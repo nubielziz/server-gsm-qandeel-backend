@@ -18,8 +18,10 @@ Status: accepted, 2026-10-31.
   is `400 BAD_REQUEST`.
 - One catalog, `src/common/errors/catalog.ts` (`code → status, title`), mirrored by `docs/contract/error-codes.md`
   (contract test, decision 009). Code throws `new AppError('EMAIL_TAKEN', { detail, errors })`; the global exception
-  filter maps `AppError`, zod errors, Fastify errors (404 route, 413 body, 415) and unknown errors (500
-  `INTERNAL_ERROR`, no stack or internals in production; full error logged with the request id).
+  filter maps `AppError`, contract validation failures (422, built by `validationFailed()`), Fastify errors (404
+  route, 413 body, 415) and unknown errors (500 `INTERNAL_ERROR`, no stack or internals in production; full error
+  logged with the request id). A raw `ZodError` thrown from code counts as a server bug (500): a handler that
+  validates more client input itself throws `validationFailed(location, error)` instead.
 - 429 always carries `Retry-After`; 401 on a staff route clears no cookie by itself (the frontend signs out);
   `IP_NOT_ALLOWED` is decided before authentication.
 

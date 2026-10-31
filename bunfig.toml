@@ -1,0 +1,4 @@
+# bun test settings (decision 014): preload sets NODE_ENV=test; 15 s per test (integration tests boot Nest apps).
+[test]
+preload = ["./test/setup.ts"]
+timeout = 15000

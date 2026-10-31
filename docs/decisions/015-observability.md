@@ -7,8 +7,11 @@ Status: accepted, 2026-10-31.
   (labels: method, route template, status); BullMQ gauges per queue and state, read on scrape; business counters
   (orders placed/completed/rejected by channel, ledger transactions by kind, supplier calls by supplier, action and
   outcome with a duration histogram, webhook deliveries by outcome, cache hits/misses by key family). The API serves
-  `GET /metrics`; the worker serves its own `/metrics` on `WORKER_METRICS_PORT`. Access: internal network or
-  `Authorization: Bearer <METRICS_TOKEN>` (map rule).
+  `GET /metrics`; the worker serves its own `/metrics` on `WORKER_METRICS_PORT`. Access (map rule "internal network
+  or token"): with `METRICS_TOKEN` set the bearer token is required from every caller; without it only loopback and
+  private addresses are allowed, and never a request carrying forwarding headers. Production requires
+  `METRICS_TOKEN` (a proxy that adds no forwarding header would make public traffic look internal); Prometheus
+  scrapes with it.
 - Health: `GET /health` checks Postgres and both Redis roles and always answers 200 JSON
   `{ status: ok | degraded | down, checks }` (the console reads any non-2xx as "API unreachable");
   `GET /health?strict=1` answers 503 when a dependency is down, for load balancers and readiness probes.

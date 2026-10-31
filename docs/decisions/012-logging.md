@@ -3,8 +3,12 @@
 Status: accepted, 2026-10-31.
 
 **Decision.**
-- pino as Fastify's logger, bridged to Nest with `nestjs-pino` (Nest 12 supported); JSON in production, pino-pretty
-  only in development.
+- pino through `nestjs-pino` (Nest 12 supported) for Nest's own messages and application code; JSON in production,
+  pino-pretty only in development. Fastify's built-in logger stays off: the access log is our `onResponse` hook
+  (`request completed` with method, route template, status, code, duration), and nestjs-pino's per-request middleware
+  is off because its route pattern does not match under Nest 12 + Fastify; the request id reaches every line through a
+  pino mixin reading the async context. Accepted gap: Fastify-internal warnings (a reply sent twice, client socket
+  errors) are not logged.
 - Request id: the incoming `X-Request-Id` is kept when it is ≤ 64 safe characters, otherwise a new UUIDv7 is made;
   it is echoed in the `X-Request-Id` response header (the frontend shows it on errors), bound to every log line, put
   into outbox payload metadata, BullMQ job data and outgoing supplier/webhook calls.

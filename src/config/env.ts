@@ -1,0 +1,542 @@
+// Environment schema and loader (decision 013): every variable in one zod schema, parsed once, frozen.
+// Production requires the secrets; development and test get safe local defaults that match compose.yaml.
+import net from 'node:net';
+import { z } from 'zod';
+
+/** The three runtime modes; the mode decides which variables are required and which defaults apply. */
+export type NodeEnv = 'development' | 'test' | 'production';
+
+/** pino level names accepted by `LOG_LEVEL`. */
+export type LogLevel = 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent';
+
+/** How the API serves the reference docs (decision 017): everyone, staff with `system:read`, or nobody. */
+export type ReferenceDocsMode = 'open' | 'staff' | 'off';
+
+/**
+ * Which proxies may set `X-Forwarded-*`: `false` (none), a hop count (the last N hops) or a list of
+ * IP/CIDR entries and named ranges (`loopback`, `linklocal`, `uniquelocal`).
+ */
+export type TrustProxy = false | number | readonly string[];
+
+/**
+ * The typed, frozen application configuration.
+ *
+ * Why: decision 013 keeps every setting in one validated object, so a bad setting stops the process at deploy
+ * time and no other file reads `process.env`.
+ */
+export interface AppConfig {
+  readonly env: NodeEnv;
+  readonly isProduction: boolean;
+  readonly http: {
+    readonly host: string;
+    readonly port: number;
+    /** Proxies trusted for `X-Forwarded-*` (client IP, protocol). */
+    readonly trustProxy: TrustProxy;
+    readonly bodyLimitBytes: number;
+    /** Exact origins allowed by CORS (scheme + host + optional port, no path). Empty = no cross-origin access. */
+    readonly corsOrigins: readonly string[];
+    /** Base of the problem+json `type` URI, without a trailing slash (decision 028). */
+    readonly errorsBaseUrl: string;
+    readonly referenceDocs: ReferenceDocsMode;
+  };
+  readonly log: { readonly level: LogLevel };
+  readonly database: { readonly url: string; readonly testUrl: string; readonly poolMax: number };
+  readonly redis: { readonly queueUrl: string; readonly cacheUrl: string; readonly bullPrefix: string };
+  readonly s3: {
+    /** Unset means the AWS default endpoint for the region. */
+    readonly endpoint: string | undefined;
+    readonly region: string;
+    readonly bucket: string;
+    readonly accessKeyId: string;
+    readonly secretAccessKey: string;
+    readonly forcePathStyle: boolean;
+  };
+  readonly security: {
+    readonly csrfSecret: string;
+    readonly csrfCookieDomain: string | undefined;
+    readonly cookieSecure: boolean;
+    readonly tokenPepper: string;
+    /** AES-256-GCM keyring (decision 019): key id to 32 raw bytes. */
+    readonly encryptionKeys: Readonly<Record<string, Buffer>>;
+    readonly encryptionActiveKid: string;
+  };
+  readonly observability: {
+    /** When set, `/metrics` requires `Authorization: Bearer <token>`; when unset only private networks may read it. */
+    readonly metricsToken: string | undefined;
+    readonly workerMetricsPort: number;
+    readonly prometheusUrl: string | undefined;
+    readonly sentryDsn: string | undefined;
+  };
+}
+
+/** One problem found while reading the environment, named by its variable. */
+export interface ConfigIssue {
+  readonly variable: string;
+  readonly message: string;
+}
+
+/**
+ * Thrown when the environment is invalid; its message lists every problem so one deploy attempt fixes them all.
+ *
+ * Why: decision 013 wants a readable list and no partial start.
+ */
+export class ConfigError extends Error {
+  constructor(readonly issues: readonly ConfigIssue[]) {
+    super(`Invalid environment configuration:\n${issues.map((i) => `  - ${i.variable}: ${i.message}`).join('\n')}`);
+    this.name = 'ConfigError';
+  }
+}
+
+const NODE_ENVS = ['development', 'test', 'production'] as const;
+const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
+const NAMED_PROXY_RANGES = ['loopback', 'linklocal', 'uniquelocal'] as const;
+const MAX_TRUST_PROXY_HOPS = 10;
+
+/**
+ * Local-only values used outside production; production rejects them so a copied `.env` cannot reach it.
+ *
+ * Why: a fresh checkout runs after `docker compose up -d` with no `.env`; production refuses these values.
+ */
+export const DEV_DEFAULTS = {
+  databaseUrl: 'postgres://gsm:gsm@localhost:5432/gsm',
+  databaseUrlTest: 'postgres://gsm:gsm@localhost:5432/gsm_test',
+  redisQueueUrl: 'redis://localhost:6379/0',
+  redisCacheUrl: 'redis://localhost:6380/0',
+  s3Endpoint: 'http://localhost:9000',
+  s3Bucket: 'gsm-files',
+  s3AccessKeyId: 'gsm-minio',
+  s3SecretAccessKey: 'gsm-minio-secret',
+  csrfSecret: 'dev-only-csrf-secret-do-not-use-in-production-0123456789',
+  tokenPepper: 'dev-only-token-pepper-do-not-use-in-production-0123456789',
+  encryptionKid: 'dev1',
+  encryptionKey: Buffer.alloc(32, 'gsm-dev-key').toString('base64'),
+  errorsBaseUrl: 'http://localhost:3000/errors',
+  corsOrigins: 'http://localhost:5173,http://127.0.0.1:5173',
+} as const;
+
+const url = (protocol: RegExp) => z.url({ protocol });
+const httpUrl = url(/^https?$/);
+const postgresUrl = url(/^postgres(ql)?$/);
+const redisUrl = url(/^rediss?$/);
+const int = (min: number, max: number) => z.coerce.number().int().min(min).max(max);
+
+/** Shape of the raw variables: format checks only; defaults, production rules and joins happen afterwards. */
+const rawSchema = z.object({
+  NODE_ENV: z.enum(NODE_ENVS).optional(),
+  PORT: int(1, 65535).optional(),
+  HOST: z.string().min(1).optional(),
+  LOG_LEVEL: z.enum(LOG_LEVELS).optional(),
+  TRUST_PROXY: z.string().optional(),
+  BODY_LIMIT_BYTES: int(1024, 100 * 1024 * 1024).optional(),
+  CORS_ORIGINS: z.string().optional(),
+  ERRORS_BASE_URL: httpUrl.optional(),
+  DATABASE_URL: postgresUrl.optional(),
+  DATABASE_URL_TEST: postgresUrl.optional(),
+  DATABASE_POOL_MAX: int(1, 200).optional(),
+  REDIS_QUEUE_URL: redisUrl.optional(),
+  REDIS_CACHE_URL: redisUrl.optional(),
+  BULL_PREFIX: z
+    .string()
+    .regex(/^[A-Za-z0-9:_-]{1,64}$/, 'use letters, digits, ":", "_" or "-" (1-64 characters)')
+    .optional(),
+  S3_ENDPOINT: httpUrl.optional(),
+  S3_REGION: z.string().min(1).optional(),
+  S3_BUCKET: z.string().min(3).optional(),
+  S3_ACCESS_KEY_ID: z.string().min(1).optional(),
+  S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  S3_FORCE_PATH_STYLE: z.stringbool().optional(),
+  CSRF_SECRET: z.string().min(32, 'must be at least 32 characters').optional(),
+  CSRF_COOKIE_DOMAIN: z.string().min(1).optional(),
+  COOKIE_SECURE: z.stringbool().optional(),
+  TOKEN_PEPPER: z.string().min(32, 'must be at least 32 characters').optional(),
+  ENCRYPTION_KEYS: z.string().optional(),
+  ENCRYPTION_ACTIVE_KID: z.string().optional(),
+  METRICS_TOKEN: z.string().min(16, 'must be at least 16 characters').optional(),
+  WORKER_METRICS_PORT: int(1, 65535).optional(),
+  PROMETHEUS_URL: httpUrl.optional(),
+  SENTRY_DSN: httpUrl.optional(),
+  REFERENCE_DOCS: z.enum(['open', 'staff', 'off']).optional(),
+});
+
+type RawEnv = z.output<typeof rawSchema>;
+/**
+ * Every environment variable the application reads (also the list `.env.example` must document).
+ *
+ * Why: a test keeps `.env.example` complete.
+ */
+export const ENV_VARIABLES: readonly string[] = Object.keys(rawSchema.shape);
+const KNOWN_VARIABLES = ENV_VARIABLES;
+
+type TrustProxyResult =
+  | { readonly ok: true; readonly value: TrustProxy }
+  | { readonly ok: false; readonly message: string };
+
+/** True for `a.b.c.d/n` or `ipv6/n` with a prefix inside the family's range, or a bare address. */
+function isIpOrCidr(entry: string): boolean {
+  const [address, prefix, extra] = entry.split('/');
+  if (extra !== undefined || address === undefined) return false;
+  const family = net.isIP(address);
+  if (family === 0) return false;
+  if (prefix === undefined) return true;
+  if (!/^\d{1,3}$/.test(prefix)) return false;
+  return Number(prefix) <= (family === 4 ? 32 : 128);
+}
+
+/**
+ * Parses `TRUST_PROXY`: empty/`false`/`0` (none), a hop count (1-10) or a comma list of IP/CIDR entries.
+ *
+ * Why: a wrong proxy trust lets any client forge its IP, which would defeat IP rules and rate limits (decision 018).
+ * "Trust everything" (`true`, `/0`) is refused on purpose.
+ *
+ * @param value raw variable text
+ * @returns the parsed value, or the reason it is invalid
+ */
+export function parseTrustProxy(value: string | undefined): TrustProxyResult {
+  const text = value?.trim() ?? '';
+  if (text === '' || text === 'false' || text === '0') return { ok: true, value: false };
+  if (/^\d+$/.test(text)) {
+    const hops = Number(text);
+    return hops <= MAX_TRUST_PROXY_HOPS
+      ? { ok: true, value: hops }
+      : { ok: false, message: `a hop count must be between 1 and ${MAX_TRUST_PROXY_HOPS}` };
+  }
+  const entries = text.split(',').map((part) => part.trim());
+  for (const entry of entries) {
+    if ((NAMED_PROXY_RANGES as readonly string[]).includes(entry)) continue;
+    if (!isIpOrCidr(entry)) {
+      return {
+        ok: false,
+        message: `"${entry}" is not a hop count, an IP, a CIDR range or one of ${NAMED_PROXY_RANGES.join(', ')}`,
+      };
+    }
+    if (entry.endsWith('/0')) return { ok: false, message: `"${entry}" would trust every address` };
+  }
+  return { ok: true, value: [...new Set(entries)] };
+}
+
+/**
+ * Parses `CORS_ORIGINS`: a comma list of exact origins (`https://console.example.com`, `http://localhost:5173`).
+ *
+ * Why: credentials are allowed (ALIGNMENT § 6), so wildcards, paths and trailing slashes are refused.
+ *
+ * @param value raw variable text
+ * @returns the unique origins, or the reason one is invalid
+ */
+export function parseCorsOrigins(
+  value: string,
+): { ok: true; value: readonly string[] } | { ok: false; message: string } {
+  const origins: string[] = [];
+  for (const part of value.split(',')) {
+    const origin = part.trim();
+    if (origin === '') continue;
+    let parsed: URL | undefined;
+    try {
+      parsed = new URL(origin);
+    } catch {
+      parsed = undefined;
+    }
+    if (!parsed || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) {
+      return { ok: false, message: `"${origin}" is not an http(s) origin` };
+    }
+    if (parsed.origin !== origin) {
+      return { ok: false, message: `"${origin}" must be written as an exact origin: ${parsed.origin}` };
+    }
+    if (!origins.includes(origin)) origins.push(origin);
+  }
+  return { ok: true, value: origins };
+}
+
+/**
+ * Parses `ENCRYPTION_KEYS` (`kid:base64-32-bytes`, comma separated; decision 019).
+ *
+ * Why: decision 019: a malformed keyring must stop the deploy, not the first encryption.
+ *
+ * @param value raw variable text
+ * @returns the keyring (key id to 32 bytes), or the reason it is invalid
+ */
+export function parseEncryptionKeys(
+  value: string,
+): { ok: true; value: Record<string, Buffer> } | { ok: false; message: string } {
+  const keys: Record<string, Buffer> = {};
+  for (const part of value.split(',')) {
+    const entry = part.trim();
+    if (entry === '') continue;
+    const colon = entry.indexOf(':');
+    const kid = colon < 0 ? '' : entry.slice(0, colon);
+    if (!/^[A-Za-z0-9_-]{1,32}$/.test(kid)) {
+      return {
+        ok: false,
+        message: 'each key must look like "<kid>:<base64 key>" with a kid of 1-32 letters, digits, "_" or "-"',
+      };
+    }
+    const material = entry.slice(colon + 1);
+    const key = /^[A-Za-z0-9+/]+={0,2}$/.test(material) ? Buffer.from(material, 'base64') : Buffer.alloc(0);
+    if (key.length !== 32) return { ok: false, message: `key "${kid}" must be 32 bytes encoded as base64` };
+    if (Object.hasOwn(keys, kid)) return { ok: false, message: `key id "${kid}" appears twice` };
+    keys[kid] = key;
+  }
+  if (Object.keys(keys).length === 0) return { ok: false, message: 'at least one key is required' };
+  return { ok: true, value: keys };
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === 'object' && !Object.isFrozen(value) && !Buffer.isBuffer(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value)) deepFreeze(child);
+  }
+  return value;
+}
+
+/**
+ * Joins the raw variables into the typed config: defaults per mode, production rules, cross-field checks.
+ * Problems are reported through `fail` (never thrown) so that one run lists every problem.
+ */
+function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) => void): AppConfig {
+  const env: NodeEnv = raw.NODE_ENV ?? 'development';
+  const production = env === 'production';
+  // A value that has a local default outside production and must be given in production.
+  const withDefault = <T>(variable: string, value: T | undefined, devDefault: T): T => {
+    if (value !== undefined) return value;
+    if (production) {
+      fail(variable, 'is required in production');
+      return devDefault;
+    }
+    return devDefault;
+  };
+  // A value that was given must not be the development default (a copied `.env` must not reach production).
+  const noDevValue = (variable: string, given: string | undefined, devValue: string) => {
+    if (production && given === devValue) fail(variable, 'must not use the development default in production');
+  };
+
+  const trust = parseTrustProxy(raw.TRUST_PROXY);
+  if (!trust.ok) fail('TRUST_PROXY', trust.message);
+  const cors = parseCorsOrigins(raw.CORS_ORIGINS ?? (production || env === 'test' ? '' : DEV_DEFAULTS.corsOrigins));
+  if (!cors.ok) fail('CORS_ORIGINS', cors.message);
+
+  const keysText = withDefault(
+    'ENCRYPTION_KEYS',
+    raw.ENCRYPTION_KEYS,
+    `${DEV_DEFAULTS.encryptionKid}:${DEV_DEFAULTS.encryptionKey}`,
+  );
+  const keyring = parseEncryptionKeys(keysText);
+  if (!keyring.ok) fail('ENCRYPTION_KEYS', keyring.message);
+  const encryptionKeys = keyring.ok ? keyring.value : {};
+  const activeKid = withDefault('ENCRYPTION_ACTIVE_KID', raw.ENCRYPTION_ACTIVE_KID, DEV_DEFAULTS.encryptionKid);
+  if (keyring.ok && !Object.hasOwn(encryptionKeys, activeKid)) {
+    fail('ENCRYPTION_ACTIVE_KID', `"${activeKid}" is not one of the key ids in ENCRYPTION_KEYS`);
+  }
+  if (production && raw.ENCRYPTION_KEYS?.includes(DEV_DEFAULTS.encryptionKey)) {
+    fail('ENCRYPTION_KEYS', 'must not use the development key in production');
+  }
+
+  const csrfSecret = withDefault('CSRF_SECRET', raw.CSRF_SECRET, DEV_DEFAULTS.csrfSecret);
+  noDevValue('CSRF_SECRET', raw.CSRF_SECRET, DEV_DEFAULTS.csrfSecret);
+  const tokenPepper = withDefault('TOKEN_PEPPER', raw.TOKEN_PEPPER, DEV_DEFAULTS.tokenPepper);
+  noDevValue('TOKEN_PEPPER', raw.TOKEN_PEPPER, DEV_DEFAULTS.tokenPepper);
+  const cookieSecure = raw.COOKIE_SECURE ?? production;
+  if (production && !cookieSecure) fail('COOKIE_SECURE', 'must be true in production (session cookies are Secure)');
+  // Behind a proxy that adds no forwarding header the public internet looks internal, so production always needs the
+  // metrics token (decision 015); Prometheus scrapes with it.
+  if (production && raw.METRICS_TOKEN === undefined) fail('METRICS_TOKEN', 'is required in production');
+
+  const errorsBaseUrl = withDefault('ERRORS_BASE_URL', raw.ERRORS_BASE_URL, DEV_DEFAULTS.errorsBaseUrl).replace(
+    /\/+$/,
+    '',
+  );
+  const s3Endpoint = raw.S3_ENDPOINT ?? (production ? undefined : DEV_DEFAULTS.s3Endpoint);
+
+  return {
+    env,
+    isProduction: production,
+    http: {
+      host: raw.HOST ?? '0.0.0.0',
+      port: raw.PORT ?? 3000,
+      trustProxy: trust.ok ? trust.value : false,
+      bodyLimitBytes: raw.BODY_LIMIT_BYTES ?? 1024 * 1024,
+      corsOrigins: cors.ok ? cors.value : [],
+      errorsBaseUrl,
+      referenceDocs: raw.REFERENCE_DOCS ?? (production ? 'staff' : 'open'),
+    },
+    log: { level: raw.LOG_LEVEL ?? (production ? 'info' : env === 'test' ? 'warn' : 'debug') },
+    database: {
+      url: withDefault('DATABASE_URL', raw.DATABASE_URL, DEV_DEFAULTS.databaseUrl),
+      testUrl: raw.DATABASE_URL_TEST ?? DEV_DEFAULTS.databaseUrlTest,
+      poolMax: raw.DATABASE_POOL_MAX ?? 10,
+    },
+    redis: {
+      queueUrl: withDefault('REDIS_QUEUE_URL', raw.REDIS_QUEUE_URL, DEV_DEFAULTS.redisQueueUrl),
+      cacheUrl: withDefault('REDIS_CACHE_URL', raw.REDIS_CACHE_URL, DEV_DEFAULTS.redisCacheUrl),
+      bullPrefix: raw.BULL_PREFIX ?? `gsm:${env}:bull`,
+    },
+    s3: {
+      endpoint: s3Endpoint,
+      region: raw.S3_REGION ?? 'us-east-1',
+      bucket: withDefault('S3_BUCKET', raw.S3_BUCKET, DEV_DEFAULTS.s3Bucket),
+      accessKeyId: withDefault('S3_ACCESS_KEY_ID', raw.S3_ACCESS_KEY_ID, DEV_DEFAULTS.s3AccessKeyId),
+      secretAccessKey: withDefault('S3_SECRET_ACCESS_KEY', raw.S3_SECRET_ACCESS_KEY, DEV_DEFAULTS.s3SecretAccessKey),
+      forcePathStyle: raw.S3_FORCE_PATH_STYLE ?? !production,
+    },
+    security: {
+      csrfSecret,
+      csrfCookieDomain: raw.CSRF_COOKIE_DOMAIN,
+      cookieSecure,
+      tokenPepper,
+      encryptionKeys,
+      encryptionActiveKid: activeKid,
+    },
+    observability: {
+      metricsToken: raw.METRICS_TOKEN,
+      workerMetricsPort: raw.WORKER_METRICS_PORT ?? 9464,
+      prometheusUrl: raw.PROMETHEUS_URL,
+      sentryDsn: raw.SENTRY_DSN,
+    },
+  };
+}
+
+/** Variables set to an empty string behave as unset (a bare `FOO=` line in a `.env` file). */
+function normalize(env: Readonly<Record<string, string | undefined>>): Record<string, string> {
+  const picked: Record<string, string> = {};
+  for (const name of KNOWN_VARIABLES) {
+    const value = env[name]?.trim();
+    if (value) picked[name] = value;
+  }
+  return picked;
+}
+
+/** The fields that are valid on their own, so the second stage can still check the rest of the environment. */
+function salvage(env: Record<string, string>): RawEnv {
+  const kept: Record<string, unknown> = {};
+  for (const name of KNOWN_VARIABLES) {
+    const field = (rawSchema.shape as Record<string, z.ZodType>)[name];
+    const result = field?.safeParse(env[name]);
+    if (result?.success && result.data !== undefined) kept[name] = result.data;
+  }
+  return kept as RawEnv;
+}
+
+/**
+ * Validates an environment record and returns the frozen typed config.
+ *
+ * Why: the single schema of decision 013; pure so tests can try any environment without touching `process.env`.
+ * Format problems and missing/inconsistent settings are reported together, once per variable.
+ *
+ * @param env variables to read (unknown names are ignored)
+ * @returns the deep-frozen configuration
+ * @throws {ConfigError} listing every invalid or missing variable
+ */
+export function parseEnv(env: Readonly<Record<string, string | undefined>>): AppConfig {
+  const normalized = normalize(env);
+  const issues: ConfigIssue[] = [];
+  const reported = new Set<string>();
+  const report = (variable: string, message: string) => {
+    // Messages never echo the offending value, so a malformed secret does not end up in the deploy log.
+    if (reported.has(variable)) return;
+    reported.add(variable);
+    issues.push({ variable, message });
+  };
+
+  const parsed = rawSchema.safeParse(normalized);
+  if (!parsed.success)
+    for (const issue of parsed.error.issues) report(String(issue.path[0] ?? 'environment'), issue.message);
+  const config = resolveConfig(parsed.success ? parsed.data : salvage(normalized), report);
+  if (issues.length > 0) throw new ConfigError(issues);
+  return deepFreeze(config);
+}
+
+let cached: AppConfig | undefined;
+
+/**
+ * Reads `process.env` once and returns the same frozen config on every later call.
+ *
+ * Why: the API, the worker and every provider must see one configuration; this is the only place that touches
+ * `process.env` (decision 013).
+ *
+ * @returns the process configuration
+ * @throws {ConfigError} when the environment is invalid
+ */
+export function loadConfig(): AppConfig {
+  cached ??= parseEnv(process.env);
+  return cached;
+}
+
+/**
+ * Entry-point helper: loads the config or prints the problem list and exits with code 1.
+ *
+ * Why: a process with a bad setting must not start (decision 013); the list tells the operator what to fix.
+ *
+ * @returns the process configuration
+ */
+export function loadConfigOrExit(): AppConfig {
+  try {
+    return loadConfig();
+  } catch (error) {
+    console.error(error instanceof ConfigError ? error.message : error);
+    process.exit(1);
+  }
+}
+
+/** Hides credentials in a URL (`postgres://user:pass@host/db` becomes `postgres://user:***@host/db`). */
+function redactUrl(value: string | undefined): string | undefined {
+  if (!value) return value;
+  try {
+    const parsed = new URL(value);
+    if (parsed.password) parsed.password = '***';
+    return parsed.toString();
+  } catch {
+    return '[invalid url]';
+  }
+}
+
+const flag = (value: unknown) => (value ? '[set]' : '[unset]');
+
+/**
+ * Builds the redacted summary the boot log prints: no secrets, no passwords, no key material.
+ *
+ * Why: operators need to see which settings the process runs with (decision 013) without leaking credentials.
+ *
+ * @param config the process configuration
+ * @returns plain JSON-safe data
+ */
+export function summarizeConfig(config: AppConfig): Record<string, unknown> {
+  return {
+    env: config.env,
+    http: {
+      host: config.http.host,
+      port: config.http.port,
+      trustProxy: config.http.trustProxy,
+      bodyLimitBytes: config.http.bodyLimitBytes,
+      corsOrigins: config.http.corsOrigins,
+      errorsBaseUrl: config.http.errorsBaseUrl,
+      referenceDocs: config.http.referenceDocs,
+    },
+    logLevel: config.log.level,
+    database: { url: redactUrl(config.database.url), poolMax: config.database.poolMax },
+    redis: {
+      queueUrl: redactUrl(config.redis.queueUrl),
+      cacheUrl: redactUrl(config.redis.cacheUrl),
+      bullPrefix: config.redis.bullPrefix,
+    },
+    s3: {
+      endpoint: redactUrl(config.s3.endpoint),
+      region: config.s3.region,
+      bucket: config.s3.bucket,
+      forcePathStyle: config.s3.forcePathStyle,
+      accessKeyId: flag(config.s3.accessKeyId),
+      secretAccessKey: flag(config.s3.secretAccessKey),
+    },
+    security: {
+      csrfSecret: flag(config.security.csrfSecret),
+      csrfCookieDomain: config.security.csrfCookieDomain,
+      cookieSecure: config.security.cookieSecure,
+      tokenPepper: flag(config.security.tokenPepper),
+      encryptionKeyIds: Object.keys(config.security.encryptionKeys),
+      encryptionActiveKid: config.security.encryptionActiveKid,
+    },
+    observability: {
+      metricsToken: flag(config.observability.metricsToken),
+      workerMetricsPort: config.observability.workerMetricsPort,
+      prometheusUrl: redactUrl(config.observability.prometheusUrl),
+      sentryDsn: flag(config.observability.sentryDsn),
+    },
+  };
+}

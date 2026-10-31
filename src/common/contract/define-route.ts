@@ -1,0 +1,372 @@
+// defineRoute(): one frozen, registered contract per endpoint (decision 008). The manifest key is the identity;
+// request schemas, success shape, error codes and docs metadata live here and drive validation, types and OpenAPI.
+import type { z } from 'zod';
+import { ERROR_CATALOG, isErrorCode, type ErrorCode } from '../errors/catalog';
+import { surfaceOfPath, type Surface } from '../surface';
+import { isListQuerySchema, type ListQueryBrand } from './list-query';
+
+/** HTTP methods of the map's routes. */
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+/** `METHOD /path`, exactly as in `docs/route-manifest.json` (`GET /admin/staff/:id`). */
+export type RouteKey = `${HttpMethod} /${string}`;
+/** Who may call a route (the `access` values of the manifest for HTTP routes). */
+export type AccessKind =
+  | 'public'
+  | 'staff-session'
+  | 'staff-permission'
+  | 'merchant-session'
+  | 'customer-session'
+  | 'api-key'
+  | 'dhru-credentials'
+  | 'gateway-signature'
+  | 'url-secret'
+  | 'checkout-token'
+  | 'tracking-token'
+  | 'link-token'
+  | 'ticket-token'
+  | 'internal-or-token';
+/** Success statuses the API uses: 200, 201 (create), 202 (accepted) and 204 (no body). */
+export type SuccessStatus = 200 | 201 | 202 | 204;
+
+type MaybeSchema = z.ZodType | undefined;
+type MaybeObject = z.ZodObject | undefined;
+
+/** How a route answers when it works. */
+export interface SuccessSpec<S extends MaybeSchema> {
+  readonly status: SuccessStatus;
+  /** JSON body schema (strips unknown keys). For a list route (`listQuery`) it is the schema of ONE row. */
+  readonly schema?: S;
+  /** Media type of a non-JSON success (CSV, PDF, HTML, Prometheus text); such a route has no schema. */
+  readonly contentType?: string;
+  /** Other statuses that carry the same body (sent with `respondWith`), e.g. `[503]` for `GET /health?strict=1`. */
+  readonly alsoStatuses?: readonly number[];
+}
+
+/** The input of {@link defineRoute}. */
+export interface RouteSpec<
+  P extends MaybeObject,
+  Q extends MaybeSchema,
+  B extends MaybeSchema,
+  H extends MaybeObject,
+  S extends MaybeSchema,
+> {
+  /** Manifest key; the Nest method and path are derived from it. */
+  readonly key: RouteKey;
+  readonly summary: string;
+  readonly description?: string;
+  readonly tags: readonly string[];
+  readonly surface: Surface;
+  readonly access: AccessKind;
+  /** `resource:action` the caller needs; required for `staff-permission`, forbidden otherwise. */
+  readonly permission?: string | null;
+  /** Path parameters; an object schema with exactly the `:names` of the path. */
+  readonly params?: P;
+  /** Query string; use `listQuery()` for lists. */
+  readonly query?: Q;
+  readonly body?: B;
+  /** Headers the route reads (object schema with lower-case names). */
+  readonly headers?: H;
+  readonly success: SuccessSpec<S>;
+  /** Catalog codes this route can answer with (documented per status in OpenAPI). */
+  readonly errors: readonly ErrorCode[];
+  /** A request body and a success body example for the docs; both are validated against the schemas. */
+  readonly examples?: { readonly request?: unknown; readonly response?: unknown };
+}
+
+/** The frozen contract of one route. */
+export interface RouteContract<
+  P extends MaybeObject,
+  Q extends MaybeSchema,
+  B extends MaybeSchema,
+  H extends MaybeObject,
+  S extends MaybeSchema,
+> {
+  readonly key: RouteKey;
+  readonly method: HttpMethod;
+  /** Nest/Fastify path (`/admin/staff/:id`). */
+  readonly path: string;
+  readonly summary: string;
+  readonly description: string | undefined;
+  readonly tags: readonly string[];
+  readonly surface: Surface;
+  readonly access: AccessKind;
+  readonly permission: string | null;
+  readonly params: P;
+  readonly query: Q;
+  readonly body: B;
+  readonly headers: H;
+  readonly success: {
+    readonly status: SuccessStatus;
+    readonly schema: S;
+    readonly contentType: string | undefined;
+    readonly alsoStatuses: readonly number[];
+    /** True when `query` is a `listQuery()`: the handler returns `{ rows, total }` and the answer is an array. */
+    readonly list: boolean;
+  };
+  readonly errors: readonly ErrorCode[];
+  readonly examples: { readonly request: unknown; readonly response: unknown };
+}
+
+/** A contract whose schemas are not known statically (what decorators and the registry accept). */
+export type AnyRouteContract = RouteContract<MaybeObject, MaybeSchema, MaybeSchema, MaybeObject, MaybeSchema>;
+
+type Out<T> = T extends z.ZodType ? z.output<T> : undefined;
+/** The validated path parameters a handler receives. */
+export type ParamsOf<C extends AnyRouteContract> = Out<C['params']>;
+/** The validated query a handler receives (the parsed list request for `listQuery()`). */
+export type QueryOf<C extends AnyRouteContract> = Out<C['query']>;
+/** The validated body a handler receives. */
+export type BodyOf<C extends AnyRouteContract> = Out<C['body']>;
+/** The validated headers a handler receives through `@ContractHeaders()`. */
+export type HeadersOf<C extends AnyRouteContract> = Out<C['headers']>;
+/**
+ * What a handler returns: `{ rows, total }` for a list route, otherwise the body before the response schema strips
+ * it (anything for a non-JSON or 204 route).
+ */
+export type ResultOf<C extends AnyRouteContract> = C['query'] extends ListQueryBrand
+  ? {
+      readonly rows: readonly (C['success']['schema'] extends z.ZodType ? z.input<C['success']['schema']> : never)[];
+      readonly total: number;
+    }
+  : C['success']['schema'] extends z.ZodType
+    ? z.input<C['success']['schema']>
+    : unknown;
+
+const KEY_PATTERN = /^(GET|POST|PUT|PATCH|DELETE) (\/\S*)$/;
+const SEGMENT_PATTERN = /^(?::([A-Za-z_][A-Za-z0-9_]*)|[A-Za-z0-9._~-]+)$/;
+const PERMISSION_PATTERN = /^[a-z][a-z0-9_]*:(?:\*|[a-z][a-z0-9_]*)$/;
+const ALLOWED_STATUSES: readonly number[] = [200, 201, 202, 204];
+
+/**
+ * Splits a manifest key into method, path and path parameter names.
+ *
+ * Why: the key is a route's identity in the map; one parser keeps the registry, path derivation and checks consistent.
+ */
+export function parseRouteKey(key: string): { method: HttpMethod; path: string; paramNames: string[] } {
+  const match = KEY_PATTERN.exec(key);
+  if (!match) throw new Error(`Route key "${key}" must look like "GET /admin/staff/:id"`);
+  const method = match[1] as HttpMethod;
+  const path = match[2]!;
+  const paramNames: string[] = [];
+  if (path !== '/') {
+    for (const segment of path.slice(1).split('/')) {
+      const parsed = SEGMENT_PATTERN.exec(segment);
+      if (!parsed) throw new Error(`Route key "${key}" has an invalid path segment "${segment}"`);
+      if (parsed[1]) paramNames.push(parsed[1]);
+    }
+  }
+  if (new Set(paramNames).size !== paramNames.length) throw new Error(`Route key "${key}" repeats a path parameter`);
+  return { method, path, paramNames };
+}
+
+/**
+ * Process-wide list of every defined contract, keyed by manifest key (read by docs and contract tests).
+ *
+ * Why: decision 009's contract tests and the OpenAPI generation read the registry instead of scanning controllers.
+ */
+export class ContractRegistry {
+  private readonly contracts = new Map<RouteKey, AnyRouteContract>();
+
+  /**
+   * Adds a contract.
+   *
+   * @param contract the frozen contract
+   * @throws {Error} when the key is already registered
+   */
+  register(contract: AnyRouteContract): void {
+    if (this.contracts.has(contract.key)) throw new Error(`Route contract "${contract.key}" is defined twice`);
+    this.contracts.set(contract.key, contract);
+  }
+
+  /** @returns the contract for a manifest key, or `undefined` */
+  get(key: string): AnyRouteContract | undefined {
+    return this.contracts.get(key as RouteKey);
+  }
+
+  /** @returns true when the key has a contract */
+  has(key: string): boolean {
+    return this.contracts.has(key as RouteKey);
+  }
+
+  /** @returns every contract in definition order */
+  all(): readonly AnyRouteContract[] {
+    return [...this.contracts.values()];
+  }
+
+  /** @returns every registered key */
+  keys(): readonly RouteKey[] {
+    return [...this.contracts.keys()];
+  }
+
+  /** Removes every contract. Tests only: the registry is process-wide. */
+  clear(): void {
+    this.contracts.clear();
+  }
+}
+
+/**
+ * The global registry of route contracts.
+ *
+ * Why: decision 009's contract tests compare it with the manifest and the frontend's types, and the OpenAPI
+ * document is generated from it.
+ */
+export const contractRegistry = new ContractRegistry();
+
+/**
+ * Defines, checks and registers the contract of one endpoint.
+ *
+ * Why: decision 008 makes one zod contract per route the source of validation, handler types, response
+ * serialisation and OpenAPI. Mistakes (a path parameter without a schema, a permission on a public route, an
+ * example that fails its own schema) fail at boot, not when someone calls the route.
+ *
+ * @param spec the route description
+ * @returns the frozen contract, also stored in {@link contractRegistry}
+ * @throws {Error} when the definition is inconsistent or the key was already defined (a programming error)
+ *
+ * @example
+ * export const showStaff = defineRoute({
+ *   key: 'GET /admin/staff/:id',
+ *   summary: 'Show a staff member',
+ *   tags: ['staff'],
+ *   surface: 'admin',
+ *   access: 'staff-permission',
+ *   permission: 'staff:read',
+ *   params: z.object({ id: zIdParam }),
+ *   success: { status: 200, schema: StaffDto },
+ *   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND'],
+ * });
+ */
+export function defineRoute<
+  P extends MaybeObject = undefined,
+  Q extends MaybeSchema = undefined,
+  B extends MaybeSchema = undefined,
+  H extends MaybeObject = undefined,
+  S extends MaybeSchema = undefined,
+>(spec: RouteSpec<P, Q, B, H, S>): RouteContract<P, Q, B, H, S> {
+  const where = `defineRoute("${spec.key}")`;
+  const problem = (message: string): never => {
+    throw new Error(`${where}: ${message}`);
+  };
+  const { method, path, paramNames } = parseRouteKey(spec.key);
+
+  if (spec.summary.trim() === '' || spec.summary.length > 120) problem('summary must be 1-120 characters');
+  if (spec.tags.length === 0) problem('tags must name at least one tag');
+  if (surfaceOfPath(path) !== spec.surface)
+    problem(`surface "${spec.surface}" does not match the path (expected "${surfaceOfPath(path)}")`);
+
+  // Access and permission.
+  const permission = spec.permission ?? null;
+  if (spec.access === 'staff-permission') {
+    if (!permission || !PERMISSION_PATTERN.test(permission))
+      problem('staff-permission routes need a permission like "staff:read"');
+  } else if (permission !== null) {
+    problem(`only staff-permission routes carry a permission (access is "${spec.access}")`);
+  }
+
+  // Inputs.
+  const declared = spec.params ? Object.keys(spec.params.shape) : [];
+  if (paramNames.length > 0 && !spec.params) problem(`path parameters (${paramNames.join(', ')}) need a params schema`);
+  if (spec.params && (declared.length !== paramNames.length || !paramNames.every((name) => declared.includes(name)))) {
+    problem(
+      `params must declare exactly the path parameters (${paramNames.join(', ') || 'none'}), got (${declared.join(', ')})`,
+    );
+  }
+  if (spec.headers) {
+    for (const name of Object.keys(spec.headers.shape)) {
+      if (name !== name.toLowerCase()) problem(`header "${name}" must be written in lower case`);
+    }
+  }
+  if (spec.body && method === 'GET') problem('a GET route cannot have a body');
+
+  // Success.
+  const { status, schema, contentType } = spec.success;
+  if (!ALLOWED_STATUSES.includes(status)) problem(`success status ${String(status)} is not one of 200, 201, 202, 204`);
+  const list = spec.query !== undefined && isListQuerySchema(spec.query);
+  if (status === 204) {
+    if (schema || contentType) problem('a 204 route has no body: remove success.schema and success.contentType');
+  } else if (!schema && !contentType) {
+    problem('declare success.schema (JSON body) or success.contentType (file, text)');
+  } else if (schema && contentType) {
+    problem('declare success.schema or success.contentType, not both');
+  }
+  if (list) {
+    if (method !== 'GET' || status !== 200 || !schema)
+      problem('a list route is GET, answers 200 and declares the row schema');
+  }
+  for (const other of spec.success.alsoStatuses ?? []) {
+    if (!Number.isInteger(other) || other < 200 || other > 599 || other === status)
+      problem(`alsoStatuses has an invalid status ${other}`);
+    if (!schema) problem('alsoStatuses needs success.schema');
+  }
+
+  // Errors.
+  for (const code of spec.errors) {
+    if (!isErrorCode(code))
+      problem(`unknown error code "${String(code)}" (add it to the catalog and docs/contract/error-codes.md)`);
+  }
+  if (new Set(spec.errors).size !== spec.errors.length) problem('errors lists a code twice');
+
+  // Examples must satisfy the schemas they document.
+  const examples = spec.examples ?? {};
+  if (examples.request !== undefined) {
+    if (!spec.body) problem('examples.request needs a body schema');
+    else if (!spec.body.safeParse(examples.request).success)
+      problem('examples.request does not satisfy the body schema');
+  }
+  if (examples.response !== undefined && schema) {
+    // A list route documents an array of rows; every other route one body.
+    const samples: unknown[] | undefined = list
+      ? Array.isArray(examples.response)
+        ? examples.response
+        : undefined
+      : [examples.response];
+    if (!samples?.every((item) => schema.safeParse(item).success)) {
+      problem(
+        list
+          ? 'examples.response must be an array of rows that satisfy the row schema'
+          : 'examples.response does not satisfy the success schema',
+      );
+    }
+  }
+
+  const contract: RouteContract<P, Q, B, H, S> = Object.freeze({
+    key: spec.key,
+    method,
+    path,
+    summary: spec.summary,
+    description: spec.description,
+    tags: Object.freeze([...spec.tags]),
+    surface: spec.surface,
+    access: spec.access,
+    permission,
+    params: spec.params as P,
+    query: spec.query as Q,
+    body: spec.body as B,
+    headers: spec.headers as H,
+    success: Object.freeze({
+      status,
+      schema: schema as S,
+      contentType,
+      alsoStatuses: Object.freeze([...(spec.success.alsoStatuses ?? [])]),
+      list,
+    }),
+    errors: Object.freeze([...spec.errors]),
+    examples: Object.freeze({ request: examples.request, response: examples.response }),
+  });
+  contractRegistry.register(contract as unknown as AnyRouteContract);
+  return contract;
+}
+
+/**
+ * Lists the HTTP statuses a route can answer with, from its success and error declarations.
+ *
+ * Why: the contract tests compare these statuses with what the frontend expects (docs/contract/TESTS.md).
+ *
+ * @param contract a route contract
+ * @returns sorted unique statuses
+ */
+export function declaredStatuses(contract: AnyRouteContract): number[] {
+  const statuses = new Set<number>([contract.success.status, ...contract.success.alsoStatuses]);
+  for (const code of contract.errors) statuses.add(ERROR_CATALOG[code].status);
+  return [...statuses].sort((a, b) => a - b);
+}

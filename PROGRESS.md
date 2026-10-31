@@ -4,11 +4,13 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
-**Phase 1 is done** (architecture + contract). Next: **Phase 2, foundation** (Sonnet implements, Opus reviews), in this
-order: **P2.1 foundation-runtime** first (everything else builds on the contract layer, config, errors and
-bootstrap); then P2.2 data and P2.3 infra in parallel; then P2.4 security and P2.5 staff sign-in; then P2.6 contract
-tests. Parallel implementers need separate git worktrees of this repo (`git worktree add ../worktrees/backend-<f>`;
-the workflow tool's worktree isolation targets the frontend repo, not this one).
+**Phase 2, foundation, in progress** (Sonnet implements, Opus reviews). **P2.1 runtime-core is done.** Next:
+**P2.2 docs-tooling ∥ P2.3 data**, then **P2.4 infra ∥ P2.7 contract-tests** (P2.7 needs P2.2's OpenAPI document),
+then **P2.5 security**, then **P2.6 staff sign-in**. Briefs: `docs/briefs/` (`_common.md` first; `_feature.md` is the
+Phase 3 recipe). Parallel implementers work in sibling worktrees of this repo (`git worktree add
+../backend-p2-<name> -b feat/backend-p2-<name>`, then `bun install` there; a sibling path keeps the relative
+`reference` symlink working; the workflow tool's worktree isolation targets the frontend repo, not this one). The lead
+merges each finished branch into `feat/backend` (squash) after review and green checks.
 
 Read before briefing any implementer: `docs/contract/ALIGNMENT.md`, the feature's `docs/contract/endpoints/<module>.md`
 and `docs/slices/<module>.json`, `docs/contract/RULES.md` for its frontend features, decisions 008-028.
@@ -29,7 +31,7 @@ and `docs/slices/<module>.json`, `docs/contract/RULES.md` for its frontend featu
 - Local stack (`compose.yaml`): Postgres 18.6 (`gsm`, `gsm_test`), queue Redis 8.10 (noeviction + AOF), cache Redis
   8.10 (allkeys-lru), MinIO (Chainguard image). Prometheus is added in Phase 2 (decision 015).
 - Bun spike: **27/27 pass** on Bun 1.4.4 (decision 001). `bun run check` green (typecheck, routes:check,
-  contract:check).
+  contract:check, `bun test ./src ./test`: 290 tests after P2.1).
 
 ## Phases
 
@@ -37,7 +39,7 @@ and `docs/slices/<module>.json`, `docs/contract/RULES.md` for its frontend featu
 |---|---|---|---|
 | 0 Setup + Bun spike | done | `25282af` | 0 |
 | 1 Architecture + contract | done | see `git log` (`docs: phase 1 ...`) | 6 (Opus analysts, one workflow, 3 at once) |
-| 2 Foundation | next | | |
+| 2 Foundation | in progress (P2.1 done) | per feature, see below | 2 so far |
 | 3 Feature loop (by stage) | | | |
 | 4 Frontend integration | | | |
 
@@ -55,12 +57,13 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 
 | # | Feature | Scope | Scenarios completed | Status |
 |---|---|---|---|---|
-| P2.1 | foundation-runtime | config, logging, request id, problem+json + catalog, contract layer (defineRoute, @Route, lists), OpenAPI + Scalar, /health, /metrics, api + worker bootstrap + shutdown, ESLint (jsdoc, boundaries), bunfig, CI script | | |
-| P2.2 | foundation-data | Drizzle schema for all 66 tables (per module), constraints, indexes, ledger triggers, first migration, migrator, resetDb, seed from the frontend demo state | | |
-| P2.3 | foundation-infra | two Redis clients, CacheService, RateLimitService, BullMQ base (queues, worker registry, schedulers, job_runs), outbox + relay, S3 storage, outbound http, crypto (AES-GCM keyring, token hashing, argon2), money helper | | |
-| P2.4 | foundation-security | IP rules hook, maintenance hook, rate-limit hook, auth guards (staff, merchant, customer sessions + CSRF, API key, Dhru, webhook signatures), permission guard, audit interceptor, CORS, helmet, cookies, body limits | | |
-| P2.5 | staff-sign-in | `POST /admin/auth/login`, `/2fa`, `/2fa/setup`, `/logout`, `/password/set`, `GET /admin/auth/me` (6) | | |
-| P2.6 | contract-tests | route/shape/error parity tests, fixture harvest from the frontend mocks, allowlist, CI wiring | | |
+| P2.1 | runtime-core | config, logging, request id, problem+json + catalog, contract layer (defineRoute, @Route, lists), money helper, /health, /metrics, api + worker bootstrap, bunfig + tests (brief `docs/briefs/P2.1-runtime-core.md`) | | done (`feat(runtime-core)` commit) |
+| P2.2 | docs-tooling | OpenAPI 3.1 generation (internal + public), Scalar `/docs` and `/reference`, `/openapi.json`, ESLint (jsdoc, boundaries, env rule) + prettier, module READMEs, CONTRIBUTING, CI script | | |
+| P2.3 | data | Drizzle schema for all 66 tables (per module) + schema additions (MISMATCHES), constraints, indexes, ledger triggers, first migration, migrator, resetDb, Postgres health indicator, seed from the frontend demo state | | |
+| P2.4 | infra | two Redis clients + health indicators, CacheService, RateLimitService, BullMQ base (queues, worker registry, schedulers, job_runs), outbox + relay, S3 storage, outbound http, crypto (AES-GCM keyring, token hashing, argon2), Prometheus in compose; retire `spike/` | | |
+| P2.5 | security | IP rules hook, maintenance hook, rate-limit hook, auth guards (staff/merchant/customer sessions, CSRF, API key, Dhru, webhook signatures), permission guard + catalog, audit interceptor, `/reference` staff gate | admin-team (part), ip-rules (part) | |
+| P2.6 | staff-sign-in | `POST /admin/auth/login`, `/2fa`, `/2fa/setup`, `/logout`, `/password/set`, `GET /admin/auth/me` (6) | | |
+| P2.7 | contract-tests | route/shape/error parity tests, fixture harvest from the frontend mocks, allowlist, `pending.ts` | | |
 | 2a | identity-staff-access | staff, roles, permissions, sessions, IP rules, access restriction, audit logs, settings (st2 admin, 31) | admin-team, ip-rules | |
 | 2b | identity-merchant-auth | merchant portal sign-in, security, sessions (st2 client, 15) | | |
 | 3 | money-wallets-ledger | postTransaction, money events, wallets, statement, adjust, credit limit, ledger, reconcile, currencies (st3, 14) | | |
@@ -92,7 +95,8 @@ re-review), max 2 review rounds.
 |---|---|
 | Phase 0 | 0 (lead only) |
 | Phase 1 | 6 (contract extraction: Opus analysts, max 3 at once) |
-| **Total** | **6** |
+| P2.1 runtime-core | 2 (Sonnet implementer, Opus review: pass, no blocking) |
+| **Total** | **8** |
 
 ## Decisions
 
@@ -117,3 +121,11 @@ None.
 - Fixture harvest runs under Node with the frontend's own Vitest (ALIGNMENT § 8), not under Bun.
 - CI needs the frontend checkout next to this repo (contract:check runs the frontend's TypeScript).
 - The `origin` remote still points at `nestjs/typescript-starter` (never pushed; the user may change it).
+- P2.1 review leftovers (accepted, non-blocking): Fastify router-level errors (malformed URL) skip the request hooks,
+  so they carry no CORS headers, access-log line or duration sample; upstream failures must throw `AppError`
+  (a Nest `HttpException` 502/504 becomes `500 INTERNAL_ERROR`); the worker's metrics listener sends no
+  `X-Request-Id` on its problem answers; if the code ever runs on Node instead of Bun, re-enter the request context in
+  a `preValidation` hook as `@fastify/request-context` does.
+- Run Bun entry points from the repo root: Bun reads `tsconfig.json` (decorator flags) from the working directory.
+- `TRUST_PROXY` as a hop count becomes a trust function (Fastify 5.12 ignores numbers); use it only when the app port
+  is reachable solely through the proxy chain, otherwise list the proxy addresses.

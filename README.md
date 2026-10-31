@@ -18,8 +18,9 @@ Requirements: Bun ≥ 1.4.4 (`npm i -g bun`), Docker with Compose, and the front
 bun install --frozen-lockfile
 cp .env.example .env
 docker compose up -d          # Postgres, queue Redis, cache Redis, MinIO (+ bucket init)
-bun run check                 # typecheck + route manifest/slices up to date
-bun run dev                   # API on :3000 (Phase 0 placeholder)
+bun run check                 # typecheck + route manifest/slices + contract docs + tests
+bun run dev                   # API on :3000 (GET /health, GET /metrics)
+bun run dev:worker            # worker process (its own /metrics on :9464)
 bun run spike                 # Bun compatibility spike: every dependency as real processes
 ```
 
@@ -38,14 +39,17 @@ Local services (host ports can be changed with `GSM_PG_PORT`, `GSM_REDIS_QUEUE_P
 | Script | What it does |
 |---|---|
 | `bun run dev` / `start` | API process (watch / plain) |
+| `bun run dev:worker` / `start:worker` | Worker process (watch / plain) |
 | `bun run typecheck` | `tsc --noEmit` (TypeScript 6, decision 003) |
+| `bun run test` | Unit tests (`src/**/*.spec.ts`) and integration tests (`test/integration`) with `bun test` |
+| `bun run test:unit` / `test:integration` | Only one of the two |
 | `bun run routes:build` | Rebuild `docs/route-manifest.{json,md}` and `docs/slices/*.json` from the map |
 | `bun run routes:check` | Fail when those files are stale (CI) |
 | `bun run contract:extract` | Re-extract the frontend's endpoint types into `docs/contract/frontend-endpoints.json` |
 | `bun run contract:docs` | Re-render the contract docs from the extraction and `docs/contract/lead-decisions.json` |
 | `bun run contract:check` | Fail when the extract or the contract docs are stale (CI) |
 | `bun run spike` | Re-run the Bun compatibility spike (decision 001) |
-| `bun run check` | Everything CI runs today |
+| `bun run check` | Everything CI runs today (typecheck, route manifest, contract docs, tests) |
 
 ## Where things are
 
