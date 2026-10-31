@@ -6,7 +6,9 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 **Phase 2, foundation, in progress** (Sonnet implements, Opus reviews). **P2.1 runtime-core, P2.2 docs-tooling and
 P2.3 data are done.** P2.4a infra-core, P2.4b queues-outbox and P2.7 contract-tests are done
-too. Next: **P2.5 security**, then **P2.6 staff sign-in** (the last Phase 2 features). Briefs: `docs/briefs/` (`_common.md` first; `_feature.md` is the
+too. Next: **P2.5a sessions-guards ∥ P2.5b pipeline-hooks**, then **P2.5c machine-auth ∥ P2.6 staff sign-in** (the
+last Phase 2 features). Parallel worktrees also get their own Redis test databases (`REDIS_QUEUE_URL_TEST`,
+`REDIS_CACHE_URL_TEST` in `.env.test`) besides their own Postgres test database. Briefs: `docs/briefs/` (`_common.md` first; `_feature.md` is the
 Phase 3 recipe). Parallel implementers work in sibling worktrees of this repo (`git worktree add
 ../backend-p2-<name> -b feat/backend-p2-<name>`, then `bun install` there; a sibling path keeps the relative
 `reference` symlink working; the workflow tool's worktree isolation targets the frontend repo, not this one). Each
@@ -73,7 +75,9 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 | P2.3 | data | Drizzle schema for all 66 tables (per module) + schema additions (MISMATCHES), constraints, indexes, ledger triggers, first migration, migrator, resetDb, Postgres health indicator, seed from the frontend demo state | | done (`feat(data)` commit) |
 | P2.4a | infra-core | two Redis clients + health indicators, CacheService + CacheKeys, RateLimitService + semaphore, crypto (AES-GCM keyring, token hashing, argon2, webhook signatures), S3 storage, outbound http + SSRF guard (brief P2.4 items 1-5) | | done (`feat(infra-core)` commit) |
 | P2.4b | queues-outbox | BullMQ base (queues, worker registry, schedulers), job runs (health module), outbox + relay (platform module), Prometheus in compose; retire `spike/` (brief P2.4 items 6-10) | | done (`feat(queues-outbox)` commit) |
-| P2.5 | security | IP rules hook, maintenance hook, rate-limit hook, auth guards (staff/merchant/customer sessions, CSRF, API key, Dhru, webhook signatures), permission guard + catalog, audit interceptor, `/reference` staff gate | admin-team (part), ip-rules (part) | |
+| P2.5a | sessions-guards | contract fields, session service + cookies + CSRF token, guard dispatcher, staff/merchant/customer session guards, CSRF guard, permission guard + catalog + Owner helpers, audit service + enforcement, `/reference` staff gate (brief P2.5 split) | admin-team (part) | |
+| P2.5b | pipeline-hooks | IP rules hook + hit-counter flush, maintenance hook, per-IP rate-limit hook, ordered hook registry (brief P2.5 split; parallel with P2.5a) | ip-rules (part) | |
+| P2.5c | machine-auth | capability-token guard registry, API key guard, Dhru credentials guard, webhook signature registry (brief P2.5 split; after P2.5a, parallel with P2.6) | | |
 | P2.6 | staff-sign-in | `POST /admin/auth/login`, `/2fa`, `/2fa/setup`, `/logout`, `/password/set`, `GET /admin/auth/me` (6) | | |
 | P2.7 | contract-tests | route/shape/error parity tests, fixture harvest from the frontend mocks, allowlist, `pending.ts` | | done (`test(contract)` commit) |
 | 2a | identity-staff-access | staff, roles, permissions, sessions, IP rules, access restriction, audit logs, settings (st2 admin, 31) | admin-team, ip-rules | |
