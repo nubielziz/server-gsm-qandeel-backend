@@ -14,7 +14,12 @@ const ROOT = join(import.meta.dir, '../..');
 const frontendPresent = existsSync(demoStatePath());
 
 beforeEach(resetDb);
-afterAll(closeTestDb);
+// The seed turns the admin allowlist on and lists three office addresses: leave nothing behind, or the IP rules stage would
+// refuse the /admin requests of the files that run after this one.
+afterAll(async () => {
+  await resetDb();
+  await closeTestDb();
+});
 
 /** Everything the seeders write, as comparable JSON (ids ascending). */
 async function snapshot() {

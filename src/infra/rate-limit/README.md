@@ -44,3 +44,21 @@ try {
 - **Semaphore:** a sorted set of leases on Redis's own clock. A lease expires after `ttlMs` (a crashed holder frees its
   place), and `release` only removes its own lease. Make `ttlMs` longer than the longest call it covers.
 - Metric: `rate_limit_denied_total{limiter}`.
+
+## The per-IP stage of the request pipeline
+
+`public-ip-limit.hook.ts` (`PublicIpLimitModule`, imported by the API's root module only) is the third stage of the request
+pipeline (`src/common/pipeline/README.md`), after the IP rules and maintenance and before authentication. It charges one point per
+request to the **client address** (the IPv4 address, or the /64 network of an IPv6 address; an IPv4-mapped address shares the key of
+its IPv4 address) on these routes (`publicLimiterFor`, decision 021):
+
+| Request | Limiter |
+|---|---|
+| anything under `/store/v1` (matched or not), except routes with a capability token | `ip` (300 a minute) |
+| routes with `access` `checkout-token`, `tracking-token`, `ticket-token` or `link-token` | `token` (30 a minute) |
+| routes with `access: 'public'` under `/admin` and `/client` (sign-in, password and registration routes) | `ip` |
+
+Not counted here: session-authenticated admin and portal routes (per-principal limits come after authentication), REST v1 and Dhru
+(a limit per API key), webhooks (signed), `/health`, `/metrics`, the documentation. The numbers live in `limiters.ts` only. A
+refusal is `429 RATE_LIMITED` with `Retry-After` and the CORS headers; with the cache Redis down the limiter counts in memory.
+The route's `access` comes from its contract (`contractRegistry`), so new routes are covered by declaring the right `access`.

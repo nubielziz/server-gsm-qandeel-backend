@@ -135,6 +135,33 @@ export class CacheKeys {
   }
 
   /**
+   * The cached snapshot of the active IP rules and the access-restriction switch (identity module).
+   *
+   * @returns `gsm:{env}:identity:ip-rules:active`
+   */
+  ipRules(): CacheKey {
+    return `${this.keyspace}identity:ip-rules:active` as CacheKey;
+  }
+
+  /**
+   * The hash of IP rule hit counters that the worker flushes to `ip_rules.hit_count` every minute (identity module).
+   *
+   * @returns `gsm:{env}:identity:ip-rule-hits:pending`
+   */
+  ipRuleHits(): CacheKey {
+    return `${this.keyspace}identity:ip-rule-hits:pending` as CacheKey;
+  }
+
+  /**
+   * The cached maintenance state (platform module).
+   *
+   * @returns `gsm:{env}:platform:maintenance:state`
+   */
+  maintenance(): CacheKey {
+    return `${this.keyspace}platform:maintenance:state` as CacheKey;
+  }
+
+  /**
    * A group of keys, for `CacheService.delByPrefix`.
    *
    * @param module the owning module, for example `catalog`
@@ -204,6 +231,27 @@ export const CACHE_KEY_FAMILIES: readonly CacheKeyFamily[] = [
     owner: 'platform',
     ttl: '60 s',
     invalidation: 'SettingsReader.invalidate() after the commit of a settings change',
+  },
+  {
+    builder: 'ipRules',
+    pattern: 'gsm:{env}:identity:ip-rules:active',
+    owner: 'identity',
+    ttl: '60 s (+-15 %), then the old snapshot is served for up to 5 minutes while one refresh runs',
+    invalidation: 'IpRuleCache.invalidate() after the commit of any IP rule or access restriction change',
+  },
+  {
+    builder: 'ipRuleHits',
+    pattern: 'gsm:{env}:identity:ip-rule-hits:pending',
+    owner: 'identity',
+    ttl: '24 h, renewed by every hit; statistics only, so an evicted counter is just lost',
+    invalidation: 'emptied by the ip_rule_hits_flush job every minute; never deleted otherwise',
+  },
+  {
+    builder: 'maintenance',
+    pattern: 'gsm:{env}:platform:maintenance:state',
+    owner: 'platform',
+    ttl: '60 s (+-15 %), then the old state is served for up to 5 minutes while one refresh runs',
+    invalidation: 'MaintenanceService.invalidate() after the commit of a maintenance change',
   },
   {
     builder: 'prefix',

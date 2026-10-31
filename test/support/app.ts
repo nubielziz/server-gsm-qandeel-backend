@@ -12,11 +12,12 @@ import { CacheModule } from '../../src/infra/cache';
 import { DbModule } from '../../src/infra/db';
 import { LOG_DESTINATION } from '../../src/infra/logging';
 import { SecurityModule } from '../../src/modules/identity';
-import { SettingsModule } from '../../src/modules/platform';
 import { QueuesModule } from '../../src/infra/queues';
-import { RateLimitModule } from '../../src/infra/rate-limit';
+import { PublicIpLimitModule, RateLimitModule } from '../../src/infra/rate-limit';
 import { RedisModule } from '../../src/infra/redis';
 import { StorageModule } from '../../src/infra/storage';
+import { IpRulesModule } from '../../src/modules/identity/security/ip-rules/ip-rules.module';
+import { MaintenanceModule, SettingsModule } from '../../src/modules/platform';
 import { logSink } from './log-sink';
 import { testInstanceEnv } from './env';
 
@@ -48,20 +49,23 @@ class NoDatabaseModule {}
 
 /**
  * Stands in for the Redis, cache, rate-limit, queue and storage modules: no clients, no queue producers and no `redis`,
- * `redis_queue` or `storage` health indicators.
+ * `redis_queue` or `storage` health indicators. It also replaces the modules of the request pipeline that need them.
  */
 @Module({})
 class NoInfrastructureModule {}
 
 /**
- * Stands in for the security stack (sessions, CSRF, permissions, the guard dispatcher) and the settings reader: they need the
- * database, the cache and the crypto services, so an app built without them has no guards and its routes are open.
+ * Stands in for the modules that read Postgres and the cache on every request: the security stack (sessions, CSRF,
+ * permissions, the guard dispatcher), the settings readers, and the IP rules and maintenance stages of the pipeline. An
+ * app built without the database or the infrastructure has no guards, and those stages do nothing.
  */
 @Module({})
 class NoSecurityModule {}
 
 /** The modules that read Postgres and the cache on every request: replaced when either is left out. */
-const NEEDS_DATABASE_AND_CACHE = [SecurityModule, SettingsModule];
+const NEEDS_DATABASE_AND_CACHE = [SecurityModule, SettingsModule, MaintenanceModule, IpRulesModule];
+/** The pipeline module that only uses the cache Redis and the rate limiter: replaced when the infrastructure is. */
+const NEEDS_INFRASTRUCTURE = [PublicIpLimitModule];
 
 /** What a test can change about the app. */
 export interface TestAppOptions {
@@ -72,12 +76,16 @@ export interface TestAppOptions {
   readonly providers?: ModuleMetadata['providers'];
   /** Modules added to the root module, for example a global one that provides a token a real module will provide later. */
   readonly imports?: ModuleMetadata['imports'];
-  /** Replace the database module with an empty one (no pool, no `postgres` health indicator, no security guards). */
+  /**
+   * Replace the database module with an empty one (no pool, no `postgres` health indicator). The security stack, the
+   * settings readers and the IP rules and maintenance stages, which read Postgres, go too: no guards, and those stages do
+   * nothing.
+   */
   readonly withoutDatabase?: boolean;
   /**
    * Replace the Redis, cache, rate-limit, queue and storage modules with empty ones (no connections, no queue producers,
-   * no `redis`, `redis_queue` or `storage` health indicators, no security guards). Nothing in the app may inject their
-   * services then.
+   * no `redis`, `redis_queue` or `storage` health indicators). Nothing in the app may inject their services then; the
+   * security stack and the pipeline stages that use them (IP rules, maintenance, per-IP limit) go too.
    */
   readonly withoutInfrastructure?: boolean;
   /** Called for every route Fastify registers (method `string | string[]`, url as registered), before `init()` ends. */
@@ -115,14 +123,13 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     .overrideProvider(LOG_DESTINATION)
     .useValue(logSink);
   if (options.withoutDatabase) builder.overrideModule(DbModule).useModule(NoDatabaseModule);
-  // The security stack reads sessions and settings from the database and the cache: without either, the app has no guards.
+  // The security stack and the IP rules and maintenance stages read the database and the cache: without either, they go.
   if (options.withoutDatabase || options.withoutInfrastructure) {
     for (const module of NEEDS_DATABASE_AND_CACHE) builder.overrideModule(module).useModule(NoSecurityModule);
   }
   if (options.withoutInfrastructure) {
-    for (const module of [RedisModule, CacheModule, RateLimitModule, QueuesModule, StorageModule]) {
-      builder.overrideModule(module).useModule(NoInfrastructureModule);
-    }
+    const replaced = [RedisModule, CacheModule, RateLimitModule, QueuesModule, StorageModule, ...NEEDS_INFRASTRUCTURE];
+    for (const module of replaced) builder.overrideModule(module).useModule(NoInfrastructureModule);
   }
   const moduleRef = await builder.compile();
   const adapter = createAppAdapter(config);

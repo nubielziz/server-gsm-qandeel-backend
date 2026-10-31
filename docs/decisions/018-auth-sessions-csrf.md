@@ -41,7 +41,9 @@ Status: accepted, 2026-10-31. Source of the staff flow: `docs/contract/ALIGNMENT
   change may leave zero active Owners (`409 LAST_OWNER`); actions on an Owner account need `*`; nobody changes their
   own role or suspends themselves; IP rules are judged against the real request IP behind the trusted proxy chain.
 - **Pipeline order** (ARCHITECTURE § 3): CORS preflight → request id → IP rules → maintenance → per-IP rate limit →
-  authentication (+ per-principal limit) → CSRF → permission → validation → handler → audit.
+  authentication (+ per-principal limit) → CSRF → permission → validation → handler → audit. The three checks before
+  authentication are Fastify hooks installed in this order by `RequestPipeline` (`PIPELINE_STAGES`, `src/common/pipeline`), so
+  the order is a table and not an accident of module loading.
 
 **Consequences.** One session service for three kinds of users; the admin flow matches the console without any
 frontend change; credentials and sessions never exist in clear text at rest.

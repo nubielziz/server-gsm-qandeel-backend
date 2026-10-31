@@ -1,6 +1,6 @@
 // Public API of the platform module: the module itself, what the bootstrap, the generator script and the contract tests
-// need from its documentation routes, the audit log, the settings reader, and the transactional outbox (write events,
-// register their queues, relay them).
+// need from its documentation routes, the audit log, the transactional outbox (write events, register their queues, relay
+// them), the settings readers and maintenance mode.
 export { PlatformModule } from './platform.module';
 export { AuditModule } from './audit/audit.module';
 export { AuditService } from './audit/audit.service';
@@ -25,6 +25,19 @@ export { OpenApiService } from './docs/openapi.service';
 export type { PublishedDocs } from './docs/openapi.service';
 export { REFERENCE_DOCS_GUARD } from './docs/reference-access.guard';
 export { SCALAR_BUNDLE_URL, SCALAR_VERSION } from './docs/scalar-page';
+export { MaintenanceModule } from './maintenance/maintenance.module';
+export { MaintenanceService } from './maintenance/maintenance.service';
+export {
+  DEFAULT_MAINTENANCE_MESSAGE,
+  MAINTENANCE_KEY,
+  MAINTENANCE_OFF,
+  MAINTENANCE_SCOPES,
+  maintenanceRefusal,
+  parseMaintenanceState,
+  scopesCovering,
+} from './maintenance/maintenance-state';
+export type { MaintenanceRequest, MaintenanceScope, MaintenanceState } from './maintenance/maintenance-state';
+export { SettingsService } from './settings/settings.service';
 export { OutboxModule } from './outbox/outbox.module';
 export { OutboxRelayModule, OUTBOX_TICK_SCHEDULER } from './outbox/outbox-relay.module';
 export { OutboxRelay, RELAY_BATCH_SIZE } from './outbox/outbox-relay';

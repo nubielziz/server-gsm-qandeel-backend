@@ -178,6 +178,9 @@ Each has a README next to its code with the rules and an example:
 - Files: `src/infra/storage/README.md`. Outbound calls (suppliers, gateways, merchant webhooks): `src/infra/http/README.md`;
   never call `fetch` directly.
 - Redis clients and health: `src/infra/redis/README.md`. Queues, workers and schedulers: `src/infra/queues/README.md`.
+- Checks that run on every request before authentication (IP rules, maintenance, the per-IP limit), their fixed order and how
+  to add one: `src/common/pipeline/README.md`. A route that changes IP rules, the access restriction or maintenance must call
+  `IpRuleCache.invalidate()` or `MaintenanceService.invalidate()` in `afterCommit`.
 - Tests run on **separate instances** so they never touch development data: database `gsm_test`, Redis database 1 on both
   roles and the bucket `gsm-files-test` (`DATABASE_URL_TEST`, `REDIS_QUEUE_URL_TEST`, `REDIS_CACHE_URL_TEST`,
   `S3_BUCKET_TEST`; under `NODE_ENV=test` the normal variables are ignored). `createTestApp({ withoutInfrastructure: true })`

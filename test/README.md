@@ -65,3 +65,23 @@ modules on the test instances: Redis database 1 on both roles and the bucket `gs
 - **Process tests** start real Bun children from the repository root with `--no-env-file`: `src/worker.ts`, and
   `test/support/slow-worker.ts` (the real `WorkerModule` plus a slow processor and shutdown markers). They pass
   `DATABASE_URL_TEST`, `BULL_PREFIX` and a free `WORKER_METRICS_PORT` themselves, and kill their children by PID.
+
+## Request pipeline tests (IP rules, maintenance, per-IP limit)
+
+`test/integration/pipeline-hooks.test.ts` (order against each other and against authentication, CORS and security headers on
+every refusal, maintenance scopes and the Dhru envelope, the per-IP limits) and `test/integration/ip-rules.test.ts` (scopes, the
+admin allowlist, expiry, address forms, the cache, Redis or Postgres being down, the hit counters, the demo seed, the flush job on a
+real worker) run the real application on Fastify `inject`.
+
+- `test/support/pipeline-routes.ts` has sample routes on the public surfaces (`/store/v1/t/...`, `/admin/t/...`, `/v1/t/...`, ...)
+  and `TestAuthGuard`, a stand-in for authentication that answers 401 to every `/t/` route without `x-test-auth`: a 403, 503 or 429
+  proves its hook ran before authentication. `freshClientIp()` / `freshClientPrefix()` give every request an address of its own
+  (`198.18.x.y`, a documentation IPv6 /64), because per-address counters live 60 seconds in Redis. Pass the address as
+  `remoteAddress` to `app.inject`.
+- The hooks read Postgres (rules, settings) and the cache Redis. A test app with a production environment names hosts that do not
+  exist, so its pipeline would refuse every request on purpose (`503 DATABASE_UNAVAILABLE`): build it with `withoutDatabase: true`
+  (and `withoutInfrastructure: true` when Redis is not wanted either), which also leaves the database-backed pipeline stages out.
+- Tests that change `ip_rules` or `settings` must delete their rows and call `IpRuleCache.invalidate()` /
+  `MaintenanceService.invalidate()` afterwards: every test app shares the database and the cache Redis, and a snapshot with a
+  restricted admin console would refuse the next file's `/admin` requests.
+

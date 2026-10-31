@@ -67,15 +67,18 @@ purpose, tables, routes, jobs, events, cache keys, permissions and scenarios.
 
 ## 3. Request pipeline
 
-Fastify `onRequest` hooks (cheap, route-independent) then Nest guards, pipes and the handler (D018). Steps 5 to 7 are one
-global guard (`AccessGuard`, identity module) that reads the route contract (`access`, `sessionStages`, `permission`, `csrf`);
-a route without a contract is refused:
+Fastify `onRequest` hooks (cheap, route-independent) then Nest guards, pipes and the handler (D018). Steps 2 to 4 are installed in
+this order by one registry, `RequestPipeline` (`src/common/pipeline`, stages `ip-rules`, `maintenance`, `rate-limit`), after CORS
+and the request id; their refusals are problem+json with the CORS and security headers. Steps 5 to 7 are one global guard
+(`AccessGuard`, identity module) that reads the route contract (`access`, `sessionStages`, `permission`, `csrf`); a route without
+a contract is refused:
 
 0. **CORS preflight** answered first, so a refused request still carries readable CORS headers.
 1. **Request id** (`X-Request-Id` kept or generated, echoed; D012).
 2. **IP rules**: active `ip_rules` cached in Redis (invalidated on change): block rules first; then, for `/admin`
    when the access restriction is on, the allowlist (`403 IP_NOT_ALLOWED`).
-3. **Maintenance**: when on for a scope, `503 MAINTENANCE` (Dhru envelope on `/api/index.php`); never `/admin`.
+3. **Maintenance**: when on for a scope, `503 MAINTENANCE` (Dhru envelope on `/api/index.php`; a Dhru order placement is decided
+   once the body is parsed); never `/admin`, `/health` or `/metrics`.
 4. **Rate limit**: per IP (D021); per-principal limits run in step 5 once the principal is known.
 5. **Authentication** by surface: staff session cookie (admin), merchant session cookie (client), customer session or
    capability token (store), Bearer API key with scopes and allowed IPs (v1), username + apiaccesskey (Dhru),

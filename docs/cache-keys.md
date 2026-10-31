@@ -32,6 +32,9 @@ The queue Redis holds BullMQ data only and has no keys in this list (see `docs/q
 | `gsm:{env}:identity:session:{tokenHash}` | identity | 60 s (a token that matches no live session: 10 s) | `SessionService` deletes it after the commit of a revoke or a rotation, and `invalidateSubject(subjectType, subjectId)` after a suspension, password change or role change | `session` |
 | `gsm:{env}:identity:role:{roleId}` | identity | 300 s | `RolePermissions.invalidate(roleId)` after the commit of a role change | `rolePermissions` |
 | `gsm:{env}:platform:settings:all` | platform | 60 s | `SettingsReader.invalidate()` after the commit of a settings change | `settings` |
+| `gsm:{env}:identity:ip-rules:active` | identity | 60 s (+-15 %), then the old snapshot is served for up to 5 minutes while one refresh runs | `IpRuleCache.invalidate()` after the commit of any IP rule or access restriction change | `ipRules` |
+| `gsm:{env}:identity:ip-rule-hits:pending` | identity | 24 h, renewed by every hit; statistics only, so an evicted counter is just lost | emptied by the `ip_rule_hits_flush` job every minute; never deleted otherwise | `ipRuleHits` |
+| `gsm:{env}:platform:maintenance:state` | platform | 60 s (+-15 %), then the old state is served for up to 5 minutes while one refresh runs | `MaintenanceService.invalidate()` after the commit of a maintenance change | `maintenance` |
 | `gsm:{env}:{module}:{entity}:{idPrefix}` | infra/cache | n/a (a `SCAN` pattern, never stored) | n/a; `CacheService.delByPrefix` deletes every key that starts with it | `prefix` |
 
 Versioned keys are the base key plus `:v{n}`, where `{n}` is the current number of the version counter

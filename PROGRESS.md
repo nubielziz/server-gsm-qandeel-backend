@@ -4,6 +4,21 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+**Stopped 2026-11-01 (user went to sleep) right after merging P2.5b.** The last commit is a WIP squash of P2.5b
+(pipeline hooks) on top of P2.5a; its `bun run check` had not finished. Tomorrow, in order:
+1. `bun run check`; fix whatever fails (the merge unified the settings module: `SettingsReader` cached + `SettingsService`
+   uncached; module and test-app conflicts were resolved as unions; READMEs need a tidy-up).
+2. P2.5b review follow-ups: MAINTENANCE 503 must not log as a server error; hash raw IPs in rate-limit keys; per-IP limit
+   also on `/admin/auth/*` and `/client/auth/*` by path; lead decision on `/webhooks/*` vs scope `all` block rules (log as
+   a MISMATCHES extra with the `/client` → `other` audience mapping); `IpRuleCache.invalidate()` clears memory after the
+   Redis delete; decision 028/ALIGNMENT § 5 mention extra problem members (`expectedEndAt`); decision 026 note: the Dhru
+   module refuses multipart placements during maintenance itself; **seed a loopback allow rule for local development**
+   (the seeded allowlist blocks 127.0.0.1, needed before P2.6 sign-in works locally).
+3. Mark P2.5b done (agent budget: P2.5a 4 calls, P2.5b 2 calls), remove worktrees `../backend-p2-guards` and
+   `../backend-p2-hooks` (their branches hold the implementer output).
+4. Next features: **P2.5c machine-auth ∥ P2.6 staff sign-in** (the last of Phase 2), then Phase 3.
+
+
 **Phase 2, foundation, in progress** (Sonnet implements, Opus reviews). **P2.1 runtime-core, P2.2 docs-tooling and
 P2.3 data are done.** P2.4a infra-core, P2.4b queues-outbox and P2.7 contract-tests are done
 too. Next: **P2.5a sessions-guards ∥ P2.5b pipeline-hooks**, then **P2.5c machine-auth ∥ P2.6 staff sign-in** (the

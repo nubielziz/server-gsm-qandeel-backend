@@ -137,4 +137,20 @@ describe('buildProblem', () => {
     expect(problem.detail).toBe('The requested item was not found.');
     expect('errors' in problem).toBe(false);
   });
+
+  it('adds the extension members of the error, and lets the fixed members win', () => {
+    const error = new AppError('MAINTENANCE', {
+      detail: 'Back soon.',
+      extensions: { expectedEndAt: '2026-03-01T10:00:00.000Z', status: 200, requestId: 'forged' },
+    });
+    expect(buildProblem(error, { requestId: 'r3', errorsBaseUrl: 'http://x/errors' })).toEqual({
+      type: 'http://x/errors/maintenance',
+      title: 'The service is in maintenance.',
+      status: 503,
+      code: 'MAINTENANCE',
+      detail: 'Back soon.',
+      requestId: 'r3',
+      expectedEndAt: '2026-03-01T10:00:00.000Z',
+    });
+  });
 });

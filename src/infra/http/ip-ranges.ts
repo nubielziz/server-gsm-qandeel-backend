@@ -1,6 +1,6 @@
 // Which IP addresses are public (decision 023): IPv4 and IPv6 literals are parsed to bytes and compared with the special-
 // purpose ranges of IANA, including addresses that embed an IPv4 address. Used by the SSRF guard. Pure functions.
-import net from 'node:net';
+import { parseIpv4Bytes, parseIpv6Bytes, sharesPrefix } from '../../common/ip-address';
 
 /** A network as address text and prefix length. */
 type Network = readonly [address: string, prefixLength: number];
@@ -44,34 +44,6 @@ const BLOCKED_V6: readonly Network[] = [
   ['ff00::', 8], // multicast
 ];
 
-/** Parses `a.b.c.d` (four decimal parts, as the URL parser normalises every IPv4 form) to bytes. */
-function parseV4(text: string): Uint8Array | undefined {
-  if (!net.isIPv4(text)) return undefined;
-  return Uint8Array.from(text.split('.').map(Number));
-}
-
-/** Parses an IPv6 address (with `::`, an embedded IPv4 tail and an optional zone) to 16 bytes. */
-function parseV6(text: string): Uint8Array | undefined {
-  const withoutZone = text.split('%')[0] ?? '';
-  if (!net.isIPv6(withoutZone)) return undefined;
-  const [head = '', tail, extra] = withoutZone.split('::');
-  if (extra !== undefined) return undefined;
-  const groups = (part: string): number[] =>
-    part === ''
-      ? []
-      : part.split(':').flatMap((group) => {
-          if (!group.includes('.')) return [Number.parseInt(group, 16)];
-          const v4 = parseV4(group);
-          return v4 ? [((v4[0] ?? 0) << 8) | (v4[1] ?? 0), ((v4[2] ?? 0) << 8) | (v4[3] ?? 0)] : [Number.NaN];
-        });
-  const first = groups(head);
-  const last = tail === undefined ? [] : groups(tail);
-  const filled =
-    tail === undefined ? first : [...first, ...Array<number>(8 - first.length - last.length).fill(0), ...last];
-  if (filled.length !== 8 || filled.some((group) => Number.isNaN(group))) return undefined;
-  return Uint8Array.from(filled.flatMap((group) => [group >> 8, group & 0xff]));
-}
-
 /** A network with its address already parsed to bytes. */
 interface ParsedNetwork {
   readonly base: Uint8Array;
@@ -86,17 +58,12 @@ function parseNetworks(networks: readonly Network[], parse: (text: string) => Ui
   });
 }
 
-const BLOCKED_V4_PARSED = parseNetworks(BLOCKED_V4, parseV4);
-const BLOCKED_V6_PARSED = parseNetworks(BLOCKED_V6, parseV6);
+const BLOCKED_V4_PARSED = parseNetworks(BLOCKED_V4, parseIpv4Bytes);
+const BLOCKED_V6_PARSED = parseNetworks(BLOCKED_V6, parseIpv6Bytes);
 
 /** True when the first `prefixLength` bits of `bytes` equal those of the network. */
 function inNetwork(bytes: Uint8Array, { base, prefixLength }: ParsedNetwork): boolean {
-  const wholeBytes = Math.floor(prefixLength / 8);
-  for (let i = 0; i < wholeBytes; i++) if (bytes[i] !== base[i]) return false;
-  const rest = prefixLength % 8;
-  if (rest === 0) return true;
-  const mask = (0xff << (8 - rest)) & 0xff;
-  return ((bytes[wholeBytes] ?? 0) & mask) === ((base[wholeBytes] ?? 0) & mask);
+  return sharesPrefix(bytes, base, prefixLength);
 }
 
 const startsWith = (bytes: Uint8Array, prefix: readonly number[]) =>
@@ -128,9 +95,9 @@ function embeddedV4(bytes: Uint8Array): Uint8Array | undefined {
  * @see docs/decisions/023-outbound-http.md
  */
 export function isPublicAddress(address: string): boolean {
-  const v4 = parseV4(address);
+  const v4 = parseIpv4Bytes(address);
   if (v4) return !BLOCKED_V4_PARSED.some((network) => inNetwork(v4, network));
-  const v6 = parseV6(address);
+  const v6 = parseIpv6Bytes(address);
   if (!v6) return false;
   const embedded = embeddedV4(v6);
   if (embedded) return !BLOCKED_V4_PARSED.some((network) => inNetwork(embedded, network));

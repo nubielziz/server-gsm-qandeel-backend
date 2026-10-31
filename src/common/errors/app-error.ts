@@ -28,6 +28,12 @@ export interface AppErrorOptions {
   readonly cause?: unknown;
   /** Seconds to wait before retrying; sent as `Retry-After` (a 429 always carries one). */
   readonly retryAfterSeconds?: number;
+  /**
+   * Extra members of the problem document (RFC 9457 section 3.2), for data the console shows next to the message, such as
+   * `expectedEndAt` of a maintenance answer. The fixed members (`type`, `title`, `status`, `code`, `detail`, `errors`,
+   * `requestId`) always win over an extension of the same name.
+   */
+  readonly extensions?: Readonly<Record<string, string | number | boolean | null>>;
 }
 
 /**
@@ -47,6 +53,8 @@ export class AppError extends Error {
   readonly detail: string | undefined;
   readonly errors: readonly FieldError[];
   readonly retryAfterSeconds: number | undefined;
+  /** Extra members of the problem document (see {@link AppErrorOptions.extensions}); empty for most errors. */
+  readonly extensions: Readonly<Record<string, string | number | boolean | null>>;
 
   /**
    * @param code a catalog code
@@ -66,5 +74,6 @@ export class AppError extends Error {
     this.detail = options.detail;
     this.errors = options.errors ?? [];
     this.retryAfterSeconds = options.retryAfterSeconds;
+    this.extensions = options.extensions ?? {};
   }
 }

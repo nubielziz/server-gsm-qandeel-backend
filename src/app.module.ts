@@ -1,8 +1,10 @@
 // Root module of the API process (decision 016): config, logging, metrics, the infrastructure (database, Redis, cache, rate
-// limits, crypto, storage, outbound HTTP, queue producers), the error filter and the 12 domain modules. The API only
-// produces work (queue producers, outbox writes); the request security pipeline is added by its own feature.
+// limits, crypto, storage, outbound HTTP, queue producers), the error filter, the request pipeline registry and the 12 domain
+// modules. The API only produces work (queue producers, outbox writes). Fastify hooks (IP rules, maintenance, per-IP limit)
+// register with the pipeline; sessions, guards and CSRF are added by their own feature.
 import { Module } from '@nestjs/common';
 import { ErrorsModule } from './common/errors';
+import { PipelineModule } from './common/pipeline';
 import { ConfigModule } from './config';
 import { CacheModule } from './infra/cache';
 import { CryptoModule } from './infra/crypto';
@@ -11,7 +13,7 @@ import { OutboundHttpModule } from './infra/http';
 import { LoggingModule } from './infra/logging';
 import { MetricsModule } from './infra/metrics';
 import { QueuesModule } from './infra/queues';
-import { RateLimitModule } from './infra/rate-limit';
+import { PublicIpLimitModule, RateLimitModule } from './infra/rate-limit';
 import { RedisModule } from './infra/redis';
 import { StorageModule } from './infra/storage';
 import { CatalogModule } from './modules/catalog';
@@ -47,6 +49,8 @@ import { SupportModule } from './modules/support';
     OutboundHttpModule,
     QueuesModule,
     ErrorsModule,
+    PipelineModule,
+    PublicIpLimitModule,
     IdentityModule,
     PlatformModule,
     MoneyModule,

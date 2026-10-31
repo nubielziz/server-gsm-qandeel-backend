@@ -16,6 +16,8 @@ Exports `PlatformModule`, the document builders and `OpenApiService` (used by `s
 
 The audit log: `AuditModule` (global) provides `AuditService.record(tx, { action, entityType, entityId?, entityLabel?, before?, after? })` (see "Audit log" below). The settings: `SettingsModule` (global) provides `SettingsReader` (`all()`, `get(key)`, `integer(key, fallback, bounds)`, `integers(specs)`, `invalidate()`), the only way other modules read `settings`.
 
+Settings and maintenance: `SettingsModule` (global) and `SettingsService.get(key, executor?)` (the raw JSON value of one setting, `undefined` when it was never set); `MaintenanceModule` with `MaintenanceService` (`state()`, `invalidate()`), the pure `maintenanceRefusal`, `scopesCovering`, `parseMaintenanceState`, `MAINTENANCE_KEY`, `MAINTENANCE_OFF`, `MAINTENANCE_SCOPES`, `DEFAULT_MAINTENANCE_MESSAGE` and the types `MaintenanceState`, `MaintenanceScope`, `MaintenanceRequest`.
+
 The outbox: `OutboxModule` (global: `OutboxService`, `OutboxRouteRegistry`), `OutboxService.add(tx, event)` and `backlog(db)`, `OutboxRouteRegistry.register({ type, queue, jobName? })`, the types `OutboxEventInput`, `OutboxPayload`, `OutboxJobData`, `OutboxRoute`, `OutboxBacklog`, and, for the worker only, `OutboxRelayModule` with `OutboxRelay`.
 
 ## Owned tables
@@ -121,6 +123,41 @@ API key scopes on its REST v1 routes: `orders:read`, `orders:write`.
 
 Keep this list in step with the contracts (`permission` of each `defineRoute`).
 
+## Settings and maintenance mode (`settings/`, `maintenance/`)
+
+`SettingsService` is the only code outside the (future) settings routes that reads the `settings` table: other modules call it
+(identity reads `adminAllowlistOnly`). The routes that write settings arrive with their features and call the `invalidate()` of
+whatever cache holds a value after their commit.
+
+**Maintenance** (scenario `system-integrity`, `docs/contract/endpoints/health.md` `PUT /admin/system/maintenance`) is the settings
+key `maintenance`, stored as the console's `MaintenanceState` (`enabled`, `scope`, `message`, `expectedEndAt`, `startedAt`,
+`startedBy`). **Default: off** when the key was never set; a value that is not a well-formed state also counts as off, with a
+warning in the log. The state is read through `MaintenanceService.state()`: memory for one second, then the cache Redis
+(`gsm:{env}:platform:maintenance:state`, 60 s, stale value for up to 5 more minutes), then settings. The route that changes it
+(system health feature, `system:manage`) calls `maintenance.invalidate()` after its commit; other instances follow within a second.
+The stage is the second of the request pipeline (`src/common/pipeline/README.md`), after the IP rules and before the per-IP limit.
+
+| Scope | `503 MAINTENANCE` for | Never |
+|---|---|---|
+| `store` | every request to `/store/v1/*` | |
+| `checkout` | `POST /store/v1/checkout-sessions` (opening a checkout) and `POST /store/v1/checkout-sessions/:token/pay` (starting its payment): no session is created, nothing is held | the rest of the storefront |
+| `api_orders` | order placement: `POST /v1/orders`, `POST /v1/orders/bulk`, and the Dhru actions `placeimeiorder`, `placeimeiorderbulk`, `placefileorder` | reads, cancels and verifies of running orders; Dhru `getimeiorder`, `getimeiorderbulk`, `accountinfo`, `imeiservicelist` |
+| `all` | the union of the three | |
+
+Never affected by any scope: `/admin/*` (staff are not locked out), `/client/*` (the merchant portal), `/webhooks/*` (a payment
+already started must still be confirmed), `/health`, `/metrics`, `/docs`, `/openapi.json` and `/reference`.
+
+- **The answer** is problem+json `503 MAINTENANCE` with the staff member's message as `detail` (a default sentence when there is
+  none), the extension member `expectedEndAt` (an ISO time or `null`; it only informs, only switching maintenance off ends it)
+  and `Retry-After` (seconds to the expected end, kept between 30 and 300; 60 when unknown). On `/api/index.php` the error goes
+  through the formatter seam (`ErrorFormatterRegistry`, decision 026): the Dhru module registers the formatter that turns it into
+  the `{ERROR: [{MESSAGE}], apiversion}` envelope; until it exists the Dhru route answers problem+json.
+- **Dhru:** all actions share one path, so a Dhru order placement is decided in the pipeline's `preValidation` phase, once the
+  body is parsed and the `action` field is known (`dhruActionOf`). A body the pipeline cannot read (multipart) is not refused
+  there; the Dhru handlers can call `maintenanceRefusal(await maintenance.state(), { method, path, dhruAction })` themselves.
+- **Failure policy:** if the state cannot be read at all, requests go through (maintenance is a courtesy to customers, not a
+  security rule).
+
 ## Events
 
 Outbox events produced (types, payload ids): none yet. A module registers an event type with its queue in `onModuleInit`
@@ -157,6 +194,12 @@ in `docs/queues.md`. Other jobs of this module (notifications, webhook deliverie
 ## Cache keys
 
 - `gsm:{env}:platform:settings:all` (`CacheKeys.settings()`): the whole `settings` table as one flat object, 60 s. The settings write routes (feature 2a) call `SettingsReader.invalidate()` inside `afterCommit`. Listed in `docs/cache-keys.md`.
+
+| Key | What | TTL | Invalidation |
+|---|---|---|---|
+| `gsm:{env}:platform:maintenance:state` | the maintenance state | 60 s, then stale for 5 min while one refresh runs | `MaintenanceService.invalidate()` after the commit of a maintenance change |
+
+Registered in `docs/cache-keys.md`. Register each further key family (owner, TTL, invalidation after commit) there too (see `CONTRIBUTING.md` → "Add a cache key").
 
 Register every other key family (owner, TTL, invalidation after commit) in `docs/cache-keys.md` (see `CONTRIBUTING.md` → "Add a cache key").
 

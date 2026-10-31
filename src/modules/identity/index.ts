@@ -1,5 +1,6 @@
-// Public API of the identity module: the module, and the security building blocks other modules and features use
-// (sessions, cookies, CSRF, the principal and permission helpers, the access guards and the permissions catalog).
+// Public API of the identity module: the module, the security building blocks other modules and features use
+// (sessions, cookies, CSRF, the principal and permission helpers, the access guards and the permissions catalog) and
+// the IP rules building blocks (the worker's hit flush job; the IP rule routes of feature 2a invalidate the cache).
 export { IdentityModule } from './identity.module';
 export { SecurityModule } from './security/security.module';
 export { AccessGuard } from './security/access.guard';
@@ -47,3 +48,14 @@ export type {
 } from './security/session.types';
 export { SessionSubjects } from './security/subject-resolvers';
 export type { SessionSubjectResolver } from './security/subject-resolvers';
+export { ipAudienceOf } from './security/ip-rules/ip-audience';
+export type { IpAudience } from './security/ip-rules/ip-audience';
+export { ADMIN_ALLOWLIST_KEY, IpRuleCache } from './security/ip-rules/ip-rule-cache';
+export { IpRuleHitsFlushModule, IP_RULE_HITS_FLUSH_SCHEDULER } from './security/ip-rules/ip-rule-hits-flush.module';
+export { IP_RULE_HITS_FLUSH_JOB } from './security/ip-rules/ip-rule-hits-flush.processor';
+export { IpRuleHits } from './security/ip-rules/ip-rule-hits';
+export { IpRuleHitsFlush } from './security/ip-rules/ip-rule-hits-flush';
+export type { FlushResult } from './security/ip-rules/ip-rule-hits-flush';
+export { compileIpRules, decideIpAccess } from './security/ip-rules/ip-rule-matcher';
+export type { ActiveIpRule, CompiledIpRules, IpDecision, IpRuleSnapshot } from './security/ip-rules/ip-rule-matcher';
+export { clientAddressOf } from './security/ip-rules/ip-rules.hook';

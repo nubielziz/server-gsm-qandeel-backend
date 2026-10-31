@@ -1,6 +1,6 @@
 // Root module of the worker process (decision 016): config, logging, metrics, the infrastructure (database, Redis, cache,
-// rate limits, crypto, storage, outbound HTTP), the queue workers and schedulers, the outbox relay, job runs, and the
-// metrics listener. Domain modules add their processors and schedules here as their features are built.
+// rate limits, crypto, storage, outbound HTTP), the queue workers and schedulers, the outbox relay, job runs, the IP rule
+// hit flush, and the metrics listener. Domain modules add their processors and schedules here as their features are built.
 import { Module } from '@nestjs/common';
 import { ConfigModule } from './config';
 import { CacheModule } from './infra/cache';
@@ -14,6 +14,7 @@ import { RateLimitModule } from './infra/rate-limit';
 import { RedisModule } from './infra/redis';
 import { StorageModule } from './infra/storage';
 import { JobRunsModule } from './modules/health';
+import { IpRuleHitsFlushModule } from './modules/identity';
 import { OutboxRelayModule } from './modules/platform';
 
 /**
@@ -40,6 +41,7 @@ import { OutboxRelayModule } from './modules/platform';
     QueueWorkersModule,
     JobRunsModule,
     OutboxRelayModule,
+    IpRuleHitsFlushModule,
   ],
   providers: [WorkerMetricsServer],
 })

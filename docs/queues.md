@@ -28,7 +28,8 @@ when a queue is missing here or when the numbers in a section differ from `QUEUE
   bounded and staff can retry failed jobs from the console (`GET /admin/system/queues/:name/failed`).
 - **Runs are recorded:** a scheduled or manual job wraps its work with `JobRunsService.run(...)` (health module), which
   writes `job_runs` (start, end, duration, items, result, error). Event-driven jobs (supplier dispatch, webhooks) are
-  recorded by their own tables, not in `job_runs`. The outbox relay tick runs every second and is not recorded.
+  recorded by their own tables, not in `job_runs`. The outbox relay tick (every second) and the IP rule hit flush (every
+  minute) are not recorded either: high-frequency housekeeping whose health is shown by metrics (decision 020).
 - **Shutdown:** on SIGTERM the worker stops taking jobs, lets the running ones finish (at most 25 s), then closes its
   connections (decision 001).
 
@@ -160,18 +161,35 @@ Processes uploaded and generated files (exports, result files).
 Scheduled housekeeping: group promotion, data retention, integrity checks, FX refresh.
 
 - **Concurrency:** 2 per worker process.
-- **Jobs:** none yet. Built by their features, each registered with `@QueueProcessor('maintenance', '<job name>')` and
-  wrapped with `JobRunsService.run`: `client_group_promotion` (feature 4a, nightly), `ledger_integrity` (12b, nightly 02:30
-  UTC), `data_retention` (nightly 03:00 UTC), `fx_refresh` (hourly), `accruals` (daily 01:00 UTC), `reminders` (every 10
-  minutes). The names are the console's job names (`GET /admin/system/jobs`).
-- **Payload:** none yet. A manual run carries `{ runId }` of the `job_runs` row that `POST /admin/system/jobs/:name/run`
-  inserted; the job id is `manual-<run id>`.
-- **Idempotency:** none yet. Rule: each run is safe to repeat; `JobRunsService.run` skips a run while another run of the same
-  job is going on.
+- **Jobs:** `ip_rule_hits_flush`, every minute (identity module, below). The others are built by their features, each
+  registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
+  `client_group_promotion` (feature 4a, nightly), `ledger_integrity` (12b, nightly 02:30 UTC), `data_retention` (nightly
+  03:00 UTC), `fx_refresh` (hourly), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). The names are the
+  console's job names (`GET /admin/system/jobs`).
+- **Payload:** none for `ip_rule_hits_flush`. A manual run of the others carries `{ runId }` of the `job_runs` row that
+  `POST /admin/system/jobs/:name/run` inserted; the job id is `manual-<run id>`.
+- **Idempotency:** `ip_rule_hits_flush` takes the whole Redis hash of counters and deletes it in one Lua step, so a second or
+  parallel run finds nothing and no hit is written twice. For the others: each run is safe to repeat; `JobRunsService.run`
+  skips a run while another run of the same job is going on.
 - **Retry policy:** 3 attempts, exponential backoff from 1 min (jitter 50 %); each attempt of a scheduled run is its own
   `job_runs` row. A manual run is one row: a retry after it failed ends the job as failed (`UnrecoverableError`), a retry
   after it succeeded returns it unchanged.
-- **Schedule:** none yet (registered with `JobSchedulerRegistry` by the owning features).
+- **Schedule:** `ip-rule-hits-flush` every minute (`src/modules/identity/security/ip-rules/ip-rule-hits-flush.module.ts`); the
+  others are registered with `JobSchedulerRegistry` by the owning features.
+
+### `ip_rule_hits_flush` (identity module)
+
+The API counts the requests an IP rule decided in the cache Redis hash `gsm:{env}:identity:ip-rule-hits:pending`
+(`IpRuleHits.record`, fire and forget); this job writes the totals to `ip_rules.hit_count` and `last_hit_at` in one `UPDATE`.
+
+- **Not recorded in `job_runs`** (decision 020 extends the outbox relay's exception to it): it runs every minute, a row a
+  minute would only bury the real runs. Its health is in the worker metrics `ip_rule_hits_flush_last_success_timestamp_seconds`
+  (alert when it stops moving), `ip_rule_hits_flush_failures_total` and `ip_rule_hits_flushed_total`; the API counts
+  `ip_rule_hit_record_failures_total{reason}` for hits it could not count.
+- **Attempts:** one (the scheduler sets `attempts: 1`): the next tick is the retry. A failed database write puts the counts back
+  in Redis, added to hits that arrived meanwhile, and fails the job. A crash between taking the counters and writing them, or
+  Redis evicting the hash, loses at most a minute of counts: they are statistics, not truth.
+- **Retention:** 10 completed and 100 failed jobs (24 hours) are kept, so a job a minute does not fill the Redis.
 
 ## alerts
 
@@ -207,6 +225,7 @@ Registered with `JobSchedulerRegistry.register` in `onModuleInit`; the worker up
 | Scheduler id | Queue | Job | Schedule | Owner |
 |---|---|---|---|---|
 | `outbox-relay-tick` | `outbox-relay` | `tick` | every second | platform (`src/modules/platform/outbox/`) |
+| `ip-rule-hits-flush` | `maintenance` | `ip_rule_hits_flush` | every minute | identity (`src/modules/identity/security/ip-rules/`) |
 
 ## Adding a queue or a job
 

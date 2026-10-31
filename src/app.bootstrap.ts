@@ -6,6 +6,7 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { Logger } from 'nestjs-pino';
 import { ProblemExceptionFilter } from './common/errors';
+import { RequestPipeline } from './common/pipeline';
 import { REQUEST_ID_HEADER, resolveRequestId, runWithRequestId } from './common/request-id';
 import type { AppConfig, TrustProxy } from './config';
 import { registerAccessLog } from './infra/logging';
@@ -116,7 +117,9 @@ export function registerRequestIdHooks(fastify: FastifyInstance): void {
  * headers, access log and request metrics. Shutdown hooks and listening stay in `main.ts`.
  *
  * Why: ALIGNMENT § 6 and decision 018 fix the order: CORS preflight is answered first (so a refused request still
- * carries readable CORS headers), then the request id; IP rules, rate limits and auth (P2.5) are added after.
+ * carries readable CORS headers), then the request id; then the request pipeline (IP rules, maintenance, per-IP rate
+ * limit), installed last so that its refusals carry the CORS and security headers too; authentication, CSRF and
+ * permissions are Nest guards and run after it.
  *
  * @param app the Nest application, created but not initialised yet
  * @param config the process configuration
@@ -158,6 +161,9 @@ export async function configureApp(app: NestFastifyApplication, config: AppConfi
   });
   registerHttpMetrics(fastify, app.get(MetricsService));
   registerAccessLog(fastify, logger);
+  // After CORS, the request id, cookies and helmet (they are onRequest hooks too, and Fastify runs hooks in the order they were
+  // added): a refusal then carries the CORS and security headers. The modules register their stage in onModuleInit.
+  app.get(RequestPipeline).install(fastify);
   // The OpenAPI documents come from the contracts of every controller registered so far, so build them last.
   app.get(OpenApiService).publish(app);
 }

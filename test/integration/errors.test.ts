@@ -12,7 +12,9 @@ let dev: TestApp;
 let prod: TestApp;
 beforeAll(async () => {
   dev = await createTestApp({ controllers: [TestController], env: { BODY_LIMIT_BYTES: '2048' } });
-  prod = await createTestApp({ controllers: [TestController], env: PRODUCTION_ENV });
+  // PRODUCTION_ENV names hosts that do not exist. Without a database the IP rules cannot be read and the pipeline refuses
+  // every request (503, on purpose), so these tests leave the database-backed pipeline stages out.
+  prod = await createTestApp({ controllers: [TestController], env: PRODUCTION_ENV, withoutDatabase: true });
 });
 afterAll(async () => {
   await dev.close();

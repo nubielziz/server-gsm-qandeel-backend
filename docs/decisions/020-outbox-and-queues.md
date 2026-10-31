@@ -16,8 +16,11 @@ Status: accepted, 2026-10-31.
 - Defaults: `attempts` with exponential backoff and jitter for transient errors, `UnrecoverableError` for permanent
   ones; `removeOnComplete { age: 24 h, count: 10 000 }`, `removeOnFail { age: 14 days }`. Supplier dispatch never
   retries a timed-out send (the order goes to needs-attention; map scenario `timeout`).
-- Every scheduled or manual run writes `job_runs`, except the outbox relay's one-second tick (86 400 rows a day would
-  bury the real runs); the relay's health is in its metrics: pending events, oldest pending age and relay lag.
+- Every scheduled or manual run writes `job_runs`, except two pieces of high-frequency housekeeping whose health is shown by
+  metrics instead: the outbox relay's one-second tick (86 400 rows a day would bury the real runs; its metrics are pending
+  events, oldest pending age and relay lag) and the IP rule hit counter flush `ip_rule_hits_flush` (every minute, queue
+  `maintenance`: it moves the Redis hit counters of the IP rules to `ip_rules.hit_count`; its metrics are the timestamp of
+  the last successful flush, flush failures and hits flushed). Amended with P2.5b.
 
 **Consequences.** The API stays fast and consistent: no job is enqueued for a rolled-back change, and no committed
 change loses its job.

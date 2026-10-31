@@ -23,6 +23,8 @@ export interface ProblemDocument {
   readonly detail: string;
   readonly errors?: readonly FieldError[];
   readonly requestId: string;
+  /** Extension members of the error (RFC 9457 section 3.2), such as `expectedEndAt` on a maintenance answer. */
+  readonly [extension: string]: unknown;
 }
 
 /**
@@ -32,10 +34,12 @@ export interface ProblemDocument {
  *
  * @param error the application error
  * @param context the request id and the base of the `type` URI (`ERRORS_BASE_URL`, no trailing slash)
- * @returns the document, with `detail` defaulting to the title
+ * @returns the document, with `detail` defaulting to the title; the error's extension members come first, so a fixed
+ *   member of the same name always wins
  */
 export function buildProblem(error: AppError, context: { requestId: string; errorsBaseUrl: string }): ProblemDocument {
   return {
+    ...error.extensions,
     type: `${context.errorsBaseUrl}/${problemSlug(error.code)}`,
     title: error.title,
     status: error.status,

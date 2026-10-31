@@ -77,6 +77,17 @@ last step completes (new token, old one revoked), then `cookies.set(reply, 'staf
 (`SessionSubjects.register({ subjectType: 'customer', resolve })`, mapping `customers.status` to `ok`, `suspended` or `gone`), every
 customer session is refused with `401`.
 
+Built: the **IP rules stage of the request pipeline** (P2.5b, `security/ip-rules/`). The rest (sessions, guards, CSRF, permissions,
+the routes) arrives with its features; the module has no controllers yet.
+
+### IP rules exports (P2.5b)
+
+Exports `IdentityModule` and, for the IP rules: `IpRuleCache` (`get()`, `invalidate()`), `ADMIN_ALLOWLIST_KEY`, the pure
+`decideIpAccess` / `compileIpRules` / `ipAudienceOf` / `clientAddressOf` and their types (`IpDecision`, `IpAudience`,
+`CompiledIpRules`, `ActiveIpRule`, `IpRuleSnapshot`), `IpRuleHits` (`record`, `idle`: the API counts), `IpRuleHitsFlush` (`flush`: the worker writes) and
+`IpRuleHitsFlushModule` with `IP_RULE_HITS_FLUSH_JOB` and `IP_RULE_HITS_FLUSH_SCHEDULER` for the worker. Add the services other modules may call here, and
+nothing else: other modules import only `src/modules/identity/index.ts` (lint rule `gsm/module-boundaries`).
+
 ## Owned tables
 
 Only this module reads and writes these 8 tables (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts` once the data layer exists.
@@ -183,13 +194,53 @@ Staff permissions the map requires on this module's admin routes: `access:*`, `a
 
 Keep this list in step with the contracts (`permission` of each `defineRoute`).
 
+## IP rules in the request pipeline (`security/ip-rules/`)
+
+Scenario `ip-rules`. The stage runs first after CORS and the request id (`src/common/pipeline/README.md`), on every request
+except `/health` and `/metrics`, and refuses with **`403 IP_NOT_ALLOWED`** (problem+json, CORS headers, before any guard).
+
+- **Client address:** `request.ip` (the socket, or the address a trusted proxy reported when `TRUST_PROXY` is set), parsed once;
+  an IPv4-mapped IPv6 address (`::ffff:203.0.113.9`) counts as its IPv4 address. IPv4, IPv6 and CIDR ranges are matched on bytes
+  (`ip_rules.cidr` is the Postgres `cidr` type; a single address reads back as `/32` or `/128`).
+- **Audience of a request** (`ip-audience.ts`): `/admin` is `admin`, `/store/v1` is `store`, `/v1` and `/api/index.php` are `api`
+  (the console's "Merchants using the API"), everything else (merchant portal `/client`, `/webhooks`, the documentation pages) is
+  `other`. The path is the route template of a matched route and the decoded path of an unknown one, so an escaped spelling
+  such as `/%61dmin` cannot dodge a rule.
+- **Verdict** (`decideIpAccess`, the same words as `POST /admin/ip-rules/check`): (1) a live **block** rule with the audience's
+  scope, or with scope `all`, that covers the address refuses it (the most specific rule is reported, then the lowest id);
+  (2) for `admin`, when the setting `adminAllowlistOnly` is on, the address needs a live **allow** rule (scope `admin`), else it
+  is refused as "not listed"; (3) otherwise it passes. A rule past its `expires_at` drops out by itself, without a reload.
+  `all` therefore reaches the merchant portal, webhooks and the docs too; `/health` and `/metrics` are never judged.
+- **Cache:** the live rules and `adminAllowlistOnly` form one snapshot in the cache Redis (`gsm:{env}:identity:ip-rules:active`,
+  60 s, stale value served for up to 5 more minutes while one refresh runs), parsed once per snapshot and kept in memory for one
+  second per process, so most requests ask neither Redis nor Postgres. **The routes that change a rule or the restriction call
+  `IpRuleCache.invalidate()` after their commit** (feature 2a): `afterCommit(() => ipRules.invalidate())`; other API instances
+  see the change within a second. With Redis down the loader reads Postgres (once a second per process); with Postgres down too
+  the last snapshot keeps being used; with no snapshot at all (cold start) the request is refused with
+  `503 DATABASE_UNAVAILABLE`: a rule that cannot be checked is not skipped.
+- **Hit counters:** every request a rule decided (a block that refused it, an allow rule that let it into the restricted console)
+  adds to the Redis hash `gsm:{env}:identity:ip-rule-hits:pending` (`IpRuleHits.record`, fire and forget; a failure only counts
+  `ip_rule_hit_record_failures_total{reason}`). The worker's per-minute job `ip_rule_hits_flush` (`IpRuleHitsFlush`, queue
+  `maintenance`, `docs/queues.md`) adds the totals to `ip_rules.hit_count` and moves `last_hit_at` forward in one statement.
+  Statistics, not truth: Redis evicting the hash loses counts. `POST /admin/ip-rules/check` must not count hits: it calls
+  `decideIpAccess` directly.
+- **Operational note:** with the restriction on, the last allow rule expiring locks everyone out of the console (the creation and
+  deletion guards of feature 2a judge only the moment of the change). The demo seed turns the restriction on and lists
+  `203.0.113.24`, `203.0.113.31` and `198.51.100.77`, so local requests from `127.0.0.1` are refused after `bun run db:seed`
+  until an allow rule for the developer's address exists.
+
 ## Events
 
 Outbox events produced (types, payload ids): none yet. Consumed: none yet. Record each outbox type and the queue it maps to here and in `docs/queues.md`.
 
 ## Jobs and schedules
 
-None yet. List each queue, job, schedule, idempotency key and retry policy here and in `docs/queues.md` (see `CONTRIBUTING.md` → "Add a job").
+- `ip_rule_hits_flush` on the `maintenance` queue, scheduler `ip-rule-hits-flush`, every minute (`IpRuleHitsFlushModule`, imported
+  by `src/worker.module.ts` only; processor `IpRuleHitsFlushProcessor`). Not recorded in `job_runs` (decision 020); metrics
+  `ip_rule_hits_flush_last_success_timestamp_seconds`, `ip_rule_hits_flush_failures_total`, `ip_rule_hits_flushed_total`.
+  Listed in `docs/queues.md`.
+
+Add the next job here and in `docs/queues.md` (see `CONTRIBUTING.md` → "Add a job").
 
 ## Cache keys
 
@@ -197,3 +248,10 @@ None yet. List each queue, job, schedule, idempotency key and retry policy here 
 - `gsm:{env}:identity:role:{roleId}` (`CacheKeys.rolePermissions`): the permissions of a role, 300 s. `RolePermissions.invalidate(roleId)` after the commit of a role change.
 
 Both are listed in `docs/cache-keys.md`. Register every other key family there too (see `CONTRIBUTING.md` → "Add a cache key").
+
+| Key | What | TTL | Invalidation |
+|---|---|---|---|
+| `gsm:{env}:identity:ip-rules:active` | live IP rules + `adminAllowlistOnly` | 60 s, then stale for 5 min while one refresh runs | `IpRuleCache.invalidate()` after the commit of any rule or restriction change |
+| `gsm:{env}:identity:ip-rule-hits:pending` | hash of hit counters (`<rule id>`, `<rule id>:at`) | 24 h, renewed by every hit | emptied by the flush job every minute |
+
+Both are registered in `docs/cache-keys.md`.
