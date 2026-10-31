@@ -1,6 +1,6 @@
-// Registry of health indicators for GET /health (decision 015). P2.3 registers Postgres (critical) and P2.4 the two
-// Redis roles (non-critical); features can add their own. Empty registry means "ok".
-import { Injectable } from '@nestjs/common';
+// Registry of health indicators for GET /health (decision 015). It lives in infra so the database and Redis modules
+// (src/infra) can register their checks without importing a domain module; the health module only reads it.
+import { Injectable, Module } from '@nestjs/common';
 
 /** Overall state: ok, degraded (a non-critical dependency is down) or down (a critical one is). */
 export type HealthStatus = 'ok' | 'degraded' | 'down';
@@ -24,7 +24,8 @@ const NAME_PATTERN = /^[a-z][a-z0-9_]{0,31}$/;
  * Holds the indicators `GET /health` runs.
  *
  * Why: the console reads Postgres and Redis state from this one route (map: "service health check: Postgres and
- * Redis"); each infrastructure module registers its own indicator in `onModuleInit`, so health never imports them.
+ * Redis"); each infrastructure module registers its own indicator in `onModuleInit`, so health never imports them
+ * and `src/infra` never imports a domain module (decision 016).
  */
 @Injectable()
 export class HealthRegistry {
@@ -49,3 +50,12 @@ export class HealthRegistry {
     return [...this.indicators.values()];
   }
 }
+
+/**
+ * Provides the one {@link HealthRegistry} of the process.
+ *
+ * Why: infrastructure modules (database, Redis, storage) and the health module import this module; Nest creates a
+ * module once per application, so they all share the same registry.
+ */
+@Module({ providers: [HealthRegistry], exports: [HealthRegistry] })
+export class HealthRegistryModule {}

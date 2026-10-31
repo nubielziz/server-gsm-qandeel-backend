@@ -2,7 +2,7 @@
 // Never throws and never reveals versions, hostnames or error texts: details go to the log only.
 import { Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { type HealthIndicator, type HealthStatus, HealthRegistry } from './health-registry';
+import { type HealthIndicator, type HealthStatus, HealthRegistry } from '../../../infra/health';
 
 /** The answer of `GET /health`. */
 export interface HealthReport {

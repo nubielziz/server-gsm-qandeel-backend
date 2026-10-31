@@ -1,7 +1,7 @@
 // Integration tests of GET /health (decision 015, map B11): always 200 with {status, checks}; ?strict=1 answers 503
 // with the same body; critical vs non-critical indicators; bounded time; nothing internal in the body.
 import { afterAll, describe, expect, it } from 'bun:test';
-import { HealthRegistry, type HealthIndicator } from '../../src/modules/health';
+import { HealthRegistry, type HealthIndicator } from '../../src/infra/health';
 import { type TestApp, createTestApp } from '../support/app';
 import { logSink } from '../support/log-sink';
 
