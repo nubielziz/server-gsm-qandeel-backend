@@ -1,12 +1,14 @@
 // Builds the real API (AppModule + the same bootstrap as main.ts) for integration tests, on Fastify inject.
 // Tests add controllers and providers of their own and may override the environment, never the pipeline.
 import 'reflect-metadata';
-import type { ModuleMetadata, Type } from '@nestjs/common';
+import { Module, type ModuleMetadata, type Type } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from '../../src/app.module';
 import { configureApp, createAppAdapter } from '../../src/app.bootstrap';
 import { APP_CONFIG, type AppConfig, parseEnv } from '../../src/config';
+import { TEST_DATABASE_URL } from './db';
+import { DbModule } from '../../src/infra/db';
 import { LOG_DESTINATION } from '../../src/infra/logging';
 import { logSink } from './log-sink';
 
@@ -28,6 +30,14 @@ export const PRODUCTION_ENV: Record<string, string> = {
   LOG_LEVEL: 'warn',
 };
 
+/**
+ * Stands in for the database module: no pool and no `postgres` health indicator.
+ *
+ * Why: tests of the health registry itself register their own indicators and must not meet the real one.
+ */
+@Module({})
+class NoDatabaseModule {}
+
 /** What a test can change about the app. */
 export interface TestAppOptions {
   /** Environment variables on top of `NODE_ENV=test`. */
@@ -37,6 +47,8 @@ export interface TestAppOptions {
   readonly providers?: ModuleMetadata['providers'];
   /** Modules added to the root module, for example a global one that provides a token a real module will provide later. */
   readonly imports?: ModuleMetadata['imports'];
+  /** Replace the database module with an empty one (no pool, no `postgres` health indicator). */
+  readonly withoutDatabase?: boolean;
 }
 
 /** A running test app. */
@@ -53,8 +65,9 @@ export interface TestApp {
  * @returns the app (use `app.inject(...)`), its config and a `close()` to call in `afterAll`
  */
 export async function createTestApp(options: TestAppOptions = {}): Promise<TestApp> {
-  const config = parseEnv({ NODE_ENV: 'test', ...options.env });
-  const moduleRef = await Test.createTestingModule({
+  // The app's pool must use the same test database as testDb()/resetDb(), including a custom DATABASE_URL_TEST.
+  const config = parseEnv({ NODE_ENV: 'test', DATABASE_URL_TEST: TEST_DATABASE_URL, ...options.env });
+  const builder = Test.createTestingModule({
     imports: [AppModule, ...(options.imports ?? [])],
     controllers: options.controllers ?? [],
     providers: options.providers ?? [],
@@ -62,8 +75,9 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     .overrideProvider(APP_CONFIG)
     .useValue(config)
     .overrideProvider(LOG_DESTINATION)
-    .useValue(logSink)
-    .compile();
+    .useValue(logSink);
+  if (options.withoutDatabase) builder.overrideModule(DbModule).useModule(NoDatabaseModule);
+  const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication<NestFastifyApplication>(createAppAdapter(config), { bufferLogs: true });
   await configureApp(app, config);
   await app.init();

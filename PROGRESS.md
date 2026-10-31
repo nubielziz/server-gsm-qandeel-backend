@@ -4,8 +4,8 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
-**Phase 2, foundation, in progress** (Sonnet implements, Opus reviews). **P2.1 runtime-core and P2.2 docs-tooling are
-done**; P2.3 data is built and being merged. Next: **P2.4 infra ∥ P2.7 contract-tests** (P2.7 needs P2.2's OpenAPI document),
+**Phase 2, foundation, in progress** (Sonnet implements, Opus reviews). **P2.1 runtime-core, P2.2 docs-tooling and
+P2.3 data are done.** Next: **P2.4 infra ∥ P2.7 contract-tests** (P2.7 needs P2.2's OpenAPI document),
 then **P2.5 security**, then **P2.6 staff sign-in**. Briefs: `docs/briefs/` (`_common.md` first; `_feature.md` is the
 Phase 3 recipe). Parallel implementers work in sibling worktrees of this repo (`git worktree add
 ../backend-p2-<name> -b feat/backend-p2-<name>`, then `bun install` there; a sibling path keeps the relative
@@ -39,7 +39,7 @@ and `docs/slices/<module>.json`, `docs/contract/RULES.md` for its frontend featu
 |---|---|---|---|
 | 0 Setup + Bun spike | done | `25282af` | 0 |
 | 1 Architecture + contract | done | see `git log` (`docs: phase 1 ...`) | 6 (Opus analysts, one workflow, 3 at once) |
-| 2 Foundation | in progress (P2.1, P2.2 done) | per feature, see below | 8 so far |
+| 2 Foundation | in progress (P2.1-P2.3 done) | per feature, see below | 8 so far |
 | 3 Feature loop (by stage) | | | |
 | 4 Frontend integration | | | |
 
@@ -59,7 +59,7 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 |---|---|---|---|---|
 | P2.1 | runtime-core | config, logging, request id, problem+json + catalog, contract layer (defineRoute, @Route, lists), money helper, /health, /metrics, api + worker bootstrap, bunfig + tests (brief `docs/briefs/P2.1-runtime-core.md`) | | done (`feat(runtime-core)` commit) |
 | P2.2 | docs-tooling | OpenAPI 3.1 generation (internal + public), Scalar `/docs` and `/reference`, `/openapi.json`, ESLint (jsdoc, boundaries, env rule) + prettier, module READMEs, CONTRIBUTING, CI script | | done (`feat(docs-tooling)` commit) |
-| P2.3 | data | Drizzle schema for all 66 tables (per module) + schema additions (MISMATCHES), constraints, indexes, ledger triggers, first migration, migrator, resetDb, Postgres health indicator, seed from the frontend demo state | | in progress (worktree `../backend-p2-data`) |
+| P2.3 | data | Drizzle schema for all 66 tables (per module) + schema additions (MISMATCHES), constraints, indexes, ledger triggers, first migration, migrator, resetDb, Postgres health indicator, seed from the frontend demo state | | done (`feat(data)` commit) |
 | P2.4 | infra | two Redis clients + health indicators, CacheService, RateLimitService, BullMQ base (queues, worker registry, schedulers, job_runs), outbox + relay, S3 storage, outbound http, crypto (AES-GCM keyring, token hashing, argon2), Prometheus in compose; retire `spike/` | | |
 | P2.5 | security | IP rules hook, maintenance hook, rate-limit hook, auth guards (staff/merchant/customer sessions, CSRF, API key, Dhru, webhook signatures), permission guard + catalog, audit interceptor, `/reference` staff gate | admin-team (part), ip-rules (part) | |
 | P2.6 | staff-sign-in | `POST /admin/auth/login`, `/2fa`, `/2fa/setup`, `/logout`, `/password/set`, `GET /admin/auth/me` (6) | | |
@@ -133,6 +133,13 @@ None.
   it stays a superset of the public one (decision 017).
 - `scripts/ci.sh` runs `docker compose up -d`: never run it (or compose) from a worktree, it re-creates the shared
   containers with the worktree's bind paths.
+- Data (P2.3) notes for Phase 3: `ip_rules.cidr` is the Postgres `cidr` type (normalise on write, drop `/32` on read:
+  the wire omits it; host bits are rejected); `support_tickets.status` stores the map values (`pending_customer`,
+  `closed`) that the support feature maps to the wire; columns left as plain `text` and every guessed type are listed
+  in `src/infra/db/README.md` ("Open vocabularies and type guesses") for the owning feature to settle; audit entries
+  without a numeric entity use `entity_id = 0` (frontend type requires a number).
+- The seed (`bun run db:seed`, development only) maps demo ids like the frontend mocks (`'m3'` → 3); each Phase 3
+  feature adds its module's seeder in `scripts/seed/`.
 - Run Bun entry points from the repo root: Bun reads `tsconfig.json` (decorator flags) from the working directory.
 - `TRUST_PROXY` as a hop count becomes a trust function (Fastify 5.12 ignores numbers); use it only when the app port
   is reachable solely through the proxy chain, otherwise list the proxy addresses.

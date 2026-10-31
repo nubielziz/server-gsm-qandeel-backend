@@ -36,7 +36,7 @@ version)`, `ledger_transactions (kind, ref_type, ref_id, memo, idempotency_key, 
   b2c_deliver, b2c_refund, b2c_chargeback, payout`) returns the lines exactly as the map writes them; a zero-amount
   line (no supplier cost) is dropped. Each builder has a unit test with the map's numbers.
 - Database enforcement: a `DEFERRABLE INITIALLY DEFERRED` constraint trigger on `ledger_entries` checks Σ amount = 0
-  per transaction at commit; `BEFORE UPDATE OR DELETE` triggers reject changes to `ledger_entries` and
+  and a single account currency per transaction at commit; `BEFORE UPDATE OR DELETE` triggers reject changes to `ledger_entries` and
   `ledger_transactions`. Corrections are reversing transactions (`ref_type = 'ledger_transaction'`).
 - Integrity job (nightly and `POST /admin/system/integrity/run`): Σ entries per account = balance, global Σ = 0,
   `balance_after` chains, holds of finished orders; results in `job_runs`, failures raise alerts.

@@ -1,7 +1,8 @@
-// Root module of the worker process (decision 016): config, logging, metrics and the metrics listener.
+// Root module of the worker process (decision 016): config, logging, metrics, the database and the metrics listener.
 // BullMQ processors, schedulers and the outbox relay are added by P2.4 and the feature stages.
 import { Module } from '@nestjs/common';
 import { ConfigModule } from './config';
+import { DbModule } from './infra/db';
 import { LoggingModule } from './infra/logging';
 import { MetricsModule, WorkerMetricsServer } from './infra/metrics';
 
@@ -12,7 +13,7 @@ import { MetricsModule, WorkerMetricsServer } from './infra/metrics';
  * on `WORKER_METRICS_PORT` so Prometheus can scrape queue and job metrics (decision 015).
  */
 @Module({
-  imports: [ConfigModule, LoggingModule.forRoot({ service: 'worker' }), MetricsModule],
+  imports: [ConfigModule, LoggingModule.forRoot({ service: 'worker' }), MetricsModule, DbModule],
   providers: [WorkerMetricsServer],
 })
 export class WorkerModule {}

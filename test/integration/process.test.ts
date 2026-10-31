@@ -6,6 +6,7 @@ import net from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PRODUCTION_ENV } from '../support/app';
+import { TEST_DATABASE_URL } from '../support/db';
 
 const ROOT = join(import.meta.dir, '../..');
 type Child = ReturnType<typeof Bun.spawn>;
@@ -121,13 +122,19 @@ describe('configuration failure', () => {
 describe('API process', () => {
   it('boots, answers /health and an unknown route with problem+json, and stops cleanly on SIGTERM', async () => {
     const port = await freePort();
-    const child = start('src/main.ts', { NODE_ENV: 'test', HOST: '127.0.0.1', PORT: String(port) });
+    const child = start('src/main.ts', {
+      NODE_ENV: 'test',
+      HOST: '127.0.0.1',
+      PORT: String(port),
+      DATABASE_URL_TEST: TEST_DATABASE_URL,
+    });
     const health = await eventually(async () => {
       const res = await fetch(`http://127.0.0.1:${port}/health`);
       return res.ok ? res : undefined;
     });
     expect(health.status).toBe(200);
-    expect(await health.json()).toEqual({ status: 'ok', checks: {} });
+    // NODE_ENV=test points the database module at gsm_test (docker compose up -d): its indicator is the only check.
+    expect(await health.json()).toEqual({ status: 'ok', checks: { postgres: 'ok' } });
     expect(health.headers.get('x-request-id')).toBeTruthy();
 
     const unknown = await fetch(`http://127.0.0.1:${port}/nope`, { headers: { 'x-request-id': 'boot-check' } });

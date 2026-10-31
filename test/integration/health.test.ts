@@ -6,9 +6,9 @@ import { type TestApp, createTestApp } from '../support/app';
 import { logSink } from '../support/log-sink';
 
 const apps: TestApp[] = [];
-/** A fresh app whose health registry has the given indicators. */
+/** A fresh app whose health registry has exactly the given indicators (no database module, so no real `postgres`). */
 async function appWith(...indicators: HealthIndicator[]): Promise<TestApp> {
-  const t = await createTestApp();
+  const t = await createTestApp({ withoutDatabase: true });
   apps.push(t);
   const registry = t.app.get(HealthRegistry);
   for (const indicator of indicators) registry.register(indicator);
