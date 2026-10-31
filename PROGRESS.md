@@ -58,8 +58,8 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 | # | Feature | Scope | Scenarios completed | Status |
 |---|---|---|---|---|
 | P2.1 | runtime-core | config, logging, request id, problem+json + catalog, contract layer (defineRoute, @Route, lists), money helper, /health, /metrics, api + worker bootstrap, bunfig + tests (brief `docs/briefs/P2.1-runtime-core.md`) | | done (`feat(runtime-core)` commit) |
-| P2.2 | docs-tooling | OpenAPI 3.1 generation (internal + public), Scalar `/docs` and `/reference`, `/openapi.json`, ESLint (jsdoc, boundaries, env rule) + prettier, module READMEs, CONTRIBUTING, CI script | | |
-| P2.3 | data | Drizzle schema for all 66 tables (per module) + schema additions (MISMATCHES), constraints, indexes, ledger triggers, first migration, migrator, resetDb, Postgres health indicator, seed from the frontend demo state | | |
+| P2.2 | docs-tooling | OpenAPI 3.1 generation (internal + public), Scalar `/docs` and `/reference`, `/openapi.json`, ESLint (jsdoc, boundaries, env rule) + prettier, module READMEs, CONTRIBUTING, CI script | | in progress (worktree `../backend-p2-docs`) |
+| P2.3 | data | Drizzle schema for all 66 tables (per module) + schema additions (MISMATCHES), constraints, indexes, ledger triggers, first migration, migrator, resetDb, Postgres health indicator, seed from the frontend demo state | | in progress (worktree `../backend-p2-data`) |
 | P2.4 | infra | two Redis clients + health indicators, CacheService, RateLimitService, BullMQ base (queues, worker registry, schedulers, job_runs), outbox + relay, S3 storage, outbound http, crypto (AES-GCM keyring, token hashing, argon2), Prometheus in compose; retire `spike/` | | |
 | P2.5 | security | IP rules hook, maintenance hook, rate-limit hook, auth guards (staff/merchant/customer sessions, CSRF, API key, Dhru, webhook signatures), permission guard + catalog, audit interceptor, `/reference` staff gate | admin-team (part), ip-rules (part) | |
 | P2.6 | staff-sign-in | `POST /admin/auth/login`, `/2fa`, `/2fa/setup`, `/logout`, `/password/set`, `GET /admin/auth/me` (6) | | |
