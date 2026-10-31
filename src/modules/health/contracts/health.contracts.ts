@@ -24,7 +24,7 @@ export const healthContract = defineRoute({
   key: 'GET /health',
   summary: 'Service health check',
   description:
-    'Checks Postgres and the two Redis roles. Always answers 200 with `{ status, checks }`; with `?strict=1` it answers 503 and the same body when the status is not `ok`, for load balancers and readiness probes. Contains no versions, hostnames or error texts.',
+    'Checks Postgres (critical), the two Redis roles and object storage. Always answers 200 with `{ status, checks }`; with `?strict=1` it answers 503 and the same body when the status is `down` (a critical dependency failed), for load balancers and readiness probes. Contains no versions, hostnames or error texts.',
   tags: ['system'],
   surface: 'system',
   access: 'public',

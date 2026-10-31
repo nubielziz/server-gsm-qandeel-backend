@@ -75,6 +75,44 @@ describe('parseEnv in development and test', () => {
     expect(config.redis.bullPrefix).toBe('gsm:test:bull');
   });
 
+  it('points Redis and the bucket at database 1 and the test bucket under NODE_ENV=test, ignoring the normal variables', () => {
+    const config = parseEnv({
+      NODE_ENV: 'test',
+      REDIS_QUEUE_URL: 'redis://dev-queue:6379/0',
+      REDIS_CACHE_URL: 'redis://dev-cache:6379/0',
+      S3_BUCKET: 'gsm-files',
+    });
+    expect(config.redis.queueUrl).toBe('redis://localhost:6379/1');
+    expect(config.redis.cacheUrl).toBe('redis://localhost:6380/1');
+    expect(config.s3.bucket).toBe('gsm-files-test');
+  });
+
+  it('lets the *_TEST variables override the test defaults (another host, another database)', () => {
+    const config = parseEnv({
+      NODE_ENV: 'test',
+      REDIS_QUEUE_URL_TEST: 'redis://127.0.0.1:1/3',
+      REDIS_CACHE_URL_TEST: 'redis://127.0.0.1:2/4',
+      S3_BUCKET_TEST: 'my-test-bucket',
+    });
+    expect(config.redis.queueUrl).toBe('redis://127.0.0.1:1/3');
+    expect(config.redis.cacheUrl).toBe('redis://127.0.0.1:2/4');
+    expect(config.s3.bucket).toBe('my-test-bucket');
+  });
+
+  it('does not let the *_TEST variables change development or production', () => {
+    const env = {
+      REDIS_QUEUE_URL_TEST: 'redis://x:1/9',
+      REDIS_CACHE_URL_TEST: 'redis://x:2/9',
+      S3_BUCKET_TEST: 'other-test-bucket',
+    };
+    const development = parseEnv(env);
+    expect(development.redis.queueUrl).toBe(DEV_DEFAULTS.redisQueueUrl);
+    expect(development.s3.bucket).toBe(DEV_DEFAULTS.s3Bucket);
+    const prod = parseEnv({ ...production(), ...env });
+    expect(prod.redis.cacheUrl).toBe('redis://cache.internal:6379/0');
+    expect(prod.s3.bucket).toBe('gsm-prod-files');
+  });
+
   it('treats empty variables as unset and ignores unknown ones', () => {
     const config = parseEnv({ PORT: '', HOST: '  ', PATH: '/usr/bin', LOG_LEVEL: 'error' });
     expect(config.http.port).toBe(3000);
@@ -168,6 +206,31 @@ describe('parseEnv in production', () => {
     expect(config.observability.prometheusUrl).toBeUndefined();
     expect(config.observability.sentryDsn).toBeUndefined();
     expect(config.security.csrfCookieDomain).toBeUndefined();
+  });
+});
+
+describe('ARGON2_* (decision 007)', () => {
+  it('defaults to the OWASP baseline', () => {
+    expect(parseEnv({}).security.argon2).toEqual({ memoryKib: 19_456, timeCost: 2, parallelism: 1 });
+  });
+
+  it('reads the three cost settings', () => {
+    const config = parseEnv({ ARGON2_MEMORY_KIB: '65536', ARGON2_TIME_COST: '3', ARGON2_PARALLELISM: '4' });
+    expect(config.security.argon2).toEqual({ memoryKib: 65_536, timeCost: 3, parallelism: 4 });
+  });
+
+  it('refuses out-of-range values and memory below 8 KiB per lane, naming the variable', () => {
+    expect(issuesOf({ ARGON2_TIME_COST: '0' }).map((i) => i.variable)).toEqual(['ARGON2_TIME_COST']);
+    expect(issuesOf({ ARGON2_PARALLELISM: '99' }).map((i) => i.variable)).toEqual(['ARGON2_PARALLELISM']);
+    expect(issuesOf({ ARGON2_MEMORY_KIB: 'lots' }).map((i) => i.variable)).toEqual(['ARGON2_MEMORY_KIB']);
+    expect(issuesOf({ ARGON2_MEMORY_KIB: '16', ARGON2_PARALLELISM: '4' })).toEqual([
+      { variable: 'ARGON2_MEMORY_KIB', message: expect.stringContaining('8 times ARGON2_PARALLELISM') },
+    ]);
+  });
+
+  it('is part of the redacted summary (the cost is not a secret)', () => {
+    const text = JSON.stringify(summarizeConfig(parseEnv({})));
+    expect(text).toContain('"argon2":{"memoryKib":19456,"timeCost":2,"parallelism":1}');
   });
 });
 

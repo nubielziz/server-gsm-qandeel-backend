@@ -133,8 +133,12 @@ describe('API process', () => {
       return res.ok ? res : undefined;
     });
     expect(health.status).toBe(200);
-    // NODE_ENV=test points the database module at gsm_test (docker compose up -d): its indicator is the only check.
-    expect(await health.json()).toEqual({ status: 'ok', checks: { postgres: 'ok' } });
+    // NODE_ENV=test points every dependency at its test instance (docker compose up -d): Postgres gsm_test, Redis
+    // database 1 on both roles and the gsm-files-test bucket.
+    expect(await health.json()).toEqual({
+      status: 'ok',
+      checks: { postgres: 'ok', redis: 'ok', redis_queue: 'ok', storage: 'ok' },
+    });
     expect(health.headers.get('x-request-id')).toBeTruthy();
 
     const unknown = await fetch(`http://127.0.0.1:${port}/nope`, { headers: { 'x-request-id': 'boot-check' } });

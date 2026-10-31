@@ -9,7 +9,9 @@ Status: accepted, 2026-10-31.
   rounding, list-query parsing). No I/O.
 - Integration: `test/integration/**` against the compose services: Postgres `gsm_test` (migrated once per run, lazily,
   by the first test that uses the database: `test/support/db.ts`, so `bun test ./src` needs no Docker), Redis DB 1 on
-  both roles, bucket `gsm-files-test`. Isolation: `resetDb()` truncates every table except
+  both roles, bucket `gsm-files-test`. Under `NODE_ENV=test` the config uses only the `*_TEST` instances
+  (`DATABASE_URL_TEST`, `REDIS_QUEUE_URL_TEST`, `REDIS_CACHE_URL_TEST`, `S3_BUCKET_TEST`) and ignores the normal ones,
+  so a test can never touch development data; a parallel worktree points them at its own database. Isolation: `resetDb()` truncates every table except
   the migrations table (`TRUNCATE … RESTART IDENTITY CASCADE`) in `beforeEach`; Redis test DBs are flushed. Includes
   concurrency tests with real parallel connections (no overspend, duplicate webhook posts once, idempotency replay)
   and Redis failure tests (down at startup, restart during processing, shutdown with active jobs).

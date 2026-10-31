@@ -1,4 +1,4 @@
-// Integration tests of GET /health (decision 015, map B11): always 200 with {status, checks}; ?strict=1 answers 503
+// Integration tests of GET /health (decision 015, map B11): always 200 with {status, checks}; ?strict=1 answers 503 when down
 // with the same body; critical vs non-critical indicators; bounded time; nothing internal in the body.
 import { afterAll, describe, expect, it } from 'bun:test';
 import { HealthRegistry, type HealthIndicator } from '../../src/infra/health';
@@ -6,9 +6,9 @@ import { type TestApp, createTestApp } from '../support/app';
 import { logSink } from '../support/log-sink';
 
 const apps: TestApp[] = [];
-/** A fresh app whose health registry has exactly the given indicators (no database module, so no real `postgres`). */
+/** A fresh app whose health registry has exactly the given indicators (no database, Redis or storage modules). */
 async function appWith(...indicators: HealthIndicator[]): Promise<TestApp> {
-  const t = await createTestApp({ withoutDatabase: true });
+  const t = await createTestApp({ withoutDatabase: true, withoutInfrastructure: true });
   apps.push(t);
   const registry = t.app.get(HealthRegistry);
   for (const indicator of indicators) registry.register(indicator);
@@ -106,22 +106,23 @@ describe('GET /health?strict=1 (load balancers)', () => {
     expect(res.json()).toEqual({ status: 'ok', checks: { postgres: 'ok' } });
   });
 
-  it('answers 503 with the same body when degraded', async () => {
+  it('answers 200 when only degraded: the API still serves without a non-critical dependency', async () => {
     const t = await appWith(up('postgres', true), down('redis', false));
-    const plain = await t.app.inject({ method: 'GET', url: '/health' });
     const strict = await t.app.inject({ method: 'GET', url: '/health?strict=1' });
+    expect(strict.statusCode).toBe(200);
+    expect(strict.json()).toEqual({ status: 'degraded', checks: { postgres: 'ok', redis: 'down' } });
+  });
+
+  it('answers 503 with the same JSON body when down', async () => {
+    const t = await appWith(down('postgres', true), up('redis', false));
+    const plain = await t.app.inject({ method: 'GET', url: '/health' });
+    const strict = await t.app.inject({ method: 'GET', url: '/health?strict=true' });
     expect(strict.statusCode).toBe(503);
+    expect(strict.json()).toEqual({ status: 'down', checks: { postgres: 'down', redis: 'ok' } });
     expect(strict.json()).toEqual(plain.json());
     expect(strict.headers['content-type']).toContain('application/json');
     expect(strict.headers['content-type']).not.toContain('problem');
     expect(strict.headers['x-request-id']).toBeTruthy();
-  });
-
-  it('answers 503 with the same body when down', async () => {
-    const t = await appWith(down('postgres', true));
-    const strict = await t.app.inject({ method: 'GET', url: '/health?strict=true' });
-    expect(strict.statusCode).toBe(503);
-    expect(strict.json()).toEqual({ status: 'down', checks: { postgres: 'down' } });
   });
 
   it('treats strict=0 and strict=false as the normal check', async () => {

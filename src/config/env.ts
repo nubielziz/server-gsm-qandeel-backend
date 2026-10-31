@@ -75,6 +75,8 @@ export interface AppConfig {
     /** AES-256-GCM keyring (decision 019): key id to 32 raw bytes. */
     readonly encryptionKeys: Readonly<Record<string, Buffer>>;
     readonly encryptionActiveKid: string;
+    /** argon2id cost of new password hashes (decision 007); each stored hash carries the parameters it was made with. */
+    readonly argon2: { readonly memoryKib: number; readonly timeCost: number; readonly parallelism: number };
   };
   readonly observability: {
     /** When set, `/metrics` requires `Authorization: Bearer <token>`; when unset only private networks may read it. */
@@ -122,8 +124,12 @@ export const DEV_DEFAULTS = {
   databaseUrlTest: 'postgres://gsm:gsm@localhost:5432/gsm_test',
   redisQueueUrl: 'redis://localhost:6379/0',
   redisCacheUrl: 'redis://localhost:6380/0',
+  // NODE_ENV=test never touches the development data: Redis database 1 on both roles and the test bucket.
+  redisQueueUrlTest: 'redis://localhost:6379/1',
+  redisCacheUrlTest: 'redis://localhost:6380/1',
   s3Endpoint: 'http://localhost:9000',
   s3Bucket: 'gsm-files',
+  s3BucketTest: 'gsm-files-test',
   s3AccessKeyId: 'gsm-minio',
   s3SecretAccessKey: 'gsm-minio-secret',
   csrfSecret: 'dev-only-csrf-secret-do-not-use-in-production-0123456789',
@@ -155,6 +161,8 @@ const rawSchema = z.object({
   DATABASE_POOL_MAX: int(1, 200).optional(),
   REDIS_QUEUE_URL: redisUrl.optional(),
   REDIS_CACHE_URL: redisUrl.optional(),
+  REDIS_QUEUE_URL_TEST: redisUrl.optional(),
+  REDIS_CACHE_URL_TEST: redisUrl.optional(),
   BULL_PREFIX: z
     .string()
     .regex(/^[A-Za-z0-9:_-]{1,64}$/, 'use letters, digits, ":", "_" or "-" (1-64 characters)')
@@ -162,6 +170,7 @@ const rawSchema = z.object({
   S3_ENDPOINT: httpUrl.optional(),
   S3_REGION: z.string().min(1).optional(),
   S3_BUCKET: z.string().min(3).optional(),
+  S3_BUCKET_TEST: z.string().min(3).optional(),
   S3_ACCESS_KEY_ID: z.string().min(1).optional(),
   S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   S3_FORCE_PATH_STYLE: z.stringbool().optional(),
@@ -171,6 +180,9 @@ const rawSchema = z.object({
   TOKEN_PEPPER: z.string().min(32, 'must be at least 32 characters').optional(),
   ENCRYPTION_KEYS: z.string().optional(),
   ENCRYPTION_ACTIVE_KID: z.string().optional(),
+  ARGON2_MEMORY_KIB: int(8, 1_048_576).optional(),
+  ARGON2_TIME_COST: int(1, 20).optional(),
+  ARGON2_PARALLELISM: int(1, 16).optional(),
   METRICS_TOKEN: z.string().min(16, 'must be at least 16 characters').optional(),
   WORKER_METRICS_PORT: int(1, 65535).optional(),
   PROMETHEUS_URL: httpUrl.optional(),
@@ -313,6 +325,7 @@ function deepFreeze<T>(value: T): T {
 function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) => void): AppConfig {
   const env: NodeEnv = raw.NODE_ENV ?? 'development';
   const production = env === 'production';
+  const testing = env === 'test';
   // A value that has a local default outside production and must be given in production.
   const withDefault = <T>(variable: string, value: T | undefined, devDefault: T): T => {
     if (value !== undefined) return value;
@@ -358,6 +371,16 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
   // metrics token (decision 015); Prometheus scrapes with it.
   if (production && raw.METRICS_TOKEN === undefined) fail('METRICS_TOKEN', 'is required in production');
 
+  // OWASP baseline for argon2id (decision 007); `bun run bench:argon2` helps pick values for the target host.
+  const argon2 = {
+    memoryKib: raw.ARGON2_MEMORY_KIB ?? 19_456,
+    timeCost: raw.ARGON2_TIME_COST ?? 2,
+    parallelism: raw.ARGON2_PARALLELISM ?? 1,
+  };
+  if (argon2.memoryKib < 8 * argon2.parallelism) {
+    fail('ARGON2_MEMORY_KIB', 'must be at least 8 times ARGON2_PARALLELISM (argon2 needs 8 KiB per lane)');
+  }
+
   const errorsBaseUrl = withDefault('ERRORS_BASE_URL', raw.ERRORS_BASE_URL, DEV_DEFAULTS.errorsBaseUrl).replace(
     /\/+$/,
     '',
@@ -382,15 +405,23 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
       testUrl: raw.DATABASE_URL_TEST ?? DEV_DEFAULTS.databaseUrlTest,
       poolMax: raw.DATABASE_POOL_MAX ?? 10,
     },
+    // Under NODE_ENV=test the normal variables are ignored on purpose: a test run can never reach the development
+    // Redis data or bucket, even when both are configured (same guarantee as DATABASE_URL_TEST, decision 014).
     redis: {
-      queueUrl: withDefault('REDIS_QUEUE_URL', raw.REDIS_QUEUE_URL, DEV_DEFAULTS.redisQueueUrl),
-      cacheUrl: withDefault('REDIS_CACHE_URL', raw.REDIS_CACHE_URL, DEV_DEFAULTS.redisCacheUrl),
+      queueUrl: testing
+        ? (raw.REDIS_QUEUE_URL_TEST ?? DEV_DEFAULTS.redisQueueUrlTest)
+        : withDefault('REDIS_QUEUE_URL', raw.REDIS_QUEUE_URL, DEV_DEFAULTS.redisQueueUrl),
+      cacheUrl: testing
+        ? (raw.REDIS_CACHE_URL_TEST ?? DEV_DEFAULTS.redisCacheUrlTest)
+        : withDefault('REDIS_CACHE_URL', raw.REDIS_CACHE_URL, DEV_DEFAULTS.redisCacheUrl),
       bullPrefix: raw.BULL_PREFIX ?? `gsm:${env}:bull`,
     },
     s3: {
       endpoint: s3Endpoint,
       region: raw.S3_REGION ?? 'us-east-1',
-      bucket: withDefault('S3_BUCKET', raw.S3_BUCKET, DEV_DEFAULTS.s3Bucket),
+      bucket: testing
+        ? (raw.S3_BUCKET_TEST ?? DEV_DEFAULTS.s3BucketTest)
+        : withDefault('S3_BUCKET', raw.S3_BUCKET, DEV_DEFAULTS.s3Bucket),
       accessKeyId: withDefault('S3_ACCESS_KEY_ID', raw.S3_ACCESS_KEY_ID, DEV_DEFAULTS.s3AccessKeyId),
       secretAccessKey: withDefault('S3_SECRET_ACCESS_KEY', raw.S3_SECRET_ACCESS_KEY, DEV_DEFAULTS.s3SecretAccessKey),
       forcePathStyle: raw.S3_FORCE_PATH_STYLE ?? !production,
@@ -402,6 +433,7 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
       tokenPepper,
       encryptionKeys,
       encryptionActiveKid: activeKid,
+      argon2,
     },
     observability: {
       metricsToken: raw.METRICS_TOKEN,
@@ -551,6 +583,7 @@ export function summarizeConfig(config: AppConfig): Record<string, unknown> {
       tokenPepper: flag(config.security.tokenPepper),
       encryptionKeyIds: Object.keys(config.security.encryptionKeys),
       encryptionActiveKid: config.security.encryptionActiveKid,
+      argon2: config.security.argon2,
     },
     observability: {
       metricsToken: flag(config.observability.metricsToken),

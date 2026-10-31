@@ -13,7 +13,8 @@ afterAll(async () => {
 describe('GET /health with the database module', () => {
   it('reports postgres ok against the test database', async () => {
     await migrateTestDb();
-    const t = await createTestApp();
+    // Only Postgres is under test here; the Redis and storage indicators have their own tests (infra-health.test.ts).
+    const t = await createTestApp({ withoutInfrastructure: true });
     apps.push(t);
     const res = await t.app.inject({ method: 'GET', url: '/health' });
     expect(res.statusCode).toBe(200);
@@ -26,7 +27,10 @@ describe('GET /health with the database module', () => {
   });
 
   it('boots with Postgres unreachable, then reports down (200) and 503 for load balancers', async () => {
-    const t = await createTestApp({ env: { DATABASE_URL_TEST: 'postgres://gsm:gsm@127.0.0.1:1/gsm_test' } });
+    const t = await createTestApp({
+      env: { DATABASE_URL_TEST: 'postgres://gsm:gsm@127.0.0.1:1/gsm_test' },
+      withoutInfrastructure: true,
+    });
     apps.push(t);
     const res = await t.app.inject({ method: 'GET', url: '/health' });
     expect(res.statusCode).toBe(200);

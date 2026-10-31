@@ -8,7 +8,7 @@ import { schema as s } from '../../src/infra/db';
 import { demoStatePath, loadDemoState } from '../../scripts/seed/demo-state';
 import { ROLES, permissionsOf } from '../../scripts/seed/identity';
 import { runSeed } from '../../scripts/seed/run';
-import { closeTestDb, resetDb, testDb } from '../support/db';
+import { TEST_DATABASE_URL, closeTestDb, resetDb, testDb } from '../support/db';
 
 const ROOT = join(import.meta.dir, '../..');
 const frontendPresent = existsSync(demoStatePath());
@@ -163,7 +163,13 @@ describe('bun run db:seed', () => {
   async function run(env: Record<string, string>) {
     const child = Bun.spawn([process.execPath, '--no-env-file', 'scripts/seed/index.ts'], {
       cwd: ROOT,
-      env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '/tmp', ...env },
+      // The child must seed the database this test resets (DATABASE_URL_TEST may point at a private database).
+      env: {
+        PATH: process.env.PATH ?? '',
+        HOME: process.env.HOME ?? '/tmp',
+        DATABASE_URL_TEST: TEST_DATABASE_URL,
+        ...env,
+      },
       stdout: 'pipe',
       stderr: 'pipe',
     });

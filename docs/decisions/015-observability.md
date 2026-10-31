@@ -14,7 +14,9 @@ Status: accepted, 2026-10-31.
   scrapes with it.
 - Health: `GET /health` checks Postgres and both Redis roles and always answers 200 JSON
   `{ status: ok | degraded | down, checks }` (the console reads any non-2xx as "API unreachable");
-  `GET /health?strict=1` answers 503 when a dependency is down, for load balancers and readiness probes.
+  `GET /health?strict=1` answers 503 when the status is `down` (a critical dependency, Postgres, failed), for load
+  balancers and readiness probes; `degraded` (cache Redis, queue Redis or storage down) stays 200 because the API still
+  serves without them.
 - History: a Prometheus server (`PROMETHEUS_URL`; added to compose) scrapes both processes; the System health
   metrics and errors routes query it with PromQL (`query_range`), time-boxed to 2 s; unset or unreachable →
   `503 MONITORING_UNAVAILABLE`. A worker job writes a per-minute health snapshot to the cache Redis, which

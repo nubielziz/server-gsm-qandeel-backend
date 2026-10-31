@@ -7,8 +7,8 @@
 | ------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------- |
 | `src/**/*.spec.ts`  | unit tests of pure logic (no I/O)                                                          | no                                    |
 | `test/schema/`      | structure of the Drizzle schema (ownership, columns, indexes, enum CHECKs)                 | no                                    |
-| `test/integration/` | real Postgres (`gsm_test`), the Nest app on Fastify `inject`, child processes              | yes (the database ones)               |
-| `test/support/`     | shared helpers: `app.ts` (test app), `db.ts` (test database), `fixtures.ts` (minimal rows) |                                       |
+| `test/integration/` | real Postgres (`gsm_test`), Redis (database 1), MinIO (`gsm-files-test`), the Nest app on Fastify `inject`, child processes | yes (Postgres, Redis, MinIO)          |
+| `test/support/`     | shared helpers: `app.ts` (test app), `db.ts` (test database), `infra.ts` (Redis, cache, storage, HTTP modules on the test instances), `rejection.ts` (typed `expectRejection`), `fixtures.ts` (minimal rows) |                                       |
 
 ## Database tests
 
@@ -29,3 +29,17 @@
 `NODE_ENV=test bun run db:migrate` (the same command the first test would run). To start from nothing:
 `docker exec gsm-backend-postgres-1 psql -U gsm -d gsm_test -c 'DROP SCHEMA public CASCADE; DROP SCHEMA IF EXISTS drizzle CASCADE; CREATE SCHEMA public'`
 and migrate again.
+
+## Infrastructure tests
+
+`createInfra()` (in `test/support/infra.ts`) builds the real Redis, cache, rate-limit, crypto, storage and outbound-HTTP
+modules on the test instances: Redis database 1 on both roles and the bucket `gsm-files-test` (under `NODE_ENV=test` the
+`REDIS_*_URL`/`S3_BUCKET` variables are ignored; override the test instances with `REDIS_QUEUE_URL_TEST`,
+`REDIS_CACHE_URL_TEST`, `S3_BUCKET_TEST`). It captures the log lines, so tests can assert that no secret is logged.
+
+- Use unique keys (`randomUUID()`) and delete what you create; never `FLUSHDB`.
+- "Redis down" tests point a role at a port nothing listens on (`deadRedisUrl()`); "store down" tests do the same for
+  `S3_ENDPOINT`. The app must still start and answer.
+- `createTestApp({ withoutInfrastructure: true })` leaves Redis, the cache and storage out (and their health indicators).
+- Await failures with `expectRejection(promise, RangeError)` / `rejectionOf(promise)`, not `await expect(...).rejects`.
+

@@ -121,14 +121,32 @@ The cache Redis holds cache entries, rate limits and locks only; BullMQ uses the
 balances, ledger rows, holds, payment or order status used for decisions, risk decisions or idempotency results
 (decision 022).
 
-1. Add a builder to `CacheKeys` (`src/infra/cache/`): keys are `gsm:{env}:{module}:{entity}:{id}[:v{n}]`, never built by
-   hand.
+1. Add a builder to `CacheKeys` (`src/infra/cache/cache-keys.ts`): keys are `gsm:{env}:{module}:{entity}:{id}[:v{n}]`, never
+   built by hand, and the cache API only accepts what a builder returns.
 2. Read through `CacheService.getOrLoad(key, ttlSeconds, loader, options)`: TTL always set (jitter is added), values
    under about 100 KB, negative caching only for hammered misses.
 3. **Invalidate after commit:** inside a use case call `afterCommit(() => cache.del(key))`; bulk invalidation bumps a
    version key. Never delete before the transaction commits.
-4. Register the key family in `docs/cache-keys.md` (owner module, TTL, invalidation trigger): a test fails when a
-   builder is missing there. Add it to the module README ("Cache keys").
+4. Register the key family twice: a row in `CACHE_KEY_FAMILIES` (builder name, pattern, owner, TTL, invalidation) and the
+   same row in `docs/cache-keys.md`. `src/infra/cache/cache-keys.spec.ts` fails when a builder, its family or its row is
+   missing. Add it to the module README ("Cache keys"). The behaviour of `getOrLoad` (lock, stale-while-revalidate,
+   negative caching) is in `src/infra/cache/README.md`.
+
+## Other infrastructure services **(P2.4)**
+
+Each has a README next to its code with the rules and an example:
+
+- Rate limits and the per-supplier semaphore: `src/infra/rate-limit/README.md`. Add or change a limiter in
+  `limiters.ts` only; refuse with `RateLimitService.enforce` (429 `RATE_LIMITED` with `Retry-After`).
+- Encryption at rest, token hashes, passwords, webhook signatures: `src/infra/crypto/README.md`. Tune the argon2 cost on the
+  production host with `bun run bench:argon2`.
+- Files: `src/infra/storage/README.md`. Outbound calls (suppliers, gateways, merchant webhooks): `src/infra/http/README.md`;
+  never call `fetch` directly.
+- Redis clients and health: `src/infra/redis/README.md`.
+- Tests run on **separate instances** so they never touch development data: database `gsm_test`, Redis database 1 on both
+  roles and the bucket `gsm-files-test` (`DATABASE_URL_TEST`, `REDIS_QUEUE_URL_TEST`, `REDIS_CACHE_URL_TEST`,
+  `S3_BUCKET_TEST`; under `NODE_ENV=test` the normal variables are ignored). `createTestApp({ withoutInfrastructure: true })`
+  leaves Redis, the cache and storage out for tests that only need the HTTP pipeline.
 
 ## Add a money event **(P2.3 and the money feature)**
 

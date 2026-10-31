@@ -18,15 +18,16 @@ export class HealthController {
   /**
    * Runs the registered health checks and reports the overall status.
    *
-   * @param query `strict`: answer 503 when the status is not ok
+   * @param query `strict`: answer 503 when the status is `down` (a critical dependency failed)
    * @returns `{ status, checks }`
-   * @throws {AlternateResponse} 503 with the same body, only with `?strict=1` and a status other than `ok`
+   * @throws {AlternateResponse} 503 with the same body, only with `?strict=1` and the status `down`; `degraded` stays 200
+   *   because the API still serves without a non-critical dependency (cache, queue Redis, storage)
    */
   @Route(healthContract)
   @Header('Cache-Control', 'no-store')
   async show(@Query() query: QueryOf<typeof healthContract>): Promise<ResultOf<typeof healthContract>> {
     const report = await this.health.check();
-    if (query.strict && report.status !== 'ok') throw respondWith(healthContract, 503, report);
+    if (query.strict && report.status === 'down') throw respondWith(healthContract, 503, report);
     return report;
   }
 }

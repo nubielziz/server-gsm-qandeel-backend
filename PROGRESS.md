@@ -41,7 +41,7 @@ and `docs/slices/<module>.json`, `docs/contract/RULES.md` for its frontend featu
 |---|---|---|---|
 | 0 Setup + Bun spike | done | `25282af` | 0 |
 | 1 Architecture + contract | done | see `git log` (`docs: phase 1 ...`) | 6 (Opus analysts, one workflow, 3 at once) |
-| 2 Foundation | in progress (P2.1-P2.3 done) | per feature, see below | 8 so far |
+| 2 Foundation | in progress (P2.1-P2.4a, P2.7 done) | per feature, see below | 14 so far |
 | 3 Feature loop (by stage) | | | |
 | 4 Frontend integration | | | |
 
@@ -62,7 +62,7 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 | P2.1 | runtime-core | config, logging, request id, problem+json + catalog, contract layer (defineRoute, @Route, lists), money helper, /health, /metrics, api + worker bootstrap, bunfig + tests (brief `docs/briefs/P2.1-runtime-core.md`) | | done (`feat(runtime-core)` commit) |
 | P2.2 | docs-tooling | OpenAPI 3.1 generation (internal + public), Scalar `/docs` and `/reference`, `/openapi.json`, ESLint (jsdoc, boundaries, env rule) + prettier, module READMEs, CONTRIBUTING, CI script | | done (`feat(docs-tooling)` commit) |
 | P2.3 | data | Drizzle schema for all 66 tables (per module) + schema additions (MISMATCHES), constraints, indexes, ledger triggers, first migration, migrator, resetDb, Postgres health indicator, seed from the frontend demo state | | done (`feat(data)` commit) |
-| P2.4a | infra-core | two Redis clients + health indicators, CacheService + CacheKeys, RateLimitService + semaphore, crypto (AES-GCM keyring, token hashing, argon2, webhook signatures), S3 storage, outbound http + SSRF guard (brief P2.4 items 1-5) | | in progress (worktree `../backend-p2-infra`) |
+| P2.4a | infra-core | two Redis clients + health indicators, CacheService + CacheKeys, RateLimitService + semaphore, crypto (AES-GCM keyring, token hashing, argon2, webhook signatures), S3 storage, outbound http + SSRF guard (brief P2.4 items 1-5) | | done (`feat(infra-core)` commit) |
 | P2.4b | queues-outbox | BullMQ base (queues, worker registry, schedulers), job runs (health module), outbox + relay (platform module), Prometheus in compose; retire `spike/` (brief P2.4 items 6-10) | | |
 | P2.5 | security | IP rules hook, maintenance hook, rate-limit hook, auth guards (staff/merchant/customer sessions, CSRF, API key, Dhru, webhook signatures), permission guard + catalog, audit interceptor, `/reference` staff gate | admin-team (part), ip-rules (part) | |
 | P2.6 | staff-sign-in | `POST /admin/auth/login`, `/2fa`, `/2fa/setup`, `/logout`, `/password/set`, `GET /admin/auth/me` (6) | | |
@@ -101,7 +101,9 @@ re-review), max 2 review rounds.
 | P2.1 runtime-core | 2 (Sonnet implementer, Opus review: pass, no blocking) |
 | P2.2 docs-tooling | 4 (implementer, review: 1 blocking, fix, re-review: pass) |
 | P2.3 data | 2 (implementer, review: pass, no blocking) |
-| **Total** | **14** |
+| P2.4a infra-core | 2 (implementer, review: pass, no blocking) |
+| P2.7 contract-tests | 4 (implementer, review: 1 blocking, fix, re-review: pass) |
+| **Total** | **20** |
 
 ## Decisions
 
@@ -143,6 +145,16 @@ None.
   without a numeric entity use `entity_id = 0` (frontend type requires a number).
 - The seed (`bun run db:seed`, development only) maps demo ids like the frontend mocks (`'m3'` → 3); each Phase 3
   feature adds its module's seeder in `scripts/seed/`.
+- Infra (P2.4a) notes: outbound calls go through `OutboundHttp` (the bare `httpRequest` is internal); https is
+  required in production unless the call sets `allowPrivateNetwork` (internal services) or an explicit `httpsOnly`
+  (a supplier on plain http needs an admin-visible opt-out in feature 6); the SSRF guard resolves DNS once, so a
+  DNS-rebinding window remains (documented; https in production mostly closes it); stream uploads are buffered in
+  memory up to 25 MiB; tune `ARGON2_*` on the production host (`scripts/bench-argon2.ts`, target 50-150 ms);
+  `GET /health?strict=1` answers 503 only when Postgres is down (lead decision, decision 015 updated); the sign-in
+  limiter key is an unsalted SHA-256 of email + IP (HMAC with `TOKEN_PEPPER` would be stronger: revisit in P2.6);
+  the local queue Redis has no `maxmemory`, so the 90 % memory warning cannot fire locally.
+- For P2.4b: BullMQ producers should use `skipWaitingForReady` (queue option) to fail fast while Redis is down,
+  instead of the check-then-act `RedisService.assertQueueReady()`.
 - Run Bun entry points from the repo root: Bun reads `tsconfig.json` (decorator flags) from the working directory.
 - `TRUST_PROXY` as a hop count becomes a trust function (Fastify 5.12 ignores numbers); use it only when the app port
   is reachable solely through the proxy chain, otherwise list the proxy addresses.

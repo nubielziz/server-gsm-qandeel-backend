@@ -8,8 +8,12 @@ import { AppModule } from '../../src/app.module';
 import { configureApp, createAppAdapter } from '../../src/app.bootstrap';
 import { APP_CONFIG, type AppConfig, parseEnv } from '../../src/config';
 import { TEST_DATABASE_URL } from './db';
+import { CacheModule } from '../../src/infra/cache';
 import { DbModule } from '../../src/infra/db';
 import { LOG_DESTINATION } from '../../src/infra/logging';
+import { RateLimitModule } from '../../src/infra/rate-limit';
+import { RedisModule } from '../../src/infra/redis';
+import { StorageModule } from '../../src/infra/storage';
 import { logSink } from './log-sink';
 
 /** A complete production environment for tests that need `NODE_ENV=production` rules. */
@@ -38,6 +42,13 @@ export const PRODUCTION_ENV: Record<string, string> = {
 @Module({})
 class NoDatabaseModule {}
 
+/**
+ * Stands in for the Redis, cache, rate-limit and storage modules: no clients and no `redis`, `redis_queue` or `storage`
+ * health indicators.
+ */
+@Module({})
+class NoInfrastructureModule {}
+
 /** What a test can change about the app. */
 export interface TestAppOptions {
   /** Environment variables on top of `NODE_ENV=test`. */
@@ -49,6 +60,11 @@ export interface TestAppOptions {
   readonly imports?: ModuleMetadata['imports'];
   /** Replace the database module with an empty one (no pool, no `postgres` health indicator). */
   readonly withoutDatabase?: boolean;
+  /**
+   * Replace the Redis, cache, rate-limit and storage modules with empty ones (no connections, no `redis`, `redis_queue`
+   * or `storage` health indicators). Nothing in the app may inject their services then.
+   */
+  readonly withoutInfrastructure?: boolean;
 }
 
 /** A running test app. */
@@ -77,6 +93,11 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     .overrideProvider(LOG_DESTINATION)
     .useValue(logSink);
   if (options.withoutDatabase) builder.overrideModule(DbModule).useModule(NoDatabaseModule);
+  if (options.withoutInfrastructure) {
+    for (const module of [RedisModule, CacheModule, RateLimitModule, StorageModule]) {
+      builder.overrideModule(module).useModule(NoInfrastructureModule);
+    }
+  }
   const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication<NestFastifyApplication>(createAppAdapter(config), { bufferLogs: true });
   await configureApp(app, config);

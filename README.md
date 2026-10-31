@@ -30,9 +30,9 @@ Local services (host ports can be changed with `GSM_PG_PORT`, `GSM_REDIS_QUEUE_P
 | Service | Port | Notes |
 |---|---|---|
 | Postgres 18 | 5432 | user/password/db `gsm`; tests use `gsm_test` |
-| Redis (queue) | 6379 | `noeviction`, AOF: BullMQ only |
-| Redis (cache) | 6380 | `allkeys-lru`, no persistence |
-| MinIO | 9000 (console 9001) | `gsm-minio` / `gsm-minio-secret`; buckets `gsm-files`, `gsm-files-test` |
+| Redis (queue) | 6379 | `noeviction`, AOF: BullMQ only; tests use database 1 |
+| Redis (cache) | 6380 | `allkeys-lru`, no persistence: cache, rate limits, locks; tests use database 1 |
+| MinIO | 9000 (console 9001) | `gsm-minio` / `gsm-minio-secret`; buckets `gsm-files`, `gsm-files-test` (tests) |
 
 ## Scripts
 
@@ -53,6 +53,7 @@ Local services (host ports can be changed with `GSM_PG_PORT`, `GSM_REDIS_QUEUE_P
 | `bun run contract:docs` | Re-render the contract docs from the extraction and `docs/contract/lead-decisions.json` |
 | `bun run contract:check` | Fail when the extract or the contract docs are stale (CI) |
 | `bun run spike` | Re-run the Bun compatibility spike (decision 001) |
+| `bun run bench:argon2` | Print the time of one argon2id hash for candidate settings (aim for 50-150 ms on the production host) |
 | `bun run check` | Everything CI runs: typecheck, lint, route manifest, contract docs, OpenAPI documents, tests |
 | `scripts/ci.sh` | The CI pipeline in one command: `bun install --frozen-lockfile`, start the Docker services, `bun run check`; exits non-zero on any failure |
 
