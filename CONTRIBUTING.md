@@ -59,11 +59,18 @@ document. The contract layer is explained in `src/common/contract/README.md`; th
    manifest key; `surface`, `access` and (for staff) `permission` as in the manifest; `tags` is the route's map group
    (`docs/route-manifest.json` → `groups`; the documents group tags by surface and prefix a tag that two surfaces share);
    every error code the route can answer, taken from `docs/contract/error-codes.md` (a new code is added to that file and
-   to `src/common/errors/catalog.ts` first); an `examples` pair for the docs (validated against the schemas).
+   to `src/common/errors/catalog.ts` first); an `examples` pair for the docs (validated against the schemas). The guards
+   read the contract: `access` picks who authenticates, `permission` is checked against the role (`x:*` grants every action of
+   `x`, `*` everything, a required `x:*` needs `x:*` or `*`), and a session route may name the sign-in stages it accepts
+   (`sessionStages`, default `['active']`). A staff mutation must write an audit row; `audit: false` (with the reason in the
+   `description`) opts out, and `csrf: false` marks a route that has no session to bind a CSRF token to (see
+   `src/common/contract/README.md`).
 3. **Write the controller** in `src/modules/<id>/controllers/`: a bare `@Controller()` and one `@Route(contract)` method
    per route that only maps inputs to a use case and returns its result. Add `@route METHOD /path` to the TSDoc.
 4. **Write the use case** in `application/`: one DB transaction **(P2.3)** (`runInTransaction`), ownership and guard
-   checks, `AuditService.record` for staff writes **(P2.5)**, an outbox row for async work (`OutboxService.add`, see "Add an
+   checks (`assertOwnerTargetAllowed` for actions on an Owner), `AuditService.record(tx, ...)` for staff writes **(P2.5a)**
+   (the request fails in development and tests when a staff write has none), and, when an account changes, the session
+   calls of the identity module (`revokeAllOf`, `invalidateSubject`, `RolePermissions.invalidate`; see its README), an outbox row for async work (`OutboxService.add`, see "Add an
    outbox event"), `afterCommit` cache invalidation. Reach other modules only through their `index.ts` (lint rule `gsm/module-boundaries`).
 5. **Write the repository** in `infra/`: Drizzle queries on this module's own tables only; list contracts translate the
    parsed list query (filters, sort, range, search) to SQL with an exact `COUNT`.
@@ -200,8 +207,8 @@ float (decision 011).
   `GET /reference/openapi.json` and `GET /reference` are the internal reference (every route); they are documentation
   routes without contracts (`DOCUMENTATION_ROUTES` in `src/modules/platform`).
 - `REFERENCE_DOCS` = `open` (default outside production), `off` (404) or `staff` (default in production). `staff`
-  asks the guard provided under `REFERENCE_DOCS_GUARD`; until the security feature (P2.5) provides one, `staff` answers
-  404.
+  asks the guard provided under `REFERENCE_DOCS_GUARD` (the identity module provides `StaffSystemReadGuard`: a staff
+  session with `system:read`, `401`/`403` otherwise); a deployment without any provider answers `404`.
 - Only the two pages relax `default-src 'none'`: they allow the Scalar script of one pinned version (with its Subresource
   Integrity hash), their inline starter script by hash, Scalar's fonts, and requests to the same origin.
 - To bump Scalar: change `SCALAR_VERSION` and `SCALAR_BUNDLE_INTEGRITY` in

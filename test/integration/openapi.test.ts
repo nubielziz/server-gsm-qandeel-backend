@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { type TestApp, createTestApp } from '../support/app';
 import { TestController } from '../support/routes';
+import { SecurityTestController } from '../support/security-routes';
 
 // A loose view of the generated document: the test walks it with plain property access.
 type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any -- OpenAPI documents are free-form JSON.
@@ -12,7 +13,7 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any -- Op
 let t: TestApp;
 let doc: Json;
 beforeAll(async () => {
-  t = await createTestApp({ controllers: [TestController] });
+  t = await createTestApp({ controllers: [TestController, SecurityTestController] });
   // autoTagControllers: false keeps the contract's own tags (buildOpenApiDocuments passes it too, or controllers add a tag each).
   doc = SwaggerModule.createDocument(
     t.app,
@@ -64,6 +65,46 @@ describe('operations', () => {
     expect(op.security).toEqual([{ staffSession: [] }]);
     expect(doc.paths['/t/items'].get.security).toBeUndefined();
     expect(doc.paths['/metrics'].get.security).toEqual([{ metricsAccess: [] }]);
+  });
+});
+
+describe('session metadata (decision 018)', () => {
+  it('lists the sign-in stages a session route accepts', () => {
+    expect(doc.paths['/admin/t/sec/session'].get['x-gsm-session-stages']).toEqual(['active']);
+    expect(doc.paths['/admin/t/sec/needs-read'].get['x-gsm-session-stages']).toEqual(['active']);
+    expect(doc.paths['/admin/t/sec/step'].post['x-gsm-session-stages']).toEqual(['pending_totp', 'pending_totp_setup']);
+    expect(doc.paths['/admin/t/sec/any-stage'].post['x-gsm-session-stages']).toEqual([
+      'pending_password',
+      'pending_totp_setup',
+      'pending_totp',
+      'active',
+    ]);
+    expect(doc.paths['/client/t/sec/session'].get['x-gsm-session-stages']).toEqual(['active']);
+    expect(doc.paths['/store/v1/t/sec/session'].get['x-gsm-session-stages']).toEqual(['active']);
+  });
+
+  it('leaves the stages out of routes that do not use a session', () => {
+    for (const operation of [doc.paths['/t/items'].post, doc.paths['/health'].get, doc.paths['/metrics'].get]) {
+      expect(operation['x-gsm-session-stages']).toBeUndefined();
+    }
+    expect(doc.paths['/store/v1/t/sec/kind/api-key'].get['x-gsm-session-stages']).toBeUndefined();
+    expect(doc.paths['/admin/t/sec/login'].post['x-gsm-session-stages']).toBeUndefined();
+  });
+
+  it('says whether a staff mutation is part of the audit log', () => {
+    expect(doc.paths['/admin/t/sec/write'].post['x-gsm-audit']).toBe(true);
+    expect(doc.paths['/admin/t/sec/forgets-audit'].post['x-gsm-audit']).toBe(true);
+    expect(doc.paths['/admin/t/sec/risk-rules'].put['x-gsm-audit']).toBe(true);
+    expect(doc.paths['/admin/t/sec/no-audit'].post['x-gsm-audit']).toBe(false);
+    expect(doc.paths['/admin/t/sec/step'].post['x-gsm-audit']).toBe(false);
+  });
+
+  it('leaves the audit flag out of reads and of routes that are not staff mutations', () => {
+    expect(doc.paths['/admin/t/sec/session'].get['x-gsm-audit']).toBeUndefined();
+    expect(doc.paths['/admin/t/sec/needs-read'].get['x-gsm-audit']).toBeUndefined();
+    expect(doc.paths['/client/t/sec/write'].post['x-gsm-audit']).toBeUndefined();
+    expect(doc.paths['/admin/t/sec/login'].post['x-gsm-audit']).toBeUndefined();
+    expect(doc.paths['/t/items'].post['x-gsm-audit']).toBeUndefined();
   });
 });
 

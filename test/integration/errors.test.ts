@@ -246,33 +246,44 @@ describe('metrics of failures', () => {
   });
 });
 
-describe('surface formatter seam (Dhru, decision 026)', () => {
-  it('lets a surface answer in its own envelope while other surfaces keep problem+json', async () => {
+describe('surface formatters (decisions 026, 028)', () => {
+  it('answers every error of the Dhru surface in the Dhru envelope, with HTTP 200', async () => {
+    // The route is not authenticated yet (the Dhru credentials guard is P2.5c), so the guard dispatcher refuses it.
+    const refused = await dev.app.inject({ method: 'POST', url: '/api/index.php', payload: { action: 'accountinfo' } });
+    expect(refused.statusCode).toBe(200);
+    expect(refused.headers['content-type']).toBe('application/json; charset=utf-8');
+    expect(refused.headers['x-powered-by']).toBe('DHRU-FUSION');
+    expect(refused.headers['dhru-fusion-api-version']).toBe('6.1');
+    expect(refused.headers['x-request-id']).toBeTruthy();
+    expect(refused.json()).toEqual({ ERROR: [{ MESSAGE: 'Authentication Failed' }], apiversion: '6.1' });
+    // Any other failure on the surface uses the envelope too; the other surfaces keep problem+json.
+    const missing = await dev.app.inject({ method: 'GET', url: '/api/index.php' });
+    expect(missing.statusCode).toBe(200);
+    expect(missing.json().ERROR[0].MESSAGE).toBe('No endpoint matches this request.');
+    expect((await get(dev, '/t/app-error')).json().code).toBe('VALIDATION_FAILED');
+  });
+
+  it('lets another surface register its own envelope in the seam', async () => {
     dev.app.get(ErrorFormatterRegistry).register({
-      name: 'test-dhru',
-      matches: ({ surface }) => surface === 'dhru',
+      name: 'test-hooks',
+      matches: ({ surface }) => surface === 'hooks',
       format: ({ error }) => ({
         status: 200,
         contentType: 'application/json; charset=utf-8',
-        body: { ERROR: [{ MESSAGE: error.detail }], apiversion: '6.1' },
+        body: { rejected: error.detail },
       }),
     });
-    const dhru = await dev.app.inject({ method: 'POST', url: '/api/index.php', payload: { action: 'accountinfo' } });
-    expect(dhru.statusCode).toBe(200);
-    expect(dhru.headers['content-type']).toBe('application/json; charset=utf-8');
-    expect(dhru.json()).toEqual({ ERROR: [{ MESSAGE: 'Authentication Failed' }], apiversion: '6.1' });
-    expect(dhru.headers['x-request-id']).toBeTruthy();
-    // Validation errors on the same surface use the formatter too; other surfaces are unchanged.
-    const bad = await dev.app.inject({ method: 'POST', url: '/api/index.php', payload: {} });
-    expect(bad.json().ERROR[0].MESSAGE).toBe('One field is not valid.');
-    expect((await get(dev, '/t/app-error')).json().code).toBe('VALIDATION_FAILED');
+    const res = await get(dev, '/webhooks/nowhere');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ rejected: 'No endpoint matches this request.' });
+    expect((await get(dev, '/nowhere')).json().code).toBe('NOT_FOUND');
   });
 
   it('refuses two formatters with the same name', () => {
     const registry = dev.app.get(ErrorFormatterRegistry);
     expect(() =>
       registry.register({
-        name: 'test-dhru',
+        name: 'dhru',
         matches: () => false,
         format: () => ({ status: 200, contentType: 'x', body: {} }),
       }),

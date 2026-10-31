@@ -1,8 +1,8 @@
 // Request id (decision 012): keep a safe incoming X-Request-Id or make a UUIDv7, bind it to the async context.
 // The same id reaches the response header, problem+json, every log line and (later) outbox rows and jobs.
 import type { IncomingMessage } from 'node:http';
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { uuidv7 } from 'uuidv7';
+import { getRequestContext, runInRequestContext } from './request-context';
 
 /**
  * Header that carries the request id in both directions.
@@ -57,23 +57,18 @@ export function resolveRequestId(request: IncomingMessage): string {
   return id;
 }
 
-interface RequestContext {
-  readonly requestId: string;
-}
-
-const storage = new AsyncLocalStorage<RequestContext>();
-
 /**
  * Runs `fn` with `requestId` as the current request id for everything it starts (awaits, timers, callbacks).
  *
- * Why: services, the logger and later the outbox writer and job producers read the id without passing it around.
+ * Why: services, the logger and later the outbox writer and job producers read the id without passing it around. The
+ * context also carries the actor and the audit counter of the request (`./request-context`).
  *
  * @param requestId the id to bind
  * @param fn the work to run
  * @returns what `fn` returns
  */
 export function runWithRequestId<T>(requestId: string, fn: () => T): T {
-  return storage.run({ requestId }, fn);
+  return runInRequestContext(requestId, fn);
 }
 
 /**
@@ -85,5 +80,5 @@ export function runWithRequestId<T>(requestId: string, fn: () => T): T {
  * @returns the current request id, or `undefined` outside a request (boot, scheduled work without a parent)
  */
 export function getRequestId(): string | undefined {
-  return storage.getStore()?.requestId;
+  return getRequestContext()?.requestId;
 }

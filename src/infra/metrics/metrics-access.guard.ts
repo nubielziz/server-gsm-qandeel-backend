@@ -1,5 +1,6 @@
 // Nest guard for GET /metrics ("internal-or-token" access in the map): answers 403 FORBIDDEN unless allowed.
-// P2.5 adds the general access guards; this one stays because /metrics has its own rule.
+// The guard dispatcher (identity module, P2.5a) runs this rule for every route with access `internal-or-token`; the
+// controller keeps its own @UseGuards as well, because /metrics has its own rule.
 import { type CanActivate, type ExecutionContext, Inject, Injectable } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { AppError } from '../../common/errors/app-error';

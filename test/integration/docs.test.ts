@@ -2,19 +2,13 @@
 // GET /reference and /reference/openapi.json (internal, gated by REFERENCE_DOCS), the public/internal filter on a
 // small fixture API, the outgoing events as webhooks, and the Content-Security-Policy that only the pages relax.
 import { createHash } from 'node:crypto';
-import { type CanActivate, type ExecutionContext, Global, Module } from '@nestjs/common';
-import { afterAll, describe, expect, it } from 'bun:test';
-import type { FastifyRequest } from 'fastify';
+import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 import { EventRegistry, contractRegistry, defineEvent, zId } from '../../src/common/contract';
-import { AppError } from '../../src/common/errors';
-import {
-  DOCUMENTATION_ROUTES,
-  OpenApiService,
-  REFERENCE_DOCS_GUARD,
-  SCALAR_BUNDLE_URL,
-} from '../../src/modules/platform';
-import { PRODUCTION_ENV, type TestApp, createTestApp } from '../support/app';
+import { DOCUMENTATION_ROUTES, OpenApiService, SCALAR_BUNDLE_URL } from '../../src/modules/platform';
+import { type TestApp, createTestApp } from '../support/app';
+import { clearIdentityCaches, productionEnvOnTestInstances, signInStaff } from '../support/auth';
+import { closeTestDb, resetDb } from '../support/db';
 import { DocsFixtureController } from '../support/docs-routes';
 import { TestController } from '../support/routes';
 
@@ -353,59 +347,86 @@ describe('REFERENCE_DOCS', () => {
     expect((await get(t, '/openapi.json')).statusCode).toBe(200);
   });
 
-  it('staff behaves like off until a staff guard is provided (P2.5)', async () => {
+  it('staff refuses a caller without a session with 401, and still serves the public pair', async () => {
     const t = await appWith({ env: { REFERENCE_DOCS: 'staff' } });
     for (const url of ['/reference', '/reference/openapi.json']) {
       const res = await get(t, url);
-      expect(res.statusCode, url).toBe(404);
-      expect(res.json().code).toBe('NOT_FOUND');
+      expect(res.statusCode, url).toBe(401);
+      expect(res.json().code).toBe('UNAUTHORIZED');
+      expect(res.headers['content-security-policy']).toBe(STRICT_CSP);
     }
     expect((await get(t, '/docs')).statusCode).toBe(200);
-  });
-
-  it('defaults to staff in production, so the internal reference is closed there until P2.5', async () => {
-    const t = await appWith({ env: PRODUCTION_ENV });
-    expect(t.config.http.referenceDocs).toBe('staff');
-    expect((await get(t, '/reference')).statusCode).toBe(404);
-    expect((await get(t, '/reference/openapi.json')).statusCode).toBe(404);
     expect((await get(t, '/openapi.json')).statusCode).toBe(200);
   });
 
-  describe('with a guard under REFERENCE_DOCS_GUARD (what P2.5 provides)', () => {
-    /** Lets a request through when it carries `x-staff: yes`, refuses it like the real guard would otherwise. */
-    const staffGuard: CanActivate = {
-      canActivate(context: ExecutionContext): boolean {
-        const request = context.switchToHttp().getRequest<FastifyRequest>();
-        if (request.headers['x-staff'] === 'yes') return true;
-        throw new AppError('UNAUTHORIZED');
-      },
-    };
-    @Global()
-    @Module({ providers: [{ provide: REFERENCE_DOCS_GUARD, useValue: staffGuard }], exports: [REFERENCE_DOCS_GUARD] })
-    class StaffGuardModule {}
+  it('defaults to staff in production: the internal reference needs a staff session there', async () => {
+    const t = await appWith({ env: productionEnvOnTestInstances() });
+    expect(t.config.http.referenceDocs).toBe('staff');
+    expect((await get(t, '/reference')).statusCode).toBe(401);
+    expect((await get(t, '/reference/openapi.json')).statusCode).toBe(401);
+    expect((await get(t, '/openapi.json')).statusCode).toBe(200);
+  });
 
-    it('staff serves the reference to the callers the guard accepts', async () => {
-      const t = await appWith({ env: { REFERENCE_DOCS: 'staff' }, imports: [StaffGuardModule] });
+  describe('with a staff session (the guard behind REFERENCE_DOCS_GUARD)', () => {
+    beforeEach(resetDb);
+    afterAll(closeTestDb);
+
+    it('staff serves the reference to a staff member with system:read', async () => {
+      const t = await appWith({ env: { REFERENCE_DOCS: 'staff' } });
+      await clearIdentityCaches(t);
+      const { session } = await signInStaff(t, ['system:read']);
       for (const url of ['/reference', '/reference/openapi.json']) {
-        expect((await get(t, url, { 'x-staff': 'yes' })).statusCode, url).toBe(200);
+        const res = await get(t, url, session.headers);
+        expect(res.statusCode, url).toBe(200);
       }
     });
 
-    it("staff answers with the guard's own refusal to everyone else", async () => {
-      const t = await appWith({ env: { REFERENCE_DOCS: 'staff' }, imports: [StaffGuardModule] });
+    it('serves the staff in production too, under the __Host- cookie', async () => {
+      const t = await appWith({ env: productionEnvOnTestInstances() });
+      await clearIdentityCaches(t);
+      const { session } = await signInStaff(t, ['system:read']);
+      expect(session.cookie.startsWith('__Host-gsm_admin_session=')).toBe(true);
       for (const url of ['/reference', '/reference/openapi.json']) {
-        const res = await get(t, url);
-        expect(res.statusCode, url).toBe(401);
-        expect(res.json().code).toBe('UNAUTHORIZED');
-        expect(res.headers['content-security-policy']).toBe(STRICT_CSP);
+        expect((await get(t, url, session.headers)).statusCode, url).toBe(200);
       }
     });
 
-    it('open and off ignore the guard', async () => {
-      const open = await appWith({ env: { REFERENCE_DOCS: 'open' }, imports: [StaffGuardModule] });
+    it('accepts a role that holds system:* or *, and refuses one that only holds another area', async () => {
+      const t = await appWith({ env: { REFERENCE_DOCS: 'staff' } });
+      await clearIdentityCaches(t);
+      for (const [permissions, status] of [
+        [['system:*'], 200],
+        [['*'], 200],
+        [['orders:*', 'system:write'], 403],
+        [[], 403],
+      ] as const) {
+        const { session } = await signInStaff(t, [...permissions]);
+        const res = await get(t, '/reference', session.headers);
+        expect(res.statusCode, permissions.join()).toBe(status);
+        if (status === 403) {
+          expect(res.json()).toMatchObject({
+            code: 'FORBIDDEN',
+            detail: 'You need the system:read permission to do this.',
+          });
+          expect(res.headers['content-security-policy']).toBe(STRICT_CSP);
+        }
+      }
+    });
+
+    it('refuses a pending sign-in session', async () => {
+      const t = await appWith({ env: { REFERENCE_DOCS: 'staff' } });
+      await clearIdentityCaches(t);
+      const { session } = await signInStaff(t, ['*'], { stage: 'pending_totp' });
+      expect((await get(t, '/reference', session.headers)).statusCode).toBe(401);
+    });
+
+    it('open and off ignore the session', async () => {
+      const open = await appWith({ env: { REFERENCE_DOCS: 'open' } });
       expect((await get(open, '/reference')).statusCode).toBe(200);
-      const off = await appWith({ env: { REFERENCE_DOCS: 'off' }, imports: [StaffGuardModule] });
-      expect((await get(off, '/reference', { 'x-staff': 'yes' })).statusCode).toBe(404);
+      const off = await appWith({ env: { REFERENCE_DOCS: 'off' } });
+      await clearIdentityCaches(off);
+      const { session } = await signInStaff(off, ['*']);
+      expect((await get(off, '/reference', session.headers)).statusCode).toBe(404);
     });
   });
 });

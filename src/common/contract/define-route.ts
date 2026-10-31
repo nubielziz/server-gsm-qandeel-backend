@@ -20,26 +20,78 @@ export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
  */
 export type RouteKey = `${HttpMethod} /${string}`;
 /**
+ * Every access kind a route contract can declare (the `access` values of the manifest for HTTP routes).
+ *
+ * Why: the guard dispatcher (decision 018) needs one handler per kind and a test checks that none is missing, so the
+ * list exists at run time and the {@link AccessKind} type is derived from it.
+ */
+export const ACCESS_KINDS = [
+  'public',
+  'staff-session',
+  'staff-permission',
+  'merchant-session',
+  'customer-session',
+  'api-key',
+  'dhru-credentials',
+  'gateway-signature',
+  'url-secret',
+  'checkout-token',
+  'tracking-token',
+  'link-token',
+  'ticket-token',
+  'internal-or-token',
+] as const;
+
+/**
  * Who may call a route (the `access` values of the manifest for HTTP routes).
  *
  * Why: guards pick how a route authenticates from this value (decision 018) and the OpenAPI document names the security
  * scheme from it.
  */
-export type AccessKind =
-  | 'public'
-  | 'staff-session'
-  | 'staff-permission'
-  | 'merchant-session'
-  | 'customer-session'
-  | 'api-key'
-  | 'dhru-credentials'
-  | 'gateway-signature'
-  | 'url-secret'
-  | 'checkout-token'
-  | 'tracking-token'
-  | 'link-token'
-  | 'ticket-token'
-  | 'internal-or-token';
+export type AccessKind = (typeof ACCESS_KINDS)[number];
+
+/**
+ * The access kinds that authenticate with a session cookie (`sessions` table, decision 018).
+ *
+ * Why: only these routes have a session stage to check, a CSRF token to match and (for staff) an audit duty.
+ */
+export const SESSION_ACCESS_KINDS = [
+  'staff-session',
+  'staff-permission',
+  'merchant-session',
+  'customer-session',
+] as const satisfies readonly AccessKind[];
+
+/**
+ * Tells whether an access kind authenticates with a session cookie.
+ *
+ * Why: see {@link SESSION_ACCESS_KINDS}; guards, the contract checks and the OpenAPI metadata ask the same question.
+ *
+ * @param access an access kind
+ * @returns true for `staff-session`, `staff-permission`, `merchant-session` and `customer-session`
+ */
+export function isSessionAccess(access: AccessKind): boolean {
+  return (SESSION_ACCESS_KINDS as readonly string[]).includes(access);
+}
+
+/**
+ * The sign-in steps a session can be in; only `active` is a full session.
+ *
+ * Why: decision 018 and MISMATCHES B106: the staff sign-in is a multi-step flow, and a route says which steps it accepts
+ * (`sessionStages`). The identity schema keeps the same list for the database CHECK; a test keeps the two equal.
+ */
+export const SESSION_STAGES = ['pending_password', 'pending_totp_setup', 'pending_totp', 'active'] as const;
+
+/** One value of {@link SESSION_STAGES}. */
+export type SessionStage = (typeof SESSION_STAGES)[number];
+
+/**
+ * The stages a session route accepts when it declares none: a full session only.
+ *
+ * Why: a pending session unlocks only its next sign-in step and the logout (decision 018), so every other route refuses it.
+ */
+export const DEFAULT_SESSION_STAGES: readonly SessionStage[] = Object.freeze(['active'] as const);
+
 /**
  * Success statuses the API uses: 200, 201 (create), 202 (accepted) and 204 (no body).
  *
@@ -101,6 +153,23 @@ export interface RouteSpec<
   readonly errors: readonly ErrorCode[];
   /** A request body and a success body example for the docs; both are validated against the schemas. */
   readonly examples?: { readonly request?: unknown; readonly response?: unknown };
+  /**
+   * The `sessions.stage` values a session route accepts (default `['active']`). The sign-in routes name their pending
+   * stages (for example `2fa` accepts `pending_totp` and `pending_totp_setup`). Only for session access kinds; a
+   * `staff-permission` route always needs `active`.
+   */
+  readonly sessionStages?: readonly SessionStage[];
+  /**
+   * `false` marks an admin route that changes data but writes no audit row (the sign-in steps). The description must say
+   * why. Every other staff mutation must call `AuditService.record` or the request fails in development and tests.
+   */
+  readonly audit?: boolean;
+  /**
+   * `false` declares a mutation that has no session to bind a CSRF token to (sign-in, password set by token). Only for
+   * routes that do not authenticate with a session cookie: they get the exact-`Origin` check instead on `/admin` and
+   * `/client`.
+   */
+  readonly csrf?: boolean;
 }
 
 /**
@@ -140,6 +209,12 @@ export interface RouteContract<
   };
   readonly errors: readonly ErrorCode[];
   readonly examples: { readonly request: unknown; readonly response: unknown };
+  /** Stages a session route accepts; `['active']` unless the spec says otherwise (meaningless for other access kinds). */
+  readonly sessionStages: readonly SessionStage[];
+  /** False when a staff mutation is exempt from the audit duty (`audit: false`). */
+  readonly audit: boolean;
+  /** False when the route declared that it has no session to bind a CSRF token to (`csrf: false`). */
+  readonly csrf: boolean;
 }
 
 /**
@@ -347,6 +422,35 @@ export function defineRoute<
     problem(`only staff-permission routes carry a permission (access is "${spec.access}")`);
   }
 
+  // Session stages, audit duty and CSRF declaration (decision 018).
+  const sessionAccess = isSessionAccess(spec.access);
+  let sessionStages: readonly SessionStage[] = DEFAULT_SESSION_STAGES;
+  if (spec.sessionStages !== undefined) {
+    if (!sessionAccess) problem(`sessionStages only applies to session routes (access is "${spec.access}")`);
+    if (spec.sessionStages.length === 0) problem('sessionStages must name at least one stage');
+    for (const stage of spec.sessionStages) {
+      if (!(SESSION_STAGES as readonly string[]).includes(stage)) problem(`unknown session stage "${String(stage)}"`);
+    }
+    if (new Set(spec.sessionStages).size !== spec.sessionStages.length) problem('sessionStages lists a stage twice');
+    if (spec.access === 'staff-permission' && (spec.sessionStages.length !== 1 || spec.sessionStages[0] !== 'active'))
+      problem('a staff-permission route needs a full session: sessionStages can only be ["active"]');
+    sessionStages = Object.freeze([...spec.sessionStages]);
+  }
+  if (spec.audit === false) {
+    if (spec.surface !== 'admin')
+      problem('audit: false only applies to admin routes (the audit log records staff writes)');
+    if (method === 'GET') problem('audit: false only applies to routes that change data (a GET is never audited)');
+    if (!spec.description || spec.description.trim() === '')
+      problem('audit: false needs a description that says why no audit row is written');
+  }
+  if (spec.csrf === false) {
+    if (sessionAccess)
+      problem(
+        `csrf: false is only for routes without a session (access is "${spec.access}"): a session route always needs the token`,
+      );
+    if (method === 'GET') problem('csrf: false only applies to routes that change data (a GET is never CSRF-checked)');
+  }
+
   // Inputs.
   const declared = spec.params ? Object.keys(spec.params.shape) : [];
   if (paramNames.length > 0 && !spec.params) problem(`path parameters (${paramNames.join(', ')}) need a params schema`);
@@ -436,6 +540,9 @@ export function defineRoute<
     }),
     errors: Object.freeze([...spec.errors]),
     examples: Object.freeze({ request: examples.request, response: examples.response }),
+    sessionStages,
+    audit: spec.audit ?? true,
+    csrf: spec.csrf ?? true,
   });
   contractRegistry.register(contract);
   return contract;

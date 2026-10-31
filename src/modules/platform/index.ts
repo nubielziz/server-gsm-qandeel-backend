@@ -1,6 +1,14 @@
 // Public API of the platform module: the module itself, what the bootstrap, the generator script and the contract tests
-// need from its documentation routes, and the transactional outbox (write events, register their queues, relay them).
+// need from its documentation routes, the audit log, the settings reader, and the transactional outbox (write events,
+// register their queues, relay them).
 export { PlatformModule } from './platform.module';
+export { AuditModule } from './audit/audit.module';
+export { AuditService } from './audit/audit.service';
+export type { AuditEntry } from './audit/audit.service';
+export { REDACTED, isSecretKey, redactForAudit } from './audit/audit-redaction';
+export { SettingsModule } from './settings/settings.module';
+export { SETTINGS_TTL_SECONDS, SettingsReader } from './settings/settings-reader';
+export type { IntegerBounds, IntegerSetting } from './settings/settings-reader';
 export { DOCUMENTATION_ROUTES } from './docs/docs.controller';
 export {
   API_VERSION,

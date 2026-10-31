@@ -8,11 +8,13 @@ Decisions that shape this module: 004 file storage, 017 API documentation, 020 o
 
 ## Status
 
-Built: `GET /openapi.json` and `GET /docs` (the public documentation), plus the internal `GET /reference` and `GET /reference/openapi.json` (no contracts: they are documentation routes, gated by `REFERENCE_DOCS`). Code: `docs/`. The transactional outbox (`outbox_events`): writing events and the worker's relay. Code: `outbox/`.
+Built: `GET /openapi.json` and `GET /docs` (the public documentation), plus the internal `GET /reference` and `GET /reference/openapi.json` (no contracts: they are documentation routes, gated by `REFERENCE_DOCS`). Code: `docs/`. The transactional outbox (`outbox_events`): writing events and the worker's relay. Code: `outbox/`. The audit log (`audit_logs`): `AuditService.record` and the check that staff writes are audited. Code: `audit/`. Cached read access to `settings` for other modules. Code: `settings/`.
 
 ## Public API (`index.ts`)
 
 Exports `PlatformModule`, the document builders and `OpenApiService` (used by `src/app.bootstrap.ts` and `scripts/gen-openapi.ts`), `DOCUMENTATION_ROUTES` (for the route-parity test) and the `REFERENCE_DOCS_GUARD` token (see below).
+
+The audit log: `AuditModule` (global) provides `AuditService.record(tx, { action, entityType, entityId?, entityLabel?, before?, after? })` (see "Audit log" below). The settings: `SettingsModule` (global) provides `SettingsReader` (`all()`, `get(key)`, `integer(key, fallback, bounds)`, `integers(specs)`, `invalidate()`), the only way other modules read `settings`.
 
 The outbox: `OutboxModule` (global: `OutboxService`, `OutboxRouteRegistry`), `OutboxService.add(tx, event)` and `backlog(db)`, `OutboxRouteRegistry.register({ type, queue, jobName? })`, the types `OutboxEventInput`, `OutboxPayload`, `OutboxJobData`, `OutboxRoute`, `OutboxBacklog`, and, for the worker only, `OutboxRelayModule` with `OutboxRelay`.
 
@@ -154,8 +156,40 @@ in `docs/queues.md`. Other jobs of this module (notifications, webhook deliverie
 
 ## Cache keys
 
-None yet. Register each key family (owner, TTL, invalidation after commit) in `docs/cache-keys.md` (see `CONTRIBUTING.md` → "Add a cache key").
+- `gsm:{env}:platform:settings:all` (`CacheKeys.settings()`): the whole `settings` table as one flat object, 60 s. The settings write routes (feature 2a) call `SettingsReader.invalidate()` inside `afterCommit`. Listed in `docs/cache-keys.md`.
 
-## Docs gate hand-over (P2.5)
+Register every other key family (owner, TTL, invalidation after commit) in `docs/cache-keys.md` (see `CONTRIBUTING.md` → "Add a cache key").
 
-`REFERENCE_DOCS=staff` asks the provider under the `REFERENCE_DOCS_GUARD` token (`docs/reference-access.guard.ts`). Until one is provided, `staff` behaves like `off` (404). P2.5 supplies a guard that requires a staff session with `system:read`: provide `{ provide: REFERENCE_DOCS_GUARD, useExisting: <guard> }` from `PlatformModule` (after importing the module that exports the guard). `test/integration/docs.test.ts` shows the wiring with a test guard.
+## Audit log (decision 018)
+
+Every admin write writes `audit_logs` inside the use case's transaction:
+
+```ts
+await this.db.runInTransaction(async ({ tx }) => {
+  const before = await this.repository.find(tx, id);
+  const after = await this.repository.update(tx, id, patch);
+  await this.audit.record(tx, {
+    action: 'Suspended staff member', // a readable English verb phrase, as the console shows it
+    entityType: 'staff', // snake_case, from the console's fixed list
+    entityId: id, // omit for an action without a numeric record (settings, a queue pause): stored as 0
+    entityLabel: after.name, // a name snapshot, or the target when there is no id
+    before, // secrets are redacted (passwordHash, *Enc, tokens, apiKey ...) before they are stored
+    after,
+  });
+});
+```
+
+The actor (`actor_type`, `actor_id`) and the IP come from the request context the session guards filled in; outside a request the
+actor is `system`. The row is written on the caller's transaction, so a rolled-back change leaves no row.
+
+**Enforcement.** A global interceptor (`AuditEnforcementInterceptor`) checks every successful staff mutation (a staff-authenticated
+route whose method is not GET and whose contract does not say `audit: false`): if the request wrote no audit row, development and
+tests answer `500` with a message that names the route, and production logs an error (the change is already committed). A sign-in
+step opts out with `audit: false` and says why in the contract description.
+
+## Docs gate
+
+`REFERENCE_DOCS=staff` asks the provider under the `REFERENCE_DOCS_GUARD` token (`docs/reference-access.guard.ts`). The identity module
+provides it (`StaffSystemReadGuard`: a staff session with `system:read`; `401` without a session, `403 FORBIDDEN` without the
+permission). Without any provider `staff` behaves like `off` (404). The reference routes have no contract, so the guard dispatcher
+lets them through to this guard (`DOCUMENTATION_ROUTES`). `test/integration/docs.test.ts` shows both.

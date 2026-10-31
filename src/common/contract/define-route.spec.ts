@@ -1,7 +1,17 @@
 // Unit tests for defineRoute (decision 008): key parsing, consistency checks at definition time, the registry.
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
-import { contractRegistry, declaredStatuses, defineRoute, parseRouteKey, type RouteKey } from './define-route';
+import {
+  ACCESS_KINDS,
+  DEFAULT_SESSION_STAGES,
+  SESSION_ACCESS_KINDS,
+  contractRegistry,
+  declaredStatuses,
+  defineRoute,
+  isSessionAccess,
+  parseRouteKey,
+  type RouteKey,
+} from './define-route';
 import { listQuery } from './list-query';
 import { operationIdOf } from './openapi';
 import { zId, zIdParam } from './zod';
@@ -113,6 +123,150 @@ describe('defineRoute', () => {
       expect(() =>
         define({ key: 'GET /admin/spec/p6', surface: 'admin', access: 'staff-session', permission: 'staff:read' }),
       ).toThrow(/only staff-permission/);
+    });
+  });
+
+  describe('sessionStages', () => {
+    const admin = { surface: 'admin', access: 'staff-session' };
+
+    it('defaults to the active stage and is frozen', () => {
+      const contract = define({ key: 'GET /admin/spec/st1', ...admin });
+      expect(contract.sessionStages).toEqual(['active']);
+      expect(contract.sessionStages).toBe(DEFAULT_SESSION_STAGES);
+      expect(
+        Object.isFrozen(
+          define({ key: 'GET /admin/spec/st2', ...admin, sessionStages: ['pending_totp'] }).sessionStages,
+        ),
+      ).toBe(true);
+    });
+
+    it('lets a session route name the pending stages it accepts', () => {
+      expect(
+        define({ key: 'POST /admin/spec/st3', ...admin, sessionStages: ['pending_totp', 'pending_totp_setup'] })
+          .sessionStages,
+      ).toEqual(['pending_totp', 'pending_totp_setup']);
+      expect(
+        define({
+          key: 'GET /client/spec/st4',
+          surface: 'client',
+          access: 'merchant-session',
+          sessionStages: ['pending_totp'],
+        }).sessionStages,
+      ).toEqual(['pending_totp']);
+    });
+
+    it('is refused on routes that do not use a session, when empty, unknown or repeated', () => {
+      expect(() => define({ sessionStages: ['active'] })).toThrow(/only applies to session routes/);
+      expect(() => define({ key: 'GET /admin/spec/st5', ...admin, sessionStages: [] })).toThrow(/at least one/);
+      expect(() => define({ key: 'GET /admin/spec/st6', ...admin, sessionStages: ['half'] })).toThrow(
+        /unknown session stage/,
+      );
+      expect(() => define({ key: 'GET /admin/spec/st7', ...admin, sessionStages: ['active', 'active'] })).toThrow(
+        /twice/,
+      );
+    });
+
+    it('cannot make a staff-permission route accept a pending session', () => {
+      const permission = {
+        key: 'GET /admin/spec/st8',
+        surface: 'admin',
+        access: 'staff-permission',
+        permission: 'staff:read',
+      };
+      expect(define({ ...permission, sessionStages: ['active'] }).sessionStages).toEqual(['active']);
+      expect(() => define({ ...permission, key: 'GET /admin/spec/st9', sessionStages: ['pending_totp'] })).toThrow(
+        /full session/,
+      );
+    });
+  });
+
+  describe('audit', () => {
+    const write = {
+      key: 'POST /admin/spec/au1',
+      surface: 'admin',
+      access: 'staff-session',
+      success: { status: 204 },
+    };
+
+    it('defaults to true and opts out with a reason in the description', () => {
+      expect(define({ ...write }).audit).toBe(true);
+      expect(
+        define({ ...write, key: 'POST /admin/spec/au2', audit: false, description: 'Sign-in step: no audit row.' })
+          .audit,
+      ).toBe(false);
+    });
+
+    it('needs the description, an admin route and a route that changes data', () => {
+      expect(() => define({ ...write, key: 'POST /admin/spec/au3', audit: false })).toThrow(/description/);
+      expect(() => define({ ...write, key: 'POST /admin/spec/au4', audit: false, description: '  ' })).toThrow(
+        /description/,
+      );
+      expect(() =>
+        define({
+          key: 'POST /client/spec/au5',
+          surface: 'client',
+          access: 'merchant-session',
+          success: { status: 204 },
+          audit: false,
+          description: 'x',
+        }),
+      ).toThrow(/admin routes/);
+      expect(() =>
+        define({
+          key: 'GET /admin/spec/au6',
+          surface: 'admin',
+          access: 'staff-session',
+          audit: false,
+          description: 'x',
+        }),
+      ).toThrow(/GET is never audited/);
+    });
+  });
+
+  describe('csrf', () => {
+    const signIn = {
+      key: 'POST /admin/spec/cs1',
+      surface: 'admin',
+      access: 'public',
+      body: z.object({}),
+      success: { status: 204 },
+    };
+
+    it('defaults to true and can be declared false on a route without a session', () => {
+      expect(define({ ...signIn }).csrf).toBe(true);
+      expect(define({ ...signIn, key: 'POST /admin/spec/cs2', csrf: false }).csrf).toBe(false);
+      expect(
+        define({
+          key: 'POST /v1/spec/cs3',
+          surface: 'v1',
+          access: 'api-key',
+          body: z.object({}),
+          success: { status: 204 },
+          csrf: false,
+        }).csrf,
+      ).toBe(false);
+    });
+
+    it('is refused on a session route (the token is the protection) and on a GET', () => {
+      for (const access of SESSION_ACCESS_KINDS) {
+        const spec = access === 'staff-permission' ? { permission: 'staff:update' } : {};
+        expect(
+          () => define({ ...signIn, ...spec, key: `POST /admin/spec/cs-${access}`, access, csrf: false }),
+          access,
+        ).toThrow(/without a session/);
+      }
+      expect(() => define({ key: 'GET /admin/spec/cs4', surface: 'admin', access: 'public', csrf: false })).toThrow(
+        /GET/,
+      );
+    });
+  });
+
+  describe('access kinds', () => {
+    it('lists every kind once, and says which ones use a session cookie', () => {
+      expect(new Set(ACCESS_KINDS).size).toBe(ACCESS_KINDS.length);
+      expect(ACCESS_KINDS.filter(isSessionAccess)).toEqual([...SESSION_ACCESS_KINDS]);
+      expect(isSessionAccess('api-key')).toBe(false);
+      expect(isSessionAccess('public')).toBe(false);
     });
   });
 

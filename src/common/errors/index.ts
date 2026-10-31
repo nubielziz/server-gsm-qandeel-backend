@@ -6,6 +6,7 @@ export { ERROR_CATALOG, isErrorCode, problemSlug, statusOf, titleOf } from './ca
 export type { ErrorCatalogEntry, ErrorCode } from './catalog';
 export { ProblemExceptionFilter } from './exception.filter';
 export { ErrorsModule } from './errors.module';
+export { DHRU_API_VERSION, DhruErrorFormatter, dhruMessageOf } from './dhru-formatter';
 export { ErrorFormatterRegistry } from './formatter-registry';
 export type { ErrorFormatContext, ErrorFormatter, ErrorResponse } from './formatter-registry';
 export { codeForStatus, normalizeException } from './normalize-exception';

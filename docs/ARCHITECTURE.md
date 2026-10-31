@@ -67,7 +67,9 @@ purpose, tables, routes, jobs, events, cache keys, permissions and scenarios.
 
 ## 3. Request pipeline
 
-Fastify `onRequest` hooks (cheap, route-independent) then Nest guards, pipes and the handler (D018):
+Fastify `onRequest` hooks (cheap, route-independent) then Nest guards, pipes and the handler (D018). Steps 5 to 7 are one
+global guard (`AccessGuard`, identity module) that reads the route contract (`access`, `sessionStages`, `permission`, `csrf`);
+a route without a contract is refused:
 
 0. **CORS preflight** answered first, so a refused request still carries readable CORS headers.
 1. **Request id** (`X-Request-Id` kept or generated, echoed; D012).
@@ -82,7 +84,9 @@ Fastify `onRequest` hooks (cheap, route-independent) then Nest guards, pipes and
 7. **Permission**: the contract's `permission` (`resource:action`; `x:*` and `*` grant all actions of a resource).
 8. **Validation**: zod contract pipes (`422 VALIDATION_FAILED`).
 9. **Handler**; the response passes the response schema; admin writes are written to `audit_logs` (actor, action,
-   entity, before, after, ip) by the audit interceptor.
+   entity, before, after, ip) by the use case (`AuditService.record(tx, ...)`, in its transaction), and an audit
+   interceptor checks that every successful staff mutation wrote one (a 500 in development and tests, an error log in
+   production; `audit: false` on the contract opts a sign-in step out).
 
 Errors anywhere become problem+json (D028). CORS allows exact origins with credentials and exposes `x-total-count`,
 `x-request-id`, `x-csrf-token`, `content-disposition`, `retry-after`. Security headers via @fastify/helmet; body limits

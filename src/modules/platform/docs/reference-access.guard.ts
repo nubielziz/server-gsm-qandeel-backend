@@ -1,21 +1,16 @@
 // Gate of the internal reference routes (GET /reference, GET /reference/openapi.json), decision 017:
-// REFERENCE_DOCS = open (everyone), off (404) or staff (a staff session with system:read, provided by P2.5).
+// REFERENCE_DOCS = open (everyone), off (404) or staff (a staff session with system:read, provided by the identity module).
 import { type CanActivate, type ExecutionContext, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../../../config';
 
 /**
  * Injection token of the staff guard behind `REFERENCE_DOCS=staff`.
  *
- * Why: the staff session and the permission check arrive with the security feature (P2.5). Until a provider exists
- * under this token, `staff` behaves like `off`, so a production deployment never serves the internal reference to
- * everyone by accident.
- *
- * Hand-over to P2.5: provide a guard (a class implementing `CanActivate` that requires a staff session with
- * `system:read`) under this token from a module `PlatformModule` can see, for example in `PlatformModule.providers`
- * after importing the identity module that exports it:
- * `{ provide: REFERENCE_DOCS_GUARD, useExisting: StaffSystemReadGuard }`. Nothing else changes. The reference routes
- * have no route contract (`getContract` finds nothing on their handlers), so the guard must check the session and the
- * permission itself instead of reading the contract's `access` and `permission`.
+ * Why: the staff session and the permission check belong to the identity module, which provides `StaffSystemReadGuard`
+ * (a staff session with `system:read`) under this token from its global `SecurityModule`. If no provider exists, `staff`
+ * behaves like `off`, so a deployment never serves the internal reference to everyone by accident. The reference routes
+ * have no route contract (`getContract` finds nothing on their handlers; the guard dispatcher lets them through because
+ * they are in `DOCUMENTATION_ROUTES`), so the provided guard checks the session and the permission itself.
  */
 export const REFERENCE_DOCS_GUARD = Symbol.for('gsm.REFERENCE_DOCS_GUARD');
 

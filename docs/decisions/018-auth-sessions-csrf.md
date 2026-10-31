@@ -23,7 +23,9 @@ Status: accepted, 2026-10-31. Source of the staff flow: `docs/contract/ALIGNMENT
   services with their own rules (optional TOTP for merchants; password or magic link and lockout for customers).
 - **Session-ending codes.** `401`, `403 ACCOUNT_SUSPENDED` and `403 IP_NOT_ALLOWED` sign the caller out wherever they
   appear, so they are only ever about the caller. Refusals about other records use their own 409/422 codes.
-- **CSRF** (cookie-authenticated surfaces): a readable `csrf_token` cookie (Secure, SameSite=Lax, Path=/, Domain
+- **CSRF** (cookie-authenticated surfaces): a readable CSRF cookie, `csrf_token` for the admin console (`csrf_token_client`
+  and `csrf_token_store` for the merchant portal and the storefront, so consoles that share a parent domain never
+  overwrite each other's token) (Secure, SameSite=Lax, Path=/, Domain
   from config so the console origin can read it) whose value is `HMAC(CSRF_SECRET, session token hash)`; the same
   value is sent as `X-CSRF-Token` on login, 2fa and me responses (cross-site consoles cannot read the cookie). Every
   mutation that carries a session must send the header (`403 CSRF_FAILED`, does not sign out). Mutations without a

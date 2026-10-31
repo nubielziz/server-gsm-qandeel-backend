@@ -1,5 +1,16 @@
 // Public surface of the contract layer (decision 008): defineRoute, @Route, list queries, shared schemas, registry.
-export { ContractRegistry, contractRegistry, declaredStatuses, defineRoute, parseRouteKey } from './define-route';
+export {
+  ACCESS_KINDS,
+  ContractRegistry,
+  DEFAULT_SESSION_STAGES,
+  SESSION_ACCESS_KINDS,
+  SESSION_STAGES,
+  contractRegistry,
+  declaredStatuses,
+  defineRoute,
+  isSessionAccess,
+  parseRouteKey,
+} from './define-route';
 export type {
   AccessKind,
   AnyRouteContract,
@@ -12,6 +23,7 @@ export type {
   RouteContract,
   RouteKey,
   RouteSpec,
+  SessionStage,
   SuccessSpec,
   SuccessStatus,
 } from './define-route';

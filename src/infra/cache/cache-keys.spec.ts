@@ -19,6 +19,16 @@ describe('CacheKeys builders', () => {
     expect<string>(keys.lock(keys.version('catalog'))).toBe('gsm:test:cache:version:catalog:lock');
   });
 
+  it('build the identity and platform keys of the security stack', () => {
+    const hash = 'a'.repeat(64);
+    expect<string>(keys.session(hash)).toBe(`gsm:test:identity:session:${hash}`);
+    expect<string>(keys.rolePermissions(12)).toBe('gsm:test:identity:role:12');
+    expect<string>(keys.settings()).toBe('gsm:test:platform:settings:all');
+    expect(familyOf(keys.session(hash))).toBe('identity:session');
+    expect(familyOf(keys.rolePermissions(12))).toBe('identity:role');
+    expect(() => keys.session('has:colon')).toThrow(/must match/);
+  });
+
   it('put the environment in every key', () => {
     const production = new CacheKeys(parseEnv({ NODE_ENV: 'development' }));
     expect(production.keyspace).toBe('gsm:development:');

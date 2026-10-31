@@ -14,7 +14,7 @@ import {
 } from '@nestjs/swagger';
 import type { z } from 'zod';
 import { ERROR_CATALOG, problemSlug, type ErrorCode } from '../errors/catalog';
-import type { AccessKind, AnyRouteContract } from './define-route';
+import { type AccessKind, type AnyRouteContract, isSessionAccess } from './define-route';
 import { toJsonSchema, type JsonSchema } from './json-schema';
 import { isListQuerySchema, listQueryParameters } from './list-query';
 
@@ -289,6 +289,11 @@ export function buildOperation(contract: AnyRouteContract): OperationParts {
   };
 }
 
+/** A route a signed-in staff member calls to change data: the audit log must record it unless the contract opts out. */
+function isStaffWrite(contract: AnyRouteContract): boolean {
+  return (contract.access === 'staff-session' || contract.access === 'staff-permission') && contract.method !== 'GET';
+}
+
 /**
  * Creates the @nestjs/swagger decorators for a contract.
  *
@@ -314,6 +319,10 @@ export function openApiDecorators(contract: AnyRouteContract): MethodDecorator[]
     ApiExtension('x-gsm-surface', contract.surface),
   ];
   if (contract.permission) decorators.push(ApiExtension('x-gsm-permission', contract.permission));
+  // Session routes say which sign-in steps they accept; staff writes say whether an audit row is part of the contract.
+  if (isSessionAccess(contract.access))
+    decorators.push(ApiExtension('x-gsm-session-stages', [...contract.sessionStages]));
+  if (isStaffWrite(contract)) decorators.push(ApiExtension('x-gsm-audit', contract.audit));
   if (parts.security) decorators.push(ApiSecurity(parts.security));
   for (const parameter of parts.parameters) {
     const common = {

@@ -11,6 +11,8 @@ import { TEST_DATABASE_URL } from './db';
 import { CacheModule } from '../../src/infra/cache';
 import { DbModule } from '../../src/infra/db';
 import { LOG_DESTINATION } from '../../src/infra/logging';
+import { SecurityModule } from '../../src/modules/identity';
+import { SettingsModule } from '../../src/modules/platform';
 import { QueuesModule } from '../../src/infra/queues';
 import { RateLimitModule } from '../../src/infra/rate-limit';
 import { RedisModule } from '../../src/infra/redis';
@@ -51,6 +53,16 @@ class NoDatabaseModule {}
 @Module({})
 class NoInfrastructureModule {}
 
+/**
+ * Stands in for the security stack (sessions, CSRF, permissions, the guard dispatcher) and the settings reader: they need the
+ * database, the cache and the crypto services, so an app built without them has no guards and its routes are open.
+ */
+@Module({})
+class NoSecurityModule {}
+
+/** The modules that read Postgres and the cache on every request: replaced when either is left out. */
+const NEEDS_DATABASE_AND_CACHE = [SecurityModule, SettingsModule];
+
 /** What a test can change about the app. */
 export interface TestAppOptions {
   /** Environment variables on top of `NODE_ENV=test`. */
@@ -60,11 +72,12 @@ export interface TestAppOptions {
   readonly providers?: ModuleMetadata['providers'];
   /** Modules added to the root module, for example a global one that provides a token a real module will provide later. */
   readonly imports?: ModuleMetadata['imports'];
-  /** Replace the database module with an empty one (no pool, no `postgres` health indicator). */
+  /** Replace the database module with an empty one (no pool, no `postgres` health indicator, no security guards). */
   readonly withoutDatabase?: boolean;
   /**
    * Replace the Redis, cache, rate-limit, queue and storage modules with empty ones (no connections, no queue producers,
-   * no `redis`, `redis_queue` or `storage` health indicators). Nothing in the app may inject their services then.
+   * no `redis`, `redis_queue` or `storage` health indicators, no security guards). Nothing in the app may inject their
+   * services then.
    */
   readonly withoutInfrastructure?: boolean;
   /** Called for every route Fastify registers (method `string | string[]`, url as registered), before `init()` ends. */
@@ -102,6 +115,10 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     .overrideProvider(LOG_DESTINATION)
     .useValue(logSink);
   if (options.withoutDatabase) builder.overrideModule(DbModule).useModule(NoDatabaseModule);
+  // The security stack reads sessions and settings from the database and the cache: without either, the app has no guards.
+  if (options.withoutDatabase || options.withoutInfrastructure) {
+    for (const module of NEEDS_DATABASE_AND_CACHE) builder.overrideModule(module).useModule(NoSecurityModule);
+  }
   if (options.withoutInfrastructure) {
     for (const module of [RedisModule, CacheModule, RateLimitModule, QueuesModule, StorageModule]) {
       builder.overrideModule(module).useModule(NoInfrastructureModule);

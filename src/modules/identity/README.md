@@ -8,11 +8,74 @@ Decisions that shape this module: 007 password hashing, 010 ids and tokens, 018 
 
 ## Status
 
-Not built yet: the module is an empty shell (`identity.module.ts`, `index.ts`). Its feature adds controllers, services, repositories and the owned tables.
+Built (P2.5a, code in `security/`): the session service, cookies and CSRF token, the guard dispatcher with the staff, merchant and customer session guards, the CSRF guard, the permission guard with the permissions catalog and the Owner helpers, and the staff gate of the internal API reference. The kinds that P2.5c builds (API keys, Dhru credentials, gateway signatures, URL secrets, capability tokens) are fail-closed placeholders. The sign-in routes (P2.6), the staff, role and IP-rule routes (feature 2a) and the IP rules, maintenance and rate-limit hooks (P2.5b) come with their own features.
 
 ## Public API (`index.ts`)
 
-Exports `IdentityModule` only. Add the services other modules may call here, and nothing else: other modules import only `src/modules/identity/index.ts` (lint rule `gsm/module-boundaries`).
+Exports `IdentityModule` and the security stack (`SecurityModule`, global). Other modules import only `src/modules/identity/index.ts` (lint rule `gsm/module-boundaries`):
+
+| Export | Use |
+|---|---|
+| `SessionService` | `create`, `rotate`, `lookup`, `touch`, `revoke`, `revokeAllOf`, `invalidateSubject` (see below) |
+| `SessionCookies` | `set` (session cookie + CSRF cookie + `X-CSRF-Token` header), `clear`, `readToken`, cookie names |
+| `CsrfService`, `csrfTokenFor`, `CSRF_HEADER` | derive and check the CSRF token |
+| `SessionAuthenticator` | `authenticate` / `authenticateOptional(subject, request, { stages })`: for routes that serve two kinds of callers on one path (the password set by token or by forced-change session) |
+| `CurrentPrincipal`, `CurrentStaff`, `principalOf`, `Principal` types | the caller inside a handler |
+| `grants`, `isValidPermission`, `isOwner`, `assertOwnerTargetAllowed` | the permission grammar and the Owner rules |
+| `RolePermissions` | the permissions of a role, cached per role; `invalidate(roleId, work)` after a role change |
+| `PermissionsCatalog` | `list()`: every concrete permission the registered contracts require, without `area:*` wildcards such as the literal `risk:*` (for `GET /admin/permissions`) |
+| `SessionSubjects` | register the session resolver of a subject type (the customers module does, feature 14b) |
+| `AccessHandlers` | `replace(kind, handler)`: P2.5c gives the machine kinds their real guards |
+| `SessionPolicy`, `SESSION_SETTING_KEYS` | the lifetimes and their settings keys |
+
+## The security stack (decision 018)
+
+One global guard, `AccessGuard`, reads each route's contract (`getContract`) and runs, in this order: **authentication by access
+kind**, the **CSRF guard**, the **permission guard**. Validation, the handler and the audit follow in the route's own pipes and
+interceptors. A route without a contract is refused (`500`), except `DOCUMENTATION_ROUTES`, which keep their own guard.
+
+| Access kind | Who authenticates |
+|---|---|
+| `public` | nobody; a mutation on `/admin` or `/client` still needs an `Origin` from `CORS_ORIGINS` (`403 CSRF_FAILED` otherwise) |
+| `staff-session`, `staff-permission` | the staff session cookie; `staff-permission` adds the contract's `permission` (`403 FORBIDDEN`, the detail names it) |
+| `merchant-session`, `customer-session` | the same mechanics with their own cookie, table and statuses |
+| `internal-or-token` | the network-or-token rule of `/metrics` (`MetricsAccessGuard`) |
+| `api-key`, `dhru-credentials`, `gateway-signature`, `url-secret`, `checkout-token`, `tracking-token`, `link-token`, `ticket-token` | placeholders until P2.5c: every request is refused with `401 UNAUTHORIZED` (the Dhru envelope `Authentication Failed` on `/api/index.php`) |
+
+**Session checks**, in this order: cookie present, the session is known and belongs to the subject (`401`); absolute expiry and idle
+expiry (`401`); the account is not suspended (`403 ACCOUNT_SUSPENDED`, and every session of the account is revoked); the stage is one
+the contract accepts (`sessionStages`, default `['active']`; `401`); `last_seen_at` is written at most once a minute. A pending
+sign-in session has a principal without permissions. `403 FORBIDDEN` and `403 CSRF_FAILED` never sign the caller out.
+
+**Cookies.** `gsm_admin_session`, `gsm_client_session`, `gsm_store_session` (httpOnly, `Secure` from `COOKIE_SECURE`, `SameSite=Lax`,
+`Path=/`, `__Host-` prefix when secure) and the readable CSRF cookies `csrf_token` (staff), `csrf_token_client`, `csrf_token_store`
+(`Domain` from `CSRF_COOKIE_DOMAIN`). The CSRF token is `HMAC(CSRF_SECRET, session token hash)`, so it changes when the session is
+rotated. A same-origin deployment must list its own origin in `CORS_ORIGINS` too, or the Origin check refuses its sign-in.
+
+**Lifetimes** are settings in minutes, with the defaults of decision 018: `sessions.staff_absolute_minutes` 480,
+`sessions.staff_idle_minutes` 30, `sessions.client_absolute_minutes` / `sessions.customer_absolute_minutes` 43200,
+`sessions.client_idle_minutes` / `sessions.customer_idle_minutes` 10080, `sessions.pending_minutes` 10. An invalid value is ignored
+(the default applies, with a warning in the log).
+
+**What a feature does when an account changes** (always pass the transaction so the cache is cleaned after the commit):
+
+```ts
+await this.db.runInTransaction(async (work) => {
+  // suspend, password change, "end all sessions", 2FA reset: sign the account out everywhere
+  await this.sessions.revokeAllOf('staff', id, { exceptSessionId: caller.session.id }, work);
+  // role of a staff member changed, or the account state changed but sessions stay: drop the cached views
+  await this.sessions.invalidateSubject('staff', id, work);
+  // permissions of a role changed
+  await this.roles.invalidate(roleId, work);
+});
+```
+
+**Sign-in steps** (P2.6): `create` a pending session at login (10 minutes), `rotate(principal.session, { stage: 'active' })` when the
+last step completes (new token, old one revoked), then `cookies.set(reply, 'staff', issued.token, issued.session.expiresAt)`.
+
+**Customers.** Storefront customers belong to the customers module. Until it registers a resolver
+(`SessionSubjects.register({ subjectType: 'customer', resolve })`, mapping `customers.status` to `ok`, `suspended` or `gone`), every
+customer session is refused with `401`.
 
 ## Owned tables
 
@@ -130,4 +193,7 @@ None yet. List each queue, job, schedule, idempotency key and retry policy here 
 
 ## Cache keys
 
-None yet. Register each key family (owner, TTL, invalidation after commit) in `docs/cache-keys.md` (see `CONTRIBUTING.md` → "Add a cache key").
+- `gsm:{env}:identity:session:{tokenHash}` (`CacheKeys.session`): the cached view of a session and the state of its account, 60 s (an unknown token 10 s). `SessionService` deletes it after the commit of a revoke or rotation; `invalidateSubject` does after a suspension, password change or role change.
+- `gsm:{env}:identity:role:{roleId}` (`CacheKeys.rolePermissions`): the permissions of a role, 300 s. `RolePermissions.invalidate(roleId)` after the commit of a role change.
+
+Both are listed in `docs/cache-keys.md`. Register every other key family there too (see `CONTRIBUTING.md` → "Add a cache key").

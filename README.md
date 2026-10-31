@@ -79,7 +79,7 @@ Generated from the route contracts (decisions 008, 009, 017) and committed under
 | URL | What |
 |---|---|
 | `GET /openapi.json`, `GET /docs` | Public: REST API v1, the Dhru Fusion reference and the webhook events we send (Scalar page) |
-| `GET /reference/openapi.json`, `GET /reference` | Internal: every route. `REFERENCE_DOCS` = `open` (default outside production), `staff` (default in production; answers 404 until the security feature provides its guard) or `off` (404) |
+| `GET /reference/openapi.json`, `GET /reference` | Internal: every route. `REFERENCE_DOCS` = `open` (default outside production), `staff` (default in production; needs a staff session with `system:read`) or `off` (404) |
 
 ## Where things are
 

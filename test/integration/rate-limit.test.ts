@@ -2,8 +2,10 @@
 // the sign-in lock-out and reset, the RATE_LIMITED helper (also through HTTP, with the Retry-After header), the Redis
 // semaphore (acquire / release / expiry / limit), and the fallback to an in-memory limiter while Redis is down.
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Query } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
+import { type QueryOf, Route, defineRoute } from '../../src/common/contract';
 import { AppError } from '../../src/common/errors';
 import { CacheKeys, CacheService } from '../../src/infra/cache';
 import { MetricsService } from '../../src/infra/metrics';
@@ -260,13 +262,25 @@ describe('enforce and the RATE_LIMITED helper', () => {
   });
 });
 
+// Every route needs a contract: the guard dispatcher refuses a route without one (decision 018).
+const limitedRoute = defineRoute({
+  key: 'GET /t/limited',
+  summary: 'A route that allows two calls per caller',
+  tags: ['test'],
+  surface: 'system',
+  access: 'public',
+  query: z.object({ caller: z.string() }),
+  success: { status: 200, schema: z.object({ remaining: z.number() }) },
+  errors: ['RATE_LIMITED', 'VALIDATION_FAILED'],
+});
+
 @Controller()
 class LimitedController {
   constructor(private readonly limits: RateLimitService) {}
 
-  @Get('/t/limited')
-  async limited(@Query('caller') who: string): Promise<{ remaining: number }> {
-    const result = await this.limits.enforce('api-key', who, 1, { limit: 2 });
+  @Route(limitedRoute)
+  async limited(@Query() query: QueryOf<typeof limitedRoute>): Promise<{ remaining: number }> {
+    const result = await this.limits.enforce('api-key', query.caller, 1, { limit: 2 });
     return { remaining: result.remaining };
   }
 }

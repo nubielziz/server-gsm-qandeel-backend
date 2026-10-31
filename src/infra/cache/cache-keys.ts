@@ -106,6 +106,35 @@ export class CacheKeys {
   }
 
   /**
+   * The cached view of one session: the session row plus the state of its account (decision 018).
+   *
+   * @param tokenHash the keyed hash of the session token (never the token itself)
+   * @returns `gsm:{env}:identity:session:{tokenHash}`
+   */
+  session(tokenHash: string): CacheKey {
+    return `${this.keyspace}identity:session:${segment('session token hash', tokenHash)}` as CacheKey;
+  }
+
+  /**
+   * The permission list of one role, read on every staff request (decision 018: "cached per role").
+   *
+   * @param roleId the id of the role
+   * @returns `gsm:{env}:identity:role:{roleId}`
+   */
+  rolePermissions(roleId: number): CacheKey {
+    return `${this.keyspace}identity:role:${segment('role id', roleId)}` as CacheKey;
+  }
+
+  /**
+   * Every row of the `settings` table as one flat object, read by the session lifetimes and later by the pipeline hooks.
+   *
+   * @returns `gsm:{env}:platform:settings:all`
+   */
+  settings(): CacheKey {
+    return `${this.keyspace}platform:settings:all` as CacheKey;
+  }
+
+  /**
    * A group of keys, for `CacheService.delByPrefix`.
    *
    * @param module the owning module, for example `catalog`
@@ -153,6 +182,28 @@ export const CACHE_KEY_FAMILIES: readonly CacheKeyFamily[] = [
     owner: 'infra/rate-limit',
     ttl: 'the limiter window (and block time) in src/infra/rate-limit/limiters.ts',
     invalidation: 'RateLimitService.reset (for example after a successful sign-in); otherwise it expires',
+  },
+  {
+    builder: 'session',
+    pattern: 'gsm:{env}:identity:session:{tokenHash}',
+    owner: 'identity',
+    ttl: '60 s (a token that matches no live session: 10 s)',
+    invalidation:
+      'SessionService deletes it after the commit of a revoke or a rotation, and invalidateSubject(subjectType, subjectId) after a suspension, password change or role change',
+  },
+  {
+    builder: 'rolePermissions',
+    pattern: 'gsm:{env}:identity:role:{roleId}',
+    owner: 'identity',
+    ttl: '300 s',
+    invalidation: 'RolePermissions.invalidate(roleId) after the commit of a role change',
+  },
+  {
+    builder: 'settings',
+    pattern: 'gsm:{env}:platform:settings:all',
+    owner: 'platform',
+    ttl: '60 s',
+    invalidation: 'SettingsReader.invalidate() after the commit of a settings change',
   },
   {
     builder: 'prefix',

@@ -91,9 +91,12 @@ Disagreements are B-entries; nothing is picked silently.
   and role changes apply on the next request (the console caches `me` for 60 s).
 - **Cookies**: session httpOnly, Secure, SameSite=Lax, Path=/, a name per subject (`gsm_admin_session`,
   `gsm_client_session`, `gsm_store_session`; `__Host-` in production). CSRF cookie `csrf_token`: readable, Secure,
-  SameSite=Lax, `Domain` from config so the console origin can read it; value = HMAC of the session. Cross-site
-  deployments (different registrable domains): session cookie `SameSite=None; Secure`, and the console relies on the
-  `X-CSRF-Token` response header.
+  SameSite=Lax, `Domain` from config so the console origin can read it; value = HMAC of the session (the merchant portal
+  and the storefront use `csrf_token_client` and `csrf_token_store`, so apps on one domain do not overwrite each other's
+  token). A mutation without a session on `/admin` or `/client` (sign-in, password set by token, register) sends no token and
+  is accepted only with an `Origin` header that is one of `CORS_ORIGINS` (a same-origin deployment lists its own origin too).
+  Cross-site deployments (different registrable domains): session cookie `SameSite=None; Secure` (not configurable yet:
+  the cookies are `SameSite=Lax`), and the console relies on the `X-CSRF-Token` response header.
 - **Other surfaces** (decision 018): merchant portal `/client/auth/*` (optional TOTP, email verification, reset links),
   storefront customers `/store/v1/auth/*` (password or magic link, lockout after repeated failures as `429`), REST v1
   `Authorization: Bearer <key>` with scopes, Dhru `username` + `apiaccesskey` (decision 026), webhooks by signature.

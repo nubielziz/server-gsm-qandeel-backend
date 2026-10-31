@@ -201,7 +201,7 @@ export const dhruLike = defineRoute({
 
 export const staffOnly = defineRoute({
   key: 'GET /admin/t/secure',
-  summary: 'A staff route (permission documented only; guards arrive with P2.5)',
+  summary: 'A staff route (the guard dispatcher enforces its permission)',
   tags: ['test'],
   surface: 'admin',
   access: 'staff-permission',

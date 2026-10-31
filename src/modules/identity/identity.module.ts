@@ -1,12 +1,14 @@
 // Identity & access module (map domain A): staff, roles, merchants, sessions, auth tokens, API keys, KYC, IP rules.
-// Empty shell in P2.1; its feature adds controllers, services and the owned tables (docs/ARCHITECTURE.md § 2).
+// It owns the authentication and authorization building blocks (src/modules/identity/security); the sign-in routes and the
+// staff, role and IP-rule routes arrive with their features (docs/ARCHITECTURE.md § 2).
 import { Module } from '@nestjs/common';
+import { SecurityModule } from './security/security.module';
 
 /**
  * Nest module for Identity & access (map domain A).
  *
  * Why: one module per map domain, each owning its tables and exposing a public service through `index.ts`
- * (decision 016).
+ * (decision 016). Today it provides the security stack: sessions, CSRF, permissions and the guard dispatcher.
  */
-@Module({})
+@Module({ imports: [SecurityModule] })
 export class IdentityModule {}

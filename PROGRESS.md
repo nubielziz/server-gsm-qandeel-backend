@@ -182,6 +182,13 @@ None.
   runs in a container, give it `stop_grace_period: 30s` (its shutdown grace is 25 s); Prometheus (compose,
   `prom/prometheus:v3.15.1`) is running and scrapes `host.docker.internal:3000` and `:9464` (check the targets turn up
   once the API and the worker run).
+- Sessions and guards (P2.5a) notes: customer sessions answer 401 until the customers module registers its
+  `SessionSubjects` resolver (feature 14b); `PermissionsCatalog.list()` leaves out `x:*` wildcards, so role validation
+  (feature 2a) accepts `x:*` by area prefix; ended sessions are never purged yet (add a purge job with feature 2a);
+  revoke and suspension clear the session cache after commit, but another instance can re-cache a live view for up to
+  about 60 s (cache-aside, decisions 018/022): sensitive actions in P2.6 and 2a re-check the database; P2.6's password
+  set on a `pending_password` session must call `CsrfService.assert` itself (the CSRF guard ran before the optional
+  session was read).
 - Merge procedure (lead): commit the implementer's output on the feature branch, `git merge --squash` it into
   `feat/backend`, apply the review fixes, then stage only paths that still exist: a deleted directory in the `git add`
   list makes the whole command fail and leaves the later edits out of the commit (happened once: P2.4b, fixed by

@@ -29,6 +29,9 @@ The queue Redis holds BullMQ data only and has no keys in this list (see `docs/q
 | `{key}:lock` | infra/cache | `lockMs` of the `getOrLoad` call | released by the process that took it (compare and delete) or expires | `lock` |
 | `gsm:{env}:semaphore:{name}` | infra/rate-limit | the longest lease (`ttlMs` of `acquire`) | `RateLimitService.release`, or the lease expires | `semaphore` |
 | `gsm:{env}:ratelimit:{limiter}:{key}` | infra/rate-limit | the limiter window (and block time) in `src/infra/rate-limit/limiters.ts` | `RateLimitService.reset` (for example after a successful sign-in); otherwise it expires | `rateLimit` |
+| `gsm:{env}:identity:session:{tokenHash}` | identity | 60 s (a token that matches no live session: 10 s) | `SessionService` deletes it after the commit of a revoke or a rotation, and `invalidateSubject(subjectType, subjectId)` after a suspension, password change or role change | `session` |
+| `gsm:{env}:identity:role:{roleId}` | identity | 300 s | `RolePermissions.invalidate(roleId)` after the commit of a role change | `rolePermissions` |
+| `gsm:{env}:platform:settings:all` | platform | 60 s | `SettingsReader.invalidate()` after the commit of a settings change | `settings` |
 | `gsm:{env}:{module}:{entity}:{idPrefix}` | infra/cache | n/a (a `SCAN` pattern, never stored) | n/a; `CacheService.delByPrefix` deletes every key that starts with it | `prefix` |
 
 Versioned keys are the base key plus `:v{n}`, where `{n}` is the current number of the version counter
