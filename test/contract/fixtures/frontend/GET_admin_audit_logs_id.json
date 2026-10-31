@@ -1,0 +1,24 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 42,
+    "actorType": "staff",
+    "actorId": 2,
+    "actorName": "Lina S.",
+    "action": "completed order",
+    "entityType": "order",
+    "entityId": 48792,
+    "entityLabel": "ORD-48792 for Zain Mobile Hub",
+    "before": {
+      "status": "processing"
+    },
+    "after": {
+      "status": "completed"
+    },
+    "ip": "198.51.100.77",
+    "createdAt": "2026-10-30T17:49:57.206Z"
+  }
+}

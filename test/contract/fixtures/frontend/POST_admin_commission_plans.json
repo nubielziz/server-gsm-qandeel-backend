@@ -1,0 +1,18 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "name": "Harvest sample",
+    "kind": "referral",
+    "basis": "Harvest sample text.",
+    "percent": "1.0000",
+    "tiers": {},
+    "period": "Harvest sample text.",
+    "isActive": false,
+    "createdAt": "2026-10-31T12:00:00.000Z",
+    "updatedAt": "2026-10-31T12:00:00.000Z",
+    "id": 4
+  }
+}

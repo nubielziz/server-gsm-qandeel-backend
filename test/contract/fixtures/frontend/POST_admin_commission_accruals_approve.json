@@ -1,0 +1,16 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "approved": 0,
+    "total": "0.0000",
+    "skipped": [
+      {
+        "id": 1,
+        "reason": "Already approved."
+      }
+    ]
+  }
+}

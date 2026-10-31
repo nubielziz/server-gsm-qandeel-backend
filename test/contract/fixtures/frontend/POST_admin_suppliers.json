@@ -1,0 +1,35 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "name": "Harvest sample",
+    "driver": "Harvest sample text.",
+    "baseUrl": "https://example.com/hook",
+    "username": "Harvest sample",
+    "currency": "HARVEST SAMPLE TEXT.",
+    "creditRate": "1.0000",
+    "status": "active",
+    "apiKeyHint": "HARVE",
+    "health": "up",
+    "successRate1h": null,
+    "successRate24h": null,
+    "p50Ms": null,
+    "p95Ms": null,
+    "balance": "0.0000",
+    "balanceCheckedAt": null,
+    "lowBalanceAlert": "150.0000",
+    "lowBalance": false,
+    "runwayDays": null,
+    "maxConcurrency": 5,
+    "rateLimitPerMin": 60,
+    "timeoutMs": 15000,
+    "createdAt": "2026-10-31T12:00:00.000Z",
+    "id": 7,
+    "openOrders": 0,
+    "reviewOrders": 0,
+    "history": [],
+    "links": []
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "running": false,
+    "lastRun": {
+      "job": "ledger_integrity",
+      "startedAt": "2026-10-31T02:30:01.209Z",
+      "finishedAt": "2026-10-31T02:30:16.119Z",
+      "durationMs": 14910,
+      "processed": 47377,
+      "trigger": "schedule",
+      "status": "succeeded",
+      "error": null,
+      "result": {
+        "entriesChecked": 47377,
+        "accountsChecked": 312,
+        "holdsChecked": 27,
+        "paymentsChecked": 1184,
+        "failedChecks": 0
+      },
+      "triggeredBy": null,
+      "id": 70
+    },
+    "lastSuccessAt": "2026-10-31T02:30:16.119Z",
+    "checks": [
+      {
+        "key": "entries_balanced",
+        "label": "Every entry sums to zero",
+        "status": "pass",
+        "count": 0,
+        "difference": "0.0000",
+        "findings": []
+      },
+      {
+        "key": "accounts_match_lines",
+        "label": "Every account balance equals the sum of its lines",
+        "status": "pass",
+        "count": 0,
+        "difference": "0.0000",
+        "findings": []
+      },
+      {
+        "key": "stuck_holds",
+        "label": "No hold is stuck for more than 24 hours",
+        "status": "pass",
+        "count": 0,
+        "difference": null,
+        "findings": []
+      },
+      {
+        "key": "payments_without_entry",
+        "label": "Every confirmed payment has an entry",
+        "status": "pass",
+        "count": 0,
+        "difference": "0.0000",
+        "findings": []
+      }
+    ]
+  }
+}

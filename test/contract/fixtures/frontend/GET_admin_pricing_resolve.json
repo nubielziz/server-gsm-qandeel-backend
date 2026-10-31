@@ -1,0 +1,85 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "price": "0.1000",
+    "rawPrice": "0.1000",
+    "floor": "0.1000",
+    "clamped": false,
+    "source": "client",
+    "cost": "0.0800",
+    "minProfit": "0.0200",
+    "margin": "0.0200",
+    "marginPct": "20.0000",
+    "steps": [
+      {
+        "id": "client",
+        "label": "Client override",
+        "state": "win",
+        "value": 0.1,
+        "after": 0.1,
+        "note": "Fixed price set for this merchant"
+      },
+      {
+        "id": "group",
+        "label": "Group service price",
+        "state": "skip",
+        "value": null,
+        "after": null,
+        "note": "Skipped, client override wins"
+      },
+      {
+        "id": "base",
+        "label": "Base price",
+        "state": "skip",
+        "value": 0.13,
+        "after": null,
+        "note": "Skipped, a fixed price applies"
+      },
+      {
+        "id": "category",
+        "label": "Category rule",
+        "state": "skip",
+        "value": null,
+        "after": null,
+        "note": "Skipped, a fixed price applies"
+      },
+      {
+        "id": "discount",
+        "label": "Group discount",
+        "state": "skip",
+        "value": 0.08,
+        "after": null,
+        "note": "Skipped, a fixed price applies"
+      }
+    ],
+    "otherGroups": [
+      {
+        "group": {
+          "id": 1,
+          "name": "Standard"
+        },
+        "price": "0.1300",
+        "clamped": false
+      },
+      {
+        "group": {
+          "id": 2,
+          "name": "Wholesale"
+        },
+        "price": "0.1200",
+        "clamped": false
+      },
+      {
+        "group": {
+          "id": 3,
+          "name": "VIP"
+        },
+        "price": "0.1200",
+        "clamped": false
+      }
+    ]
+  }
+}

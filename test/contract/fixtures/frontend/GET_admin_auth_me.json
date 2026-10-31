@@ -1,0 +1,23 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "email": "rami@gsm-supply.example",
+    "name": "Rami K.",
+    "status": "active",
+    "role": {
+      "id": 1,
+      "name": "Owner"
+    },
+    "permissions": [
+      "*"
+    ],
+    "twofaEnabled": true,
+    "mustChangePassword": false,
+    "lastLoginAt": "2026-10-31T12:00:00.000Z",
+    "lastLoginIp": "203.0.113.24"
+  }
+}

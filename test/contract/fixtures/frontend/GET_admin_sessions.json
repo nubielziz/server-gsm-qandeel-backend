@@ -1,0 +1,108 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "7"
+  },
+  "body": [
+    {
+      "subjectType": "staff",
+      "subject": {
+        "id": 1,
+        "name": "Rami K.",
+        "email": "rami@gsm-supply.example"
+      },
+      "ip": "203.0.113.24",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "lastSeenAt": "2026-10-31T11:48:00.000Z",
+      "createdAt": "2026-10-31T09:48:00.000Z",
+      "expiresAt": "2026-10-31T20:00:00.000Z",
+      "id": 1,
+      "current": true
+    },
+    {
+      "subjectType": "staff",
+      "subject": {
+        "id": 1,
+        "name": "Rami K.",
+        "email": "rami@gsm-supply.example"
+      },
+      "ip": "203.0.113.24",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+      "lastSeenAt": "2026-10-31T11:03:00.000Z",
+      "createdAt": "2026-10-31T09:03:00.000Z",
+      "expiresAt": "2026-10-31T19:00:00.000Z",
+      "id": 2
+    },
+    {
+      "subjectType": "staff",
+      "subject": {
+        "id": 2,
+        "name": "Lina S.",
+        "email": "lina@gsm-supply.example"
+      },
+      "ip": "203.0.113.31",
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0",
+      "lastSeenAt": "2026-10-31T11:19:00.000Z",
+      "createdAt": "2026-10-31T09:19:00.000Z",
+      "expiresAt": "2026-10-31T20:00:00.000Z",
+      "id": 3
+    },
+    {
+      "subjectType": "staff",
+      "subject": {
+        "id": 3,
+        "name": "Omar T.",
+        "email": "omar@gsm-supply.example"
+      },
+      "ip": "198.51.100.77",
+      "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
+      "lastSeenAt": "2026-10-31T09:00:00.000Z",
+      "createdAt": "2026-10-31T07:00:00.000Z",
+      "expiresAt": "2026-10-31T20:00:00.000Z",
+      "id": 4
+    },
+    {
+      "subjectType": "client",
+      "subject": {
+        "id": 1,
+        "name": "Zain Mobile Hub",
+        "email": "ops@zainmobilehub.example"
+      },
+      "ip": "203.0.113.55",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+      "lastSeenAt": "2026-10-31T11:54:15.000Z",
+      "createdAt": "2026-10-31T08:54:15.000Z",
+      "expiresAt": "2026-11-07T12:00:00.000Z",
+      "id": 5
+    },
+    {
+      "subjectType": "client",
+      "subject": {
+        "id": 2,
+        "name": "Al-Noor Telecom",
+        "email": "ops@alnoortelecom.example"
+      },
+      "ip": "203.0.113.65",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "lastSeenAt": "2026-10-31T11:50:27.000Z",
+      "createdAt": "2026-10-31T08:50:27.000Z",
+      "expiresAt": "2026-11-07T12:00:00.000Z",
+      "id": 6
+    },
+    {
+      "subjectType": "client",
+      "subject": {
+        "id": 3,
+        "name": "Phone Doctor FZE",
+        "email": "ops@phonedoctorfze.example"
+      },
+      "ip": "203.0.113.193",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+      "lastSeenAt": "2026-10-31T11:52:18.000Z",
+      "createdAt": "2026-10-31T08:52:18.000Z",
+      "expiresAt": "2026-11-07T12:00:00.000Z",
+      "id": 7
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "8"
+  },
+  "body": [
+    {
+      "id": 1,
+      "tac": "35389011",
+      "brand": "Apple",
+      "model": "A2633",
+      "marketingName": "iPhone 13",
+      "releaseYear": 2021,
+      "source": "import"
+    },
+    {
+      "id": 2,
+      "tac": "35925410",
+      "brand": "Apple",
+      "model": "A2889",
+      "marketingName": "iPhone 14 Pro",
+      "releaseYear": 2022,
+      "source": "import"
+    },
+    {
+      "id": 3,
+      "tac": "01388300",
+      "brand": "Apple",
+      "model": "A2403",
+      "marketingName": "iPhone 12",
+      "releaseYear": 2020,
+      "source": "import"
+    },
+    {
+      "id": 4,
+      "tac": "35290511",
+      "brand": "Samsung",
+      "model": "SM-S911B",
+      "marketingName": "Galaxy S23",
+      "releaseYear": 2023,
+      "source": "import"
+    },
+    {
+      "id": 5,
+      "tac": "35848011",
+      "brand": "Samsung",
+      "model": "SM-A546E",
+      "marketingName": "Galaxy A54",
+      "releaseYear": 2023,
+      "source": "import"
+    },
+    {
+      "id": 6,
+      "tac": "86741205",
+      "brand": "Xiaomi",
+      "model": "23021RAAEG",
+      "marketingName": "Redmi Note 12",
+      "releaseYear": 2023,
+      "source": "import"
+    },
+    {
+      "id": 7,
+      "tac": "35460711",
+      "brand": "Google",
+      "model": "GVU6C",
+      "marketingName": "Pixel 7",
+      "releaseYear": 2022,
+      "source": "import"
+    },
+    {
+      "id": 8,
+      "tac": "35691211",
+      "brand": "Apple",
+      "model": "A2221",
+      "marketingName": "iPhone 11",
+      "releaseYear": 2019,
+      "source": "import"
+    }
+  ]
+}

@@ -163,7 +163,7 @@ describe('bun run db:seed', () => {
   async function run(env: Record<string, string>) {
     const child = Bun.spawn([process.execPath, '--no-env-file', 'scripts/seed/index.ts'], {
       cwd: ROOT,
-      // The child must seed the database this test resets (DATABASE_URL_TEST may point at a private database).
+      // The child runs without env files, so it gets the test database explicitly (a worktree may use its own database).
       env: {
         PATH: process.env.PATH ?? '',
         HOME: process.env.HOME ?? '/tmp',

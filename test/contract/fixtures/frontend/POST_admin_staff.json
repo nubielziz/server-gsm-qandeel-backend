@@ -1,0 +1,31 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 7,
+    "email": "harvest.sample@example.com",
+    "name": "Harvest sample",
+    "role": {
+      "id": 1,
+      "name": "Owner"
+    },
+    "status": "invited",
+    "twofaEnabled": false,
+    "mustChangePassword": false,
+    "passwordChangedAt": null,
+    "resetSentAt": "2026-10-31T12:00:00.000Z",
+    "lastLoginAt": null,
+    "lastLoginIp": null,
+    "activeSessions": 0,
+    "createdAt": "2026-10-31T12:00:00.000Z",
+    "createdBy": {
+      "id": 1,
+      "name": "Rami K."
+    },
+    "suspendedAt": null,
+    "suspendedReason": null,
+    "suspendedBy": null
+  }
+}

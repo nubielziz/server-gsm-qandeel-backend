@@ -1,0 +1,122 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "7"
+  },
+  "body": [
+    {
+      "id": 1,
+      "kind": "allow",
+      "scope": "admin",
+      "cidr": "203.0.113.24",
+      "label": "Rami, Amman office",
+      "reason": "",
+      "source": "manual",
+      "expiresAt": null,
+      "hitCount": 412,
+      "lastHitAt": "2026-10-31T11:48:00.000Z",
+      "createdAt": "2026-09-25T12:00:00.000Z",
+      "createdBy": {
+        "id": 1,
+        "name": "Rami K."
+      }
+    },
+    {
+      "id": 2,
+      "kind": "allow",
+      "scope": "admin",
+      "cidr": "203.0.113.31",
+      "label": "Lina and Dana, Amman office",
+      "reason": "",
+      "source": "manual",
+      "expiresAt": null,
+      "hitCount": 366,
+      "lastHitAt": "2026-10-31T11:19:00.000Z",
+      "createdAt": "2026-09-27T12:00:00.000Z",
+      "createdBy": {
+        "id": 1,
+        "name": "Rami K."
+      }
+    },
+    {
+      "id": 3,
+      "kind": "allow",
+      "scope": "admin",
+      "cidr": "198.51.100.77",
+      "label": "Omar, working from home",
+      "reason": "",
+      "source": "manual",
+      "expiresAt": "2026-11-05T12:00:00.000Z",
+      "hitCount": 98,
+      "lastHitAt": "2026-10-31T09:00:00.000Z",
+      "createdAt": "2026-10-29T12:00:00.000Z",
+      "createdBy": {
+        "id": 1,
+        "name": "Rami K."
+      }
+    },
+    {
+      "id": 4,
+      "kind": "block",
+      "scope": "store",
+      "cidr": "192.0.2.0/24",
+      "label": "",
+      "reason": "Card testing, 60 attempts in 10 minutes",
+      "source": "auto",
+      "expiresAt": "2026-11-16T12:00:00.000Z",
+      "hitCount": 183,
+      "lastHitAt": "2026-10-31T06:00:00.000Z",
+      "createdAt": "2026-10-17T12:00:00.000Z",
+      "createdBy": null
+    },
+    {
+      "id": 5,
+      "kind": "block",
+      "scope": "admin",
+      "cidr": "198.51.100.200",
+      "label": "",
+      "reason": "Repeated failed admin sign-ins, 31 in one hour",
+      "source": "auto",
+      "expiresAt": "2026-11-04T12:00:00.000Z",
+      "hitCount": 54,
+      "lastHitAt": "2026-10-30T12:00:00.000Z",
+      "createdAt": "2026-10-28T12:00:00.000Z",
+      "createdBy": null
+    },
+    {
+      "id": 6,
+      "kind": "block",
+      "scope": "api",
+      "cidr": "203.0.113.160/28",
+      "label": "",
+      "reason": "A merchant key scraping the price list, about 4,000 requests an hour",
+      "source": "manual",
+      "expiresAt": null,
+      "hitCount": 1240,
+      "lastHitAt": "2026-10-31T11:35:00.000Z",
+      "createdAt": "2026-10-25T12:00:00.000Z",
+      "createdBy": {
+        "id": 1,
+        "name": "Rami K."
+      }
+    },
+    {
+      "id": 7,
+      "kind": "block",
+      "scope": "all",
+      "cidr": "198.51.100.231",
+      "label": "",
+      "reason": "Account takeover attempts on customer and admin logins",
+      "source": "manual",
+      "expiresAt": "2026-11-05T12:00:00.000Z",
+      "hitCount": 37,
+      "lastHitAt": "2026-10-30T09:00:00.000Z",
+      "createdAt": "2026-10-29T12:00:00.000Z",
+      "createdBy": {
+        "id": 1,
+        "name": "Rami K."
+      }
+    }
+  ]
+}

@@ -1,0 +1,457 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "42"
+  },
+  "body": [
+    {
+      "id": 42,
+      "actorType": "staff",
+      "actorId": 2,
+      "actorName": "Lina S.",
+      "action": "completed order",
+      "entityType": "order",
+      "entityId": 48792,
+      "entityLabel": "ORD-48792 for Zain Mobile Hub",
+      "before": {
+        "status": "processing"
+      },
+      "after": {
+        "status": "completed"
+      },
+      "ip": "198.51.100.77",
+      "createdAt": "2026-10-30T17:49:57.206Z"
+    },
+    {
+      "id": 41,
+      "actorType": "system",
+      "actorId": null,
+      "actorName": "System",
+      "action": "synced supplier costs",
+      "entityType": "supplier",
+      "entityId": 2,
+      "entityLabel": "Gulf Server Hub",
+      "before": {
+        "SRV-CHM-1M cost": "$17.00"
+      },
+      "after": {
+        "SRV-CHM-1M cost": "$19.80"
+      },
+      "ip": null,
+      "createdAt": "2026-10-30T12:00:00.000Z"
+    },
+    {
+      "id": 40,
+      "actorType": "system",
+      "actorId": null,
+      "actorName": "System",
+      "action": "published legal document",
+      "entityType": "legal",
+      "entityId": 1,
+      "entityLabel": "Terms of service 3.2 (EN)",
+      "before": {
+        "version": "3.1"
+      },
+      "after": {
+        "version": "3.2"
+      },
+      "ip": null,
+      "createdAt": "2026-10-30T11:19:00.000Z"
+    },
+    {
+      "id": 39,
+      "actorType": "system",
+      "actorId": null,
+      "actorName": "System",
+      "action": "flagged supplier degraded",
+      "entityType": "supplier",
+      "entityId": 3,
+      "entityLabel": "Rapid IMEI",
+      "before": {
+        "status": "up",
+        "success_1h": "97%"
+      },
+      "after": {
+        "status": "degraded",
+        "success_1h": "48%"
+      },
+      "ip": null,
+      "createdAt": "2026-10-30T05:50:00.000Z"
+    },
+    {
+      "id": 38,
+      "actorType": "staff",
+      "actorId": 2,
+      "actorName": "Lina S.",
+      "action": "completed order",
+      "entityType": "order",
+      "entityId": 48809,
+      "entityLabel": "ORD-48809 for Phone Doctor FZE",
+      "before": {
+        "status": "processing"
+      },
+      "after": {
+        "status": "completed"
+      },
+      "ip": "198.51.100.77",
+      "createdAt": "2026-10-30T02:12:04.811Z"
+    },
+    {
+      "id": 37,
+      "actorType": "staff",
+      "actorId": 2,
+      "actorName": "Lina S.",
+      "action": "completed order",
+      "entityType": "order",
+      "entityId": 48759,
+      "entityLabel": "ORD-48759 for Doha Phone Lab",
+      "before": {
+        "status": "processing"
+      },
+      "after": {
+        "status": "completed"
+      },
+      "ip": "203.0.113.24",
+      "createdAt": "2026-10-30T02:11:02.457Z"
+    },
+    {
+      "id": 36,
+      "actorType": "staff",
+      "actorId": 2,
+      "actorName": "Lina S.",
+      "action": "completed order",
+      "entityType": "order",
+      "entityId": 48787,
+      "entityLabel": "ORD-48787 for Istanbul GSM Care",
+      "before": {
+        "status": "processing"
+      },
+      "after": {
+        "status": "completed"
+      },
+      "ip": "198.51.100.77",
+      "createdAt": "2026-10-29T22:14:59.112Z"
+    },
+    {
+      "id": 35,
+      "actorType": "staff",
+      "actorId": 1,
+      "actorName": "Rami K.",
+      "action": "set client price for",
+      "entityType": "merchant",
+      "entityId": 5,
+      "entityLabel": "Cairo GSM Lab, AT&T USA Premier",
+      "before": {
+        "price": "group 15.90"
+      },
+      "after": {
+        "price": "15.20"
+      },
+      "ip": "203.0.113.24",
+      "createdAt": "2026-10-29T11:16:00.000Z"
+    },
+    {
+      "id": 34,
+      "actorType": "staff",
+      "actorId": 2,
+      "actorName": "Lina S.",
+      "action": "logged in",
+      "entityType": "session",
+      "entityId": 0,
+      "entityLabel": "Lina S.",
+      "before": null,
+      "after": null,
+      "ip": "203.0.113.24",
+      "createdAt": "2026-10-29T02:34:00.000Z"
+    },
+    {
+      "id": 33,
+      "actorType": "staff",
+      "actorId": 1,
+      "actorName": "Rami K.",
+      "action": "approved after risk review",
+      "entityType": "order",
+      "entityId": 20464,
+      "entityLabel": "SF-20464 for Olivia Grant",
+      "before": {
+        "risk_decision": "review"
+      },
+      "after": {
+        "risk_decision": "approved"
+      },
+      "ip": "198.51.100.77",
+      "createdAt": "2026-10-29T02:16:00.000Z"
+    },
+    {
+      "id": 32,
+      "actorType": "staff",
+      "actorId": 2,
+      "actorName": "Lina S.",
+      "action": "completed order",
+      "entityType": "order",
+      "entityId": 48734,
+      "entityLabel": "ORD-48734 for Phone Doctor FZE",
+      "before": {
+        "status": "processing"
+      },
+      "after": {
+        "status": "completed"
+      },
+      "ip": "198.51.100.77",
+      "createdAt": "2026-10-29T01:35:38.150Z"
+    },
+    {
+      "id": 31,
+      "actorType": "staff",
+      "actorId": 3,
+      "actorName": "Omar T.",
+      "action": "recorded top-up for",
+      "entityType": "supplier",
+      "entityId": 6,
+      "entityLabel": "Bosphorus Unlock",
+      "before": {
+        "prepaid": "$760.00"
+      },
+      "after": {
+        "prepaid": "$1,260.00"
+      },
+      "ip": "203.0.113.31",
+      "createdAt": "2026-10-28T08:50:00.000Z"
+    },
+    {
+      "id": 30,
+      "actorType": "staff",
+      "actorId": 2,
+      "actorName": "Lina S.",
+      "action": "issued refund",
+      "entityType": "refund",
+      "entityId": 1001,
+      "entityLabel": "Goodwill refund on a delayed unlock",
+      "before": {
+        "status": "requested"
+      },
+      "after": {
+        "status": "completed"
+      },
+      "ip": "203.0.113.31",
+      "createdAt": "2026-10-28T06:17:00.000Z"
+    },
+    {
+      "id": 29,
+      "actorType": "staff",
+      "actorId": 2,
+      "actorName": "Lina S.",
+      "action": "completed order",
+      "entityType": "order",
+      "entityId": 48716,
+      "entityLabel": "ORD-48716 for Beirut Unlock Co",
+      "before": {
+        "status": "processing"
+      },
+      "after": {
+        "status": "completed"
+      },
+      "ip": "203.0.113.31",
+      "createdAt": "2026-10-28T00:31:43.548Z"
+    },
+    {
+      "id": 28,
+      "actorType": "staff",
+      "actorId": 2,
+      "actorName": "Lina S.",
+      "action": "completed order",
+      "entityType": "order",
+      "entityId": 48643,
+      "entityLabel": "ORD-48643 for Beirut Unlock Co",
+      "before": {
+        "status": "processing"
+      },
+      "after": {
+        "status": "completed"
+      },
+      "ip": "198.51.100.77",
+      "createdAt": "2026-10-27T07:28:14.218Z"
+    },
+    {
+      "id": 27,
+      "actorType": "staff",
+      "actorId": 1,
+      "actorName": "Rami K.",
+      "action": "changed commission plan of",
+      "entityType": "merchant",
+      "entityId": 5,
+      "entityLabel": "Cairo GSM Lab",
+      "before": {
+        "plan": "Referral 3%"
+      },
+      "after": {
+        "plan": "Partner 5%"
+      },
+      "ip": "203.0.113.31",
+      "createdAt": "2026-10-27T06:57:00.000Z"
+    },
+    {
+      "id": 26,
+      "actorType": "staff",
+      "actorId": 1,
+      "actorName": "Rami K.",
+      "action": "unlisted from storefront",
+      "entityType": "listing",
+      "entityId": 11,
+      "entityLabel": "MDM Removal, iPhone Premium",
+      "before": {
+        "is_listed": "true"
+      },
+      "after": {
+        "is_listed": "false",
+        "reason": "High risk: stolen devices"
+      },
+      "ip": "203.0.113.31",
+      "createdAt": "2026-10-27T03:03:00.000Z"
+    },
+    {
+      "id": 25,
+      "actorType": "staff",
+      "actorId": 2,
+      "actorName": "Lina S.",
+      "action": "completed order",
+      "entityType": "order",
+      "entityId": 48663,
+      "entityLabel": "ORD-48663 for Sana'a Repair",
+      "before": {
+        "status": "processing"
+      },
+      "after": {
+        "status": "completed"
+      },
+      "ip": "198.51.100.77",
+      "createdAt": "2026-10-26T15:16:01.549Z"
+    },
+    {
+      "id": 24,
+      "actorType": "staff",
+      "actorId": 3,
+      "actorName": "Omar T.",
+      "action": "set exchange markup",
+      "entityType": "setting",
+      "entityId": 0,
+      "entityLabel": "GBP, EUR, SEK, CAD",
+      "before": {
+        "markup": "1.0%"
+      },
+      "after": {
+        "markup": "1.5%"
+      },
+      "ip": "203.0.113.24",
+      "createdAt": "2026-10-26T06:53:00.000Z"
+    },
+    {
+      "id": 23,
+      "actorType": "staff",
+      "actorId": 1,
+      "actorName": "Rami K.",
+      "action": "disabled service",
+      "entityType": "service",
+      "entityId": 14,
+      "entityLabel": "Xiaomi Mi Account Clean",
+      "before": {
+        "status": "active"
+      },
+      "after": {
+        "status": "disabled"
+      },
+      "ip": "198.51.100.77",
+      "createdAt": "2026-10-26T02:28:00.000Z"
+    },
+    {
+      "id": 22,
+      "actorType": "staff",
+      "actorId": 2,
+      "actorName": "Lina S.",
+      "action": "completed order",
+      "entityType": "order",
+      "entityId": 48661,
+      "entityLabel": "ORD-48661 for Sana'a Repair",
+      "before": {
+        "status": "processing"
+      },
+      "after": {
+        "status": "completed"
+      },
+      "ip": "198.51.100.77",
+      "createdAt": "2026-10-26T02:01:42.129Z"
+    },
+    {
+      "id": 21,
+      "actorType": "staff",
+      "actorId": 2,
+      "actorName": "Lina S.",
+      "action": "added to blocklist",
+      "entityType": "blocklist",
+      "entityId": 5,
+      "entityLabel": "IMEI 35 389011 884201 9",
+      "before": {},
+      "after": {
+        "reason": "Reported stolen by the previous owner"
+      },
+      "ip": "203.0.113.31",
+      "createdAt": "2026-10-25T11:35:00.000Z"
+    },
+    {
+      "id": 20,
+      "actorType": "staff",
+      "actorId": 3,
+      "actorName": "Omar T.",
+      "action": "paid withdrawal",
+      "entityType": "withdrawal",
+      "entityId": 199,
+      "entityLabel": "Zain Mobile Hub, $300.00",
+      "before": {
+        "status": "pending"
+      },
+      "after": {
+        "status": "paid"
+      },
+      "ip": "203.0.113.24",
+      "createdAt": "2026-10-25T09:14:00.000Z"
+    },
+    {
+      "id": 19,
+      "actorType": "staff",
+      "actorId": 1,
+      "actorName": "Rami K.",
+      "action": "changed price of",
+      "entityType": "service",
+      "entityId": 6,
+      "entityLabel": "T-Mobile USA Unlock",
+      "before": {
+        "price": "$12.36"
+      },
+      "after": {
+        "price": "$12.74"
+      },
+      "ip": "203.0.113.31",
+      "createdAt": "2026-10-25T05:29:00.000Z"
+    },
+    {
+      "id": 18,
+      "actorType": "staff",
+      "actorId": 2,
+      "actorName": "Lina S.",
+      "action": "suspended",
+      "entityType": "merchant",
+      "entityId": 19,
+      "entityLabel": "Tunis Fix Point",
+      "before": {
+        "status": "active"
+      },
+      "after": {
+        "status": "suspended",
+        "reason": "Chargeback dispute"
+      },
+      "ip": "203.0.113.24",
+      "createdAt": "2026-10-25T04:39:00.000Z"
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "currency": "USD",
+    "rows": [
+      {
+        "kind": "bank",
+        "balance": "28819.0800",
+        "accounts": 1
+      },
+      {
+        "kind": "owner_capital",
+        "balance": "-25000.0000",
+        "accounts": 1
+      },
+      {
+        "kind": "supplier_prepaid",
+        "balance": "5088.4000",
+        "accounts": 6
+      },
+      {
+        "kind": "client_wallet",
+        "balance": "-7608.1700",
+        "accounts": 18
+      },
+      {
+        "kind": "gateway_clearing",
+        "balance": "1111.5300",
+        "accounts": 1
+      },
+      {
+        "kind": "fee_income",
+        "balance": "-106.4400",
+        "accounts": 1
+      },
+      {
+        "kind": "client_hold",
+        "balance": "-353.1900",
+        "accounts": 18
+      },
+      {
+        "kind": "revenue",
+        "balance": "-8796.1500",
+        "accounts": 1
+      },
+      {
+        "kind": "cogs",
+        "balance": "6948.5900",
+        "accounts": 1
+      },
+      {
+        "kind": "customer_funds",
+        "balance": "-187.8800",
+        "accounts": 1
+      },
+      {
+        "kind": "vat_payable",
+        "balance": "-87.7600",
+        "accounts": 1
+      },
+      {
+        "kind": "gateway_fees",
+        "balance": "68.0300",
+        "accounts": 1
+      },
+      {
+        "kind": "commission_expense",
+        "balance": "58.3700",
+        "accounts": 1
+      },
+      {
+        "kind": "chargeback_loss",
+        "balance": "45.5900",
+        "accounts": 1
+      }
+    ],
+    "totalDebit": "42139.5900",
+    "totalCredit": "42139.5900"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "subject": "Your order SF-20431 is confirmed",
+    "body": "Hi Daniel, thanks for your order. We received £14.39 for \"Vodafone UK iPhone Unlock\". Your receipt is attached and shows the VAT. We will email you the result as soon as the carrier confirms it, usually within a few hours.",
+    "format": "text",
+    "from": "GSM Supply <support@gsmsupply.example>",
+    "note": "A sample with made-up details."
+  }
+}

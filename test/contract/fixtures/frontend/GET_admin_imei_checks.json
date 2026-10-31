@@ -1,0 +1,534 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "907"
+  },
+  "body": [
+    {
+      "id": 9900,
+      "imei": "867412055465701",
+      "brand": "Xiaomi",
+      "model": "Redmi Note 12",
+      "checkType": "icloud",
+      "status": "clean",
+      "source": "storefront_free",
+      "country": "US",
+      "ip": "203.0.113.20",
+      "cost": "0.0400",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-31T11:47:00.000Z",
+      "orderId": null,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "findMy": "off"
+      }
+    },
+    {
+      "id": 9899,
+      "imei": "354607117850713",
+      "brand": "Google",
+      "model": "Pixel 7",
+      "checkType": "basic",
+      "status": "clean",
+      "source": "storefront_free",
+      "country": "GB",
+      "ip": "203.0.113.21",
+      "cost": "0.0000",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-31T11:46:00.000Z",
+      "orderId": null,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "modelMatched": true
+      }
+    },
+    {
+      "id": 9898,
+      "imei": "867412055003650",
+      "brand": "Xiaomi",
+      "model": "Redmi Note 12",
+      "checkType": "basic",
+      "status": "clean",
+      "source": "storefront_free",
+      "country": "US",
+      "ip": "203.0.113.22",
+      "cost": "0.0000",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-31T11:06:00.000Z",
+      "orderId": null,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "modelMatched": true
+      }
+    },
+    {
+      "id": 9897,
+      "imei": "867412054364913",
+      "brand": "Xiaomi",
+      "model": "Redmi Note 12",
+      "checkType": "icloud",
+      "status": "clean",
+      "source": "pre_order",
+      "country": "US",
+      "ip": "203.0.113.23",
+      "cost": "0.0400",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-31T10:11:00.000Z",
+      "orderId": null,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "findMy": "off"
+      }
+    },
+    {
+      "id": 9896,
+      "imei": "013883004958751",
+      "brand": "Apple",
+      "model": "iPhone 12",
+      "checkType": "sim_lock",
+      "status": "locked",
+      "source": "pre_order",
+      "country": "DE",
+      "ip": "203.0.113.24",
+      "cost": "0.0400",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-31T09:59:00.000Z",
+      "orderId": null,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "simLock": "locked"
+      }
+    },
+    {
+      "id": 9895,
+      "imei": "358480116422751",
+      "brand": "Samsung",
+      "model": "Galaxy A54",
+      "checkType": "blacklist",
+      "status": "clean",
+      "source": "pre_order",
+      "country": "DE",
+      "ip": "203.0.113.25",
+      "cost": "0.0400",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-31T09:31:00.000Z",
+      "orderId": 20406,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "blacklist": "not listed"
+      }
+    },
+    {
+      "id": 9894,
+      "imei": "867412055521552",
+      "brand": "Xiaomi",
+      "model": "Redmi Note 12",
+      "checkType": "blacklist",
+      "status": "clean",
+      "source": "storefront_free",
+      "country": "US",
+      "ip": "203.0.113.26",
+      "cost": "0.0400",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-31T08:41:00.000Z",
+      "orderId": null,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "blacklist": "not listed"
+      }
+    },
+    {
+      "id": 9893,
+      "imei": "359254104958848",
+      "brand": "Apple",
+      "model": "iPhone 14 Pro",
+      "checkType": "blacklist",
+      "status": "clean",
+      "source": "storefront_free",
+      "country": "US",
+      "ip": "203.0.113.27",
+      "cost": "0.0400",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-31T08:27:00.000Z",
+      "orderId": null,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "blacklist": "not listed"
+      }
+    },
+    {
+      "id": 9892,
+      "imei": "358480110999283",
+      "brand": "Samsung",
+      "model": "Galaxy A54",
+      "checkType": "basic",
+      "status": "clean",
+      "source": "pre_order",
+      "country": "GB",
+      "ip": "203.0.113.28",
+      "cost": "0.0000",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-31T08:23:00.000Z",
+      "orderId": 20427,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "modelMatched": true
+      }
+    },
+    {
+      "id": 9891,
+      "imei": "353890117612744",
+      "brand": "Apple",
+      "model": "iPhone 13",
+      "checkType": "basic",
+      "status": "clean",
+      "source": "storefront_free",
+      "country": "FR",
+      "ip": "203.0.113.29",
+      "cost": "0.0000",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-31T06:25:00.000Z",
+      "orderId": null,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "modelMatched": true
+      }
+    },
+    {
+      "id": 9890,
+      "imei": "353890116588044",
+      "brand": "Apple",
+      "model": "iPhone 13",
+      "checkType": "blacklist",
+      "status": "clean",
+      "source": "storefront_free",
+      "country": "ES",
+      "ip": "203.0.113.30",
+      "cost": "0.0400",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-31T06:14:00.000Z",
+      "orderId": null,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "blacklist": "not listed"
+      }
+    },
+    {
+      "id": 9889,
+      "imei": "359254102649175",
+      "brand": "Apple",
+      "model": "iPhone 14 Pro",
+      "checkType": "sim_lock",
+      "status": "locked",
+      "source": "storefront_free",
+      "country": "GB",
+      "ip": "203.0.113.31",
+      "cost": "0.0400",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-30T22:26:00.000Z",
+      "orderId": null,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "simLock": "locked"
+      }
+    },
+    {
+      "id": 9888,
+      "imei": "354607117593388",
+      "brand": "Google",
+      "model": "Pixel 7",
+      "checkType": "blacklist",
+      "status": "clean",
+      "source": "pre_order",
+      "country": "GB",
+      "ip": "203.0.113.32",
+      "cost": "0.0400",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-30T20:17:00.000Z",
+      "orderId": null,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "blacklist": "not listed"
+      }
+    },
+    {
+      "id": 9887,
+      "imei": "359254104333687",
+      "brand": "Apple",
+      "model": "iPhone 14 Pro",
+      "checkType": "sim_lock",
+      "status": "locked",
+      "source": "pre_order",
+      "country": "DE",
+      "ip": "203.0.113.33",
+      "cost": "0.0400",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-30T19:46:00.000Z",
+      "orderId": null,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "simLock": "locked"
+      }
+    },
+    {
+      "id": 9886,
+      "imei": "352905118071566",
+      "brand": "Samsung",
+      "model": "Galaxy S23",
+      "checkType": "sim_lock",
+      "status": "clean",
+      "source": "storefront_free",
+      "country": "ES",
+      "ip": "203.0.113.34",
+      "cost": "0.0400",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-30T19:31:00.000Z",
+      "orderId": null,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "simLock": "unlocked"
+      }
+    },
+    {
+      "id": 9885,
+      "imei": "354607111214759",
+      "brand": "Google",
+      "model": "Pixel 7",
+      "checkType": "basic",
+      "status": "clean",
+      "source": "storefront_free",
+      "country": "US",
+      "ip": "203.0.113.35",
+      "cost": "0.0000",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-30T18:33:00.000Z",
+      "orderId": null,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "modelMatched": true
+      }
+    },
+    {
+      "id": 9884,
+      "imei": "013883000943625",
+      "brand": "Apple",
+      "model": "iPhone 12",
+      "checkType": "blacklist",
+      "status": "clean",
+      "source": "storefront_free",
+      "country": "DE",
+      "ip": "203.0.113.36",
+      "cost": "0.0400",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-30T18:13:00.000Z",
+      "orderId": null,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "blacklist": "not listed"
+      }
+    },
+    {
+      "id": 9883,
+      "imei": "356912118072640",
+      "brand": "Apple",
+      "model": "iPhone 11",
+      "checkType": "blacklist",
+      "status": "clean",
+      "source": "pre_order",
+      "country": "NL",
+      "ip": "203.0.113.37",
+      "cost": "0.0400",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-30T17:54:00.000Z",
+      "orderId": null,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "blacklist": "not listed"
+      }
+    },
+    {
+      "id": 9882,
+      "imei": "356912113774851",
+      "brand": "Apple",
+      "model": "iPhone 11",
+      "checkType": "blacklist",
+      "status": "clean",
+      "source": "pre_order",
+      "country": "ES",
+      "ip": "203.0.113.38",
+      "cost": "0.0400",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-30T17:22:00.000Z",
+      "orderId": null,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "blacklist": "not listed"
+      }
+    },
+    {
+      "id": 9881,
+      "imei": "358480113973210",
+      "brand": "Samsung",
+      "model": "Galaxy A54",
+      "checkType": "basic",
+      "status": "clean",
+      "source": "storefront_free",
+      "country": "GB",
+      "ip": "203.0.113.39",
+      "cost": "0.0000",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-30T17:21:00.000Z",
+      "orderId": null,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "modelMatched": true
+      }
+    },
+    {
+      "id": 9880,
+      "imei": "867412056164345",
+      "brand": "Xiaomi",
+      "model": "Redmi Note 12",
+      "checkType": "blacklist",
+      "status": "clean",
+      "source": "storefront_free",
+      "country": "GB",
+      "ip": "203.0.113.40",
+      "cost": "0.0400",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-30T16:58:00.000Z",
+      "orderId": null,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "blacklist": "not listed"
+      }
+    },
+    {
+      "id": 9879,
+      "imei": "352905112571124",
+      "brand": "Samsung",
+      "model": "Galaxy S23",
+      "checkType": "basic",
+      "status": "clean",
+      "source": "pre_order",
+      "country": "US",
+      "ip": "203.0.113.41",
+      "cost": "0.0000",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-30T16:51:00.000Z",
+      "orderId": 20415,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "modelMatched": true
+      }
+    },
+    {
+      "id": 9878,
+      "imei": "353890117837317",
+      "brand": "Apple",
+      "model": "iPhone 13",
+      "checkType": "blacklist",
+      "status": "clean",
+      "source": "storefront_free",
+      "country": "NL",
+      "ip": "203.0.113.42",
+      "cost": "0.0400",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-30T16:48:00.000Z",
+      "orderId": null,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "blacklist": "not listed"
+      }
+    },
+    {
+      "id": 9877,
+      "imei": "359254108464215",
+      "brand": "Apple",
+      "model": "iPhone 14 Pro",
+      "checkType": "basic",
+      "status": "clean",
+      "source": "storefront_free",
+      "country": "DE",
+      "ip": "203.0.113.43",
+      "cost": "0.0000",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-30T16:47:00.000Z",
+      "orderId": null,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "modelMatched": true
+      }
+    },
+    {
+      "id": 9876,
+      "imei": "354607119111601",
+      "brand": "Google",
+      "model": "Pixel 7",
+      "checkType": "blacklist",
+      "status": "clean",
+      "source": "storefront_free",
+      "country": "ES",
+      "ip": "203.0.113.44",
+      "cost": "0.0400",
+      "price": "0.0000",
+      "cachedUntil": null,
+      "createdAt": "2026-10-30T16:13:00.000Z",
+      "orderId": null,
+      "customer": null,
+      "supplier": null,
+      "result": {
+        "blacklist": "not listed"
+      }
+    }
+  ]
+}

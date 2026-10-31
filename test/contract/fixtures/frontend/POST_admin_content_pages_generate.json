@@ -1,0 +1,27 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "created": [
+      {
+        "bodyMd": "# Unlock Harvest sample text. on Harvest sample text.\n\nDraft for review.",
+        "seoTitle": "",
+        "seoDescription": "",
+        "status": "draft",
+        "publishedAt": null,
+        "createdAt": "2026-10-31T12:00:00.000Z",
+        "updatedAt": "2026-10-31T12:00:00.000Z",
+        "visits30d": null,
+        "orders30d": null,
+        "kind": "model",
+        "title": "Unlock Harvest sample text. on Harvest sample text.",
+        "slug": "unlock-harvest-sample-text-on-harvest-sample-text",
+        "locale": "en",
+        "id": 22
+      }
+    ],
+    "skipped": 0
+  }
+}

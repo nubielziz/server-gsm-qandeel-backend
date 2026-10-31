@@ -1,0 +1,73 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 4202,
+    "number": "T-4202",
+    "subject": "Phone still locked after unlock (SF-20471)",
+    "channel": "web",
+    "requesterType": "customer",
+    "requesterId": 28,
+    "requester": {
+      "name": "Victor Silva",
+      "email": "victor.silva@webmail.example"
+    },
+    "orderId": 20471,
+    "category": "failed_unlock",
+    "priority": "high",
+    "status": "open",
+    "assigneeId": 2,
+    "assignee": {
+      "id": 2,
+      "name": "Lina S."
+    },
+    "firstResponseAt": "2026-10-31T04:12:00.000Z",
+    "resolvedAt": null,
+    "csatScore": null,
+    "createdAt": "2026-10-31T03:00:00.000Z",
+    "updatedAt": "2026-10-31T09:54:00.000Z",
+    "lastPublicAt": "2026-10-31T09:54:00.000Z",
+    "slaDueAt": "2026-10-31T11:54:00.000Z",
+    "late": true,
+    "messages": [
+      {
+        "id": 1,
+        "ticketId": 4202,
+        "authorType": "customer",
+        "authorId": 28,
+        "authorName": "Victor",
+        "body": "I got the email saying completed but my phone still says SIM not supported.",
+        "isInternal": false,
+        "fileIds": [],
+        "createdAt": "2026-10-31T03:00:00.000Z"
+      },
+      {
+        "id": 2,
+        "ticketId": 4202,
+        "authorType": "staff",
+        "authorId": 2,
+        "authorName": "Lina S.",
+        "body": "Hi, thanks for telling us. Please restart the phone with the new SIM inside and send me a photo of the message on screen.",
+        "isInternal": false,
+        "fileIds": [],
+        "createdAt": "2026-10-31T04:12:00.000Z"
+      },
+      {
+        "id": 3,
+        "ticketId": 4202,
+        "authorType": "customer",
+        "authorId": 28,
+        "authorName": "Victor",
+        "body": "Here is the photo. Same message after restart.",
+        "isInternal": false,
+        "fileIds": [],
+        "createdAt": "2026-10-31T09:54:00.000Z"
+      }
+    ],
+    "replyChannels": [
+      "email"
+    ]
+  }
+}

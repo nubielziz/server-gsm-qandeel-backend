@@ -1,0 +1,159 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "6"
+  },
+  "body": [
+    {
+      "id": 1,
+      "email": "rami@gsm-supply.example",
+      "name": "Rami K.",
+      "role": {
+        "id": 1,
+        "name": "Owner"
+      },
+      "status": "active",
+      "twofaEnabled": true,
+      "mustChangePassword": false,
+      "passwordChangedAt": "2026-09-01T12:00:00.000Z",
+      "resetSentAt": null,
+      "lastLoginAt": "2026-10-31T12:00:00.000Z",
+      "lastLoginIp": "203.0.113.24",
+      "activeSessions": 2,
+      "createdAt": "2026-09-25T12:00:00.000Z",
+      "createdBy": null,
+      "suspendedAt": null,
+      "suspendedReason": null,
+      "suspendedBy": null
+    },
+    {
+      "id": 2,
+      "email": "lina@gsm-supply.example",
+      "name": "Lina S.",
+      "role": {
+        "id": 4,
+        "name": "Support"
+      },
+      "status": "active",
+      "twofaEnabled": true,
+      "mustChangePassword": false,
+      "passwordChangedAt": "2026-09-27T12:00:00.000Z",
+      "resetSentAt": null,
+      "lastLoginAt": "2026-10-31T11:19:00.000Z",
+      "lastLoginIp": "203.0.113.31",
+      "activeSessions": 1,
+      "createdAt": "2026-09-27T12:00:00.000Z",
+      "createdBy": {
+        "id": 1,
+        "name": "Rami K."
+      },
+      "suspendedAt": null,
+      "suspendedReason": null,
+      "suspendedBy": null
+    },
+    {
+      "id": 3,
+      "email": "omar@gsm-supply.example",
+      "name": "Omar T.",
+      "role": {
+        "id": 3,
+        "name": "Finance"
+      },
+      "status": "active",
+      "twofaEnabled": true,
+      "mustChangePassword": false,
+      "passwordChangedAt": "2026-10-01T12:00:00.000Z",
+      "resetSentAt": null,
+      "lastLoginAt": "2026-10-31T09:00:00.000Z",
+      "lastLoginIp": "198.51.100.77",
+      "activeSessions": 1,
+      "createdAt": "2026-10-01T12:00:00.000Z",
+      "createdBy": {
+        "id": 1,
+        "name": "Rami K."
+      },
+      "suspendedAt": null,
+      "suspendedReason": null,
+      "suspendedBy": null
+    },
+    {
+      "id": 4,
+      "email": "dana@gsm-supply.example",
+      "name": "Dana M.",
+      "role": {
+        "id": 2,
+        "name": "Admin"
+      },
+      "status": "active",
+      "twofaEnabled": true,
+      "mustChangePassword": false,
+      "passwordChangedAt": "2026-10-09T12:00:00.000Z",
+      "resetSentAt": null,
+      "lastLoginAt": "2026-10-30T07:00:00.000Z",
+      "lastLoginIp": "203.0.113.31",
+      "activeSessions": 0,
+      "createdAt": "2026-10-09T12:00:00.000Z",
+      "createdBy": {
+        "id": 1,
+        "name": "Rami K."
+      },
+      "suspendedAt": null,
+      "suspendedReason": null,
+      "suspendedBy": null
+    },
+    {
+      "id": 5,
+      "email": "nadia@gsm-supply.example",
+      "name": "Nadia H.",
+      "role": {
+        "id": 5,
+        "name": "Risk reviewer"
+      },
+      "status": "invited",
+      "twofaEnabled": false,
+      "mustChangePassword": false,
+      "passwordChangedAt": null,
+      "resetSentAt": "2026-10-31T11:40:00.000Z",
+      "lastLoginAt": null,
+      "lastLoginIp": null,
+      "activeSessions": 0,
+      "createdAt": "2026-10-31T11:40:00.000Z",
+      "createdBy": {
+        "id": 1,
+        "name": "Rami K."
+      },
+      "suspendedAt": null,
+      "suspendedReason": null,
+      "suspendedBy": null
+    },
+    {
+      "id": 6,
+      "email": "yusuf@gsm-supply.example",
+      "name": "Yusuf A.",
+      "role": {
+        "id": 6,
+        "name": "Read only"
+      },
+      "status": "suspended",
+      "twofaEnabled": true,
+      "mustChangePassword": false,
+      "passwordChangedAt": "2026-09-28T12:00:00.000Z",
+      "resetSentAt": null,
+      "lastLoginAt": "2026-10-19T12:00:00.000Z",
+      "lastLoginIp": "203.0.113.90",
+      "activeSessions": 0,
+      "createdAt": "2026-09-28T12:00:00.000Z",
+      "createdBy": {
+        "id": 1,
+        "name": "Rami K."
+      },
+      "suspendedAt": "2026-10-26T12:00:00.000Z",
+      "suspendedReason": "Left the team",
+      "suspendedBy": {
+        "id": 1,
+        "name": "Rami K."
+      }
+    }
+  ]
+}

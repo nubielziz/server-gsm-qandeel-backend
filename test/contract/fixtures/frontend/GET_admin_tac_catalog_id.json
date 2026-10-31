@@ -1,0 +1,15 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "tac": "35389011",
+    "brand": "Apple",
+    "model": "A2633",
+    "marketingName": "iPhone 13",
+    "releaseYear": 2021,
+    "source": "import"
+  }
+}

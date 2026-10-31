@@ -1,0 +1,66 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": [
+    {
+      "clientId": 1,
+      "name": "Legacy integration",
+      "prefix": "gsm_live_01xx",
+      "scopes": [
+        "orders:create",
+        "orders:read",
+        "account:read"
+      ],
+      "allowedIps": [
+        "203.0.113.55"
+      ],
+      "rateLimitPerMin": 120,
+      "lastUsedAt": "2026-09-16T12:00:00.000Z",
+      "lastUsedIp": "203.0.113.55",
+      "expiresAt": null,
+      "revokedAt": "2026-10-01T12:00:00.000Z",
+      "createdAt": "2025-09-17T12:00:00.000Z",
+      "id": 20
+    },
+    {
+      "clientId": 1,
+      "name": "Staging",
+      "prefix": "gsm_test_08xx",
+      "scopes": [
+        "orders:create",
+        "orders:read",
+        "account:read"
+      ],
+      "allowedIps": [],
+      "rateLimitPerMin": 120,
+      "lastUsedAt": null,
+      "lastUsedIp": "",
+      "expiresAt": null,
+      "revokedAt": null,
+      "createdAt": "2025-09-17T12:00:00.000Z",
+      "id": 19
+    },
+    {
+      "clientId": 1,
+      "name": "Production",
+      "prefix": "gsm_live_69xx",
+      "scopes": [
+        "orders:create",
+        "orders:read",
+        "account:read"
+      ],
+      "allowedIps": [
+        "203.0.113.55"
+      ],
+      "rateLimitPerMin": 120,
+      "lastUsedAt": "2026-10-31T11:54:15.000Z",
+      "lastUsedIp": "203.0.113.55",
+      "expiresAt": null,
+      "revokedAt": null,
+      "createdAt": "2025-09-17T12:00:00.000Z",
+      "id": 1
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "title": "Harvest sample",
+    "category": "refund",
+    "locale": "en",
+    "body": "Harvest sample text.",
+    "shortcut": "/harvest",
+    "createdBy": 1,
+    "createdAt": "2026-10-31T12:00:00.000Z",
+    "updatedAt": "2026-10-31T12:00:00.000Z",
+    "id": 9
+  }
+}

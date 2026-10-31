@@ -1,0 +1,15 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "tac": "35123456",
+    "brand": "Harvest",
+    "model": "H1",
+    "marketingName": "",
+    "releaseYear": 0,
+    "source": "manual",
+    "id": 9
+  }
+}

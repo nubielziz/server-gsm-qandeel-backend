@@ -1,0 +1,784 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "54"
+  },
+  "body": [
+    {
+      "id": 1000,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "bank",
+      "amount": "360.0000",
+      "feeAmount": "0.0000",
+      "netAmount": "360.0000",
+      "currency": "USD",
+      "gatewayTxnId": "TRX-1431693",
+      "capturedAt": "2026-09-27T13:21:00.000Z",
+      "createdAt": "2026-09-27T13:00:00.000Z",
+      "invoiceId": 1,
+      "receiptFileId": 10000,
+      "client": {
+        "id": 11,
+        "name": "Istanbul GSM Care",
+        "group": "Wholesale",
+        "walletBalance": "265.9600"
+      },
+      "gateway": {
+        "id": 3,
+        "name": "Bank transfer"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-09-27T13:21:00.000Z",
+      "note": null
+    },
+    {
+      "id": 1001,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "bank",
+      "amount": "435.0000",
+      "feeAmount": "0.0000",
+      "netAmount": "435.0000",
+      "currency": "USD",
+      "gatewayTxnId": "TRX-2209827",
+      "capturedAt": "2026-09-27T16:54:00.000Z",
+      "createdAt": "2026-09-27T14:00:00.000Z",
+      "invoiceId": 2,
+      "receiptFileId": 10001,
+      "client": {
+        "id": 6,
+        "name": "Erbil Mobile Parts",
+        "group": "Standard",
+        "walletBalance": "141.1300"
+      },
+      "gateway": {
+        "id": 3,
+        "name": "Bank transfer"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-09-27T16:54:00.000Z",
+      "note": null
+    },
+    {
+      "id": 1002,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "bank",
+      "amount": "535.0000",
+      "feeAmount": "0.0000",
+      "netAmount": "535.0000",
+      "currency": "USD",
+      "gatewayTxnId": "TRX-9694202",
+      "capturedAt": "2026-09-27T17:01:00.000Z",
+      "createdAt": "2026-09-27T14:00:00.000Z",
+      "invoiceId": 3,
+      "receiptFileId": 10002,
+      "client": {
+        "id": 15,
+        "name": "Doha Phone Lab",
+        "group": "Wholesale",
+        "walletBalance": "357.0900"
+      },
+      "gateway": {
+        "id": 3,
+        "name": "Bank transfer"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-09-27T17:01:00.000Z",
+      "note": null
+    },
+    {
+      "id": 1003,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "bank",
+      "amount": "825.0000",
+      "feeAmount": "0.0000",
+      "netAmount": "825.0000",
+      "currency": "USD",
+      "gatewayTxnId": "TRX-9811585",
+      "capturedAt": "2026-09-27T16:28:00.000Z",
+      "createdAt": "2026-09-27T15:00:00.000Z",
+      "invoiceId": 4,
+      "receiptFileId": 10003,
+      "client": {
+        "id": 3,
+        "name": "Phone Doctor FZE",
+        "group": "VIP",
+        "walletBalance": "2260.0900"
+      },
+      "gateway": {
+        "id": 3,
+        "name": "Bank transfer"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-09-27T16:28:00.000Z",
+      "note": null
+    },
+    {
+      "id": 1004,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "card",
+      "amount": "680.4100",
+      "feeAmount": "20.4100",
+      "netAmount": "660.0000",
+      "currency": "USD",
+      "gatewayTxnId": "pi_3Q319xK9328",
+      "capturedAt": "2026-09-27T15:00:20.000Z",
+      "createdAt": "2026-09-27T15:00:00.000Z",
+      "invoiceId": 5,
+      "receiptFileId": null,
+      "client": {
+        "id": 8,
+        "name": "Casablanca Unlock",
+        "group": "Wholesale",
+        "walletBalance": "310.9300"
+      },
+      "gateway": {
+        "id": 1,
+        "name": "Card gateway"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "System"
+      },
+      "reviewedAt": "2026-09-27T15:00:20.000Z",
+      "note": null
+    },
+    {
+      "id": 1005,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "bank",
+      "amount": "660.0000",
+      "feeAmount": "0.0000",
+      "netAmount": "660.0000",
+      "currency": "USD",
+      "gatewayTxnId": "TRX-4951986",
+      "capturedAt": "2026-09-27T16:58:00.000Z",
+      "createdAt": "2026-09-27T15:00:00.000Z",
+      "invoiceId": 6,
+      "receiptFileId": 10005,
+      "client": {
+        "id": 10,
+        "name": "Karachi Unlock Hub",
+        "group": "Wholesale",
+        "walletBalance": "480.4300"
+      },
+      "gateway": {
+        "id": 3,
+        "name": "Bank transfer"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-09-27T16:58:00.000Z",
+      "note": null
+    },
+    {
+      "id": 1006,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "wise",
+      "amount": "355.0000",
+      "feeAmount": "0.0000",
+      "netAmount": "355.0000",
+      "currency": "USD",
+      "gatewayTxnId": "WISE-97354217",
+      "capturedAt": "2026-09-27T17:53:00.000Z",
+      "createdAt": "2026-09-27T15:00:00.000Z",
+      "invoiceId": 7,
+      "receiptFileId": 10006,
+      "client": {
+        "id": 12,
+        "name": "Jeddah Tech Bar",
+        "group": "Standard",
+        "walletBalance": "177.7300"
+      },
+      "gateway": {
+        "id": 4,
+        "name": "Wise"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-09-27T17:53:00.000Z",
+      "note": null
+    },
+    {
+      "id": 1007,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "bank",
+      "amount": "50.0000",
+      "feeAmount": "0.0000",
+      "netAmount": "50.0000",
+      "currency": "USD",
+      "gatewayTxnId": "TRX-1766955",
+      "capturedAt": "2026-09-27T19:00:00.000Z",
+      "createdAt": "2026-09-27T15:00:00.000Z",
+      "invoiceId": 8,
+      "receiptFileId": 10007,
+      "client": {
+        "id": 19,
+        "name": "Tunis Fix Point",
+        "group": "Standard",
+        "walletBalance": "20.1800"
+      },
+      "gateway": {
+        "id": 3,
+        "name": "Bank transfer"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-09-27T19:00:00.000Z",
+      "note": null
+    },
+    {
+      "id": 1008,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "bank",
+      "amount": "345.0000",
+      "feeAmount": "0.0000",
+      "netAmount": "345.0000",
+      "currency": "USD",
+      "gatewayTxnId": "TRX-9466871",
+      "capturedAt": "2026-09-27T18:01:00.000Z",
+      "createdAt": "2026-09-27T16:00:00.000Z",
+      "invoiceId": 9,
+      "receiptFileId": 10008,
+      "client": {
+        "id": 7,
+        "name": "Tripoli Repair Group",
+        "group": "Standard",
+        "walletBalance": "42.1700"
+      },
+      "gateway": {
+        "id": 3,
+        "name": "Bank transfer"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-09-27T18:01:00.000Z",
+      "note": null
+    },
+    {
+      "id": 1009,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "usdt",
+      "amount": "459.6000",
+      "feeAmount": "4.6000",
+      "netAmount": "455.0000",
+      "currency": "USD",
+      "gatewayTxnId": "35a8f…46c0",
+      "capturedAt": "2026-09-27T17:36:00.000Z",
+      "createdAt": "2026-09-27T16:00:00.000Z",
+      "invoiceId": 10,
+      "receiptFileId": null,
+      "client": {
+        "id": 9,
+        "name": "Lagos Gadget Fix",
+        "group": "Standard",
+        "walletBalance": "95.5700"
+      },
+      "gateway": {
+        "id": 2,
+        "name": "Crypto gateway"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-09-27T17:36:00.000Z",
+      "note": null
+    },
+    {
+      "id": 1010,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "bank",
+      "amount": "780.0000",
+      "feeAmount": "0.0000",
+      "netAmount": "780.0000",
+      "currency": "USD",
+      "gatewayTxnId": "TRX-0804355",
+      "capturedAt": "2026-09-27T19:11:00.000Z",
+      "createdAt": "2026-09-27T18:00:00.000Z",
+      "invoiceId": 11,
+      "receiptFileId": 10010,
+      "client": {
+        "id": 1,
+        "name": "Zain Mobile Hub",
+        "group": "VIP",
+        "walletBalance": "1209.7500"
+      },
+      "gateway": {
+        "id": 3,
+        "name": "Bank transfer"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-09-27T19:11:00.000Z",
+      "note": null
+    },
+    {
+      "id": 1011,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "wise",
+      "amount": "680.0000",
+      "feeAmount": "0.0000",
+      "netAmount": "680.0000",
+      "currency": "USD",
+      "gatewayTxnId": "WISE-17601057",
+      "capturedAt": "2026-09-27T19:12:00.000Z",
+      "createdAt": "2026-09-27T18:00:00.000Z",
+      "invoiceId": 12,
+      "receiptFileId": 10011,
+      "client": {
+        "id": 2,
+        "name": "Al-Noor Telecom",
+        "group": "Wholesale",
+        "walletBalance": "620.9100"
+      },
+      "gateway": {
+        "id": 4,
+        "name": "Wise"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-09-27T19:12:00.000Z",
+      "note": null
+    },
+    {
+      "id": 1012,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "bank",
+      "amount": "435.0000",
+      "feeAmount": "0.0000",
+      "netAmount": "435.0000",
+      "currency": "USD",
+      "gatewayTxnId": "TRX-7073234",
+      "capturedAt": "2026-09-27T18:16:00.000Z",
+      "createdAt": "2026-09-27T18:00:00.000Z",
+      "invoiceId": 13,
+      "receiptFileId": 10012,
+      "client": {
+        "id": 4,
+        "name": "Basra Unlock Center",
+        "group": "Wholesale",
+        "walletBalance": "219.7400"
+      },
+      "gateway": {
+        "id": 3,
+        "name": "Bank transfer"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-09-27T18:16:00.000Z",
+      "note": null
+    },
+    {
+      "id": 1013,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "bank",
+      "amount": "765.0000",
+      "feeAmount": "0.0000",
+      "netAmount": "765.0000",
+      "currency": "USD",
+      "gatewayTxnId": "TRX-6999186",
+      "capturedAt": "2026-09-27T19:13:00.000Z",
+      "createdAt": "2026-09-27T18:00:00.000Z",
+      "invoiceId": 14,
+      "receiptFileId": 10013,
+      "client": {
+        "id": 5,
+        "name": "Cairo GSM Lab",
+        "group": "VIP",
+        "walletBalance": "1223.7700"
+      },
+      "gateway": {
+        "id": 3,
+        "name": "Bank transfer"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-09-27T19:13:00.000Z",
+      "note": null
+    },
+    {
+      "id": 1014,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "bank",
+      "amount": "150.0000",
+      "feeAmount": "0.0000",
+      "netAmount": "150.0000",
+      "currency": "USD",
+      "gatewayTxnId": "TRX-1962064",
+      "capturedAt": "2026-09-28T19:00:52.635Z",
+      "createdAt": "2026-09-28T18:33:52.635Z",
+      "invoiceId": 15,
+      "receiptFileId": 10014,
+      "client": {
+        "id": 7,
+        "name": "Tripoli Repair Group",
+        "group": "Standard",
+        "walletBalance": "42.1700"
+      },
+      "gateway": {
+        "id": 3,
+        "name": "Bank transfer"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-09-28T19:00:52.635Z",
+      "note": null
+    },
+    {
+      "id": 1015,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "bank",
+      "amount": "130.0000",
+      "feeAmount": "0.0000",
+      "netAmount": "130.0000",
+      "currency": "USD",
+      "gatewayTxnId": "TRX-8028103",
+      "capturedAt": "2026-09-29T04:07:17.643Z",
+      "createdAt": "2026-09-29T01:33:17.643Z",
+      "invoiceId": 16,
+      "receiptFileId": 10015,
+      "client": {
+        "id": 6,
+        "name": "Erbil Mobile Parts",
+        "group": "Standard",
+        "walletBalance": "141.1300"
+      },
+      "gateway": {
+        "id": 3,
+        "name": "Bank transfer"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-09-29T04:07:17.643Z",
+      "note": null
+    },
+    {
+      "id": 1016,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "bank",
+      "amount": "415.0000",
+      "feeAmount": "0.0000",
+      "netAmount": "415.0000",
+      "currency": "USD",
+      "gatewayTxnId": "TRX-0099885",
+      "capturedAt": "2026-09-30T19:36:47.726Z",
+      "createdAt": "2026-09-30T18:08:47.726Z",
+      "invoiceId": 17,
+      "receiptFileId": 10016,
+      "client": {
+        "id": 2,
+        "name": "Al-Noor Telecom",
+        "group": "Wholesale",
+        "walletBalance": "620.9100"
+      },
+      "gateway": {
+        "id": 3,
+        "name": "Bank transfer"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-09-30T19:36:47.726Z",
+      "note": null
+    },
+    {
+      "id": 1017,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "wise",
+      "amount": "290.0000",
+      "feeAmount": "0.0000",
+      "netAmount": "290.0000",
+      "currency": "USD",
+      "gatewayTxnId": "WISE-52530453",
+      "capturedAt": "2026-10-03T06:03:46.548Z",
+      "createdAt": "2026-10-03T05:47:46.548Z",
+      "invoiceId": 18,
+      "receiptFileId": 10017,
+      "client": {
+        "id": 10,
+        "name": "Karachi Unlock Hub",
+        "group": "Wholesale",
+        "walletBalance": "480.4300"
+      },
+      "gateway": {
+        "id": 4,
+        "name": "Wise"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-10-03T06:03:46.548Z",
+      "note": null
+    },
+    {
+      "id": 1018,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "bank",
+      "amount": "195.0000",
+      "feeAmount": "0.0000",
+      "netAmount": "195.0000",
+      "currency": "USD",
+      "gatewayTxnId": "TRX-3138286",
+      "capturedAt": "2026-10-03T20:12:25.028Z",
+      "createdAt": "2026-10-03T19:18:25.028Z",
+      "invoiceId": 19,
+      "receiptFileId": 10018,
+      "client": {
+        "id": 11,
+        "name": "Istanbul GSM Care",
+        "group": "Wholesale",
+        "walletBalance": "265.9600"
+      },
+      "gateway": {
+        "id": 3,
+        "name": "Bank transfer"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-10-03T20:12:25.028Z",
+      "note": null
+    },
+    {
+      "id": 1019,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "bank",
+      "amount": "410.0000",
+      "feeAmount": "0.0000",
+      "netAmount": "410.0000",
+      "currency": "USD",
+      "gatewayTxnId": "TRX-0814187",
+      "capturedAt": "2026-10-04T13:54:14.727Z",
+      "createdAt": "2026-10-04T12:28:14.727Z",
+      "invoiceId": 20,
+      "receiptFileId": 10019,
+      "client": {
+        "id": 3,
+        "name": "Phone Doctor FZE",
+        "group": "VIP",
+        "walletBalance": "2260.0900"
+      },
+      "gateway": {
+        "id": 3,
+        "name": "Bank transfer"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-10-04T13:54:14.727Z",
+      "note": null
+    },
+    {
+      "id": 1020,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "usdt",
+      "amount": "308.0800",
+      "feeAmount": "3.0800",
+      "netAmount": "305.0000",
+      "currency": "USD",
+      "gatewayTxnId": "41a6f…38c4",
+      "capturedAt": "2026-10-05T09:03:04.397Z",
+      "createdAt": "2026-10-05T06:52:04.397Z",
+      "invoiceId": 21,
+      "receiptFileId": null,
+      "client": {
+        "id": 1,
+        "name": "Zain Mobile Hub",
+        "group": "VIP",
+        "walletBalance": "1209.7500"
+      },
+      "gateway": {
+        "id": 2,
+        "name": "Crypto gateway"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-10-05T09:03:04.397Z",
+      "note": null
+    },
+    {
+      "id": 1021,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "usdt",
+      "amount": "212.1200",
+      "feeAmount": "2.1200",
+      "netAmount": "210.0000",
+      "currency": "USD",
+      "gatewayTxnId": "78a1f…89c8",
+      "capturedAt": "2026-10-06T01:26:25.618Z",
+      "createdAt": "2026-10-06T01:11:25.618Z",
+      "invoiceId": 22,
+      "receiptFileId": null,
+      "client": {
+        "id": 5,
+        "name": "Cairo GSM Lab",
+        "group": "VIP",
+        "walletBalance": "1223.7700"
+      },
+      "gateway": {
+        "id": 2,
+        "name": "Crypto gateway"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-10-06T01:26:25.618Z",
+      "note": null
+    },
+    {
+      "id": 1022,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "usdt",
+      "amount": "606.0600",
+      "feeAmount": "6.0600",
+      "netAmount": "600.0000",
+      "currency": "USD",
+      "gatewayTxnId": "89a6f…50c2",
+      "capturedAt": "2026-10-07T18:10:50.629Z",
+      "createdAt": "2026-10-07T14:12:50.629Z",
+      "invoiceId": 23,
+      "receiptFileId": null,
+      "client": {
+        "id": 3,
+        "name": "Phone Doctor FZE",
+        "group": "VIP",
+        "walletBalance": "2260.0900"
+      },
+      "gateway": {
+        "id": 2,
+        "name": "Crypto gateway"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-10-07T18:10:50.629Z",
+      "note": null
+    },
+    {
+      "id": 1023,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "usdt",
+      "amount": "353.5400",
+      "feeAmount": "3.5400",
+      "netAmount": "350.0000",
+      "currency": "USD",
+      "gatewayTxnId": "28a8f…10c6",
+      "capturedAt": "2026-10-07T21:15:44.787Z",
+      "createdAt": "2026-10-07T18:57:44.787Z",
+      "invoiceId": 24,
+      "receiptFileId": null,
+      "client": {
+        "id": 5,
+        "name": "Cairo GSM Lab",
+        "group": "VIP",
+        "walletBalance": "1223.7700"
+      },
+      "gateway": {
+        "id": 2,
+        "name": "Crypto gateway"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "Omar T."
+      },
+      "reviewedAt": "2026-10-07T21:15:44.787Z",
+      "note": null
+    },
+    {
+      "id": 1024,
+      "purpose": "topup",
+      "status": "approved",
+      "methodType": "card",
+      "amount": "453.6100",
+      "feeAmount": "13.6100",
+      "netAmount": "440.0000",
+      "currency": "USD",
+      "gatewayTxnId": "pi_3Q941xK3128",
+      "capturedAt": "2026-10-07T21:09:58.845Z",
+      "createdAt": "2026-10-07T21:09:38.845Z",
+      "invoiceId": 25,
+      "receiptFileId": null,
+      "client": {
+        "id": 1,
+        "name": "Zain Mobile Hub",
+        "group": "VIP",
+        "walletBalance": "1209.7500"
+      },
+      "gateway": {
+        "id": 1,
+        "name": "Card gateway"
+      },
+      "reviewedBy": {
+        "id": null,
+        "name": "System"
+      },
+      "reviewedAt": "2026-10-07T21:09:58.845Z",
+      "note": null
+    }
+  ]
+}

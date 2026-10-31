@@ -1,0 +1,53 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": [
+    {
+      "id": 9,
+      "name": "Lagos Gadget Fix",
+      "country": "NG",
+      "orders": 15,
+      "spend": "347.5700",
+      "profit": "31.2700",
+      "walletBalance": "95.5700"
+    },
+    {
+      "id": 1,
+      "name": "Zain Mobile Hub",
+      "country": "JO",
+      "orders": 23,
+      "spend": "281.1200",
+      "profit": "24.6400",
+      "walletBalance": "1209.7500"
+    },
+    {
+      "id": 7,
+      "name": "Tripoli Repair Group",
+      "country": "LY",
+      "orders": 8,
+      "spend": "259.6300",
+      "profit": "18.1200",
+      "walletBalance": "42.1700"
+    },
+    {
+      "id": 2,
+      "name": "Al-Noor Telecom",
+      "country": "SA",
+      "orders": 23,
+      "spend": "257.3800",
+      "profit": "34.1500",
+      "walletBalance": "620.9100"
+    },
+    {
+      "id": 5,
+      "name": "Cairo GSM Lab",
+      "country": "EG",
+      "orders": 15,
+      "spend": "240.8700",
+      "profit": "28.8400",
+      "walletBalance": "1223.7700"
+    }
+  ]
+}

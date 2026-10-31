@@ -1,0 +1,432 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "15"
+  },
+  "body": [
+    {
+      "id": 4202,
+      "number": "T-4202",
+      "subject": "Phone still locked after unlock (SF-20471)",
+      "channel": "web",
+      "requesterType": "customer",
+      "requesterId": 28,
+      "requester": {
+        "name": "Victor Silva",
+        "email": "victor.silva@webmail.example"
+      },
+      "orderId": 20471,
+      "category": "failed_unlock",
+      "priority": "high",
+      "status": "open",
+      "assigneeId": 2,
+      "assignee": {
+        "id": 2,
+        "name": "Lina S."
+      },
+      "firstResponseAt": "2026-10-31T04:12:00.000Z",
+      "resolvedAt": null,
+      "csatScore": null,
+      "createdAt": "2026-10-31T03:00:00.000Z",
+      "updatedAt": "2026-10-31T09:54:00.000Z",
+      "lastPublicAt": "2026-10-31T09:54:00.000Z",
+      "slaDueAt": "2026-10-31T11:54:00.000Z",
+      "late": true
+    },
+    {
+      "id": 4201,
+      "number": "T-4201",
+      "subject": "Order SF-20487 is taking longer than expected",
+      "channel": "email",
+      "requesterType": "customer",
+      "requesterId": 9,
+      "requester": {
+        "name": "Jessica Moore",
+        "email": "jessica.moore@mail.example"
+      },
+      "orderId": 20487,
+      "category": "delay",
+      "priority": "high",
+      "status": "new",
+      "assigneeId": null,
+      "assignee": null,
+      "firstResponseAt": null,
+      "resolvedAt": null,
+      "csatScore": null,
+      "createdAt": "2026-10-31T08:36:00.000Z",
+      "updatedAt": "2026-10-31T08:36:00.000Z",
+      "lastPublicAt": "2026-10-31T08:36:00.000Z",
+      "slaDueAt": "2026-10-31T10:36:00.000Z",
+      "late": true
+    },
+    {
+      "id": 4214,
+      "number": "T-4214",
+      "subject": "Rapid IMEI orders replying slowly today",
+      "channel": "email",
+      "requesterType": "client",
+      "requesterId": 2,
+      "requester": {
+        "name": "Al-Noor Telecom",
+        "email": "ops@alnoortelecom.example"
+      },
+      "orderId": null,
+      "category": "delay",
+      "priority": "normal",
+      "status": "new",
+      "assigneeId": null,
+      "assignee": null,
+      "firstResponseAt": null,
+      "resolvedAt": null,
+      "csatScore": null,
+      "createdAt": "2026-10-31T08:00:00.000Z",
+      "updatedAt": "2026-10-31T08:00:00.000Z",
+      "lastPublicAt": "2026-10-31T08:00:00.000Z",
+      "slaDueAt": "2026-10-31T16:00:00.000Z",
+      "late": false
+    },
+    {
+      "id": 4210,
+      "number": "T-4210",
+      "subject": "Is an iPhone 12 from AT&T eligible?",
+      "channel": "web",
+      "requesterType": "customer",
+      "requesterId": 9,
+      "requester": {
+        "name": "Jessica Moore",
+        "email": "jessica.moore@mail.example"
+      },
+      "orderId": null,
+      "category": "presale",
+      "priority": "low",
+      "status": "new",
+      "assigneeId": null,
+      "assignee": null,
+      "firstResponseAt": null,
+      "resolvedAt": null,
+      "csatScore": null,
+      "createdAt": "2026-10-31T07:00:00.000Z",
+      "updatedAt": "2026-10-31T07:00:00.000Z",
+      "lastPublicAt": "2026-10-31T07:00:00.000Z",
+      "slaDueAt": "2026-11-01T07:00:00.000Z",
+      "late": false
+    },
+    {
+      "id": 4207,
+      "number": "T-4207",
+      "subject": "Where is my result? SF-20472",
+      "channel": "telegram",
+      "requesterType": "customer",
+      "requesterId": 8,
+      "requester": {
+        "name": "Marco Ricci",
+        "email": "marco.ricci@webmail.example"
+      },
+      "orderId": 20472,
+      "category": "delay",
+      "priority": "normal",
+      "status": "new",
+      "assigneeId": null,
+      "assignee": null,
+      "firstResponseAt": null,
+      "resolvedAt": null,
+      "csatScore": null,
+      "createdAt": "2026-10-31T06:00:00.000Z",
+      "updatedAt": "2026-10-31T06:00:00.000Z",
+      "lastPublicAt": "2026-10-31T06:00:00.000Z",
+      "slaDueAt": "2026-10-31T14:00:00.000Z",
+      "late": false
+    },
+    {
+      "id": 4213,
+      "number": "T-4213",
+      "subject": "Deposit PAY-1037 not showing in the wallet",
+      "channel": "telegram",
+      "requesterType": "client",
+      "requesterId": 5,
+      "requester": {
+        "name": "Cairo GSM Lab",
+        "email": "ops@cairogsmlab.example"
+      },
+      "orderId": null,
+      "category": "billing",
+      "priority": "high",
+      "status": "open",
+      "assigneeId": 3,
+      "assignee": {
+        "id": 3,
+        "name": "Omar T."
+      },
+      "firstResponseAt": "2026-10-31T05:48:00.000Z",
+      "resolvedAt": null,
+      "csatScore": null,
+      "createdAt": "2026-10-31T05:00:00.000Z",
+      "updatedAt": "2026-10-31T05:48:00.000Z",
+      "lastPublicAt": "2026-10-31T05:48:00.000Z",
+      "slaDueAt": null,
+      "late": false
+    },
+    {
+      "id": 4211,
+      "number": "T-4211",
+      "subject": "Do you unlock Vodafone UK Pixel phones?",
+      "channel": "chat",
+      "requesterType": "customer",
+      "requesterId": 21,
+      "requester": {
+        "name": "Samira Khan",
+        "email": "samira.khan@mail.example"
+      },
+      "orderId": null,
+      "category": "presale",
+      "priority": "low",
+      "status": "pending",
+      "assigneeId": 2,
+      "assignee": {
+        "id": 2,
+        "name": "Lina S."
+      },
+      "firstResponseAt": "2026-10-31T01:18:00.000Z",
+      "resolvedAt": null,
+      "csatScore": null,
+      "createdAt": "2026-10-31T01:00:00.000Z",
+      "updatedAt": "2026-10-31T01:18:00.000Z",
+      "lastPublicAt": "2026-10-31T01:18:00.000Z",
+      "slaDueAt": null,
+      "late": false
+    },
+    {
+      "id": 4209,
+      "number": "T-4209",
+      "subject": "Order SF-20427 was rejected",
+      "channel": "email",
+      "requesterType": "customer",
+      "requesterId": 20,
+      "requester": {
+        "name": "Kevin Doyle",
+        "email": "kevin.doyle@webmail.example"
+      },
+      "orderId": 20427,
+      "category": "failed_unlock",
+      "priority": "normal",
+      "status": "resolved",
+      "assigneeId": 2,
+      "assignee": {
+        "id": 2,
+        "name": "Lina S."
+      },
+      "firstResponseAt": "2026-10-30T23:30:00.000Z",
+      "resolvedAt": "2026-10-30T23:30:00.000Z",
+      "csatScore": 4,
+      "createdAt": "2026-10-30T22:00:00.000Z",
+      "updatedAt": "2026-10-30T23:30:00.000Z",
+      "lastPublicAt": "2026-10-30T23:30:00.000Z",
+      "slaDueAt": null,
+      "late": false
+    },
+    {
+      "id": 4206,
+      "number": "T-4206",
+      "subject": "Charged twice for SF-20442",
+      "channel": "email",
+      "requesterType": "customer",
+      "requesterId": 28,
+      "requester": {
+        "name": "Victor Silva",
+        "email": "victor.silva@webmail.example"
+      },
+      "orderId": 20442,
+      "category": "billing",
+      "priority": "normal",
+      "status": "pending",
+      "assigneeId": 3,
+      "assignee": {
+        "id": 3,
+        "name": "Omar T."
+      },
+      "firstResponseAt": "2026-10-30T19:00:00.000Z",
+      "resolvedAt": null,
+      "csatScore": null,
+      "createdAt": "2026-10-30T16:00:00.000Z",
+      "updatedAt": "2026-10-30T19:00:00.000Z",
+      "lastPublicAt": "2026-10-30T19:00:00.000Z",
+      "slaDueAt": null,
+      "late": false
+    },
+    {
+      "id": 4212,
+      "number": "T-4212",
+      "subject": "Chargeback warning from my bank",
+      "channel": "email",
+      "requesterType": "customer",
+      "requesterId": 19,
+      "requester": {
+        "name": "Jack Turner",
+        "email": "jt.4569@tempbox.example"
+      },
+      "orderId": null,
+      "category": "refund",
+      "priority": "high",
+      "status": "open",
+      "assigneeId": 1,
+      "assignee": {
+        "id": 1,
+        "name": "Rami K."
+      },
+      "firstResponseAt": null,
+      "resolvedAt": null,
+      "csatScore": null,
+      "createdAt": "2026-10-30T10:00:00.000Z",
+      "updatedAt": "2026-10-30T11:00:00.000Z",
+      "lastPublicAt": "2026-10-30T10:00:00.000Z",
+      "slaDueAt": "2026-10-30T12:00:00.000Z",
+      "late": true
+    },
+    {
+      "id": 4203,
+      "number": "T-4203",
+      "subject": "Refund request for SF-20418",
+      "channel": "email",
+      "requesterType": "customer",
+      "requesterId": 11,
+      "requester": {
+        "name": "Priya Nair",
+        "email": "priya.nair@post.example"
+      },
+      "orderId": 20418,
+      "category": "refund",
+      "priority": "normal",
+      "status": "pending",
+      "assigneeId": 2,
+      "assignee": {
+        "id": 2,
+        "name": "Lina S."
+      },
+      "firstResponseAt": "2026-10-30T08:00:00.000Z",
+      "resolvedAt": null,
+      "csatScore": null,
+      "createdAt": "2026-10-30T06:00:00.000Z",
+      "updatedAt": "2026-10-30T10:00:00.000Z",
+      "lastPublicAt": "2026-10-30T10:00:00.000Z",
+      "slaDueAt": "2026-10-30T18:00:00.000Z",
+      "late": true
+    },
+    {
+      "id": 4208,
+      "number": "T-4208",
+      "subject": "VAT invoice for SF-20421",
+      "channel": "email",
+      "requesterType": "customer",
+      "requesterId": 30,
+      "requester": {
+        "name": "Oscar Nilsson",
+        "email": "oscar.nilsson@inbox.example"
+      },
+      "orderId": 20421,
+      "category": "billing",
+      "priority": "low",
+      "status": "resolved",
+      "assigneeId": 2,
+      "assignee": {
+        "id": 2,
+        "name": "Lina S."
+      },
+      "firstResponseAt": "2026-10-30T03:00:00.000Z",
+      "resolvedAt": "2026-10-30T03:00:00.000Z",
+      "csatScore": 5,
+      "createdAt": "2026-10-29T20:00:00.000Z",
+      "updatedAt": "2026-10-30T03:00:00.000Z",
+      "lastPublicAt": "2026-10-30T03:00:00.000Z",
+      "slaDueAt": null,
+      "late": false
+    },
+    {
+      "id": 4204,
+      "number": "T-4204",
+      "subject": "Wrong IMEI on SF-20477",
+      "channel": "chat",
+      "requesterType": "customer",
+      "requesterId": 23,
+      "requester": {
+        "name": "Ana Costa",
+        "email": "ana.costa@post.example"
+      },
+      "orderId": 20477,
+      "category": "wrong_imei",
+      "priority": "normal",
+      "status": "resolved",
+      "assigneeId": 2,
+      "assignee": {
+        "id": 2,
+        "name": "Lina S."
+      },
+      "firstResponseAt": "2026-10-29T10:00:00.000Z",
+      "resolvedAt": "2026-10-29T13:00:00.000Z",
+      "csatScore": 4,
+      "createdAt": "2026-10-29T09:00:00.000Z",
+      "updatedAt": "2026-10-29T13:00:00.000Z",
+      "lastPublicAt": "2026-10-29T13:00:00.000Z",
+      "slaDueAt": null,
+      "late": false
+    },
+    {
+      "id": 4215,
+      "number": "T-4215",
+      "subject": "API returns 429 for bulk orders",
+      "channel": "email",
+      "requesterType": "client",
+      "requesterId": 10,
+      "requester": {
+        "name": "Karachi Unlock Hub",
+        "email": "ops@karachiunlockh.example"
+      },
+      "orderId": null,
+      "category": "other",
+      "priority": "low",
+      "status": "resolved",
+      "assigneeId": 1,
+      "assignee": {
+        "id": 1,
+        "name": "Rami K."
+      },
+      "firstResponseAt": "2026-10-29T08:00:00.000Z",
+      "resolvedAt": "2026-10-29T08:00:00.000Z",
+      "csatScore": 5,
+      "createdAt": "2026-10-29T05:00:00.000Z",
+      "updatedAt": "2026-10-29T08:00:00.000Z",
+      "lastPublicAt": "2026-10-29T08:00:00.000Z",
+      "slaDueAt": null,
+      "late": false
+    },
+    {
+      "id": 4205,
+      "number": "T-4205",
+      "subject": "How do I enter the unlock code?",
+      "channel": "web",
+      "requesterType": "customer",
+      "requesterId": 10,
+      "requester": {
+        "name": "Tyler Brooks",
+        "email": "tyler.brooks@inbox.example"
+      },
+      "orderId": 20420,
+      "category": "howto",
+      "priority": "low",
+      "status": "resolved",
+      "assigneeId": 2,
+      "assignee": {
+        "id": 2,
+        "name": "Lina S."
+      },
+      "firstResponseAt": "2026-10-28T13:30:00.000Z",
+      "resolvedAt": "2026-10-28T13:30:00.000Z",
+      "csatScore": 5,
+      "createdAt": "2026-10-28T12:00:00.000Z",
+      "updatedAt": "2026-10-28T13:30:00.000Z",
+      "lastPublicAt": "2026-10-28T13:30:00.000Z",
+      "slaDueAt": null,
+      "late": false
+    }
+  ]
+}

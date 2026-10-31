@@ -8,6 +8,7 @@
 | `src/**/*.spec.ts`  | unit tests of pure logic (no I/O)                                                          | no                                    |
 | `test/schema/`      | structure of the Drizzle schema (ownership, columns, indexes, enum CHECKs)                 | no                                    |
 | `test/integration/` | real Postgres (`gsm_test`), Redis (database 1), MinIO (`gsm-files-test`), the Nest app on Fastify `inject`, child processes | yes (Postgres, Redis, MinIO)          |
+| `test/contract/`    | the backend against the map and the console: route, shape and error parity (decision 009)  | yes (a child process boots the app)   |
 | `test/support/`     | shared helpers: `app.ts` (test app), `db.ts` (test database), `infra.ts` (Redis, cache, storage, HTTP modules on the test instances), `rejection.ts` (typed `expectRejection`), `fixtures.ts` (minimal rows) |                                       |
 
 ## Database tests

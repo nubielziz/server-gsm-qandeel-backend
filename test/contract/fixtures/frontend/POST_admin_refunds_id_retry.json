@@ -1,0 +1,47 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1011,
+    "orderId": 20440,
+    "status": "completed",
+    "method": "manual",
+    "amount": "4.8300",
+    "reason": "Duplicate payment",
+    "currency": "EUR",
+    "fx": "0.92",
+    "partial": false,
+    "gatewayRefundId": "tx_00000002",
+    "note": "Crypto payments cannot be refunded by the gateway. Paid out manually from the treasury wallet.",
+    "requestedBy": {
+      "type": "customer",
+      "name": null
+    },
+    "approvedBy": {
+      "id": 1,
+      "name": "Rami K."
+    },
+    "customer": {
+      "id": 22,
+      "name": "Diego Fernandez"
+    },
+    "order": {
+      "id": 20440,
+      "deliveredAt": "2026-10-21T06:41:16.173Z",
+      "cost": "0.0500"
+    },
+    "payment": {
+      "id": 20440,
+      "method": "crypto",
+      "brand": "USDT TRC20",
+      "amount": "4.8300",
+      "taxAmount": "0.8400"
+    },
+    "netAmount": "3.9900",
+    "taxAmount": "0.8400",
+    "completedAt": "2026-10-31T12:00:00.000Z",
+    "createdAt": "2026-10-30T10:00:00.000Z"
+  }
+}

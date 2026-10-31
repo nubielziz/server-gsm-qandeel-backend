@@ -1,0 +1,105 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "8"
+  },
+  "body": [
+    {
+      "id": 1,
+      "event": "order.received",
+      "channel": "email",
+      "audience": "customer",
+      "locale": "en",
+      "subject": "Your order {{orderId}} is confirmed",
+      "body": "Hi {{customerName}}, thanks for your order. We received {{amount}} for \"{{service}}\". Your receipt is attached and shows the VAT. We will email you the result as soon as the carrier confirms it, usually within a few hours.",
+      "isActive": true,
+      "sentLast30Days": 112,
+      "createdAt": "2026-09-01T12:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "event": "order.completed",
+      "channel": "email",
+      "audience": "customer",
+      "locale": "en",
+      "subject": "Your unlock is ready",
+      "body": "Hi {{customerName}}, good news: the carrier confirmed the unlock for {{orderId}}. Insert a SIM from another network and restart the phone. If anything is unclear, just reply to this email.",
+      "isActive": true,
+      "sentLast30Days": 86,
+      "createdAt": "2026-09-01T12:00:00.000Z"
+    },
+    {
+      "id": 3,
+      "event": "order.failed",
+      "channel": "email",
+      "audience": "customer",
+      "locale": "en",
+      "subject": "We couldn’t unlock order {{orderId}}",
+      "body": "Hi {{customerName}}, the carrier rejected this unlock, so we have refunded {{amount}} to your card. It can take 5 to 10 days to appear. We are sorry it did not work out.",
+      "isActive": true,
+      "sentLast30Days": 6,
+      "createdAt": "2026-09-01T12:00:00.000Z"
+    },
+    {
+      "id": 4,
+      "event": "support.reply",
+      "channel": "email",
+      "audience": "customer",
+      "locale": "en",
+      "subject": "Re: Where is my result?",
+      "body": "Hi {{customerName}}, thanks for your patience. We checked with the carrier and… (the text of the agent’s reply). Reply to this email to keep the conversation going.",
+      "isActive": true,
+      "sentLast30Days": 41,
+      "createdAt": "2026-09-01T12:00:00.000Z"
+    },
+    {
+      "id": 5,
+      "event": "checkout.abandoned",
+      "channel": "email",
+      "audience": "customer",
+      "locale": "en",
+      "subject": "You left something behind",
+      "body": "Hi, you started an unlock for an {{device}} and did not finish paying. Your basket is saved: one tap takes you back to the payment step. No account needed.",
+      "isActive": true,
+      "sentLast30Days": 17,
+      "createdAt": "2026-09-01T12:00:00.000Z"
+    },
+    {
+      "id": 6,
+      "event": "payment.failed",
+      "channel": "email",
+      "audience": "customer",
+      "locale": "en",
+      "subject": "Your payment didn’t go through",
+      "body": "Hi, the payment for your unlock was declined by your bank, so we did not start it. Nothing was charged. You can try again or use another card.",
+      "isActive": false,
+      "sentLast30Days": 0,
+      "createdAt": "2026-09-01T12:00:00.000Z"
+    },
+    {
+      "id": 7,
+      "event": "order.completed",
+      "channel": "telegram",
+      "audience": "merchant",
+      "locale": "en",
+      "subject": "",
+      "body": "Order {{orderId}} is complete. The result is in your panel.",
+      "isActive": true,
+      "sentLast30Days": 214,
+      "createdAt": "2026-09-01T12:00:00.000Z"
+    },
+    {
+      "id": 8,
+      "event": "deposit.approved",
+      "channel": "email",
+      "audience": "merchant",
+      "locale": "en",
+      "subject": "Your deposit of {{amount}} was approved",
+      "body": "Hi {{customerName}}, your deposit was approved and your wallet is topped up.",
+      "isActive": true,
+      "sentLast30Days": 38,
+      "createdAt": "2026-09-01T12:00:00.000Z"
+    }
+  ]
+}

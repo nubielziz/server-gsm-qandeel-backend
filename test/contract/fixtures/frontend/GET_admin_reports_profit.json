@@ -1,0 +1,172 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "groupBy": "client",
+    "from": "2026-10-01",
+    "to": "2026-10-31",
+    "currency": "USD",
+    "rows": [
+      {
+        "key": "0",
+        "label": "Storefront customers",
+        "orders": 86,
+        "revenue": "1160.1400",
+        "cost": "525.3700",
+        "profit": "634.7700"
+      },
+      {
+        "key": "2",
+        "label": "Al-Noor Telecom",
+        "orders": 65,
+        "revenue": "717.2200",
+        "cost": "595.2100",
+        "profit": "122.0100"
+      },
+      {
+        "key": "5",
+        "label": "Cairo GSM Lab",
+        "orders": 58,
+        "revenue": "917.1600",
+        "cost": "806.7400",
+        "profit": "110.4200"
+      },
+      {
+        "key": "9",
+        "label": "Lagos Gadget Fix",
+        "orders": 36,
+        "revenue": "567.7000",
+        "cost": "480.5800",
+        "profit": "87.1200"
+      },
+      {
+        "key": "1",
+        "label": "Zain Mobile Hub",
+        "orders": 63,
+        "revenue": "606.1500",
+        "cost": "520.3100",
+        "profit": "85.8400"
+      },
+      {
+        "key": "10",
+        "label": "Karachi Unlock Hub",
+        "orders": 46,
+        "revenue": "453.3100",
+        "cost": "374.9500",
+        "profit": "78.3600"
+      },
+      {
+        "key": "3",
+        "label": "Phone Doctor FZE",
+        "orders": 61,
+        "revenue": "511.1900",
+        "cost": "433.3900",
+        "profit": "77.8000"
+      },
+      {
+        "key": "6",
+        "label": "Erbil Mobile Parts",
+        "orders": 34,
+        "revenue": "414.7000",
+        "cost": "340.7800",
+        "profit": "73.9200"
+      },
+      {
+        "key": "8",
+        "label": "Casablanca Unlock",
+        "orders": 39,
+        "revenue": "529.0700",
+        "cost": "459.5300",
+        "profit": "69.5400"
+      },
+      {
+        "key": "12",
+        "label": "Jeddah Tech Bar",
+        "orders": 30,
+        "revenue": "368.8700",
+        "cost": "299.8700",
+        "profit": "69.0000"
+      },
+      {
+        "key": "4",
+        "label": "Basra Unlock Center",
+        "orders": 45,
+        "revenue": "380.2600",
+        "cost": "312.9400",
+        "profit": "67.3200"
+      },
+      {
+        "key": "15",
+        "label": "Doha Phone Lab",
+        "orders": 45,
+        "revenue": "447.9100",
+        "cost": "380.6700",
+        "profit": "67.2400"
+      },
+      {
+        "key": "7",
+        "label": "Tripoli Repair Group",
+        "orders": 19,
+        "revenue": "445.4200",
+        "cost": "387.5200",
+        "profit": "57.9000"
+      },
+      {
+        "key": "11",
+        "label": "Istanbul GSM Care",
+        "orders": 36,
+        "revenue": "281.0600",
+        "cost": "226.7100",
+        "profit": "54.3500"
+      },
+      {
+        "key": "14",
+        "label": "Kuwait SIM Center",
+        "orders": 25,
+        "revenue": "249.9200",
+        "cost": "195.7500",
+        "profit": "54.1700"
+      },
+      {
+        "key": "13",
+        "label": "Muscat Mobile Clinic",
+        "orders": 22,
+        "revenue": "243.7500",
+        "cost": "197.7300",
+        "profit": "46.0200"
+      },
+      {
+        "key": "16",
+        "label": "Beirut Unlock Co",
+        "orders": 21,
+        "revenue": "211.1900",
+        "cost": "167.1300",
+        "profit": "44.0600"
+      },
+      {
+        "key": "17",
+        "label": "Sana'a Repair",
+        "orders": 25,
+        "revenue": "238.8400",
+        "cost": "196.4600",
+        "profit": "42.3800"
+      },
+      {
+        "key": "19",
+        "label": "Tunis Fix Point",
+        "orders": 10,
+        "revenue": "58.2900",
+        "cost": "46.9500",
+        "profit": "11.3400"
+      }
+    ],
+    "totals": {
+      "orders": 766,
+      "revenue": "8802.1500",
+      "cost": "6948.5900",
+      "profit": "1853.5600"
+    }
+  }
+}

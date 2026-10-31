@@ -1,0 +1,1008 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "1962"
+  },
+  "body": [
+    {
+      "id": 1,
+      "kind": "opening",
+      "memo": "Opening balance (owner capital)",
+      "refType": "system",
+      "refId": 0,
+      "createdAt": "2026-09-25T12:00:00.000Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Rami K."
+      },
+      "entries": [
+        {
+          "id": 1,
+          "account": {
+            "id": 1,
+            "kind": "bank",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "25000.0000",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 2,
+          "account": {
+            "id": 2,
+            "kind": "owner_capital",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "-25000.0000",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "kind": "supplier_topup",
+      "memo": "Prepaid top-up, Nordic GSM",
+      "refType": "supplier",
+      "refId": 1,
+      "createdAt": "2026-09-26T12:00:00.000Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Omar T."
+      },
+      "entries": [
+        {
+          "id": 3,
+          "account": {
+            "id": 3,
+            "kind": "supplier_prepaid",
+            "ownerType": "supplier",
+            "ownerId": 1,
+            "ownerName": "Nordic GSM"
+          },
+          "amount": "2467.4800",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 4,
+          "account": {
+            "id": 1,
+            "kind": "bank",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "-2467.4800",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "kind": "supplier_topup",
+      "memo": "Prepaid top-up, Gulf Server Hub",
+      "refType": "supplier",
+      "refId": 2,
+      "createdAt": "2026-09-26T12:00:00.000Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Omar T."
+      },
+      "entries": [
+        {
+          "id": 5,
+          "account": {
+            "id": 4,
+            "kind": "supplier_prepaid",
+            "ownerType": "supplier",
+            "ownerId": 2,
+            "ownerName": "Gulf Server Hub"
+          },
+          "amount": "1864.5300",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 6,
+          "account": {
+            "id": 1,
+            "kind": "bank",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "-1864.5300",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "kind": "supplier_topup",
+      "memo": "Prepaid top-up, Rapid IMEI",
+      "refType": "supplier",
+      "refId": 3,
+      "createdAt": "2026-09-26T12:00:00.000Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Omar T."
+      },
+      "entries": [
+        {
+          "id": 7,
+          "account": {
+            "id": 5,
+            "kind": "supplier_prepaid",
+            "ownerType": "supplier",
+            "ownerId": 3,
+            "ownerName": "Rapid IMEI"
+          },
+          "amount": "401.8800",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 8,
+          "account": {
+            "id": 1,
+            "kind": "bank",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "-401.8800",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "kind": "supplier_topup",
+      "memo": "Prepaid top-up, RemoteDesk Pro",
+      "refType": "supplier",
+      "refId": 4,
+      "createdAt": "2026-09-26T12:00:00.000Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Omar T."
+      },
+      "entries": [
+        {
+          "id": 9,
+          "account": {
+            "id": 6,
+            "kind": "supplier_prepaid",
+            "ownerType": "supplier",
+            "ownerId": 4,
+            "ownerName": "RemoteDesk Pro"
+          },
+          "amount": "938.8000",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 10,
+          "account": {
+            "id": 1,
+            "kind": "bank",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "-938.8000",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "kind": "supplier_topup",
+      "memo": "Prepaid top-up, FileForge",
+      "refType": "supplier",
+      "refId": 5,
+      "createdAt": "2026-09-26T12:00:00.000Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Omar T."
+      },
+      "entries": [
+        {
+          "id": 11,
+          "account": {
+            "id": 7,
+            "kind": "supplier_prepaid",
+            "ownerType": "supplier",
+            "ownerId": 5,
+            "ownerName": "FileForge"
+          },
+          "amount": "343.5400",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 12,
+          "account": {
+            "id": 1,
+            "kind": "bank",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "-343.5400",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "kind": "supplier_topup",
+      "memo": "Prepaid top-up, Bosphorus Unlock",
+      "refType": "supplier",
+      "refId": 6,
+      "createdAt": "2026-09-26T12:00:00.000Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Omar T."
+      },
+      "entries": [
+        {
+          "id": 13,
+          "account": {
+            "id": 8,
+            "kind": "supplier_prepaid",
+            "ownerType": "supplier",
+            "ownerId": 6,
+            "ownerName": "Bosphorus Unlock"
+          },
+          "amount": "1446.7100",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 14,
+          "account": {
+            "id": 1,
+            "kind": "bank",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "-1446.7100",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "kind": "deposit",
+      "memo": "Deposit PAY-1000 (Bank transfer)",
+      "refType": "payment",
+      "refId": 1000,
+      "createdAt": "2026-09-27T13:21:00.000Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Omar T."
+      },
+      "entries": [
+        {
+          "id": 15,
+          "account": {
+            "id": 1,
+            "kind": "bank",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "360.0000",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 16,
+          "account": {
+            "id": 9,
+            "kind": "client_wallet",
+            "ownerType": "client",
+            "ownerId": 11,
+            "ownerName": "Istanbul GSM Care"
+          },
+          "amount": "-360.0000",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "kind": "deposit",
+      "memo": "Deposit PAY-1004 (Card)",
+      "refType": "payment",
+      "refId": 1004,
+      "createdAt": "2026-09-27T15:00:20.000Z",
+      "createdBy": {
+        "type": "system",
+        "id": null,
+        "name": "System"
+      },
+      "entries": [
+        {
+          "id": 17,
+          "account": {
+            "id": 10,
+            "kind": "gateway_clearing",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "680.4100",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 18,
+          "account": {
+            "id": 11,
+            "kind": "client_wallet",
+            "ownerType": "client",
+            "ownerId": 8,
+            "ownerName": "Casablanca Unlock"
+          },
+          "amount": "-660.0000",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 19,
+          "account": {
+            "id": 12,
+            "kind": "fee_income",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "-20.4100",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "kind": "deposit",
+      "memo": "Deposit PAY-1003 (Bank transfer)",
+      "refType": "payment",
+      "refId": 1003,
+      "createdAt": "2026-09-27T16:28:00.000Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Omar T."
+      },
+      "entries": [
+        {
+          "id": 20,
+          "account": {
+            "id": 1,
+            "kind": "bank",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "825.0000",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 21,
+          "account": {
+            "id": 13,
+            "kind": "client_wallet",
+            "ownerType": "client",
+            "ownerId": 3,
+            "ownerName": "Phone Doctor FZE"
+          },
+          "amount": "-825.0000",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "kind": "deposit",
+      "memo": "Deposit PAY-1001 (Bank transfer)",
+      "refType": "payment",
+      "refId": 1001,
+      "createdAt": "2026-09-27T16:54:00.000Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Omar T."
+      },
+      "entries": [
+        {
+          "id": 22,
+          "account": {
+            "id": 1,
+            "kind": "bank",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "435.0000",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 23,
+          "account": {
+            "id": 14,
+            "kind": "client_wallet",
+            "ownerType": "client",
+            "ownerId": 6,
+            "ownerName": "Erbil Mobile Parts"
+          },
+          "amount": "-435.0000",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "kind": "deposit",
+      "memo": "Deposit PAY-1005 (Bank transfer)",
+      "refType": "payment",
+      "refId": 1005,
+      "createdAt": "2026-09-27T16:58:00.000Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Omar T."
+      },
+      "entries": [
+        {
+          "id": 24,
+          "account": {
+            "id": 1,
+            "kind": "bank",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "660.0000",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 25,
+          "account": {
+            "id": 15,
+            "kind": "client_wallet",
+            "ownerType": "client",
+            "ownerId": 10,
+            "ownerName": "Karachi Unlock Hub"
+          },
+          "amount": "-660.0000",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "kind": "deposit",
+      "memo": "Deposit PAY-1002 (Bank transfer)",
+      "refType": "payment",
+      "refId": 1002,
+      "createdAt": "2026-09-27T17:01:00.000Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Omar T."
+      },
+      "entries": [
+        {
+          "id": 26,
+          "account": {
+            "id": 1,
+            "kind": "bank",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "535.0000",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 27,
+          "account": {
+            "id": 16,
+            "kind": "client_wallet",
+            "ownerType": "client",
+            "ownerId": 15,
+            "ownerName": "Doha Phone Lab"
+          },
+          "amount": "-535.0000",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "kind": "deposit",
+      "memo": "Deposit PAY-1009 (USDT (TRC20))",
+      "refType": "payment",
+      "refId": 1009,
+      "createdAt": "2026-09-27T17:36:00.000Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Omar T."
+      },
+      "entries": [
+        {
+          "id": 28,
+          "account": {
+            "id": 10,
+            "kind": "gateway_clearing",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "459.6000",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 29,
+          "account": {
+            "id": 17,
+            "kind": "client_wallet",
+            "ownerType": "client",
+            "ownerId": 9,
+            "ownerName": "Lagos Gadget Fix"
+          },
+          "amount": "-455.0000",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 30,
+          "account": {
+            "id": 12,
+            "kind": "fee_income",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "-4.6000",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "kind": "deposit",
+      "memo": "Deposit PAY-1006 (Wise)",
+      "refType": "payment",
+      "refId": 1006,
+      "createdAt": "2026-09-27T17:53:00.000Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Omar T."
+      },
+      "entries": [
+        {
+          "id": 31,
+          "account": {
+            "id": 1,
+            "kind": "bank",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "355.0000",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 32,
+          "account": {
+            "id": 18,
+            "kind": "client_wallet",
+            "ownerType": "client",
+            "ownerId": 12,
+            "ownerName": "Jeddah Tech Bar"
+          },
+          "amount": "-355.0000",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "kind": "deposit",
+      "memo": "Deposit PAY-1008 (Bank transfer)",
+      "refType": "payment",
+      "refId": 1008,
+      "createdAt": "2026-09-27T18:01:00.000Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Omar T."
+      },
+      "entries": [
+        {
+          "id": 33,
+          "account": {
+            "id": 1,
+            "kind": "bank",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "345.0000",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 34,
+          "account": {
+            "id": 19,
+            "kind": "client_wallet",
+            "ownerType": "client",
+            "ownerId": 7,
+            "ownerName": "Tripoli Repair Group"
+          },
+          "amount": "-345.0000",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "kind": "deposit",
+      "memo": "Deposit PAY-1012 (Bank transfer)",
+      "refType": "payment",
+      "refId": 1012,
+      "createdAt": "2026-09-27T18:16:00.000Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Omar T."
+      },
+      "entries": [
+        {
+          "id": 35,
+          "account": {
+            "id": 1,
+            "kind": "bank",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "435.0000",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 36,
+          "account": {
+            "id": 20,
+            "kind": "client_wallet",
+            "ownerType": "client",
+            "ownerId": 4,
+            "ownerName": "Basra Unlock Center"
+          },
+          "amount": "-435.0000",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "kind": "deposit",
+      "memo": "Deposit PAY-1007 (Bank transfer)",
+      "refType": "payment",
+      "refId": 1007,
+      "createdAt": "2026-09-27T19:00:00.000Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Omar T."
+      },
+      "entries": [
+        {
+          "id": 37,
+          "account": {
+            "id": 1,
+            "kind": "bank",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "50.0000",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 38,
+          "account": {
+            "id": 21,
+            "kind": "client_wallet",
+            "ownerType": "client",
+            "ownerId": 19,
+            "ownerName": "Tunis Fix Point"
+          },
+          "amount": "-50.0000",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "kind": "deposit",
+      "memo": "Deposit PAY-1010 (Bank transfer)",
+      "refType": "payment",
+      "refId": 1010,
+      "createdAt": "2026-09-27T19:11:00.000Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Omar T."
+      },
+      "entries": [
+        {
+          "id": 39,
+          "account": {
+            "id": 1,
+            "kind": "bank",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "780.0000",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 40,
+          "account": {
+            "id": 22,
+            "kind": "client_wallet",
+            "ownerType": "client",
+            "ownerId": 1,
+            "ownerName": "Zain Mobile Hub"
+          },
+          "amount": "-780.0000",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "kind": "deposit",
+      "memo": "Deposit PAY-1011 (Wise)",
+      "refType": "payment",
+      "refId": 1011,
+      "createdAt": "2026-09-27T19:12:00.000Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Omar T."
+      },
+      "entries": [
+        {
+          "id": 41,
+          "account": {
+            "id": 1,
+            "kind": "bank",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "680.0000",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 42,
+          "account": {
+            "id": 23,
+            "kind": "client_wallet",
+            "ownerType": "client",
+            "ownerId": 2,
+            "ownerName": "Al-Noor Telecom"
+          },
+          "amount": "-680.0000",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "kind": "deposit",
+      "memo": "Deposit PAY-1013 (Bank transfer)",
+      "refType": "payment",
+      "refId": 1013,
+      "createdAt": "2026-09-27T19:13:00.000Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Omar T."
+      },
+      "entries": [
+        {
+          "id": 43,
+          "account": {
+            "id": 1,
+            "kind": "bank",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "765.0000",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 44,
+          "account": {
+            "id": 24,
+            "kind": "client_wallet",
+            "ownerType": "client",
+            "ownerId": 5,
+            "ownerName": "Cairo GSM Lab"
+          },
+          "amount": "-765.0000",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "kind": "deposit",
+      "memo": "Deposit PAY-1014 (Bank transfer)",
+      "refType": "payment",
+      "refId": 1014,
+      "createdAt": "2026-09-28T19:00:52.635Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Omar T."
+      },
+      "entries": [
+        {
+          "id": 45,
+          "account": {
+            "id": 1,
+            "kind": "bank",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "150.0000",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 46,
+          "account": {
+            "id": 19,
+            "kind": "client_wallet",
+            "ownerType": "client",
+            "ownerId": 7,
+            "ownerName": "Tripoli Repair Group"
+          },
+          "amount": "-150.0000",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "kind": "deposit",
+      "memo": "Deposit PAY-1015 (Bank transfer)",
+      "refType": "payment",
+      "refId": 1015,
+      "createdAt": "2026-09-29T04:07:17.643Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Omar T."
+      },
+      "entries": [
+        {
+          "id": 47,
+          "account": {
+            "id": 1,
+            "kind": "bank",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "130.0000",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 48,
+          "account": {
+            "id": 14,
+            "kind": "client_wallet",
+            "ownerType": "client",
+            "ownerId": 6,
+            "ownerName": "Erbil Mobile Parts"
+          },
+          "amount": "-130.0000",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "kind": "deposit",
+      "memo": "Deposit PAY-1016 (Bank transfer)",
+      "refType": "payment",
+      "refId": 1016,
+      "createdAt": "2026-09-30T19:36:47.726Z",
+      "createdBy": {
+        "type": "staff",
+        "id": null,
+        "name": "Omar T."
+      },
+      "entries": [
+        {
+          "id": 49,
+          "account": {
+            "id": 1,
+            "kind": "bank",
+            "ownerType": null,
+            "ownerId": null,
+            "ownerName": null
+          },
+          "amount": "415.0000",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 50,
+          "account": {
+            "id": 23,
+            "kind": "client_wallet",
+            "ownerType": "client",
+            "ownerId": 2,
+            "ownerName": "Al-Noor Telecom"
+          },
+          "amount": "-415.0000",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "kind": "order_hold",
+      "memo": "Hold for ORD-48100",
+      "refType": "order",
+      "refId": 48100,
+      "createdAt": "2026-10-02T01:10:56.000Z",
+      "createdBy": {
+        "type": "system",
+        "id": null,
+        "name": "System"
+      },
+      "entries": [
+        {
+          "id": 51,
+          "account": {
+            "id": 13,
+            "kind": "client_wallet",
+            "ownerType": "client",
+            "ownerId": 3,
+            "ownerName": "Phone Doctor FZE"
+          },
+          "amount": "3.3100",
+          "balanceAfter": "0.0000"
+        },
+        {
+          "id": 52,
+          "account": {
+            "id": 25,
+            "kind": "client_hold",
+            "ownerType": "client",
+            "ownerId": 3,
+            "ownerName": "Phone Doctor FZE"
+          },
+          "amount": "-3.3100",
+          "balanceAfter": "0.0000"
+        }
+      ]
+    }
+  ]
+}

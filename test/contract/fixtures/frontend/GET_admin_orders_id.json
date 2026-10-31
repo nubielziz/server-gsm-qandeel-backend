@@ -1,0 +1,88 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 48100,
+    "reviewReason": null,
+    "status": "completed",
+    "queue": null,
+    "dispatchState": "sent",
+    "channel": "b2b",
+    "source": "dhru",
+    "service": {
+      "id": 25,
+      "name": "Xiaomi EDL Auth File",
+      "type": "file",
+      "slaMinutes": 15,
+      "category": "Files"
+    },
+    "client": {
+      "id": 3,
+      "name": "Phone Doctor FZE"
+    },
+    "customer": null,
+    "imei": "SM-S911B",
+    "quantity": 1,
+    "inputs": {},
+    "unitPrice": "3.3100",
+    "totalPrice": "3.3100",
+    "unitCost": "2.4000",
+    "totalCost": "2.4000",
+    "currency": "USD",
+    "taxAmount": "0.0000",
+    "supplier": {
+      "id": 5,
+      "name": "FileForge"
+    },
+    "supplierRef": "F-322029",
+    "attempts": 1,
+    "result": {
+      "code": "File delivered: SMS911B.zip (0.9 MB).",
+      "comment": null,
+      "fileId": 48100
+    },
+    "verificationStatus": null,
+    "inputFileId": null,
+    "clientNote": null,
+    "adminNote": null,
+    "pricingSnapshot": {
+      "source": "base",
+      "price": "3.3100",
+      "floor": "2.5400",
+      "clamped": false,
+      "fx": 1,
+      "taxRate": 0,
+      "steps": [
+        {
+          "id": "client",
+          "label": "Client override",
+          "state": "none",
+          "value": null,
+          "after": null,
+          "note": "None for this merchant"
+        },
+        {
+          "id": "group",
+          "label": "Group service price",
+          "state": "none",
+          "value": null,
+          "after": null,
+          "note": "None for the merchant’s group"
+        },
+        {
+          "id": "base",
+          "label": "Base price",
+          "state": "apply",
+          "value": 3.6,
+          "after": 3.31,
+          "note": "Cost 2.4000 plus 50% markup"
+        }
+      ]
+    },
+    "createdAt": "2026-10-02T01:10:55.000Z",
+    "sentAt": "2026-10-02T01:10:58.000Z",
+    "completedAt": "2026-10-02T01:16:16.289Z"
+  }
+}

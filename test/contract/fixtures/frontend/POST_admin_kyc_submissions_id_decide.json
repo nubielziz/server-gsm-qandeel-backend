@@ -1,0 +1,43 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "clientId": 18,
+    "status": "approved",
+    "fileIds": [
+      9002,
+      9003
+    ],
+    "files": [
+      {
+        "id": 9002,
+        "filename": "passport.jpg",
+        "mime": "image/jpeg",
+        "size": 482000
+      },
+      {
+        "id": 9003,
+        "filename": "trade-licence.pdf",
+        "mime": "application/pdf",
+        "size": 1240000
+      }
+    ],
+    "reviewedAt": "2026-10-31T12:00:00.000Z",
+    "reviewedBy": {
+      "id": 1,
+      "name": "Rami K."
+    },
+    "note": "",
+    "createdAt": "2026-10-30T12:00:00.000Z",
+    "client": {
+      "id": 18,
+      "name": "Algiers Service Plus",
+      "email": "ops@algiersservice.example",
+      "country": "DZ",
+      "status": "pending"
+    }
+  }
+}

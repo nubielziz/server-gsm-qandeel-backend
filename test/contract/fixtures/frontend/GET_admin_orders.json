@@ -1,0 +1,2069 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "864"
+  },
+  "body": [
+    {
+      "id": 48100,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "dhru",
+      "service": {
+        "id": 25,
+        "name": "Xiaomi EDL Auth File",
+        "type": "file",
+        "slaMinutes": 15,
+        "category": "Files"
+      },
+      "client": {
+        "id": 3,
+        "name": "Phone Doctor FZE"
+      },
+      "customer": null,
+      "imei": "SM-S911B",
+      "quantity": 1,
+      "inputs": {},
+      "unitPrice": "3.3100",
+      "totalPrice": "3.3100",
+      "unitCost": "2.4000",
+      "totalCost": "2.4000",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 5,
+        "name": "FileForge"
+      },
+      "supplierRef": "F-322029",
+      "attempts": 1,
+      "result": {
+        "code": "File delivered: SMS911B.zip (0.9 MB).",
+        "comment": null,
+        "fileId": 48100
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "3.3100",
+        "floor": "2.5400",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 3.6,
+            "after": 3.31,
+            "note": "Cost 2.4000 plus 50% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T01:10:55.000Z",
+      "sentAt": "2026-10-02T01:10:58.000Z",
+      "completedAt": "2026-10-02T01:16:16.289Z"
+    },
+    {
+      "id": 48101,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "dhru",
+      "service": {
+        "id": 5,
+        "name": "AT&T USA Premier Unlock",
+        "type": "imei",
+        "slaMinutes": 2880,
+        "category": "Carrier unlock"
+      },
+      "client": {
+        "id": 8,
+        "name": "Casablanca Unlock"
+      },
+      "customer": null,
+      "imei": "352905112490861",
+      "quantity": 1,
+      "inputs": {
+        "device": "Galaxy A14 (SM-A145F)"
+      },
+      "unitPrice": "16.2600",
+      "totalPrice": "16.2600",
+      "unitCost": "13.5000",
+      "totalCost": "13.5000",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 1,
+        "name": "Nordic GSM"
+      },
+      "supplierRef": "NG-837214",
+      "attempts": 1,
+      "result": {
+        "code": "Unlock confirmed by carrier. Insert a non-supported SIM to verify.",
+        "comment": null,
+        "fileId": null
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "16.2600",
+        "floor": "14.3100",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 17.28,
+            "after": 16.26,
+            "note": "Cost 13.5000 plus 28% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T06:23:25.000Z",
+      "sentAt": "2026-10-02T06:23:28.000Z",
+      "completedAt": "2026-10-03T21:37:21.645Z"
+    },
+    {
+      "id": 48102,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "dhru",
+      "service": {
+        "id": 10,
+        "name": "Orange France Unlock",
+        "type": "imei",
+        "slaMinutes": 2880,
+        "category": "Carrier unlock"
+      },
+      "client": {
+        "id": 4,
+        "name": "Basra Unlock Center"
+      },
+      "customer": null,
+      "imei": "354607111076240",
+      "quantity": 1,
+      "inputs": {
+        "device": "Galaxy A14 (SM-A145F)"
+      },
+      "unitPrice": "13.3800",
+      "totalPrice": "13.3800",
+      "unitCost": "11.2000",
+      "totalCost": "11.2000",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 1,
+        "name": "Nordic GSM"
+      },
+      "supplierRef": "NG-885413",
+      "attempts": 1,
+      "result": {
+        "code": "Unlock confirmed by carrier. Insert a non-supported SIM to verify.",
+        "comment": null,
+        "fileId": null
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "13.3800",
+        "floor": "11.8700",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 14.22,
+            "after": 13.38,
+            "note": "Cost 11.2000 plus 27% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T07:42:49.000Z",
+      "sentAt": "2026-10-02T07:42:52.000Z",
+      "completedAt": "2026-10-02T23:36:31.791Z"
+    },
+    {
+      "id": 48103,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "dhru",
+      "service": {
+        "id": 14,
+        "name": "Xiaomi Mi Account Clean",
+        "type": "imei",
+        "slaMinutes": 180,
+        "category": "Xiaomi"
+      },
+      "client": {
+        "id": 8,
+        "name": "Casablanca Unlock"
+      },
+      "customer": null,
+      "imei": "353890113898412",
+      "quantity": 1,
+      "inputs": {
+        "device": "Redmi Note 12 (23021RAAEG)"
+      },
+      "unitPrice": "5.6400",
+      "totalPrice": "5.6400",
+      "unitCost": "4.2000",
+      "totalCost": "4.2000",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      },
+      "supplierRef": "BU-624199",
+      "attempts": 1,
+      "result": {
+        "code": "Status: Clean. Carrier: unlocked. Region: EU.",
+        "comment": null,
+        "fileId": null
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "5.6400",
+        "floor": "4.4500",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 5.88,
+            "after": 5.64,
+            "note": "Cost 4.2000 plus 40% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T07:55:15.000Z",
+      "sentAt": "2026-10-02T07:55:18.000Z",
+      "completedAt": "2026-10-02T09:18:22.764Z"
+    },
+    {
+      "id": 48104,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "portal",
+      "service": {
+        "id": 7,
+        "name": "Verizon USA Clean Unlock",
+        "type": "imei",
+        "slaMinutes": 720,
+        "category": "Carrier unlock"
+      },
+      "client": {
+        "id": 10,
+        "name": "Karachi Unlock Hub"
+      },
+      "customer": null,
+      "imei": "353890111349160",
+      "quantity": 1,
+      "inputs": {
+        "device": "Galaxy S23 (SM-S911B)"
+      },
+      "unitPrice": "7.1100",
+      "totalPrice": "7.1100",
+      "unitCost": "5.6000",
+      "totalCost": "5.6000",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      },
+      "supplierRef": "BU-663597",
+      "attempts": 1,
+      "result": {
+        "code": "Unlock confirmed by carrier. Insert a non-supported SIM to verify.",
+        "comment": null,
+        "fileId": null
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "7.1100",
+        "floor": "5.9400",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 7.56,
+            "after": 7.11,
+            "note": "Cost 5.6000 plus 35% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T08:52:35.000Z",
+      "sentAt": "2026-10-02T08:52:38.000Z",
+      "completedAt": "2026-10-02T16:58:41.182Z"
+    },
+    {
+      "id": 48105,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "dhru",
+      "service": {
+        "id": 14,
+        "name": "Xiaomi Mi Account Clean",
+        "type": "imei",
+        "slaMinutes": 180,
+        "category": "Xiaomi"
+      },
+      "client": {
+        "id": 3,
+        "name": "Phone Doctor FZE"
+      },
+      "customer": null,
+      "imei": "359254101036747",
+      "quantity": 1,
+      "inputs": {
+        "device": "Galaxy S23 (SM-S911B)"
+      },
+      "unitPrice": "5.4100",
+      "totalPrice": "5.4100",
+      "unitCost": "4.2000",
+      "totalCost": "4.2000",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      },
+      "supplierRef": "BU-304626",
+      "attempts": 1,
+      "result": {
+        "code": "Status: Clean. Carrier: unlocked. Region: EU.",
+        "comment": null,
+        "fileId": null
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "5.4100",
+        "floor": "4.4500",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 5.88,
+            "after": 5.41,
+            "note": "Cost 4.2000 plus 40% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T08:53:14.000Z",
+      "sentAt": "2026-10-02T08:53:17.000Z",
+      "completedAt": "2026-10-02T10:56:04.753Z"
+    },
+    {
+      "id": 48106,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "portal",
+      "service": {
+        "id": 3,
+        "name": "Samsung Info (KG / FRP / Region)",
+        "type": "imei",
+        "slaMinutes": 2,
+        "category": "Samsung"
+      },
+      "client": {
+        "id": 4,
+        "name": "Basra Unlock Center"
+      },
+      "customer": null,
+      "imei": "359254106834625",
+      "quantity": 1,
+      "inputs": {
+        "device": "Galaxy A54 (SM-A546E)"
+      },
+      "unitPrice": "0.1200",
+      "totalPrice": "0.1200",
+      "unitCost": "0.0700",
+      "totalCost": "0.0700",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 3,
+        "name": "Rapid IMEI"
+      },
+      "supplierRef": "RI-069174",
+      "attempts": 1,
+      "result": {
+        "code": "Status: Clean. Carrier: unlocked. Region: EU.",
+        "comment": null,
+        "fileId": null
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "0.1200",
+        "floor": "0.0900",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 0.12,
+            "after": 0.12,
+            "note": "Cost 0.0700 plus 70% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T09:00:29.000Z",
+      "sentAt": "2026-10-02T09:00:32.000Z",
+      "completedAt": "2026-10-02T09:01:10.188Z"
+    },
+    {
+      "id": 20400,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2c",
+      "source": "store",
+      "service": {
+        "id": 9,
+        "name": "EE UK Unlock",
+        "type": "imei",
+        "slaMinutes": 1440,
+        "category": "Carrier unlock"
+      },
+      "client": null,
+      "customer": {
+        "id": 19,
+        "name": "Jack Turner",
+        "email": "jt.4569@tempbox.example"
+      },
+      "imei": "356912111872749",
+      "quantity": 1,
+      "inputs": {
+        "device": "iPhone 11 (A2221)"
+      },
+      "unitPrice": "12.9900",
+      "totalPrice": "12.9900",
+      "unitCost": "6.4000",
+      "totalCost": "6.4000",
+      "currency": "GBP",
+      "taxAmount": "2.6000",
+      "supplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      },
+      "supplierRef": "BU-720427",
+      "attempts": 1,
+      "result": {
+        "code": "Unlock confirmed by the carrier. Insert a SIM from another network and restart your phone.",
+        "comment": null,
+        "fileId": null
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "retail",
+        "price": "12.9900",
+        "floor": "6.7800",
+        "clamped": false,
+        "fx": 0.79,
+        "taxRate": 0.2,
+        "steps": [
+          {
+            "id": "retail",
+            "label": "Storefront price",
+            "state": "win",
+            "value": 12.99,
+            "after": 12.99,
+            "note": "Listed price in the storefront"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T09:12:14.000Z",
+      "sentAt": "2026-10-02T12:12:14.000Z",
+      "completedAt": "2026-10-02T22:20:38.201Z"
+    },
+    {
+      "id": 48107,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "portal",
+      "service": {
+        "id": 2,
+        "name": "Apple Warranty & Activation Date",
+        "type": "imei",
+        "slaMinutes": 1,
+        "category": "Apple"
+      },
+      "client": {
+        "id": 3,
+        "name": "Phone Doctor FZE"
+      },
+      "customer": null,
+      "imei": "353890110354484",
+      "quantity": 1,
+      "inputs": {
+        "device": "Xiaomi 13 (2211133G)"
+      },
+      "unitPrice": "0.0900",
+      "totalPrice": "0.0900",
+      "unitCost": "0.0500",
+      "totalCost": "0.0500",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 3,
+        "name": "Rapid IMEI"
+      },
+      "supplierRef": "RI-626038",
+      "attempts": 1,
+      "result": {
+        "code": "iCloud: Clean. Find My: OFF. Model: Xiaomi 13 (2211133G).",
+        "comment": null,
+        "fileId": null
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "0.0900",
+        "floor": "0.0700",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 0.1,
+            "after": 0.09,
+            "note": "Cost 0.0500 plus 80% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T09:26:59.000Z",
+      "sentAt": "2026-10-02T09:27:02.000Z",
+      "completedAt": "2026-10-02T09:27:08.025Z"
+    },
+    {
+      "id": 48108,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "dhru",
+      "service": {
+        "id": 19,
+        "name": "Miracle Box Credits x20",
+        "type": "server",
+        "slaMinutes": 5,
+        "category": "Credits"
+      },
+      "client": {
+        "id": 2,
+        "name": "Al-Noor Telecom"
+      },
+      "customer": null,
+      "imei": "amir92@gsm.example",
+      "quantity": 10,
+      "inputs": {},
+      "unitPrice": "7.3800",
+      "totalPrice": "73.8000",
+      "unitCost": "6.1000",
+      "totalCost": "61.0000",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 2,
+        "name": "Gulf Server Hub"
+      },
+      "supplierRef": "GS-974557",
+      "attempts": 1,
+      "result": {
+        "code": "Delivered to amir92@gsm.example. Activation takes under 2 minutes.",
+        "comment": null,
+        "fileId": null
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "7.3800",
+        "floor": "6.4700",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 7.69,
+            "after": 7.38,
+            "note": "Cost 6.1000 plus 26% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T09:53:15.000Z",
+      "sentAt": "2026-10-02T09:53:18.000Z",
+      "completedAt": "2026-10-02T09:54:20.981Z"
+    },
+    {
+      "id": 20401,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2c",
+      "source": "store",
+      "service": {
+        "id": 1,
+        "name": "iCloud Clean / Lost Check",
+        "type": "imei",
+        "slaMinutes": 2,
+        "category": "Apple"
+      },
+      "client": null,
+      "customer": {
+        "id": 18,
+        "name": "Hannah Weber",
+        "email": "hannah.weber@inbox.example"
+      },
+      "imei": "358480111557387",
+      "quantity": 1,
+      "inputs": {
+        "device": "Galaxy A54 (SM-A546E)"
+      },
+      "unitPrice": "3.9900",
+      "totalPrice": "3.9900",
+      "unitCost": "0.0800",
+      "totalCost": "0.0800",
+      "currency": "EUR",
+      "taxAmount": "0.7600",
+      "supplier": {
+        "id": 3,
+        "name": "Rapid IMEI"
+      },
+      "supplierRef": "RI-889668",
+      "attempts": 1,
+      "result": {
+        "code": "iCloud status: Clean. Find My iPhone: OFF. Model: Galaxy A54 (SM-A546E).",
+        "comment": null,
+        "fileId": null
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "retail",
+        "price": "3.9900",
+        "floor": "0.1000",
+        "clamped": false,
+        "fx": 0.92,
+        "taxRate": 0.19,
+        "steps": [
+          {
+            "id": "retail",
+            "label": "Storefront price",
+            "state": "win",
+            "value": 3.99,
+            "after": 3.99,
+            "note": "Listed price in the storefront"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T11:22:46.000Z",
+      "sentAt": "2026-10-02T11:22:52.000Z",
+      "completedAt": "2026-10-02T11:23:01.791Z"
+    },
+    {
+      "id": 48109,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "dhru",
+      "service": {
+        "id": 4,
+        "name": "Blacklist Status (GSMA)",
+        "type": "imei",
+        "slaMinutes": 1,
+        "category": "Generic"
+      },
+      "client": {
+        "id": 19,
+        "name": "Tunis Fix Point"
+      },
+      "customer": null,
+      "imei": "354607115147690",
+      "quantity": 1,
+      "inputs": {
+        "device": "iPhone 14 Pro (A2889)"
+      },
+      "unitPrice": "0.0900",
+      "totalPrice": "0.0900",
+      "unitCost": "0.0400",
+      "totalCost": "0.0400",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 3,
+        "name": "Rapid IMEI"
+      },
+      "supplierRef": "RI-413715",
+      "attempts": 1,
+      "result": {
+        "code": "Status: Clean. Carrier: unlocked. Region: EU.",
+        "comment": null,
+        "fileId": null
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "0.0900",
+        "floor": "0.0600",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 0.09,
+            "after": 0.09,
+            "note": "Cost 0.0400 plus 100% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T11:37:00.000Z",
+      "sentAt": "2026-10-02T11:37:03.000Z",
+      "completedAt": "2026-10-02T11:37:23.186Z"
+    },
+    {
+      "id": 48110,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "dhru",
+      "service": {
+        "id": 3,
+        "name": "Samsung Info (KG / FRP / Region)",
+        "type": "imei",
+        "slaMinutes": 2,
+        "category": "Samsung"
+      },
+      "client": {
+        "id": 10,
+        "name": "Karachi Unlock Hub"
+      },
+      "customer": null,
+      "imei": "867412052327342",
+      "quantity": 1,
+      "inputs": {
+        "device": "Galaxy A14 (SM-A145F)"
+      },
+      "unitPrice": "0.1200",
+      "totalPrice": "0.1200",
+      "unitCost": "0.0700",
+      "totalCost": "0.0700",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 3,
+        "name": "Rapid IMEI"
+      },
+      "supplierRef": "RI-263476",
+      "attempts": 1,
+      "result": {
+        "code": "Status: Clean. Carrier: unlocked. Region: EU.",
+        "comment": null,
+        "fileId": null
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "0.1200",
+        "floor": "0.0900",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 0.12,
+            "after": 0.12,
+            "note": "Cost 0.0700 plus 70% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T11:52:05.000Z",
+      "sentAt": "2026-10-02T11:52:08.000Z",
+      "completedAt": "2026-10-02T11:52:31.972Z"
+    },
+    {
+      "id": 48111,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "dhru",
+      "service": {
+        "id": 9,
+        "name": "EE UK Unlock",
+        "type": "imei",
+        "slaMinutes": 1440,
+        "category": "Carrier unlock"
+      },
+      "client": {
+        "id": 10,
+        "name": "Karachi Unlock Hub"
+      },
+      "customer": null,
+      "imei": "867412055638919",
+      "quantity": 1,
+      "inputs": {
+        "device": "iPhone 13 (A2633)"
+      },
+      "unitPrice": "7.8800",
+      "totalPrice": "7.8800",
+      "unitCost": "6.4000",
+      "totalCost": "6.4000",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      },
+      "supplierRef": "BU-605113",
+      "attempts": 1,
+      "result": {
+        "code": "Unlock confirmed by carrier. Insert a non-supported SIM to verify.",
+        "comment": null,
+        "fileId": null
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "7.8800",
+        "floor": "6.7800",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 8.38,
+            "after": 7.88,
+            "note": "Cost 6.4000 plus 31% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T13:51:37.000Z",
+      "sentAt": "2026-10-02T13:51:40.000Z",
+      "completedAt": "2026-10-02T22:45:40.150Z"
+    },
+    {
+      "id": 48112,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "dhru",
+      "service": {
+        "id": 4,
+        "name": "Blacklist Status (GSMA)",
+        "type": "imei",
+        "slaMinutes": 1,
+        "category": "Generic"
+      },
+      "client": {
+        "id": 6,
+        "name": "Erbil Mobile Parts"
+      },
+      "customer": null,
+      "imei": "013883004348953",
+      "quantity": 1,
+      "inputs": {
+        "device": "Galaxy A54 (SM-A546E)"
+      },
+      "unitPrice": "0.0900",
+      "totalPrice": "0.0900",
+      "unitCost": "0.0400",
+      "totalCost": "0.0400",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 3,
+        "name": "Rapid IMEI"
+      },
+      "supplierRef": "RI-660257",
+      "attempts": 1,
+      "result": {
+        "code": "Status: Clean. Carrier: unlocked. Region: EU.",
+        "comment": null,
+        "fileId": null
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "0.0900",
+        "floor": "0.0600",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 0.09,
+            "after": 0.09,
+            "note": "Cost 0.0400 plus 100% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T13:58:58.000Z",
+      "sentAt": "2026-10-02T13:59:01.000Z",
+      "completedAt": "2026-10-02T14:00:06.422Z"
+    },
+    {
+      "id": 48113,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "portal",
+      "service": {
+        "id": 24,
+        "name": "Samsung Combination File",
+        "type": "file",
+        "slaMinutes": 3,
+        "category": "Files"
+      },
+      "client": {
+        "id": 1,
+        "name": "Zain Mobile Hub"
+      },
+      "customer": null,
+      "imei": "ELS-NX9",
+      "quantity": 1,
+      "inputs": {},
+      "unitPrice": "1.2900",
+      "totalPrice": "1.2900",
+      "unitCost": "0.9000",
+      "totalCost": "0.9000",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 5,
+        "name": "FileForge"
+      },
+      "supplierRef": "F-853549",
+      "attempts": 1,
+      "result": {
+        "code": "File delivered: ELSNX9.zip (9.5 MB).",
+        "comment": null,
+        "fileId": 48113
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "1.2900",
+        "floor": "0.9500",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 1.4,
+            "after": 1.29,
+            "note": "Cost 0.9000 plus 55% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T14:11:01.000Z",
+      "sentAt": "2026-10-02T14:11:04.000Z",
+      "completedAt": "2026-10-02T14:11:38.668Z"
+    },
+    {
+      "id": 48114,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "portal",
+      "service": {
+        "id": 25,
+        "name": "Xiaomi EDL Auth File",
+        "type": "file",
+        "slaMinutes": 15,
+        "category": "Files"
+      },
+      "client": {
+        "id": 1,
+        "name": "Zain Mobile Hub"
+      },
+      "customer": null,
+      "imei": "SM-S911B",
+      "quantity": 1,
+      "inputs": {},
+      "unitPrice": "3.3100",
+      "totalPrice": "3.3100",
+      "unitCost": "2.4000",
+      "totalCost": "2.4000",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 5,
+        "name": "FileForge"
+      },
+      "supplierRef": "F-096581",
+      "attempts": 1,
+      "result": {
+        "code": "File delivered: SMS911B.zip (13.4 MB).",
+        "comment": null,
+        "fileId": 48114
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "3.3100",
+        "floor": "2.5400",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 3.6,
+            "after": 3.31,
+            "note": "Cost 2.4000 plus 50% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T14:31:59.000Z",
+      "sentAt": "2026-10-02T14:32:02.000Z",
+      "completedAt": "2026-10-02T14:40:34.435Z"
+    },
+    {
+      "id": 48115,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "dhru",
+      "service": {
+        "id": 20,
+        "name": "Samsung FRP Remote (USB)",
+        "type": "remote",
+        "slaMinutes": 30,
+        "category": "Remote"
+      },
+      "client": {
+        "id": 12,
+        "name": "Jeddah Tech Bar"
+      },
+      "customer": null,
+      "imei": "SN 724A68922",
+      "quantity": 1,
+      "inputs": {
+        "device": "Pixel 7 (GVU6C)"
+      },
+      "unitPrice": "6.9600",
+      "totalPrice": "6.9600",
+      "unitCost": "4.8000",
+      "totalCost": "4.8000",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 4,
+        "name": "RemoteDesk Pro"
+      },
+      "supplierRef": "RP-262660",
+      "attempts": 1,
+      "result": {
+        "code": "Remote session finished (13 min). Device rebooted normally.",
+        "comment": null,
+        "fileId": null
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "6.9600",
+        "floor": "5.0900",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 6.96,
+            "after": 6.96,
+            "note": "Cost 4.8000 plus 45% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T14:35:49.000Z",
+      "sentAt": "2026-10-02T14:35:52.000Z",
+      "completedAt": "2026-10-02T14:59:46.595Z"
+    },
+    {
+      "id": 48116,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "dhru",
+      "service": {
+        "id": 8,
+        "name": "Vodafone UK iPhone Unlock",
+        "type": "imei",
+        "slaMinutes": 1440,
+        "category": "Carrier unlock"
+      },
+      "client": {
+        "id": 3,
+        "name": "Phone Doctor FZE"
+      },
+      "customer": null,
+      "imei": "867412056693442",
+      "quantity": 1,
+      "inputs": {
+        "device": "iPhone 14 Pro (A2889)"
+      },
+      "unitPrice": "8.4400",
+      "totalPrice": "8.4400",
+      "unitCost": "7.2000",
+      "totalCost": "7.2000",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      },
+      "supplierRef": "BU-716416",
+      "attempts": 1,
+      "result": {
+        "code": "Unlock confirmed by carrier. Insert a non-supported SIM to verify.",
+        "comment": null,
+        "fileId": null
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "8.4400",
+        "floor": "7.6300",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 9.36,
+            "after": 8.44,
+            "note": "Cost 7.2000 plus 30% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T15:29:34.000Z",
+      "sentAt": "2026-10-02T15:29:37.000Z",
+      "completedAt": "2026-10-03T00:14:43.383Z"
+    },
+    {
+      "id": 48117,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "dhru",
+      "service": {
+        "id": 20,
+        "name": "Samsung FRP Remote (USB)",
+        "type": "remote",
+        "slaMinutes": 30,
+        "category": "Remote"
+      },
+      "client": {
+        "id": 8,
+        "name": "Casablanca Unlock"
+      },
+      "customer": null,
+      "imei": "SN 819A98299",
+      "quantity": 1,
+      "inputs": {
+        "device": "iPhone 14 Pro (A2889)"
+      },
+      "unitPrice": "6.6800",
+      "totalPrice": "6.6800",
+      "unitCost": "4.8000",
+      "totalCost": "4.8000",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 4,
+        "name": "RemoteDesk Pro"
+      },
+      "supplierRef": "RP-025920",
+      "attempts": 1,
+      "result": {
+        "code": "Remote session finished (7 min). Device rebooted normally.",
+        "comment": null,
+        "fileId": null
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "6.6800",
+        "floor": "5.0900",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 6.96,
+            "after": 6.68,
+            "note": "Cost 4.8000 plus 45% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T17:06:48.000Z",
+      "sentAt": "2026-10-02T17:06:51.000Z",
+      "completedAt": "2026-10-02T17:33:50.653Z"
+    },
+    {
+      "id": 48118,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "dhru",
+      "service": {
+        "id": 8,
+        "name": "Vodafone UK iPhone Unlock",
+        "type": "imei",
+        "slaMinutes": 1440,
+        "category": "Carrier unlock"
+      },
+      "client": {
+        "id": 10,
+        "name": "Karachi Unlock Hub"
+      },
+      "customer": null,
+      "imei": "354607112286319",
+      "quantity": 1,
+      "inputs": {
+        "device": "Huawei P40 (ELS-NX9)"
+      },
+      "unitPrice": "8.8100",
+      "totalPrice": "8.8100",
+      "unitCost": "7.2000",
+      "totalCost": "7.2000",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      },
+      "supplierRef": "BU-759478",
+      "attempts": 1,
+      "result": {
+        "code": "Unlock confirmed by carrier. Insert a non-supported SIM to verify.",
+        "comment": null,
+        "fileId": null
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "8.8100",
+        "floor": "7.6300",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 9.36,
+            "after": 8.81,
+            "note": "Cost 7.2000 plus 30% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T18:28:59.000Z",
+      "sentAt": "2026-10-02T18:29:02.000Z",
+      "completedAt": "2026-10-03T15:29:33.641Z"
+    },
+    {
+      "id": 48119,
+      "reviewReason": null,
+      "status": "rejected",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "dhru",
+      "service": {
+        "id": 7,
+        "name": "Verizon USA Clean Unlock",
+        "type": "imei",
+        "slaMinutes": 720,
+        "category": "Carrier unlock"
+      },
+      "client": {
+        "id": 3,
+        "name": "Phone Doctor FZE"
+      },
+      "customer": null,
+      "imei": "013883001905730",
+      "quantity": 1,
+      "inputs": {
+        "device": "Xiaomi 13 (2211133G)"
+      },
+      "unitPrice": "6.8200",
+      "totalPrice": "6.8200",
+      "unitCost": "5.6000",
+      "totalCost": "5.6000",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      },
+      "supplierRef": "BU-762843",
+      "attempts": 1,
+      "result": {
+        "code": "IMEI is blacklisted",
+        "comment": null,
+        "fileId": null
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "6.8200",
+        "floor": "5.9400",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 7.56,
+            "after": 6.82,
+            "note": "Cost 5.6000 plus 35% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T18:47:14.000Z",
+      "sentAt": "2026-10-02T18:47:17.000Z",
+      "completedAt": "2026-10-02T22:33:44.432Z"
+    },
+    {
+      "id": 48120,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "dhru",
+      "service": {
+        "id": 8,
+        "name": "Vodafone UK iPhone Unlock",
+        "type": "imei",
+        "slaMinutes": 1440,
+        "category": "Carrier unlock"
+      },
+      "client": {
+        "id": 15,
+        "name": "Doha Phone Lab"
+      },
+      "customer": null,
+      "imei": "867412054604326",
+      "quantity": 1,
+      "inputs": {
+        "device": "iPhone 13 (A2633)"
+      },
+      "unitPrice": "8.8100",
+      "totalPrice": "8.8100",
+      "unitCost": "7.2000",
+      "totalCost": "7.2000",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      },
+      "supplierRef": "BU-401256",
+      "attempts": 1,
+      "result": {
+        "code": "Unlock confirmed by carrier. Insert a non-supported SIM to verify.",
+        "comment": null,
+        "fileId": null
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "8.8100",
+        "floor": "7.6300",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 9.36,
+            "after": 8.81,
+            "note": "Cost 7.2000 plus 30% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-02T19:24:15.000Z",
+      "sentAt": "2026-10-02T19:24:18.000Z",
+      "completedAt": "2026-10-03T16:46:08.551Z"
+    },
+    {
+      "id": 48121,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "v1",
+      "service": {
+        "id": 24,
+        "name": "Samsung Combination File",
+        "type": "file",
+        "slaMinutes": 3,
+        "category": "Files"
+      },
+      "client": {
+        "id": 1,
+        "name": "Zain Mobile Hub"
+      },
+      "customer": null,
+      "imei": "SM-A546E",
+      "quantity": 1,
+      "inputs": {},
+      "unitPrice": "1.2900",
+      "totalPrice": "1.2900",
+      "unitCost": "0.9000",
+      "totalCost": "0.9000",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 5,
+        "name": "FileForge"
+      },
+      "supplierRef": "F-202113",
+      "attempts": 1,
+      "result": {
+        "code": "File delivered: SMA546E.zip (2.0 MB).",
+        "comment": null,
+        "fileId": 48121
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "1.2900",
+        "floor": "0.9500",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 1.4,
+            "after": 1.29,
+            "note": "Cost 0.9000 plus 55% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-03T06:38:58.000Z",
+      "sentAt": "2026-10-03T06:39:01.000Z",
+      "completedAt": "2026-10-03T06:39:53.687Z"
+    },
+    {
+      "id": 48122,
+      "reviewReason": null,
+      "status": "completed",
+      "queue": null,
+      "dispatchState": "sent",
+      "channel": "b2b",
+      "source": "dhru",
+      "service": {
+        "id": 8,
+        "name": "Vodafone UK iPhone Unlock",
+        "type": "imei",
+        "slaMinutes": 1440,
+        "category": "Carrier unlock"
+      },
+      "client": {
+        "id": 15,
+        "name": "Doha Phone Lab"
+      },
+      "customer": null,
+      "imei": "352905118588528",
+      "quantity": 1,
+      "inputs": {
+        "device": "Pixel 7 (GVU6C)"
+      },
+      "unitPrice": "8.8100",
+      "totalPrice": "8.8100",
+      "unitCost": "7.2000",
+      "totalCost": "7.2000",
+      "currency": "USD",
+      "taxAmount": "0.0000",
+      "supplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      },
+      "supplierRef": "BU-339195",
+      "attempts": 1,
+      "result": {
+        "code": "Unlock confirmed by carrier. Insert a non-supported SIM to verify.",
+        "comment": null,
+        "fileId": null
+      },
+      "verificationStatus": null,
+      "inputFileId": null,
+      "clientNote": null,
+      "adminNote": null,
+      "pricingSnapshot": {
+        "source": "base",
+        "price": "8.8100",
+        "floor": "7.6300",
+        "clamped": false,
+        "fx": 1,
+        "taxRate": 0,
+        "steps": [
+          {
+            "id": "client",
+            "label": "Client override",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for this merchant"
+          },
+          {
+            "id": "group",
+            "label": "Group service price",
+            "state": "none",
+            "value": null,
+            "after": null,
+            "note": "None for the merchant’s group"
+          },
+          {
+            "id": "base",
+            "label": "Base price",
+            "state": "apply",
+            "value": 9.36,
+            "after": 8.81,
+            "note": "Cost 7.2000 plus 30% markup"
+          }
+        ]
+      },
+      "createdAt": "2026-10-03T07:52:25.000Z",
+      "sentAt": "2026-10-03T07:52:28.000Z",
+      "completedAt": "2026-10-03T19:13:01.092Z"
+    }
+  ]
+}

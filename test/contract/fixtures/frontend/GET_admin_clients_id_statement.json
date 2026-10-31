@@ -1,0 +1,234 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "141"
+  },
+  "body": [
+    {
+      "id": 40,
+      "transactionId": 19,
+      "kind": "deposit",
+      "memo": "Deposit PAY-1010 (Bank transfer)",
+      "amount": "780.0000",
+      "balanceAfter": "780.0000",
+      "createdAt": "2026-09-27T19:11:00.000Z"
+    },
+    {
+      "id": 127,
+      "transactionId": 52,
+      "kind": "order_hold",
+      "memo": "Hold for ORD-48113",
+      "amount": "-1.2900",
+      "balanceAfter": "778.7100",
+      "createdAt": "2026-10-02T14:11:02.000Z"
+    },
+    {
+      "id": 133,
+      "transactionId": 54,
+      "kind": "order_hold",
+      "memo": "Hold for ORD-48114",
+      "amount": "-3.3100",
+      "balanceAfter": "775.4000",
+      "createdAt": "2026-10-02T14:32:00.000Z"
+    },
+    {
+      "id": 183,
+      "transactionId": 71,
+      "kind": "order_hold",
+      "memo": "Hold for ORD-48121",
+      "amount": "-1.2900",
+      "balanceAfter": "774.1100",
+      "createdAt": "2026-10-03T06:38:59.000Z"
+    },
+    {
+      "id": 205,
+      "transactionId": 80,
+      "kind": "order_hold",
+      "memo": "Hold for ORD-48126",
+      "amount": "-18.3600",
+      "balanceAfter": "755.7500",
+      "createdAt": "2026-10-03T09:31:13.000Z"
+    },
+    {
+      "id": 326,
+      "transactionId": 120,
+      "kind": "order_hold",
+      "memo": "Hold for ORD-48140",
+      "amount": "-8.4400",
+      "balanceAfter": "747.3100",
+      "createdAt": "2026-10-04T06:42:23.000Z"
+    },
+    {
+      "id": 360,
+      "transactionId": 132,
+      "kind": "order_hold",
+      "memo": "Hold for ORD-48147",
+      "amount": "-15.9000",
+      "balanceAfter": "731.4100",
+      "createdAt": "2026-10-04T13:04:15.000Z"
+    },
+    {
+      "id": 368,
+      "transactionId": 135,
+      "kind": "order_hold",
+      "memo": "Hold for ORD-48148",
+      "amount": "-3.3100",
+      "balanceAfter": "728.1000",
+      "createdAt": "2026-10-04T15:05:04.000Z"
+    },
+    {
+      "id": 402,
+      "transactionId": 146,
+      "kind": "order_hold",
+      "memo": "Hold for ORD-48153",
+      "amount": "-9.1800",
+      "balanceAfter": "718.9200",
+      "createdAt": "2026-10-05T06:04:11.000Z"
+    },
+    {
+      "id": 415,
+      "transactionId": 150,
+      "kind": "deposit",
+      "memo": "Deposit PAY-1020 (USDT (TRC20))",
+      "amount": "305.0000",
+      "balanceAfter": "1023.9200",
+      "createdAt": "2026-10-05T09:03:04.397Z"
+    },
+    {
+      "id": 504,
+      "transactionId": 181,
+      "kind": "order_hold",
+      "memo": "Hold for ORD-48167",
+      "amount": "-7.5600",
+      "balanceAfter": "1016.3600",
+      "createdAt": "2026-10-06T07:34:08.000Z"
+    },
+    {
+      "id": 614,
+      "transactionId": 217,
+      "kind": "order_hold",
+      "memo": "Hold for ORD-48181",
+      "amount": "-11.4900",
+      "balanceAfter": "1004.8700",
+      "createdAt": "2026-10-07T05:02:24.000Z"
+    },
+    {
+      "id": 617,
+      "transactionId": 218,
+      "kind": "order_release",
+      "memo": "Release ORD-48167",
+      "amount": "7.5600",
+      "balanceAfter": "1012.4300",
+      "createdAt": "2026-10-07T05:06:20.846Z"
+    },
+    {
+      "id": 628,
+      "transactionId": 223,
+      "kind": "order_hold",
+      "memo": "Hold for ORD-48185",
+      "amount": "-7.5600",
+      "balanceAfter": "1004.8700",
+      "createdAt": "2026-10-07T07:30:45.000Z"
+    },
+    {
+      "id": 654,
+      "transactionId": 232,
+      "kind": "order_hold",
+      "memo": "Hold for ORD-48190",
+      "amount": "-3.3100",
+      "balanceAfter": "1001.5600",
+      "createdAt": "2026-10-07T09:58:49.000Z"
+    },
+    {
+      "id": 694,
+      "transactionId": 247,
+      "kind": "order_hold",
+      "memo": "Hold for ORD-48200",
+      "amount": "-0.1000",
+      "balanceAfter": "1001.4600",
+      "createdAt": "2026-10-07T14:54:21.000Z"
+    },
+    {
+      "id": 778,
+      "transactionId": 274,
+      "kind": "deposit",
+      "memo": "Deposit PAY-1024 (Card)",
+      "amount": "440.0000",
+      "balanceAfter": "1441.4600",
+      "createdAt": "2026-10-07T21:09:58.845Z"
+    },
+    {
+      "id": 831,
+      "transactionId": 292,
+      "kind": "order_hold",
+      "memo": "Hold for ORD-48218",
+      "amount": "-5.4100",
+      "balanceAfter": "1436.0500",
+      "createdAt": "2026-10-08T08:08:39.000Z"
+    },
+    {
+      "id": 853,
+      "transactionId": 300,
+      "kind": "order_hold",
+      "memo": "Hold for ORD-48221",
+      "amount": "-8.4400",
+      "balanceAfter": "1427.6100",
+      "createdAt": "2026-10-08T09:59:11.000Z"
+    },
+    {
+      "id": 908,
+      "transactionId": 319,
+      "kind": "order_release",
+      "memo": "Release ORD-48221",
+      "amount": "8.4400",
+      "balanceAfter": "1436.0500",
+      "createdAt": "2026-10-08T22:02:15.332Z"
+    },
+    {
+      "id": 910,
+      "transactionId": 320,
+      "kind": "deposit",
+      "memo": "Deposit PAY-1026 (Bank transfer)",
+      "amount": "415.0000",
+      "balanceAfter": "1851.0500",
+      "createdAt": "2026-10-09T04:06:58.186Z"
+    },
+    {
+      "id": 957,
+      "transactionId": 337,
+      "kind": "commission",
+      "memo": "Commission CA-0002 to Zain Mobile Hub",
+      "amount": "0.1700",
+      "balanceAfter": "1851.2200",
+      "createdAt": "2026-10-09T09:18:22.764Z"
+    },
+    {
+      "id": 960,
+      "transactionId": 339,
+      "kind": "order_hold",
+      "memo": "Hold for ORD-48236",
+      "amount": "-7.5600",
+      "balanceAfter": "1843.6600",
+      "createdAt": "2026-10-09T09:54:33.000Z"
+    },
+    {
+      "id": 980,
+      "transactionId": 346,
+      "kind": "order_hold",
+      "memo": "Hold for ORD-48240",
+      "amount": "-8.2500",
+      "balanceAfter": "1835.4100",
+      "createdAt": "2026-10-09T12:39:22.000Z"
+    },
+    {
+      "id": 1027,
+      "transactionId": 363,
+      "kind": "commission",
+      "memo": "Commission CA-0004 to Zain Mobile Hub",
+      "amount": "0.2000",
+      "balanceAfter": "1835.6100",
+      "createdAt": "2026-10-09T17:33:50.652Z"
+    }
+  ]
+}

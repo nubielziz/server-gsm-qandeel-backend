@@ -1,0 +1,82 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "email": "daniel.whitmore@mail.example",
+    "emailVerifiedAt": "2026-09-30T12:00:00.000Z",
+    "name": "Daniel Whitmore",
+    "phone": "",
+    "country": "GB",
+    "locale": "en",
+    "currency": 2,
+    "currencyCode": "GBP",
+    "hasAccount": true,
+    "createdBy": null,
+    "marketingOptIn": false,
+    "riskLevel": "low",
+    "status": "active",
+    "suspendedAt": null,
+    "suspendedReason": null,
+    "suspendedBy": null,
+    "internalNotes": "",
+    "lastLoginAt": "2026-10-24T12:00:00.000Z",
+    "firstOrderAt": "2026-10-06T21:22:45.000Z",
+    "totalSpent": "38.3700",
+    "anonymizedAt": null,
+    "createdAt": "2026-09-30T12:00:00.000Z",
+    "ordersCount": 4,
+    "lastOrderAt": "2026-10-29T15:29:34.000Z",
+    "stats": {
+      "orders": 4,
+      "spent": "38.3700",
+      "lastOrderAt": "2026-10-29T15:29:34.000Z",
+      "refunds": 1,
+      "tickets": 0,
+      "disputes": 1
+    },
+    "account": {
+      "emailVerified": true,
+      "mustChangePassword": false,
+      "passwordChangedAt": "2026-09-12T12:00:00.000Z",
+      "resetSentAt": null,
+      "activeSessions": 1,
+      "lastIp": "203.0.113.177"
+    },
+    "latestConsents": {
+      "orderId": 20485,
+      "records": [
+        {
+          "purpose": "terms",
+          "document": "Terms of service v3.2",
+          "at": "2026-10-29T15:28:53.000Z",
+          "ip": "203.0.113.177"
+        },
+        {
+          "purpose": "privacy",
+          "document": "Privacy policy v2.1",
+          "at": "2026-10-29T15:28:53.000Z",
+          "ip": "203.0.113.177"
+        },
+        {
+          "purpose": "refund_policy",
+          "document": "Refund policy v1.4",
+          "at": "2026-10-29T15:28:53.000Z",
+          "ip": "203.0.113.177"
+        },
+        {
+          "purpose": "withdrawal_waiver",
+          "document": null,
+          "at": "2026-10-29T15:28:56.000Z",
+          "ip": "203.0.113.177"
+        }
+      ]
+    },
+    "risk": {
+      "highestScore": 24,
+      "signals": []
+    }
+  }
+}

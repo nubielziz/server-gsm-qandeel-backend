@@ -1,0 +1,18 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "lines": [
+      {
+        "line": 1,
+        "raw": "Harvest sample text.",
+        "imei": "Harvest",
+        "code": "sample text.",
+        "orderId": null,
+        "status": "not_found"
+      }
+    ]
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "kind": "allow",
+    "scope": "admin",
+    "cidr": "203.0.113.24",
+    "label": "Rami, Amman office",
+    "reason": "",
+    "source": "manual",
+    "expiresAt": null,
+    "hitCount": 412,
+    "lastHitAt": "2026-10-31T11:48:00.000Z",
+    "createdAt": "2026-09-25T12:00:00.000Z",
+    "createdBy": {
+      "id": 1,
+      "name": "Rami K."
+    }
+  }
+}

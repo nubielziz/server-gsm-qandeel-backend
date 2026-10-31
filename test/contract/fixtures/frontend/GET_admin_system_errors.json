@@ -1,0 +1,96 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "range": "1h",
+    "total": 22,
+    "groups": [
+      {
+        "code": "INSUFFICIENT_FUNDS",
+        "status": 402,
+        "method": "POST",
+        "endpoint": "/v1/orders",
+        "surface": "v1",
+        "count": 6,
+        "firstSeenAt": "2026-10-31T11:01:39.169Z",
+        "lastSeenAt": "2026-10-31T11:56:01.984Z",
+        "lastRequestId": "req_71e583a672e5",
+        "sentryUrl": null
+      },
+      {
+        "code": "RATE_LIMITED",
+        "status": 429,
+        "method": "POST",
+        "endpoint": "/v1/orders",
+        "surface": "v1",
+        "count": 4,
+        "firstSeenAt": "2026-10-31T11:03:23.885Z",
+        "lastSeenAt": "2026-10-31T11:56:20.211Z",
+        "lastRequestId": "req_33f4cf1532f4",
+        "sentryUrl": null
+      },
+      {
+        "code": "INVALID_IMEI",
+        "status": 422,
+        "method": "POST",
+        "endpoint": "/dhru/api/index.php",
+        "surface": "dhru",
+        "count": 3,
+        "firstSeenAt": "2026-10-31T11:02:19.678Z",
+        "lastSeenAt": "2026-10-31T11:49:27.975Z",
+        "lastRequestId": "req_31858a9e3285",
+        "sentryUrl": null
+      },
+      {
+        "code": "VALIDATION_FAILED",
+        "status": 422,
+        "method": "POST",
+        "endpoint": "/v1/orders",
+        "surface": "v1",
+        "count": 3,
+        "firstSeenAt": "2026-10-31T11:03:31.670Z",
+        "lastSeenAt": "2026-10-31T11:48:03.540Z",
+        "lastRequestId": "req_f98bac86fa8b",
+        "sentryUrl": null
+      },
+      {
+        "code": "UNAUTHORIZED",
+        "status": 401,
+        "method": "GET",
+        "endpoint": "/client/v1/me",
+        "surface": "client",
+        "count": 2,
+        "firstSeenAt": "2026-10-31T11:03:50.748Z",
+        "lastSeenAt": "2026-10-31T11:50:35.045Z",
+        "lastRequestId": "req_124ec057114e",
+        "sentryUrl": null
+      },
+      {
+        "code": "PAYMENT_DECLINED",
+        "status": 402,
+        "method": "POST",
+        "endpoint": "/store/v1/checkout",
+        "surface": "store",
+        "count": 1,
+        "firstSeenAt": "2026-10-31T11:03:13.530Z",
+        "lastSeenAt": "2026-10-31T11:27:38.964Z",
+        "lastRequestId": "req_b17c84b2b27c",
+        "sentryUrl": null
+      },
+      {
+        "code": "NOT_FOUND",
+        "status": 404,
+        "method": "GET",
+        "endpoint": "/store/v1/services/:slug",
+        "surface": "store",
+        "count": 1,
+        "firstSeenAt": "2026-10-31T11:01:31.292Z",
+        "lastSeenAt": "2026-10-31T11:42:22.659Z",
+        "lastRequestId": "req_b2278da0b327",
+        "sentryUrl": null
+      }
+    ]
+  }
+}

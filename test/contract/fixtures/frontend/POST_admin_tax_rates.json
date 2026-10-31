@@ -1,0 +1,19 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "country": "GB",
+    "region": "Harvest sample text.",
+    "ratePercent": "1.0000",
+    "taxType": "Harvest sample text.",
+    "appliesTo": "2026-10-01",
+    "validFrom": "2026-11-01T00:00:00.000Z",
+    "validTo": "2026-11-01T00:00:00.000Z",
+    "label": "Harvest sample",
+    "ossScheme": "Harvest sample text.",
+    "createdAt": "2026-10-31T12:00:00.000Z",
+    "id": 13
+  }
+}

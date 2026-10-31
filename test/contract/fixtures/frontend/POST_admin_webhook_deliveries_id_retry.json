@@ -1,0 +1,31 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 34,
+    "endpointId": 3,
+    "event": "deposit.approved",
+    "payload": {
+      "event": "deposit.approved",
+      "orderId": 48098,
+      "createdAt": "2026-10-31T10:45:00.000Z"
+    },
+    "attempt": 5,
+    "status": "pending",
+    "responseCode": 500,
+    "nextRetryAt": "2026-10-31T12:00:00.000Z",
+    "createdAt": "2026-10-31T10:45:00.000Z",
+    "endpoint": {
+      "id": 3,
+      "url": "https://hooks.phone-doctor-fze.example/gsm"
+    },
+    "client": {
+      "id": 3,
+      "name": "Phone Doctor FZE"
+    },
+    "responseBody": "{\"error\":\"internal\"}",
+    "error": null
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "scope": "category",
+    "targetId": 4,
+    "target": {
+      "id": 4,
+      "name": "Carrier unlock"
+    },
+    "groupId": null,
+    "group": null,
+    "kind": "discount",
+    "percent": "2.0000",
+    "fixed": "0.0000",
+    "rounding": "none",
+    "minProfit": "0.0000",
+    "priority": 100,
+    "isActive": true,
+    "startsAt": null,
+    "endsAt": null
+  }
+}

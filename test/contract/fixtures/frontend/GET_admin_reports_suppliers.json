@@ -1,0 +1,68 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": [
+    {
+      "supplierId": 1,
+      "supplierName": "Nordic GSM",
+      "orders": 67,
+      "completed": 47,
+      "rejected": 3,
+      "spend": "648.1000",
+      "rejectionRate": 6,
+      "averageSeconds": 74649.59189361703
+    },
+    {
+      "supplierId": 2,
+      "supplierName": "Gulf Server Hub",
+      "orders": 46,
+      "completed": 39,
+      "rejected": 4,
+      "spend": "1042.1000",
+      "rejectionRate": 9.30232558139535,
+      "averageSeconds": 97.0887435897436
+    },
+    {
+      "supplierId": 3,
+      "supplierName": "Rapid IMEI",
+      "orders": 51,
+      "completed": 40,
+      "rejected": 1,
+      "spend": "2.6800",
+      "rejectionRate": 2.4390243902439024,
+      "averageSeconds": 37.808975
+    },
+    {
+      "supplierId": 4,
+      "supplierName": "RemoteDesk Pro",
+      "orders": 29,
+      "completed": 24,
+      "rejected": 2,
+      "spend": "173.1000",
+      "rejectionRate": 7.6923076923076925,
+      "averageSeconds": 1600.6433749999999
+    },
+    {
+      "supplierId": 5,
+      "supplierName": "FileForge",
+      "orders": 40,
+      "completed": 36,
+      "rejected": 2,
+      "spend": "50.2000",
+      "rejectionRate": 5.263157894736842,
+      "averageSeconds": 220.187
+    },
+    {
+      "supplierId": 6,
+      "supplierName": "Bosphorus Unlock",
+      "orders": 65,
+      "completed": 49,
+      "rejected": 4,
+      "spend": "310.6000",
+      "rejectionRate": 7.547169811320755,
+      "averageSeconds": 44034.20879591837
+    }
+  ]
+}

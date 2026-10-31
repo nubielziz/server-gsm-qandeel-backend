@@ -1,0 +1,35 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "2"
+  },
+  "body": [
+    {
+      "id": 31,
+      "customerId": 4,
+      "kind": "export",
+      "status": "completed",
+      "requestedAt": "2026-10-19T12:00:00.000Z",
+      "dueAt": "2026-11-18T12:00:00.000Z",
+      "completedAt": "2026-10-21T12:00:00.000Z",
+      "handledBy": 1,
+      "fileId": null,
+      "createdAt": "2026-10-19T12:00:00.000Z",
+      "customerName": "Emma Dubois"
+    },
+    {
+      "id": 32,
+      "customerId": 16,
+      "kind": "erasure",
+      "status": "open",
+      "requestedAt": "2026-10-28T12:00:00.000Z",
+      "dueAt": "2026-11-27T12:00:00.000Z",
+      "completedAt": null,
+      "handledBy": null,
+      "fileId": null,
+      "createdAt": "2026-10-28T12:00:00.000Z",
+      "customerName": "Mia Schneider"
+    }
+  ]
+}

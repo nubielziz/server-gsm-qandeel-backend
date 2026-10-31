@@ -1,0 +1,47 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "refreshed": [
+      {
+        "code": "GBP",
+        "rateToBase": "0.7916",
+        "rateUpdatedAt": "2026-10-31T12:00:00.000Z"
+      },
+      {
+        "code": "EUR",
+        "rateToBase": "0.9218",
+        "rateUpdatedAt": "2026-10-31T12:00:00.000Z"
+      },
+      {
+        "code": "SEK",
+        "rateToBase": "10.6212",
+        "rateUpdatedAt": "2026-10-31T12:00:00.000Z"
+      },
+      {
+        "code": "CAD",
+        "rateToBase": "1.3727",
+        "rateUpdatedAt": "2026-10-31T12:00:00.000Z"
+      },
+      {
+        "code": "AED",
+        "rateToBase": "3.6773",
+        "rateUpdatedAt": "2026-10-31T12:00:00.000Z"
+      },
+      {
+        "code": "SAR",
+        "rateToBase": "3.7575",
+        "rateUpdatedAt": "2026-10-31T12:00:00.000Z"
+      },
+      {
+        "code": "XTS",
+        "rateToBase": "1.0020",
+        "rateUpdatedAt": "2026-10-31T12:00:00.000Z"
+      }
+    ],
+    "failed": [],
+    "source": "Mock reference rates"
+  }
+}

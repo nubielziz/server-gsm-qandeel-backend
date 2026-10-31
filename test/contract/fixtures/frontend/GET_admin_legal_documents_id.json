@@ -1,0 +1,18 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "type": "terms",
+    "version": "3.2",
+    "locale": "en",
+    "bodyMd": "# Terms of service v3.2\n\nText for Terms of service v3.2 goes here.",
+    "effectiveFrom": "2026-09-21T12:00:00.000Z",
+    "isCurrent": true,
+    "requiresReacceptance": false,
+    "createdAt": "2026-09-21T12:00:00.000Z",
+    "acceptedCount": 125
+  }
+}

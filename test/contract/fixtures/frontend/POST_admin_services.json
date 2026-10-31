@@ -1,0 +1,29 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 28,
+    "name": "Harvest sample",
+    "code": "HARVEST-1",
+    "type": "imei",
+    "status": "active",
+    "executionMode": "auto",
+    "categoryId": 1,
+    "category": {
+      "id": 1,
+      "name": "Apple"
+    },
+    "basePrice": "10.0000",
+    "cost": "0.0000",
+    "costChangedFrom": null,
+    "minProfit": "0.0000",
+    "floorPrice": "0.0000",
+    "marginPct": "100.0000",
+    "belowFloor": false,
+    "slaMinutes": 10,
+    "supplier": null,
+    "fallbackSupplier": null
+  }
+}

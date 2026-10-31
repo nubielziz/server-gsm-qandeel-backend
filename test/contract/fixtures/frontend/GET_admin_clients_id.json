@@ -1,0 +1,41 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "username": "zain-mobile-hub",
+    "email": "ops@zainmobilehub.example",
+    "name": "Zain Mobile Hub",
+    "company": "Zain Mobile Hub",
+    "phone": "",
+    "country": "JO",
+    "groupId": 3,
+    "status": "active",
+    "kycStatus": "approved",
+    "referralCode": "GSM0001",
+    "emailVerifiedAt": "2025-09-16T13:00:00.000Z",
+    "createdAt": "2025-09-16T12:00:00.000Z",
+    "stats": {
+      "orders": 72,
+      "spend": "677.3800",
+      "profit": "85.8400",
+      "margin": "12.7",
+      "successRate": 95.45454545454545,
+      "lastOrderAt": "2026-10-31T11:54:15.000Z"
+    },
+    "group": {
+      "id": 3,
+      "name": "VIP",
+      "discountPercent": "8.0000"
+    },
+    "referredBy": null,
+    "wallet": {
+      "balance": "1209.7500",
+      "reserved": "71.2300",
+      "creditLimit": "2000.0000",
+      "available": "3209.7500"
+    }
+  }
+}

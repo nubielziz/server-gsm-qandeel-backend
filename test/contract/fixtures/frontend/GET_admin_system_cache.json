@@ -1,0 +1,53 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "status": "ok",
+    "memory": {
+      "usedBytes": 438776146,
+      "maxBytes": 2147483648,
+      "usage": {
+        "value": 20.43,
+        "unit": "percent",
+        "state": "ok",
+        "warn": 75,
+        "crit": 90,
+        "direction": "above"
+      }
+    },
+    "evictionsPerMin": {
+      "value": 0,
+      "unit": "per_min",
+      "state": "ok",
+      "warn": 10,
+      "crit": 100,
+      "direction": "above"
+    },
+    "hitRate": {
+      "value": 97.44,
+      "unit": "percent",
+      "state": "ok",
+      "warn": 90,
+      "crit": 70,
+      "direction": "below"
+    },
+    "clients": {
+      "value": 38,
+      "unit": "count",
+      "state": "ok",
+      "warn": 400,
+      "crit": 900,
+      "direction": "above"
+    },
+    "latency": {
+      "value": 0.4,
+      "unit": "ms",
+      "state": "ok",
+      "warn": 5,
+      "crit": 25,
+      "direction": "above"
+    }
+  }
+}

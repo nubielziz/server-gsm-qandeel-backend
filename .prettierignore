@@ -20,3 +20,5 @@ scripts/lib/*.mjs
 *.yml
 .claude
 .serena
+# Fixtures recorded by `bun run contract:harvest`: written as the harvest wrote them, so a re-harvest shows a clean diff.
+test/contract/fixtures

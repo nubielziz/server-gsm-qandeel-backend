@@ -1,0 +1,163 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "currency": "USD",
+    "totals": {
+      "clients": 18,
+      "balance": "7608.1700",
+      "reserved": "353.1900",
+      "overdraftLimit": "15500.0000",
+      "overdraftUsed": "81.9500",
+      "inOverdraft": 1
+    },
+    "rows": [
+      {
+        "clientId": 3,
+        "name": "Phone Doctor FZE",
+        "balance": "2260.0900",
+        "reserved": "23.7200",
+        "overdraftLimit": "2500.0000",
+        "overdraftUsed": "0.0000"
+      },
+      {
+        "clientId": 5,
+        "name": "Cairo GSM Lab",
+        "balance": "1223.7700",
+        "reserved": "15.3100",
+        "overdraftLimit": "1500.0000",
+        "overdraftUsed": "0.0000"
+      },
+      {
+        "clientId": 1,
+        "name": "Zain Mobile Hub",
+        "balance": "1209.7500",
+        "reserved": "71.2300",
+        "overdraftLimit": "2000.0000",
+        "overdraftUsed": "0.0000"
+      },
+      {
+        "clientId": 2,
+        "name": "Al-Noor Telecom",
+        "balance": "620.9100",
+        "reserved": "21.8700",
+        "overdraftLimit": "1500.0000",
+        "overdraftUsed": "0.0000"
+      },
+      {
+        "clientId": 10,
+        "name": "Karachi Unlock Hub",
+        "balance": "480.4300",
+        "reserved": "16.2600",
+        "overdraftLimit": "900.0000",
+        "overdraftUsed": "0.0000"
+      },
+      {
+        "clientId": 15,
+        "name": "Doha Phone Lab",
+        "balance": "357.0900",
+        "reserved": "0.0000",
+        "overdraftLimit": "800.0000",
+        "overdraftUsed": "0.0000"
+      },
+      {
+        "clientId": 8,
+        "name": "Casablanca Unlock",
+        "balance": "310.9300",
+        "reserved": "0.0000",
+        "overdraftLimit": "800.0000",
+        "overdraftUsed": "0.0000"
+      },
+      {
+        "clientId": 11,
+        "name": "Istanbul GSM Care",
+        "balance": "265.9600",
+        "reserved": "7.9800",
+        "overdraftLimit": "900.0000",
+        "overdraftUsed": "0.0000"
+      },
+      {
+        "clientId": 4,
+        "name": "Basra Unlock Center",
+        "balance": "219.7400",
+        "reserved": "0.0000",
+        "overdraftLimit": "800.0000",
+        "overdraftUsed": "0.0000"
+      },
+      {
+        "clientId": 12,
+        "name": "Jeddah Tech Bar",
+        "balance": "177.7300",
+        "reserved": "48.4000",
+        "overdraftLimit": "600.0000",
+        "overdraftUsed": "0.0000"
+      },
+      {
+        "clientId": 6,
+        "name": "Erbil Mobile Parts",
+        "balance": "141.1300",
+        "reserved": "9.1700",
+        "overdraftLimit": "500.0000",
+        "overdraftUsed": "0.0000"
+      },
+      {
+        "clientId": 14,
+        "name": "Kuwait SIM Center",
+        "balance": "131.1100",
+        "reserved": "8.9700",
+        "overdraftLimit": "500.0000",
+        "overdraftUsed": "0.0000"
+      },
+      {
+        "clientId": 9,
+        "name": "Lagos Gadget Fix",
+        "balance": "95.5700",
+        "reserved": "71.7300",
+        "overdraftLimit": "500.0000",
+        "overdraftUsed": "0.0000"
+      },
+      {
+        "clientId": 13,
+        "name": "Muscat Mobile Clinic",
+        "balance": "74.7500",
+        "reserved": "26.5000",
+        "overdraftLimit": "400.0000",
+        "overdraftUsed": "0.0000"
+      },
+      {
+        "clientId": 16,
+        "name": "Beirut Unlock Co",
+        "balance": "58.8100",
+        "reserved": "0.0000",
+        "overdraftLimit": "300.0000",
+        "overdraftUsed": "0.0000"
+      },
+      {
+        "clientId": 7,
+        "name": "Tripoli Repair Group",
+        "balance": "42.1700",
+        "reserved": "7.4100",
+        "overdraftLimit": "400.0000",
+        "overdraftUsed": "0.0000"
+      },
+      {
+        "clientId": 19,
+        "name": "Tunis Fix Point",
+        "balance": "20.1800",
+        "reserved": "1.5300",
+        "overdraftLimit": "300.0000",
+        "overdraftUsed": "0.0000"
+      },
+      {
+        "clientId": 17,
+        "name": "Sana'a Repair",
+        "balance": "-81.9500",
+        "reserved": "23.1100",
+        "overdraftLimit": "300.0000",
+        "overdraftUsed": "81.9500"
+      }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "category": "Orders",
+    "question": "How long does a carrier unlock take?",
+    "answerMd": "Short answer to \"How long does a carrier unlock take?\".",
+    "locale": "en",
+    "isPublished": true,
+    "helpfulYes": 142,
+    "helpfulNo": 9,
+    "sort": 1,
+    "createdAt": "2026-09-01T12:00:00.000Z",
+    "updatedAt": "2026-10-21T12:00:00.000Z"
+  }
+}

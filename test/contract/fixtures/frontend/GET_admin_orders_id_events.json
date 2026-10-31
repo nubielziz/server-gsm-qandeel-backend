@@ -1,0 +1,98 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": [
+    {
+      "id": 1,
+      "type": "created",
+      "fromStatus": null,
+      "toStatus": null,
+      "actor": {
+        "type": "client",
+        "id": null,
+        "name": "Merchant API"
+      },
+      "data": {
+        "message": "Order received via Dhru API"
+      },
+      "createdAt": "2026-10-02T01:10:55.000Z"
+    },
+    {
+      "id": 2,
+      "type": "hold",
+      "fromStatus": null,
+      "toStatus": null,
+      "actor": {
+        "type": "system",
+        "id": null,
+        "name": "System"
+      },
+      "data": {
+        "message": "$3.31 held from Phone Doctor FZE wallet"
+      },
+      "createdAt": "2026-10-02T01:10:56.000Z"
+    },
+    {
+      "id": 3,
+      "type": "dispatch",
+      "fromStatus": null,
+      "toStatus": null,
+      "actor": {
+        "type": "system",
+        "id": null,
+        "name": "System"
+      },
+      "data": {
+        "message": "Sent to FileForge (REST v2)"
+      },
+      "createdAt": "2026-10-02T01:10:58.000Z"
+    },
+    {
+      "id": 4,
+      "type": "ack",
+      "fromStatus": null,
+      "toStatus": null,
+      "actor": {
+        "type": "supplier",
+        "id": null,
+        "name": "FileForge"
+      },
+      "data": {
+        "message": "Accepted by supplier, ref F-322029"
+      },
+      "createdAt": "2026-10-02T01:11:07.000Z"
+    },
+    {
+      "id": 5,
+      "type": "completed",
+      "fromStatus": null,
+      "toStatus": null,
+      "actor": {
+        "type": "system",
+        "id": null,
+        "name": "System"
+      },
+      "data": {
+        "message": "Completed by supplier reply"
+      },
+      "createdAt": "2026-10-02T01:16:16.289Z"
+    },
+    {
+      "id": 6,
+      "type": "settle",
+      "fromStatus": null,
+      "toStatus": null,
+      "actor": {
+        "type": "system",
+        "id": null,
+        "name": "System"
+      },
+      "data": {
+        "message": "Settled: revenue $3.31, cost $2.40"
+      },
+      "createdAt": "2026-10-02T01:16:16.789Z"
+    }
+  ]
+}

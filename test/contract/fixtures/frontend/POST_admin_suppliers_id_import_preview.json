@@ -1,0 +1,32 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "items": [
+      {
+        "supplierServiceId": 2,
+        "name": "iCloud Clean / Lost Check",
+        "type": "imei",
+        "state": "matching",
+        "serviceId": 1,
+        "serviceName": "iCloud Clean / Lost Check",
+        "cost": "0.5864",
+        "previousCost": null,
+        "suggestedPrice": null
+      },
+      {
+        "supplierServiceId": 4,
+        "name": "Apple Warranty & Activation Date",
+        "type": "imei",
+        "state": "matching",
+        "serviceId": 2,
+        "serviceName": "Apple Warranty & Activation Date",
+        "cost": "0.0540",
+        "previousCost": null,
+        "suggestedPrice": null
+      }
+    ]
+  }
+}

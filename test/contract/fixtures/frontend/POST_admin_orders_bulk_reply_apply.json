@@ -1,0 +1,15 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "applied": 0,
+    "failed": [
+      {
+        "orderId": 48100,
+        "title": "The order is already closed."
+      }
+    ]
+  }
+}

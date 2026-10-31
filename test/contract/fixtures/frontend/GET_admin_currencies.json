@@ -1,0 +1,100 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "7"
+  },
+  "body": [
+    {
+      "id": 1,
+      "code": "USD",
+      "name": "US dollar",
+      "rateToBase": "1.0000",
+      "rateUpdatedAt": "2026-10-31T07:00:00.000Z",
+      "markupPercent": "0.0000",
+      "charmRounding": false,
+      "isStorefront": true,
+      "decimals": 2,
+      "isActive": true,
+      "createdAt": "2026-10-31T07:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "code": "GBP",
+      "name": "Pound sterling",
+      "rateToBase": "0.7900",
+      "rateUpdatedAt": "2026-10-31T07:00:00.000Z",
+      "markupPercent": "1.5000",
+      "charmRounding": true,
+      "isStorefront": true,
+      "decimals": 2,
+      "isActive": true,
+      "createdAt": "2026-10-31T07:00:00.000Z"
+    },
+    {
+      "id": 3,
+      "code": "EUR",
+      "name": "Euro",
+      "rateToBase": "0.9200",
+      "rateUpdatedAt": "2026-10-31T09:00:00.000Z",
+      "markupPercent": "1.5000",
+      "charmRounding": true,
+      "isStorefront": true,
+      "decimals": 2,
+      "isActive": true,
+      "createdAt": "2026-10-31T09:00:00.000Z"
+    },
+    {
+      "id": 4,
+      "code": "SEK",
+      "name": "Swedish krona",
+      "rateToBase": "10.6000",
+      "rateUpdatedAt": "2026-10-28T10:00:00.000Z",
+      "markupPercent": "1.5000",
+      "charmRounding": true,
+      "isStorefront": true,
+      "decimals": 2,
+      "isActive": true,
+      "createdAt": "2026-10-28T10:00:00.000Z"
+    },
+    {
+      "id": 5,
+      "code": "CAD",
+      "name": "Canadian dollar",
+      "rateToBase": "1.3700",
+      "rateUpdatedAt": "2026-10-31T09:00:00.000Z",
+      "markupPercent": "1.5000",
+      "charmRounding": true,
+      "isStorefront": true,
+      "decimals": 2,
+      "isActive": true,
+      "createdAt": "2026-10-31T09:00:00.000Z"
+    },
+    {
+      "id": 6,
+      "code": "AED",
+      "name": "UAE dirham",
+      "rateToBase": "3.6700",
+      "rateUpdatedAt": "2026-10-31T10:00:00.000Z",
+      "markupPercent": "1.5000",
+      "charmRounding": true,
+      "isStorefront": true,
+      "decimals": 2,
+      "isActive": true,
+      "createdAt": "2026-10-31T10:00:00.000Z"
+    },
+    {
+      "id": 7,
+      "code": "SAR",
+      "name": "Saudi riyal",
+      "rateToBase": "3.7500",
+      "rateUpdatedAt": "2026-10-31T11:00:00.000Z",
+      "markupPercent": "1.5000",
+      "charmRounding": true,
+      "isStorefront": true,
+      "decimals": 2,
+      "isActive": true,
+      "createdAt": "2026-10-31T11:00:00.000Z"
+    }
+  ]
+}

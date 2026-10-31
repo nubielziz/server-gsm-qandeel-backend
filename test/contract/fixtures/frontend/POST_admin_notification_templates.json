@@ -1,0 +1,18 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "event": "order.completed",
+    "channel": "email",
+    "audience": "staff",
+    "locale": "en",
+    "subject": "Harvest sample text.",
+    "body": "Harvest sample text.",
+    "isActive": false,
+    "sentLast30Days": 0,
+    "createdAt": "2026-10-31T12:00:00.000Z",
+    "id": 9
+  }
+}

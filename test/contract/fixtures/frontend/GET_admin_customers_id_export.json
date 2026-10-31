@@ -1,0 +1,49 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "content-disposition": "attachment; filename=\"customer-1.json\""
+  },
+  "body": {
+    "customer": {
+      "id": 1,
+      "name": "Daniel Whitmore",
+      "email": "daniel.whitmore@mail.example",
+      "country": "GB"
+    },
+    "orders": [
+      {
+        "id": 20408,
+        "service": "EE UK Unlock",
+        "imei": "352905111594077",
+        "status": "completed",
+        "total": "12.9900",
+        "created": "2026-10-06T21:22:45.000Z"
+      },
+      {
+        "id": 20457,
+        "service": "Vodafone UK iPhone Unlock",
+        "imei": "356912117374880",
+        "status": "completed",
+        "total": "14.9900",
+        "created": "2026-10-25T07:44:03.000Z"
+      },
+      {
+        "id": 20466,
+        "service": "EE UK Unlock",
+        "imei": "356912110201304",
+        "status": "rejected",
+        "total": "12.9900",
+        "created": "2026-10-26T16:51:53.000Z"
+      },
+      {
+        "id": 20485,
+        "service": "Samsung Info (KG / FRP / Region)",
+        "imei": "867412056228330",
+        "status": "completed",
+        "total": "3.9900",
+        "created": "2026-10-29T15:29:34.000Z"
+      }
+    ]
+  }
+}

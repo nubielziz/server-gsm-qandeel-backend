@@ -1,0 +1,196 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "held": [
+      {
+        "orderId": 20490,
+        "paidAt": "2026-10-30T09:14:52.000Z",
+        "score": 67,
+        "service": {
+          "id": 9,
+          "name": "EE UK Unlock"
+        },
+        "supplier": {
+          "id": 6,
+          "name": "Bosphorus Unlock"
+        },
+        "imei": "867412052715306",
+        "device": "Redmi Note 12 (23021RAAEG)",
+        "capturedAmount": "12.9900",
+        "currency": "USD",
+        "fxRate": "1.0000",
+        "paymentMethod": "card",
+        "signals": [
+          "IMEI was checked blacklisted before",
+          "New customer, first order above $40",
+          "VPN or proxy IP"
+        ],
+        "customer": {
+          "id": 10,
+          "name": "Tyler Brooks",
+          "email": "tyler.brooks@inbox.example",
+          "country": "US",
+          "riskLevel": "medium",
+          "history": {
+            "earlierOrders": 8,
+            "refunds": 1,
+            "disputes": 1
+          }
+        }
+      },
+      {
+        "orderId": 20491,
+        "paidAt": "2026-10-30T10:10:30.000Z",
+        "score": 70,
+        "service": {
+          "id": 5,
+          "name": "AT&T USA Premier Unlock"
+        },
+        "supplier": {
+          "id": 1,
+          "name": "Nordic GSM"
+        },
+        "imei": "359254103397733",
+        "device": "iPhone 14 Pro (A2889)",
+        "capturedAmount": "25.9900",
+        "currency": "USD",
+        "fxRate": "1.0000",
+        "paymentMethod": "card",
+        "signals": [
+          "Email on a previous chargeback",
+          "Disposable email domain"
+        ],
+        "customer": {
+          "id": 28,
+          "name": "Victor Silva",
+          "email": "victor.silva@webmail.example",
+          "country": "US",
+          "riskLevel": "low",
+          "history": {
+            "earlierOrders": 12,
+            "refunds": 2,
+            "disputes": 0
+          }
+        }
+      },
+      {
+        "orderId": 20494,
+        "paidAt": "2026-10-30T14:37:51.000Z",
+        "score": 62,
+        "service": {
+          "id": 5,
+          "name": "AT&T USA Premier Unlock"
+        },
+        "supplier": {
+          "id": 1,
+          "name": "Nordic GSM"
+        },
+        "imei": "352905111794859",
+        "device": "Galaxy S23 (SM-S911B)",
+        "capturedAmount": "25.9900",
+        "currency": "USD",
+        "fxRate": "1.0000",
+        "paymentMethod": "card",
+        "signals": [
+          "IP country differs from card country",
+          "Prepaid card BIN",
+          "4 orders in one hour from one device"
+        ],
+        "customer": {
+          "id": 25,
+          "name": "Olivia Grant",
+          "email": "olivia.grant@mail.example",
+          "country": "US",
+          "riskLevel": "low",
+          "history": {
+            "earlierOrders": 7,
+            "refunds": 1,
+            "disputes": 1
+          }
+        }
+      },
+      {
+        "orderId": 20495,
+        "paidAt": "2026-10-30T17:03:32.000Z",
+        "score": 87,
+        "service": {
+          "id": 8,
+          "name": "Vodafone UK iPhone Unlock"
+        },
+        "supplier": {
+          "id": 6,
+          "name": "Bosphorus Unlock"
+        },
+        "imei": "354607119195422",
+        "device": "Pixel 7 (GVU6C)",
+        "capturedAmount": "17.9900",
+        "currency": "GBP",
+        "fxRate": "0.7900",
+        "paymentMethod": "card",
+        "signals": [
+          "Disposable email domain",
+          "New customer, first order above $40",
+          "VPN or proxy IP",
+          "IP country differs from card country"
+        ],
+        "customer": {
+          "id": 21,
+          "name": "Samira Khan",
+          "email": "samira.khan@mail.example",
+          "country": "GB",
+          "riskLevel": "low",
+          "history": {
+            "earlierOrders": 5,
+            "refunds": 1,
+            "disputes": 0
+          }
+        }
+      }
+    ],
+    "stats": {
+      "decided30d": 2,
+      "approved30d": 1,
+      "refunded30d": 1,
+      "heldShare": 5.8
+    },
+    "recent": [
+      {
+        "orderId": 20464,
+        "score": 84,
+        "customer": {
+          "id": 25,
+          "name": "Olivia Grant"
+        },
+        "capturedAmount": "25.9900",
+        "currency": "USD",
+        "fxRate": "1.0000",
+        "outcome": "refunded",
+        "reviewedBy": {
+          "id": 1,
+          "name": "Rami K."
+        },
+        "reviewedAt": "2026-10-26T15:01:24.000Z"
+      },
+      {
+        "orderId": 20400,
+        "score": 71,
+        "customer": {
+          "id": 19,
+          "name": "Jack Turner"
+        },
+        "capturedAmount": "15.5900",
+        "currency": "GBP",
+        "fxRate": "0.7900",
+        "outcome": "approved",
+        "reviewedBy": {
+          "id": 2,
+          "name": "Lina S."
+        },
+        "reviewedAt": "2026-10-02T11:12:14.000Z"
+      }
+    ]
+  }
+}

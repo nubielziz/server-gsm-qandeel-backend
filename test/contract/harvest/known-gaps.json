@@ -1,0 +1,3 @@
+{
+  "GET /admin/queues": "The console only links to this address (the queue monitor page); the mock layer has no handler for it."
+}

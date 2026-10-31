@@ -1,0 +1,22 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "kind": "carrier",
+    "slug": "unlock-iphone-on-atandt",
+    "locale": "en",
+    "title": "Unlock iPhone on AT&T",
+    "bodyMd": "# Unlock iPhone on AT&T\n\nText for Unlock iPhone on AT&T goes here.",
+    "seoTitle": "Unlock iPhone on AT&T",
+    "seoDescription": "",
+    "status": "published",
+    "publishedAt": "2026-10-28T12:00:00.000Z",
+    "createdAt": "2026-09-28T12:00:00.000Z",
+    "updatedAt": "2026-10-28T12:00:00.000Z",
+    "visits30d": 5480,
+    "orders30d": 21
+  }
+}

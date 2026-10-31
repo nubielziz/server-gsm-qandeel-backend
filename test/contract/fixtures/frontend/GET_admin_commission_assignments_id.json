@@ -1,0 +1,26 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "planId": 1,
+    "beneficiaryId": 1,
+    "scope": "referrals",
+    "startsAt": "2025-09-16T12:00:00.000Z",
+    "endsAt": null,
+    "createdAt": "2025-09-16T12:00:00.000Z",
+    "updatedAt": "2025-09-16T12:00:00.000Z",
+    "beneficiary": {
+      "id": 1,
+      "name": "Zain Mobile Hub",
+      "country": "JO"
+    },
+    "plan": {
+      "id": 1,
+      "name": "Referral",
+      "percent": "3.0000"
+    }
+  }
+}

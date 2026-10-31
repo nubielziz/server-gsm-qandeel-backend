@@ -36,6 +36,8 @@
     "contract:extract": "bun scripts/extract-frontend-contract.mjs",
     "contract:docs": "bun scripts/build-contract-docs.mjs",
     "contract:check": "bun scripts/extract-frontend-contract.mjs --check && bun scripts/build-contract-docs.mjs --check",
+    "contract:harvest": "node scripts/contract-harvest.mjs",
+    "contract:pending": "bun scripts/gen-contract-pending.mjs",
     "docs:openapi": "bun --no-env-file scripts/gen-openapi.ts",
     "docs:openapi:check": "bun --no-env-file scripts/gen-openapi.ts --check"
   },
@@ -76,6 +78,8 @@
     "@nestjs/testing": "^12.3.2",
     "@types/bun": "^1.4.4",
     "@types/pg": "^8.23.1",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
     "drizzle-kit": "^0.31.11",
     "eslint": "^10.14.0",
     "eslint-config-prettier": "^10.1.8",

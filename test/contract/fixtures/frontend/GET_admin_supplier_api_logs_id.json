@@ -1,0 +1,32 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 79,
+    "supplierId": 4,
+    "orderId": 48666,
+    "action": "getimeiorder",
+    "httpStatus": 200,
+    "durationMs": 956,
+    "error": "",
+    "createdAt": "2026-10-31T11:59:58.000Z",
+    "request": {
+      "action": "getimeiorder",
+      "username": "gsm-supply",
+      "apiaccesskey": "••••••••",
+      "parameters": {
+        "REFERENCEID": "48666"
+      }
+    },
+    "response": {
+      "SUCCESS": [
+        {
+          "MESSAGE": "OK",
+          "REFERENCEID": "R48666"
+        }
+      ]
+    }
+  }
+}

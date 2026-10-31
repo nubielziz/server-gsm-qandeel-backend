@@ -1,0 +1,38 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "name": "iCloud Clean / Lost Check",
+    "code": "IMEI-ICL-CHK",
+    "type": "imei",
+    "status": "active",
+    "executionMode": "auto",
+    "categoryId": 1,
+    "category": {
+      "id": 1,
+      "name": "Apple"
+    },
+    "basePrice": "0.1300",
+    "cost": "0.0800",
+    "costChangedFrom": null,
+    "minProfit": "0.0200",
+    "floorPrice": "0.1000",
+    "marginPct": "38.4615",
+    "belowFloor": false,
+    "slaMinutes": 2,
+    "supplier": {
+      "id": 3,
+      "name": "Rapid IMEI"
+    },
+    "fallbackSupplier": {
+      "id": 1,
+      "name": "Nordic GSM"
+    },
+    "fields": [],
+    "options": [],
+    "groupPrices": []
+  }
+}

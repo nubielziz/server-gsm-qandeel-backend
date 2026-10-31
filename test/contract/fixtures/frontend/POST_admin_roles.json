@@ -1,0 +1,14 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "name": "Harvest sample",
+    "permissions": [
+      "Harvest sample text."
+    ],
+    "id": 7,
+    "staffCount": 0
+  }
+}

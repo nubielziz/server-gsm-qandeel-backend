@@ -1,0 +1,436 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "11"
+  },
+  "body": [
+    {
+      "id": 1007,
+      "orderId": 20467,
+      "status": "requested",
+      "method": "original",
+      "amount": "19.9900",
+      "reason": "Unlock did not work: phone still asks for a code",
+      "currency": "CAD",
+      "fx": "1.37",
+      "partial": false,
+      "gatewayRefundId": null,
+      "note": null,
+      "requestedBy": {
+        "type": "customer",
+        "name": null
+      },
+      "approvedBy": null,
+      "customer": {
+        "id": 11,
+        "name": "Priya Nair"
+      },
+      "order": {
+        "id": 20467,
+        "deliveredAt": "2026-10-27T19:40:57.073Z",
+        "cost": "9.8000"
+      },
+      "payment": {
+        "id": 20467,
+        "method": "card",
+        "brand": "Mastercard 7803",
+        "amount": "19.9900",
+        "taxAmount": "0.0000"
+      },
+      "netAmount": null,
+      "taxAmount": null,
+      "completedAt": null,
+      "createdAt": "2026-10-31T07:00:00.000Z"
+    },
+    {
+      "id": 1010,
+      "orderId": 20489,
+      "status": "completed",
+      "method": "original",
+      "amount": "7.2000",
+      "reason": "Goodwill: supplier replied after the promised time",
+      "currency": "GBP",
+      "fx": "0.79",
+      "partial": true,
+      "gatewayRefundId": "re_05474685",
+      "note": null,
+      "requestedBy": {
+        "type": "customer",
+        "name": null
+      },
+      "approvedBy": {
+        "id": 2,
+        "name": "Lina S."
+      },
+      "customer": {
+        "id": 21,
+        "name": "Samira Khan"
+      },
+      "order": {
+        "id": 20489,
+        "deliveredAt": "2026-10-30T21:28:11.209Z",
+        "cost": "7.2000"
+      },
+      "payment": {
+        "id": 20489,
+        "method": "card",
+        "brand": "Visa 0039",
+        "amount": "17.9900",
+        "taxAmount": "3.0000"
+      },
+      "netAmount": "6.0000",
+      "taxAmount": "1.2000",
+      "completedAt": "2026-10-30T22:28:11.209Z",
+      "createdAt": "2026-10-30T22:28:11.209Z"
+    },
+    {
+      "id": 1011,
+      "orderId": 20440,
+      "status": "failed",
+      "method": "original",
+      "amount": "4.8300",
+      "reason": "Duplicate payment",
+      "currency": "EUR",
+      "fx": "0.92",
+      "partial": false,
+      "gatewayRefundId": null,
+      "note": "Gateway error: the card issuer declined the credit. Retry, or refund by bank transfer.",
+      "requestedBy": {
+        "type": "customer",
+        "name": null
+      },
+      "approvedBy": {
+        "id": 3,
+        "name": "Omar T."
+      },
+      "customer": {
+        "id": 22,
+        "name": "Diego Fernandez"
+      },
+      "order": {
+        "id": 20440,
+        "deliveredAt": "2026-10-21T06:41:16.173Z",
+        "cost": "0.0500"
+      },
+      "payment": {
+        "id": 20440,
+        "method": "crypto",
+        "brand": "USDT TRC20",
+        "amount": "4.8300",
+        "taxAmount": "0.8400"
+      },
+      "netAmount": null,
+      "taxAmount": null,
+      "completedAt": null,
+      "createdAt": "2026-10-30T10:00:00.000Z"
+    },
+    {
+      "id": 1008,
+      "orderId": 20478,
+      "status": "requested",
+      "method": "original",
+      "amount": "11.9900",
+      "reason": "Changed my mind, I no longer need the unlock",
+      "currency": "USD",
+      "fx": "1",
+      "partial": false,
+      "gatewayRefundId": null,
+      "note": null,
+      "requestedBy": {
+        "type": "customer",
+        "name": null
+      },
+      "approvedBy": null,
+      "customer": {
+        "id": 24,
+        "name": "Ryan Cooper"
+      },
+      "order": {
+        "id": 20478,
+        "deliveredAt": "2026-10-29T02:29:24.163Z",
+        "cost": "5.6000"
+      },
+      "payment": {
+        "id": 20478,
+        "method": "card",
+        "brand": "Mastercard 4747",
+        "amount": "11.9900",
+        "taxAmount": "0.0000"
+      },
+      "netAmount": null,
+      "taxAmount": null,
+      "completedAt": null,
+      "createdAt": "2026-10-30T09:00:00.000Z"
+    },
+    {
+      "id": 1009,
+      "orderId": 20462,
+      "status": "requested",
+      "method": "original",
+      "amount": "11.9900",
+      "reason": "Ordered the wrong service for my carrier",
+      "currency": "USD",
+      "fx": "1",
+      "partial": false,
+      "gatewayRefundId": null,
+      "note": null,
+      "requestedBy": {
+        "type": "customer",
+        "name": null
+      },
+      "approvedBy": null,
+      "customer": {
+        "id": 28,
+        "name": "Victor Silva"
+      },
+      "order": {
+        "id": 20462,
+        "deliveredAt": "2026-10-26T10:33:23.866Z",
+        "cost": "5.6000"
+      },
+      "payment": {
+        "id": 20462,
+        "method": "card",
+        "brand": "Mastercard 4535",
+        "amount": "11.9900",
+        "taxAmount": "0.0000"
+      },
+      "netAmount": null,
+      "taxAmount": null,
+      "completedAt": null,
+      "createdAt": "2026-10-29T05:00:00.000Z"
+    },
+    {
+      "id": 1006,
+      "orderId": 20469,
+      "status": "completed",
+      "method": "original",
+      "amount": "11.9900",
+      "reason": "Carrier rejected the request: device not eligible",
+      "currency": "USD",
+      "fx": "1",
+      "partial": false,
+      "gatewayRefundId": "re_78976348",
+      "note": null,
+      "requestedBy": {
+        "type": "system",
+        "name": "System"
+      },
+      "approvedBy": null,
+      "customer": {
+        "id": 9,
+        "name": "Jessica Moore"
+      },
+      "order": {
+        "id": 20469,
+        "deliveredAt": null,
+        "cost": "5.6000"
+      },
+      "payment": {
+        "id": 20469,
+        "method": "card",
+        "brand": "Visa 5616",
+        "amount": "11.9900",
+        "taxAmount": "0.0000"
+      },
+      "netAmount": "11.9900",
+      "taxAmount": "0.0000",
+      "completedAt": "2026-10-27T23:21:51.183Z",
+      "createdAt": "2026-10-27T23:21:51.183Z"
+    },
+    {
+      "id": 1004,
+      "orderId": 20464,
+      "status": "completed",
+      "method": "original",
+      "amount": "25.9900",
+      "reason": "Refunded after risk review: card owner did not match the IMEI buyer",
+      "currency": "USD",
+      "fx": "1",
+      "partial": false,
+      "gatewayRefundId": "re_79295163",
+      "note": null,
+      "requestedBy": {
+        "type": "customer",
+        "name": null
+      },
+      "approvedBy": {
+        "id": 1,
+        "name": "Rami K."
+      },
+      "customer": {
+        "id": 25,
+        "name": "Olivia Grant"
+      },
+      "order": {
+        "id": 20464,
+        "deliveredAt": null,
+        "cost": "13.5000"
+      },
+      "payment": {
+        "id": 20464,
+        "method": "wallet",
+        "brand": "Mastercard 8159",
+        "amount": "25.9900",
+        "taxAmount": "0.0000"
+      },
+      "netAmount": "25.9900",
+      "taxAmount": "0.0000",
+      "completedAt": "2026-10-27T18:49:12.409Z",
+      "createdAt": "2026-10-27T18:49:12.409Z"
+    },
+    {
+      "id": 1005,
+      "orderId": 20466,
+      "status": "completed",
+      "method": "original",
+      "amount": "15.5900",
+      "reason": "IMEI is blacklisted",
+      "currency": "GBP",
+      "fx": "0.79",
+      "partial": false,
+      "gatewayRefundId": "re_67212844",
+      "note": null,
+      "requestedBy": {
+        "type": "system",
+        "name": "System"
+      },
+      "approvedBy": null,
+      "customer": {
+        "id": 1,
+        "name": "Daniel Whitmore"
+      },
+      "order": {
+        "id": 20466,
+        "deliveredAt": null,
+        "cost": "6.4000"
+      },
+      "payment": {
+        "id": 20466,
+        "method": "card",
+        "brand": "Amex 0738",
+        "amount": "15.5900",
+        "taxAmount": "2.6000"
+      },
+      "netAmount": "12.9900",
+      "taxAmount": "2.6000",
+      "completedAt": "2026-10-27T08:33:37.154Z",
+      "createdAt": "2026-10-27T08:33:37.154Z"
+    },
+    {
+      "id": 1003,
+      "orderId": 20452,
+      "status": "completed",
+      "method": "original",
+      "amount": "11.9900",
+      "reason": "Device already unlocked",
+      "currency": "USD",
+      "fx": "1",
+      "partial": false,
+      "gatewayRefundId": "re_74956144",
+      "note": null,
+      "requestedBy": {
+        "type": "system",
+        "name": "System"
+      },
+      "approvedBy": null,
+      "customer": {
+        "id": 28,
+        "name": "Victor Silva"
+      },
+      "order": {
+        "id": 20452,
+        "deliveredAt": null,
+        "cost": "5.6000"
+      },
+      "payment": {
+        "id": 20452,
+        "method": "card",
+        "brand": "Amex 0107",
+        "amount": "11.9900",
+        "taxAmount": "0.0000"
+      },
+      "netAmount": "11.9900",
+      "taxAmount": "0.0000",
+      "completedAt": "2026-10-24T01:36:41.793Z",
+      "createdAt": "2026-10-24T01:36:41.793Z"
+    },
+    {
+      "id": 1002,
+      "orderId": 20441,
+      "status": "completed",
+      "method": "original",
+      "amount": "19.9900",
+      "reason": "Device already unlocked",
+      "currency": "USD",
+      "fx": "1",
+      "partial": false,
+      "gatewayRefundId": "re_82922782",
+      "note": null,
+      "requestedBy": {
+        "type": "system",
+        "name": "System"
+      },
+      "approvedBy": null,
+      "customer": {
+        "id": 10,
+        "name": "Tyler Brooks"
+      },
+      "order": {
+        "id": 20441,
+        "deliveredAt": null,
+        "cost": "9.8000"
+      },
+      "payment": {
+        "id": 20441,
+        "method": "card",
+        "brand": "Amex 2044",
+        "amount": "19.9900",
+        "taxAmount": "0.0000"
+      },
+      "netAmount": "19.9900",
+      "taxAmount": "0.0000",
+      "completedAt": "2026-10-22T05:38:07.563Z",
+      "createdAt": "2026-10-22T05:38:07.563Z"
+    },
+    {
+      "id": 1001,
+      "orderId": 20427,
+      "status": "completed",
+      "method": "original",
+      "amount": "18.4400",
+      "reason": "Carrier rejected the request: device not eligible",
+      "currency": "EUR",
+      "fx": "0.92",
+      "partial": false,
+      "gatewayRefundId": "re_71981394",
+      "note": null,
+      "requestedBy": {
+        "type": "system",
+        "name": "System"
+      },
+      "approvedBy": null,
+      "customer": {
+        "id": 20,
+        "name": "Kevin Doyle"
+      },
+      "order": {
+        "id": 20427,
+        "deliveredAt": null,
+        "cost": "7.2000"
+      },
+      "payment": {
+        "id": 20427,
+        "method": "card",
+        "brand": "Visa 7843",
+        "amount": "18.4400",
+        "taxAmount": "3.4500"
+      },
+      "netAmount": "14.9900",
+      "taxAmount": "3.4500",
+      "completedAt": "2026-10-16T05:50:52.286Z",
+      "createdAt": "2026-10-16T05:50:52.286Z"
+    }
+  ]
+}

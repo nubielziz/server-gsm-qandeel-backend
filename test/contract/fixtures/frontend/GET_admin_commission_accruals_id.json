@@ -1,0 +1,28 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "planId": 1,
+    "beneficiaryId": 1,
+    "orderId": 48101,
+    "period": "2026-10",
+    "basisAmount": "16.2600",
+    "percent": "3.0000",
+    "amount": "0.4900",
+    "status": "approved",
+    "ledgerTxId": 422,
+    "createdAt": "2026-10-03T21:37:21.644Z",
+    "updatedAt": "2026-10-10T21:37:21.644Z",
+    "beneficiary": {
+      "id": 1,
+      "name": "Zain Mobile Hub"
+    },
+    "merchant": {
+      "id": 8,
+      "name": "Casablanca Unlock"
+    }
+  }
+}

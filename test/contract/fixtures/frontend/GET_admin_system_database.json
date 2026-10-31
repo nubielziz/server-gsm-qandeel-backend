@@ -1,0 +1,92 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "status": "ok",
+    "connections": {
+      "used": 37,
+      "max": 100,
+      "usage": {
+        "value": 37,
+        "unit": "percent",
+        "state": "ok",
+        "warn": 70,
+        "crit": 90,
+        "direction": "above"
+      },
+      "poolWait": {
+        "value": 3.9,
+        "unit": "ms",
+        "state": "ok",
+        "warn": 50,
+        "crit": 500,
+        "direction": "above"
+      },
+      "waitingClients": 0
+    },
+    "locks": {
+      "waiting": 0,
+      "longestWait": {
+        "value": 0,
+        "unit": "s",
+        "state": "ok",
+        "warn": 5,
+        "crit": 30,
+        "direction": "above"
+      }
+    },
+    "replicaLag": {
+      "value": 0.5,
+      "unit": "s",
+      "state": "ok",
+      "warn": 5,
+      "crit": 30,
+      "direction": "above"
+    },
+    "size": {
+      "bytes": 19756849562,
+      "growthPerDayBytes": 325058560
+    },
+    "pendingMigrations": [],
+    "slowQueries": [
+      {
+        "id": "-8123450912384712938",
+        "query": "SELECT o.* FROM orders o WHERE o.status = $1 AND o.sla_due_at < now() ORDER BY o.created_at LIMIT $2",
+        "calls": 18420,
+        "meanMs": 41.2,
+        "totalMs": 758904
+      },
+      {
+        "id": "2210948872210445613",
+        "query": "SELECT le.account_id, SUM(le.amount) FROM ledger_entries le WHERE le.account_id = ANY($1) GROUP BY le.account_id",
+        "calls": 9804,
+        "meanMs": 33.5,
+        "totalMs": 328434
+      },
+      {
+        "id": "-5094417722198840017",
+        "query": "UPDATE orders SET status = $1, updated_at = now() WHERE id = $2",
+        "calls": 61233,
+        "meanMs": 12.8,
+        "totalMs": 783782
+      },
+      {
+        "id": "7740911285566301124",
+        "query": "SELECT * FROM supplier_api_logs WHERE supplier_id = $1 AND created_at > $2 ORDER BY created_at DESC LIMIT $3",
+        "calls": 24518,
+        "meanMs": 9.4,
+        "totalMs": 230469
+      },
+      {
+        "id": "-3318852206471209954",
+        "query": "INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, before, after) VALUES ($1, $2, $3, $4, $5, $6)",
+        "calls": 38905,
+        "meanMs": 3.1,
+        "totalMs": 120606
+      }
+    ],
+    "longTransactions": []
+  }
+}

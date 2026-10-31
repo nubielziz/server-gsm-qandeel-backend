@@ -5,8 +5,8 @@ Single source of truth for status. The lead updates it after every step. Read it
 ## Resume here
 
 **Phase 2, foundation, in progress** (Sonnet implements, Opus reviews). **P2.1 runtime-core, P2.2 docs-tooling and
-P2.3 data are done.** Next: **P2.4a infra-core ∥ P2.7 contract-tests** (running), then
-**P2.4b queues-outbox**, then **P2.5 security**, then **P2.6 staff sign-in**. Briefs: `docs/briefs/` (`_common.md` first; `_feature.md` is the
+P2.3 data are done.** P2.4a infra-core and P2.7 contract-tests are done too. Next: **P2.4b
+queues-outbox**, then **P2.5 security**, then **P2.6 staff sign-in**. Briefs: `docs/briefs/` (`_common.md` first; `_feature.md` is the
 Phase 3 recipe). Parallel implementers work in sibling worktrees of this repo (`git worktree add
 ../backend-p2-<name> -b feat/backend-p2-<name>`, then `bun install` there; a sibling path keeps the relative
 `reference` symlink working; the workflow tool's worktree isolation targets the frontend repo, not this one). Each
@@ -66,7 +66,7 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 | P2.4b | queues-outbox | BullMQ base (queues, worker registry, schedulers), job runs (health module), outbox + relay (platform module), Prometheus in compose; retire `spike/` (brief P2.4 items 6-10) | | |
 | P2.5 | security | IP rules hook, maintenance hook, rate-limit hook, auth guards (staff/merchant/customer sessions, CSRF, API key, Dhru, webhook signatures), permission guard + catalog, audit interceptor, `/reference` staff gate | admin-team (part), ip-rules (part) | |
 | P2.6 | staff-sign-in | `POST /admin/auth/login`, `/2fa`, `/2fa/setup`, `/logout`, `/password/set`, `GET /admin/auth/me` (6) | | |
-| P2.7 | contract-tests | route/shape/error parity tests, fixture harvest from the frontend mocks, allowlist, `pending.ts` | | in progress (worktree `../backend-p2-contract`) |
+| P2.7 | contract-tests | route/shape/error parity tests, fixture harvest from the frontend mocks, allowlist, `pending.ts` | | done (`test(contract)` commit) |
 | 2a | identity-staff-access | staff, roles, permissions, sessions, IP rules, access restriction, audit logs, settings (st2 admin, 31) | admin-team, ip-rules | |
 | 2b | identity-merchant-auth | merchant portal sign-in, security, sessions (st2 client, 15) | | |
 | 3 | money-wallets-ledger | postTransaction, money events, wallets, statement, adjust, credit limit, ledger, reconcile, currencies (st3, 14) | | |
@@ -155,6 +155,11 @@ None.
   the local queue Redis has no `maxmemory`, so the 90 % memory warning cannot fire locally.
 - For P2.4b: BullMQ producers should use `skipWaitingForReady` (queue option) to fail fast while Redis is down,
   instead of the check-then-act `RedisService.assertQueueReady()`.
+- Contract tests (P2.7): `test/contract/pending.ts` lists every unbuilt manifest key (378 after Phase 2's first four
+  routes); a feature that builds routes removes them there. Known gaps for later features (`test/contract/README.md`
+  "Known limits"): `GET /admin/permissions` needs a B-entry (`Permission[]` vs `string[]`, feature 2a);
+  `GET /admin/files/:id` is a 302 that `defineRoute` cannot declare yet; route parity needs an allowance for the Dhru
+  transport `POST /api/index.php` (feature 7a); `fixtures.test` does not notice a vanished mutation fixture.
 - Run Bun entry points from the repo root: Bun reads `tsconfig.json` (decorator flags) from the working directory.
 - `TRUST_PROXY` as a hop count becomes a trust function (Fastify 5.12 ignores numbers); use it only when the app port
   is reachable solely through the proxy chain, otherwise list the proxy addresses.

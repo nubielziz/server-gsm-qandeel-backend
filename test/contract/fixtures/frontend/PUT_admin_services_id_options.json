@@ -1,0 +1,14 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": [
+    {
+      "list": "model",
+      "value": "Harvest sample text.",
+      "label": "Harvest sample",
+      "supplierValue": "Harvest sample text."
+    }
+  ]
+}

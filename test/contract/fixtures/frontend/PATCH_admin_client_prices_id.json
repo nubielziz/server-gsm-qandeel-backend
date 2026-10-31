@@ -1,0 +1,22 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "serviceId": 1,
+    "clientId": 1,
+    "price": "0.1000",
+    "note": "",
+    "createdAt": "2026-10-11T12:00:00.000Z",
+    "service": {
+      "id": 1,
+      "name": "iCloud Clean / Lost Check",
+      "type": "imei",
+      "basePrice": "0.1300",
+      "floorPrice": "0.1000"
+    },
+    "groupPrice": "0.1196"
+  }
+}

@@ -1,0 +1,251 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "checkedAt": "2026-10-31T12:00:00.000Z",
+    "suppliers": [
+      {
+        "id": 1,
+        "name": "Nordic GSM",
+        "status": "active",
+        "health": "ok",
+        "since": "2026-10-13T00:00:00.000Z",
+        "lastSuccessAt": "2026-10-31T11:59:23.000Z",
+        "latency": {
+          "value": 341,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 2000,
+          "crit": 5000,
+          "direction": "above"
+        },
+        "errorRate": {
+          "value": 1.45,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 5,
+          "crit": 20,
+          "direction": "above"
+        },
+        "timeoutRate": {
+          "value": 0.7,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 5,
+          "crit": 20,
+          "direction": "above"
+        },
+        "circuit": "closed",
+        "lastSyncAt": "2026-10-31T11:56:00.000Z",
+        "balance": {
+          "amount": "1850.0000",
+          "currency": "USD",
+          "state": "ok",
+          "checkedAt": "2026-10-31T11:56:00.000Z"
+        }
+      },
+      {
+        "id": 2,
+        "name": "Gulf Server Hub",
+        "status": "active",
+        "health": "ok",
+        "since": "2026-10-22T11:00:00.000Z",
+        "lastSuccessAt": "2026-10-31T11:59:21.000Z",
+        "latency": {
+          "value": 405,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 2000,
+          "crit": 5000,
+          "direction": "above"
+        },
+        "errorRate": {
+          "value": 0.64,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 5,
+          "crit": 20,
+          "direction": "above"
+        },
+        "timeoutRate": {
+          "value": 0.31,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 5,
+          "crit": 20,
+          "direction": "above"
+        },
+        "circuit": "closed",
+        "lastSyncAt": "2026-10-31T11:52:00.000Z",
+        "balance": {
+          "amount": "38.4000",
+          "currency": "USD",
+          "state": "warn",
+          "checkedAt": "2026-10-31T11:52:00.000Z"
+        }
+      },
+      {
+        "id": 3,
+        "name": "Rapid IMEI",
+        "status": "active",
+        "health": "ok",
+        "since": "2026-10-20T20:00:00.000Z",
+        "lastSuccessAt": "2026-10-31T11:59:36.000Z",
+        "latency": {
+          "value": 563,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 2000,
+          "crit": 5000,
+          "direction": "above"
+        },
+        "errorRate": {
+          "value": 0.88,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 5,
+          "crit": 20,
+          "direction": "above"
+        },
+        "timeoutRate": {
+          "value": 0.55,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 5,
+          "crit": 20,
+          "direction": "above"
+        },
+        "circuit": "closed",
+        "lastSyncAt": "2026-10-31T11:59:00.000Z",
+        "balance": {
+          "amount": "640.0000",
+          "currency": "USD",
+          "state": "ok",
+          "checkedAt": "2026-10-31T11:59:00.000Z"
+        }
+      },
+      {
+        "id": 4,
+        "name": "RemoteDesk Pro",
+        "status": "active",
+        "health": "ok",
+        "since": "2026-10-12T00:00:00.000Z",
+        "lastSuccessAt": "2026-10-31T11:59:34.000Z",
+        "latency": {
+          "value": 621,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 2000,
+          "crit": 5000,
+          "direction": "above"
+        },
+        "errorRate": {
+          "value": 0.85,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 5,
+          "crit": 20,
+          "direction": "above"
+        },
+        "timeoutRate": {
+          "value": 0.42,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 5,
+          "crit": 20,
+          "direction": "above"
+        },
+        "circuit": "closed",
+        "lastSyncAt": "2026-10-31T11:57:00.000Z",
+        "balance": {
+          "amount": "910.0000",
+          "currency": "USD",
+          "state": "ok",
+          "checkedAt": "2026-10-31T11:57:00.000Z"
+        }
+      },
+      {
+        "id": 5,
+        "name": "FileForge",
+        "status": "active",
+        "health": "ok",
+        "since": "2026-10-18T20:00:00.000Z",
+        "lastSuccessAt": "2026-10-31T11:59:26.000Z",
+        "latency": {
+          "value": 592,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 2000,
+          "crit": 5000,
+          "direction": "above"
+        },
+        "errorRate": {
+          "value": 1.48,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 5,
+          "crit": 20,
+          "direction": "above"
+        },
+        "timeoutRate": {
+          "value": 0.51,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 5,
+          "crit": 20,
+          "direction": "above"
+        },
+        "circuit": "closed",
+        "lastSyncAt": "2026-10-31T11:51:00.000Z",
+        "balance": {
+          "amount": "420.0000",
+          "currency": "USD",
+          "state": "ok",
+          "checkedAt": "2026-10-31T11:51:00.000Z"
+        }
+      },
+      {
+        "id": 6,
+        "name": "Bosphorus Unlock",
+        "status": "active",
+        "health": "ok",
+        "since": "2026-10-22T06:00:00.000Z",
+        "lastSuccessAt": "2026-10-31T11:59:17.000Z",
+        "latency": {
+          "value": 982,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 2000,
+          "crit": 5000,
+          "direction": "above"
+        },
+        "errorRate": {
+          "value": 0.97,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 5,
+          "crit": 20,
+          "direction": "above"
+        },
+        "timeoutRate": {
+          "value": 0.54,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 5,
+          "crit": 20,
+          "direction": "above"
+        },
+        "circuit": "closed",
+        "lastSyncAt": "2026-10-31T11:53:00.000Z",
+        "balance": {
+          "amount": "1230.0000",
+          "currency": "USD",
+          "state": "ok",
+          "checkedAt": "2026-10-31T11:53:00.000Z"
+        }
+      }
+    ]
+  }
+}

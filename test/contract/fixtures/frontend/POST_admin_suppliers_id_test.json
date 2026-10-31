@@ -1,0 +1,14 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "ok": true,
+    "message": "Authenticated.",
+    "httpStatus": 200,
+    "durationMs": 310,
+    "accountName": "GSM Supply",
+    "balance": "1850.0000"
+  }
+}

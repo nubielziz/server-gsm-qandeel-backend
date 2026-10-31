@@ -1,0 +1,8 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/pdf",
+    "content-disposition": "attachment; filename=\"statement-1-mock.pdf\""
+  },
+  "body": "Mock statement for merchant 1"
+}

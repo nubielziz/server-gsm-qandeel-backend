@@ -38,10 +38,12 @@ bun run dev:worker            # worker process (its own /metrics on :9464)
 | `routes:check` | `docs/route-manifest.json` or `docs/slices/*` are stale against the map |
 | `contract:check` | the extracted frontend contract or the contract docs are stale |
 | `docs:openapi:check` | `docs/contract/openapi.json` or `openapi.public.json` differ from what the contracts generate |
-| `test` | any unit, integration or lint-rule test fails |
+| `test` | any unit, integration, contract (`test/contract`, see its README) or lint-rule test fails |
 
 Other scripts: `lint:fix`, `format` / `format:check` (Prettier: single quotes, trailing commas, 120 columns; Markdown,
-YAML and generated JSON are not formatted), `docs:openapi` (regenerate), `routes:build`, `contract:docs`.
+YAML and generated JSON are not formatted), `docs:openapi` (regenerate), `routes:build`, `contract:docs`,
+`contract:harvest` (re-record the console's mock answers into `test/contract/fixtures`; needs the frontend checkout with
+`npm ci`).
 
 ## Add an endpoint end to end
 
@@ -67,8 +69,9 @@ document. The contract layer is explained in `src/common/contract/README.md`; th
    parsed list query (filters, sort, range, search) to SQL with an exact `COUNT`.
 6. **Test it.** Unit tests for domain functions (`*.spec.ts` next to the code); integration tests in `test/integration/`
    with `createTestApp` (`test/support/app.ts`): success, each documented refusal (status, code, field), permission
-   refusal, list filters and `x-total-count`, idempotency replays, and concurrency where money or stock moves. The route
-   leaves `test/contract/pending.ts` **(P2.7)** and the parity tests then compare it with the frontend types.
+   refusal, list filters and `x-total-count`, idempotency replays, and concurrency where money or stock moves. Delete the
+   route's key from `test/contract/pending.ts`: the contract tests then compare it with the frontend types, the harvested
+   fixture and the OpenAPI examples (`test/contract/README.md` explains each failure and the allowlist).
 7. **Regenerate the documents:** `bun run docs:openapi`, then commit `docs/contract/openapi.json` and
    `openapi.public.json` with the change; the diff shows the contract change. `GET /reference` (internal) and, for REST
    v1, Dhru and webhook events, `GET /docs` show the result.

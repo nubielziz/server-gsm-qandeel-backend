@@ -1,0 +1,22 @@
+{
+  "status": 202,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "job": "price_sync",
+    "startedAt": "2026-10-31T12:00:00.000Z",
+    "finishedAt": null,
+    "durationMs": 0,
+    "processed": 0,
+    "trigger": "manual",
+    "status": "running",
+    "error": null,
+    "result": null,
+    "triggeredBy": {
+      "id": 1,
+      "name": "Rami K."
+    },
+    "id": 139
+  }
+}

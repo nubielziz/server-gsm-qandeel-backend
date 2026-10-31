@@ -1,0 +1,32 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 70,
+    "number": "INV-2026-0070",
+    "kind": "manual",
+    "status": "open",
+    "amount": "10.0000",
+    "fee": "0.0000",
+    "netAmount": "10.0000",
+    "taxAmount": "0.0000",
+    "taxRate": "0.0000",
+    "taxCountry": "JO",
+    "customerVatId": "",
+    "total": "10.0000",
+    "currency": "USD",
+    "client": {
+      "id": 1,
+      "name": "Zain Mobile Hub"
+    },
+    "customer": null,
+    "orderId": null,
+    "pdfFileId": null,
+    "description": "203.0.113.7",
+    "dueAt": "2026-11-14T12:00:00.000Z",
+    "paidAt": null,
+    "createdAt": "2026-10-31T12:00:00.000Z"
+  }
+}

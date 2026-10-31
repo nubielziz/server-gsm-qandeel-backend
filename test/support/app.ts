@@ -65,6 +65,8 @@ export interface TestAppOptions {
    * or `storage` health indicators). Nothing in the app may inject their services then.
    */
   readonly withoutInfrastructure?: boolean;
+  /** Called for every route Fastify registers (method `string | string[]`, url as registered), before `init()` ends. */
+  readonly onRoute?: (route: { method: string | readonly string[]; url: string }) => void;
 }
 
 /** A running test app. */
@@ -99,7 +101,11 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     }
   }
   const moduleRef = await builder.compile();
-  const app = moduleRef.createNestApplication<NestFastifyApplication>(createAppAdapter(config), { bufferLogs: true });
+  const adapter = createAppAdapter(config);
+  // Fastify only reports a route to hooks added before it is registered, i.e. before `app.init()`.
+  const { onRoute } = options;
+  if (onRoute) adapter.getInstance().addHook('onRoute', (route) => onRoute({ method: route.method, url: route.url }));
+  const app = moduleRef.createNestApplication<NestFastifyApplication>(adapter, { bufferLogs: true });
   await configureApp(app, config);
   await app.init();
   await app.getHttpAdapter().getInstance().ready();

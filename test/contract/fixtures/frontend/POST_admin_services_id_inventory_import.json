@@ -1,0 +1,12 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "imported": 1,
+    "duplicates": 0,
+    "rejected": 0,
+    "batchRef": "B-0031"
+  }
+}

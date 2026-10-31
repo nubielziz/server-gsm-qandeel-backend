@@ -1,0 +1,240 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "4"
+  },
+  "body": [
+    {
+      "title": "Card gateway callbacks delayed",
+      "severity": "minor",
+      "status": "resolved",
+      "components": [
+        "gateway:1"
+      ],
+      "summary": "Payment confirmations arrived up to ten minutes late.",
+      "timeline": [
+        {
+          "at": "2026-10-22T12:00:00.000Z",
+          "status": "investigating",
+          "text": "Payment confirmations are late.",
+          "by": {
+            "id": 1,
+            "name": "Rami K."
+          }
+        },
+        {
+          "at": "2026-10-22T12:20:00.000Z",
+          "status": "identified",
+          "text": "The gateway retries callbacks in bursts; our webhook worker was too slow.",
+          "by": {
+            "id": 1,
+            "name": "Rami K."
+          }
+        },
+        {
+          "at": "2026-10-22T12:47:00.000Z",
+          "status": "resolved",
+          "text": "Webhook worker concurrency raised; confirmations are on time.",
+          "by": {
+            "id": 1,
+            "name": "Rami K."
+          }
+        }
+      ],
+      "rootCause": "The gateway sent callbacks in bursts and the webhook worker took one at a time.",
+      "startedAt": "2026-10-22T12:00:00.000Z",
+      "resolvedAt": "2026-10-22T12:47:00.000Z",
+      "alertEventId": null,
+      "createdBy": {
+        "id": 1,
+        "name": "Rami K."
+      },
+      "resolvedBy": {
+        "id": 1,
+        "name": "Rami K."
+      },
+      "createdAt": "2026-10-22T12:00:00.000Z",
+      "updatedAt": "2026-10-22T12:47:00.000Z",
+      "id": 4
+    },
+    {
+      "title": "Gulf Server Hub rate limiting",
+      "severity": "minor",
+      "status": "resolved",
+      "components": [
+        "supplier:2"
+      ],
+      "summary": "The supplier answered 429 to about a third of our calls for two hours.",
+      "timeline": [
+        {
+          "at": "2026-10-14T12:00:00.000Z",
+          "status": "investigating",
+          "text": "Many 429 answers from Gulf Server Hub.",
+          "by": {
+            "id": 4,
+            "name": "Dana M."
+          }
+        },
+        {
+          "at": "2026-10-14T12:35:00.000Z",
+          "status": "identified",
+          "text": "The supplier lowered its limit to 30 calls a minute without telling us.",
+          "by": {
+            "id": 4,
+            "name": "Dana M."
+          }
+        },
+        {
+          "at": "2026-10-14T14:00:00.000Z",
+          "status": "resolved",
+          "text": "Our limit for this supplier is now 30 calls a minute.",
+          "by": {
+            "id": 4,
+            "name": "Dana M."
+          }
+        }
+      ],
+      "rootCause": "The supplier changed its rate limit. We set our own limit per supplier to match.",
+      "startedAt": "2026-10-14T12:00:00.000Z",
+      "resolvedAt": "2026-10-14T14:00:00.000Z",
+      "alertEventId": null,
+      "createdBy": {
+        "id": 4,
+        "name": "Dana M."
+      },
+      "resolvedBy": {
+        "id": 4,
+        "name": "Dana M."
+      },
+      "createdAt": "2026-10-14T12:00:00.000Z",
+      "updatedAt": "2026-10-14T14:00:00.000Z",
+      "id": 3
+    },
+    {
+      "title": "Order dispatch queue stalled",
+      "severity": "major",
+      "status": "resolved",
+      "components": [
+        "workers"
+      ],
+      "summary": "No orders were sent to suppliers for 1 hour 12 minutes.",
+      "timeline": [
+        {
+          "at": "2026-10-05T12:00:00.000Z",
+          "status": "investigating",
+          "text": "Orders wait in orders.dispatch and nothing is taken from the queue.",
+          "by": {
+            "id": 4,
+            "name": "Dana M."
+          }
+        },
+        {
+          "at": "2026-10-05T12:31:00.000Z",
+          "status": "identified",
+          "text": "Workers started with an old Redis key prefix after the last deploy.",
+          "by": {
+            "id": 4,
+            "name": "Dana M."
+          }
+        },
+        {
+          "at": "2026-10-05T12:58:00.000Z",
+          "status": "monitoring",
+          "text": "Workers restarted with the right prefix; the backlog is draining.",
+          "by": {
+            "id": 4,
+            "name": "Dana M."
+          }
+        },
+        {
+          "at": "2026-10-05T13:12:00.000Z",
+          "status": "resolved",
+          "text": "Backlog cleared. All delayed orders were sent.",
+          "by": {
+            "id": 4,
+            "name": "Dana M."
+          }
+        }
+      ],
+      "rootCause": "A deploy left the workers on an old Redis key prefix. The prefix now comes from one setting shared with the API.",
+      "startedAt": "2026-10-05T12:00:00.000Z",
+      "resolvedAt": "2026-10-05T13:12:00.000Z",
+      "alertEventId": null,
+      "createdBy": {
+        "id": 4,
+        "name": "Dana M."
+      },
+      "resolvedBy": {
+        "id": 4,
+        "name": "Dana M."
+      },
+      "createdAt": "2026-10-05T12:00:00.000Z",
+      "updatedAt": "2026-10-05T13:12:00.000Z",
+      "id": 2
+    },
+    {
+      "title": "Storefront checkout errors",
+      "severity": "major",
+      "status": "resolved",
+      "components": [
+        "api",
+        "gateway:1"
+      ],
+      "summary": "Card payments failed at the last step for about 25 minutes.",
+      "timeline": [
+        {
+          "at": "2026-09-20T12:00:00.000Z",
+          "status": "investigating",
+          "text": "Card payments fail at the last step. Looking at the gateway callbacks.",
+          "by": {
+            "id": 1,
+            "name": "Rami K."
+          }
+        },
+        {
+          "at": "2026-09-20T12:09:00.000Z",
+          "status": "identified",
+          "text": "The gateway changed its callback signature header.",
+          "by": {
+            "id": 1,
+            "name": "Rami K."
+          }
+        },
+        {
+          "at": "2026-09-20T12:18:00.000Z",
+          "status": "monitoring",
+          "text": "Callback check updated and deployed. Watching new payments.",
+          "by": {
+            "id": 1,
+            "name": "Rami K."
+          }
+        },
+        {
+          "at": "2026-09-20T12:26:00.000Z",
+          "status": "resolved",
+          "text": "Payments complete again. No money was lost; 14 paid orders were completed by hand.",
+          "by": {
+            "id": 1,
+            "name": "Rami K."
+          }
+        }
+      ],
+      "rootCause": "The gateway renamed the signature header without notice. Our callback check now accepts both names.",
+      "startedAt": "2026-09-20T12:00:00.000Z",
+      "resolvedAt": "2026-09-20T12:26:00.000Z",
+      "alertEventId": null,
+      "createdBy": {
+        "id": 1,
+        "name": "Rami K."
+      },
+      "resolvedBy": {
+        "id": 1,
+        "name": "Rami K."
+      },
+      "createdAt": "2026-09-20T12:00:00.000Z",
+      "updatedAt": "2026-09-20T12:26:00.000Z",
+      "id": 1
+    }
+  ]
+}

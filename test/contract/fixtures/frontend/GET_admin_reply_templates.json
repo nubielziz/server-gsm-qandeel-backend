@@ -1,0 +1,97 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "8"
+  },
+  "body": [
+    {
+      "id": 1,
+      "title": "Order is in progress",
+      "category": "delay",
+      "locale": "en",
+      "body": "Hi {{name}}, thanks for your patience. Your order {{order}} is with the carrier and the usual time for this service is {{eta}}. I will update you as soon as it moves. If it is not done by then, we refund you in full.",
+      "shortcut": "",
+      "createdBy": 1,
+      "createdAt": "2026-09-01T12:00:00.000Z",
+      "updatedAt": "2026-09-01T12:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "title": "Wrong IMEI entered",
+      "category": "wrong_imei",
+      "locale": "en",
+      "body": "Hi {{name}}, the IMEI on {{order}} does not match the phone model you selected. Please reply with the IMEI from *#06# on the phone and we will correct the order before it is sent.",
+      "shortcut": "",
+      "createdBy": 1,
+      "createdAt": "2026-09-01T12:00:00.000Z",
+      "updatedAt": "2026-09-01T12:00:00.000Z"
+    },
+    {
+      "id": 3,
+      "title": "How to enter the unlock code",
+      "category": "howto",
+      "locale": "en",
+      "body": "Hi {{name}}, insert a SIM card from a different network, restart the phone and enter the unlock code when asked. For iPhone, no code is needed: connect to Wi-Fi and restart, then follow the prompts.",
+      "shortcut": "",
+      "createdBy": 1,
+      "createdAt": "2026-09-01T12:00:00.000Z",
+      "updatedAt": "2026-09-01T12:00:00.000Z"
+    },
+    {
+      "id": 4,
+      "title": "Refund approved",
+      "category": "refund",
+      "locale": "en",
+      "body": "Hi {{name}}, your refund for {{order}} has been issued to the original payment method. It usually shows up within 5 to 10 business days, depending on your bank.",
+      "shortcut": "",
+      "createdBy": 1,
+      "createdAt": "2026-09-01T12:00:00.000Z",
+      "updatedAt": "2026-09-01T12:00:00.000Z"
+    },
+    {
+      "id": 5,
+      "title": "Refund not possible after delivery",
+      "category": "refund",
+      "locale": "en",
+      "body": "Hi {{name}}, {{order}} was delivered and the service was completed, so under our terms it cannot be refunded. If the phone is still locked, send us a photo of the message on the screen and we will check it again.",
+      "shortcut": "",
+      "createdBy": 1,
+      "createdAt": "2026-09-01T12:00:00.000Z",
+      "updatedAt": "2026-09-01T12:00:00.000Z"
+    },
+    {
+      "id": 6,
+      "title": "Failed unlock: refund issued",
+      "category": "failed_unlock",
+      "locale": "en",
+      "body": "Hi {{name}}, the carrier rejected the unlock for {{order}}, so we refunded the full amount. The refund is on its way to your original payment method.",
+      "shortcut": "",
+      "createdBy": 1,
+      "createdAt": "2026-09-01T12:00:00.000Z",
+      "updatedAt": "2026-09-01T12:00:00.000Z"
+    },
+    {
+      "id": 7,
+      "title": "Invoice request",
+      "category": "billing",
+      "locale": "en",
+      "body": "Hi {{name}}, your receipt for {{order}} is attached. If you need a VAT invoice with your company details, reply with the company name, address and VAT number.",
+      "shortcut": "",
+      "createdBy": 1,
+      "createdAt": "2026-09-01T12:00:00.000Z",
+      "updatedAt": "2026-09-01T12:00:00.000Z"
+    },
+    {
+      "id": 8,
+      "title": "Eligibility question",
+      "category": "presale",
+      "locale": "en",
+      "body": "Hi {{name}}, we can check the IMEI for free before you pay. Send it here, or use the checker on the website. If the device is blacklisted or not eligible, we will tell you before you order.",
+      "shortcut": "",
+      "createdBy": 1,
+      "createdAt": "2026-09-01T12:00:00.000Z",
+      "updatedAt": "2026-09-01T12:00:00.000Z"
+    }
+  ]
+}

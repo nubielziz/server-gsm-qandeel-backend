@@ -1,0 +1,796 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "generatedAt": "2026-10-31T12:00:00.000Z",
+    "stats": {
+      "current": {
+        "revenue": "2822.3600",
+        "profit": "595.5800",
+        "orders": 299,
+        "successRate": 93.62549800796812,
+        "medianTurnaroundSeconds": 662.849
+      },
+      "previous": {
+        "revenue": "2448.1200",
+        "profit": "524.8400",
+        "orders": 235,
+        "successRate": 91.91489361702128,
+        "medianTurnaroundSeconds": 2212.894
+      }
+    },
+    "attention": [
+      {
+        "id": "sla",
+        "severity": "critical",
+        "kind": "orders_past_sla",
+        "count": 15,
+        "oldestOrderId": 48784,
+        "overdueSeconds": 46524.565,
+        "targetSeconds": 86400
+      },
+      {
+        "id": "disp",
+        "severity": "critical",
+        "kind": "disputes_due",
+        "count": 2,
+        "firstDisputeId": 2004,
+        "dueAt": "2026-11-02T12:00:00.000Z",
+        "amount": "11.9900",
+        "fee": "15.0000"
+      },
+      {
+        "id": "review",
+        "severity": "high",
+        "kind": "orders_review",
+        "count": 9,
+        "topReason": "Supplier timed out after 3 attempts",
+        "topReasonCount": 3
+      },
+      {
+        "id": "sup-3",
+        "severity": "high",
+        "kind": "supplier_degraded",
+        "supplierId": 3,
+        "supplierName": "Rapid IMEI",
+        "successRate": 35.3,
+        "openOrders": 10
+      },
+      {
+        "id": "floor",
+        "severity": "high",
+        "kind": "services_below_floor",
+        "count": 1,
+        "serviceNames": [
+          "Chimera Tool 1 Month"
+        ]
+      },
+      {
+        "id": "risk",
+        "severity": "high",
+        "kind": "orders_held",
+        "count": 4,
+        "captured": "82.9600",
+        "oldestAt": "2026-10-30T09:14:52.000Z"
+      },
+      {
+        "id": "rff",
+        "severity": "high",
+        "kind": "refunds_failed",
+        "count": 1,
+        "firstRefundId": 1011,
+        "reason": "Gateway error: the card issuer declined the credit. Retry, or refund by bank transfer."
+      },
+      {
+        "id": "bal-2",
+        "severity": "medium",
+        "kind": "supplier_balance_low",
+        "supplierId": 2,
+        "supplierName": "Gulf Server Hub",
+        "balance": "38.4000",
+        "minimum": "150.0000",
+        "runwayDays": 0.257940696670185
+      },
+      {
+        "id": "pay",
+        "severity": "medium",
+        "kind": "deposits_pending",
+        "count": 6,
+        "total": "5566.5000",
+        "oldestAt": "2026-10-30T06:45:00.000Z"
+      },
+      {
+        "id": "neg",
+        "severity": "medium",
+        "kind": "wallets_negative",
+        "count": 1,
+        "clients": [
+          {
+            "id": 17,
+            "name": "Sana'a Repair",
+            "balance": "-81.9500"
+          }
+        ]
+      },
+      {
+        "id": "tk",
+        "severity": "medium",
+        "kind": "tickets_late",
+        "count": 4,
+        "oldestTicketId": 4212,
+        "waitingSince": "2026-10-30T10:00:00.000Z",
+        "subject": "Chargeback warning from my bank"
+      },
+      {
+        "id": "rfq",
+        "severity": "medium",
+        "kind": "refunds_requested",
+        "count": 3,
+        "total": "43.9700"
+      },
+      {
+        "id": "fx",
+        "severity": "medium",
+        "kind": "fx_stale",
+        "currencies": [
+          "SEK"
+        ],
+        "oldestUpdatedAt": "2026-10-28T10:00:00.000Z"
+      },
+      {
+        "id": "pend",
+        "severity": "low",
+        "kind": "merchants_pending",
+        "count": 2,
+        "names": [
+          "Algiers Service Plus",
+          "Accra Devices"
+        ]
+      },
+      {
+        "id": "comm",
+        "severity": "low",
+        "kind": "commissions_accrued",
+        "count": 49,
+        "total": "23.7500",
+        "agents": 2
+      }
+    ],
+    "queues": [
+      {
+        "type": "imei",
+        "open": 40,
+        "review": 11,
+        "pastSla": 11,
+        "oldestCreatedAt": "2026-10-29T23:04:35.435Z"
+      },
+      {
+        "type": "server",
+        "open": 3,
+        "review": 1,
+        "pastSla": 2,
+        "oldestCreatedAt": "2026-10-31T06:41:29.000Z"
+      },
+      {
+        "type": "remote",
+        "open": 3,
+        "review": 1,
+        "pastSla": 1,
+        "oldestCreatedAt": "2026-10-30T05:19:08.000Z"
+      },
+      {
+        "type": "file",
+        "open": 2,
+        "review": 0,
+        "pastSla": 1,
+        "oldestCreatedAt": "2026-10-31T11:54:04.000Z"
+      }
+    ],
+    "suppliers": [
+      {
+        "id": 1,
+        "name": "Nordic GSM",
+        "enabled": true,
+        "health": "up",
+        "successRate1h": 97.8,
+        "p50Ms": 250,
+        "balance": "1850.0000",
+        "lowBalance": false
+      },
+      {
+        "id": 2,
+        "name": "Gulf Server Hub",
+        "enabled": true,
+        "health": "up",
+        "successRate1h": 98.4,
+        "p50Ms": 440,
+        "balance": "38.4000",
+        "lowBalance": true
+      },
+      {
+        "id": 3,
+        "name": "Rapid IMEI",
+        "enabled": true,
+        "health": "degraded",
+        "successRate1h": 35.3,
+        "p50Ms": 3292,
+        "balance": "640.0000",
+        "lowBalance": false
+      },
+      {
+        "id": 4,
+        "name": "RemoteDesk Pro",
+        "enabled": true,
+        "health": "up",
+        "successRate1h": 97.2,
+        "p50Ms": 716,
+        "balance": "910.0000",
+        "lowBalance": false
+      },
+      {
+        "id": 5,
+        "name": "FileForge",
+        "enabled": true,
+        "health": "up",
+        "successRate1h": 98.6,
+        "p50Ms": 482,
+        "balance": "420.0000",
+        "lowBalance": false
+      },
+      {
+        "id": 6,
+        "name": "Bosphorus Unlock",
+        "enabled": true,
+        "health": "up",
+        "successRate1h": 94.6,
+        "p50Ms": 730,
+        "balance": "1230.0000",
+        "lowBalance": false
+      }
+    ],
+    "ordersByType": {
+      "daily": [
+        {
+          "date": "2026-10-02",
+          "imei": 17,
+          "server": 1,
+          "remote": 2,
+          "file": 3
+        },
+        {
+          "date": "2026-10-03",
+          "imei": 12,
+          "server": 4,
+          "remote": 1,
+          "file": 3
+        },
+        {
+          "date": "2026-10-04",
+          "imei": 11,
+          "server": 0,
+          "remote": 1,
+          "file": 1
+        },
+        {
+          "date": "2026-10-05",
+          "imei": 11,
+          "server": 3,
+          "remote": 1,
+          "file": 0
+        },
+        {
+          "date": "2026-10-06",
+          "imei": 11,
+          "server": 4,
+          "remote": 4,
+          "file": 0
+        },
+        {
+          "date": "2026-10-07",
+          "imei": 17,
+          "server": 9,
+          "remote": 3,
+          "file": 2
+        },
+        {
+          "date": "2026-10-08",
+          "imei": 14,
+          "server": 1,
+          "remote": 3,
+          "file": 1
+        },
+        {
+          "date": "2026-10-09",
+          "imei": 16,
+          "server": 3,
+          "remote": 4,
+          "file": 3
+        },
+        {
+          "date": "2026-10-10",
+          "imei": 17,
+          "server": 3,
+          "remote": 0,
+          "file": 2
+        },
+        {
+          "date": "2026-10-11",
+          "imei": 11,
+          "server": 2,
+          "remote": 0,
+          "file": 2
+        },
+        {
+          "date": "2026-10-12",
+          "imei": 11,
+          "server": 0,
+          "remote": 1,
+          "file": 3
+        },
+        {
+          "date": "2026-10-13",
+          "imei": 8,
+          "server": 3,
+          "remote": 4,
+          "file": 3
+        },
+        {
+          "date": "2026-10-14",
+          "imei": 22,
+          "server": 7,
+          "remote": 6,
+          "file": 3
+        },
+        {
+          "date": "2026-10-15",
+          "imei": 15,
+          "server": 4,
+          "remote": 3,
+          "file": 2
+        },
+        {
+          "date": "2026-10-16",
+          "imei": 11,
+          "server": 2,
+          "remote": 2,
+          "file": 4
+        },
+        {
+          "date": "2026-10-17",
+          "imei": 21,
+          "server": 6,
+          "remote": 4,
+          "file": 4
+        },
+        {
+          "date": "2026-10-18",
+          "imei": 11,
+          "server": 4,
+          "remote": 4,
+          "file": 4
+        },
+        {
+          "date": "2026-10-19",
+          "imei": 17,
+          "server": 6,
+          "remote": 1,
+          "file": 3
+        },
+        {
+          "date": "2026-10-20",
+          "imei": 29,
+          "server": 2,
+          "remote": 6,
+          "file": 1
+        },
+        {
+          "date": "2026-10-21",
+          "imei": 19,
+          "server": 7,
+          "remote": 5,
+          "file": 2
+        },
+        {
+          "date": "2026-10-22",
+          "imei": 25,
+          "server": 5,
+          "remote": 1,
+          "file": 4
+        },
+        {
+          "date": "2026-10-23",
+          "imei": 22,
+          "server": 7,
+          "remote": 4,
+          "file": 2
+        },
+        {
+          "date": "2026-10-24",
+          "imei": 24,
+          "server": 5,
+          "remote": 6,
+          "file": 6
+        },
+        {
+          "date": "2026-10-25",
+          "imei": 16,
+          "server": 4,
+          "remote": 3,
+          "file": 8
+        },
+        {
+          "date": "2026-10-26",
+          "imei": 25,
+          "server": 2,
+          "remote": 2,
+          "file": 1
+        },
+        {
+          "date": "2026-10-27",
+          "imei": 18,
+          "server": 8,
+          "remote": 2,
+          "file": 9
+        },
+        {
+          "date": "2026-10-28",
+          "imei": 25,
+          "server": 10,
+          "remote": 6,
+          "file": 3
+        },
+        {
+          "date": "2026-10-29",
+          "imei": 32,
+          "server": 4,
+          "remote": 7,
+          "file": 4
+        },
+        {
+          "date": "2026-10-30",
+          "imei": 31,
+          "server": 9,
+          "remote": 6,
+          "file": 7
+        },
+        {
+          "date": "2026-10-31",
+          "imei": 26,
+          "server": 6,
+          "remote": 2,
+          "file": 4
+        }
+      ],
+      "monthly": [
+        {
+          "month": "2025-11",
+          "imei": 77,
+          "server": 20,
+          "remote": 16,
+          "file": 14
+        },
+        {
+          "month": "2025-12",
+          "imei": 82,
+          "server": 23,
+          "remote": 16,
+          "file": 18
+        },
+        {
+          "month": "2026-01",
+          "imei": 99,
+          "server": 30,
+          "remote": 21,
+          "file": 21
+        },
+        {
+          "month": "2026-02",
+          "imei": 134,
+          "server": 35,
+          "remote": 26,
+          "file": 24
+        },
+        {
+          "month": "2026-03",
+          "imei": 144,
+          "server": 44,
+          "remote": 31,
+          "file": 32
+        },
+        {
+          "month": "2026-04",
+          "imei": 177,
+          "server": 57,
+          "remote": 39,
+          "file": 35
+        },
+        {
+          "month": "2026-05",
+          "imei": 236,
+          "server": 59,
+          "remote": 47,
+          "file": 43
+        },
+        {
+          "month": "2026-06",
+          "imei": 253,
+          "server": 80,
+          "remote": 60,
+          "file": 56
+        },
+        {
+          "month": "2026-07",
+          "imei": 328,
+          "server": 87,
+          "remote": 68,
+          "file": 60
+        },
+        {
+          "month": "2026-08",
+          "imei": 324,
+          "server": 99,
+          "remote": 75,
+          "file": 74
+        },
+        {
+          "month": "2026-09",
+          "imei": 372,
+          "server": 124,
+          "remote": 77,
+          "file": 81
+        },
+        {
+          "month": "2026-10",
+          "imei": 545,
+          "server": 131,
+          "remote": 94,
+          "file": 94
+        }
+      ]
+    },
+    "revenueByChannel": {
+      "daily": [
+        {
+          "date": "2026-10-02",
+          "b2b": "135.2800",
+          "b2c": "16.9800"
+        },
+        {
+          "date": "2026-10-03",
+          "b2b": "270.6400",
+          "b2c": "15.9800"
+        },
+        {
+          "date": "2026-10-04",
+          "b2b": "70.5700",
+          "b2c": "19.9900"
+        },
+        {
+          "date": "2026-10-05",
+          "b2b": "106.6700",
+          "b2c": "15.9800"
+        },
+        {
+          "date": "2026-10-06",
+          "b2b": "175.2300",
+          "b2c": "3.9900"
+        },
+        {
+          "date": "2026-10-07",
+          "b2b": "391.4000",
+          "b2c": "12.9900"
+        },
+        {
+          "date": "2026-10-08",
+          "b2b": "133.0400",
+          "b2c": "7.9800"
+        },
+        {
+          "date": "2026-10-09",
+          "b2b": "235.8000",
+          "b2c": "40.9800"
+        },
+        {
+          "date": "2026-10-10",
+          "b2b": "114.2100",
+          "b2c": "19.9900"
+        },
+        {
+          "date": "2026-10-11",
+          "b2b": "173.7300",
+          "b2c": "53.9600"
+        },
+        {
+          "date": "2026-10-12",
+          "b2b": "114.0000",
+          "b2c": "51.9700"
+        },
+        {
+          "date": "2026-10-13",
+          "b2b": "79.3700",
+          "b2c": "3.9900"
+        },
+        {
+          "date": "2026-10-14",
+          "b2b": "339.2400",
+          "b2c": "0.0000"
+        },
+        {
+          "date": "2026-10-15",
+          "b2b": "329.9000",
+          "b2c": "90.9500"
+        },
+        {
+          "date": "2026-10-16",
+          "b2b": "184.2400",
+          "b2c": "12.9900"
+        },
+        {
+          "date": "2026-10-17",
+          "b2b": "393.9100",
+          "b2c": "40.9800"
+        },
+        {
+          "date": "2026-10-18",
+          "b2b": "254.1200",
+          "b2c": "3.9900"
+        },
+        {
+          "date": "2026-10-19",
+          "b2b": "156.4800",
+          "b2c": "70.9600"
+        },
+        {
+          "date": "2026-10-20",
+          "b2b": "186.6500",
+          "b2c": "40.9800"
+        },
+        {
+          "date": "2026-10-21",
+          "b2b": "351.1600",
+          "b2c": "39.9600"
+        },
+        {
+          "date": "2026-10-22",
+          "b2b": "394.7500",
+          "b2c": "23.9800"
+        },
+        {
+          "date": "2026-10-23",
+          "b2b": "337.7900",
+          "b2c": "92.9400"
+        },
+        {
+          "date": "2026-10-24",
+          "b2b": "372.6100",
+          "b2c": "53.9600"
+        },
+        {
+          "date": "2026-10-25",
+          "b2b": "209.6600",
+          "b2c": "0.0000"
+        },
+        {
+          "date": "2026-10-26",
+          "b2b": "119.0200",
+          "b2c": "122.9300"
+        },
+        {
+          "date": "2026-10-27",
+          "b2b": "493.7100",
+          "b2c": "77.9400"
+        },
+        {
+          "date": "2026-10-28",
+          "b2b": "335.5500",
+          "b2c": "63.9400"
+        },
+        {
+          "date": "2026-10-29",
+          "b2b": "375.3100",
+          "b2c": "70.9300"
+        },
+        {
+          "date": "2026-10-30",
+          "b2b": "434.4300",
+          "b2c": "37.9600"
+        },
+        {
+          "date": "2026-10-31",
+          "b2b": "373.5400",
+          "b2c": "49.9700"
+        }
+      ],
+      "totals": {
+        "last7Days": {
+          "b2b": "2341.2200",
+          "b2c": "423.6700"
+        },
+        "last30Days": {
+          "b2b": "7642.0100",
+          "b2c": "1160.1400"
+        }
+      }
+    },
+    "storefront": {
+      "funnel": {
+        "visitorsEstimated": 5079,
+        "imeiChecks": 907,
+        "checkoutsStarted": 342,
+        "paid": 104,
+        "delivered": 86
+      },
+      "averageOrder": "14.6631",
+      "refundRate": 7.737755570710794,
+      "disputeRate": 4.807692307692308,
+      "firstReplySeconds": 5400,
+      "satisfaction": {
+        "average": 4.6,
+        "ratings": 5
+      },
+      "heldForReview": 4
+    },
+    "topCustomers": [
+      {
+        "id": 28,
+        "name": "Victor Silva",
+        "country": "US",
+        "orders": 5,
+        "spend": "81.9500"
+      },
+      {
+        "id": 24,
+        "name": "Ryan Cooper",
+        "country": "US",
+        "orders": 5,
+        "spend": "73.9500"
+      },
+      {
+        "id": 9,
+        "name": "Jessica Moore",
+        "country": "US",
+        "orders": 5,
+        "spend": "65.9500"
+      },
+      {
+        "id": 21,
+        "name": "Samira Khan",
+        "country": "GB",
+        "orders": 4,
+        "spend": "56.3600"
+      },
+      {
+        "id": 25,
+        "name": "Olivia Grant",
+        "country": "US",
+        "orders": 2,
+        "spend": "51.9800"
+      }
+    ],
+    "navCounts": {
+      "orders": {
+        "open": 48,
+        "pastSla": 15
+      },
+      "finance": {
+        "pendingDeposits": 6
+      },
+      "merchants": {
+        "pendingApproval": 2
+      },
+      "support": {
+        "open": 10,
+        "late": 4
+      },
+      "refunds": {
+        "open": 6,
+        "disputesDueSoon": 1
+      },
+      "risk": {
+        "held": 4
+      }
+    }
+  }
+}

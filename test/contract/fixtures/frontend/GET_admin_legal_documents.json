@@ -1,0 +1,93 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "7"
+  },
+  "body": [
+    {
+      "id": 1,
+      "type": "terms",
+      "version": "3.2",
+      "locale": "en",
+      "bodyMd": "# Terms of service v3.2\n\nText for Terms of service v3.2 goes here.",
+      "effectiveFrom": "2026-09-21T12:00:00.000Z",
+      "isCurrent": true,
+      "requiresReacceptance": false,
+      "createdAt": "2026-09-21T12:00:00.000Z",
+      "acceptedCount": 125
+    },
+    {
+      "id": 2,
+      "type": "terms",
+      "version": "3.2",
+      "locale": "ar",
+      "bodyMd": "# Terms of service v3.2\n\nText for Terms of service v3.2 goes here.",
+      "effectiveFrom": "2026-09-21T12:00:00.000Z",
+      "isCurrent": true,
+      "requiresReacceptance": false,
+      "createdAt": "2026-09-21T12:00:00.000Z",
+      "acceptedCount": 14
+    },
+    {
+      "id": 3,
+      "type": "privacy",
+      "version": "2.1",
+      "locale": "en",
+      "bodyMd": "# Privacy policy v2.1\n\nText for Privacy policy v2.1 goes here.",
+      "effectiveFrom": "2026-08-17T12:00:00.000Z",
+      "isCurrent": true,
+      "requiresReacceptance": false,
+      "createdAt": "2026-08-17T12:00:00.000Z",
+      "acceptedCount": 125
+    },
+    {
+      "id": 4,
+      "type": "refund",
+      "version": "1.4",
+      "locale": "en",
+      "bodyMd": "# Refund policy v1.4\n\nText for Refund policy v1.4 goes here.",
+      "effectiveFrom": "2026-09-21T12:00:00.000Z",
+      "isCurrent": true,
+      "requiresReacceptance": false,
+      "createdAt": "2026-09-21T12:00:00.000Z",
+      "acceptedCount": 125
+    },
+    {
+      "id": 5,
+      "type": "cookies",
+      "version": "1.0",
+      "locale": "en",
+      "bodyMd": "# Cookie policy v1.0\n\nText for Cookie policy v1.0 goes here.",
+      "effectiveFrom": "2026-07-03T12:00:00.000Z",
+      "isCurrent": true,
+      "requiresReacceptance": false,
+      "createdAt": "2026-07-03T12:00:00.000Z",
+      "acceptedCount": 0
+    },
+    {
+      "id": 6,
+      "type": "terms",
+      "version": "3.1",
+      "locale": "en",
+      "bodyMd": "# Terms of service v3.1\n\nText for Terms of service v3.1 goes here.",
+      "effectiveFrom": "2026-05-24T12:00:00.000Z",
+      "isCurrent": false,
+      "requiresReacceptance": false,
+      "createdAt": "2026-05-24T12:00:00.000Z",
+      "acceptedCount": 38
+    },
+    {
+      "id": 7,
+      "type": "refund",
+      "version": "1.5",
+      "locale": "en",
+      "bodyMd": "# Refund policy v1.5\n\nText for Refund policy v1.5 goes here.",
+      "effectiveFrom": null,
+      "isCurrent": false,
+      "requiresReacceptance": true,
+      "createdAt": "2026-10-30T12:00:00.000Z",
+      "acceptedCount": null
+    }
+  ]
+}

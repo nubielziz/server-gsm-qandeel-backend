@@ -1,0 +1,12 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "balance": "1209.7500",
+    "reserved": "71.2300",
+    "creditLimit": "2000.0000",
+    "available": "3209.7500"
+  }
+}

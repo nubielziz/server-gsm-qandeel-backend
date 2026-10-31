@@ -1,0 +1,32 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "ruleId": 4,
+    "value": 1720,
+    "subjectType": "system",
+    "subjectId": 0,
+    "startedAt": "2026-10-29T06:00:00.000Z",
+    "acknowledgedAt": null,
+    "resolvedAt": "2026-10-29T06:11:00.000Z",
+    "status": "resolved",
+    "severity": "warning",
+    "rule": {
+      "id": 4,
+      "key": "api_p95_latency",
+      "name": "API p95 latency",
+      "metric": "api.p95",
+      "comparator": "gt",
+      "threshold": 1500,
+      "windowSeconds": 300,
+      "unit": "ms"
+    },
+    "subjectLabel": null,
+    "acknowledgedBy": null,
+    "note": null,
+    "incidentId": null,
+    "id": 10
+  }
+}

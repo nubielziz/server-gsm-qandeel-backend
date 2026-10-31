@@ -1,0 +1,104 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "5"
+  },
+  "body": [
+    {
+      "id": 2005,
+      "orderId": 20408,
+      "status": "needs_response",
+      "reasonCode": "Product not received (13.1)",
+      "note": "Customer says the service was never delivered",
+      "amount": "15.5900",
+      "fee": "15.0000",
+      "currency": "GBP",
+      "fx": "0.79",
+      "evidenceDueAt": "2026-11-06T12:00:00.000Z",
+      "submittedAt": null,
+      "resolvedAt": null,
+      "createdAt": "2026-10-26T12:00:00.000Z",
+      "customer": {
+        "id": 1,
+        "name": "Daniel Whitmore"
+      }
+    },
+    {
+      "id": 2004,
+      "orderId": 20405,
+      "status": "needs_response",
+      "reasonCode": "Fraudulent (10.4)",
+      "note": "Customer says they did not make this purchase",
+      "amount": "11.9900",
+      "fee": "15.0000",
+      "currency": "USD",
+      "fx": "1",
+      "evidenceDueAt": "2026-11-02T12:00:00.000Z",
+      "submittedAt": null,
+      "resolvedAt": null,
+      "createdAt": "2026-10-24T12:00:00.000Z",
+      "customer": {
+        "id": 25,
+        "name": "Olivia Grant"
+      }
+    },
+    {
+      "id": 2003,
+      "orderId": 20403,
+      "status": "under_review",
+      "reasonCode": "Fraudulent (10.4)",
+      "note": "Evidence submitted, waiting for the card network",
+      "amount": "19.9900",
+      "fee": "15.0000",
+      "currency": "USD",
+      "fx": "1",
+      "evidenceDueAt": "2026-10-23T12:00:00.000Z",
+      "submittedAt": "2026-10-20T12:00:00.000Z",
+      "resolvedAt": null,
+      "createdAt": "2026-10-15T12:00:00.000Z",
+      "customer": {
+        "id": 24,
+        "name": "Ryan Cooper"
+      }
+    },
+    {
+      "id": 2002,
+      "orderId": 20402,
+      "status": "won",
+      "reasonCode": "Product unacceptable (13.3)",
+      "note": "Won: delivery proof and consent records accepted",
+      "amount": "11.9900",
+      "fee": "15.0000",
+      "currency": "USD",
+      "fx": "1",
+      "evidenceDueAt": "2026-10-17T12:00:00.000Z",
+      "submittedAt": "2026-10-13T12:00:00.000Z",
+      "resolvedAt": "2026-10-27T12:00:00.000Z",
+      "createdAt": "2026-10-07T12:00:00.000Z",
+      "customer": {
+        "id": 10,
+        "name": "Tyler Brooks"
+      }
+    },
+    {
+      "id": 2001,
+      "orderId": 20400,
+      "status": "lost",
+      "reasonCode": "Fraudulent (10.4)",
+      "note": "Lost: 3D Secure was not used on this payment",
+      "amount": "15.5900",
+      "fee": "15.0000",
+      "currency": "GBP",
+      "fx": "0.79",
+      "evidenceDueAt": "2026-10-14T12:00:00.000Z",
+      "submittedAt": "2026-10-09T12:00:00.000Z",
+      "resolvedAt": "2026-10-22T12:00:00.000Z",
+      "createdAt": "2026-10-04T12:00:00.000Z",
+      "customer": {
+        "id": 19,
+        "name": "Jack Turner"
+      }
+    }
+  ]
+}

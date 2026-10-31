@@ -1,0 +1,29 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 2,
+    "scope": "service",
+    "targetId": 1,
+    "target": {
+      "id": 1,
+      "name": "iCloud Clean / Lost Check"
+    },
+    "groupId": 1,
+    "group": {
+      "id": 1,
+      "name": "Standard"
+    },
+    "kind": "margin",
+    "percent": "1.0000",
+    "fixed": "10.0000",
+    "rounding": "none",
+    "minProfit": "10.0000",
+    "priority": 10,
+    "isActive": true,
+    "startsAt": "2026-11-01T00:00:00.000Z",
+    "endsAt": "2026-11-01T00:00:00.000Z"
+  }
+}

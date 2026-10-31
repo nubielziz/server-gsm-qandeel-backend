@@ -1,0 +1,25 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "key": "harvest_rule",
+    "name": "Harvest rule",
+    "metric": "api.rate5xx",
+    "comparator": "gt",
+    "threshold": 10,
+    "windowSeconds": 300,
+    "severity": "critical",
+    "channels": [
+      "email"
+    ],
+    "unit": "percent",
+    "isActive": true,
+    "mutedUntil": null,
+    "open": false,
+    "createdAt": "2026-10-31T12:00:00.000Z",
+    "updatedAt": null,
+    "id": 11
+  }
+}

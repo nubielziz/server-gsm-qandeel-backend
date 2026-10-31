@@ -1,0 +1,23 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 48,
+    "recipientType": "customer",
+    "recipientId": 100,
+    "channel": "email",
+    "event": "order.received",
+    "payload": {
+      "orderId": "SF-20431",
+      "locale": "en",
+      "templateId": 1
+    },
+    "status": "sent",
+    "sentAt": "2026-10-31T10:30:00.000Z",
+    "createdAt": "2026-10-31T10:30:00.000Z",
+    "recipient": "d***e@example.com",
+    "error": null
+  }
+}

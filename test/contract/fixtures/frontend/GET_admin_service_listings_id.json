@@ -1,0 +1,29 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "serviceId": 1,
+    "locale": "en",
+    "slug": "icloud-clean-lost-check",
+    "publicTitle": "iCloud Clean / Lost Check",
+    "isListed": true,
+    "isFeatured": true,
+    "service": {
+      "id": 1,
+      "name": "iCloud Clean / Lost Check",
+      "code": "IMEI-ICL-CHK",
+      "basePrice": "0.1300",
+      "cost": "0.0800"
+    },
+    "retailPrice": "3.9900",
+    "floorPrice": "0.1400",
+    "marginPct": "97.9950",
+    "orders30d": 13,
+    "revenue30d": "51.8700",
+    "locked": false,
+    "lockedReason": null
+  }
+}

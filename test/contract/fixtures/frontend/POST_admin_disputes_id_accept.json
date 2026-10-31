@@ -1,0 +1,64 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 2005,
+    "orderId": 20408,
+    "status": "lost",
+    "reasonCode": "Product not received (13.1)",
+    "note": "Customer says the service was never delivered",
+    "amount": "15.5900",
+    "fee": "15.0000",
+    "currency": "GBP",
+    "fx": "0.79",
+    "evidenceDueAt": "2026-11-06T12:00:00.000Z",
+    "submittedAt": null,
+    "resolvedAt": "2026-10-31T12:00:00.000Z",
+    "createdAt": "2026-10-26T12:00:00.000Z",
+    "customer": {
+      "id": 1,
+      "name": "Daniel Whitmore"
+    },
+    "evidence": [
+      {
+        "key": "payment",
+        "title": "Payment record",
+        "ok": true,
+        "body": "Amex 0870, £12.32 captured 07 Oct, 00:22. Gateway ref pi_3Q398xK5815."
+      },
+      {
+        "key": "three_ds",
+        "title": "3D Secure authentication",
+        "ok": true,
+        "body": "The cardholder passed the bank’s own check. For fraud disputes this usually shifts liability to the bank."
+      },
+      {
+        "key": "delivery",
+        "title": "Proof of delivery",
+        "ok": true,
+        "body": "Result delivered 07 Oct, 20:48 to da•••@mail.example: “Unlock confirmed by the carrier. Insert a SIM from another network and restart your phone.”"
+      },
+      {
+        "key": "consents",
+        "title": "Terms the customer accepted",
+        "ok": true,
+        "body": "Terms of service v3.2; Privacy policy v2.1; Refund policy v1.4; Digital service starts now, right of withdrawal is waived. Recorded from IP 203.0.113.153."
+      },
+      {
+        "key": "history",
+        "title": "Order history",
+        "ok": true,
+        "body": "2 earlier paid orders from the same customer that were not disputed."
+      },
+      {
+        "key": "contact",
+        "title": "Customer contact",
+        "ok": true,
+        "body": "The customer never contacted support about this order."
+      }
+    ],
+    "strength": "strong"
+  }
+}

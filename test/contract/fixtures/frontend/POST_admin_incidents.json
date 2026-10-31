@@ -1,0 +1,38 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "title": "Harvest sample",
+    "severity": "critical",
+    "status": "investigating",
+    "components": [
+      "api"
+    ],
+    "summary": "Harvest sample text.",
+    "timeline": [
+      {
+        "at": "2026-10-31T12:00:00.000Z",
+        "status": "investigating",
+        "text": "Incident declared. We are investigating.",
+        "by": {
+          "id": 1,
+          "name": "Rami K."
+        }
+      }
+    ],
+    "rootCause": null,
+    "startedAt": "2026-10-31T12:00:00.000Z",
+    "resolvedAt": null,
+    "alertEventId": null,
+    "createdBy": {
+      "id": 1,
+      "name": "Rami K."
+    },
+    "resolvedBy": null,
+    "createdAt": "2026-10-31T12:00:00.000Z",
+    "updatedAt": "2026-10-31T12:00:00.000Z",
+    "id": 5
+  }
+}

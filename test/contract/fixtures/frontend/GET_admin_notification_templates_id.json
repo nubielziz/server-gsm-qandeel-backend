@@ -1,0 +1,18 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "event": "order.received",
+    "channel": "email",
+    "audience": "customer",
+    "locale": "en",
+    "subject": "Your order {{orderId}} is confirmed",
+    "body": "Hi {{customerName}}, thanks for your order. We received {{amount}} for \"{{service}}\". Your receipt is attached and shows the VAT. We will email you the result as soon as the carrier confirms it, usually within a few hours.",
+    "isActive": true,
+    "sentLast30Days": 112,
+    "createdAt": "2026-09-01T12:00:00.000Z"
+  }
+}

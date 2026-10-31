@@ -9,7 +9,7 @@ live in `test/contract/` and run in `bun run check`; a red contract test blocks 
 |---|---|---|
 | `docs/route-manifest.json` | `scripts/build-route-manifest.mjs` (`--check` in CI) | every map row expanded to endpoints (all 9 surfaces) |
 | `docs/contract/frontend-endpoints.json` | `scripts/extract-frontend-contract.mjs` (`--check` in CI) | the frontend's request/response shapes for its 269 `@route` functions |
-| `test/contract/fixtures/frontend/*.json` | `scripts/harvest-frontend-fixtures` (see below) | one real example response per frontend route, from the frontend mock layer |
+| `test/contract/fixtures/frontend/*.json` | `bun run contract:harvest` (`scripts/contract-harvest.mjs`, see below) | one example response per console GET route and per mutation that answers a body, from the frontend mock layer |
 | contract registry | `src/common/contract` (imported) | every backend `defineRoute()`, Dhru action, supplier call and event schema |
 | `docs/contract/error-codes.md` + `src/common/errors/catalog.ts` | hand-written | the error catalog |
 | `test/contract/allowlist.ts` | hand-written | accepted deviations, each naming its `docs/contract/MISMATCHES.md` id |
@@ -26,7 +26,8 @@ live in `test/contract/` and run in `bun run check`; a red contract test blocks 
    (zod → JSON Schema 2020-12) of the same route:
    - Response (2xx): every property the frontend reads as required is required in the backend schema (or has a
      default); types match (`string`, `number`, `boolean`, arrays, objects, records); `Money` ↔ money pattern,
-     `IsoDateTime` ↔ `date-time`, `Id` ↔ integer; the backend enum ⊆ the frontend enum (the backend never sends a
+     `IsoDateTime` ↔ `date-time`, `Id` ↔ integer, `DateOnly` ↔ `date` (in requests a plain console string fits a
+     backend `DateOnly`: the console has no date-only type); the backend enum ⊆ the frontend enum (the backend never sends a
      value the frontend does not know); a nullable backend field must be nullable in the frontend; `ListResult<T>` ↔
      array of `T` + `x-total-count`. Extra backend fields are allowed and reported.
    - Request: every field the frontend sends is accepted with a compatible type; every field the backend requires is
@@ -34,7 +35,7 @@ live in `test/contract/` and run in `bun run check`; a red contract test blocks 
    - Success status: the backend's declared 2xx status equals what the frontend expects (204 = no body).
    - Fixtures: each harvested fixture validates against the backend response schema.
    - OpenAPI: every example in `docs/contract/openapi.json` validates against its schema.
-3. **`error-parity.test.ts`**: the catalog equals `error-codes.md` (code, status, title); every code the frontend
+3. **`error-parity.test.ts`**: the catalog equals `error-codes.md` (code, status; titles live in the catalog only); every code the frontend
    references exists in the catalog with the status the frontend expects; codes the frontend never handles are
    printed as a report (not a failure).
 4. **`docs-drift`** (CI script, not a test file): `routes:check`, `extract-frontend-contract --check` and an
@@ -48,10 +49,11 @@ deviation passes only through an allowlist entry `{ route, path, rule, mismatch:
 
 The frontend mock layer (MSW handlers + the demo seed) is the reference behaviour. The harvest runs those handlers
 in Node from a config that lives in this repo (the frontend repo stays untouched, its caches redirected here), calls
-every frontend route once with representative parameters, and writes `test/contract/fixtures/frontend/<key>.json`
-(`{ status, headers: { x-total-count? }, body }`). It runs on demand (`bun run contract:harvest`) and when the
-frontend changes; fixtures are committed so CI does not need the frontend's dependencies. Exact entry points and
-env shims: see `ALIGNMENT.md` § mock infrastructure.
+every console GET route once with representative parameters (and every mutation that answers a body), and writes
+`test/contract/fixtures/frontend/<METHOD>_<path>.json` (`{ status, headers: { x-total-count? }, body }`). It runs on
+demand (`bun run contract:harvest`) and when the frontend changes; fixtures are committed so CI does not need the
+frontend's dependencies. Exact entry points and env shims: see `ALIGNMENT.md` § 8; the workflow is in
+`test/contract/README.md`.
 
 ## Scope per phase
 

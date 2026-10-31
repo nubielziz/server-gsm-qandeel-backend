@@ -1,0 +1,37 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1048,
+    "purpose": "topup",
+    "status": "approved",
+    "methodType": "usdt",
+    "amount": "2500.0000",
+    "feeAmount": "25.0000",
+    "netAmount": "2475.0000",
+    "currency": "USD",
+    "gatewayTxnId": "48a4f…59c3",
+    "capturedAt": "2026-10-31T12:00:00.000Z",
+    "createdAt": "2026-10-30T06:45:00.000Z",
+    "invoiceId": 49,
+    "receiptFileId": null,
+    "client": {
+      "id": 3,
+      "name": "Phone Doctor FZE",
+      "group": "VIP",
+      "walletBalance": "4735.0900"
+    },
+    "gateway": {
+      "id": 2,
+      "name": "Crypto gateway"
+    },
+    "reviewedBy": {
+      "id": 1,
+      "name": "Rami K."
+    },
+    "reviewedAt": "2026-10-31T12:00:00.000Z",
+    "note": "Large deposit. Check the tx hash on-chain before approving."
+  }
+}

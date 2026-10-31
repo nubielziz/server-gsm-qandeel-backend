@@ -1,0 +1,19 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "country": "GB",
+    "region": "",
+    "ratePercent": "20.0000",
+    "taxType": "vat",
+    "appliesTo": "digital_services",
+    "validFrom": "2026-04-14T12:00:00.000Z",
+    "validTo": null,
+    "label": "United Kingdom VAT",
+    "ossScheme": "UK VAT",
+    "createdAt": "2026-04-14T12:00:00.000Z"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "name": "orders.dispatch",
+    "state": "warn",
+    "paused": true,
+    "waiting": 3,
+    "active": 0,
+    "delayed": 4,
+    "failed": 0,
+    "oldestAge": {
+      "value": 4.2,
+      "unit": "s",
+      "state": "ok",
+      "warn": 120,
+      "crit": 600,
+      "direction": "above"
+    },
+    "ratePerMin": {
+      "value": 0,
+      "unit": "per_min",
+      "state": "ok"
+    },
+    "workers": 4
+  }
+}

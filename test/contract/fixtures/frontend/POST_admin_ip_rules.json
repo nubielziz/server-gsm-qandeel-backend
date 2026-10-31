@@ -1,0 +1,23 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "kind": "allow",
+    "scope": "admin",
+    "cidr": "203.0.113.7",
+    "label": "",
+    "reason": "",
+    "source": "manual",
+    "expiresAt": null,
+    "hitCount": 0,
+    "lastHitAt": null,
+    "createdAt": "2026-10-31T12:00:00.000Z",
+    "id": 8,
+    "createdBy": {
+      "id": 1,
+      "name": "Rami K."
+    }
+  }
+}

@@ -1,0 +1,434 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "48"
+  },
+  "body": [
+    {
+      "id": 48,
+      "recipientType": "customer",
+      "recipientId": 100,
+      "channel": "email",
+      "event": "order.received",
+      "payload": {
+        "orderId": "SF-20431",
+        "locale": "en",
+        "templateId": 1
+      },
+      "status": "sent",
+      "sentAt": "2026-10-31T10:30:00.000Z",
+      "createdAt": "2026-10-31T10:30:00.000Z",
+      "recipient": "d***e@example.com",
+      "error": null
+    },
+    {
+      "id": 47,
+      "recipientType": "customer",
+      "recipientId": 101,
+      "channel": "email",
+      "event": "order.completed",
+      "payload": {
+        "orderId": "SF-20430",
+        "locale": "en",
+        "templateId": 2
+      },
+      "status": "sent",
+      "sentAt": "2026-10-31T09:00:00.000Z",
+      "createdAt": "2026-10-31T09:00:00.000Z",
+      "recipient": "s***g@example.com",
+      "error": null
+    },
+    {
+      "id": 46,
+      "recipientType": "customer",
+      "recipientId": 102,
+      "channel": "email",
+      "event": "order.failed",
+      "payload": {
+        "orderId": "SF-20429",
+        "locale": "en",
+        "templateId": 3
+      },
+      "status": "sent",
+      "sentAt": "2026-10-31T07:30:00.000Z",
+      "createdAt": "2026-10-31T07:30:00.000Z",
+      "recipient": "m***n@example.com",
+      "error": null
+    },
+    {
+      "id": 45,
+      "recipientType": "customer",
+      "recipientId": 103,
+      "channel": "email",
+      "event": "support.reply",
+      "payload": {
+        "orderId": "SF-20428",
+        "locale": "en",
+        "templateId": 4
+      },
+      "status": "failed",
+      "sentAt": null,
+      "createdAt": "2026-10-31T06:00:00.000Z",
+      "recipient": "l***r@example.com",
+      "error": "The mailbox does not exist."
+    },
+    {
+      "id": 44,
+      "recipientType": "customer",
+      "recipientId": 104,
+      "channel": "email",
+      "event": "checkout.abandoned",
+      "payload": {
+        "orderId": "SF-20427",
+        "locale": "en",
+        "templateId": 5
+      },
+      "status": "sent",
+      "sentAt": "2026-10-31T04:30:00.000Z",
+      "createdAt": "2026-10-31T04:30:00.000Z",
+      "recipient": "o***d@example.com",
+      "error": null
+    },
+    {
+      "id": 43,
+      "recipientType": "customer",
+      "recipientId": 105,
+      "channel": "email",
+      "event": "payment.failed",
+      "payload": {
+        "orderId": "SF-20426",
+        "locale": "en",
+        "templateId": 6
+      },
+      "status": "queued",
+      "sentAt": null,
+      "createdAt": "2026-10-31T03:00:00.000Z",
+      "recipient": "i***a@example.com",
+      "error": null
+    },
+    {
+      "id": 42,
+      "recipientType": "client",
+      "recipientId": 106,
+      "channel": "telegram",
+      "event": "order.completed",
+      "payload": {
+        "orderId": "SF-20425",
+        "locale": "en",
+        "templateId": 7
+      },
+      "status": "sent",
+      "sentAt": "2026-10-31T01:30:00.000Z",
+      "createdAt": "2026-10-31T01:30:00.000Z",
+      "recipient": "@acme_1***",
+      "error": null
+    },
+    {
+      "id": 41,
+      "recipientType": "client",
+      "recipientId": 107,
+      "channel": "email",
+      "event": "deposit.approved",
+      "payload": {
+        "orderId": "SF-20424",
+        "locale": "en",
+        "templateId": 8
+      },
+      "status": "sent",
+      "sentAt": "2026-10-31T00:00:00.000Z",
+      "createdAt": "2026-10-31T00:00:00.000Z",
+      "recipient": "s***g@example.com",
+      "error": null
+    },
+    {
+      "id": 40,
+      "recipientType": "customer",
+      "recipientId": 108,
+      "channel": "email",
+      "event": "order.received",
+      "payload": {
+        "orderId": "SF-20423",
+        "locale": "en",
+        "templateId": 1
+      },
+      "status": "sent",
+      "sentAt": "2026-10-30T22:30:00.000Z",
+      "createdAt": "2026-10-30T22:30:00.000Z",
+      "recipient": "m***n@example.com",
+      "error": null
+    },
+    {
+      "id": 39,
+      "recipientType": "customer",
+      "recipientId": 100,
+      "channel": "email",
+      "event": "order.completed",
+      "payload": {
+        "orderId": "SF-20422",
+        "locale": "en",
+        "templateId": 2
+      },
+      "status": "sent",
+      "sentAt": "2026-10-30T21:00:00.000Z",
+      "createdAt": "2026-10-30T21:00:00.000Z",
+      "recipient": "l***r@example.com",
+      "error": null
+    },
+    {
+      "id": 38,
+      "recipientType": "customer",
+      "recipientId": 101,
+      "channel": "email",
+      "event": "order.failed",
+      "payload": {
+        "orderId": "SF-20421",
+        "locale": "en",
+        "templateId": 3
+      },
+      "status": "failed",
+      "sentAt": null,
+      "createdAt": "2026-10-30T19:30:00.000Z",
+      "recipient": "o***d@example.com",
+      "error": "The mailbox does not exist."
+    },
+    {
+      "id": 37,
+      "recipientType": "customer",
+      "recipientId": 102,
+      "channel": "email",
+      "event": "support.reply",
+      "payload": {
+        "orderId": "SF-20420",
+        "locale": "en",
+        "templateId": 4
+      },
+      "status": "sent",
+      "sentAt": "2026-10-30T18:00:00.000Z",
+      "createdAt": "2026-10-30T18:00:00.000Z",
+      "recipient": "i***a@example.com",
+      "error": null
+    },
+    {
+      "id": 36,
+      "recipientType": "customer",
+      "recipientId": 103,
+      "channel": "email",
+      "event": "checkout.abandoned",
+      "payload": {
+        "orderId": "SF-20419",
+        "locale": "en",
+        "templateId": 5
+      },
+      "status": "sent",
+      "sentAt": "2026-10-30T16:30:00.000Z",
+      "createdAt": "2026-10-30T16:30:00.000Z",
+      "recipient": "d***e@example.com",
+      "error": null
+    },
+    {
+      "id": 35,
+      "recipientType": "customer",
+      "recipientId": 104,
+      "channel": "email",
+      "event": "payment.failed",
+      "payload": {
+        "orderId": "SF-20418",
+        "locale": "en",
+        "templateId": 6
+      },
+      "status": "sent",
+      "sentAt": "2026-10-30T15:00:00.000Z",
+      "createdAt": "2026-10-30T15:00:00.000Z",
+      "recipient": "s***g@example.com",
+      "error": null
+    },
+    {
+      "id": 34,
+      "recipientType": "client",
+      "recipientId": 105,
+      "channel": "telegram",
+      "event": "order.completed",
+      "payload": {
+        "orderId": "SF-20417",
+        "locale": "en",
+        "templateId": 7
+      },
+      "status": "sent",
+      "sentAt": "2026-10-30T13:30:00.000Z",
+      "createdAt": "2026-10-30T13:30:00.000Z",
+      "recipient": "@acme_4***",
+      "error": null
+    },
+    {
+      "id": 33,
+      "recipientType": "client",
+      "recipientId": 106,
+      "channel": "email",
+      "event": "deposit.approved",
+      "payload": {
+        "orderId": "SF-20416",
+        "locale": "en",
+        "templateId": 8
+      },
+      "status": "sent",
+      "sentAt": "2026-10-30T12:00:00.000Z",
+      "createdAt": "2026-10-30T12:00:00.000Z",
+      "recipient": "l***r@example.com",
+      "error": null
+    },
+    {
+      "id": 32,
+      "recipientType": "customer",
+      "recipientId": 107,
+      "channel": "email",
+      "event": "order.received",
+      "payload": {
+        "orderId": "SF-20415",
+        "locale": "en",
+        "templateId": 1
+      },
+      "status": "queued",
+      "sentAt": null,
+      "createdAt": "2026-10-30T10:30:00.000Z",
+      "recipient": "o***d@example.com",
+      "error": null
+    },
+    {
+      "id": 31,
+      "recipientType": "customer",
+      "recipientId": 108,
+      "channel": "email",
+      "event": "order.completed",
+      "payload": {
+        "orderId": "SF-20414",
+        "locale": "en",
+        "templateId": 2
+      },
+      "status": "failed",
+      "sentAt": null,
+      "createdAt": "2026-10-30T09:00:00.000Z",
+      "recipient": "i***a@example.com",
+      "error": "The mailbox does not exist."
+    },
+    {
+      "id": 30,
+      "recipientType": "customer",
+      "recipientId": 100,
+      "channel": "email",
+      "event": "order.failed",
+      "payload": {
+        "orderId": "SF-20413",
+        "locale": "en",
+        "templateId": 3
+      },
+      "status": "sent",
+      "sentAt": "2026-10-30T07:30:00.000Z",
+      "createdAt": "2026-10-30T07:30:00.000Z",
+      "recipient": "d***e@example.com",
+      "error": null
+    },
+    {
+      "id": 29,
+      "recipientType": "customer",
+      "recipientId": 101,
+      "channel": "email",
+      "event": "support.reply",
+      "payload": {
+        "orderId": "SF-20412",
+        "locale": "en",
+        "templateId": 4
+      },
+      "status": "sent",
+      "sentAt": "2026-10-30T06:00:00.000Z",
+      "createdAt": "2026-10-30T06:00:00.000Z",
+      "recipient": "s***g@example.com",
+      "error": null
+    },
+    {
+      "id": 28,
+      "recipientType": "customer",
+      "recipientId": 102,
+      "channel": "email",
+      "event": "checkout.abandoned",
+      "payload": {
+        "orderId": "SF-20411",
+        "locale": "en",
+        "templateId": 5
+      },
+      "status": "sent",
+      "sentAt": "2026-10-30T04:30:00.000Z",
+      "createdAt": "2026-10-30T04:30:00.000Z",
+      "recipient": "m***n@example.com",
+      "error": null
+    },
+    {
+      "id": 27,
+      "recipientType": "customer",
+      "recipientId": 103,
+      "channel": "email",
+      "event": "payment.failed",
+      "payload": {
+        "orderId": "SF-20410",
+        "locale": "en",
+        "templateId": 6
+      },
+      "status": "sent",
+      "sentAt": "2026-10-30T03:00:00.000Z",
+      "createdAt": "2026-10-30T03:00:00.000Z",
+      "recipient": "l***r@example.com",
+      "error": null
+    },
+    {
+      "id": 26,
+      "recipientType": "client",
+      "recipientId": 104,
+      "channel": "telegram",
+      "event": "order.completed",
+      "payload": {
+        "orderId": "SF-20409",
+        "locale": "en",
+        "templateId": 7
+      },
+      "status": "sent",
+      "sentAt": "2026-10-30T01:30:00.000Z",
+      "createdAt": "2026-10-30T01:30:00.000Z",
+      "recipient": "@acme_2***",
+      "error": null
+    },
+    {
+      "id": 25,
+      "recipientType": "client",
+      "recipientId": 105,
+      "channel": "email",
+      "event": "deposit.approved",
+      "payload": {
+        "orderId": "SF-20408",
+        "locale": "en",
+        "templateId": 8
+      },
+      "status": "sent",
+      "sentAt": "2026-10-30T00:00:00.000Z",
+      "createdAt": "2026-10-30T00:00:00.000Z",
+      "recipient": "i***a@example.com",
+      "error": null
+    },
+    {
+      "id": 24,
+      "recipientType": "customer",
+      "recipientId": 106,
+      "channel": "email",
+      "event": "order.received",
+      "payload": {
+        "orderId": "SF-20407",
+        "locale": "en",
+        "templateId": 1
+      },
+      "status": "failed",
+      "sentAt": null,
+      "createdAt": "2026-10-29T22:30:00.000Z",
+      "recipient": "d***e@example.com",
+      "error": "The mailbox does not exist."
+    }
+  ]
+}

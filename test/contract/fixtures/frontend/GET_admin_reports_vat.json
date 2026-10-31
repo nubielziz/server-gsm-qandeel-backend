@@ -1,0 +1,82 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "from": "2026-10-01",
+    "to": "2026-10-31",
+    "currency": "USD",
+    "rows": [
+      {
+        "country": "DE",
+        "period": "2026-10",
+        "rate": "19.0000",
+        "orders": 5,
+        "taxable": "30.9500",
+        "vat": "5.8900"
+      },
+      {
+        "country": "ES",
+        "period": "2026-10",
+        "rate": "21.0000",
+        "orders": 4,
+        "taxable": "44.9600",
+        "vat": "9.4500"
+      },
+      {
+        "country": "FR",
+        "period": "2026-10",
+        "rate": "20.0000",
+        "orders": 5,
+        "taxable": "77.9500",
+        "vat": "15.6000"
+      },
+      {
+        "country": "GB",
+        "period": "2026-10",
+        "rate": "20.0000",
+        "orders": 17,
+        "taxable": "194.8300",
+        "vat": "39.0000"
+      },
+      {
+        "country": "IE",
+        "period": "2026-10",
+        "rate": "23.0000",
+        "orders": 2,
+        "taxable": "18.9800",
+        "vat": "4.3700"
+      },
+      {
+        "country": "IT",
+        "period": "2026-10",
+        "rate": "22.0000",
+        "orders": 2,
+        "taxable": "18.9800",
+        "vat": "4.1800"
+      },
+      {
+        "country": "NL",
+        "period": "2026-10",
+        "rate": "21.0000",
+        "orders": 1,
+        "taxable": "14.9900",
+        "vat": "3.1500"
+      },
+      {
+        "country": "SE",
+        "period": "2026-10",
+        "rate": "25.0000",
+        "orders": 2,
+        "taxable": "7.9800",
+        "vat": "2.0000"
+      }
+    ],
+    "totals": {
+      "orders": 38,
+      "taxable": "409.6200",
+      "vat": "83.6400"
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "bodyMd": "Harvest sample text.",
+    "seoTitle": "",
+    "seoDescription": "",
+    "status": "draft",
+    "publishedAt": null,
+    "createdAt": "2026-10-31T12:00:00.000Z",
+    "updatedAt": "2026-10-31T12:00:00.000Z",
+    "visits30d": null,
+    "orders30d": null,
+    "kind": "country",
+    "title": "Harvest sample",
+    "slug": "harvest-sample",
+    "locale": "en",
+    "id": 21
+  }
+}

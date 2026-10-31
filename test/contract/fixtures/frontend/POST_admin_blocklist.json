@@ -1,0 +1,19 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "kind": "email",
+    "display": "Harvest sample text.",
+    "reason": "Harvest sample text.",
+    "expiresAt": null,
+    "source": "manual",
+    "createdBy": {
+      "id": 1,
+      "name": "Rami K."
+    },
+    "createdAt": "2026-10-31T12:00:00.000Z",
+    "id": 7
+  }
+}

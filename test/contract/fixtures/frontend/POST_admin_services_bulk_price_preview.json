@@ -1,0 +1,20 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "lines": [
+      {
+        "serviceId": 1,
+        "name": "iCloud Clean / Lost Check",
+        "code": "IMEI-ICL-CHK",
+        "oldPrice": "0.1300",
+        "newPrice": "0.1300",
+        "floorPrice": "0.1000",
+        "belowFloor": false
+      }
+    ],
+    "belowFloor": 0
+  }
+}

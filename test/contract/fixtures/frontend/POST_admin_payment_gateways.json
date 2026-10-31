@@ -1,0 +1,29 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "code": "HARVEST-1",
+    "driver": "Harvest sample text.",
+    "name": "Harvest sample",
+    "audience": "b2c",
+    "feePercent": "2.5000",
+    "feeFixed": "10.0000",
+    "minAmount": "10.0000",
+    "maxAmount": "10.0000",
+    "allowedGroupIds": [
+      1
+    ],
+    "supportsRefunds": false,
+    "supports3ds": false,
+    "isManual": false,
+    "instructions": "Harvest sample text.",
+    "holdHours": 10,
+    "isActive": false,
+    "createdAt": "2026-10-31T12:00:00.000Z",
+    "secretHint": null,
+    "volume30d": null,
+    "id": 5
+  }
+}

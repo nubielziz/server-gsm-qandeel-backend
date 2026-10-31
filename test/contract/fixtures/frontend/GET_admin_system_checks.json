@@ -1,0 +1,6200 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "range": "1h",
+    "bucketSeconds": 60,
+    "components": [
+      {
+        "key": "api",
+        "name": "API",
+        "uptime": {
+          "value": 100,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 99.9,
+          "crit": 99.5,
+          "direction": "below"
+        },
+        "latency": {
+          "value": 36,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 300,
+          "crit": 1000,
+          "direction": "above"
+        },
+        "buckets": [
+          {
+            "start": "2026-10-31T11:01:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 46
+          },
+          {
+            "start": "2026-10-31T11:02:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 40
+          },
+          {
+            "start": "2026-10-31T11:03:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 40
+          },
+          {
+            "start": "2026-10-31T11:04:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 39
+          },
+          {
+            "start": "2026-10-31T11:05:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 44
+          },
+          {
+            "start": "2026-10-31T11:06:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 40
+          },
+          {
+            "start": "2026-10-31T11:07:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 47
+          },
+          {
+            "start": "2026-10-31T11:08:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 35
+          },
+          {
+            "start": "2026-10-31T11:09:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 41
+          },
+          {
+            "start": "2026-10-31T11:10:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 37
+          },
+          {
+            "start": "2026-10-31T11:11:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 37
+          },
+          {
+            "start": "2026-10-31T11:12:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 40
+          },
+          {
+            "start": "2026-10-31T11:13:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 47
+          },
+          {
+            "start": "2026-10-31T11:14:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 42
+          },
+          {
+            "start": "2026-10-31T11:15:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 36
+          },
+          {
+            "start": "2026-10-31T11:16:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 37
+          },
+          {
+            "start": "2026-10-31T11:17:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 45
+          },
+          {
+            "start": "2026-10-31T11:18:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 44
+          },
+          {
+            "start": "2026-10-31T11:19:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 42
+          },
+          {
+            "start": "2026-10-31T11:20:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 36
+          },
+          {
+            "start": "2026-10-31T11:21:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 39
+          },
+          {
+            "start": "2026-10-31T11:22:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 36
+          },
+          {
+            "start": "2026-10-31T11:23:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 43
+          },
+          {
+            "start": "2026-10-31T11:24:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 41
+          },
+          {
+            "start": "2026-10-31T11:25:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 40
+          },
+          {
+            "start": "2026-10-31T11:26:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 43
+          },
+          {
+            "start": "2026-10-31T11:27:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 47
+          },
+          {
+            "start": "2026-10-31T11:28:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 44
+          },
+          {
+            "start": "2026-10-31T11:29:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 45
+          },
+          {
+            "start": "2026-10-31T11:30:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 42
+          },
+          {
+            "start": "2026-10-31T11:31:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 37
+          },
+          {
+            "start": "2026-10-31T11:32:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 37
+          },
+          {
+            "start": "2026-10-31T11:33:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 37
+          },
+          {
+            "start": "2026-10-31T11:34:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 42
+          },
+          {
+            "start": "2026-10-31T11:35:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 37
+          },
+          {
+            "start": "2026-10-31T11:36:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 36
+          },
+          {
+            "start": "2026-10-31T11:37:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 41
+          },
+          {
+            "start": "2026-10-31T11:38:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 41
+          },
+          {
+            "start": "2026-10-31T11:39:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 42
+          },
+          {
+            "start": "2026-10-31T11:40:00.000Z",
+            "status": "degraded",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 132
+          },
+          {
+            "start": "2026-10-31T11:41:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 36
+          },
+          {
+            "start": "2026-10-31T11:42:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 35
+          },
+          {
+            "start": "2026-10-31T11:43:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 36
+          },
+          {
+            "start": "2026-10-31T11:44:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 44
+          },
+          {
+            "start": "2026-10-31T11:45:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 46
+          },
+          {
+            "start": "2026-10-31T11:46:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 41
+          },
+          {
+            "start": "2026-10-31T11:47:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 42
+          },
+          {
+            "start": "2026-10-31T11:48:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 41
+          },
+          {
+            "start": "2026-10-31T11:49:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 37
+          },
+          {
+            "start": "2026-10-31T11:50:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 46
+          },
+          {
+            "start": "2026-10-31T11:51:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 45
+          },
+          {
+            "start": "2026-10-31T11:52:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 44
+          },
+          {
+            "start": "2026-10-31T11:53:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 36
+          },
+          {
+            "start": "2026-10-31T11:54:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 47
+          },
+          {
+            "start": "2026-10-31T11:55:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 46
+          },
+          {
+            "start": "2026-10-31T11:56:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 46
+          },
+          {
+            "start": "2026-10-31T11:57:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 38
+          },
+          {
+            "start": "2026-10-31T11:58:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 44
+          },
+          {
+            "start": "2026-10-31T11:59:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 37
+          },
+          {
+            "start": "2026-10-31T12:00:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 36
+          }
+        ]
+      },
+      {
+        "key": "postgres",
+        "name": "Postgres",
+        "uptime": {
+          "value": 100,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 99.9,
+          "crit": 99.5,
+          "direction": "below"
+        },
+        "latency": {
+          "value": 4.1,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 100,
+          "crit": 500,
+          "direction": "above"
+        },
+        "buckets": [
+          {
+            "start": "2026-10-31T11:01:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:02:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:03:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:04:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:05:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:06:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:07:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:08:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:09:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:10:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:11:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:12:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:13:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:14:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:15:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:16:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:17:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:18:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:19:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:20:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:21:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:22:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:23:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:24:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:25:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:26:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:27:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:28:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:29:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:30:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:31:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:32:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:33:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:34:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:35:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:36:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:37:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:38:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:39:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:40:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:41:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:42:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:43:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:44:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:45:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:46:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:47:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:48:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:49:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:50:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:51:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:52:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:53:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:54:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:55:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:56:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:57:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          },
+          {
+            "start": "2026-10-31T11:58:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T11:59:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 5
+          },
+          {
+            "start": "2026-10-31T12:00:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 4
+          }
+        ]
+      },
+      {
+        "key": "redis",
+        "name": "Redis",
+        "uptime": {
+          "value": 100,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 99.9,
+          "crit": 99.5,
+          "direction": "below"
+        },
+        "latency": {
+          "value": 2.3,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 50,
+          "crit": 250,
+          "direction": "above"
+        },
+        "buckets": [
+          {
+            "start": "2026-10-31T11:01:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:02:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:03:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:04:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:05:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:06:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:07:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:08:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:09:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:10:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:11:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:12:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:13:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:14:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:15:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:16:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:17:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:18:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:19:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:20:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:21:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:22:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:23:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:24:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:25:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:26:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:27:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:28:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:29:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:30:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:31:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:32:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:33:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:34:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:35:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:36:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:37:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:38:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:39:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:40:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:41:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:42:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:43:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:44:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:45:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:46:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:47:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:48:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:49:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:50:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:51:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:52:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:53:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:54:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:55:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:56:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:57:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:58:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T11:59:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          },
+          {
+            "start": "2026-10-31T12:00:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2
+          }
+        ]
+      },
+      {
+        "key": "storage",
+        "name": "File storage",
+        "uptime": {
+          "value": 100,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 99.9,
+          "crit": 99.5,
+          "direction": "below"
+        },
+        "latency": {
+          "value": 129,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 800,
+          "crit": 2000,
+          "direction": "above"
+        },
+        "buckets": [
+          {
+            "start": "2026-10-31T11:01:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 117
+          },
+          {
+            "start": "2026-10-31T11:02:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 113
+          },
+          {
+            "start": "2026-10-31T11:03:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 140
+          },
+          {
+            "start": "2026-10-31T11:04:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 137
+          },
+          {
+            "start": "2026-10-31T11:05:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 131
+          },
+          {
+            "start": "2026-10-31T11:06:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 136
+          },
+          {
+            "start": "2026-10-31T11:07:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 145
+          },
+          {
+            "start": "2026-10-31T11:08:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 138
+          },
+          {
+            "start": "2026-10-31T11:09:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 113
+          },
+          {
+            "start": "2026-10-31T11:10:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 113
+          },
+          {
+            "start": "2026-10-31T11:11:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 147
+          },
+          {
+            "start": "2026-10-31T11:12:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 117
+          },
+          {
+            "start": "2026-10-31T11:13:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 129
+          },
+          {
+            "start": "2026-10-31T11:14:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 114
+          },
+          {
+            "start": "2026-10-31T11:15:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 125
+          },
+          {
+            "start": "2026-10-31T11:16:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 120
+          },
+          {
+            "start": "2026-10-31T11:17:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 115
+          },
+          {
+            "start": "2026-10-31T11:18:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 148
+          },
+          {
+            "start": "2026-10-31T11:19:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 114
+          },
+          {
+            "start": "2026-10-31T11:20:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 131
+          },
+          {
+            "start": "2026-10-31T11:21:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 135
+          },
+          {
+            "start": "2026-10-31T11:22:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 113
+          },
+          {
+            "start": "2026-10-31T11:23:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 135
+          },
+          {
+            "start": "2026-10-31T11:24:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 139
+          },
+          {
+            "start": "2026-10-31T11:25:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 116
+          },
+          {
+            "start": "2026-10-31T11:26:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 134
+          },
+          {
+            "start": "2026-10-31T11:27:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 111
+          },
+          {
+            "start": "2026-10-31T11:28:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 140
+          },
+          {
+            "start": "2026-10-31T11:29:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 136
+          },
+          {
+            "start": "2026-10-31T11:30:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 126
+          },
+          {
+            "start": "2026-10-31T11:31:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 146
+          },
+          {
+            "start": "2026-10-31T11:32:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 132
+          },
+          {
+            "start": "2026-10-31T11:33:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 134
+          },
+          {
+            "start": "2026-10-31T11:34:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 147
+          },
+          {
+            "start": "2026-10-31T11:35:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 137
+          },
+          {
+            "start": "2026-10-31T11:36:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 146
+          },
+          {
+            "start": "2026-10-31T11:37:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 139
+          },
+          {
+            "start": "2026-10-31T11:38:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 136
+          },
+          {
+            "start": "2026-10-31T11:39:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 136
+          },
+          {
+            "start": "2026-10-31T11:40:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 123
+          },
+          {
+            "start": "2026-10-31T11:41:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 128
+          },
+          {
+            "start": "2026-10-31T11:42:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 147
+          },
+          {
+            "start": "2026-10-31T11:43:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 138
+          },
+          {
+            "start": "2026-10-31T11:44:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 150
+          },
+          {
+            "start": "2026-10-31T11:45:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 139
+          },
+          {
+            "start": "2026-10-31T11:46:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 118
+          },
+          {
+            "start": "2026-10-31T11:47:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 149
+          },
+          {
+            "start": "2026-10-31T11:48:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 132
+          },
+          {
+            "start": "2026-10-31T11:49:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 138
+          },
+          {
+            "start": "2026-10-31T11:50:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 121
+          },
+          {
+            "start": "2026-10-31T11:51:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 115
+          },
+          {
+            "start": "2026-10-31T11:52:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 118
+          },
+          {
+            "start": "2026-10-31T11:53:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 114
+          },
+          {
+            "start": "2026-10-31T11:54:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 120
+          },
+          {
+            "start": "2026-10-31T11:55:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 118
+          },
+          {
+            "start": "2026-10-31T11:56:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 121
+          },
+          {
+            "start": "2026-10-31T11:57:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 133
+          },
+          {
+            "start": "2026-10-31T11:58:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 141
+          },
+          {
+            "start": "2026-10-31T11:59:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 115
+          },
+          {
+            "start": "2026-10-31T12:00:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 129
+          }
+        ]
+      },
+      {
+        "key": "workers",
+        "name": "Queue workers",
+        "uptime": {
+          "value": 100,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 99.9,
+          "crit": 99.5,
+          "direction": "below"
+        },
+        "latency": {
+          "value": 34,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 200,
+          "crit": 1000,
+          "direction": "above"
+        },
+        "buckets": [
+          {
+            "start": "2026-10-31T11:01:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 37
+          },
+          {
+            "start": "2026-10-31T11:02:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 31
+          },
+          {
+            "start": "2026-10-31T11:03:00.000Z",
+            "status": "degraded",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 109
+          },
+          {
+            "start": "2026-10-31T11:04:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 31
+          },
+          {
+            "start": "2026-10-31T11:05:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 37
+          },
+          {
+            "start": "2026-10-31T11:06:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 37
+          },
+          {
+            "start": "2026-10-31T11:07:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 32
+          },
+          {
+            "start": "2026-10-31T11:08:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 34
+          },
+          {
+            "start": "2026-10-31T11:09:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 29
+          },
+          {
+            "start": "2026-10-31T11:10:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 33
+          },
+          {
+            "start": "2026-10-31T11:11:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 29
+          },
+          {
+            "start": "2026-10-31T11:12:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 31
+          },
+          {
+            "start": "2026-10-31T11:13:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 30
+          },
+          {
+            "start": "2026-10-31T11:14:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 33
+          },
+          {
+            "start": "2026-10-31T11:15:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 28
+          },
+          {
+            "start": "2026-10-31T11:16:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 31
+          },
+          {
+            "start": "2026-10-31T11:17:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 29
+          },
+          {
+            "start": "2026-10-31T11:18:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 31
+          },
+          {
+            "start": "2026-10-31T11:19:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 35
+          },
+          {
+            "start": "2026-10-31T11:20:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 35
+          },
+          {
+            "start": "2026-10-31T11:21:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 36
+          },
+          {
+            "start": "2026-10-31T11:22:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 30
+          },
+          {
+            "start": "2026-10-31T11:23:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 33
+          },
+          {
+            "start": "2026-10-31T11:24:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 28
+          },
+          {
+            "start": "2026-10-31T11:25:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 30
+          },
+          {
+            "start": "2026-10-31T11:26:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 31
+          },
+          {
+            "start": "2026-10-31T11:27:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 34
+          },
+          {
+            "start": "2026-10-31T11:28:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 29
+          },
+          {
+            "start": "2026-10-31T11:29:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 30
+          },
+          {
+            "start": "2026-10-31T11:30:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 29
+          },
+          {
+            "start": "2026-10-31T11:31:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 30
+          },
+          {
+            "start": "2026-10-31T11:32:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 37
+          },
+          {
+            "start": "2026-10-31T11:33:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 28
+          },
+          {
+            "start": "2026-10-31T11:34:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 31
+          },
+          {
+            "start": "2026-10-31T11:35:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 30
+          },
+          {
+            "start": "2026-10-31T11:36:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 34
+          },
+          {
+            "start": "2026-10-31T11:37:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 32
+          },
+          {
+            "start": "2026-10-31T11:38:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 36
+          },
+          {
+            "start": "2026-10-31T11:39:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 36
+          },
+          {
+            "start": "2026-10-31T11:40:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 31
+          },
+          {
+            "start": "2026-10-31T11:41:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 28
+          },
+          {
+            "start": "2026-10-31T11:42:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 31
+          },
+          {
+            "start": "2026-10-31T11:43:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 29
+          },
+          {
+            "start": "2026-10-31T11:44:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 29
+          },
+          {
+            "start": "2026-10-31T11:45:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 35
+          },
+          {
+            "start": "2026-10-31T11:46:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 33
+          },
+          {
+            "start": "2026-10-31T11:47:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 32
+          },
+          {
+            "start": "2026-10-31T11:48:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 36
+          },
+          {
+            "start": "2026-10-31T11:49:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 35
+          },
+          {
+            "start": "2026-10-31T11:50:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 28
+          },
+          {
+            "start": "2026-10-31T11:51:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 32
+          },
+          {
+            "start": "2026-10-31T11:52:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 29
+          },
+          {
+            "start": "2026-10-31T11:53:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 32
+          },
+          {
+            "start": "2026-10-31T11:54:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 36
+          },
+          {
+            "start": "2026-10-31T11:55:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 31
+          },
+          {
+            "start": "2026-10-31T11:56:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 31
+          },
+          {
+            "start": "2026-10-31T11:57:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 29
+          },
+          {
+            "start": "2026-10-31T11:58:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 33
+          },
+          {
+            "start": "2026-10-31T11:59:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 34
+          },
+          {
+            "start": "2026-10-31T12:00:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 34
+          }
+        ]
+      },
+      {
+        "key": "mail",
+        "name": "Email relay",
+        "uptime": {
+          "value": 100,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 99.9,
+          "crit": 99.5,
+          "direction": "below"
+        },
+        "latency": {
+          "value": 386,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 1500,
+          "crit": 4000,
+          "direction": "above"
+        },
+        "buckets": [
+          {
+            "start": "2026-10-31T11:01:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 374
+          },
+          {
+            "start": "2026-10-31T11:02:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 305
+          },
+          {
+            "start": "2026-10-31T11:03:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 326
+          },
+          {
+            "start": "2026-10-31T11:04:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 334
+          },
+          {
+            "start": "2026-10-31T11:05:00.000Z",
+            "status": "degraded",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1015
+          },
+          {
+            "start": "2026-10-31T11:06:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 347
+          },
+          {
+            "start": "2026-10-31T11:07:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 329
+          },
+          {
+            "start": "2026-10-31T11:08:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 299
+          },
+          {
+            "start": "2026-10-31T11:09:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 301
+          },
+          {
+            "start": "2026-10-31T11:10:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 374
+          },
+          {
+            "start": "2026-10-31T11:11:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 366
+          },
+          {
+            "start": "2026-10-31T11:12:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 297
+          },
+          {
+            "start": "2026-10-31T11:13:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 302
+          },
+          {
+            "start": "2026-10-31T11:14:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 385
+          },
+          {
+            "start": "2026-10-31T11:15:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 311
+          },
+          {
+            "start": "2026-10-31T11:16:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 368
+          },
+          {
+            "start": "2026-10-31T11:17:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 379
+          },
+          {
+            "start": "2026-10-31T11:18:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 329
+          },
+          {
+            "start": "2026-10-31T11:19:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 294
+          },
+          {
+            "start": "2026-10-31T11:20:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 380
+          },
+          {
+            "start": "2026-10-31T11:21:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 320
+          },
+          {
+            "start": "2026-10-31T11:22:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 319
+          },
+          {
+            "start": "2026-10-31T11:23:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 353
+          },
+          {
+            "start": "2026-10-31T11:24:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 332
+          },
+          {
+            "start": "2026-10-31T11:25:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 295
+          },
+          {
+            "start": "2026-10-31T11:26:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 348
+          },
+          {
+            "start": "2026-10-31T11:27:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 292
+          },
+          {
+            "start": "2026-10-31T11:28:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 387
+          },
+          {
+            "start": "2026-10-31T11:29:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 354
+          },
+          {
+            "start": "2026-10-31T11:30:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 380
+          },
+          {
+            "start": "2026-10-31T11:31:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 387
+          },
+          {
+            "start": "2026-10-31T11:32:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 337
+          },
+          {
+            "start": "2026-10-31T11:33:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 356
+          },
+          {
+            "start": "2026-10-31T11:34:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 382
+          },
+          {
+            "start": "2026-10-31T11:35:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 337
+          },
+          {
+            "start": "2026-10-31T11:36:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 324
+          },
+          {
+            "start": "2026-10-31T11:37:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 292
+          },
+          {
+            "start": "2026-10-31T11:38:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 300
+          },
+          {
+            "start": "2026-10-31T11:39:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 352
+          },
+          {
+            "start": "2026-10-31T11:40:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 372
+          },
+          {
+            "start": "2026-10-31T11:41:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 332
+          },
+          {
+            "start": "2026-10-31T11:42:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 359
+          },
+          {
+            "start": "2026-10-31T11:43:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 334
+          },
+          {
+            "start": "2026-10-31T11:44:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 311
+          },
+          {
+            "start": "2026-10-31T11:45:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 318
+          },
+          {
+            "start": "2026-10-31T11:46:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 294
+          },
+          {
+            "start": "2026-10-31T11:47:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 387
+          },
+          {
+            "start": "2026-10-31T11:48:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 376
+          },
+          {
+            "start": "2026-10-31T11:49:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 361
+          },
+          {
+            "start": "2026-10-31T11:50:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 292
+          },
+          {
+            "start": "2026-10-31T11:51:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 381
+          },
+          {
+            "start": "2026-10-31T11:52:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 347
+          },
+          {
+            "start": "2026-10-31T11:53:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 338
+          },
+          {
+            "start": "2026-10-31T11:54:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 337
+          },
+          {
+            "start": "2026-10-31T11:55:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 388
+          },
+          {
+            "start": "2026-10-31T11:56:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 373
+          },
+          {
+            "start": "2026-10-31T11:57:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 358
+          },
+          {
+            "start": "2026-10-31T11:58:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 344
+          },
+          {
+            "start": "2026-10-31T11:59:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 295
+          },
+          {
+            "start": "2026-10-31T12:00:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 386
+          }
+        ]
+      },
+      {
+        "key": "supplier:1",
+        "name": "Nordic GSM",
+        "uptime": {
+          "value": 100,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 99.9,
+          "crit": 99.5,
+          "direction": "below"
+        },
+        "latency": {
+          "value": 341,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 2000,
+          "crit": 5000,
+          "direction": "above"
+        },
+        "buckets": [
+          {
+            "start": "2026-10-31T11:01:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 362
+          },
+          {
+            "start": "2026-10-31T11:02:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 304
+          },
+          {
+            "start": "2026-10-31T11:03:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 291
+          },
+          {
+            "start": "2026-10-31T11:04:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 305
+          },
+          {
+            "start": "2026-10-31T11:05:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 352
+          },
+          {
+            "start": "2026-10-31T11:06:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 308
+          },
+          {
+            "start": "2026-10-31T11:07:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 381
+          },
+          {
+            "start": "2026-10-31T11:08:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 320
+          },
+          {
+            "start": "2026-10-31T11:09:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 332
+          },
+          {
+            "start": "2026-10-31T11:10:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 336
+          },
+          {
+            "start": "2026-10-31T11:11:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 377
+          },
+          {
+            "start": "2026-10-31T11:12:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 356
+          },
+          {
+            "start": "2026-10-31T11:13:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 351
+          },
+          {
+            "start": "2026-10-31T11:14:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 298
+          },
+          {
+            "start": "2026-10-31T11:15:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 324
+          },
+          {
+            "start": "2026-10-31T11:16:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 350
+          },
+          {
+            "start": "2026-10-31T11:17:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 369
+          },
+          {
+            "start": "2026-10-31T11:18:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 298
+          },
+          {
+            "start": "2026-10-31T11:19:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 332
+          },
+          {
+            "start": "2026-10-31T11:20:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 323
+          },
+          {
+            "start": "2026-10-31T11:21:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 309
+          },
+          {
+            "start": "2026-10-31T11:22:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 367
+          },
+          {
+            "start": "2026-10-31T11:23:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 351
+          },
+          {
+            "start": "2026-10-31T11:24:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 317
+          },
+          {
+            "start": "2026-10-31T11:25:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 378
+          },
+          {
+            "start": "2026-10-31T11:26:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 373
+          },
+          {
+            "start": "2026-10-31T11:27:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 328
+          },
+          {
+            "start": "2026-10-31T11:28:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 331
+          },
+          {
+            "start": "2026-10-31T11:29:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 349
+          },
+          {
+            "start": "2026-10-31T11:30:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 330
+          },
+          {
+            "start": "2026-10-31T11:31:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 374
+          },
+          {
+            "start": "2026-10-31T11:32:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 309
+          },
+          {
+            "start": "2026-10-31T11:33:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 384
+          },
+          {
+            "start": "2026-10-31T11:34:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 297
+          },
+          {
+            "start": "2026-10-31T11:35:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 334
+          },
+          {
+            "start": "2026-10-31T11:36:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 333
+          },
+          {
+            "start": "2026-10-31T11:37:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 290
+          },
+          {
+            "start": "2026-10-31T11:38:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 344
+          },
+          {
+            "start": "2026-10-31T11:39:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 375
+          },
+          {
+            "start": "2026-10-31T11:40:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 346
+          },
+          {
+            "start": "2026-10-31T11:41:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 387
+          },
+          {
+            "start": "2026-10-31T11:42:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 330
+          },
+          {
+            "start": "2026-10-31T11:43:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 361
+          },
+          {
+            "start": "2026-10-31T11:44:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 386
+          },
+          {
+            "start": "2026-10-31T11:45:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 302
+          },
+          {
+            "start": "2026-10-31T11:46:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 299
+          },
+          {
+            "start": "2026-10-31T11:47:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 331
+          },
+          {
+            "start": "2026-10-31T11:48:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 362
+          },
+          {
+            "start": "2026-10-31T11:49:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 297
+          },
+          {
+            "start": "2026-10-31T11:50:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 382
+          },
+          {
+            "start": "2026-10-31T11:51:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 355
+          },
+          {
+            "start": "2026-10-31T11:52:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 375
+          },
+          {
+            "start": "2026-10-31T11:53:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 297
+          },
+          {
+            "start": "2026-10-31T11:54:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 324
+          },
+          {
+            "start": "2026-10-31T11:55:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 343
+          },
+          {
+            "start": "2026-10-31T11:56:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 365
+          },
+          {
+            "start": "2026-10-31T11:57:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 298
+          },
+          {
+            "start": "2026-10-31T11:58:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 327
+          },
+          {
+            "start": "2026-10-31T11:59:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 337
+          },
+          {
+            "start": "2026-10-31T12:00:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 341
+          }
+        ]
+      },
+      {
+        "key": "supplier:2",
+        "name": "Gulf Server Hub",
+        "uptime": {
+          "value": 100,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 99.9,
+          "crit": 99.5,
+          "direction": "below"
+        },
+        "latency": {
+          "value": 405,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 2000,
+          "crit": 5000,
+          "direction": "above"
+        },
+        "buckets": [
+          {
+            "start": "2026-10-31T11:01:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 430
+          },
+          {
+            "start": "2026-10-31T11:02:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 470
+          },
+          {
+            "start": "2026-10-31T11:03:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 424
+          },
+          {
+            "start": "2026-10-31T11:04:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 442
+          },
+          {
+            "start": "2026-10-31T11:05:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 513
+          },
+          {
+            "start": "2026-10-31T11:06:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 392
+          },
+          {
+            "start": "2026-10-31T11:07:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 470
+          },
+          {
+            "start": "2026-10-31T11:08:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 406
+          },
+          {
+            "start": "2026-10-31T11:09:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 511
+          },
+          {
+            "start": "2026-10-31T11:10:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 403
+          },
+          {
+            "start": "2026-10-31T11:11:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 475
+          },
+          {
+            "start": "2026-10-31T11:12:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 514
+          },
+          {
+            "start": "2026-10-31T11:13:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 475
+          },
+          {
+            "start": "2026-10-31T11:14:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 517
+          },
+          {
+            "start": "2026-10-31T11:15:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 469
+          },
+          {
+            "start": "2026-10-31T11:16:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 496
+          },
+          {
+            "start": "2026-10-31T11:17:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 489
+          },
+          {
+            "start": "2026-10-31T11:18:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 416
+          },
+          {
+            "start": "2026-10-31T11:19:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 517
+          },
+          {
+            "start": "2026-10-31T11:20:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 497
+          },
+          {
+            "start": "2026-10-31T11:21:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 432
+          },
+          {
+            "start": "2026-10-31T11:22:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 487
+          },
+          {
+            "start": "2026-10-31T11:23:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 390
+          },
+          {
+            "start": "2026-10-31T11:24:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 500
+          },
+          {
+            "start": "2026-10-31T11:25:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 493
+          },
+          {
+            "start": "2026-10-31T11:26:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 394
+          },
+          {
+            "start": "2026-10-31T11:27:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 455
+          },
+          {
+            "start": "2026-10-31T11:28:00.000Z",
+            "status": "degraded",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1375
+          },
+          {
+            "start": "2026-10-31T11:29:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 414
+          },
+          {
+            "start": "2026-10-31T11:30:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 494
+          },
+          {
+            "start": "2026-10-31T11:31:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 416
+          },
+          {
+            "start": "2026-10-31T11:32:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 478
+          },
+          {
+            "start": "2026-10-31T11:33:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 483
+          },
+          {
+            "start": "2026-10-31T11:34:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 521
+          },
+          {
+            "start": "2026-10-31T11:35:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 441
+          },
+          {
+            "start": "2026-10-31T11:36:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 425
+          },
+          {
+            "start": "2026-10-31T11:37:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 427
+          },
+          {
+            "start": "2026-10-31T11:38:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 491
+          },
+          {
+            "start": "2026-10-31T11:39:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 422
+          },
+          {
+            "start": "2026-10-31T11:40:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 433
+          },
+          {
+            "start": "2026-10-31T11:41:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 399
+          },
+          {
+            "start": "2026-10-31T11:42:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 406
+          },
+          {
+            "start": "2026-10-31T11:43:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 448
+          },
+          {
+            "start": "2026-10-31T11:44:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 429
+          },
+          {
+            "start": "2026-10-31T11:45:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 468
+          },
+          {
+            "start": "2026-10-31T11:46:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 493
+          },
+          {
+            "start": "2026-10-31T11:47:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 490
+          },
+          {
+            "start": "2026-10-31T11:48:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 521
+          },
+          {
+            "start": "2026-10-31T11:49:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 447
+          },
+          {
+            "start": "2026-10-31T11:50:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 445
+          },
+          {
+            "start": "2026-10-31T11:51:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 519
+          },
+          {
+            "start": "2026-10-31T11:52:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 409
+          },
+          {
+            "start": "2026-10-31T11:53:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 453
+          },
+          {
+            "start": "2026-10-31T11:54:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 419
+          },
+          {
+            "start": "2026-10-31T11:55:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 426
+          },
+          {
+            "start": "2026-10-31T11:56:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 441
+          },
+          {
+            "start": "2026-10-31T11:57:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 484
+          },
+          {
+            "start": "2026-10-31T11:58:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 490
+          },
+          {
+            "start": "2026-10-31T11:59:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 495
+          },
+          {
+            "start": "2026-10-31T12:00:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 405
+          }
+        ]
+      },
+      {
+        "key": "supplier:3",
+        "name": "Rapid IMEI",
+        "uptime": {
+          "value": 100,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 99.9,
+          "crit": 99.5,
+          "direction": "below"
+        },
+        "latency": {
+          "value": 563,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 2000,
+          "crit": 5000,
+          "direction": "above"
+        },
+        "buckets": [
+          {
+            "start": "2026-10-31T11:01:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 622
+          },
+          {
+            "start": "2026-10-31T11:02:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 614
+          },
+          {
+            "start": "2026-10-31T11:03:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 623
+          },
+          {
+            "start": "2026-10-31T11:04:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 593
+          },
+          {
+            "start": "2026-10-31T11:05:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 613
+          },
+          {
+            "start": "2026-10-31T11:06:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 531
+          },
+          {
+            "start": "2026-10-31T11:07:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 542
+          },
+          {
+            "start": "2026-10-31T11:08:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 638
+          },
+          {
+            "start": "2026-10-31T11:09:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 659
+          },
+          {
+            "start": "2026-10-31T11:10:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 654
+          },
+          {
+            "start": "2026-10-31T11:11:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 615
+          },
+          {
+            "start": "2026-10-31T11:12:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 532
+          },
+          {
+            "start": "2026-10-31T11:13:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 647
+          },
+          {
+            "start": "2026-10-31T11:14:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 578
+          },
+          {
+            "start": "2026-10-31T11:15:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 515
+          },
+          {
+            "start": "2026-10-31T11:16:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 517
+          },
+          {
+            "start": "2026-10-31T11:17:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 614
+          },
+          {
+            "start": "2026-10-31T11:18:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 566
+          },
+          {
+            "start": "2026-10-31T11:19:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 627
+          },
+          {
+            "start": "2026-10-31T11:20:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 522
+          },
+          {
+            "start": "2026-10-31T11:21:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 652
+          },
+          {
+            "start": "2026-10-31T11:22:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 630
+          },
+          {
+            "start": "2026-10-31T11:23:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 580
+          },
+          {
+            "start": "2026-10-31T11:24:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 606
+          },
+          {
+            "start": "2026-10-31T11:25:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 611
+          },
+          {
+            "start": "2026-10-31T11:26:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 543
+          },
+          {
+            "start": "2026-10-31T11:27:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 519
+          },
+          {
+            "start": "2026-10-31T11:28:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 523
+          },
+          {
+            "start": "2026-10-31T11:29:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 644
+          },
+          {
+            "start": "2026-10-31T11:30:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 651
+          },
+          {
+            "start": "2026-10-31T11:31:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 578
+          },
+          {
+            "start": "2026-10-31T11:32:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 545
+          },
+          {
+            "start": "2026-10-31T11:33:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 508
+          },
+          {
+            "start": "2026-10-31T11:34:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 548
+          },
+          {
+            "start": "2026-10-31T11:35:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 540
+          },
+          {
+            "start": "2026-10-31T11:36:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 668
+          },
+          {
+            "start": "2026-10-31T11:37:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 518
+          },
+          {
+            "start": "2026-10-31T11:38:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 575
+          },
+          {
+            "start": "2026-10-31T11:39:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 511
+          },
+          {
+            "start": "2026-10-31T11:40:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 605
+          },
+          {
+            "start": "2026-10-31T11:41:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 673
+          },
+          {
+            "start": "2026-10-31T11:42:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 609
+          },
+          {
+            "start": "2026-10-31T11:43:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 616
+          },
+          {
+            "start": "2026-10-31T11:44:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 658
+          },
+          {
+            "start": "2026-10-31T11:45:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 537
+          },
+          {
+            "start": "2026-10-31T11:46:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 534
+          },
+          {
+            "start": "2026-10-31T11:47:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 562
+          },
+          {
+            "start": "2026-10-31T11:48:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 550
+          },
+          {
+            "start": "2026-10-31T11:49:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 540
+          },
+          {
+            "start": "2026-10-31T11:50:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 637
+          },
+          {
+            "start": "2026-10-31T11:51:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 553
+          },
+          {
+            "start": "2026-10-31T11:52:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 522
+          },
+          {
+            "start": "2026-10-31T11:53:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 675
+          },
+          {
+            "start": "2026-10-31T11:54:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 591
+          },
+          {
+            "start": "2026-10-31T11:55:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 583
+          },
+          {
+            "start": "2026-10-31T11:56:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 621
+          },
+          {
+            "start": "2026-10-31T11:57:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 640
+          },
+          {
+            "start": "2026-10-31T11:58:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 652
+          },
+          {
+            "start": "2026-10-31T11:59:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 568
+          },
+          {
+            "start": "2026-10-31T12:00:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 563
+          }
+        ]
+      },
+      {
+        "key": "supplier:4",
+        "name": "RemoteDesk Pro",
+        "uptime": {
+          "value": 100,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 99.9,
+          "crit": 99.5,
+          "direction": "below"
+        },
+        "latency": {
+          "value": 621,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 2000,
+          "crit": 5000,
+          "direction": "above"
+        },
+        "buckets": [
+          {
+            "start": "2026-10-31T11:01:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 726
+          },
+          {
+            "start": "2026-10-31T11:02:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 734
+          },
+          {
+            "start": "2026-10-31T11:03:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 589
+          },
+          {
+            "start": "2026-10-31T11:04:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 670
+          },
+          {
+            "start": "2026-10-31T11:05:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 643
+          },
+          {
+            "start": "2026-10-31T11:06:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 620
+          },
+          {
+            "start": "2026-10-31T11:07:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 645
+          },
+          {
+            "start": "2026-10-31T11:08:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 632
+          },
+          {
+            "start": "2026-10-31T11:09:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 644
+          },
+          {
+            "start": "2026-10-31T11:10:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 682
+          },
+          {
+            "start": "2026-10-31T11:11:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 744
+          },
+          {
+            "start": "2026-10-31T11:12:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 730
+          },
+          {
+            "start": "2026-10-31T11:13:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 780
+          },
+          {
+            "start": "2026-10-31T11:14:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 696
+          },
+          {
+            "start": "2026-10-31T11:15:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 778
+          },
+          {
+            "start": "2026-10-31T11:16:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 794
+          },
+          {
+            "start": "2026-10-31T11:17:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 628
+          },
+          {
+            "start": "2026-10-31T11:18:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 622
+          },
+          {
+            "start": "2026-10-31T11:19:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 680
+          },
+          {
+            "start": "2026-10-31T11:20:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 785
+          },
+          {
+            "start": "2026-10-31T11:21:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 609
+          },
+          {
+            "start": "2026-10-31T11:22:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 767
+          },
+          {
+            "start": "2026-10-31T11:23:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 736
+          },
+          {
+            "start": "2026-10-31T11:24:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 655
+          },
+          {
+            "start": "2026-10-31T11:25:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 775
+          },
+          {
+            "start": "2026-10-31T11:26:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 726
+          },
+          {
+            "start": "2026-10-31T11:27:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 643
+          },
+          {
+            "start": "2026-10-31T11:28:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 771
+          },
+          {
+            "start": "2026-10-31T11:29:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 774
+          },
+          {
+            "start": "2026-10-31T11:30:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 665
+          },
+          {
+            "start": "2026-10-31T11:31:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 629
+          },
+          {
+            "start": "2026-10-31T11:32:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 758
+          },
+          {
+            "start": "2026-10-31T11:33:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 794
+          },
+          {
+            "start": "2026-10-31T11:34:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 665
+          },
+          {
+            "start": "2026-10-31T11:35:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 666
+          },
+          {
+            "start": "2026-10-31T11:36:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 594
+          },
+          {
+            "start": "2026-10-31T11:37:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 780
+          },
+          {
+            "start": "2026-10-31T11:38:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 760
+          },
+          {
+            "start": "2026-10-31T11:39:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 733
+          },
+          {
+            "start": "2026-10-31T11:40:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 764
+          },
+          {
+            "start": "2026-10-31T11:41:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 702
+          },
+          {
+            "start": "2026-10-31T11:42:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 624
+          },
+          {
+            "start": "2026-10-31T11:43:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 665
+          },
+          {
+            "start": "2026-10-31T11:44:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 686
+          },
+          {
+            "start": "2026-10-31T11:45:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 612
+          },
+          {
+            "start": "2026-10-31T11:46:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 627
+          },
+          {
+            "start": "2026-10-31T11:47:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 686
+          },
+          {
+            "start": "2026-10-31T11:48:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 707
+          },
+          {
+            "start": "2026-10-31T11:49:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 686
+          },
+          {
+            "start": "2026-10-31T11:50:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 735
+          },
+          {
+            "start": "2026-10-31T11:51:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 799
+          },
+          {
+            "start": "2026-10-31T11:52:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 784
+          },
+          {
+            "start": "2026-10-31T11:53:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 624
+          },
+          {
+            "start": "2026-10-31T11:54:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 616
+          },
+          {
+            "start": "2026-10-31T11:55:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 798
+          },
+          {
+            "start": "2026-10-31T11:56:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 734
+          },
+          {
+            "start": "2026-10-31T11:57:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 709
+          },
+          {
+            "start": "2026-10-31T11:58:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 612
+          },
+          {
+            "start": "2026-10-31T11:59:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 675
+          },
+          {
+            "start": "2026-10-31T12:00:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 621
+          }
+        ]
+      },
+      {
+        "key": "supplier:5",
+        "name": "FileForge",
+        "uptime": {
+          "value": 100,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 99.9,
+          "crit": 99.5,
+          "direction": "below"
+        },
+        "latency": {
+          "value": 592,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 2000,
+          "crit": 5000,
+          "direction": "above"
+        },
+        "buckets": [
+          {
+            "start": "2026-10-31T11:01:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 480
+          },
+          {
+            "start": "2026-10-31T11:02:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 606
+          },
+          {
+            "start": "2026-10-31T11:03:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 508
+          },
+          {
+            "start": "2026-10-31T11:04:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 515
+          },
+          {
+            "start": "2026-10-31T11:05:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 617
+          },
+          {
+            "start": "2026-10-31T11:06:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 550
+          },
+          {
+            "start": "2026-10-31T11:07:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 608
+          },
+          {
+            "start": "2026-10-31T11:08:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 488
+          },
+          {
+            "start": "2026-10-31T11:09:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 579
+          },
+          {
+            "start": "2026-10-31T11:10:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 538
+          },
+          {
+            "start": "2026-10-31T11:11:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 567
+          },
+          {
+            "start": "2026-10-31T11:12:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 570
+          },
+          {
+            "start": "2026-10-31T11:13:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 513
+          },
+          {
+            "start": "2026-10-31T11:14:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 535
+          },
+          {
+            "start": "2026-10-31T11:15:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 522
+          },
+          {
+            "start": "2026-10-31T11:16:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 638
+          },
+          {
+            "start": "2026-10-31T11:17:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 580
+          },
+          {
+            "start": "2026-10-31T11:18:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 500
+          },
+          {
+            "start": "2026-10-31T11:19:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 628
+          },
+          {
+            "start": "2026-10-31T11:20:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 485
+          },
+          {
+            "start": "2026-10-31T11:21:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 644
+          },
+          {
+            "start": "2026-10-31T11:22:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 561
+          },
+          {
+            "start": "2026-10-31T11:23:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 610
+          },
+          {
+            "start": "2026-10-31T11:24:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 583
+          },
+          {
+            "start": "2026-10-31T11:25:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 515
+          },
+          {
+            "start": "2026-10-31T11:26:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 597
+          },
+          {
+            "start": "2026-10-31T11:27:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 598
+          },
+          {
+            "start": "2026-10-31T11:28:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 618
+          },
+          {
+            "start": "2026-10-31T11:29:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 554
+          },
+          {
+            "start": "2026-10-31T11:30:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 646
+          },
+          {
+            "start": "2026-10-31T11:31:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 536
+          },
+          {
+            "start": "2026-10-31T11:32:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 645
+          },
+          {
+            "start": "2026-10-31T11:33:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 525
+          },
+          {
+            "start": "2026-10-31T11:34:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 529
+          },
+          {
+            "start": "2026-10-31T11:35:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 581
+          },
+          {
+            "start": "2026-10-31T11:36:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 557
+          },
+          {
+            "start": "2026-10-31T11:37:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 510
+          },
+          {
+            "start": "2026-10-31T11:38:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 481
+          },
+          {
+            "start": "2026-10-31T11:39:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 632
+          },
+          {
+            "start": "2026-10-31T11:40:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 554
+          },
+          {
+            "start": "2026-10-31T11:41:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 593
+          },
+          {
+            "start": "2026-10-31T11:42:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 504
+          },
+          {
+            "start": "2026-10-31T11:43:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 553
+          },
+          {
+            "start": "2026-10-31T11:44:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 489
+          },
+          {
+            "start": "2026-10-31T11:45:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 548
+          },
+          {
+            "start": "2026-10-31T11:46:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 512
+          },
+          {
+            "start": "2026-10-31T11:47:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 543
+          },
+          {
+            "start": "2026-10-31T11:48:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 644
+          },
+          {
+            "start": "2026-10-31T11:49:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 610
+          },
+          {
+            "start": "2026-10-31T11:50:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 553
+          },
+          {
+            "start": "2026-10-31T11:51:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 515
+          },
+          {
+            "start": "2026-10-31T11:52:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 530
+          },
+          {
+            "start": "2026-10-31T11:53:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 590
+          },
+          {
+            "start": "2026-10-31T11:54:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 633
+          },
+          {
+            "start": "2026-10-31T11:55:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 510
+          },
+          {
+            "start": "2026-10-31T11:56:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 583
+          },
+          {
+            "start": "2026-10-31T11:57:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 594
+          },
+          {
+            "start": "2026-10-31T11:58:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 556
+          },
+          {
+            "start": "2026-10-31T11:59:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 498
+          },
+          {
+            "start": "2026-10-31T12:00:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 592
+          }
+        ]
+      },
+      {
+        "key": "supplier:6",
+        "name": "Bosphorus Unlock",
+        "uptime": {
+          "value": 100,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 99.9,
+          "crit": 99.5,
+          "direction": "below"
+        },
+        "latency": {
+          "value": 982,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 2000,
+          "crit": 5000,
+          "direction": "above"
+        },
+        "buckets": [
+          {
+            "start": "2026-10-31T11:01:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 933
+          },
+          {
+            "start": "2026-10-31T11:02:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1086
+          },
+          {
+            "start": "2026-10-31T11:03:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 943
+          },
+          {
+            "start": "2026-10-31T11:04:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 925
+          },
+          {
+            "start": "2026-10-31T11:05:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 942
+          },
+          {
+            "start": "2026-10-31T11:06:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 922
+          },
+          {
+            "start": "2026-10-31T11:07:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1063
+          },
+          {
+            "start": "2026-10-31T11:08:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 822
+          },
+          {
+            "start": "2026-10-31T11:09:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1039
+          },
+          {
+            "start": "2026-10-31T11:10:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1089
+          },
+          {
+            "start": "2026-10-31T11:11:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 884
+          },
+          {
+            "start": "2026-10-31T11:12:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 850
+          },
+          {
+            "start": "2026-10-31T11:13:00.000Z",
+            "status": "degraded",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 2580
+          },
+          {
+            "start": "2026-10-31T11:14:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 860
+          },
+          {
+            "start": "2026-10-31T11:15:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 980
+          },
+          {
+            "start": "2026-10-31T11:16:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1011
+          },
+          {
+            "start": "2026-10-31T11:17:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 970
+          },
+          {
+            "start": "2026-10-31T11:18:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 940
+          },
+          {
+            "start": "2026-10-31T11:19:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 847
+          },
+          {
+            "start": "2026-10-31T11:20:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 919
+          },
+          {
+            "start": "2026-10-31T11:21:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1070
+          },
+          {
+            "start": "2026-10-31T11:22:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1051
+          },
+          {
+            "start": "2026-10-31T11:23:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1074
+          },
+          {
+            "start": "2026-10-31T11:24:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1042
+          },
+          {
+            "start": "2026-10-31T11:25:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 819
+          },
+          {
+            "start": "2026-10-31T11:26:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1089
+          },
+          {
+            "start": "2026-10-31T11:27:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1004
+          },
+          {
+            "start": "2026-10-31T11:28:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 907
+          },
+          {
+            "start": "2026-10-31T11:29:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1093
+          },
+          {
+            "start": "2026-10-31T11:30:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 897
+          },
+          {
+            "start": "2026-10-31T11:31:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 887
+          },
+          {
+            "start": "2026-10-31T11:32:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1052
+          },
+          {
+            "start": "2026-10-31T11:33:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1084
+          },
+          {
+            "start": "2026-10-31T11:34:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 837
+          },
+          {
+            "start": "2026-10-31T11:35:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 907
+          },
+          {
+            "start": "2026-10-31T11:36:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 949
+          },
+          {
+            "start": "2026-10-31T11:37:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1009
+          },
+          {
+            "start": "2026-10-31T11:38:00.000Z",
+            "status": "degraded",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 3044
+          },
+          {
+            "start": "2026-10-31T11:39:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 967
+          },
+          {
+            "start": "2026-10-31T11:40:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1018
+          },
+          {
+            "start": "2026-10-31T11:41:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1057
+          },
+          {
+            "start": "2026-10-31T11:42:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 824
+          },
+          {
+            "start": "2026-10-31T11:43:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1002
+          },
+          {
+            "start": "2026-10-31T11:44:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 916
+          },
+          {
+            "start": "2026-10-31T11:45:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 998
+          },
+          {
+            "start": "2026-10-31T11:46:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1099
+          },
+          {
+            "start": "2026-10-31T11:47:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 873
+          },
+          {
+            "start": "2026-10-31T11:48:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 952
+          },
+          {
+            "start": "2026-10-31T11:49:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 872
+          },
+          {
+            "start": "2026-10-31T11:50:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 879
+          },
+          {
+            "start": "2026-10-31T11:51:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1031
+          },
+          {
+            "start": "2026-10-31T11:52:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 944
+          },
+          {
+            "start": "2026-10-31T11:53:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 829
+          },
+          {
+            "start": "2026-10-31T11:54:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 908
+          },
+          {
+            "start": "2026-10-31T11:55:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 827
+          },
+          {
+            "start": "2026-10-31T11:56:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 893
+          },
+          {
+            "start": "2026-10-31T11:57:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 823
+          },
+          {
+            "start": "2026-10-31T11:58:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1058
+          },
+          {
+            "start": "2026-10-31T11:59:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1003
+          },
+          {
+            "start": "2026-10-31T12:00:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 982
+          }
+        ]
+      },
+      {
+        "key": "gateway:1",
+        "name": "Card gateway",
+        "uptime": {
+          "value": 100,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 99.9,
+          "crit": 99.5,
+          "direction": "below"
+        },
+        "latency": {
+          "value": 426,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 1500,
+          "crit": 4000,
+          "direction": "above"
+        },
+        "buckets": [
+          {
+            "start": "2026-10-31T11:01:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 409
+          },
+          {
+            "start": "2026-10-31T11:02:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 402
+          },
+          {
+            "start": "2026-10-31T11:03:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 507
+          },
+          {
+            "start": "2026-10-31T11:04:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 458
+          },
+          {
+            "start": "2026-10-31T11:05:00.000Z",
+            "status": "degraded",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 1201
+          },
+          {
+            "start": "2026-10-31T11:06:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 422
+          },
+          {
+            "start": "2026-10-31T11:07:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 521
+          },
+          {
+            "start": "2026-10-31T11:08:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 492
+          },
+          {
+            "start": "2026-10-31T11:09:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 427
+          },
+          {
+            "start": "2026-10-31T11:10:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 405
+          },
+          {
+            "start": "2026-10-31T11:11:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 491
+          },
+          {
+            "start": "2026-10-31T11:12:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 399
+          },
+          {
+            "start": "2026-10-31T11:13:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 417
+          },
+          {
+            "start": "2026-10-31T11:14:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 513
+          },
+          {
+            "start": "2026-10-31T11:15:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 401
+          },
+          {
+            "start": "2026-10-31T11:16:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 468
+          },
+          {
+            "start": "2026-10-31T11:17:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 503
+          },
+          {
+            "start": "2026-10-31T11:18:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 389
+          },
+          {
+            "start": "2026-10-31T11:19:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 400
+          },
+          {
+            "start": "2026-10-31T11:20:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 434
+          },
+          {
+            "start": "2026-10-31T11:21:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 482
+          },
+          {
+            "start": "2026-10-31T11:22:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 473
+          },
+          {
+            "start": "2026-10-31T11:23:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 415
+          },
+          {
+            "start": "2026-10-31T11:24:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 468
+          },
+          {
+            "start": "2026-10-31T11:25:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 523
+          },
+          {
+            "start": "2026-10-31T11:26:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 512
+          },
+          {
+            "start": "2026-10-31T11:27:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 391
+          },
+          {
+            "start": "2026-10-31T11:28:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 401
+          },
+          {
+            "start": "2026-10-31T11:29:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 473
+          },
+          {
+            "start": "2026-10-31T11:30:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 509
+          },
+          {
+            "start": "2026-10-31T11:31:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 483
+          },
+          {
+            "start": "2026-10-31T11:32:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 393
+          },
+          {
+            "start": "2026-10-31T11:33:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 499
+          },
+          {
+            "start": "2026-10-31T11:34:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 455
+          },
+          {
+            "start": "2026-10-31T11:35:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 520
+          },
+          {
+            "start": "2026-10-31T11:36:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 388
+          },
+          {
+            "start": "2026-10-31T11:37:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 512
+          },
+          {
+            "start": "2026-10-31T11:38:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 414
+          },
+          {
+            "start": "2026-10-31T11:39:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 434
+          },
+          {
+            "start": "2026-10-31T11:40:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 476
+          },
+          {
+            "start": "2026-10-31T11:41:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 437
+          },
+          {
+            "start": "2026-10-31T11:42:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 437
+          },
+          {
+            "start": "2026-10-31T11:43:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 523
+          },
+          {
+            "start": "2026-10-31T11:44:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 411
+          },
+          {
+            "start": "2026-10-31T11:45:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 436
+          },
+          {
+            "start": "2026-10-31T11:46:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 407
+          },
+          {
+            "start": "2026-10-31T11:47:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 420
+          },
+          {
+            "start": "2026-10-31T11:48:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 506
+          },
+          {
+            "start": "2026-10-31T11:49:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 406
+          },
+          {
+            "start": "2026-10-31T11:50:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 475
+          },
+          {
+            "start": "2026-10-31T11:51:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 427
+          },
+          {
+            "start": "2026-10-31T11:52:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 465
+          },
+          {
+            "start": "2026-10-31T11:53:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 397
+          },
+          {
+            "start": "2026-10-31T11:54:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 456
+          },
+          {
+            "start": "2026-10-31T11:55:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 467
+          },
+          {
+            "start": "2026-10-31T11:56:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 441
+          },
+          {
+            "start": "2026-10-31T11:57:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 480
+          },
+          {
+            "start": "2026-10-31T11:58:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 398
+          },
+          {
+            "start": "2026-10-31T11:59:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 486
+          },
+          {
+            "start": "2026-10-31T12:00:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 426
+          }
+        ]
+      },
+      {
+        "key": "gateway:2",
+        "name": "Crypto gateway",
+        "uptime": {
+          "value": 100,
+          "unit": "percent",
+          "state": "ok",
+          "warn": 99.9,
+          "crit": 99.5,
+          "direction": "below"
+        },
+        "latency": {
+          "value": 701,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 1500,
+          "crit": 4000,
+          "direction": "above"
+        },
+        "buckets": [
+          {
+            "start": "2026-10-31T11:01:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 689
+          },
+          {
+            "start": "2026-10-31T11:02:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 690
+          },
+          {
+            "start": "2026-10-31T11:03:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 520
+          },
+          {
+            "start": "2026-10-31T11:04:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 565
+          },
+          {
+            "start": "2026-10-31T11:05:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 525
+          },
+          {
+            "start": "2026-10-31T11:06:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 623
+          },
+          {
+            "start": "2026-10-31T11:07:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 649
+          },
+          {
+            "start": "2026-10-31T11:08:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 551
+          },
+          {
+            "start": "2026-10-31T11:09:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 597
+          },
+          {
+            "start": "2026-10-31T11:10:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 594
+          },
+          {
+            "start": "2026-10-31T11:11:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 539
+          },
+          {
+            "start": "2026-10-31T11:12:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 685
+          },
+          {
+            "start": "2026-10-31T11:13:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 591
+          },
+          {
+            "start": "2026-10-31T11:14:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 567
+          },
+          {
+            "start": "2026-10-31T11:15:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 659
+          },
+          {
+            "start": "2026-10-31T11:16:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 589
+          },
+          {
+            "start": "2026-10-31T11:17:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 556
+          },
+          {
+            "start": "2026-10-31T11:18:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 615
+          },
+          {
+            "start": "2026-10-31T11:19:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 583
+          },
+          {
+            "start": "2026-10-31T11:20:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 619
+          },
+          {
+            "start": "2026-10-31T11:21:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 692
+          },
+          {
+            "start": "2026-10-31T11:22:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 677
+          },
+          {
+            "start": "2026-10-31T11:23:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 599
+          },
+          {
+            "start": "2026-10-31T11:24:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 675
+          },
+          {
+            "start": "2026-10-31T11:25:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 659
+          },
+          {
+            "start": "2026-10-31T11:26:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 523
+          },
+          {
+            "start": "2026-10-31T11:27:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 657
+          },
+          {
+            "start": "2026-10-31T11:28:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 681
+          },
+          {
+            "start": "2026-10-31T11:29:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 683
+          },
+          {
+            "start": "2026-10-31T11:30:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 684
+          },
+          {
+            "start": "2026-10-31T11:31:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 641
+          },
+          {
+            "start": "2026-10-31T11:32:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 560
+          },
+          {
+            "start": "2026-10-31T11:33:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 523
+          },
+          {
+            "start": "2026-10-31T11:34:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 600
+          },
+          {
+            "start": "2026-10-31T11:35:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 586
+          },
+          {
+            "start": "2026-10-31T11:36:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 624
+          },
+          {
+            "start": "2026-10-31T11:37:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 679
+          },
+          {
+            "start": "2026-10-31T11:38:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 633
+          },
+          {
+            "start": "2026-10-31T11:39:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 700
+          },
+          {
+            "start": "2026-10-31T11:40:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 577
+          },
+          {
+            "start": "2026-10-31T11:41:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 625
+          },
+          {
+            "start": "2026-10-31T11:42:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 616
+          },
+          {
+            "start": "2026-10-31T11:43:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 593
+          },
+          {
+            "start": "2026-10-31T11:44:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 624
+          },
+          {
+            "start": "2026-10-31T11:45:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 642
+          },
+          {
+            "start": "2026-10-31T11:46:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 576
+          },
+          {
+            "start": "2026-10-31T11:47:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 558
+          },
+          {
+            "start": "2026-10-31T11:48:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 518
+          },
+          {
+            "start": "2026-10-31T11:49:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 593
+          },
+          {
+            "start": "2026-10-31T11:50:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 597
+          },
+          {
+            "start": "2026-10-31T11:51:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 684
+          },
+          {
+            "start": "2026-10-31T11:52:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 580
+          },
+          {
+            "start": "2026-10-31T11:53:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 615
+          },
+          {
+            "start": "2026-10-31T11:54:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 657
+          },
+          {
+            "start": "2026-10-31T11:55:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 591
+          },
+          {
+            "start": "2026-10-31T11:56:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 630
+          },
+          {
+            "start": "2026-10-31T11:57:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 541
+          },
+          {
+            "start": "2026-10-31T11:58:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 541
+          },
+          {
+            "start": "2026-10-31T11:59:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 537
+          },
+          {
+            "start": "2026-10-31T12:00:00.000Z",
+            "status": "ok",
+            "checks": 1,
+            "failures": 0,
+            "latencyMs": 701
+          }
+        ]
+      }
+    ]
+  }
+}

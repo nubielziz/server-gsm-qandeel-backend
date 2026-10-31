@@ -1,0 +1,17 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 10,
+    "name": "Harvest sample",
+    "type": "imei",
+    "allowedGroupIds": [
+      1
+    ],
+    "sort": 10,
+    "isActive": false,
+    "serviceCount": 0
+  }
+}

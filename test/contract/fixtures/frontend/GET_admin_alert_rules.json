@@ -1,0 +1,204 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "10"
+  },
+  "body": [
+    {
+      "key": "api_rate5xx",
+      "name": "API 5xx rate",
+      "metric": "api.rate5xx",
+      "comparator": "gt",
+      "threshold": 2,
+      "windowSeconds": 300,
+      "severity": "critical",
+      "channels": [
+        "telegram",
+        "email"
+      ],
+      "unit": "percent",
+      "isActive": true,
+      "mutedUntil": null,
+      "open": false,
+      "createdAt": "2026-06-13T12:00:00.000Z",
+      "updatedAt": null,
+      "id": 3
+    },
+    {
+      "key": "api_p95_latency",
+      "name": "API p95 latency",
+      "metric": "api.p95",
+      "comparator": "gt",
+      "threshold": 1500,
+      "windowSeconds": 300,
+      "severity": "warning",
+      "channels": [
+        "telegram"
+      ],
+      "unit": "ms",
+      "isActive": true,
+      "mutedUntil": null,
+      "open": false,
+      "createdAt": "2026-06-13T12:00:00.000Z",
+      "updatedAt": null,
+      "id": 4
+    },
+    {
+      "key": "db_connections",
+      "name": "Database connections",
+      "metric": "db.connection_usage",
+      "comparator": "gt",
+      "threshold": 90,
+      "windowSeconds": 120,
+      "severity": "critical",
+      "channels": [
+        "telegram",
+        "email"
+      ],
+      "unit": "percent",
+      "isActive": true,
+      "mutedUntil": null,
+      "open": false,
+      "createdAt": "2026-07-23T12:00:00.000Z",
+      "updatedAt": null,
+      "id": 7
+    },
+    {
+      "key": "ledger_mismatch",
+      "name": "Ledger mismatch",
+      "metric": "ledger.mismatch_count",
+      "comparator": "gt",
+      "threshold": 0,
+      "windowSeconds": 60,
+      "severity": "critical",
+      "channels": [
+        "telegram",
+        "email"
+      ],
+      "unit": "count",
+      "isActive": true,
+      "mutedUntil": null,
+      "open": false,
+      "createdAt": "2026-05-24T12:00:00.000Z",
+      "updatedAt": null,
+      "id": 2
+    },
+    {
+      "key": "queue_oldest_job",
+      "name": "Oldest queued job",
+      "metric": "queue.oldest_age",
+      "comparator": "gt",
+      "threshold": 120,
+      "windowSeconds": 120,
+      "severity": "warning",
+      "channels": [
+        "telegram"
+      ],
+      "unit": "s",
+      "isActive": true,
+      "mutedUntil": null,
+      "open": false,
+      "createdAt": "2026-07-03T12:00:00.000Z",
+      "updatedAt": null,
+      "id": 5
+    },
+    {
+      "key": "orders_past_sla",
+      "name": "Orders past SLA",
+      "metric": "orders.past_sla",
+      "comparator": "gt",
+      "threshold": 20,
+      "windowSeconds": 300,
+      "severity": "critical",
+      "channels": [
+        "telegram",
+        "email"
+      ],
+      "unit": "count",
+      "isActive": true,
+      "mutedUntil": null,
+      "open": false,
+      "createdAt": "2026-07-03T12:00:00.000Z",
+      "updatedAt": null,
+      "id": 6
+    },
+    {
+      "key": "redis_memory",
+      "name": "Redis memory",
+      "metric": "redis.memory_usage",
+      "comparator": "gt",
+      "threshold": 85,
+      "windowSeconds": 300,
+      "severity": "warning",
+      "channels": [
+        "telegram"
+      ],
+      "unit": "percent",
+      "isActive": false,
+      "mutedUntil": null,
+      "open": false,
+      "createdAt": "2026-09-01T12:00:00.000Z",
+      "updatedAt": null,
+      "id": 9
+    },
+    {
+      "key": "supplier_balance_low",
+      "name": "Supplier balance low",
+      "metric": "supplier.balance",
+      "comparator": "lt",
+      "threshold": 150,
+      "windowSeconds": 3600,
+      "severity": "warning",
+      "channels": [
+        "email"
+      ],
+      "unit": null,
+      "isActive": true,
+      "mutedUntil": "2026-11-01T08:00:00.000Z",
+      "open": false,
+      "createdAt": "2026-08-02T12:00:00.000Z",
+      "updatedAt": null,
+      "id": 8
+    },
+    {
+      "key": "supplier_timeout_rate",
+      "name": "Supplier timeouts",
+      "metric": "supplier.timeout_rate",
+      "comparator": "gt",
+      "threshold": 20,
+      "windowSeconds": 180,
+      "severity": "critical",
+      "channels": [
+        "telegram",
+        "email"
+      ],
+      "unit": "percent",
+      "isActive": true,
+      "mutedUntil": null,
+      "open": false,
+      "createdAt": "2026-05-24T12:00:00.000Z",
+      "updatedAt": null,
+      "id": 1
+    },
+    {
+      "key": "webhook_failures",
+      "name": "Webhook delivery",
+      "metric": "webhooks.success_rate",
+      "comparator": "lt",
+      "threshold": 95,
+      "windowSeconds": 600,
+      "severity": "warning",
+      "channels": [
+        "email"
+      ],
+      "unit": "percent",
+      "isActive": true,
+      "mutedUntil": null,
+      "open": false,
+      "createdAt": "2026-09-16T12:00:00.000Z",
+      "updatedAt": null,
+      "id": 10
+    }
+  ]
+}

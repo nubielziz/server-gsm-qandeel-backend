@@ -1,0 +1,26 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "key": "api_rate5xx",
+    "name": "API 5xx rate",
+    "metric": "api.rate5xx",
+    "comparator": "gt",
+    "threshold": 2,
+    "windowSeconds": 300,
+    "severity": "critical",
+    "channels": [
+      "telegram",
+      "email"
+    ],
+    "unit": "percent",
+    "isActive": true,
+    "mutedUntil": null,
+    "open": false,
+    "createdAt": "2026-06-13T12:00:00.000Z",
+    "updatedAt": null,
+    "id": 3
+  }
+}

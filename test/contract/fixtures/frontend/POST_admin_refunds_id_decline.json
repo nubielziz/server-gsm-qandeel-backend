@@ -1,0 +1,47 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1008,
+    "orderId": 20478,
+    "status": "rejected",
+    "method": "original",
+    "amount": "11.9900",
+    "reason": "Changed my mind, I no longer need the unlock",
+    "currency": "USD",
+    "fx": "1",
+    "partial": false,
+    "gatewayRefundId": null,
+    "note": "Harvest sample text.",
+    "requestedBy": {
+      "type": "customer",
+      "name": null
+    },
+    "approvedBy": {
+      "id": 1,
+      "name": "Rami K."
+    },
+    "customer": {
+      "id": 24,
+      "name": "Ryan Cooper"
+    },
+    "order": {
+      "id": 20478,
+      "deliveredAt": "2026-10-29T02:29:24.163Z",
+      "cost": "5.6000"
+    },
+    "payment": {
+      "id": 20478,
+      "method": "card",
+      "brand": "Mastercard 4747",
+      "amount": "11.9900",
+      "taxAmount": "0.0000"
+    },
+    "netAmount": null,
+    "taxAmount": null,
+    "completedAt": null,
+    "createdAt": "2026-10-30T09:00:00.000Z"
+  }
+}

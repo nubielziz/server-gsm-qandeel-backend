@@ -1,0 +1,45 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "kind": "opening",
+    "memo": "Opening balance (owner capital)",
+    "refType": "system",
+    "refId": 0,
+    "createdAt": "2026-09-25T12:00:00.000Z",
+    "createdBy": {
+      "type": "staff",
+      "id": null,
+      "name": "Rami K."
+    },
+    "entries": [
+      {
+        "id": 1,
+        "account": {
+          "id": 1,
+          "kind": "bank",
+          "ownerType": null,
+          "ownerId": null,
+          "ownerName": null
+        },
+        "amount": "25000.0000",
+        "balanceAfter": "0.0000"
+      },
+      {
+        "id": 2,
+        "account": {
+          "id": 2,
+          "kind": "owner_capital",
+          "ownerType": null,
+          "ownerId": null,
+          "ownerName": null
+        },
+        "amount": "-25000.0000",
+        "balanceAfter": "0.0000"
+      }
+    ]
+  }
+}

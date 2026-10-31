@@ -1,0 +1,22 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "serviceId": 2,
+    "clientId": 1,
+    "price": "10.0000",
+    "note": "",
+    "createdAt": "2026-10-31T12:00:00.000Z",
+    "id": 4,
+    "service": {
+      "id": 2,
+      "name": "Apple Warranty & Activation Date",
+      "type": "imei",
+      "basePrice": "0.1000",
+      "floorPrice": "0.0700"
+    },
+    "groupPrice": "0.0920"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "guestCheckout": true,
+    "require3ds": true,
+    "withdrawalWaiver": true,
+    "autoRefundFailed": true,
+    "imeiPrecheck": true,
+    "refundHoursBeforeDispatch": 1,
+    "abandonedMinutes": 60,
+    "imeiRetentionDays": 180
+  }
+}

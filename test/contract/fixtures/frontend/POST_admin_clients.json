@@ -1,0 +1,41 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "username": "harvest-sample",
+    "email": "harvest.sample@example.com",
+    "name": "Harvest sample",
+    "company": "Harvest sample",
+    "phone": "",
+    "country": "GB",
+    "groupId": 1,
+    "status": "pending",
+    "kycStatus": "none",
+    "referralCode": "GSMMVWCMTC0",
+    "emailVerifiedAt": null,
+    "createdAt": "2026-10-31T12:00:00.000Z",
+    "stats": {
+      "orders": 0,
+      "spend": "0.0000",
+      "profit": "0.0000",
+      "margin": null,
+      "successRate": null,
+      "lastOrderAt": null
+    },
+    "id": 21,
+    "group": {
+      "id": 1,
+      "name": "Standard",
+      "discountPercent": "0.0000"
+    },
+    "referredBy": null,
+    "wallet": {
+      "balance": "0.0000",
+      "reserved": "0.0000",
+      "creditLimit": "0.0000",
+      "available": "0.0000"
+    }
+  }
+}

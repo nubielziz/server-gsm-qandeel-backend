@@ -1,0 +1,35 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 4202,
+    "number": "T-4202",
+    "subject": "Phone still locked after unlock (SF-20471)",
+    "channel": "web",
+    "requesterType": "customer",
+    "requesterId": 28,
+    "requester": {
+      "name": "Victor Silva",
+      "email": "victor.silva@webmail.example"
+    },
+    "orderId": 20471,
+    "category": "failed_unlock",
+    "priority": "high",
+    "status": "open",
+    "assigneeId": 2,
+    "assignee": {
+      "id": 2,
+      "name": "Lina S."
+    },
+    "firstResponseAt": "2026-10-31T04:12:00.000Z",
+    "resolvedAt": null,
+    "csatScore": null,
+    "createdAt": "2026-10-31T03:00:00.000Z",
+    "updatedAt": "2026-10-31T09:54:00.000Z",
+    "lastPublicAt": "2026-10-31T09:54:00.000Z",
+    "slaDueAt": "2026-10-31T11:54:00.000Z",
+    "late": true
+  }
+}

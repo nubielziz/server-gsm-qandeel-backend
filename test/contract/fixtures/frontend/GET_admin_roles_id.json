@@ -1,0 +1,14 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "name": "Owner",
+    "permissions": [
+      "*"
+    ],
+    "staffCount": 1
+  }
+}

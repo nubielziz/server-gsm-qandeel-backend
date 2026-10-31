@@ -1,0 +1,32 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "number": "INV-2026-0001",
+    "kind": "topup",
+    "status": "paid",
+    "amount": "360.0000",
+    "fee": "0.0000",
+    "netAmount": "360.0000",
+    "taxAmount": "0.0000",
+    "taxRate": "0.0000",
+    "taxCountry": "TR",
+    "customerVatId": "",
+    "total": "360.0000",
+    "currency": "USD",
+    "client": {
+      "id": 11,
+      "name": "Istanbul GSM Care"
+    },
+    "customer": null,
+    "orderId": null,
+    "pdfFileId": 9501,
+    "description": null,
+    "dueAt": "2026-09-30T13:00:00.000Z",
+    "paidAt": "2026-09-27T13:21:00.000Z",
+    "createdAt": "2026-09-27T13:00:00.000Z"
+  }
+}

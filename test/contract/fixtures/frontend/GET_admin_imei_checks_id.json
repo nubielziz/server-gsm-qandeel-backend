@@ -1,0 +1,27 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 9900,
+    "imei": "867412055465701",
+    "brand": "Xiaomi",
+    "model": "Redmi Note 12",
+    "checkType": "icloud",
+    "status": "clean",
+    "source": "storefront_free",
+    "country": "US",
+    "ip": "203.0.113.20",
+    "cost": "0.0400",
+    "price": "0.0000",
+    "cachedUntil": null,
+    "createdAt": "2026-10-31T11:47:00.000Z",
+    "orderId": null,
+    "customer": null,
+    "supplier": null,
+    "result": {
+      "findMy": "off"
+    }
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "3"
+  },
+  "body": [
+    {
+      "id": 1,
+      "serviceId": 1,
+      "clientId": 1,
+      "price": "0.1000",
+      "note": "",
+      "createdAt": "2026-10-11T12:00:00.000Z",
+      "service": {
+        "id": 1,
+        "name": "iCloud Clean / Lost Check",
+        "type": "imei",
+        "basePrice": "0.1300",
+        "floorPrice": "0.1000"
+      },
+      "groupPrice": "0.1196"
+    },
+    {
+      "id": 2,
+      "serviceId": 20,
+      "clientId": 3,
+      "price": "5.5000",
+      "note": "",
+      "createdAt": "2026-10-11T12:00:00.000Z",
+      "service": {
+        "id": 20,
+        "name": "Samsung FRP Remote (USB)",
+        "type": "remote",
+        "basePrice": "6.9600",
+        "floorPrice": "5.0900"
+      },
+      "groupPrice": "6.4032"
+    },
+    {
+      "id": 3,
+      "serviceId": 5,
+      "clientId": 5,
+      "price": "15.2000",
+      "note": "",
+      "createdAt": "2026-10-11T12:00:00.000Z",
+      "service": {
+        "id": 5,
+        "name": "AT&T USA Premier Unlock",
+        "type": "imei",
+        "basePrice": "17.2800",
+        "floorPrice": "14.3100"
+      },
+      "groupPrice": "15.9000"
+    }
+  ]
+}

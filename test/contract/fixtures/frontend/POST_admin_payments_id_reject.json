@@ -1,0 +1,37 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1049,
+    "purpose": "topup",
+    "status": "rejected",
+    "methodType": "bank",
+    "amount": "300.0000",
+    "feeAmount": "0.0000",
+    "netAmount": "300.0000",
+    "currency": "USD",
+    "gatewayTxnId": "TRX-4205026",
+    "capturedAt": null,
+    "createdAt": "2026-10-30T11:22:00.000Z",
+    "invoiceId": 50,
+    "receiptFileId": 10049,
+    "client": {
+      "id": 14,
+      "name": "Kuwait SIM Center",
+      "group": "Standard",
+      "walletBalance": "131.1100"
+    },
+    "gateway": {
+      "id": 3,
+      "name": "Bank transfer"
+    },
+    "reviewedBy": {
+      "id": 1,
+      "name": "Rami K."
+    },
+    "reviewedAt": "2026-10-31T12:00:00.000Z",
+    "note": "Harvest sample text."
+  }
+}

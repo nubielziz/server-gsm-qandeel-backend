@@ -1,0 +1,27 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "code": "card",
+    "driver": "card",
+    "name": "Card gateway",
+    "audience": "b2c",
+    "feePercent": "2.9000",
+    "feeFixed": "0.3000",
+    "minAmount": "1.0000",
+    "maxAmount": "2000.0000",
+    "allowedGroupIds": [],
+    "supportsRefunds": true,
+    "supports3ds": true,
+    "isManual": false,
+    "instructions": "Hosted checkout page, 3D Secure, Apple Pay and Google Pay",
+    "holdHours": 0,
+    "isActive": true,
+    "createdAt": "2026-10-01T12:00:00.000Z",
+    "secretHint": "••••fa0",
+    "volume30d": "1313.1000"
+  }
+}

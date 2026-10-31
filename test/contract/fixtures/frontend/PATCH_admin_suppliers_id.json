@@ -1,0 +1,535 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "name": "Nordic GSM",
+    "driver": "dhru",
+    "baseUrl": "https://api.nordicgsm.example",
+    "username": "gsm-supply",
+    "currency": "USD",
+    "creditRate": "1.0000",
+    "status": "active",
+    "apiKeyHint": "sk_57",
+    "health": "up",
+    "successRate1h": 97.8,
+    "successRate24h": 98.39166666666665,
+    "p50Ms": 310,
+    "p95Ms": 806,
+    "balance": "1850.0000",
+    "balanceCheckedAt": "2026-10-31T11:56:00.000Z",
+    "lowBalanceAlert": "150.0000",
+    "lowBalance": false,
+    "runwayDays": 17.511832319134555,
+    "maxConcurrency": 5,
+    "rateLimitPerMin": 60,
+    "timeoutMs": 15000,
+    "createdAt": "2026-07-03T11:56:00.000Z",
+    "openOrders": 17,
+    "reviewOrders": 3,
+    "history": [
+      {
+        "at": "2026-10-30T13:00:00.000Z",
+        "successRate": 98.2,
+        "medianMs": 361
+      },
+      {
+        "at": "2026-10-30T14:00:00.000Z",
+        "successRate": 98.8,
+        "medianMs": 368
+      },
+      {
+        "at": "2026-10-30T15:00:00.000Z",
+        "successRate": 97.8,
+        "medianMs": 353
+      },
+      {
+        "at": "2026-10-30T16:00:00.000Z",
+        "successRate": 97.5,
+        "medianMs": 350
+      },
+      {
+        "at": "2026-10-30T17:00:00.000Z",
+        "successRate": 98.8,
+        "medianMs": 323
+      },
+      {
+        "at": "2026-10-30T18:00:00.000Z",
+        "successRate": 97.6,
+        "medianMs": 384
+      },
+      {
+        "at": "2026-10-30T19:00:00.000Z",
+        "successRate": 99.6,
+        "medianMs": 357
+      },
+      {
+        "at": "2026-10-30T20:00:00.000Z",
+        "successRate": 100,
+        "medianMs": 321
+      },
+      {
+        "at": "2026-10-30T21:00:00.000Z",
+        "successRate": 97,
+        "medianMs": 297
+      },
+      {
+        "at": "2026-10-30T22:00:00.000Z",
+        "successRate": 97.3,
+        "medianMs": 279
+      },
+      {
+        "at": "2026-10-30T23:00:00.000Z",
+        "successRate": 98,
+        "medianMs": 333
+      },
+      {
+        "at": "2026-10-31T00:00:00.000Z",
+        "successRate": 97.1,
+        "medianMs": 373
+      },
+      {
+        "at": "2026-10-31T01:00:00.000Z",
+        "successRate": 99.8,
+        "medianMs": 333
+      },
+      {
+        "at": "2026-10-31T02:00:00.000Z",
+        "successRate": 96.8,
+        "medianMs": 262
+      },
+      {
+        "at": "2026-10-31T03:00:00.000Z",
+        "successRate": 99.1,
+        "medianMs": 303
+      },
+      {
+        "at": "2026-10-31T04:00:00.000Z",
+        "successRate": 99,
+        "medianMs": 373
+      },
+      {
+        "at": "2026-10-31T05:00:00.000Z",
+        "successRate": 97.7,
+        "medianMs": 357
+      },
+      {
+        "at": "2026-10-31T06:00:00.000Z",
+        "successRate": 100,
+        "medianMs": 330
+      },
+      {
+        "at": "2026-10-31T07:00:00.000Z",
+        "successRate": 98.6,
+        "medianMs": 347
+      },
+      {
+        "at": "2026-10-31T08:00:00.000Z",
+        "successRate": 98.8,
+        "medianMs": 334
+      },
+      {
+        "at": "2026-10-31T09:00:00.000Z",
+        "successRate": 98.9,
+        "medianMs": 285
+      },
+      {
+        "at": "2026-10-31T10:00:00.000Z",
+        "successRate": 99.2,
+        "medianMs": 250
+      },
+      {
+        "at": "2026-10-31T11:00:00.000Z",
+        "successRate": 98,
+        "medianMs": 347
+      },
+      {
+        "at": "2026-10-31T12:00:00.000Z",
+        "successRate": 97.8,
+        "medianMs": 250
+      }
+    ],
+    "links": [
+      {
+        "serviceId": 1,
+        "serviceName": "iCloud Clean / Lost Check",
+        "serviceCode": "IMEI-ICL-CHK",
+        "serviceStatus": "active",
+        "supplierServiceId": 2,
+        "supplierServiceName": "iCloud Clean / Lost Check",
+        "priority": 2,
+        "cost": "0.0800",
+        "slaMinutes": 2,
+        "chain": [
+          {
+            "priority": 1,
+            "supplierId": 3,
+            "supplierName": "Rapid IMEI",
+            "supplierServiceId": 1,
+            "supplierServiceName": "iCloud Clean / Lost Check"
+          },
+          {
+            "priority": 2,
+            "supplierId": 1,
+            "supplierName": "Nordic GSM",
+            "supplierServiceId": 2,
+            "supplierServiceName": "iCloud Clean / Lost Check"
+          }
+        ]
+      },
+      {
+        "serviceId": 2,
+        "serviceName": "Apple Warranty & Activation Date",
+        "serviceCode": "IMEI-APL-WRN",
+        "serviceStatus": "active",
+        "supplierServiceId": 4,
+        "supplierServiceName": "Apple Warranty & Activation Date",
+        "priority": 2,
+        "cost": "0.0500",
+        "slaMinutes": 1,
+        "chain": [
+          {
+            "priority": 1,
+            "supplierId": 3,
+            "supplierName": "Rapid IMEI",
+            "supplierServiceId": 3,
+            "supplierServiceName": "Apple Warranty & Activation Date"
+          },
+          {
+            "priority": 2,
+            "supplierId": 1,
+            "supplierName": "Nordic GSM",
+            "supplierServiceId": 4,
+            "supplierServiceName": "Apple Warranty & Activation Date"
+          }
+        ]
+      },
+      {
+        "serviceId": 3,
+        "serviceName": "Samsung Info (KG / FRP / Region)",
+        "serviceCode": "IMEI-SAM-INF",
+        "serviceStatus": "active",
+        "supplierServiceId": 6,
+        "supplierServiceName": "Samsung Info (KG / FRP / Region)",
+        "priority": 2,
+        "cost": "0.0700",
+        "slaMinutes": 2,
+        "chain": [
+          {
+            "priority": 1,
+            "supplierId": 3,
+            "supplierName": "Rapid IMEI",
+            "supplierServiceId": 5,
+            "supplierServiceName": "Samsung Info (KG / FRP / Region)"
+          },
+          {
+            "priority": 2,
+            "supplierId": 1,
+            "supplierName": "Nordic GSM",
+            "supplierServiceId": 6,
+            "supplierServiceName": "Samsung Info (KG / FRP / Region)"
+          }
+        ]
+      },
+      {
+        "serviceId": 4,
+        "serviceName": "Blacklist Status (GSMA)",
+        "serviceCode": "IMEI-BLK-CHK",
+        "serviceStatus": "active",
+        "supplierServiceId": 8,
+        "supplierServiceName": "Blacklist Status (GSMA)",
+        "priority": 2,
+        "cost": "0.0400",
+        "slaMinutes": 1,
+        "chain": [
+          {
+            "priority": 1,
+            "supplierId": 3,
+            "supplierName": "Rapid IMEI",
+            "supplierServiceId": 7,
+            "supplierServiceName": "Blacklist Status (GSMA)"
+          },
+          {
+            "priority": 2,
+            "supplierId": 1,
+            "supplierName": "Nordic GSM",
+            "supplierServiceId": 8,
+            "supplierServiceName": "Blacklist Status (GSMA)"
+          }
+        ]
+      },
+      {
+        "serviceId": 5,
+        "serviceName": "AT&T USA Premier Unlock",
+        "serviceCode": "IMEI-ATT-USA",
+        "serviceStatus": "active",
+        "supplierServiceId": 9,
+        "supplierServiceName": "AT&T USA Premier Unlock",
+        "priority": 1,
+        "cost": "13.5000",
+        "slaMinutes": 2880,
+        "chain": [
+          {
+            "priority": 1,
+            "supplierId": 1,
+            "supplierName": "Nordic GSM",
+            "supplierServiceId": 9,
+            "supplierServiceName": "AT&T USA Premier Unlock"
+          },
+          {
+            "priority": 2,
+            "supplierId": 6,
+            "supplierName": "Bosphorus Unlock",
+            "supplierServiceId": 10,
+            "supplierServiceName": "AT&T USA Premier Unlock"
+          }
+        ]
+      },
+      {
+        "serviceId": 6,
+        "serviceName": "T-Mobile USA Unlock",
+        "serviceCode": "IMEI-TMO-USA",
+        "serviceStatus": "active",
+        "supplierServiceId": 11,
+        "supplierServiceName": "T-Mobile USA Unlock",
+        "priority": 1,
+        "cost": "9.8000",
+        "slaMinutes": 1440,
+        "chain": [
+          {
+            "priority": 1,
+            "supplierId": 1,
+            "supplierName": "Nordic GSM",
+            "supplierServiceId": 11,
+            "supplierServiceName": "T-Mobile USA Unlock"
+          },
+          {
+            "priority": 2,
+            "supplierId": 6,
+            "supplierName": "Bosphorus Unlock",
+            "supplierServiceId": 12,
+            "supplierServiceName": "T-Mobile USA Unlock"
+          }
+        ]
+      },
+      {
+        "serviceId": 7,
+        "serviceName": "Verizon USA Clean Unlock",
+        "serviceCode": "IMEI-VZW-USA",
+        "serviceStatus": "active",
+        "supplierServiceId": 14,
+        "supplierServiceName": "Verizon USA Clean Unlock",
+        "priority": 2,
+        "cost": "5.6000",
+        "slaMinutes": 720,
+        "chain": [
+          {
+            "priority": 1,
+            "supplierId": 6,
+            "supplierName": "Bosphorus Unlock",
+            "supplierServiceId": 13,
+            "supplierServiceName": "Verizon USA Clean Unlock"
+          },
+          {
+            "priority": 2,
+            "supplierId": 1,
+            "supplierName": "Nordic GSM",
+            "supplierServiceId": 14,
+            "supplierServiceName": "Verizon USA Clean Unlock"
+          }
+        ]
+      },
+      {
+        "serviceId": 8,
+        "serviceName": "Vodafone UK iPhone Unlock",
+        "serviceCode": "IMEI-VOD-UK",
+        "serviceStatus": "active",
+        "supplierServiceId": 16,
+        "supplierServiceName": "Vodafone UK iPhone Unlock",
+        "priority": 2,
+        "cost": "7.2000",
+        "slaMinutes": 1440,
+        "chain": [
+          {
+            "priority": 1,
+            "supplierId": 6,
+            "supplierName": "Bosphorus Unlock",
+            "supplierServiceId": 15,
+            "supplierServiceName": "Vodafone UK iPhone Unlock"
+          },
+          {
+            "priority": 2,
+            "supplierId": 1,
+            "supplierName": "Nordic GSM",
+            "supplierServiceId": 16,
+            "supplierServiceName": "Vodafone UK iPhone Unlock"
+          }
+        ]
+      },
+      {
+        "serviceId": 9,
+        "serviceName": "EE UK Unlock",
+        "serviceCode": "IMEI-EE-UK",
+        "serviceStatus": "active",
+        "supplierServiceId": 18,
+        "supplierServiceName": "EE UK Unlock",
+        "priority": 2,
+        "cost": "6.4000",
+        "slaMinutes": 1440,
+        "chain": [
+          {
+            "priority": 1,
+            "supplierId": 6,
+            "supplierName": "Bosphorus Unlock",
+            "supplierServiceId": 17,
+            "supplierServiceName": "EE UK Unlock"
+          },
+          {
+            "priority": 2,
+            "supplierId": 1,
+            "supplierName": "Nordic GSM",
+            "supplierServiceId": 18,
+            "supplierServiceName": "EE UK Unlock"
+          }
+        ]
+      },
+      {
+        "serviceId": 10,
+        "serviceName": "Orange France Unlock",
+        "serviceCode": "IMEI-ORG-FR",
+        "serviceStatus": "active",
+        "supplierServiceId": 19,
+        "supplierServiceName": "Orange France Unlock",
+        "priority": 1,
+        "cost": "11.2000",
+        "slaMinutes": 2880,
+        "chain": [
+          {
+            "priority": 1,
+            "supplierId": 1,
+            "supplierName": "Nordic GSM",
+            "supplierServiceId": 19,
+            "supplierServiceName": "Orange France Unlock"
+          },
+          {
+            "priority": 2,
+            "supplierId": 6,
+            "supplierName": "Bosphorus Unlock",
+            "supplierServiceId": 20,
+            "supplierServiceName": "Orange France Unlock"
+          }
+        ]
+      },
+      {
+        "serviceId": 11,
+        "serviceName": "MDM Removal, iPhone Premium",
+        "serviceCode": "IMEI-MDM-PRM",
+        "serviceStatus": "active",
+        "supplierServiceId": 21,
+        "supplierServiceName": "MDM Removal, iPhone Premium",
+        "priority": 1,
+        "cost": "24.0000",
+        "slaMinutes": 4320,
+        "chain": [
+          {
+            "priority": 1,
+            "supplierId": 1,
+            "supplierName": "Nordic GSM",
+            "supplierServiceId": 21,
+            "supplierServiceName": "MDM Removal, iPhone Premium"
+          },
+          {
+            "priority": 2,
+            "supplierId": 6,
+            "supplierName": "Bosphorus Unlock",
+            "supplierServiceId": 22,
+            "supplierServiceName": "MDM Removal, iPhone Premium"
+          }
+        ]
+      },
+      {
+        "serviceId": 12,
+        "serviceName": "iCloud Lost Mode Removal",
+        "serviceCode": "IMEI-ICL-LOST",
+        "serviceStatus": "active",
+        "supplierServiceId": 23,
+        "supplierServiceName": "iCloud Lost Mode Removal",
+        "priority": 1,
+        "cost": "32.0000",
+        "slaMinutes": 2880,
+        "chain": [
+          {
+            "priority": 1,
+            "supplierId": 1,
+            "supplierName": "Nordic GSM",
+            "supplierServiceId": 23,
+            "supplierServiceName": "iCloud Lost Mode Removal"
+          },
+          {
+            "priority": 2,
+            "supplierId": 6,
+            "supplierName": "Bosphorus Unlock",
+            "supplierServiceId": 24,
+            "supplierServiceName": "iCloud Lost Mode Removal"
+          }
+        ]
+      },
+      {
+        "serviceId": 13,
+        "serviceName": "Samsung KG Lock Fix",
+        "serviceCode": "IMEI-SAM-KG",
+        "serviceStatus": "active",
+        "supplierServiceId": 25,
+        "supplierServiceName": "Samsung KG Lock Fix",
+        "priority": 1,
+        "cost": "7.5000",
+        "slaMinutes": 60,
+        "chain": [
+          {
+            "priority": 1,
+            "supplierId": 1,
+            "supplierName": "Nordic GSM",
+            "supplierServiceId": 25,
+            "supplierServiceName": "Samsung KG Lock Fix"
+          },
+          {
+            "priority": 2,
+            "supplierId": 6,
+            "supplierName": "Bosphorus Unlock",
+            "supplierServiceId": 26,
+            "supplierServiceName": "Samsung KG Lock Fix"
+          }
+        ]
+      },
+      {
+        "serviceId": 14,
+        "serviceName": "Xiaomi Mi Account Clean",
+        "serviceCode": "IMEI-XIA-MI",
+        "serviceStatus": "disabled",
+        "supplierServiceId": 28,
+        "supplierServiceName": "Xiaomi Mi Account Clean",
+        "priority": 2,
+        "cost": "4.2000",
+        "slaMinutes": 180,
+        "chain": [
+          {
+            "priority": 1,
+            "supplierId": 6,
+            "supplierName": "Bosphorus Unlock",
+            "supplierServiceId": 27,
+            "supplierServiceName": "Xiaomi Mi Account Clean"
+          },
+          {
+            "priority": 2,
+            "supplierId": 1,
+            "supplierName": "Nordic GSM",
+            "supplierServiceId": 28,
+            "supplierServiceName": "Xiaomi Mi Account Clean"
+          }
+        ]
+      }
+    ]
+  }
+}

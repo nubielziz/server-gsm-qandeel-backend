@@ -1,0 +1,16 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "kind": "email",
+    "display": "jt.****@tempbox.example",
+    "reason": "Chargeback lost",
+    "expiresAt": null,
+    "source": "chargeback",
+    "createdBy": null,
+    "createdAt": "2026-10-22T12:00:00.000Z"
+  }
+}

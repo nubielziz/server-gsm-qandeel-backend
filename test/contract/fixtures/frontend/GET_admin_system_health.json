@@ -1,0 +1,1207 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "status": "operational",
+    "since": "2026-10-22T12:47:00.000Z",
+    "checkedAt": "2026-10-31T12:00:00.000Z",
+    "monitoring": {
+      "status": "available",
+      "detail": null,
+      "lastScrapeAt": "2026-10-31T12:00:00.000Z"
+    },
+    "build": {
+      "version": "v1.42.0",
+      "commit": "9c4e1fa",
+      "environment": "production",
+      "deployedAt": "2026-10-30T06:00:00.000Z"
+    },
+    "components": [
+      {
+        "key": "api",
+        "name": "API",
+        "kind": "core",
+        "status": "ok",
+        "since": "2026-10-13T21:00:00.000Z",
+        "latency": {
+          "value": 36,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 300,
+          "crit": 1000,
+          "direction": "above"
+        },
+        "uptime": {
+          "h24": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d7": {
+            "value": 99.97,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d30": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          }
+        },
+        "lastCheckedAt": "2026-10-31T12:00:00.000Z",
+        "detail": null,
+        "supplierId": null,
+        "gatewayId": null
+      },
+      {
+        "key": "postgres",
+        "name": "Postgres",
+        "kind": "core",
+        "status": "ok",
+        "since": "2026-10-18T08:00:00.000Z",
+        "latency": {
+          "value": 4.1,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 100,
+          "crit": 500,
+          "direction": "above"
+        },
+        "uptime": {
+          "h24": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d7": {
+            "value": 99.99,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d30": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          }
+        },
+        "lastCheckedAt": "2026-10-31T12:00:00.000Z",
+        "detail": null,
+        "supplierId": null,
+        "gatewayId": null
+      },
+      {
+        "key": "redis",
+        "name": "Redis",
+        "kind": "core",
+        "status": "ok",
+        "since": "2026-10-21T17:00:00.000Z",
+        "latency": {
+          "value": 2.3,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 50,
+          "crit": 250,
+          "direction": "above"
+        },
+        "uptime": {
+          "h24": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d7": {
+            "value": 99.99,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d30": {
+            "value": 99.97,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          }
+        },
+        "lastCheckedAt": "2026-10-31T12:00:00.000Z",
+        "detail": null,
+        "supplierId": null,
+        "gatewayId": null
+      },
+      {
+        "key": "storage",
+        "name": "File storage",
+        "kind": "core",
+        "status": "ok",
+        "since": "2026-10-14T20:00:00.000Z",
+        "latency": {
+          "value": 129,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 800,
+          "crit": 2000,
+          "direction": "above"
+        },
+        "uptime": {
+          "h24": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d7": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d30": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          }
+        },
+        "lastCheckedAt": "2026-10-31T12:00:00.000Z",
+        "detail": null,
+        "supplierId": null,
+        "gatewayId": null
+      },
+      {
+        "key": "workers",
+        "name": "Queue workers",
+        "kind": "core",
+        "status": "ok",
+        "since": "2026-10-17T09:00:00.000Z",
+        "latency": {
+          "value": 34,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 200,
+          "crit": 1000,
+          "direction": "above"
+        },
+        "uptime": {
+          "h24": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d7": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d30": {
+            "value": 99.95,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          }
+        },
+        "lastCheckedAt": "2026-10-31T12:00:00.000Z",
+        "detail": null,
+        "supplierId": null,
+        "gatewayId": null
+      },
+      {
+        "key": "mail",
+        "name": "Email relay",
+        "kind": "core",
+        "status": "ok",
+        "since": "2026-10-13T16:00:00.000Z",
+        "latency": {
+          "value": 386,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 1500,
+          "crit": 4000,
+          "direction": "above"
+        },
+        "uptime": {
+          "h24": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d7": {
+            "value": 99.98,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d30": {
+            "value": 99.99,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          }
+        },
+        "lastCheckedAt": "2026-10-31T12:00:00.000Z",
+        "detail": null,
+        "supplierId": null,
+        "gatewayId": null
+      },
+      {
+        "key": "supplier:1",
+        "name": "Nordic GSM",
+        "kind": "supplier",
+        "status": "ok",
+        "since": "2026-10-13T00:00:00.000Z",
+        "latency": {
+          "value": 341,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 2000,
+          "crit": 5000,
+          "direction": "above"
+        },
+        "uptime": {
+          "h24": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d7": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d30": {
+            "value": 99.99,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          }
+        },
+        "lastCheckedAt": "2026-10-31T12:00:00.000Z",
+        "detail": null,
+        "supplierId": 1,
+        "gatewayId": null
+      },
+      {
+        "key": "supplier:2",
+        "name": "Gulf Server Hub",
+        "kind": "supplier",
+        "status": "ok",
+        "since": "2026-10-22T11:00:00.000Z",
+        "latency": {
+          "value": 405,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 2000,
+          "crit": 5000,
+          "direction": "above"
+        },
+        "uptime": {
+          "h24": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d7": {
+            "value": 99.97,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d30": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          }
+        },
+        "lastCheckedAt": "2026-10-31T12:00:00.000Z",
+        "detail": null,
+        "supplierId": 2,
+        "gatewayId": null
+      },
+      {
+        "key": "supplier:3",
+        "name": "Rapid IMEI",
+        "kind": "supplier",
+        "status": "ok",
+        "since": "2026-10-20T20:00:00.000Z",
+        "latency": {
+          "value": 563,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 2000,
+          "crit": 5000,
+          "direction": "above"
+        },
+        "uptime": {
+          "h24": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d7": {
+            "value": 99.98,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d30": {
+            "value": 99.97,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          }
+        },
+        "lastCheckedAt": "2026-10-31T12:00:00.000Z",
+        "detail": null,
+        "supplierId": 3,
+        "gatewayId": null
+      },
+      {
+        "key": "supplier:4",
+        "name": "RemoteDesk Pro",
+        "kind": "supplier",
+        "status": "ok",
+        "since": "2026-10-12T00:00:00.000Z",
+        "latency": {
+          "value": 621,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 2000,
+          "crit": 5000,
+          "direction": "above"
+        },
+        "uptime": {
+          "h24": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d7": {
+            "value": 99.97,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d30": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          }
+        },
+        "lastCheckedAt": "2026-10-31T12:00:00.000Z",
+        "detail": null,
+        "supplierId": 4,
+        "gatewayId": null
+      },
+      {
+        "key": "supplier:5",
+        "name": "FileForge",
+        "kind": "supplier",
+        "status": "ok",
+        "since": "2026-10-18T20:00:00.000Z",
+        "latency": {
+          "value": 592,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 2000,
+          "crit": 5000,
+          "direction": "above"
+        },
+        "uptime": {
+          "h24": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d7": {
+            "value": 99.98,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d30": {
+            "value": 99.99,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          }
+        },
+        "lastCheckedAt": "2026-10-31T12:00:00.000Z",
+        "detail": null,
+        "supplierId": 5,
+        "gatewayId": null
+      },
+      {
+        "key": "supplier:6",
+        "name": "Bosphorus Unlock",
+        "kind": "supplier",
+        "status": "ok",
+        "since": "2026-10-22T06:00:00.000Z",
+        "latency": {
+          "value": 982,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 2000,
+          "crit": 5000,
+          "direction": "above"
+        },
+        "uptime": {
+          "h24": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d7": {
+            "value": 99.99,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d30": {
+            "value": 99.96,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          }
+        },
+        "lastCheckedAt": "2026-10-31T12:00:00.000Z",
+        "detail": null,
+        "supplierId": 6,
+        "gatewayId": null
+      },
+      {
+        "key": "gateway:1",
+        "name": "Card gateway",
+        "kind": "gateway",
+        "status": "ok",
+        "since": "2026-10-28T19:00:00.000Z",
+        "latency": {
+          "value": 426,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 1500,
+          "crit": 4000,
+          "direction": "above"
+        },
+        "uptime": {
+          "h24": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d7": {
+            "value": 99.99,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d30": {
+            "value": 99.97,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          }
+        },
+        "lastCheckedAt": "2026-10-31T12:00:00.000Z",
+        "detail": null,
+        "supplierId": null,
+        "gatewayId": 1
+      },
+      {
+        "key": "gateway:2",
+        "name": "Crypto gateway",
+        "kind": "gateway",
+        "status": "ok",
+        "since": "2026-10-20T17:00:00.000Z",
+        "latency": {
+          "value": 701,
+          "unit": "ms",
+          "state": "ok",
+          "warn": 1500,
+          "crit": 4000,
+          "direction": "above"
+        },
+        "uptime": {
+          "h24": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d7": {
+            "value": 100,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          },
+          "d30": {
+            "value": 99.96,
+            "unit": "percent",
+            "state": "ok",
+            "warn": 99.9,
+            "crit": 99.5,
+            "direction": "below"
+          }
+        },
+        "lastCheckedAt": "2026-10-31T12:00:00.000Z",
+        "detail": null,
+        "supplierId": null,
+        "gatewayId": 2
+      }
+    ],
+    "uptime": {
+      "h24": {
+        "value": 100,
+        "unit": "percent",
+        "state": "ok",
+        "warn": 99.9,
+        "crit": 99.5,
+        "direction": "below"
+      },
+      "d7": {
+        "value": 100,
+        "unit": "percent",
+        "state": "ok",
+        "warn": 99.9,
+        "crit": 99.5,
+        "direction": "below"
+      },
+      "d30": {
+        "value": 99.98,
+        "unit": "percent",
+        "state": "ok",
+        "warn": 99.9,
+        "crit": 99.5,
+        "direction": "below"
+      },
+      "daily": [
+        {
+          "at": "2026-10-02T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-03T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-04T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-05T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-06T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-07T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-08T00:00:00.000Z",
+          "value": 99.9
+        },
+        {
+          "at": "2026-10-09T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-10T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-11T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-12T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-13T00:00:00.000Z",
+          "value": 99.94
+        },
+        {
+          "at": "2026-10-14T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-15T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-16T00:00:00.000Z",
+          "value": 99.87
+        },
+        {
+          "at": "2026-10-17T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-18T00:00:00.000Z",
+          "value": 99.94
+        },
+        {
+          "at": "2026-10-19T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-20T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-21T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-22T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-23T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-24T00:00:00.000Z",
+          "value": 99.94
+        },
+        {
+          "at": "2026-10-25T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-26T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-27T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-28T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-29T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-30T00:00:00.000Z",
+          "value": 100
+        },
+        {
+          "at": "2026-10-31T00:00:00.000Z",
+          "value": 100
+        }
+      ]
+    },
+    "alerts": {
+      "open": {
+        "value": 0,
+        "unit": "count",
+        "state": "ok",
+        "warn": 1
+      },
+      "critical": 0,
+      "items": [],
+      "trend": [
+        {
+          "at": "2026-10-30T12:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T12:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T12:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T13:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T13:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T13:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T13:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T14:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T14:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T14:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T14:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T15:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T15:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T15:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T15:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T16:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T16:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T16:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T16:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T17:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T17:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T17:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T17:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T18:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T18:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T18:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T18:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T19:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T19:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T19:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T19:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T20:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T20:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T20:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T20:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T21:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T21:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T21:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T21:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T22:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T22:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T22:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T22:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T23:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T23:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T23:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-30T23:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T00:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T00:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T00:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T00:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T01:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T01:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T01:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T01:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T02:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T02:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T02:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T02:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T03:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T03:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T03:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T03:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T04:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T04:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T04:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T04:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T05:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T05:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T05:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T05:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T06:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T06:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T06:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T06:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T07:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T07:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T07:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T07:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T08:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T08:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T08:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T08:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T09:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T09:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T09:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T09:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T10:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T10:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T10:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T10:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T11:00:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T11:15:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T11:30:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T11:45:00.000Z",
+          "value": 0
+        },
+        {
+          "at": "2026-10-31T12:00:00.000Z",
+          "value": 0
+        }
+      ]
+    },
+    "incidents": [],
+    "maintenance": {
+      "enabled": false,
+      "scope": null,
+      "message": null,
+      "expectedEndAt": null,
+      "startedAt": null,
+      "startedBy": null
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "name": "Apple",
+    "type": "imei",
+    "allowedGroupIds": [],
+    "sort": 1,
+    "isActive": true,
+    "serviceCount": 4
+  }
+}

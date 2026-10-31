@@ -1,0 +1,64 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 2004,
+    "orderId": 20405,
+    "status": "under_review",
+    "reasonCode": "Fraudulent (10.4)",
+    "note": "Customer says they did not make this purchase",
+    "amount": "11.9900",
+    "fee": "15.0000",
+    "currency": "USD",
+    "fx": "1",
+    "evidenceDueAt": "2026-11-02T12:00:00.000Z",
+    "submittedAt": "2026-10-31T12:00:00.000Z",
+    "resolvedAt": null,
+    "createdAt": "2026-10-24T12:00:00.000Z",
+    "customer": {
+      "id": 25,
+      "name": "Olivia Grant"
+    },
+    "evidence": [
+      {
+        "key": "payment",
+        "title": "Payment record",
+        "ok": true,
+        "body": "Mastercard 7760, $11.99 captured 05 Oct, 12:17. Gateway ref pi_3Q988xK9114."
+      },
+      {
+        "key": "three_ds",
+        "title": "3D Secure authentication",
+        "ok": true,
+        "body": "The cardholder passed the bank’s own check. For fraud disputes this usually shifts liability to the bank."
+      },
+      {
+        "key": "delivery",
+        "title": "Proof of delivery",
+        "ok": true,
+        "body": "Result delivered 05 Oct, 23:17 to ol•••@mail.example: “Unlock confirmed by the carrier. Insert a SIM from another network and restart your phone.”"
+      },
+      {
+        "key": "consents",
+        "title": "Terms the customer accepted",
+        "ok": true,
+        "body": "Terms of service v3.2; Privacy policy v2.1; Refund policy v1.4; Digital service starts now, right of withdrawal is waived; Marketing emails (opt-in). Recorded from IP 203.0.113.210."
+      },
+      {
+        "key": "history",
+        "title": "Order history",
+        "ok": true,
+        "body": "5 earlier paid orders from the same customer that were not disputed."
+      },
+      {
+        "key": "contact",
+        "title": "Customer contact",
+        "ok": true,
+        "body": "The customer never contacted support about this order."
+      }
+    ],
+    "strength": "strong"
+  }
+}

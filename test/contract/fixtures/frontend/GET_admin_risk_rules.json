@@ -1,0 +1,50 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "rules": [
+      {
+        "id": "blockBlacklistedImei",
+        "on": true,
+        "value": null
+      },
+      {
+        "id": "reviewThreshold",
+        "on": true,
+        "value": 50
+      },
+      {
+        "id": "blockThreshold",
+        "on": true,
+        "value": 80
+      },
+      {
+        "id": "maxOrdersPerEmail",
+        "on": true,
+        "value": 3
+      },
+      {
+        "id": "reviewFirstOrderAbove",
+        "on": true,
+        "value": 40
+      },
+      {
+        "id": "require3ds",
+        "on": true,
+        "value": null
+      },
+      {
+        "id": "reviewIpCountryMismatch",
+        "on": true,
+        "value": null
+      },
+      {
+        "id": "blockDisposableEmail",
+        "on": false,
+        "value": null
+      }
+    ]
+  }
+}

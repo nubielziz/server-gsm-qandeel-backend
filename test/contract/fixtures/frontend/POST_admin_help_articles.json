@@ -1,0 +1,19 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "category": "Harvest sample text.",
+    "question": "Harvest sample text.",
+    "answerMd": "Harvest sample text.",
+    "locale": "en",
+    "isPublished": false,
+    "helpfulYes": 0,
+    "helpfulNo": 0,
+    "sort": 13,
+    "createdAt": "2026-10-31T12:00:00.000Z",
+    "updatedAt": "2026-10-31T12:00:00.000Z",
+    "id": 13
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "ruleId": 5,
+    "value": 192,
+    "subjectType": "queue",
+    "subjectId": 0,
+    "startedAt": "2026-10-31T11:38:00.000Z",
+    "acknowledgedAt": "2026-10-31T12:00:00.000Z",
+    "resolvedAt": null,
+    "status": "acknowledged",
+    "severity": "warning",
+    "rule": {
+      "id": 5,
+      "key": "queue_oldest_job",
+      "name": "Oldest queued job",
+      "metric": "queue.oldest_age",
+      "comparator": "gt",
+      "threshold": 120,
+      "windowSeconds": 120,
+      "unit": "s"
+    },
+    "subjectLabel": "orders.dispatch",
+    "acknowledgedBy": {
+      "id": 1,
+      "name": "Rami K."
+    },
+    "note": null,
+    "incidentId": null,
+    "id": 12
+  }
+}

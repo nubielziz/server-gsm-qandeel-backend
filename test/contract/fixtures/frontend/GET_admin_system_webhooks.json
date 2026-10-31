@@ -1,0 +1,52 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "outgoing": {
+      "successRate": {
+        "value": 98.74,
+        "unit": "percent",
+        "state": "ok",
+        "warn": 97,
+        "crit": 90,
+        "direction": "below"
+      },
+      "delivered": 3214,
+      "failed": 41,
+      "retrying": 5,
+      "oldestUndeliveredAt": "2026-10-31T11:59:20.000Z",
+      "oldestAge": {
+        "value": 40,
+        "unit": "s",
+        "state": "ok",
+        "warn": 300,
+        "crit": 1800,
+        "direction": "above"
+      }
+    },
+    "incoming": {
+      "successRate": {
+        "value": 99.77,
+        "unit": "percent",
+        "state": "ok",
+        "warn": 97,
+        "crit": 90,
+        "direction": "below"
+      },
+      "delivered": 884,
+      "failed": 2,
+      "retrying": 0,
+      "oldestUndeliveredAt": null,
+      "oldestAge": {
+        "value": 0,
+        "unit": "s",
+        "state": "ok",
+        "warn": 300,
+        "crit": 1800,
+        "direction": "above"
+      }
+    }
+  }
+}

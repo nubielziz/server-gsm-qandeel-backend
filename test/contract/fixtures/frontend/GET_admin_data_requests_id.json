@@ -1,0 +1,19 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 31,
+    "customerId": 4,
+    "kind": "export",
+    "status": "completed",
+    "requestedAt": "2026-10-19T12:00:00.000Z",
+    "dueAt": "2026-11-18T12:00:00.000Z",
+    "completedAt": "2026-10-21T12:00:00.000Z",
+    "handledBy": 1,
+    "fileId": null,
+    "createdAt": "2026-10-19T12:00:00.000Z",
+    "customerName": "Emma Dubois"
+  }
+}

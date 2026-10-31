@@ -1,0 +1,47 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "title": "Supplier timeouts",
+    "severity": "major",
+    "status": "identified",
+    "components": [
+      "supplier:3"
+    ],
+    "summary": "Rapid IMEI answers in about 6 seconds and times out. Orders sent to it are late.",
+    "timeline": [
+      {
+        "at": "2026-10-31T11:32:00.000Z",
+        "status": "investigating",
+        "text": "Timeouts on Rapid IMEI, the first one about ten minutes ago. Checking with the supplier.",
+        "by": {
+          "id": 4,
+          "name": "Dana M."
+        }
+      },
+      {
+        "at": "2026-10-31T11:43:00.000Z",
+        "status": "identified",
+        "text": "The supplier confirmed a problem on its side and has no time to fix yet.",
+        "by": {
+          "id": 4,
+          "name": "Dana M."
+        }
+      }
+    ],
+    "rootCause": null,
+    "startedAt": "2026-10-31T11:32:00.000Z",
+    "resolvedAt": null,
+    "alertEventId": 11,
+    "createdBy": {
+      "id": 4,
+      "name": "Dana M."
+    },
+    "resolvedBy": null,
+    "createdAt": "2026-10-31T11:32:00.000Z",
+    "updatedAt": "2026-10-31T12:00:00.000Z",
+    "id": 5
+  }
+}

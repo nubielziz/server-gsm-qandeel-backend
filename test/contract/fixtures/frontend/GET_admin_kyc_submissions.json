@@ -1,0 +1,225 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "6"
+  },
+  "body": [
+    {
+      "id": 1,
+      "clientId": 18,
+      "status": "pending",
+      "fileIds": [
+        9002,
+        9003
+      ],
+      "files": [
+        {
+          "id": 9002,
+          "filename": "passport.jpg",
+          "mime": "image/jpeg",
+          "size": 482000
+        },
+        {
+          "id": 9003,
+          "filename": "trade-licence.pdf",
+          "mime": "application/pdf",
+          "size": 1240000
+        }
+      ],
+      "reviewedAt": null,
+      "reviewedBy": null,
+      "note": "",
+      "createdAt": "2026-10-30T12:00:00.000Z",
+      "client": {
+        "id": 18,
+        "name": "Algiers Service Plus",
+        "email": "ops@algiersservice.example",
+        "country": "DZ",
+        "status": "pending"
+      }
+    },
+    {
+      "id": 2,
+      "clientId": 20,
+      "status": "pending",
+      "fileIds": [
+        9004,
+        9005
+      ],
+      "files": [
+        {
+          "id": 9004,
+          "filename": "passport.jpg",
+          "mime": "image/jpeg",
+          "size": 482000
+        },
+        {
+          "id": 9005,
+          "filename": "trade-licence.pdf",
+          "mime": "application/pdf",
+          "size": 1240000
+        }
+      ],
+      "reviewedAt": null,
+      "reviewedBy": null,
+      "note": "",
+      "createdAt": "2026-10-30T12:00:00.000Z",
+      "client": {
+        "id": 20,
+        "name": "Accra Devices",
+        "email": "ops@accradevices.example",
+        "country": "GH",
+        "status": "pending"
+      }
+    },
+    {
+      "id": 3,
+      "clientId": 1,
+      "status": "approved",
+      "fileIds": [
+        9006,
+        9007
+      ],
+      "files": [
+        {
+          "id": 9006,
+          "filename": "passport.jpg",
+          "mime": "image/jpeg",
+          "size": 482000
+        },
+        {
+          "id": 9007,
+          "filename": "trade-licence.pdf",
+          "mime": "application/pdf",
+          "size": 1240000
+        }
+      ],
+      "reviewedAt": "2026-10-11T12:00:00.000Z",
+      "reviewedBy": {
+        "id": 1,
+        "name": "Rami K."
+      },
+      "note": "Documents match the trade licence.",
+      "createdAt": "2026-10-10T12:00:00.000Z",
+      "client": {
+        "id": 1,
+        "name": "Zain Mobile Hub",
+        "email": "ops@zainmobilehub.example",
+        "country": "JO",
+        "status": "active"
+      }
+    },
+    {
+      "id": 4,
+      "clientId": 2,
+      "status": "approved",
+      "fileIds": [
+        9008,
+        9009
+      ],
+      "files": [
+        {
+          "id": 9008,
+          "filename": "passport.jpg",
+          "mime": "image/jpeg",
+          "size": 482000
+        },
+        {
+          "id": 9009,
+          "filename": "trade-licence.pdf",
+          "mime": "application/pdf",
+          "size": 1240000
+        }
+      ],
+      "reviewedAt": "2026-10-10T12:00:00.000Z",
+      "reviewedBy": {
+        "id": 1,
+        "name": "Rami K."
+      },
+      "note": "Documents match the trade licence.",
+      "createdAt": "2026-10-09T12:00:00.000Z",
+      "client": {
+        "id": 2,
+        "name": "Al-Noor Telecom",
+        "email": "ops@alnoortelecom.example",
+        "country": "SA",
+        "status": "active"
+      }
+    },
+    {
+      "id": 5,
+      "clientId": 3,
+      "status": "approved",
+      "fileIds": [
+        9010,
+        9011
+      ],
+      "files": [
+        {
+          "id": 9010,
+          "filename": "passport.jpg",
+          "mime": "image/jpeg",
+          "size": 482000
+        },
+        {
+          "id": 9011,
+          "filename": "trade-licence.pdf",
+          "mime": "application/pdf",
+          "size": 1240000
+        }
+      ],
+      "reviewedAt": "2026-10-09T12:00:00.000Z",
+      "reviewedBy": {
+        "id": 1,
+        "name": "Rami K."
+      },
+      "note": "Documents match the trade licence.",
+      "createdAt": "2026-10-08T12:00:00.000Z",
+      "client": {
+        "id": 3,
+        "name": "Phone Doctor FZE",
+        "email": "ops@phonedoctorfze.example",
+        "country": "AE",
+        "status": "active"
+      }
+    },
+    {
+      "id": 6,
+      "clientId": 19,
+      "status": "rejected",
+      "fileIds": [
+        9012,
+        9013
+      ],
+      "files": [
+        {
+          "id": 9012,
+          "filename": "passport.jpg",
+          "mime": "image/jpeg",
+          "size": 482000
+        },
+        {
+          "id": 9013,
+          "filename": "trade-licence.pdf",
+          "mime": "application/pdf",
+          "size": 1240000
+        }
+      ],
+      "reviewedAt": "2026-09-22T12:00:00.000Z",
+      "reviewedBy": {
+        "id": 1,
+        "name": "Rami K."
+      },
+      "note": "The passport photo was unreadable.",
+      "createdAt": "2026-09-21T12:00:00.000Z",
+      "client": {
+        "id": 19,
+        "name": "Tunis Fix Point",
+        "email": "ops@tunisfixpoint.example",
+        "country": "TN",
+        "status": "suspended"
+      }
+    }
+  ]
+}

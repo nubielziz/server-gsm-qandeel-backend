@@ -1,0 +1,19 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1,
+    "code": "USD",
+    "name": "US dollar",
+    "rateToBase": "1.0000",
+    "rateUpdatedAt": "2026-10-31T07:00:00.000Z",
+    "markupPercent": "0.0000",
+    "charmRounding": false,
+    "isStorefront": true,
+    "decimals": 2,
+    "isActive": true,
+    "createdAt": "2026-10-31T07:00:00.000Z"
+  }
+}

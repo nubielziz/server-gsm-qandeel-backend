@@ -1,0 +1,37 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 1000,
+    "purpose": "topup",
+    "status": "approved",
+    "methodType": "bank",
+    "amount": "360.0000",
+    "feeAmount": "0.0000",
+    "netAmount": "360.0000",
+    "currency": "USD",
+    "gatewayTxnId": "TRX-1431693",
+    "capturedAt": "2026-09-27T13:21:00.000Z",
+    "createdAt": "2026-09-27T13:00:00.000Z",
+    "invoiceId": 1,
+    "receiptFileId": 10000,
+    "client": {
+      "id": 11,
+      "name": "Istanbul GSM Care",
+      "group": "Wholesale",
+      "walletBalance": "265.9600"
+    },
+    "gateway": {
+      "id": 3,
+      "name": "Bank transfer"
+    },
+    "reviewedBy": {
+      "id": null,
+      "name": "Omar T."
+    },
+    "reviewedAt": "2026-09-27T13:21:00.000Z",
+    "note": null
+  }
+}

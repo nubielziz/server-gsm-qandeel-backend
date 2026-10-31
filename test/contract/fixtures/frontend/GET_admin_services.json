@@ -1,0 +1,701 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "27"
+  },
+  "body": [
+    {
+      "id": 1,
+      "name": "iCloud Clean / Lost Check",
+      "code": "IMEI-ICL-CHK",
+      "type": "imei",
+      "status": "active",
+      "executionMode": "auto",
+      "categoryId": 1,
+      "category": {
+        "id": 1,
+        "name": "Apple"
+      },
+      "basePrice": "0.1300",
+      "cost": "0.0800",
+      "costChangedFrom": null,
+      "minProfit": "0.0200",
+      "floorPrice": "0.1000",
+      "marginPct": "38.4615",
+      "belowFloor": false,
+      "slaMinutes": 2,
+      "supplier": {
+        "id": 3,
+        "name": "Rapid IMEI"
+      },
+      "fallbackSupplier": {
+        "id": 1,
+        "name": "Nordic GSM"
+      }
+    },
+    {
+      "id": 2,
+      "name": "Apple Warranty & Activation Date",
+      "code": "IMEI-APL-WRN",
+      "type": "imei",
+      "status": "active",
+      "executionMode": "auto",
+      "categoryId": 1,
+      "category": {
+        "id": 1,
+        "name": "Apple"
+      },
+      "basePrice": "0.1000",
+      "cost": "0.0500",
+      "costChangedFrom": null,
+      "minProfit": "0.0200",
+      "floorPrice": "0.0700",
+      "marginPct": "50.0000",
+      "belowFloor": false,
+      "slaMinutes": 1,
+      "supplier": {
+        "id": 3,
+        "name": "Rapid IMEI"
+      },
+      "fallbackSupplier": {
+        "id": 1,
+        "name": "Nordic GSM"
+      }
+    },
+    {
+      "id": 3,
+      "name": "Samsung Info (KG / FRP / Region)",
+      "code": "IMEI-SAM-INF",
+      "type": "imei",
+      "status": "active",
+      "executionMode": "auto",
+      "categoryId": 2,
+      "category": {
+        "id": 2,
+        "name": "Samsung"
+      },
+      "basePrice": "0.1200",
+      "cost": "0.0700",
+      "costChangedFrom": null,
+      "minProfit": "0.0200",
+      "floorPrice": "0.0900",
+      "marginPct": "41.6667",
+      "belowFloor": false,
+      "slaMinutes": 2,
+      "supplier": {
+        "id": 3,
+        "name": "Rapid IMEI"
+      },
+      "fallbackSupplier": {
+        "id": 1,
+        "name": "Nordic GSM"
+      }
+    },
+    {
+      "id": 4,
+      "name": "Blacklist Status (GSMA)",
+      "code": "IMEI-BLK-CHK",
+      "type": "imei",
+      "status": "active",
+      "executionMode": "auto",
+      "categoryId": 3,
+      "category": {
+        "id": 3,
+        "name": "Generic"
+      },
+      "basePrice": "0.0900",
+      "cost": "0.0400",
+      "costChangedFrom": null,
+      "minProfit": "0.0200",
+      "floorPrice": "0.0600",
+      "marginPct": "55.5556",
+      "belowFloor": false,
+      "slaMinutes": 1,
+      "supplier": {
+        "id": 3,
+        "name": "Rapid IMEI"
+      },
+      "fallbackSupplier": {
+        "id": 1,
+        "name": "Nordic GSM"
+      }
+    },
+    {
+      "id": 5,
+      "name": "AT&T USA Premier Unlock",
+      "code": "IMEI-ATT-USA",
+      "type": "imei",
+      "status": "active",
+      "executionMode": "auto",
+      "categoryId": 4,
+      "category": {
+        "id": 4,
+        "name": "Carrier unlock"
+      },
+      "basePrice": "17.2800",
+      "cost": "13.5000",
+      "costChangedFrom": null,
+      "minProfit": "0.8100",
+      "floorPrice": "14.3100",
+      "marginPct": "21.8750",
+      "belowFloor": false,
+      "slaMinutes": 2880,
+      "supplier": {
+        "id": 1,
+        "name": "Nordic GSM"
+      },
+      "fallbackSupplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      }
+    },
+    {
+      "id": 6,
+      "name": "T-Mobile USA Unlock",
+      "code": "IMEI-TMO-USA",
+      "type": "imei",
+      "status": "active",
+      "executionMode": "auto",
+      "categoryId": 4,
+      "category": {
+        "id": 4,
+        "name": "Carrier unlock"
+      },
+      "basePrice": "12.7400",
+      "cost": "9.8000",
+      "costChangedFrom": null,
+      "minProfit": "0.5900",
+      "floorPrice": "10.3900",
+      "marginPct": "23.0769",
+      "belowFloor": false,
+      "slaMinutes": 1440,
+      "supplier": {
+        "id": 1,
+        "name": "Nordic GSM"
+      },
+      "fallbackSupplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      }
+    },
+    {
+      "id": 7,
+      "name": "Verizon USA Clean Unlock",
+      "code": "IMEI-VZW-USA",
+      "type": "imei",
+      "status": "active",
+      "executionMode": "auto",
+      "categoryId": 4,
+      "category": {
+        "id": 4,
+        "name": "Carrier unlock"
+      },
+      "basePrice": "7.5600",
+      "cost": "5.6000",
+      "costChangedFrom": null,
+      "minProfit": "0.3400",
+      "floorPrice": "5.9400",
+      "marginPct": "25.9259",
+      "belowFloor": false,
+      "slaMinutes": 720,
+      "supplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      },
+      "fallbackSupplier": {
+        "id": 1,
+        "name": "Nordic GSM"
+      }
+    },
+    {
+      "id": 8,
+      "name": "Vodafone UK iPhone Unlock",
+      "code": "IMEI-VOD-UK",
+      "type": "imei",
+      "status": "active",
+      "executionMode": "auto",
+      "categoryId": 4,
+      "category": {
+        "id": 4,
+        "name": "Carrier unlock"
+      },
+      "basePrice": "9.3600",
+      "cost": "7.2000",
+      "costChangedFrom": null,
+      "minProfit": "0.4300",
+      "floorPrice": "7.6300",
+      "marginPct": "23.0769",
+      "belowFloor": false,
+      "slaMinutes": 1440,
+      "supplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      },
+      "fallbackSupplier": {
+        "id": 1,
+        "name": "Nordic GSM"
+      }
+    },
+    {
+      "id": 9,
+      "name": "EE UK Unlock",
+      "code": "IMEI-EE-UK",
+      "type": "imei",
+      "status": "active",
+      "executionMode": "auto",
+      "categoryId": 4,
+      "category": {
+        "id": 4,
+        "name": "Carrier unlock"
+      },
+      "basePrice": "8.3800",
+      "cost": "6.4000",
+      "costChangedFrom": null,
+      "minProfit": "0.3800",
+      "floorPrice": "6.7800",
+      "marginPct": "23.6277",
+      "belowFloor": false,
+      "slaMinutes": 1440,
+      "supplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      },
+      "fallbackSupplier": {
+        "id": 1,
+        "name": "Nordic GSM"
+      }
+    },
+    {
+      "id": 10,
+      "name": "Orange France Unlock",
+      "code": "IMEI-ORG-FR",
+      "type": "imei",
+      "status": "active",
+      "executionMode": "auto",
+      "categoryId": 4,
+      "category": {
+        "id": 4,
+        "name": "Carrier unlock"
+      },
+      "basePrice": "14.2200",
+      "cost": "11.2000",
+      "costChangedFrom": null,
+      "minProfit": "0.6700",
+      "floorPrice": "11.8700",
+      "marginPct": "21.2377",
+      "belowFloor": false,
+      "slaMinutes": 2880,
+      "supplier": {
+        "id": 1,
+        "name": "Nordic GSM"
+      },
+      "fallbackSupplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      }
+    },
+    {
+      "id": 11,
+      "name": "MDM Removal, iPhone Premium",
+      "code": "IMEI-MDM-PRM",
+      "type": "imei",
+      "status": "active",
+      "executionMode": "manual",
+      "categoryId": 1,
+      "category": {
+        "id": 1,
+        "name": "Apple"
+      },
+      "basePrice": "30.0000",
+      "cost": "24.0000",
+      "costChangedFrom": null,
+      "minProfit": "1.4400",
+      "floorPrice": "25.4400",
+      "marginPct": "20.0000",
+      "belowFloor": false,
+      "slaMinutes": 4320,
+      "supplier": {
+        "id": 1,
+        "name": "Nordic GSM"
+      },
+      "fallbackSupplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      }
+    },
+    {
+      "id": 12,
+      "name": "iCloud Lost Mode Removal",
+      "code": "IMEI-ICL-LOST",
+      "type": "imei",
+      "status": "active",
+      "executionMode": "manual",
+      "categoryId": 1,
+      "category": {
+        "id": 1,
+        "name": "Apple"
+      },
+      "basePrice": "39.0400",
+      "cost": "32.0000",
+      "costChangedFrom": null,
+      "minProfit": "1.9200",
+      "floorPrice": "33.9200",
+      "marginPct": "18.0328",
+      "belowFloor": false,
+      "slaMinutes": 2880,
+      "supplier": {
+        "id": 1,
+        "name": "Nordic GSM"
+      },
+      "fallbackSupplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      }
+    },
+    {
+      "id": 13,
+      "name": "Samsung KG Lock Fix",
+      "code": "IMEI-SAM-KG",
+      "type": "imei",
+      "status": "active",
+      "executionMode": "auto",
+      "categoryId": 2,
+      "category": {
+        "id": 2,
+        "name": "Samsung"
+      },
+      "basePrice": "9.9800",
+      "cost": "7.5000",
+      "costChangedFrom": null,
+      "minProfit": "0.4500",
+      "floorPrice": "7.9500",
+      "marginPct": "24.8497",
+      "belowFloor": false,
+      "slaMinutes": 60,
+      "supplier": {
+        "id": 1,
+        "name": "Nordic GSM"
+      },
+      "fallbackSupplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      }
+    },
+    {
+      "id": 14,
+      "name": "Xiaomi Mi Account Clean",
+      "code": "IMEI-XIA-MI",
+      "type": "imei",
+      "status": "disabled",
+      "executionMode": "auto",
+      "categoryId": 5,
+      "category": {
+        "id": 5,
+        "name": "Xiaomi"
+      },
+      "basePrice": "5.8800",
+      "cost": "4.2000",
+      "costChangedFrom": null,
+      "minProfit": "0.2500",
+      "floorPrice": "4.4500",
+      "marginPct": "28.5714",
+      "belowFloor": false,
+      "slaMinutes": 180,
+      "supplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      },
+      "fallbackSupplier": {
+        "id": 1,
+        "name": "Nordic GSM"
+      }
+    },
+    {
+      "id": 15,
+      "name": "Z3X Credits x10",
+      "code": "SRV-Z3X-10",
+      "type": "server",
+      "status": "active",
+      "executionMode": "auto",
+      "categoryId": 6,
+      "category": {
+        "id": 6,
+        "name": "Credits"
+      },
+      "basePrice": "9.3500",
+      "cost": "8.5000",
+      "costChangedFrom": null,
+      "minProfit": "0.6800",
+      "floorPrice": "9.1800",
+      "marginPct": "9.0909",
+      "belowFloor": false,
+      "slaMinutes": 5,
+      "supplier": {
+        "id": 2,
+        "name": "Gulf Server Hub"
+      },
+      "fallbackSupplier": null
+    },
+    {
+      "id": 16,
+      "name": "UnlockTool 1-Day License",
+      "code": "SRV-UT-1D",
+      "type": "server",
+      "status": "active",
+      "executionMode": "auto",
+      "categoryId": 7,
+      "category": {
+        "id": 7,
+        "name": "Licenses"
+      },
+      "basePrice": "4.0000",
+      "cost": "3.2000",
+      "costChangedFrom": null,
+      "minProfit": "0.1900",
+      "floorPrice": "3.3900",
+      "marginPct": "20.0000",
+      "belowFloor": false,
+      "slaMinutes": 5,
+      "supplier": {
+        "id": 2,
+        "name": "Gulf Server Hub"
+      },
+      "fallbackSupplier": null
+    },
+    {
+      "id": 17,
+      "name": "Chimera Tool 1 Month",
+      "code": "SRV-CHM-1M",
+      "type": "server",
+      "status": "active",
+      "executionMode": "auto",
+      "categoryId": 7,
+      "category": {
+        "id": 7,
+        "name": "Licenses"
+      },
+      "basePrice": "19.5000",
+      "cost": "19.8000",
+      "costChangedFrom": "17.0000",
+      "minProfit": "1.1900",
+      "floorPrice": "20.9900",
+      "marginPct": "-1.5385",
+      "belowFloor": true,
+      "slaMinutes": 10,
+      "supplier": {
+        "id": 2,
+        "name": "Gulf Server Hub"
+      },
+      "fallbackSupplier": null
+    },
+    {
+      "id": 18,
+      "name": "NCK Dongle Credits x50",
+      "code": "SRV-NCK-50",
+      "type": "server",
+      "status": "active",
+      "executionMode": "auto",
+      "categoryId": 6,
+      "category": {
+        "id": 6,
+        "name": "Credits"
+      },
+      "basePrice": "15.3700",
+      "cost": "12.6000",
+      "costChangedFrom": null,
+      "minProfit": "0.7600",
+      "floorPrice": "13.3600",
+      "marginPct": "18.0221",
+      "belowFloor": false,
+      "slaMinutes": 5,
+      "supplier": {
+        "id": 2,
+        "name": "Gulf Server Hub"
+      },
+      "fallbackSupplier": null
+    },
+    {
+      "id": 19,
+      "name": "Miracle Box Credits x20",
+      "code": "SRV-MBX-20",
+      "type": "server",
+      "status": "active",
+      "executionMode": "auto",
+      "categoryId": 6,
+      "category": {
+        "id": 6,
+        "name": "Credits"
+      },
+      "basePrice": "7.6900",
+      "cost": "6.1000",
+      "costChangedFrom": null,
+      "minProfit": "0.3700",
+      "floorPrice": "6.4700",
+      "marginPct": "20.6762",
+      "belowFloor": false,
+      "slaMinutes": 5,
+      "supplier": {
+        "id": 2,
+        "name": "Gulf Server Hub"
+      },
+      "fallbackSupplier": null
+    },
+    {
+      "id": 20,
+      "name": "Samsung FRP Remote (USB)",
+      "code": "RMT-SAM-FRP",
+      "type": "remote",
+      "status": "active",
+      "executionMode": "auto",
+      "categoryId": 8,
+      "category": {
+        "id": 8,
+        "name": "Remote"
+      },
+      "basePrice": "6.9600",
+      "cost": "4.8000",
+      "costChangedFrom": null,
+      "minProfit": "0.2900",
+      "floorPrice": "5.0900",
+      "marginPct": "31.0345",
+      "belowFloor": false,
+      "slaMinutes": 30,
+      "supplier": {
+        "id": 4,
+        "name": "RemoteDesk Pro"
+      },
+      "fallbackSupplier": null
+    },
+    {
+      "id": 21,
+      "name": "Xiaomi Mi Account Remote",
+      "code": "RMT-XIA-MI",
+      "type": "remote",
+      "status": "active",
+      "executionMode": "auto",
+      "categoryId": 8,
+      "category": {
+        "id": 8,
+        "name": "Remote"
+      },
+      "basePrice": "8.9700",
+      "cost": "6.5000",
+      "costChangedFrom": null,
+      "minProfit": "0.3900",
+      "floorPrice": "6.8900",
+      "marginPct": "27.5362",
+      "belowFloor": false,
+      "slaMinutes": 45,
+      "supplier": {
+        "id": 4,
+        "name": "RemoteDesk Pro"
+      },
+      "fallbackSupplier": null
+    },
+    {
+      "id": 22,
+      "name": "iPhone Passcode Remote",
+      "code": "RMT-IPH-PAS",
+      "type": "remote",
+      "status": "active",
+      "executionMode": "auto",
+      "categoryId": 8,
+      "category": {
+        "id": 8,
+        "name": "Remote"
+      },
+      "basePrice": "23.4000",
+      "cost": "18.0000",
+      "costChangedFrom": null,
+      "minProfit": "1.0800",
+      "floorPrice": "19.0800",
+      "marginPct": "23.0769",
+      "belowFloor": false,
+      "slaMinutes": 90,
+      "supplier": {
+        "id": 4,
+        "name": "RemoteDesk Pro"
+      },
+      "fallbackSupplier": null
+    },
+    {
+      "id": 23,
+      "name": "Huawei ID Remote",
+      "code": "RMT-HUA-ID",
+      "type": "remote",
+      "status": "active",
+      "executionMode": "auto",
+      "categoryId": 8,
+      "category": {
+        "id": 8,
+        "name": "Remote"
+      },
+      "basePrice": "12.4200",
+      "cost": "9.2000",
+      "costChangedFrom": null,
+      "minProfit": "0.5500",
+      "floorPrice": "9.7500",
+      "marginPct": "25.9259",
+      "belowFloor": false,
+      "slaMinutes": 60,
+      "supplier": {
+        "id": 4,
+        "name": "RemoteDesk Pro"
+      },
+      "fallbackSupplier": null
+    },
+    {
+      "id": 24,
+      "name": "Samsung Combination File",
+      "code": "FIL-SAM-CMB",
+      "type": "file",
+      "status": "active",
+      "executionMode": "auto",
+      "categoryId": 9,
+      "category": {
+        "id": 9,
+        "name": "Files"
+      },
+      "basePrice": "1.4000",
+      "cost": "0.9000",
+      "costChangedFrom": null,
+      "minProfit": "0.0500",
+      "floorPrice": "0.9500",
+      "marginPct": "35.7143",
+      "belowFloor": false,
+      "slaMinutes": 3,
+      "supplier": {
+        "id": 5,
+        "name": "FileForge"
+      },
+      "fallbackSupplier": null
+    },
+    {
+      "id": 25,
+      "name": "Xiaomi EDL Auth File",
+      "code": "FIL-XIA-EDL",
+      "type": "file",
+      "status": "active",
+      "executionMode": "auto",
+      "categoryId": 9,
+      "category": {
+        "id": 9,
+        "name": "Files"
+      },
+      "basePrice": "3.6000",
+      "cost": "2.4000",
+      "costChangedFrom": null,
+      "minProfit": "0.1400",
+      "floorPrice": "2.5400",
+      "marginPct": "33.3333",
+      "belowFloor": false,
+      "slaMinutes": 15,
+      "supplier": {
+        "id": 5,
+        "name": "FileForge"
+      },
+      "fallbackSupplier": null
+    }
+  ]
+}

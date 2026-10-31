@@ -1,0 +1,90 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "9"
+  },
+  "body": [
+    {
+      "id": 1,
+      "name": "Apple",
+      "type": "imei",
+      "allowedGroupIds": [],
+      "sort": 1,
+      "isActive": true,
+      "serviceCount": 4
+    },
+    {
+      "id": 2,
+      "name": "Samsung",
+      "type": "imei",
+      "allowedGroupIds": [],
+      "sort": 2,
+      "isActive": true,
+      "serviceCount": 2
+    },
+    {
+      "id": 3,
+      "name": "Generic",
+      "type": "imei",
+      "allowedGroupIds": [],
+      "sort": 3,
+      "isActive": true,
+      "serviceCount": 1
+    },
+    {
+      "id": 4,
+      "name": "Carrier unlock",
+      "type": "imei",
+      "allowedGroupIds": [],
+      "sort": 4,
+      "isActive": true,
+      "serviceCount": 6
+    },
+    {
+      "id": 5,
+      "name": "Xiaomi",
+      "type": "imei",
+      "allowedGroupIds": [],
+      "sort": 5,
+      "isActive": true,
+      "serviceCount": 1
+    },
+    {
+      "id": 6,
+      "name": "Credits",
+      "type": "server",
+      "allowedGroupIds": [],
+      "sort": 6,
+      "isActive": true,
+      "serviceCount": 3
+    },
+    {
+      "id": 7,
+      "name": "Licenses",
+      "type": "server",
+      "allowedGroupIds": [],
+      "sort": 7,
+      "isActive": true,
+      "serviceCount": 2
+    },
+    {
+      "id": 8,
+      "name": "Remote",
+      "type": "remote",
+      "allowedGroupIds": [],
+      "sort": 8,
+      "isActive": true,
+      "serviceCount": 4
+    },
+    {
+      "id": 9,
+      "name": "Files",
+      "type": "file",
+      "allowedGroupIds": [],
+      "sort": 9,
+      "isActive": true,
+      "serviceCount": 4
+    }
+  ]
+}

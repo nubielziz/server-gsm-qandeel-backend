@@ -1,0 +1,19 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": [
+    {
+      "key": "HARVEST-1",
+      "label": "Harvest sample",
+      "fieldType": "number",
+      "required": false,
+      "options": [
+        "Harvest sample text."
+      ],
+      "regex": "Harvest sample text.",
+      "supplierKey": "HARVEST-1"
+    }
+  ]
+}

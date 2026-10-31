@@ -1,0 +1,29 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 15,
+    "serviceId": 15,
+    "locale": "en",
+    "slug": "harvest-listing",
+    "publicTitle": "Harvest listing",
+    "isListed": false,
+    "isFeatured": false,
+    "service": {
+      "id": 15,
+      "name": "Z3X Credits x10",
+      "code": "SRV-Z3X-10",
+      "basePrice": "9.3500",
+      "cost": "8.5000"
+    },
+    "retailPrice": null,
+    "floorPrice": "10.2900",
+    "marginPct": null,
+    "orders30d": 0,
+    "revenue30d": "0.0000",
+    "locked": false,
+    "lockedReason": null
+  }
+}

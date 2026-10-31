@@ -1,0 +1,68 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "5"
+  },
+  "body": [
+    {
+      "id": 1,
+      "kind": "email",
+      "display": "jt.****@tempbox.example",
+      "reason": "Chargeback lost",
+      "expiresAt": null,
+      "source": "chargeback",
+      "createdBy": null,
+      "createdAt": "2026-10-22T12:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "kind": "card",
+      "display": "Visa fingerprint fp_9f2…c1a",
+      "reason": "Chargeback lost",
+      "expiresAt": null,
+      "source": "chargeback",
+      "createdBy": null,
+      "createdAt": "2026-10-22T12:00:00.000Z"
+    },
+    {
+      "id": 3,
+      "kind": "domain",
+      "display": "tempbox.example",
+      "reason": "Disposable mailbox provider",
+      "expiresAt": null,
+      "source": "manual",
+      "createdBy": {
+        "id": 1,
+        "name": "Rami K."
+      },
+      "createdAt": "2026-10-10T12:00:00.000Z"
+    },
+    {
+      "id": 5,
+      "kind": "imei",
+      "display": "35 389011 884201 9",
+      "reason": "Reported stolen by the previous owner",
+      "expiresAt": null,
+      "source": "manual",
+      "createdBy": {
+        "id": 2,
+        "name": "Lina S."
+      },
+      "createdAt": "2026-10-25T12:00:00.000Z"
+    },
+    {
+      "id": 6,
+      "kind": "country",
+      "display": "Region under sanctions",
+      "reason": "Compliance: orders and payments not accepted",
+      "expiresAt": null,
+      "source": "manual",
+      "createdBy": {
+        "id": 1,
+        "name": "Rami K."
+      },
+      "createdAt": "2026-08-02T12:00:00.000Z"
+    }
+  ]
+}

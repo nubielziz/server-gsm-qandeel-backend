@@ -1,0 +1,59 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "title": "Card gateway callbacks delayed",
+    "severity": "minor",
+    "status": "resolved",
+    "components": [
+      "gateway:1"
+    ],
+    "summary": "Payment confirmations arrived up to ten minutes late.",
+    "timeline": [
+      {
+        "at": "2026-10-22T12:00:00.000Z",
+        "status": "investigating",
+        "text": "Payment confirmations are late.",
+        "by": {
+          "id": 1,
+          "name": "Rami K."
+        }
+      },
+      {
+        "at": "2026-10-22T12:20:00.000Z",
+        "status": "identified",
+        "text": "The gateway retries callbacks in bursts; our webhook worker was too slow.",
+        "by": {
+          "id": 1,
+          "name": "Rami K."
+        }
+      },
+      {
+        "at": "2026-10-22T12:47:00.000Z",
+        "status": "resolved",
+        "text": "Webhook worker concurrency raised; confirmations are on time.",
+        "by": {
+          "id": 1,
+          "name": "Rami K."
+        }
+      }
+    ],
+    "rootCause": "The gateway sent callbacks in bursts and the webhook worker took one at a time.",
+    "startedAt": "2026-10-22T12:00:00.000Z",
+    "resolvedAt": "2026-10-22T12:47:00.000Z",
+    "alertEventId": null,
+    "createdBy": {
+      "id": 1,
+      "name": "Rami K."
+    },
+    "resolvedBy": {
+      "id": 1,
+      "name": "Rami K."
+    },
+    "createdAt": "2026-10-22T12:00:00.000Z",
+    "updatedAt": "2026-10-22T12:47:00.000Z",
+    "id": 4
+  }
+}

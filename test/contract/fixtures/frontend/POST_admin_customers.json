@@ -1,0 +1,34 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 31,
+    "email": "harvest.sample@example.com",
+    "emailVerifiedAt": null,
+    "name": "Harvest sample",
+    "phone": "",
+    "country": "GB",
+    "locale": "en",
+    "currency": 2,
+    "currencyCode": "GBP",
+    "hasAccount": true,
+    "createdBy": 1,
+    "marketingOptIn": false,
+    "riskLevel": "low",
+    "status": "active",
+    "suspendedAt": null,
+    "suspendedReason": null,
+    "suspendedBy": null,
+    "internalNotes": "",
+    "lastLoginAt": null,
+    "firstOrderAt": null,
+    "totalSpent": "0.0000",
+    "anonymizedAt": null,
+    "createdAt": "2026-10-31T12:00:00.000Z",
+    "ordersCount": 0,
+    "lastOrderAt": null,
+    "temporaryPassword": "h84KYqzJ37ZUnH"
+  }
+}

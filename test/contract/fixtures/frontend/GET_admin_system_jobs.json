@@ -1,0 +1,189 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "jobs": [
+      {
+        "name": "price_sync",
+        "label": "Supplier price sync",
+        "schedule": "*/15 * * * *",
+        "scheduleText": "Every 15 minutes",
+        "state": "ok",
+        "running": false,
+        "lastRun": {
+          "job": "price_sync",
+          "startedAt": "2026-10-31T11:45:03.184Z",
+          "finishedAt": "2026-10-31T11:45:27.195Z",
+          "durationMs": 24011,
+          "processed": 1517,
+          "trigger": "schedule",
+          "status": "succeeded",
+          "error": null,
+          "result": {
+            "suppliers": 6,
+            "prices": 1517,
+            "changed": 46
+          },
+          "triggeredBy": null,
+          "id": 136
+        },
+        "nextRunAt": "2026-10-31T12:15:00.000Z"
+      },
+      {
+        "name": "supplier_balance",
+        "label": "Supplier balance check",
+        "schedule": "*/30 * * * *",
+        "scheduleText": "Every 30 minutes",
+        "state": "ok",
+        "running": false,
+        "lastRun": {
+          "job": "supplier_balance",
+          "startedAt": "2026-10-31T11:30:00.950Z",
+          "finishedAt": "2026-10-31T11:30:04.945Z",
+          "durationMs": 3995,
+          "processed": 6,
+          "trigger": "schedule",
+          "status": "succeeded",
+          "error": null,
+          "result": {
+            "suppliers": 6,
+            "lowBalance": 1
+          },
+          "triggeredBy": null,
+          "id": 132
+        },
+        "nextRunAt": "2026-10-31T12:30:00.000Z"
+      },
+      {
+        "name": "reminders",
+        "label": "Reminders and alert follow-ups",
+        "schedule": "*/10 * * * *",
+        "scheduleText": "Every 10 minutes",
+        "state": "ok",
+        "running": false,
+        "lastRun": {
+          "job": "reminders",
+          "startedAt": "2026-10-31T11:50:03.697Z",
+          "finishedAt": "2026-10-31T11:50:04.866Z",
+          "durationMs": 1169,
+          "processed": 12,
+          "trigger": "schedule",
+          "status": "succeeded",
+          "error": null,
+          "result": {
+            "sent": 12
+          },
+          "triggeredBy": null,
+          "id": 137
+        },
+        "nextRunAt": "2026-10-31T12:10:00.000Z"
+      },
+      {
+        "name": "fx_refresh",
+        "label": "FX rates refresh",
+        "schedule": "5 * * * *",
+        "scheduleText": "Every hour at :05",
+        "state": "ok",
+        "running": false,
+        "lastRun": {
+          "job": "fx_refresh",
+          "startedAt": "2026-10-31T11:05:01.216Z",
+          "finishedAt": "2026-10-31T11:05:02.260Z",
+          "durationMs": 1044,
+          "processed": 7,
+          "trigger": "schedule",
+          "status": "succeeded",
+          "error": null,
+          "result": {
+            "currencies": 7,
+            "updated": 7
+          },
+          "triggeredBy": null,
+          "id": 128
+        },
+        "nextRunAt": "2026-10-31T12:05:00.000Z"
+      },
+      {
+        "name": "accruals",
+        "label": "Commission accruals",
+        "schedule": "0 1 * * *",
+        "scheduleText": "Every day at 01:00 UTC",
+        "state": "ok",
+        "running": false,
+        "lastRun": {
+          "job": "accruals",
+          "startedAt": "2026-10-31T01:00:02.017Z",
+          "finishedAt": "2026-10-31T01:00:43.001Z",
+          "durationMs": 40984,
+          "processed": 207,
+          "trigger": "schedule",
+          "status": "succeeded",
+          "error": null,
+          "result": {
+            "accruals": 207,
+            "clients": 18
+          },
+          "triggeredBy": null,
+          "id": 67
+        },
+        "nextRunAt": "2026-11-01T01:00:00.000Z"
+      },
+      {
+        "name": "ledger_integrity",
+        "label": "Ledger integrity check",
+        "schedule": "30 2 * * *",
+        "scheduleText": "Every day at 02:30 UTC",
+        "state": "ok",
+        "running": false,
+        "lastRun": {
+          "job": "ledger_integrity",
+          "startedAt": "2026-10-31T02:30:01.209Z",
+          "finishedAt": "2026-10-31T02:30:16.119Z",
+          "durationMs": 14910,
+          "processed": 47377,
+          "trigger": "schedule",
+          "status": "succeeded",
+          "error": null,
+          "result": {
+            "entriesChecked": 47377,
+            "accountsChecked": 312,
+            "holdsChecked": 27,
+            "paymentsChecked": 1184,
+            "failedChecks": 0
+          },
+          "triggeredBy": null,
+          "id": 70
+        },
+        "nextRunAt": "2026-11-01T02:30:00.000Z"
+      },
+      {
+        "name": "data_retention",
+        "label": "Expired data cleanup",
+        "schedule": "0 3 * * *",
+        "scheduleText": "Every day at 03:00 UTC",
+        "state": "ok",
+        "running": false,
+        "lastRun": {
+          "job": "data_retention",
+          "startedAt": "2026-10-31T03:00:03.812Z",
+          "finishedAt": "2026-10-31T03:01:26.397Z",
+          "durationMs": 82585,
+          "processed": 1804,
+          "trigger": "schedule",
+          "status": "succeeded",
+          "error": null,
+          "result": {
+            "imeiRecordsDeleted": 1804,
+            "sessionsDeleted": 601
+          },
+          "triggeredBy": null,
+          "id": 73
+        },
+        "nextRunAt": "2026-11-01T03:00:00.000Z"
+      }
+    ],
+    "runs": []
+  }
+}

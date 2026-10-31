@@ -1,0 +1,31 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 36,
+    "endpointId": 1,
+    "event": "order.completed",
+    "payload": {
+      "event": "order.completed",
+      "orderId": 48100,
+      "createdAt": "2026-10-31T11:35:00.000Z"
+    },
+    "attempt": 1,
+    "status": "delivered",
+    "responseCode": 200,
+    "nextRetryAt": null,
+    "createdAt": "2026-10-31T11:35:00.000Z",
+    "endpoint": {
+      "id": 1,
+      "url": "https://hooks.zain-mobile-hub.example/gsm"
+    },
+    "client": {
+      "id": 1,
+      "name": "Zain Mobile Hub"
+    },
+    "responseBody": "{\"ok\":true}",
+    "error": null
+  }
+}

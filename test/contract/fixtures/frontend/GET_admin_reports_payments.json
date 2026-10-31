@@ -1,0 +1,1711 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "methods": [
+      {
+        "method": "card",
+        "payments": 72,
+        "volume": "1035.3400",
+        "fees": "51.6900",
+        "feeRate": "4.99",
+        "refunds": 6,
+        "disputes": 3
+      },
+      {
+        "method": "wallet",
+        "payments": 20,
+        "volume": "277.7600",
+        "fees": "14.0600",
+        "feeRate": "5.06",
+        "refunds": 1,
+        "disputes": 1
+      },
+      {
+        "method": "crypto",
+        "payments": 12,
+        "volume": "227.8700",
+        "fees": "2.2800",
+        "feeRate": "1",
+        "refunds": 0,
+        "disputes": 1
+      }
+    ],
+    "payments": [
+      {
+        "id": 20503,
+        "orderId": 20503,
+        "amount": "4.7900",
+        "feeAmount": "0.4400",
+        "createdAt": "2026-10-31T11:58:23.000Z",
+        "method": "card",
+        "brand": "Visa 3713",
+        "status": "captured",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 4,
+          "name": "Emma Dubois"
+        }
+      },
+      {
+        "id": 20502,
+        "orderId": 20502,
+        "amount": "4.7500",
+        "feeAmount": "0.4400",
+        "createdAt": "2026-10-31T11:57:05.000Z",
+        "method": "card",
+        "brand": "Mastercard 9439",
+        "status": "captured",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 3,
+          "name": "Lukas Brandt"
+        }
+      },
+      {
+        "id": 20501,
+        "orderId": 20501,
+        "amount": "4.7500",
+        "feeAmount": "0.4400",
+        "createdAt": "2026-10-31T11:56:17.000Z",
+        "method": "wallet",
+        "brand": "Mastercard 8832",
+        "status": "captured",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 3,
+          "name": "Lukas Brandt"
+        }
+      },
+      {
+        "id": 20500,
+        "orderId": 20500,
+        "amount": "11.9900",
+        "feeAmount": "0.6500",
+        "createdAt": "2026-10-31T11:21:44.000Z",
+        "method": "wallet",
+        "brand": "Amex 4719",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 10,
+          "name": "Tyler Brooks"
+        }
+      },
+      {
+        "id": 20499,
+        "orderId": 20499,
+        "amount": "11.9900",
+        "feeAmount": "0.6500",
+        "createdAt": "2026-10-31T10:53:26.000Z",
+        "method": "card",
+        "brand": "Amex 3884",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 9,
+          "name": "Jessica Moore"
+        }
+      },
+      {
+        "id": 20498,
+        "orderId": 20498,
+        "amount": "25.9900",
+        "feeAmount": "1.0500",
+        "createdAt": "2026-10-31T10:12:22.000Z",
+        "method": "card",
+        "brand": "Mastercard 1778",
+        "status": "captured",
+        "currency": "CAD",
+        "fx": "1.37",
+        "customer": {
+          "id": 11,
+          "name": "Priya Nair"
+        }
+      },
+      {
+        "id": 20497,
+        "orderId": 20497,
+        "amount": "4.7900",
+        "feeAmount": "0.4400",
+        "createdAt": "2026-10-31T07:11:21.000Z",
+        "method": "card",
+        "brand": "Visa 0039",
+        "status": "captured",
+        "currency": "GBP",
+        "fx": "0.79",
+        "customer": {
+          "id": 15,
+          "name": "Harry Patel"
+        }
+      },
+      {
+        "id": 20496,
+        "orderId": 20496,
+        "amount": "25.9900",
+        "feeAmount": "1.0500",
+        "createdAt": "2026-10-31T05:20:25.000Z",
+        "method": "card",
+        "brand": "Visa 9916",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 24,
+          "name": "Ryan Cooper"
+        }
+      },
+      {
+        "id": 20495,
+        "orderId": 20495,
+        "amount": "17.9900",
+        "feeAmount": "0.8200",
+        "createdAt": "2026-10-30T17:03:32.000Z",
+        "method": "card",
+        "brand": "Amex 1120",
+        "status": "captured",
+        "currency": "GBP",
+        "fx": "0.79",
+        "customer": {
+          "id": 21,
+          "name": "Samira Khan"
+        }
+      },
+      {
+        "id": 20494,
+        "orderId": 20494,
+        "amount": "25.9900",
+        "feeAmount": "1.0500",
+        "createdAt": "2026-10-30T14:37:51.000Z",
+        "method": "card",
+        "brand": "Visa 1289",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 25,
+          "name": "Olivia Grant"
+        }
+      },
+      {
+        "id": 20493,
+        "orderId": 20493,
+        "amount": "19.9900",
+        "feeAmount": "0.8800",
+        "createdAt": "2026-10-30T13:20:03.000Z",
+        "method": "card",
+        "brand": "Visa 0111",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 28,
+          "name": "Victor Silva"
+        }
+      },
+      {
+        "id": 20492,
+        "orderId": 20492,
+        "amount": "4.8700",
+        "feeAmount": "0.4400",
+        "createdAt": "2026-10-30T12:43:27.000Z",
+        "method": "wallet",
+        "brand": "Amex 0425",
+        "status": "captured",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 8,
+          "name": "Marco Ricci"
+        }
+      },
+      {
+        "id": 20491,
+        "orderId": 20491,
+        "amount": "25.9900",
+        "feeAmount": "1.0500",
+        "createdAt": "2026-10-30T10:10:30.000Z",
+        "method": "card",
+        "brand": "Amex 5703",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 28,
+          "name": "Victor Silva"
+        }
+      },
+      {
+        "id": 20490,
+        "orderId": 20490,
+        "amount": "12.9900",
+        "feeAmount": "0.7500",
+        "createdAt": "2026-10-30T09:14:52.000Z",
+        "method": "card",
+        "brand": "Visa 1616",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 10,
+          "name": "Tyler Brooks"
+        }
+      },
+      {
+        "id": 20489,
+        "orderId": 20489,
+        "amount": "17.9900",
+        "feeAmount": "0.8200",
+        "createdAt": "2026-10-30T07:36:37.000Z",
+        "method": "card",
+        "brand": "Visa 0039",
+        "status": "partial_refund",
+        "currency": "GBP",
+        "fx": "0.79",
+        "customer": {
+          "id": 21,
+          "name": "Samira Khan"
+        }
+      },
+      {
+        "id": 20488,
+        "orderId": 20488,
+        "amount": "4.7900",
+        "feeAmount": "0.4400",
+        "createdAt": "2026-10-30T05:22:57.000Z",
+        "method": "card",
+        "brand": "Mastercard 0651",
+        "status": "captured",
+        "currency": "GBP",
+        "fx": "0.79",
+        "customer": {
+          "id": 14,
+          "name": "Chloe Bennett"
+        }
+      },
+      {
+        "id": 20487,
+        "orderId": 20487,
+        "amount": "19.9900",
+        "feeAmount": "0.8800",
+        "createdAt": "2026-10-30T05:13:47.970Z",
+        "method": "card",
+        "brand": "Amex 3014",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 9,
+          "name": "Jessica Moore"
+        }
+      },
+      {
+        "id": 20486,
+        "orderId": 20486,
+        "amount": "3.9900",
+        "feeAmount": "0.4200",
+        "createdAt": "2026-10-29T16:30:37.000Z",
+        "method": "wallet",
+        "brand": "Mastercard 7804",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 9,
+          "name": "Jessica Moore"
+        }
+      },
+      {
+        "id": 20485,
+        "orderId": 20485,
+        "amount": "4.7900",
+        "feeAmount": "0.4400",
+        "createdAt": "2026-10-29T15:29:34.000Z",
+        "method": "card",
+        "brand": "Mastercard 9794",
+        "status": "captured",
+        "currency": "GBP",
+        "fx": "0.79",
+        "customer": {
+          "id": 1,
+          "name": "Daniel Whitmore"
+        }
+      },
+      {
+        "id": 20484,
+        "orderId": 20484,
+        "amount": "11.9900",
+        "feeAmount": "0.6500",
+        "createdAt": "2026-10-29T13:41:05.000Z",
+        "method": "wallet",
+        "brand": "Visa 1095",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 24,
+          "name": "Ryan Cooper"
+        }
+      },
+      {
+        "id": 20483,
+        "orderId": 20483,
+        "amount": "17.9900",
+        "feeAmount": "0.8200",
+        "createdAt": "2026-10-29T12:59:34.000Z",
+        "method": "card",
+        "brand": "Amex 3142",
+        "status": "captured",
+        "currency": "GBP",
+        "fx": "0.79",
+        "customer": {
+          "id": 14,
+          "name": "Chloe Bennett"
+        }
+      },
+      {
+        "id": 20482,
+        "orderId": 20482,
+        "amount": "3.9900",
+        "feeAmount": "0.4200",
+        "createdAt": "2026-10-29T11:54:54.000Z",
+        "method": "card",
+        "brand": "Mastercard 0210",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 9,
+          "name": "Jessica Moore"
+        }
+      },
+      {
+        "id": 20481,
+        "orderId": 20481,
+        "amount": "25.9900",
+        "feeAmount": "1.0500",
+        "createdAt": "2026-10-29T11:48:07.000Z",
+        "method": "card",
+        "brand": "Amex 3065",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 10,
+          "name": "Tyler Brooks"
+        }
+      },
+      {
+        "id": 20480,
+        "orderId": 20480,
+        "amount": "4.7500",
+        "feeAmount": "0.4400",
+        "createdAt": "2026-10-28T17:11:18.000Z",
+        "method": "card",
+        "brand": "Amex 8383",
+        "status": "captured",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 3,
+          "name": "Lukas Brandt"
+        }
+      },
+      {
+        "id": 20479,
+        "orderId": 20479,
+        "amount": "19.9900",
+        "feeAmount": "0.8800",
+        "createdAt": "2026-10-28T16:03:40.000Z",
+        "method": "wallet",
+        "brand": "Visa 6269",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 24,
+          "name": "Ryan Cooper"
+        }
+      },
+      {
+        "id": 20478,
+        "orderId": 20478,
+        "amount": "11.9900",
+        "feeAmount": "0.6500",
+        "createdAt": "2026-10-28T15:32:03.000Z",
+        "method": "card",
+        "brand": "Mastercard 4747",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 24,
+          "name": "Ryan Cooper"
+        }
+      },
+      {
+        "id": 20477,
+        "orderId": 20477,
+        "amount": "18.1400",
+        "feeAmount": "0.8300",
+        "createdAt": "2026-10-28T15:28:07.000Z",
+        "method": "card",
+        "brand": "Visa 2467",
+        "status": "captured",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 23,
+          "name": "Ana Costa"
+        }
+      },
+      {
+        "id": 20476,
+        "orderId": 20476,
+        "amount": "18.4400",
+        "feeAmount": "0.8300",
+        "createdAt": "2026-10-28T13:50:12.000Z",
+        "method": "wallet",
+        "brand": "Amex 1902",
+        "status": "captured",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 6,
+          "name": "Aoife Brennan"
+        }
+      },
+      {
+        "id": 20475,
+        "orderId": 20475,
+        "amount": "4.7900",
+        "feeAmount": "0.4400",
+        "createdAt": "2026-10-28T11:52:11.000Z",
+        "method": "card",
+        "brand": "Visa 7333",
+        "status": "captured",
+        "currency": "GBP",
+        "fx": "0.79",
+        "customer": {
+          "id": 21,
+          "name": "Samira Khan"
+        }
+      },
+      {
+        "id": 20474,
+        "orderId": 20474,
+        "amount": "15.5900",
+        "feeAmount": "0.1600",
+        "createdAt": "2026-10-28T10:24:25.000Z",
+        "method": "crypto",
+        "brand": "USDT TRC20",
+        "status": "captured",
+        "currency": "GBP",
+        "fx": "0.79",
+        "customer": {
+          "id": 21,
+          "name": "Samira Khan"
+        }
+      },
+      {
+        "id": 20473,
+        "orderId": 20473,
+        "amount": "17.9900",
+        "feeAmount": "0.8200",
+        "createdAt": "2026-10-28T08:32:29.000Z",
+        "method": "card",
+        "brand": "Amex 1747",
+        "status": "captured",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 4,
+          "name": "Emma Dubois"
+        }
+      },
+      {
+        "id": 20472,
+        "orderId": 20472,
+        "amount": "18.2900",
+        "feeAmount": "0.8300",
+        "createdAt": "2026-10-27T17:42:25.000Z",
+        "method": "card",
+        "brand": "Amex 8764",
+        "status": "captured",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 8,
+          "name": "Marco Ricci"
+        }
+      },
+      {
+        "id": 20471,
+        "orderId": 20471,
+        "amount": "3.9900",
+        "feeAmount": "0.4200",
+        "createdAt": "2026-10-27T16:12:16.000Z",
+        "method": "card",
+        "brand": "Visa 1917",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 28,
+          "name": "Victor Silva"
+        }
+      },
+      {
+        "id": 20470,
+        "orderId": 20470,
+        "amount": "15.5900",
+        "feeAmount": "0.7500",
+        "createdAt": "2026-10-27T15:22:50.000Z",
+        "method": "card",
+        "brand": "Amex 6029",
+        "status": "captured",
+        "currency": "GBP",
+        "fx": "0.79",
+        "customer": {
+          "id": 15,
+          "name": "Harry Patel"
+        }
+      },
+      {
+        "id": 20469,
+        "orderId": 20469,
+        "amount": "11.9900",
+        "feeAmount": "0.6500",
+        "createdAt": "2026-10-27T14:19:40.000Z",
+        "method": "card",
+        "brand": "Visa 5616",
+        "status": "refunded",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 9,
+          "name": "Jessica Moore"
+        }
+      },
+      {
+        "id": 20468,
+        "orderId": 20468,
+        "amount": "3.9900",
+        "feeAmount": "0.4200",
+        "createdAt": "2026-10-27T10:05:37.000Z",
+        "method": "card",
+        "brand": "Amex 2739",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 24,
+          "name": "Ryan Cooper"
+        }
+      },
+      {
+        "id": 20467,
+        "orderId": 20467,
+        "amount": "19.9900",
+        "feeAmount": "0.8800",
+        "createdAt": "2026-10-26T20:55:21.000Z",
+        "method": "card",
+        "brand": "Mastercard 7803",
+        "status": "captured",
+        "currency": "CAD",
+        "fx": "1.37",
+        "customer": {
+          "id": 11,
+          "name": "Priya Nair"
+        }
+      },
+      {
+        "id": 20466,
+        "orderId": 20466,
+        "amount": "15.5900",
+        "feeAmount": "0.7500",
+        "createdAt": "2026-10-26T16:51:53.000Z",
+        "method": "card",
+        "brand": "Amex 0738",
+        "status": "refunded",
+        "currency": "GBP",
+        "fx": "0.79",
+        "customer": {
+          "id": 1,
+          "name": "Daniel Whitmore"
+        }
+      },
+      {
+        "id": 20465,
+        "orderId": 20465,
+        "amount": "4.8300",
+        "feeAmount": "0.4400",
+        "createdAt": "2026-10-26T13:03:08.000Z",
+        "method": "card",
+        "brand": "Amex 3022",
+        "status": "captured",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 22,
+          "name": "Diego Fernandez"
+        }
+      },
+      {
+        "id": 20464,
+        "orderId": 20464,
+        "amount": "25.9900",
+        "feeAmount": "1.0500",
+        "createdAt": "2026-10-26T12:01:24.000Z",
+        "method": "wallet",
+        "brand": "Mastercard 8159",
+        "status": "refunded",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 25,
+          "name": "Olivia Grant"
+        }
+      },
+      {
+        "id": 20463,
+        "orderId": 20463,
+        "amount": "15.5900",
+        "feeAmount": "0.7500",
+        "createdAt": "2026-10-26T09:10:56.000Z",
+        "method": "card",
+        "brand": "Mastercard 3811",
+        "status": "captured",
+        "currency": "GBP",
+        "fx": "0.79",
+        "customer": {
+          "id": 14,
+          "name": "Chloe Bennett"
+        }
+      },
+      {
+        "id": 20462,
+        "orderId": 20462,
+        "amount": "11.9900",
+        "feeAmount": "0.6500",
+        "createdAt": "2026-10-26T05:59:04.000Z",
+        "method": "card",
+        "brand": "Mastercard 4535",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 28,
+          "name": "Victor Silva"
+        }
+      },
+      {
+        "id": 20461,
+        "orderId": 20461,
+        "amount": "19.9900",
+        "feeAmount": "0.2000",
+        "createdAt": "2026-10-26T05:34:56.000Z",
+        "method": "crypto",
+        "brand": "USDT TRC20",
+        "status": "captured",
+        "currency": "CAD",
+        "fx": "1.37",
+        "customer": {
+          "id": 26,
+          "name": "Ethan Clarke"
+        }
+      },
+      {
+        "id": 20460,
+        "orderId": 20460,
+        "amount": "19.9900",
+        "feeAmount": "0.8800",
+        "createdAt": "2026-10-25T19:07:19.000Z",
+        "method": "wallet",
+        "brand": "Visa 0090",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 28,
+          "name": "Victor Silva"
+        }
+      },
+      {
+        "id": 20459,
+        "orderId": 20459,
+        "amount": "26.3900",
+        "feeAmount": "0.2600",
+        "createdAt": "2026-10-25T15:52:05.000Z",
+        "method": "crypto",
+        "brand": "USDT TRC20",
+        "status": "captured",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 4,
+          "name": "Emma Dubois"
+        }
+      },
+      {
+        "id": 20458,
+        "orderId": 20458,
+        "amount": "25.9900",
+        "feeAmount": "0.2600",
+        "createdAt": "2026-10-25T13:23:19.000Z",
+        "method": "crypto",
+        "brand": "USDT TRC20",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 9,
+          "name": "Jessica Moore"
+        }
+      },
+      {
+        "id": 20457,
+        "orderId": 20457,
+        "amount": "17.9900",
+        "feeAmount": "0.8200",
+        "createdAt": "2026-10-25T07:44:03.000Z",
+        "method": "card",
+        "brand": "Mastercard 7184",
+        "status": "captured",
+        "currency": "GBP",
+        "fx": "0.79",
+        "customer": {
+          "id": 1,
+          "name": "Daniel Whitmore"
+        }
+      },
+      {
+        "id": 20456,
+        "orderId": 20456,
+        "amount": "25.9900",
+        "feeAmount": "0.2600",
+        "createdAt": "2026-10-24T19:19:47.000Z",
+        "method": "crypto",
+        "brand": "USDT TRC20",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 25,
+          "name": "Olivia Grant"
+        }
+      },
+      {
+        "id": 20455,
+        "orderId": 20455,
+        "amount": "18.1400",
+        "feeAmount": "0.1800",
+        "createdAt": "2026-10-24T18:30:29.000Z",
+        "method": "crypto",
+        "brand": "USDT TRC20",
+        "status": "captured",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 5,
+          "name": "Noah van Dijk"
+        }
+      },
+      {
+        "id": 20454,
+        "orderId": 20454,
+        "amount": "14.9900",
+        "feeAmount": "0.7300",
+        "createdAt": "2026-10-24T10:26:39.000Z",
+        "method": "card",
+        "brand": "Visa 6550",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 28,
+          "name": "Victor Silva"
+        }
+      },
+      {
+        "id": 20453,
+        "orderId": 20453,
+        "amount": "3.9900",
+        "feeAmount": "0.4200",
+        "createdAt": "2026-10-24T05:11:43.000Z",
+        "method": "wallet",
+        "brand": "Mastercard 5184",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 10,
+          "name": "Tyler Brooks"
+        }
+      },
+      {
+        "id": 20452,
+        "orderId": 20452,
+        "amount": "11.9900",
+        "feeAmount": "0.6500",
+        "createdAt": "2026-10-23T18:54:55.000Z",
+        "method": "card",
+        "brand": "Amex 0107",
+        "status": "refunded",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 28,
+          "name": "Victor Silva"
+        }
+      },
+      {
+        "id": 20451,
+        "orderId": 20451,
+        "amount": "3.9900",
+        "feeAmount": "0.4200",
+        "createdAt": "2026-10-23T16:11:48.000Z",
+        "method": "wallet",
+        "brand": "Amex 6151",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 25,
+          "name": "Olivia Grant"
+        }
+      },
+      {
+        "id": 20450,
+        "orderId": 20450,
+        "amount": "19.9900",
+        "feeAmount": "0.8800",
+        "createdAt": "2026-10-23T13:18:37.000Z",
+        "method": "wallet",
+        "brand": "Amex 7809",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 28,
+          "name": "Victor Silva"
+        }
+      },
+      {
+        "id": 20449,
+        "orderId": 20449,
+        "amount": "3.9900",
+        "feeAmount": "0.4200",
+        "createdAt": "2026-10-23T12:10:29.000Z",
+        "method": "card",
+        "brand": "Visa 3835",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 9,
+          "name": "Jessica Moore"
+        }
+      },
+      {
+        "id": 20448,
+        "orderId": 20448,
+        "amount": "4.7500",
+        "feeAmount": "0.4400",
+        "createdAt": "2026-10-22T19:13:52.000Z",
+        "method": "card",
+        "brand": "Mastercard 0637",
+        "status": "captured",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 27,
+          "name": "Nina Petrova"
+        }
+      },
+      {
+        "id": 20447,
+        "orderId": 20447,
+        "amount": "15.5900",
+        "feeAmount": "0.7500",
+        "createdAt": "2026-10-22T10:14:44.000Z",
+        "method": "card",
+        "brand": "Visa 1693",
+        "status": "captured",
+        "currency": "GBP",
+        "fx": "0.79",
+        "customer": {
+          "id": 21,
+          "name": "Samira Khan"
+        }
+      },
+      {
+        "id": 20446,
+        "orderId": 20446,
+        "amount": "19.9900",
+        "feeAmount": "0.8800",
+        "createdAt": "2026-10-22T09:40:59.000Z",
+        "method": "wallet",
+        "brand": "Visa 4428",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 28,
+          "name": "Victor Silva"
+        }
+      },
+      {
+        "id": 20445,
+        "orderId": 20445,
+        "amount": "25.9900",
+        "feeAmount": "1.0500",
+        "createdAt": "2026-10-22T08:48:26.000Z",
+        "method": "wallet",
+        "brand": "Visa 6070",
+        "status": "captured",
+        "currency": "CAD",
+        "fx": "1.37",
+        "customer": {
+          "id": 11,
+          "name": "Priya Nair"
+        }
+      },
+      {
+        "id": 20444,
+        "orderId": 20444,
+        "amount": "25.9900",
+        "feeAmount": "1.0500",
+        "createdAt": "2026-10-22T08:24:19.000Z",
+        "method": "card",
+        "brand": "Mastercard 7264",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 25,
+          "name": "Olivia Grant"
+        }
+      },
+      {
+        "id": 20443,
+        "orderId": 20443,
+        "amount": "19.9900",
+        "feeAmount": "0.8800",
+        "createdAt": "2026-10-21T13:39:02.000Z",
+        "method": "card",
+        "brand": "Amex 2111",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 24,
+          "name": "Ryan Cooper"
+        }
+      },
+      {
+        "id": 20442,
+        "orderId": 20442,
+        "amount": "11.9900",
+        "feeAmount": "0.6500",
+        "createdAt": "2026-10-21T09:15:32.000Z",
+        "method": "card",
+        "brand": "Amex 2751",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 28,
+          "name": "Victor Silva"
+        }
+      },
+      {
+        "id": 20441,
+        "orderId": 20441,
+        "amount": "19.9900",
+        "feeAmount": "0.8800",
+        "createdAt": "2026-10-21T09:12:55.000Z",
+        "method": "card",
+        "brand": "Amex 2044",
+        "status": "refunded",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 10,
+          "name": "Tyler Brooks"
+        }
+      },
+      {
+        "id": 20440,
+        "orderId": 20440,
+        "amount": "4.8300",
+        "feeAmount": "0.0500",
+        "createdAt": "2026-10-21T06:41:05.000Z",
+        "method": "crypto",
+        "brand": "USDT TRC20",
+        "status": "captured",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 22,
+          "name": "Diego Fernandez"
+        }
+      },
+      {
+        "id": 20439,
+        "orderId": 20439,
+        "amount": "11.9900",
+        "feeAmount": "0.1200",
+        "createdAt": "2026-10-20T17:40:42.000Z",
+        "method": "crypto",
+        "brand": "USDT TRC20",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 9,
+          "name": "Jessica Moore"
+        }
+      },
+      {
+        "id": 20438,
+        "orderId": 20438,
+        "amount": "11.9900",
+        "feeAmount": "0.6500",
+        "createdAt": "2026-10-20T16:45:17.000Z",
+        "method": "card",
+        "brand": "Mastercard 2465",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 10,
+          "name": "Tyler Brooks"
+        }
+      },
+      {
+        "id": 20437,
+        "orderId": 20437,
+        "amount": "17.8400",
+        "feeAmount": "0.8200",
+        "createdAt": "2026-10-20T14:09:24.000Z",
+        "method": "wallet",
+        "brand": "Mastercard 1051",
+        "status": "captured",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 18,
+          "name": "Hannah Weber"
+        }
+      },
+      {
+        "id": 20436,
+        "orderId": 20436,
+        "amount": "4.9900",
+        "feeAmount": "0.4400",
+        "createdAt": "2026-10-19T14:48:38.000Z",
+        "method": "card",
+        "brand": "Amex 0402",
+        "status": "captured",
+        "currency": "SEK",
+        "fx": "10.6",
+        "customer": {
+          "id": 30,
+          "name": "Oscar Nilsson"
+        }
+      },
+      {
+        "id": 20435,
+        "orderId": 20435,
+        "amount": "14.9900",
+        "feeAmount": "0.7300",
+        "createdAt": "2026-10-19T14:11:32.000Z",
+        "method": "card",
+        "brand": "Amex 4636",
+        "status": "captured",
+        "currency": "AED",
+        "fx": "3.67",
+        "customer": {
+          "id": 12,
+          "name": "Omar Haddad"
+        }
+      },
+      {
+        "id": 20434,
+        "orderId": 20434,
+        "amount": "25.9900",
+        "feeAmount": "1.0500",
+        "createdAt": "2026-10-18T17:23:34.000Z",
+        "method": "card",
+        "brand": "Amex 0989",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 10,
+          "name": "Tyler Brooks"
+        }
+      },
+      {
+        "id": 20433,
+        "orderId": 20433,
+        "amount": "3.9900",
+        "feeAmount": "0.4200",
+        "createdAt": "2026-10-18T15:56:19.000Z",
+        "method": "card",
+        "brand": "Amex 2479",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 25,
+          "name": "Olivia Grant"
+        }
+      },
+      {
+        "id": 20432,
+        "orderId": 20432,
+        "amount": "25.9900",
+        "feeAmount": "1.0500",
+        "createdAt": "2026-10-18T10:10:14.000Z",
+        "method": "card",
+        "brand": "Mastercard 4080",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 28,
+          "name": "Victor Silva"
+        }
+      },
+      {
+        "id": 20431,
+        "orderId": 20431,
+        "amount": "25.9900",
+        "feeAmount": "0.2600",
+        "createdAt": "2026-10-18T08:33:11.000Z",
+        "method": "crypto",
+        "brand": "USDT TRC20",
+        "status": "captured",
+        "currency": "CAD",
+        "fx": "1.37",
+        "customer": {
+          "id": 11,
+          "name": "Priya Nair"
+        }
+      },
+      {
+        "id": 20430,
+        "orderId": 20430,
+        "amount": "14.9900",
+        "feeAmount": "0.1500",
+        "createdAt": "2026-10-17T15:50:46.000Z",
+        "method": "crypto",
+        "brand": "USDT TRC20",
+        "status": "captured",
+        "currency": "AED",
+        "fx": "3.67",
+        "customer": {
+          "id": 12,
+          "name": "Omar Haddad"
+        }
+      },
+      {
+        "id": 20429,
+        "orderId": 20429,
+        "amount": "25.9900",
+        "feeAmount": "1.0500",
+        "createdAt": "2026-10-16T11:43:30.000Z",
+        "method": "card",
+        "brand": "Visa 3074",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 28,
+          "name": "Victor Silva"
+        }
+      },
+      {
+        "id": 20428,
+        "orderId": 20428,
+        "amount": "15.5900",
+        "feeAmount": "0.7500",
+        "createdAt": "2026-10-15T17:17:30.000Z",
+        "method": "card",
+        "brand": "Mastercard 7118",
+        "status": "captured",
+        "currency": "GBP",
+        "fx": "0.79",
+        "customer": {
+          "id": 14,
+          "name": "Chloe Bennett"
+        }
+      },
+      {
+        "id": 20427,
+        "orderId": 20427,
+        "amount": "18.4400",
+        "feeAmount": "0.8300",
+        "createdAt": "2026-10-15T10:43:54.000Z",
+        "method": "card",
+        "brand": "Visa 7843",
+        "status": "refunded",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 20,
+          "name": "Kevin Doyle"
+        }
+      },
+      {
+        "id": 20426,
+        "orderId": 20426,
+        "amount": "17.9900",
+        "feeAmount": "0.8200",
+        "createdAt": "2026-10-14T18:19:48.000Z",
+        "method": "card",
+        "brand": "Mastercard 0630",
+        "status": "captured",
+        "currency": "GBP",
+        "fx": "0.79",
+        "customer": {
+          "id": 15,
+          "name": "Harry Patel"
+        }
+      },
+      {
+        "id": 20425,
+        "orderId": 20425,
+        "amount": "15.5900",
+        "feeAmount": "0.7500",
+        "createdAt": "2026-10-14T17:36:45.000Z",
+        "method": "wallet",
+        "brand": "Mastercard 5454",
+        "status": "captured",
+        "currency": "GBP",
+        "fx": "0.79",
+        "customer": {
+          "id": 21,
+          "name": "Samira Khan"
+        }
+      },
+      {
+        "id": 20424,
+        "orderId": 20424,
+        "amount": "25.9900",
+        "feeAmount": "1.0500",
+        "createdAt": "2026-10-14T16:02:54.000Z",
+        "method": "card",
+        "brand": "Visa 2867",
+        "status": "captured",
+        "currency": "CAD",
+        "fx": "1.37",
+        "customer": {
+          "id": 11,
+          "name": "Priya Nair"
+        }
+      },
+      {
+        "id": 20423,
+        "orderId": 20423,
+        "amount": "17.9900",
+        "feeAmount": "0.1800",
+        "createdAt": "2026-10-14T15:26:41.000Z",
+        "method": "crypto",
+        "brand": "USDT TRC20",
+        "status": "captured",
+        "currency": "GBP",
+        "fx": "0.79",
+        "customer": {
+          "id": 14,
+          "name": "Chloe Bennett"
+        }
+      },
+      {
+        "id": 20422,
+        "orderId": 20422,
+        "amount": "26.3900",
+        "feeAmount": "1.0700",
+        "createdAt": "2026-10-14T12:34:14.000Z",
+        "method": "card",
+        "brand": "Visa 4543",
+        "status": "captured",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 4,
+          "name": "Emma Dubois"
+        }
+      },
+      {
+        "id": 20421,
+        "orderId": 20421,
+        "amount": "4.9900",
+        "feeAmount": "0.4400",
+        "createdAt": "2026-10-13T15:16:05.000Z",
+        "method": "wallet",
+        "brand": "Visa 1787",
+        "status": "captured",
+        "currency": "SEK",
+        "fx": "10.6",
+        "customer": {
+          "id": 30,
+          "name": "Oscar Nilsson"
+        }
+      },
+      {
+        "id": 20420,
+        "orderId": 20420,
+        "amount": "3.9900",
+        "feeAmount": "0.4200",
+        "createdAt": "2026-10-12T15:48:22.000Z",
+        "method": "card",
+        "brand": "Mastercard 2482",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 10,
+          "name": "Tyler Brooks"
+        }
+      },
+      {
+        "id": 20419,
+        "orderId": 20419,
+        "amount": "3.9900",
+        "feeAmount": "0.4200",
+        "createdAt": "2026-10-11T17:32:08.000Z",
+        "method": "card",
+        "brand": "Visa 4404",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 28,
+          "name": "Victor Silva"
+        }
+      },
+      {
+        "id": 20418,
+        "orderId": 20418,
+        "amount": "3.9900",
+        "feeAmount": "0.4200",
+        "createdAt": "2026-10-11T15:35:39.000Z",
+        "method": "card",
+        "brand": "Visa 3167",
+        "status": "captured",
+        "currency": "CAD",
+        "fx": "1.37",
+        "customer": {
+          "id": 11,
+          "name": "Priya Nair"
+        }
+      },
+      {
+        "id": 20417,
+        "orderId": 20417,
+        "amount": "26.6100",
+        "feeAmount": "1.0700",
+        "createdAt": "2026-10-11T15:02:48.000Z",
+        "method": "wallet",
+        "brand": "Amex 5758",
+        "status": "captured",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 23,
+          "name": "Ana Costa"
+        }
+      },
+      {
+        "id": 20416,
+        "orderId": 20416,
+        "amount": "19.9900",
+        "feeAmount": "0.8800",
+        "createdAt": "2026-10-11T10:52:24.000Z",
+        "method": "card",
+        "brand": "Mastercard 6572",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 9,
+          "name": "Jessica Moore"
+        }
+      },
+      {
+        "id": 20415,
+        "orderId": 20415,
+        "amount": "25.9900",
+        "feeAmount": "1.0500",
+        "createdAt": "2026-10-10T19:35:26.000Z",
+        "method": "card",
+        "brand": "Visa 0016",
+        "status": "captured",
+        "currency": "CAD",
+        "fx": "1.37",
+        "customer": {
+          "id": 11,
+          "name": "Priya Nair"
+        }
+      },
+      {
+        "id": 20414,
+        "orderId": 20414,
+        "amount": "25.9900",
+        "feeAmount": "1.0500",
+        "createdAt": "2026-10-10T13:10:28.000Z",
+        "method": "card",
+        "brand": "Mastercard 0193",
+        "status": "captured",
+        "currency": "CAD",
+        "fx": "1.37",
+        "customer": {
+          "id": 11,
+          "name": "Priya Nair"
+        }
+      },
+      {
+        "id": 20413,
+        "orderId": 20413,
+        "amount": "19.9900",
+        "feeAmount": "0.8800",
+        "createdAt": "2026-10-09T14:48:45.000Z",
+        "method": "card",
+        "brand": "Mastercard 5388",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 24,
+          "name": "Ryan Cooper"
+        }
+      },
+      {
+        "id": 20412,
+        "orderId": 20412,
+        "amount": "17.9900",
+        "feeAmount": "0.8200",
+        "createdAt": "2026-10-09T08:09:48.000Z",
+        "method": "card",
+        "brand": "Mastercard 2819",
+        "status": "captured",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 4,
+          "name": "Emma Dubois"
+        }
+      },
+      {
+        "id": 20411,
+        "orderId": 20411,
+        "amount": "4.7500",
+        "feeAmount": "0.4400",
+        "createdAt": "2026-10-08T13:51:54.000Z",
+        "method": "card",
+        "brand": "Mastercard 2240",
+        "status": "captured",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 27,
+          "name": "Nina Petrova"
+        }
+      },
+      {
+        "id": 20410,
+        "orderId": 20410,
+        "amount": "25.9900",
+        "feeAmount": "1.0500",
+        "createdAt": "2026-10-08T10:04:58.000Z",
+        "method": "card",
+        "brand": "Mastercard 7761",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 25,
+          "name": "Olivia Grant"
+        }
+      },
+      {
+        "id": 20409,
+        "orderId": 20409,
+        "amount": "3.9900",
+        "feeAmount": "0.4200",
+        "createdAt": "2026-10-08T08:14:21.000Z",
+        "method": "card",
+        "brand": "Amex 2178",
+        "status": "captured",
+        "currency": "CAD",
+        "fx": "1.37",
+        "customer": {
+          "id": 26,
+          "name": "Ethan Clarke"
+        }
+      },
+      {
+        "id": 20408,
+        "orderId": 20408,
+        "amount": "15.5900",
+        "feeAmount": "0.7500",
+        "createdAt": "2026-10-06T21:22:45.000Z",
+        "method": "card",
+        "brand": "Amex 0870",
+        "status": "disputed",
+        "currency": "GBP",
+        "fx": "0.79",
+        "customer": {
+          "id": 1,
+          "name": "Daniel Whitmore"
+        }
+      },
+      {
+        "id": 20407,
+        "orderId": 20407,
+        "amount": "4.9100",
+        "feeAmount": "0.4400",
+        "createdAt": "2026-10-06T13:41:53.000Z",
+        "method": "card",
+        "brand": "Mastercard 3598",
+        "status": "captured",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 6,
+          "name": "Aoife Brennan"
+        }
+      },
+      {
+        "id": 20406,
+        "orderId": 20406,
+        "amount": "3.9900",
+        "feeAmount": "0.4200",
+        "createdAt": "2026-10-05T17:11:10.000Z",
+        "method": "card",
+        "brand": "Mastercard 3076",
+        "status": "captured",
+        "currency": "SAR",
+        "fx": "3.75",
+        "customer": {
+          "id": 13,
+          "name": "Fahad Al-Otaibi"
+        }
+      },
+      {
+        "id": 20405,
+        "orderId": 20405,
+        "amount": "11.9900",
+        "feeAmount": "0.6500",
+        "createdAt": "2026-10-05T09:17:48.000Z",
+        "method": "wallet",
+        "brand": "Mastercard 7760",
+        "status": "disputed",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 25,
+          "name": "Olivia Grant"
+        }
+      },
+      {
+        "id": 20404,
+        "orderId": 20404,
+        "amount": "4.7900",
+        "feeAmount": "0.4400",
+        "createdAt": "2026-10-03T16:55:59.000Z",
+        "method": "wallet",
+        "brand": "Amex 6703",
+        "status": "captured",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 17,
+          "name": "Lucas Moreau"
+        }
+      },
+      {
+        "id": 20403,
+        "orderId": 20403,
+        "amount": "19.9900",
+        "feeAmount": "0.2000",
+        "createdAt": "2026-10-03T11:30:45.000Z",
+        "method": "crypto",
+        "brand": "USDT TRC20",
+        "status": "disputed",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 24,
+          "name": "Ryan Cooper"
+        }
+      },
+      {
+        "id": 20402,
+        "orderId": 20402,
+        "amount": "11.9900",
+        "feeAmount": "0.6500",
+        "createdAt": "2026-10-03T07:55:18.000Z",
+        "method": "card",
+        "brand": "Mastercard 2006",
+        "status": "captured",
+        "currency": "USD",
+        "fx": "1",
+        "customer": {
+          "id": 10,
+          "name": "Tyler Brooks"
+        }
+      },
+      {
+        "id": 20401,
+        "orderId": 20401,
+        "amount": "4.7500",
+        "feeAmount": "0.4400",
+        "createdAt": "2026-10-02T11:22:46.000Z",
+        "method": "card",
+        "brand": "Visa 0389",
+        "status": "captured",
+        "currency": "EUR",
+        "fx": "0.92",
+        "customer": {
+          "id": 18,
+          "name": "Hannah Weber"
+        }
+      },
+      {
+        "id": 20400,
+        "orderId": 20400,
+        "amount": "15.5900",
+        "feeAmount": "0.7500",
+        "createdAt": "2026-10-02T09:12:14.000Z",
+        "method": "card",
+        "brand": "Visa 4417",
+        "status": "chargeback",
+        "currency": "GBP",
+        "fx": "0.79",
+        "customer": {
+          "id": 19,
+          "name": "Jack Turner"
+        }
+      }
+    ],
+    "total": 104,
+    "totals": {
+      "refundedCount": 7,
+      "refundedAmount": "111.1900",
+      "refundedPercentOfSales": "7.7",
+      "awaitingAmount": "48.8000",
+      "chargebackLoss": "45.5900"
+    }
+  }
+}

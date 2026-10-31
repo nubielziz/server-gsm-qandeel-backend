@@ -1,0 +1,559 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "161"
+  },
+  "body": [
+    {
+      "id": 1,
+      "planId": 1,
+      "beneficiaryId": 1,
+      "orderId": 48101,
+      "period": "2026-10",
+      "basisAmount": "16.2600",
+      "percent": "3.0000",
+      "amount": "0.4900",
+      "status": "approved",
+      "ledgerTxId": 422,
+      "createdAt": "2026-10-03T21:37:21.644Z",
+      "updatedAt": "2026-10-10T21:37:21.644Z",
+      "beneficiary": {
+        "id": 1,
+        "name": "Zain Mobile Hub"
+      },
+      "merchant": {
+        "id": 8,
+        "name": "Casablanca Unlock"
+      }
+    },
+    {
+      "id": 2,
+      "planId": 1,
+      "beneficiaryId": 1,
+      "orderId": 48103,
+      "period": "2026-10",
+      "basisAmount": "5.6400",
+      "percent": "3.0000",
+      "amount": "0.1700",
+      "status": "approved",
+      "ledgerTxId": 337,
+      "createdAt": "2026-10-02T09:18:22.764Z",
+      "updatedAt": "2026-10-09T09:18:22.764Z",
+      "beneficiary": {
+        "id": 1,
+        "name": "Zain Mobile Hub"
+      },
+      "merchant": {
+        "id": 8,
+        "name": "Casablanca Unlock"
+      }
+    },
+    {
+      "id": 3,
+      "planId": 2,
+      "beneficiaryId": 5,
+      "orderId": 48115,
+      "period": "2026-10",
+      "basisAmount": "6.9600",
+      "percent": "5.0000",
+      "amount": "0.3500",
+      "status": "approved",
+      "ledgerTxId": 360,
+      "createdAt": "2026-10-02T14:59:46.595Z",
+      "updatedAt": "2026-10-09T14:59:46.595Z",
+      "beneficiary": {
+        "id": 5,
+        "name": "Cairo GSM Lab"
+      },
+      "merchant": {
+        "id": 12,
+        "name": "Jeddah Tech Bar"
+      }
+    },
+    {
+      "id": 4,
+      "planId": 1,
+      "beneficiaryId": 1,
+      "orderId": 48117,
+      "period": "2026-10",
+      "basisAmount": "6.6800",
+      "percent": "3.0000",
+      "amount": "0.2000",
+      "status": "approved",
+      "ledgerTxId": 363,
+      "createdAt": "2026-10-02T17:33:50.652Z",
+      "updatedAt": "2026-10-09T17:33:50.652Z",
+      "beneficiary": {
+        "id": 1,
+        "name": "Zain Mobile Hub"
+      },
+      "merchant": {
+        "id": 8,
+        "name": "Casablanca Unlock"
+      }
+    },
+    {
+      "id": 5,
+      "planId": 2,
+      "beneficiaryId": 5,
+      "orderId": 48120,
+      "period": "2026-10",
+      "basisAmount": "8.8100",
+      "percent": "5.0000",
+      "amount": "0.4400",
+      "status": "approved",
+      "ledgerTxId": 412,
+      "createdAt": "2026-10-03T16:46:08.550Z",
+      "updatedAt": "2026-10-10T16:46:08.550Z",
+      "beneficiary": {
+        "id": 5,
+        "name": "Cairo GSM Lab"
+      },
+      "merchant": {
+        "id": 15,
+        "name": "Doha Phone Lab"
+      }
+    },
+    {
+      "id": 6,
+      "planId": 2,
+      "beneficiaryId": 5,
+      "orderId": 48122,
+      "period": "2026-10",
+      "basisAmount": "8.8100",
+      "percent": "5.0000",
+      "amount": "0.4400",
+      "status": "approved",
+      "ledgerTxId": 416,
+      "createdAt": "2026-10-03T19:13:01.092Z",
+      "updatedAt": "2026-10-10T19:13:01.092Z",
+      "beneficiary": {
+        "id": 5,
+        "name": "Cairo GSM Lab"
+      },
+      "merchant": {
+        "id": 15,
+        "name": "Doha Phone Lab"
+      }
+    },
+    {
+      "id": 7,
+      "planId": 1,
+      "beneficiaryId": 1,
+      "orderId": 48127,
+      "period": "2026-10",
+      "basisAmount": "16.9300",
+      "percent": "3.0000",
+      "amount": "0.5100",
+      "status": "approved",
+      "ledgerTxId": 449,
+      "createdAt": "2026-10-04T16:19:05.410Z",
+      "updatedAt": "2026-10-11T16:19:05.410Z",
+      "beneficiary": {
+        "id": 1,
+        "name": "Zain Mobile Hub"
+      },
+      "merchant": {
+        "id": 9,
+        "name": "Lagos Gadget Fix"
+      }
+    },
+    {
+      "id": 8,
+      "planId": 1,
+      "beneficiaryId": 1,
+      "orderId": 48130,
+      "period": "2026-10",
+      "basisAmount": "1.3400",
+      "percent": "3.0000",
+      "amount": "0.0400",
+      "status": "approved",
+      "ledgerTxId": 402,
+      "createdAt": "2026-10-03T13:16:50.218Z",
+      "updatedAt": "2026-10-10T13:16:50.218Z",
+      "beneficiary": {
+        "id": 1,
+        "name": "Zain Mobile Hub"
+      },
+      "merchant": {
+        "id": 8,
+        "name": "Casablanca Unlock"
+      }
+    },
+    {
+      "id": 9,
+      "planId": 1,
+      "beneficiaryId": 1,
+      "orderId": 48132,
+      "period": "2026-10",
+      "basisAmount": "7.8800",
+      "percent": "3.0000",
+      "amount": "0.2400",
+      "status": "approved",
+      "ledgerTxId": 425,
+      "createdAt": "2026-10-03T23:27:19.524Z",
+      "updatedAt": "2026-10-10T23:27:19.524Z",
+      "beneficiary": {
+        "id": 1,
+        "name": "Zain Mobile Hub"
+      },
+      "merchant": {
+        "id": 11,
+        "name": "Istanbul GSM Care"
+      }
+    },
+    {
+      "id": 10,
+      "planId": 1,
+      "beneficiaryId": 1,
+      "orderId": 48143,
+      "period": "2026-10",
+      "basisAmount": "7.4100",
+      "percent": "3.0000",
+      "amount": "0.2200",
+      "status": "approved",
+      "ledgerTxId": 462,
+      "createdAt": "2026-10-04T20:52:19.658Z",
+      "updatedAt": "2026-10-11T20:52:19.658Z",
+      "beneficiary": {
+        "id": 1,
+        "name": "Zain Mobile Hub"
+      },
+      "merchant": {
+        "id": 9,
+        "name": "Lagos Gadget Fix"
+      }
+    },
+    {
+      "id": 11,
+      "planId": 2,
+      "beneficiaryId": 5,
+      "orderId": 48154,
+      "period": "2026-10",
+      "basisAmount": "9.1800",
+      "percent": "5.0000",
+      "amount": "0.4600",
+      "status": "approved",
+      "ledgerTxId": 469,
+      "createdAt": "2026-10-05T06:51:10.797Z",
+      "updatedAt": "2026-10-12T06:51:10.797Z",
+      "beneficiary": {
+        "id": 5,
+        "name": "Cairo GSM Lab"
+      },
+      "merchant": {
+        "id": 15,
+        "name": "Doha Phone Lab"
+      }
+    },
+    {
+      "id": 12,
+      "planId": 2,
+      "beneficiaryId": 5,
+      "orderId": 48163,
+      "period": "2026-10",
+      "basisAmount": "9.1700",
+      "percent": "5.0000",
+      "amount": "0.4600",
+      "status": "approved",
+      "ledgerTxId": 536,
+      "createdAt": "2026-10-06T16:11:20.138Z",
+      "updatedAt": "2026-10-13T16:11:20.138Z",
+      "beneficiary": {
+        "id": 5,
+        "name": "Cairo GSM Lab"
+      },
+      "merchant": {
+        "id": 12,
+        "name": "Jeddah Tech Bar"
+      }
+    },
+    {
+      "id": 13,
+      "planId": 1,
+      "beneficiaryId": 1,
+      "orderId": 48164,
+      "period": "2026-10",
+      "basisAmount": "18.7000",
+      "percent": "3.0000",
+      "amount": "0.5600",
+      "status": "approved",
+      "ledgerTxId": 506,
+      "createdAt": "2026-10-06T05:21:40.371Z",
+      "updatedAt": "2026-10-13T05:21:40.371Z",
+      "beneficiary": {
+        "id": 1,
+        "name": "Zain Mobile Hub"
+      },
+      "merchant": {
+        "id": 9,
+        "name": "Lagos Gadget Fix"
+      }
+    },
+    {
+      "id": 14,
+      "planId": 1,
+      "beneficiaryId": 1,
+      "orderId": 48169,
+      "period": "2026-10",
+      "basisAmount": "30.7400",
+      "percent": "3.0000",
+      "amount": "0.9200",
+      "status": "approved",
+      "ledgerTxId": 519,
+      "createdAt": "2026-10-06T09:21:04.013Z",
+      "updatedAt": "2026-10-13T09:21:04.013Z",
+      "beneficiary": {
+        "id": 1,
+        "name": "Zain Mobile Hub"
+      },
+      "merchant": {
+        "id": 9,
+        "name": "Lagos Gadget Fix"
+      }
+    },
+    {
+      "id": 15,
+      "planId": 2,
+      "beneficiaryId": 5,
+      "orderId": 48171,
+      "period": "2026-10",
+      "basisAmount": "8.8100",
+      "percent": "5.0000",
+      "amount": "0.4400",
+      "status": "approved",
+      "ledgerTxId": 544,
+      "createdAt": "2026-10-07T01:00:09.784Z",
+      "updatedAt": "2026-10-14T01:00:09.784Z",
+      "beneficiary": {
+        "id": 5,
+        "name": "Cairo GSM Lab"
+      },
+      "merchant": {
+        "id": 15,
+        "name": "Doha Phone Lab"
+      }
+    },
+    {
+      "id": 16,
+      "planId": 1,
+      "beneficiaryId": 1,
+      "orderId": 48180,
+      "period": "2026-10",
+      "basisAmount": "22.4600",
+      "percent": "3.0000",
+      "amount": "0.6700",
+      "status": "approved",
+      "ledgerTxId": 535,
+      "createdAt": "2026-10-06T15:37:14.880Z",
+      "updatedAt": "2026-10-13T15:37:14.880Z",
+      "beneficiary": {
+        "id": 1,
+        "name": "Zain Mobile Hub"
+      },
+      "merchant": {
+        "id": 11,
+        "name": "Istanbul GSM Care"
+      }
+    },
+    {
+      "id": 17,
+      "planId": 1,
+      "beneficiaryId": 1,
+      "orderId": 48186,
+      "period": "2026-10",
+      "basisAmount": "9.1800",
+      "percent": "3.0000",
+      "amount": "0.2800",
+      "status": "approved",
+      "ledgerTxId": 563,
+      "createdAt": "2026-10-07T07:57:42.428Z",
+      "updatedAt": "2026-10-14T07:57:42.428Z",
+      "beneficiary": {
+        "id": 1,
+        "name": "Zain Mobile Hub"
+      },
+      "merchant": {
+        "id": 11,
+        "name": "Istanbul GSM Care"
+      }
+    },
+    {
+      "id": 18,
+      "planId": 1,
+      "beneficiaryId": 1,
+      "orderId": 48188,
+      "period": "2026-10",
+      "basisAmount": "1.3400",
+      "percent": "3.0000",
+      "amount": "0.0400",
+      "status": "approved",
+      "ledgerTxId": 571,
+      "createdAt": "2026-10-07T09:32:13.072Z",
+      "updatedAt": "2026-10-14T09:32:13.072Z",
+      "beneficiary": {
+        "id": 1,
+        "name": "Zain Mobile Hub"
+      },
+      "merchant": {
+        "id": 11,
+        "name": "Istanbul GSM Care"
+      }
+    },
+    {
+      "id": 19,
+      "planId": 1,
+      "beneficiaryId": 1,
+      "orderId": 48192,
+      "period": "2026-10",
+      "basisAmount": "39.0400",
+      "percent": "3.0000",
+      "amount": "1.1700",
+      "status": "approved",
+      "ledgerTxId": 667,
+      "createdAt": "2026-10-08T16:21:15.805Z",
+      "updatedAt": "2026-10-15T16:21:15.805Z",
+      "beneficiary": {
+        "id": 1,
+        "name": "Zain Mobile Hub"
+      },
+      "merchant": {
+        "id": 9,
+        "name": "Lagos Gadget Fix"
+      }
+    },
+    {
+      "id": 20,
+      "planId": 2,
+      "beneficiaryId": 5,
+      "orderId": 48193,
+      "period": "2026-10",
+      "basisAmount": "19.2000",
+      "percent": "5.0000",
+      "amount": "0.9600",
+      "status": "approved",
+      "ledgerTxId": 578,
+      "createdAt": "2026-10-07T11:10:07.206Z",
+      "updatedAt": "2026-10-14T11:10:07.206Z",
+      "beneficiary": {
+        "id": 5,
+        "name": "Cairo GSM Lab"
+      },
+      "merchant": {
+        "id": 15,
+        "name": "Doha Phone Lab"
+      }
+    },
+    {
+      "id": 21,
+      "planId": 1,
+      "beneficiaryId": 1,
+      "orderId": 48197,
+      "period": "2026-10",
+      "basisAmount": "8.6100",
+      "percent": "3.0000",
+      "amount": "0.2600",
+      "status": "approved",
+      "ledgerTxId": 595,
+      "createdAt": "2026-10-07T13:56:52.973Z",
+      "updatedAt": "2026-10-14T13:56:52.973Z",
+      "beneficiary": {
+        "id": 1,
+        "name": "Zain Mobile Hub"
+      },
+      "merchant": {
+        "id": 8,
+        "name": "Casablanca Unlock"
+      }
+    },
+    {
+      "id": 22,
+      "planId": 2,
+      "beneficiaryId": 5,
+      "orderId": 48207,
+      "period": "2026-10",
+      "basisAmount": "0.1200",
+      "percent": "5.0000",
+      "amount": "0.0100",
+      "status": "approved",
+      "ledgerTxId": 611,
+      "createdAt": "2026-10-07T17:24:05.470Z",
+      "updatedAt": "2026-10-14T17:24:05.470Z",
+      "beneficiary": {
+        "id": 5,
+        "name": "Cairo GSM Lab"
+      },
+      "merchant": {
+        "id": 15,
+        "name": "Doha Phone Lab"
+      }
+    },
+    {
+      "id": 23,
+      "planId": 1,
+      "beneficiaryId": 1,
+      "orderId": 48208,
+      "period": "2026-10",
+      "basisAmount": "9.5800",
+      "percent": "3.0000",
+      "amount": "0.2900",
+      "status": "approved",
+      "ledgerTxId": 615,
+      "createdAt": "2026-10-07T18:17:40.439Z",
+      "updatedAt": "2026-10-14T18:17:40.439Z",
+      "beneficiary": {
+        "id": 1,
+        "name": "Zain Mobile Hub"
+      },
+      "merchant": {
+        "id": 11,
+        "name": "Istanbul GSM Care"
+      }
+    },
+    {
+      "id": 24,
+      "planId": 2,
+      "beneficiaryId": 5,
+      "orderId": 48215,
+      "period": "2026-10",
+      "basisAmount": "1.5400",
+      "percent": "5.0000",
+      "amount": "0.0800",
+      "status": "approved",
+      "ledgerTxId": 630,
+      "createdAt": "2026-10-08T06:22:21.095Z",
+      "updatedAt": "2026-10-15T06:22:21.095Z",
+      "beneficiary": {
+        "id": 5,
+        "name": "Cairo GSM Lab"
+      },
+      "merchant": {
+        "id": 15,
+        "name": "Doha Phone Lab"
+      }
+    },
+    {
+      "id": 25,
+      "planId": 2,
+      "beneficiaryId": 5,
+      "orderId": 48219,
+      "period": "2026-10",
+      "basisAmount": "6.9600",
+      "percent": "5.0000",
+      "amount": "0.3500",
+      "status": "approved",
+      "ledgerTxId": 644,
+      "createdAt": "2026-10-08T08:59:48.540Z",
+      "updatedAt": "2026-10-15T08:59:48.540Z",
+      "beneficiary": {
+        "id": 5,
+        "name": "Cairo GSM Lab"
+      },
+      "merchant": {
+        "id": 12,
+        "name": "Jeddah Tech Bar"
+      }
+    }
+  ]
+}

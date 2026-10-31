@@ -1,0 +1,19 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 32,
+    "customerId": 16,
+    "kind": "erasure",
+    "status": "rejected",
+    "requestedAt": "2026-10-28T12:00:00.000Z",
+    "dueAt": "2026-11-27T12:00:00.000Z",
+    "completedAt": null,
+    "handledBy": 1,
+    "fileId": null,
+    "createdAt": "2026-10-28T12:00:00.000Z",
+    "customerName": "Mia Schneider"
+  }
+}
