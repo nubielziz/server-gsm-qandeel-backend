@@ -4,7 +4,9 @@ A Phase 3 brief names its routes, tables, scenarios and frontend features; this 
 they are done. Read `_common.md` first.
 
 ## Inputs, in this order
-1. The brief: routes (manifest keys), out-of-scope list, decisions that matter, user-answered rules.
+1. The brief: routes (manifest keys), out-of-scope list, decisions that matter, user-answered rules
+   (`docs/contract/OPEN-QUESTIONS.md` and the PROGRESS table "Business rules answered by the user": they override any
+   default or proposal).
 2. `docs/contract/endpoints/<module>.md`: per route the map rule, the frontend function and types, query/request/
    response semantics, errors, B-ids and the mock that answers it today.
 3. `docs/contract/frontend-endpoints.json`: the exact request/response shapes (query with node, never read whole).

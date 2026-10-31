@@ -12032,6 +12032,7 @@
          "enum": [
           "failed",
           "rejected",
+          "processing",
           "completed",
           "requested"
          ]
@@ -12228,6 +12229,7 @@
       "enum": [
        "failed",
        "rejected",
+       "processing",
        "completed",
        "requested"
       ]
@@ -31083,6 +31085,7 @@
       "enum": [
        "failed",
        "rejected",
+       "processing",
        "completed",
        "requested"
       ]
@@ -31286,6 +31289,7 @@
       "enum": [
        "failed",
        "rejected",
+       "processing",
        "completed",
        "requested"
       ]
@@ -31477,6 +31481,7 @@
       "enum": [
        "failed",
        "rejected",
+       "processing",
        "completed",
        "requested"
       ]

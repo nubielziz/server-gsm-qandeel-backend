@@ -45,12 +45,21 @@ and `docs/slices/<module>.json`, `docs/contract/RULES.md` for its frontend featu
 | 3 Feature loop (by stage) | | | |
 | 4 Frontend integration | | | |
 
-## Open questions for the user
+## Business rules answered by the user (2026-10-31)
 
-Eight business rules with lead defaults (`docs/contract/OPEN-QUESTIONS.md`): group promotion, credit limits, manual
-invoices, manual bank deposits, commission on refunded orders, gateway hold_hours, the refund `processing` status,
-pricing-rule stacking. None blocks Phase 2; each touches a later stage (3, 4, 8, 11, 16). Update
-`docs/contract/lead-decisions.json` and rerun `bun run contract:docs` when the user answers.
+All eight questions of `docs/contract/OPEN-QUESTIONS.md` are answered (recorded in `docs/contract/lead-decisions.json`;
+full rules in the cited ANSWERS/MISMATCHES entries). The feature that implements each rule must follow it:
+
+| # | Rule | Feature |
+|---|---|---|
+| 1 | Group promotion: cumulative completed-order spend in USD since account creation; `earn_threshold` set per group by the admin; nightly job promotes, never demotes; manual group change any time (ANSWERS merchants Q7) | 4a (client groups + promotion job) |
+| 2 | Credit limit: lowering below the credit in use allowed (new orders refused until a top-up); a limit > 0 on a group without `overdraft_allowed` is 422 (merchants Q13) | 3 |
+| 3 | Manual invoice = top-up (paying credits the wallet, `invoice.paid`); no B2B VAT for now but the rate stays a setting (default 0); due in 14 days (B41, finance Q6) | 8 |
+| 4 | Deposit approval: manual gateways (bank, Wise) debit `bank`; automatic gateways `gateway_clearing` until payout (B38, finance Q8) | 8 |
+| 5 | Commission on refunds: reversed before approval, reversing entry after approval (commissions Q8) | 11 |
+| 6 | Automatic gateways credit by themselves 10 min after confirmation (setting `payments.auto_credit_delay_minutes`) when the gateway API still says confirmed and risk has not flagged it (flagged → staff review); crypto only after the gateway's required confirmations; manual gateways keep staff review; `hold_hours` only lengthens the wait (settings Q9) | 8 (+ 18 risk flags) |
+| 7 | Refund `processing` between approval and the gateway result; the console now knows it (B82 resolved, console M258) | 16 |
+| 8 | Pricing: exactly the demo's resolver (services Q6) | 4b |
 
 ## Feature plan (Phase 2 and 3)
 
@@ -69,22 +78,22 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 | P2.7 | contract-tests | route/shape/error parity tests, fixture harvest from the frontend mocks, allowlist, `pending.ts` | | done (`test(contract)` commit) |
 | 2a | identity-staff-access | staff, roles, permissions, sessions, IP rules, access restriction, audit logs, settings (st2 admin, 31) | admin-team, ip-rules | |
 | 2b | identity-merchant-auth | merchant portal sign-in, security, sessions (st2 client, 15) | | |
-| 3 | money-wallets-ledger | postTransaction, money events, wallets, statement, adjust, credit limit, ledger, reconcile, currencies (st3, 14) | | |
-| 4a | catalog-structure | client groups, categories, services, fields, options, inventory (st4/5) | | |
-| 4b | catalog-pricing | group/client prices, pricing rules, bulk price, resolve, merchant catalog and price export | | |
+| 3 | money-wallets-ledger | postTransaction, money events, wallets, statement, adjust, credit limit (user rule 2), ledger, reconcile, currencies (st3, 14) | | |
+| 4a | catalog-structure | client groups + nightly promotion job (user rule 1), categories, services, fields, options, inventory (st4/5) | | |
+| 4b | catalog-pricing | group/client prices, pricing rules (user rule 8: the demo's resolver), bulk price, resolve, merchant catalog and price export | | |
 | 5 | orders-engine | state machine, placement + hold, admin order actions, bulk reply, export, merchant orders, files (st5) | manual | |
 | 6 | suppliers | suppliers admin, Dhru supplier client, dispatch/poll jobs, dispatch/fetch/change-supplier, sync, import (st6) | success, reject, timeout | |
 | 7a | dhru-and-rest-v1 | Dhru surface (8 actions), REST v1 (12), idempotency (st7) | | |
 | 7b | merchant-api-webhooks | API keys, webhook endpoints, deliveries, outgoing events, public docs (st7) | | |
-| 8 | billing | gateways, invoices, payments, approve/reject, KYC, payment webhook (B2B), invoice.paid (st8) | | |
+| 8 | billing | gateways, invoices (user rule 3), payments, approve/reject (user rule 4), automatic credit after the verification delay (user rule 6), KYC, payment webhook (B2B), invoice.paid (st8) | | |
 | 9 | health-dashboard | system health routes, dashboard, queues board (st9) | | |
-| 11 | commissions-reports | plans, assignments, accruals, approve, reports (st11) | | |
+| 11 | commissions-reports | plans, assignments, accruals (user rule 5 on refunds), approve, reports (st11) | | |
 | 12a | notifications | templates, notifications, preferences, Telegram link + webhook (st12) | | |
 | 12b | alerts-integrity | alert rules, alerts, incidents, integrity job (st12) | system-alert, system-integrity | |
 | 14a | storefront-checkout | store config, listings, IMEI check (checksum + TAC), checkout sessions, consents (st14) | | |
 | 14b | customers-accounts | store sign-in, account, admin customers, tax rates, TAC catalog, FX refresh (st14) | b2c-account | |
 | 15 | storefront-content | listings admin, content pages, help, legal documents (st15) | | |
-| 16 | b2c-payments-refunds | pay, receipt, B2C payment webhook, refunds, disputes, VAT/payments reports, storefront settings (st16) | b2c-paid, b2c-refund, b2c-chargeback | |
+| 16 | b2c-payments-refunds | pay, receipt, B2C payment webhook, refunds (user rule 7: `processing`), disputes, VAT/payments reports, storefront settings (st16) | b2c-paid, b2c-refund, b2c-chargeback | |
 | 17 | support | tickets (store + admin), replies, notes, templates, CSAT (st17) | b2c-ticket | |
 | 18 | risk-privacy | IMEI checks via supplier, blocklist, risk queue and rules, data requests, export/anonymize (st18) | | |
 | 19 | growth | abandoned checkouts, recovery, funnel, content generation (st19) | | |
