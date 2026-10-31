@@ -8,11 +8,13 @@ Decisions that shape this module: 004 file storage, 017 API documentation, 020 o
 
 ## Status
 
-Built: `GET /openapi.json` and `GET /docs` (the public documentation), plus the internal `GET /reference` and `GET /reference/openapi.json` (no contracts: they are documentation routes, gated by `REFERENCE_DOCS`). Code: `docs/`.
+Built: `GET /openapi.json` and `GET /docs` (the public documentation), plus the internal `GET /reference` and `GET /reference/openapi.json` (no contracts: they are documentation routes, gated by `REFERENCE_DOCS`). Code: `docs/`. The transactional outbox (`outbox_events`): writing events and the worker's relay. Code: `outbox/`.
 
 ## Public API (`index.ts`)
 
 Exports `PlatformModule`, the document builders and `OpenApiService` (used by `src/app.bootstrap.ts` and `scripts/gen-openapi.ts`), `DOCUMENTATION_ROUTES` (for the route-parity test) and the `REFERENCE_DOCS_GUARD` token (see below).
+
+The outbox: `OutboxModule` (global: `OutboxService`, `OutboxRouteRegistry`), `OutboxService.add(tx, event)` and `backlog(db)`, `OutboxRouteRegistry.register({ type, queue, jobName? })`, the types `OutboxEventInput`, `OutboxPayload`, `OutboxJobData`, `OutboxRoute`, `OutboxBacklog`, and, for the worker only, `OutboxRelayModule` with `OutboxRelay`.
 
 ## Owned tables
 
@@ -119,11 +121,36 @@ Keep this list in step with the contracts (`permission` of each `defineRoute`).
 
 ## Events
 
-Outbox events produced (types, payload ids): none yet. Consumed: none yet. Record each outbox type and the queue it maps to here and in `docs/queues.md`.
+Outbox events produced (types, payload ids): none yet. A module registers an event type with its queue in `onModuleInit`
+(`OutboxRouteRegistry.register`) and writes it with `OutboxService.add(tx, ...)` inside its transaction; the table of event
+types is in `docs/queues.md` ("Outbox event types"). Consumed: none yet. The map's outgoing events (`order.status_changed`,
+`wallet.low_balance`, `invoice.paid`) are registered by the features that produce them.
+
+### The outbox (`outbox/`)
+
+- **Write** (API and worker): `OutboxService.add(tx, { type, aggregateType, aggregateId, payload })` inserts the
+  `outbox_events` row and sends `pg_notify('outbox', id)` on the caller's transaction, so the row and the wake-up exist if and
+  only if the change commits. The payload is checked (`outbox-payload.ts`): a flat object of whole numbers, strings up to
+  64 characters, flags and short lists; no decimals (no money), no nesting, no free text, at most 2 KB. It is stored with
+  `meta.requestId` (the current request id, decision 012). An event type that no module registered is refused.
+- **Relay** (worker only, `OutboxRelayModule`): `OutboxRelay.run()` selects the pending rows `ORDER BY id LIMIT 100 FOR
+  UPDATE SKIP LOCKED`, adds one job per row to the queue of its type with the job id `outbox-<id>` and the data
+  `OutboxJobData`, sets `processed_at` and counts the attempt in the same transaction, and repeats while batches are full.
+  It runs on a one-second BullMQ tick (`outbox-relay-tick`, the safety net) and on a Postgres `NOTIFY outbox` wake-up
+  (`OutboxListener`: one dedicated `pg.Client` named `gsm-outbox-listener`, reconnects with a growing wait, catches up after
+  every reconnect, closed in `onModuleDestroy`). Calls that arrive during a run share it and make it look once more.
+- **Failures.** Queue Redis down: the pass stops, every row stays pending and no attempt is counted (the tick retries). A
+  row that cannot be handed over for its own reason (no queue registered for its type, BullMQ refuses the job): the
+  attempt is counted and the row waits 2^attempts seconds (at most 5 minutes). Rows are never dropped; a stuck row shows in
+  the backlog (`OutboxService.backlog`, metrics `outbox_pending_events`, `outbox_oldest_pending_age_seconds`).
+- **Not here yet:** deleting processed rows (data retention, a maintenance job of a later feature).
+- **Metrics** (worker `/metrics`): `outbox_events_relayed_total{queue}`, `outbox_relay_lag_seconds`,
+  `outbox_relay_failures_total{reason}`, `outbox_pending_events`, `outbox_oldest_pending_age_seconds`.
 
 ## Jobs and schedules
 
-None yet. List each queue, job, schedule, idempotency key and retry policy here and in `docs/queues.md` (see `CONTRIBUTING.md` → "Add a job").
+The relay tick: `outbox-relay-tick`, every second, queue `outbox-relay`, job `tick` (processor `OutboxRelayProcessor`). Listed
+in `docs/queues.md`. Other jobs of this module (notifications, webhook deliveries, file jobs) arrive with their features.
 
 ## Cache keys
 

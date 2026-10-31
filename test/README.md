@@ -44,3 +44,24 @@ modules on the test instances: Redis database 1 on both roles and the bucket `gs
 - `createTestApp({ withoutInfrastructure: true })` leaves Redis, the cache and storage out (and their health indicators).
 - Await failures with `expectRejection(promise, RangeError)` / `rejectionOf(promise)`, not `await expect(...).rejects`.
 
+
+## Queue, worker and outbox tests
+
+`test/integration/queues.test.ts`, `outbox.test.ts`, `job-runs.test.ts`, `pg-listener.test.ts`, `worker-process.test.ts` and
+`queue-redis-restart.test.ts` run the real BullMQ, outbox and worker code on the test instances.
+
+- **A private BullMQ prefix per file** (`testBullPrefix()` in `test/support/queues.ts`, passed as `BULL_PREFIX`), and the
+  file deletes its keys at the end (`deleteBullKeys`): files never see each other's jobs or schedulers. Never `FLUSHDB`.
+- `createInfra({ modules, providers, overrides, env })` builds a small Nest app from the modules you name. Put your test
+  `@QueueProcessor` classes in `providers`; replace a module setting with `overrides: [[TOKEN, value]]`.
+- **Outbox tests share one database with every relay that is running**, and a relay takes whatever is pending. Rigs that
+  keep a listener or workers alive are closed after their test (`outbox.test.ts`); do not leave one open. Do not use
+  `resetDb()` in a file that checks job ids: it restarts the id sequences, and a new event would get the id of an old one
+  that the queue still keeps.
+- **Redis down / restarting** is simulated with a TCP forwarder (`createForwarder` in `test/support/infra.ts`) that can be
+  stopped and started again, and with `deadRedisUrl()`. The one test that restarts the real container needs
+  `GSM_TEST_DOCKER=1` (`docker restart gsm-backend-redis-queue-1`; `GSM_TEST_REDIS_QUEUE_CONTAINER` overrides the name); it
+  is skipped otherwise. Never run it while another checkout uses the same Redis.
+- **Process tests** start real Bun children from the repository root with `--no-env-file`: `src/worker.ts`, and
+  `test/support/slow-worker.ts` (the real `WorkerModule` plus a slow processor and shutdown markers). They pass
+  `DATABASE_URL_TEST`, `BULL_PREFIX` and a free `WORKER_METRICS_PORT` themselves, and kill their children by PID.

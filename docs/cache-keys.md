@@ -3,7 +3,7 @@
 Every key of the **cache Redis** (decision 006: `allkeys-lru`, no persistence) is built by `CacheKeys`
 (`src/infra/cache/cache-keys.ts`) and listed here with its owner, TTL and invalidation (decision 022). A test
 (`src/infra/cache/cache-keys.spec.ts`) fails when a builder, its row in `CACHE_KEY_FAMILIES` or its row below is missing.
-The queue Redis holds BullMQ data only and has no keys in this list (see `docs/queues.md` when it exists).
+The queue Redis holds BullMQ data only and has no keys in this list (see `docs/queues.md`).
 
 ## Rules
 

@@ -5,16 +5,15 @@
  *
  * @param text exposition text from `/metrics`
  * @param name metric name including any `_count`/`_total` suffix
- * @param labels label values the line must carry
+ * @param labels label values the line must carry (none for a metric without labels)
  * @returns the sample value, or 0 when no such line exists
  */
 export function metricValue(text: string, name: string, labels: Record<string, string> = {}): number {
-  const line = text
-    .split('\n')
-    .find(
-      (candidate) =>
-        candidate.startsWith(`${name}{`) &&
-        Object.entries(labels).every(([key, value]) => candidate.includes(`${key}="${value}"`)),
-    );
+  const line = text.split('\n').find(
+    (candidate) =>
+      // A metric without labels is written `name 3`, one with labels `name{a="b"} 3`.
+      (candidate.startsWith(`${name}{`) || candidate.startsWith(`${name} `)) &&
+      Object.entries(labels).every(([key, value]) => candidate.includes(`${key}="${value}"`)),
+  );
   return line ? Number(line.slice(line.lastIndexOf(' ') + 1)) : 0;
 }

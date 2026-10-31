@@ -7,13 +7,32 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PRODUCTION_ENV } from '../support/app';
 import { TEST_DATABASE_URL } from '../support/db';
+import { MetricsModule } from '../../src/infra/metrics';
+import { RedisModule, RedisService } from '../../src/infra/redis';
+import { createInfra } from '../support/infra';
+import { deleteBullKeys, testBullPrefix } from '../support/queues';
 
 const ROOT = join(import.meta.dir, '../..');
 type Child = ReturnType<typeof Bun.spawn>;
 const children: Child[] = [];
+/** The worker children keep their BullMQ keys (the relay's tick scheduler) under this prefix, deleted at the end. */
+const workerPrefix = testBullPrefix();
 // A failed assertion must not leave a server running.
-afterAll(() => {
+afterAll(async () => {
   for (const child of children) child.kill();
+  await Promise.all(children.map((child) => child.exited));
+  const cleaner = await createInfra({ modules: [MetricsModule, RedisModule] });
+  await deleteBullKeys(cleaner.get(RedisService).queue, workerPrefix);
+  await cleaner.close();
+}, 20_000);
+
+/** What a worker child needs on the test instances: its own database and BullMQ prefix, and a free metrics port. */
+const workerEnv = (port: number): Record<string, string> => ({
+  NODE_ENV: 'test',
+  HOST: '127.0.0.1',
+  WORKER_METRICS_PORT: String(port),
+  DATABASE_URL_TEST: TEST_DATABASE_URL,
+  BULL_PREFIX: workerPrefix,
 });
 
 function start(script: 'src/main.ts' | 'src/worker.ts', env: Record<string, string>): Child {
@@ -172,7 +191,7 @@ describe('API process', () => {
 describe('worker process', () => {
   it('boots, serves its own /metrics and stops cleanly on SIGTERM', async () => {
     const port = await freePort();
-    const child = start('src/worker.ts', { NODE_ENV: 'test', HOST: '127.0.0.1', WORKER_METRICS_PORT: String(port) });
+    const child = start('src/worker.ts', workerEnv(port));
     const metrics = await eventually(async () => {
       const res = await fetch(`http://127.0.0.1:${port}/metrics`);
       return res.ok ? res : undefined;
@@ -194,12 +213,7 @@ describe('worker process', () => {
 
   it('applies the same access rule as the API: the token when one is set', async () => {
     const port = await freePort();
-    const child = start('src/worker.ts', {
-      NODE_ENV: 'test',
-      HOST: '127.0.0.1',
-      WORKER_METRICS_PORT: String(port),
-      METRICS_TOKEN: 'worker-metrics-token-123',
-    });
+    const child = start('src/worker.ts', { ...workerEnv(port), METRICS_TOKEN: 'worker-metrics-token-123' });
     const url = `http://127.0.0.1:${port}/metrics`;
     const refused = await eventually(async () => fetch(url));
     expect(refused.status).toBe(403);
@@ -215,7 +229,7 @@ describe('worker process', () => {
     const blocker = net.createServer().listen(port, '127.0.0.1');
     await new Promise((resolve) => blocker.once('listening', resolve));
     try {
-      const child = start('src/worker.ts', { NODE_ENV: 'test', HOST: '127.0.0.1', WORKER_METRICS_PORT: String(port) });
+      const child = start('src/worker.ts', workerEnv(port));
       const code = await Promise.race([child.exited, Bun.sleep(15_000).then(() => 'timeout' as const)]);
       expect(code).not.toBe(0);
       expect(code).not.toBe('timeout');

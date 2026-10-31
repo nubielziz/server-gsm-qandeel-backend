@@ -16,10 +16,10 @@ read-only; override with `FRONTEND_DIR`).
 ```bash
 bun install --frozen-lockfile
 cp .env.example .env          # optional outside production: every value has a local default
-docker compose up -d          # Postgres, queue Redis, cache Redis, MinIO
+docker compose up -d          # Postgres, queue Redis, cache Redis, MinIO, Prometheus
 bun run check                 # everything CI runs (see below)
 bun run dev                   # API on :3000
-bun run dev:worker            # worker process (its own /metrics on :9464)
+bun run dev:worker            # worker process: queue workers, schedulers, outbox relay (its own /metrics on :9464)
 ```
 
 - API documentation: <http://localhost:3000/docs> (public: REST v1, Dhru, webhook events), <http://localhost:3000/reference>
@@ -63,8 +63,8 @@ document. The contract layer is explained in `src/common/contract/README.md`; th
 3. **Write the controller** in `src/modules/<id>/controllers/`: a bare `@Controller()` and one `@Route(contract)` method
    per route that only maps inputs to a use case and returns its result. Add `@route METHOD /path` to the TSDoc.
 4. **Write the use case** in `application/`: one DB transaction **(P2.3)** (`runInTransaction`), ownership and guard
-   checks, `AuditService.record` for staff writes **(P2.5)**, an outbox row for async work, `afterCommit` cache
-   invalidation. Reach other modules only through their `index.ts` (lint rule `gsm/module-boundaries`).
+   checks, `AuditService.record` for staff writes **(P2.5)**, an outbox row for async work (`OutboxService.add`, see "Add an
+   outbox event"), `afterCommit` cache invalidation. Reach other modules only through their `index.ts` (lint rule `gsm/module-boundaries`).
 5. **Write the repository** in `infra/`: Drizzle queries on this module's own tables only; list contracts translate the
    parsed list query (filters, sort, range, search) to SQL with an exact `COUNT`.
 6. **Test it.** Unit tests for domain functions (`*.spec.ts` next to the code); integration tests in `test/integration/`
@@ -103,20 +103,42 @@ documents afterwards.
 
 ## Add a job **(P2.4)**
 
-Jobs run only in the worker process (decision 020); the API writes the database and an outbox row, then returns.
+Jobs run only in the worker process (decision 020); the API writes the database and an outbox row, then returns. The code is
+in `src/infra/queues/` (its `README.md` has an example); every queue, job and schedule is listed in `docs/queues.md`.
 
-1. **Queue and processor.** Use an existing queue from the registry in `src/infra/queues/` or add one with its default
-   options and concurrency. Put the processor in `src/modules/<id>/jobs/` and register it with the processor API; only
-   `src/worker.ts` starts it.
-2. **Payload: ids only.** No secrets, no personal data. The processor re-reads the state it needs.
+1. **Queue and processor.** Use a queue of `QUEUES` (`src/infra/queues/queue-definitions.ts`; a new queue also needs its
+   section in `docs/queues.md`). Write the processor in `src/modules/<id>/jobs/`, mark it `@QueueProcessor('<queue>',
+   '<job name>')`, provide it in the module and import that module in `src/worker.module.ts`. Only the worker process turns
+   it into a BullMQ `Worker`.
+2. **Payload: ids only.** No secrets, no personal data. The processor re-reads the state it needs. `QueuesService.add` adds
+   the request id; the worker restores it while the job runs.
 3. **Idempotency.** The processor must be safe to run twice: guarded updates (`UPDATE … WHERE id = $1 AND status =
-   $2`), a deterministic `jobId` (`outbox:<id>`, `order-poll:<orderId>`), unique idempotency keys for ledger postings.
-4. **Retry policy.** Exponential backoff with jitter for transient errors; `UnrecoverableError` for permanent ones.
-   A supplier dispatch never retries a timed-out send (the order goes to needs attention, decision 025).
-5. **Schedules** use `upsertJobScheduler` through the schedulers registry (idempotent on every worker boot).
-6. **Record the run:** scheduled and manual runs write `job_runs` through `JobRunsService`.
+   $2`), a deterministic `jobId` built by `queueJobId('order-poll', orderId)` (`order-poll-77`; BullMQ refuses `:` in ids, so
+   decision 020's `outbox:<id>` is `outbox-<id>`), unique idempotency keys for ledger postings.
+4. **Retry policy.** The queue's attempts and exponential backoff with jitter apply to transient errors; throw
+   `UnrecoverableError` for permanent ones. A supplier dispatch never retries a timed-out send (the order goes to needs
+   attention, decision 025).
+5. **Schedules** register with `JobSchedulerRegistry.register` in the module's `onModuleInit`; the worker upserts them on
+   every boot (idempotent).
+6. **Record the run:** scheduled and manual runs write `job_runs` through `JobRunsService.run` (health module, exported from
+   `src/modules/health`; import `JobRunsModule`). It skips a run while another run of the same job is going on.
 7. **Document it** in `docs/queues.md` (queue, job, payload, idempotency key, retry policy, schedule) and in the module
    README ("Jobs and schedules"), and add an integration test that runs the processor twice.
+
+### Add an outbox event **(P2.4)**
+
+A state change that needs async work (a supplier call, a webhook, an email) writes an `outbox_events` row in the same
+transaction; the worker's relay turns it into a BullMQ job with the id `outbox-<event id>`.
+
+1. In the module's `onModuleInit`, register the event type: `outboxRoutes.register({ type: 'order.status_changed', queue:
+   'merchant-webhooks' })` (`OutboxRouteRegistry`, exported by `src/modules/platform`). `OutboxService.add` refuses a type
+   that is not registered.
+2. In the use case, inside `runInTransaction`: `await outbox.add(tx, { type, aggregateType: 'orders', aggregateId,
+   payload: { orderId } })`. The payload is ids and short codes only (whole numbers, strings up to 64 characters, no
+   nesting, no money); `meta.requestId` is added for you.
+3. Write the consumer as a `@QueueProcessor` that receives `OutboxJobData` (`eventId`, `type`, `aggregateType`,
+   `aggregateId`, `payload`, `requestId`) and re-reads the aggregate.
+4. Add the event type to the table in `docs/queues.md` and to the module README ("Events").
 
 ## Add a cache key **(P2.4)**
 
@@ -145,7 +167,7 @@ Each has a README next to its code with the rules and an example:
   production host with `bun run bench:argon2`.
 - Files: `src/infra/storage/README.md`. Outbound calls (suppliers, gateways, merchant webhooks): `src/infra/http/README.md`;
   never call `fetch` directly.
-- Redis clients and health: `src/infra/redis/README.md`.
+- Redis clients and health: `src/infra/redis/README.md`. Queues, workers and schedulers: `src/infra/queues/README.md`.
 - Tests run on **separate instances** so they never touch development data: database `gsm_test`, Redis database 1 on both
   roles and the bucket `gsm-files-test` (`DATABASE_URL_TEST`, `REDIS_QUEUE_URL_TEST`, `REDIS_CACHE_URL_TEST`,
   `S3_BUCKET_TEST`; under `NODE_ENV=test` the normal variables are ignored). `createTestApp({ withoutInfrastructure: true })`

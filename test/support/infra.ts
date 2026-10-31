@@ -1,6 +1,6 @@
 // Harness for the infrastructure integration tests (Redis, cache, rate limits, storage, outbound HTTP): a small Nest module
 // with the real infra modules on the test instances (Redis database 1, bucket gsm-files-test), a capture logger, and helpers.
-import { type DynamicModule, Global, type LoggerService, Module, type Type } from '@nestjs/common';
+import { type DynamicModule, Global, type LoggerService, Module, type ModuleMetadata, type Type } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import net from 'node:net';
 import { APP_CONFIG, type AppConfig, parseEnv } from '../../src/config';
@@ -67,6 +67,10 @@ export interface InfraOptions {
   readonly modules?: Array<Type<unknown>>;
   /** Run `onModuleInit` (connect the clients); default true. `false` leaves the modules just constructed. */
   readonly init?: boolean;
+  /** Providers added to the testing module, for example `@QueueProcessor` classes of a test. */
+  readonly providers?: ModuleMetadata['providers'];
+  /** Providers of the loaded modules to replace with a value, as `[token, value]` pairs (settings of a module under test). */
+  readonly overrides?: ReadonlyArray<readonly [token: Type<unknown> | symbol | string, value: unknown]>;
 }
 
 const ALL_MODULES: Array<Type<unknown>> = [
@@ -88,11 +92,12 @@ const ALL_MODULES: Array<Type<unknown>> = [
 export async function createInfra(options: InfraOptions = {}): Promise<InfraHarness> {
   const config = parseEnv({ NODE_ENV: 'test', ...options.env });
   const logger = new CapturingLogger();
-  const moduleRef = await Test.createTestingModule({
+  const builder = Test.createTestingModule({
     imports: [TestConfigModule.with(config), ...(options.modules ?? ALL_MODULES)],
-  })
-    .setLogger(logger)
-    .compile();
+    providers: options.providers ?? [],
+  }).setLogger(logger);
+  for (const [token, value] of options.overrides ?? []) builder.overrideProvider(token).useValue(value);
+  const moduleRef = await builder.compile();
   if (options.init ?? true) await moduleRef.init();
   return {
     moduleRef,

@@ -2,7 +2,6 @@
 // connect, both roles connect and report health, the queue producer fails fast and the app still starts while Redis is down,
 // the clients recover on their own, shutdown closes every connection, and no credential reaches the log.
 import { afterAll, describe, expect, it } from 'bun:test';
-import { AppError } from '../../src/common/errors';
 import { parseEnv } from '../../src/config';
 import { HealthRegistry } from '../../src/infra/health';
 import { MetricsService } from '../../src/infra/metrics';
@@ -123,20 +122,6 @@ describe('with Redis down at startup', () => {
     }
   });
 
-  it('refuses to enqueue at once through assertQueueReady (a BullMQ Queue would wait for the first connection)', async () => {
-    const dead = await deadRedisUrl();
-    const down = (await infra({ env: { REDIS_QUEUE_URL_TEST: dead, REDIS_CACHE_URL_TEST: dead } })).get(RedisService);
-    expect(() => down.assertQueueReady()).toThrow(AppError);
-    try {
-      down.assertQueueReady();
-    } catch (error) {
-      expect((error as AppError).code).toBe('UNAVAILABLE');
-      expect((error as AppError).status).toBe(503);
-    }
-    const up = (await infra()).get(RedisService);
-    expect(() => up.assertQueueReady()).not.toThrow();
-  });
-
   it('reports both roles as down (the API is then "degraded", not "down")', async () => {
     const dead = await deadRedisUrl();
     const harness = await infra({ env: { REDIS_QUEUE_URL_TEST: dead, REDIS_CACHE_URL_TEST: dead } });
@@ -217,7 +202,6 @@ describe('with Redis restarting while the app runs', () => {
         await expectRejection(client.set('gsm:test:restart-probe', '1'), undefined, role);
         expect(performance.now() - before, role).toBeLessThan(750);
       }
-      expect(() => redis.assertQueueReady()).toThrow(AppError);
 
       await forwarder.start(); // Redis is back
       await eventually(
@@ -228,7 +212,6 @@ describe('with Redis restarting while the app runs', () => {
         async () => ((await redis.cache.ping().catch(() => undefined)) === 'PONG' ? true : undefined),
         10_000,
       );
-      expect(() => redis.assertQueueReady()).not.toThrow();
       expect(await redis.queue.set('gsm:test:restart-probe', '1', 'EX', 5)).toBe('OK');
     } finally {
       await forwarder.stop();

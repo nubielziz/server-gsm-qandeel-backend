@@ -11,6 +11,7 @@ import { TEST_DATABASE_URL } from './db';
 import { CacheModule } from '../../src/infra/cache';
 import { DbModule } from '../../src/infra/db';
 import { LOG_DESTINATION } from '../../src/infra/logging';
+import { QueuesModule } from '../../src/infra/queues';
 import { RateLimitModule } from '../../src/infra/rate-limit';
 import { RedisModule } from '../../src/infra/redis';
 import { StorageModule } from '../../src/infra/storage';
@@ -43,8 +44,8 @@ export const PRODUCTION_ENV: Record<string, string> = {
 class NoDatabaseModule {}
 
 /**
- * Stands in for the Redis, cache, rate-limit and storage modules: no clients and no `redis`, `redis_queue` or `storage`
- * health indicators.
+ * Stands in for the Redis, cache, rate-limit, queue and storage modules: no clients, no queue producers and no `redis`,
+ * `redis_queue` or `storage` health indicators.
  */
 @Module({})
 class NoInfrastructureModule {}
@@ -61,8 +62,8 @@ export interface TestAppOptions {
   /** Replace the database module with an empty one (no pool, no `postgres` health indicator). */
   readonly withoutDatabase?: boolean;
   /**
-   * Replace the Redis, cache, rate-limit and storage modules with empty ones (no connections, no `redis`, `redis_queue`
-   * or `storage` health indicators). Nothing in the app may inject their services then.
+   * Replace the Redis, cache, rate-limit, queue and storage modules with empty ones (no connections, no queue producers,
+   * no `redis`, `redis_queue` or `storage` health indicators). Nothing in the app may inject their services then.
    */
   readonly withoutInfrastructure?: boolean;
   /** Called for every route Fastify registers (method `string | string[]`, url as registered), before `init()` ends. */
@@ -96,7 +97,7 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     .useValue(logSink);
   if (options.withoutDatabase) builder.overrideModule(DbModule).useModule(NoDatabaseModule);
   if (options.withoutInfrastructure) {
-    for (const module of [RedisModule, CacheModule, RateLimitModule, StorageModule]) {
+    for (const module of [RedisModule, CacheModule, RateLimitModule, QueuesModule, StorageModule]) {
       builder.overrideModule(module).useModule(NoInfrastructureModule);
     }
   }

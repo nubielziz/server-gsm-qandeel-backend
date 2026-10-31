@@ -12,4 +12,4 @@ days old); `bun:sql` (fastest, Bun-only, youngest feature set).
 
 **Consequences.** Money and other `numeric` values arrive as strings and stay decimal (never floats); `bigint`
 columns also arrive as strings and are mapped explicitly. Transactions use `db.transaction()`; row locks use
-`.for('update')`. Drop the postgres.js dependency once the spike is retired.
+`.for('update')`. The postgres.js dependency was dropped with the spike (P2.4b).

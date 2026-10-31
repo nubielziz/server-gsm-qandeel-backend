@@ -1,6 +1,7 @@
-# Local infrastructure for the GSM backend: Postgres, the two Redis roles and S3-compatible storage.
+# Local infrastructure for the GSM backend: Postgres, the two Redis roles, S3-compatible storage and Prometheus.
 # Start with `docker compose up -d`; host ports can be overridden through the GSM_*_PORT variables.
-# Decision records: docs/decisions/004-local-s3-minio.md (MinIO image), 006-redis-topology.md (two Redis roles).
+# Decision records: docs/decisions/004-local-s3-minio.md (MinIO image), 006-redis-topology.md (two Redis roles),
+# 015-observability.md (Prometheus).
 name: gsm-backend
 
 services:
@@ -91,7 +92,31 @@ services:
     command: ["mb", "--ignore-existing", "local/gsm-files", "local/gsm-files-test"]
     restart: on-failure
 
+  # Prometheus scrapes the API (:3000) and the worker (:9464) that run on the host; the System health pages query it
+  # (PROMETHEUS_URL=http://localhost:9090). Targets, and how production scrapes with the METRICS_TOKEN, are in
+  # docker/prometheus/prometheus.yml. Pinned by tag and digest; the image runs as `nobody` and owns /prometheus.
+  prometheus:
+    image: prom/prometheus:v3.15.1@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    # Lets the container reach the API and the worker running on the host (Linux Docker does not define the name itself).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${GSM_PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./docker/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
 volumes:
   pgdata:
   redis-queue-data:
   minio-data:
+  prometheus-data:

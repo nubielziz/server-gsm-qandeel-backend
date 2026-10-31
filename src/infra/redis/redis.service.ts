@@ -2,7 +2,6 @@
 // factory for BullMQ worker connections. Connects in onModuleInit, closes in onApplicationShutdown.
 import { Inject, Injectable, Logger, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
 import type { Redis } from 'ioredis';
-import { AppError } from '../../common/errors';
 import { LogThrottle } from '../../common/log-throttle';
 import { TimeoutError, withTimeout } from '../../common/timeout';
 import { APP_CONFIG, type AppConfig } from '../../config';
@@ -18,8 +17,15 @@ const QUIT_WAIT_MS = 2_000;
 /** Redis errors repeat on every reconnect attempt; one line per client per interval is logged. */
 const ERROR_LOG_INTERVAL_MS = 30_000;
 
-/** Removes `user:password@` from anything that looks like a URL, so a connection error can never log a credential. */
-function withoutCredentials(message: string): string {
+/**
+ * Removes `user:password@` from anything that looks like a URL.
+ *
+ * Why: a connection error can carry the Redis URL, and a log line must never carry a credential.
+ *
+ * @param message text that may contain URLs
+ * @returns the text with the credentials of every URL replaced by `***`
+ */
+export function withoutCredentials(message: string): string {
   return message.replace(/\/\/[^@\s/]+@/g, '//***@');
 }
 
@@ -77,21 +83,6 @@ export class RedisService implements OnModuleInit, OnApplicationShutdown {
     this.watch(connection, 'queue worker');
     this.workerConnections.add(connection);
     return connection;
-  }
-
-  /**
-   * Fails at once, with `503 UNAVAILABLE`, when the queue Redis connection is not ready.
-   *
-   * Why: decision 006 wants producers to fail fast. Raw commands on {@link RedisService.queue} already do (no offline
-   * queue), but a BullMQ `Queue` built on this client waits for the connection's first `ready` before it sends anything,
-   * so `queue.add()` would hang while Redis is down at startup. Call this before enqueueing.
-   *
-   * @throws {AppError} `UNAVAILABLE` when the queue connection is not ready
-   */
-  assertQueueReady(): void {
-    if (this.queue.status !== 'ready') {
-      throw new AppError('UNAVAILABLE', { detail: 'The job queue is not available right now.' });
-    }
   }
 
   /** Closes every client of this process. Idempotent, and never throws: a dead Redis must not block the shutdown. */

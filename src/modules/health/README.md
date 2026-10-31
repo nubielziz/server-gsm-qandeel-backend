@@ -8,11 +8,14 @@ Decisions that shape this module: 015 observability. Common to all modules: 008 
 
 ## Status
 
-Built: `GET /health` (health check) and `GET /metrics` (Prometheus), both in `controllers/` with their contracts in `contracts/health.contracts.ts`.
+Built: `GET /health` (health check) and `GET /metrics` (Prometheus), both in `controllers/` with their contracts in `contracts/health.contracts.ts`. The run log of jobs (`job_runs`): `JobRunsService`, in `job-runs/`.
 
 ## Public API (`index.ts`)
 
-Exports `HealthModule` and the `HealthReport` type. Other modules call nothing here.
+Exports `HealthModule` and the `HealthReport` type, and the run log for the processors of other modules: `JobRunsModule`,
+`JobRunsService` (`run`, `start`, `finish`, `findRunning`, `failStuck`) and the types `JobRunReport`, `RunJobOptions`,
+`RunOverlap`, `StartJobRunInput`, `JobRunOutcome`, `JobRun`, `JobStatus`, `JobTrigger`. `JobRunsModule` is separate from
+`HealthModule` so that the worker loads the service without the health controllers.
 
 ## Owned tables
 
@@ -92,7 +95,26 @@ Outbox events produced (types, payload ids): none yet. Consumed: none yet. Recor
 
 ## Jobs and schedules
 
-None yet. List each queue, job, schedule, idempotency key and retry policy here and in `docs/queues.md` (see `CONTRIBUTING.md` → "Add a job").
+None of this module's own jobs exist yet (the checks, alerts and integrity features add them). The run log is built:
+
+- **`JobRunsService.run({ job, trigger, runId?, triggeredBy?, overlap? }, work)`** is the wrapper processors use around their
+  scheduled or manual work. It inserts a `running` row, runs `work(run)`, and closes the row as `succeeded` (or `skipped`
+  when the report says `skipped: true`) with the duration (database clock), `processed` and the `result` counters (no secrets,
+  no personal data); when `work` throws it closes the row as `failed` with the message (cut at 1 000 characters) and
+  rethrows, so BullMQ retries as the queue says (each attempt is its own row). A failure while recording the end is logged
+  and never hides the job's own outcome.
+- **One run per job at a time.** `overlap` is `skip` for `run` (default: a second run records a `skipped` row with
+  `result.runningRunId` and does not call `work`), `refuse` (`start` throws `AppError('JOB_ALREADY_RUNNING')`, 409, for the
+  manual-run route) or `allow`. Starters of one job queue up on a transaction advisory lock, so two workers cannot both
+  start it.
+- **Manual runs.** `POST /admin/system/jobs/:name/run` (health feature) calls `start({ trigger: 'manual', triggeredBy,
+  overlap: 'refuse' })`, adds the job with `{ runId }` and the job id `manual-<run id>`, and the processor adopts the row with
+  `run({ ..., runId })`. A row that is no longer `running` (closed by the reaper) is not run again.
+- **`failStuck(maxAgeMs)`** closes runs that stayed `running` too long (a worker that was killed), so the guard cannot block
+  a job for ever. The health feature schedules it.
+- Event-driven jobs (dispatch, webhooks) are not recorded here, and neither is the outbox relay tick (one run per second).
+
+Queues, jobs and schedules: `docs/queues.md`.
 
 ## Cache keys
 

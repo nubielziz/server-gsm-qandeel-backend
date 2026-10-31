@@ -1,6 +1,6 @@
 // Root module of the worker process (decision 016): config, logging, metrics, the infrastructure (database, Redis, cache,
-// rate limits, crypto, storage, outbound HTTP) and the metrics listener. BullMQ processors, schedulers and the outbox
-// relay are added by the queue feature and the feature stages.
+// rate limits, crypto, storage, outbound HTTP), the queue workers and schedulers, the outbox relay, job runs, and the
+// metrics listener. Domain modules add their processors and schedules here as their features are built.
 import { Module } from '@nestjs/common';
 import { ConfigModule } from './config';
 import { CacheModule } from './infra/cache';
@@ -9,15 +9,20 @@ import { DbModule } from './infra/db';
 import { OutboundHttpModule } from './infra/http';
 import { LoggingModule } from './infra/logging';
 import { MetricsModule, WorkerMetricsServer } from './infra/metrics';
+import { QueueWorkersModule, QueuesModule } from './infra/queues';
 import { RateLimitModule } from './infra/rate-limit';
 import { RedisModule } from './infra/redis';
 import { StorageModule } from './infra/storage';
+import { JobRunsModule } from './modules/health';
+import { OutboxRelayModule } from './modules/platform';
 
 /**
  * Root Nest module of the worker process.
  *
- * Why: the worker shares the codebase with the API but never serves the API's routes; it exposes its own `/metrics`
- * on `WORKER_METRICS_PORT` so Prometheus can scrape queue and job metrics (decision 015).
+ * Why: the worker shares the codebase with the API but never serves the API's routes. It runs the BullMQ workers for
+ * every `@QueueProcessor`, creates the job schedulers on boot, relays the outbox (decision 020), and exposes its own
+ * `/metrics` on `WORKER_METRICS_PORT` so Prometheus can scrape queue and job metrics (decision 015). Shutdown order
+ * (decision 001): workers and the relay stop in `onModuleDestroy`; the pool, Redis and the producers close afterwards.
  */
 @Module({
   imports: [
@@ -31,6 +36,10 @@ import { StorageModule } from './infra/storage';
     CryptoModule,
     StorageModule,
     OutboundHttpModule,
+    QueuesModule,
+    QueueWorkersModule,
+    JobRunsModule,
+    OutboxRelayModule,
   ],
   providers: [WorkerMetricsServer],
 })

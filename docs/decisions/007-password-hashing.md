@@ -11,7 +11,7 @@ Status: accepted, 2026-10-31.
 
 **Consequences.** Only human-chosen secrets (passwords) use argon2. High-entropy random secrets (session tokens, API
 keys, invite and reset tokens) are stored as keyed SHA-256 hashes for constant-time lookup; recorded with the
-security decisions of Phase 1. Drop the `argon2` dependency once the spike is retired.
+security decisions of Phase 1. The `argon2` dependency was dropped with the spike (P2.4b).
 
 Note: `@node-rs/argon2` exports `Algorithm` as an ambient const enum, which `isolatedModules` rejects; rely on
 its default (argon2id) and assert the `$argon2id$` prefix in a unit test.

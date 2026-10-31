@@ -9,8 +9,6 @@ reference
 docs
 # Generated SQL migrations (drizzle-kit).
 drizzle
-# The Phase 0 spike is retired by P2.4.
-spike
 # Phase 0 and 1 scripts, kept as they were written (a reformat would bury their history).
 scripts/*.mjs
 scripts/lib/*.mjs

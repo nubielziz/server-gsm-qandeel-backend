@@ -1,6 +1,6 @@
 // Public API of the Redis infrastructure (decision 006): the Nest module, the service and the client factories.
 export { RedisModule } from './redis.module';
-export { RedisService } from './redis.service';
+export { RedisService, withoutCredentials } from './redis.service';
 export type { RedisRole } from './redis.service';
 export {
   createCacheClient,

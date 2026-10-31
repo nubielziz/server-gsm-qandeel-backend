@@ -119,7 +119,7 @@ stays, staff are alerted and resolve it with fetch or a manual dispatch (scenari
 
 ## 7. Async work
 
-Outbox rows written with the state change; the relay moves them to BullMQ with `jobId = outbox:<id>` (D020). Every job
+Outbox rows written with the state change; the relay moves them to BullMQ with `jobId = outbox-<id>` (D020). Every job
 carries ids only, re-reads state and acts through guarded transitions; schedulers are upserted on every worker boot;
 every run writes `job_runs`. Queues, payloads, idempotency keys, retries and schedules: `docs/queues.md`. Shutdown:
 workers drain in `onModuleDestroy`, connections close in `onApplicationShutdown`.

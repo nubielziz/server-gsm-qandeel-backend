@@ -44,8 +44,6 @@ export default defineConfig(
     // Generated SQL migrations and the committed OpenAPI/contract documents are data, not code.
     'drizzle/',
     'docs/',
-    // The Phase 0 Bun compatibility spike is retired by P2.4 and was never held to these rules.
-    'spike/',
   ]),
 
   {

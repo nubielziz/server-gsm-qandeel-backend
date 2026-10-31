@@ -13,7 +13,6 @@ ignored_paths:
 - "dist/**"
 - "coverage/**"
 - "drizzle/meta/**"
-- "spike/**/drizzle/**"
 - "docs/route-manifest.json"
 - "docs/slices/**"
 - "docs/contract/openapi.json"

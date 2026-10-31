@@ -11,6 +11,7 @@ modules.
 | Pool, Drizzle instance, `Database` / `Transaction` / `DbExecutor` types | `database.ts`                                                                   |
 | Nest provider, lifecycle, health check                                  | `db.service.ts`, `db.module.ts`, `postgres.health.ts`                           |
 | Transaction helper with `afterCommit`                                   | `transaction.ts`                                                                |
+| Dedicated `LISTEN` connection that reconnects by itself                 | `pg-listener.ts` (`PgListener`; the outbox relay's wake-up)                     |
 | Migrator (advisory lock)                                                | `migrate.ts`                                                                    |
 | Migrations                                                              | `drizzle/` at the repository root (SQL + snapshots, committed)                  |
 
@@ -49,6 +50,9 @@ await this.db.runInTransaction(async ({ tx, afterCommit }) => {
   harmless for cache deletes (the only use today); track callbacks per savepoint before using them for jobs or emails.
 - Repositories take `DbExecutor` (the database or a transaction) so one function serves both.
 - The `postgres` health indicator (critical) is registered by `DbModule`; `GET /health` runs `select 1`.
+- `PgListener` is for `LISTEN`/`NOTIFY`: one `pg.Client` of its own (never a pooled connection held for ever), named in
+  `pg_stat_activity`, reconnecting with a growing, jittered wait, and calling `onConnected({ reconnect })` after every
+  connect so the owner can catch up on what a lost `NOTIFY` would have said. It never throws into the process.
 
 ## Conventions beyond decision 027
 

@@ -1,6 +1,6 @@
 // Root module of the API process (decision 016): config, logging, metrics, the infrastructure (database, Redis, cache, rate
-// limits, crypto, storage, outbound HTTP), the error filter and the 12 domain modules. Queues, the outbox and the request
-// security pipeline are added by their own features.
+// limits, crypto, storage, outbound HTTP, queue producers), the error filter and the 12 domain modules. The API only
+// produces work (queue producers, outbox writes); the request security pipeline is added by its own feature.
 import { Module } from '@nestjs/common';
 import { ErrorsModule } from './common/errors';
 import { ConfigModule } from './config';
@@ -10,6 +10,7 @@ import { DbModule } from './infra/db';
 import { OutboundHttpModule } from './infra/http';
 import { LoggingModule } from './infra/logging';
 import { MetricsModule } from './infra/metrics';
+import { QueuesModule } from './infra/queues';
 import { RateLimitModule } from './infra/rate-limit';
 import { RedisModule } from './infra/redis';
 import { StorageModule } from './infra/storage';
@@ -44,6 +45,7 @@ import { SupportModule } from './modules/support';
     CryptoModule,
     StorageModule,
     OutboundHttpModule,
+    QueuesModule,
     ErrorsModule,
     IdentityModule,
     PlatformModule,

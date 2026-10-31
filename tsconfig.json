@@ -22,6 +22,6 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src", "test", "scripts", "spike", "*.ts"],
+  "include": ["src", "test", "scripts", "*.ts"],
   "exclude": ["node_modules", "reference", "dist", "coverage"]
 }
