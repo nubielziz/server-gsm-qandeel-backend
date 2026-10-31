@@ -8,7 +8,7 @@ codes internally. Client-only codes of the console (NETWORK_ERROR, INVALID_RESPO
 emitted. **Session-ending codes** (401 UNAUTHORIZED, 403 ACCOUNT_SUSPENDED, 403 IP_NOT_ALLOWED) are only ever about
 the caller. Titles are fixed English sentences written with the catalog in Phase 2.
 
-119 codes. "Frontend" = referenced by the console's code or mocks; other codes are backend additions the
+120 codes. "Frontend" = referenced by the console's code or mocks; other codes are backend additions the
 console shows through their title and detail.
 
 | Code | Status | Meaning | Routes | Frontend |
@@ -86,6 +86,7 @@ console shows through their title and detail.
 | PAYMENT_ALREADY_REVIEWED | 409 | POST /admin/payments/:id/approve\|reject on a reviewed payment. | `POST /admin/payments/:id/approve`, `POST /admin/payments/:id/reject` | yes |
 | PLAN_IN_USE | 409 | DELETE /admin/commission-plans/:id while assigned. | `DELETE /admin/commission-plans/:id` | yes |
 | PLAN_LOCKED | 409 | PATCH /admin/commission-assignments/:id plan change refused (test only). | `PATCH /admin/commission-plans/:id`, `PATCH /admin/commission-assignments/:id` | yes |
+| PRICE_CHANGED | 409 | The charged price is more than the tolerance above the price the merchant was last listed (B117); the Dhru surface answers "Price changed. Please refresh the service list and order again.". | any |  |
 | PRICE_EXISTS | 409 | POST /admin/client-prices for a merchant/service that already has one. | `POST /admin/client-prices` | yes |
 | RECONCILE_RUNNING | 409 | a run is already in progress (FinancePage.test.tsx:240-262 uses code CONFLICT) | `POST /admin/ledger/reconcile` |  |
 | REFUND_NOT_FAILED | 409 | POST /admin/refunds/:id/retry on a refund that did not fail. | `POST /admin/refunds/:id/retry` | yes |

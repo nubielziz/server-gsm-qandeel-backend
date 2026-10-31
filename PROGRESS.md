@@ -49,7 +49,7 @@ and `docs/slices/<module>.json`, `docs/contract/RULES.md` for its frontend featu
 
 ## Business rules answered by the user (2026-10-31)
 
-All eight questions of `docs/contract/OPEN-QUESTIONS.md` are answered (recorded in `docs/contract/lead-decisions.json`;
+All questions of `docs/contract/OPEN-QUESTIONS.md` are answered (eight from Phase 1, a ninth raised by the user) (recorded in `docs/contract/lead-decisions.json`;
 full rules in the cited ANSWERS/MISMATCHES entries). The feature that implements each rule must follow it:
 
 | # | Rule | Feature |
@@ -62,6 +62,7 @@ full rules in the cited ANSWERS/MISMATCHES entries). The feature that implements
 | 6 | Automatic gateways credit by themselves 10 min after confirmation (setting `payments.auto_credit_delay_minutes`) when the gateway API still says confirmed and risk has not flagged it (flagged → staff review); crypto only after the gateway's required confirmations; manual gateways keep staff review; `hold_hours` only lengthens the wait (settings Q9) | 8 (+ 18 risk flags) |
 | 7 | Refund `processing` between approval and the gateway result; the console now knows it (B82 resolved, console M258) | 16 |
 | 8 | Pricing: exactly the demo's resolver (services Q6) | 4b |
+| 9 | Price protection (MISMATCHES B117): order-time floor on max(service cost, latest synced supplier cost); dashboard alert; real prices in every price list (catalog version bumped by the sync); an order more than `pricing.price_change_tolerance_percent` (default 10, no console field yet) above the merchant's last listed price is refused with `409 PRICE_CHANGED` (Dhru: "Price changed. Please refresh the service list and order again."), within it the raise is recorded in `pricing_snapshot`; merchants who ordered a service in the last 30 days get a digest (email, Telegram, webhook `service.price_changed`) when its price changes; lead default: no dispatch failover to a link costlier than the charged price | 4b, 6 (+ 7a, 7b, 9, 12a) |
 
 ## Feature plan (Phase 2 and 3)
 
@@ -84,15 +85,15 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 | 2b | identity-merchant-auth | merchant portal sign-in, security, sessions (st2 client, 15) | | |
 | 3 | money-wallets-ledger | postTransaction, money events, wallets, statement, adjust, credit limit (user rule 2), ledger, reconcile, currencies (st3, 14) | | |
 | 4a | catalog-structure | client groups + nightly promotion job (user rule 1), categories, services, fields, options, inventory (st4/5) | | |
-| 4b | catalog-pricing | group/client prices, pricing rules (user rule 8: the demo's resolver), bulk price, resolve, merchant catalog and price export | | |
+| 4b | catalog-pricing | group/client prices, pricing rules (user rule 8: the demo's resolver), price protection (user rule 9: effective-cost floor, listed-price memory, PRICE_CHANGED guard, raise in the snapshot), bulk price, resolve, merchant catalog and price export | | |
 | 5 | orders-engine | state machine, placement + hold, admin order actions, bulk reply, export, merchant orders, files (st5) | manual | |
-| 6 | suppliers | suppliers admin, Dhru supplier client, dispatch/poll jobs, dispatch/fetch/change-supplier, sync, import (st6) | success, reject, timeout | |
-| 7a | dhru-and-rest-v1 | Dhru surface (8 actions), REST v1 (12), idempotency (st7) | | |
-| 7b | merchant-api-webhooks | API keys, webhook endpoints, deliveries, outgoing events, public docs (st7) | | |
+| 6 | suppliers | suppliers admin, Dhru supplier client, dispatch/poll jobs, dispatch/fetch/change-supplier, sync (user rule 9: recompute the effective cost, bump the price version, no failover above the charged price), import (st6) | success, reject, timeout | |
+| 7a | dhru-and-rest-v1 | Dhru surface (8 actions), REST v1 (12), idempotency, PRICE_CHANGED message and listed-price memory on the list actions (user rule 9) (st7) | | |
+| 7b | merchant-api-webhooks | API keys, webhook endpoints, deliveries, outgoing events incl. `service.price_changed` (user rule 9, route-parity allowance B117), public docs (st7) | | |
 | 8 | billing | gateways, invoices (user rule 3), payments, approve/reject (user rule 4), automatic credit after the verification delay (user rule 6), KYC, payment webhook (B2B), invoice.paid (st8) | | |
-| 9 | health-dashboard | system health routes, dashboard, queues board (st9) | | |
+| 9 | health-dashboard | system health routes, dashboard (services_below_floor on the effective cost, user rule 9), queues board (st9) | | |
 | 11 | commissions-reports | plans, assignments, accruals (user rule 5 on refunds), approve, reports (st11) | | |
-| 12a | notifications | templates, notifications, preferences, Telegram link + webhook (st12) | | |
+| 12a | notifications | templates, notifications, preferences, Telegram link + webhook, price-change digest (user rule 9) (st12) | | |
 | 12b | alerts-integrity | alert rules, alerts, incidents, integrity job (st12) | system-alert, system-integrity | |
 | 14a | storefront-checkout | store config, listings, IMEI check (checksum + TAC), checkout sessions, consents (st14) | | |
 | 14b | customers-accounts | store sign-in, account, admin customers, tax rates, TAC catalog, FX refresh (st14) | b2c-account | |

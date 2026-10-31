@@ -94,6 +94,7 @@ export const ERROR_CATALOG = {
   PAYMENT_ALREADY_REVIEWED: { status: 409, title: 'This payment was already reviewed.' },
   PLAN_IN_USE: { status: 409, title: 'This plan is still assigned.' },
   PLAN_LOCKED: { status: 409, title: 'The plan of this assignment cannot be changed.' },
+  PRICE_CHANGED: { status: 409, title: 'The price changed since your last service list: refresh it and order again.' },
   PRICE_EXISTS: { status: 409, title: 'A price already exists for this merchant and service.' },
   RECONCILE_RUNNING: { status: 409, title: 'A reconciliation is already running.' },
   REFUND_NOT_FAILED: { status: 409, title: 'This refund did not fail.' },

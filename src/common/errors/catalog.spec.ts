@@ -18,7 +18,7 @@ function readDocumentedCodes(): Map<string, number> {
 describe('error catalog', () => {
   it('lists exactly the codes of error-codes.md with the same statuses', () => {
     const documented = readDocumentedCodes();
-    expect(documented.size).toBe(119);
+    expect(documented.size).toBe(120);
     expect([...Object.keys(ERROR_CATALOG)].sort()).toEqual([...documented.keys()].sort());
     for (const [code, status] of documented) expect(statusOf(code as never)).toBe(status);
   });

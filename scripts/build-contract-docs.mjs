@@ -42,6 +42,7 @@ const BACKEND_CODES = [
   ['IDEMPOTENCY_IN_PROGRESS', 409, 'A request with the same Idempotency-Key is still being processed.'],
   ['TURNSTILE_FAILED', 403, 'The storefront anti-bot check (Turnstile) failed or is missing.'],
   ['ERASURE_NOT_DONE', 409, 'An erasure request cannot be completed before the customer is anonymized.'],
+  ['PRICE_CHANGED', 409, 'The charged price is more than the tolerance above the price the merchant was last listed (B117); the Dhru surface answers "Price changed. Please refresh the service list and order again.".'],
 ];
 
 // ---- numbering of conflicts (B1..Bn) and extras (after) ----
