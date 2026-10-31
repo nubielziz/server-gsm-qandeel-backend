@@ -16,6 +16,7 @@ import { RateLimitModule } from '../../src/infra/rate-limit';
 import { RedisModule } from '../../src/infra/redis';
 import { StorageModule } from '../../src/infra/storage';
 import { logSink } from './log-sink';
+import { testInstanceEnv } from './env';
 
 /** A complete production environment for tests that need `NODE_ENV=production` rules. */
 export const PRODUCTION_ENV: Record<string, string> = {
@@ -85,7 +86,12 @@ export interface TestApp {
  */
 export async function createTestApp(options: TestAppOptions = {}): Promise<TestApp> {
   // The app's pool must use the same test database as testDb()/resetDb(), including a custom DATABASE_URL_TEST.
-  const config = parseEnv({ NODE_ENV: 'test', DATABASE_URL_TEST: TEST_DATABASE_URL, ...options.env });
+  const config = parseEnv({
+    NODE_ENV: 'test',
+    DATABASE_URL_TEST: TEST_DATABASE_URL,
+    ...testInstanceEnv(),
+    ...options.env,
+  });
   const builder = Test.createTestingModule({
     imports: [AppModule, ...(options.imports ?? [])],
     controllers: options.controllers ?? [],

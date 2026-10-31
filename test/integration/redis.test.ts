@@ -9,6 +9,7 @@ import { RedisService } from '../../src/infra/redis';
 import { type InfraHarness, createForwarder, createInfra, deadRedisUrl, eventually } from '../support/infra';
 import { metricValue } from '../support/metrics';
 import { expectRejection } from '../support/rejection';
+import { testInstanceEnv } from '../support/env';
 
 const open: InfraHarness[] = [];
 async function infra(...args: Parameters<typeof createInfra>): Promise<InfraHarness> {
@@ -156,7 +157,7 @@ describe('with Redis down at startup', () => {
 
   it('connects by itself once Redis is reachable again, and says so', async () => {
     // A forwarder on the dead port, started after the app: stands in for a Redis that comes back.
-    const real = new URL(parseEnv({ NODE_ENV: 'test' }).redis.queueUrl);
+    const real = new URL(parseEnv({ NODE_ENV: 'test', ...testInstanceEnv() }).redis.queueUrl);
     const forwarder = await createForwarder({ host: real.hostname, port: Number(real.port) });
     const url = `redis://127.0.0.1:${forwarder.port}/1`;
     const harness = await infra({ env: { REDIS_QUEUE_URL_TEST: url, REDIS_CACHE_URL_TEST: url } });
@@ -182,7 +183,7 @@ describe('with Redis down at startup', () => {
 
 describe('with Redis restarting while the app runs', () => {
   it('fails commands at once while it is away and carries on by itself when it is back', async () => {
-    const real = new URL(parseEnv({ NODE_ENV: 'test' }).redis.queueUrl);
+    const real = new URL(parseEnv({ NODE_ENV: 'test', ...testInstanceEnv() }).redis.queueUrl);
     const forwarder = await createForwarder({ host: real.hostname, port: Number(real.port) });
     await forwarder.start();
     const url = `redis://127.0.0.1:${forwarder.port}/1`;

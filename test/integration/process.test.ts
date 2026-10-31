@@ -11,6 +11,7 @@ import { MetricsModule } from '../../src/infra/metrics';
 import { RedisModule, RedisService } from '../../src/infra/redis';
 import { createInfra } from '../support/infra';
 import { deleteBullKeys, testBullPrefix } from '../support/queues';
+import { testInstanceEnv } from '../support/env';
 
 const ROOT = join(import.meta.dir, '../..');
 type Child = ReturnType<typeof Bun.spawn>;
@@ -38,7 +39,7 @@ const workerEnv = (port: number): Record<string, string> => ({
 function start(script: 'src/main.ts' | 'src/worker.ts', env: Record<string, string>): Child {
   const child = Bun.spawn([process.execPath, '--no-env-file', script], {
     cwd: ROOT,
-    env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? tmpdir(), ...env },
+    env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? tmpdir(), ...testInstanceEnv(), ...env },
     stdout: 'pipe',
     stderr: 'pipe',
   });

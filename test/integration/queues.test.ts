@@ -30,6 +30,7 @@ import { type InfraHarness, createForwarder, createInfra, deadRedisUrl, eventual
 import { metricValue } from '../support/metrics';
 import { bullKeys, deleteBullKeys, testBullPrefix, waitForState } from '../support/queues';
 import { expectRejection } from '../support/rejection';
+import { testInstanceEnv } from '../support/env';
 
 const base = testBullPrefix();
 /** The BULL_PREFIX of a group of tests: groups never see each other's jobs. */
@@ -236,7 +237,7 @@ describe('a queue Redis that is down', () => {
   });
 
   it('works again by itself once Redis is back, with the producer that was built while it was away', async () => {
-    const real = new URL(parseEnv({ NODE_ENV: 'test' }).redis.queueUrl);
+    const real = new URL(parseEnv({ NODE_ENV: 'test', ...testInstanceEnv() }).redis.queueUrl);
     const forwarder = await createForwarder({ host: real.hostname, port: Number(real.port) });
     const url = `redis://127.0.0.1:${forwarder.port}/1`;
     // Redis is away while the app starts.
@@ -438,7 +439,7 @@ describe('the drain deadline', () => {
 
 describe('workers and schedulers when the queue Redis was down at startup', () => {
   it('start working and create their schedulers by themselves once Redis is reachable', async () => {
-    const real = new URL(parseEnv({ NODE_ENV: 'test' }).redis.queueUrl);
+    const real = new URL(parseEnv({ NODE_ENV: 'test', ...testInstanceEnv() }).redis.queueUrl);
     const forwarder = await createForwarder({ host: real.hostname, port: Number(real.port) });
     const url = `redis://127.0.0.1:${forwarder.port}/1`;
     // The forwarder is not started: Redis is away while the worker process boots.
@@ -482,7 +483,7 @@ describe('workers and schedulers when the queue Redis was down at startup', () =
 
 describe('workers and a queue Redis that goes away', () => {
   it('keep working after the connection drops and comes back (the Redis restart of decision 006)', async () => {
-    const real = new URL(parseEnv({ NODE_ENV: 'test' }).redis.queueUrl);
+    const real = new URL(parseEnv({ NODE_ENV: 'test', ...testInstanceEnv() }).redis.queueUrl);
     const forwarder = await createForwarder({ host: real.hostname, port: Number(real.port) });
     await forwarder.start();
     const url = `redis://127.0.0.1:${forwarder.port}/1`;

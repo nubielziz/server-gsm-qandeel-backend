@@ -11,6 +11,7 @@ import { MetricsModule } from '../../src/infra/metrics';
 import { RateLimitModule } from '../../src/infra/rate-limit';
 import { RedisModule } from '../../src/infra/redis';
 import { StorageModule } from '../../src/infra/storage';
+import { testInstanceEnv } from './env';
 
 @Global()
 @Module({})
@@ -90,7 +91,7 @@ const ALL_MODULES: Array<Type<unknown>> = [
  * @returns the harness; call `close()` in `afterAll` so every connection is closed
  */
 export async function createInfra(options: InfraOptions = {}): Promise<InfraHarness> {
-  const config = parseEnv({ NODE_ENV: 'test', ...options.env });
+  const config = parseEnv({ NODE_ENV: 'test', ...testInstanceEnv(), ...options.env });
   const logger = new CapturingLogger();
   const builder = Test.createTestingModule({
     imports: [TestConfigModule.with(config), ...(options.modules ?? ALL_MODULES)],

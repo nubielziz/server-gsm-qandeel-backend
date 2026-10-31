@@ -25,6 +25,7 @@ import { type InfraHarness, createForwarder, createInfra, eventually, freePort }
 import { metricValue } from '../support/metrics';
 import { deleteBullKeys, testBullPrefix } from '../support/queues';
 import { expectRejection } from '../support/rejection';
+import { testInstanceEnv } from '../support/env';
 
 const base = testBullPrefix();
 const open: InfraHarness[] = [];
@@ -290,7 +291,7 @@ describe('the relay', () => {
   });
 
   it('keeps the events pending while the queue Redis is down, counts no attempt, and hands them over when it is back', async () => {
-    const real = new URL(parseEnv({ NODE_ENV: 'test' }).redis.queueUrl);
+    const real = new URL(parseEnv({ NODE_ENV: 'test', ...testInstanceEnv() }).redis.queueUrl);
     const forwarder = await createForwarder({ host: real.hostname, port: Number(real.port) });
     const r = await rig({ env: { REDIS_QUEUE_URL_TEST: `redis://127.0.0.1:${forwarder.port}/1` } });
     await addEvent(r, 1);

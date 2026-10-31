@@ -13,6 +13,7 @@ import { RedisModule, RedisService } from '../../src/infra/redis';
 import { TEST_DATABASE_URL, closeTestDb, testDb } from '../support/db';
 import { createInfra, eventually, freePort, type InfraHarness } from '../support/infra';
 import { deleteBullKeys, testBullPrefix, waitForState } from '../support/queues';
+import { testInstanceEnv } from '../support/env';
 
 const ROOT = join(import.meta.dir, '../..');
 const base = testBullPrefix();
@@ -38,6 +39,7 @@ function spawn(script: string, env: Record<string, string>) {
       HOME: process.env.HOME ?? tmpdir(),
       NODE_ENV: 'test',
       HOST: '127.0.0.1',
+      ...testInstanceEnv(),
       ...env,
     },
     stdout: 'pipe',
