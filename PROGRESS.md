@@ -5,7 +5,7 @@ Single source of truth for status. The lead updates it after every step. Read it
 ## Resume here
 
 **Stopped 2026-11-01 (user went to sleep) right after merging P2.5b.** The last commit is a WIP squash of P2.5b
-(pipeline hooks) on top of P2.5a; its `bun run check` had not finished. Tomorrow, in order:
+(pipeline hooks) on top of P2.5a; its `bun run check` ends with 12 failing tests (1371 pass): fix them first. Tomorrow, in order:
 1. `bun run check`; fix whatever fails (the merge unified the settings module: `SettingsReader` cached + `SettingsService`
    uncached; module and test-app conflicts were resolved as unions; READMEs need a tidy-up).
 2. P2.5b review follow-ups: MAINTENANCE 503 must not log as a server error; hash raw IPs in rate-limit keys; per-IP limit
