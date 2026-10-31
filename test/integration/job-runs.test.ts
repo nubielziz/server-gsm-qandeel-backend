@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import { AppError } from '../../src/common/errors';
 import { DbModule, schema as s } from '../../src/infra/db';
 import { JobRunsModule, JobRunsService } from '../../src/modules/health';
+import { UnrecoverableError } from '../../src/infra/queues';
 import { type InfraHarness, createInfra } from '../support/infra';
 import { TEST_DATABASE_URL, closeTestDb, resetDb, testDb } from '../support/db';
 import { expectRejection } from '../support/rejection';
@@ -177,16 +178,31 @@ describe('run (the wrapper processors use)', () => {
     expect(await rowsOf('ledger_integrity')).toHaveLength(1);
   });
 
-  it('does not run the work again for a run that was already closed (for example by the reaper)', async () => {
+  it('fails a retry of a manual run that already failed, without running the work again (the job must not end completed)', async () => {
     const started = await jobRuns.start({ job: 'ledger_integrity', trigger: 'manual' });
     await jobRuns.finish(started.id, { status: 'failed', error: 'The worker stopped before this run finished.' });
+    let ran = false;
+    await expectRejection(
+      jobRuns.run({ job: 'ledger_integrity', trigger: 'manual', runId: started.id }, () => {
+        ran = true;
+        return Promise.resolve();
+      }),
+      UnrecoverableError,
+    );
+    expect(ran).toBe(false);
+    expect((await rowsOf('ledger_integrity')).map((row) => row.status)).toEqual(['failed']);
+  });
+
+  it('returns a manual run that already succeeded unchanged (a duplicate delivery is harmless)', async () => {
+    const started = await jobRuns.start({ job: 'ledger_integrity', trigger: 'manual' });
+    await jobRuns.finish(started.id, { status: 'succeeded', processed: 3 });
     let ran = false;
     const result = await jobRuns.run({ job: 'ledger_integrity', trigger: 'manual', runId: started.id }, () => {
       ran = true;
       return Promise.resolve();
     });
     expect(ran).toBe(false);
-    expect(result.status).toBe('failed');
+    expect(result.status).toBe('succeeded');
   });
 
   it('fails when the run to adopt does not exist', async () => {

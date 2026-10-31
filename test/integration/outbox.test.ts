@@ -414,7 +414,7 @@ describe('waking the relay', () => {
     await eventually(() => (listener.listening ? true : undefined));
     const { pool } = await testDb();
     const { rows: found } = await pool.query<{ pid: number }>(
-      `select pid from pg_stat_activity where application_name = 'gsm-outbox-listener' and pid <> pg_backend_pid()`,
+      `select pid from pg_stat_activity where datname = current_database() and application_name = 'gsm-outbox-listener' and pid <> pg_backend_pid()`,
     );
     expect(found.length).toBeGreaterThanOrEqual(1);
     for (const { pid } of found) await pool.query('select pg_terminate_backend($1)', [pid]);
@@ -433,7 +433,7 @@ describe('waking the relay', () => {
       Number(
         (
           await pool.query<{ n: string }>(
-            `select count(*) as n from pg_stat_activity where application_name = 'gsm-outbox-listener'`,
+            `select count(*) as n from pg_stat_activity where datname = current_database() and application_name = 'gsm-outbox-listener'`,
           )
         ).rows[0]?.n,
       );

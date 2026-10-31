@@ -14,6 +14,7 @@ import {
   insertSkippedJobRun,
   lockJobRuns,
 } from './job-runs.repository';
+import { UnrecoverableError } from '../../../infra/queues';
 
 /**
  * What to do when another run of the same job is going on.
@@ -145,6 +146,13 @@ export class JobRunsService {
       const existing = await findJobRun(this.db.db, options.runId);
       if (!existing) throw new Error(`Job run ${options.runId} does not exist.`);
       if (existing.status !== 'running') {
+        // A BullMQ retry of a manual run that already failed must fail too (not end "completed"); a run that already
+        // succeeded or was skipped is returned as it is, so a duplicate delivery stays harmless.
+        if (existing.status === 'failed') {
+          throw new UnrecoverableError(
+            `Job run ${existing.id} of "${existing.job}" already failed; it is not run again.`,
+          );
+        }
         this.logger.warn(
           `Job run ${existing.id} of "${existing.job}" is already ${existing.status}; the work is not run again.`,
         );

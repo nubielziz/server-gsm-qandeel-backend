@@ -113,8 +113,8 @@ in `src/infra/queues/` (its `README.md` has an example); every queue, job and sc
 2. **Payload: ids only.** No secrets, no personal data. The processor re-reads the state it needs. `QueuesService.add` adds
    the request id; the worker restores it while the job runs.
 3. **Idempotency.** The processor must be safe to run twice: guarded updates (`UPDATE … WHERE id = $1 AND status =
-   $2`), a deterministic `jobId` built by `queueJobId('order-poll', orderId)` (`order-poll-77`; BullMQ refuses `:` in ids, so
-   decision 020's `outbox:<id>` is `outbox-<id>`), unique idempotency keys for ledger postings.
+   $2`), a deterministic `jobId` built by `queueJobId('order-poll', orderId)` (`order-poll-77`; BullMQ refuses `:` in ids,
+   decision 020), unique idempotency keys for ledger postings.
 4. **Retry policy.** The queue's attempts and exponential backoff with jitter apply to transient errors; throw
    `UnrecoverableError` for permanent ones. A supplier dispatch never retries a timed-out send (the order goes to needs
    attention, decision 025).
@@ -138,6 +138,9 @@ transaction; the worker's relay turns it into a BullMQ job with the id `outbox-<
    nesting, no money); `meta.requestId` is added for you.
 3. Write the consumer as a `@QueueProcessor` that receives `OutboxJobData` (`eventId`, `type`, `aggregateType`,
    `aggregateId`, `payload`, `requestId`) and re-reads the aggregate.
+4. The module that registers the event type must also be loaded by the worker (`src/worker.module.ts`): the relay only
+   knows the routes registered in its own process. A row whose type the worker does not know stays pending as
+   `unmapped_type` (retried, never lost) until it does.
 4. Add the event type to the table in `docs/queues.md` and to the module README ("Events").
 
 ## Add a cache key **(P2.4)**

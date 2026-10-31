@@ -15,8 +15,8 @@ when a queue is missing here or when the numbers in a section differ from `QUEUE
   request id while the job runs, so one id joins API, outbox, worker and supplier logs (decision 012).
 - **Job ids are deterministic** where the same occurrence can be enqueued twice: `queueJobId('outbox', eventId)` gives
   `outbox-1042`. BullMQ ignores an `add` whose id is already taken while the first job is retained. **BullMQ refuses
-  custom ids that contain `:` or are only digits**, so ids are `<kind>-<id>` with a hyphen (decision 020 and the map's
-  manual-run text say `outbox:<id>` and `manual:<run id>`; read them as `outbox-<id>` and `manual-<run id>`).
+  custom ids that contain `:` or are only digits**, so ids are `<kind>-<id>` with a hyphen (`outbox-<id>`,
+  `manual-<run id>`; decision 020).
 - **Processors are idempotent.** A job can run twice (a stalled job, a crash after the work but before the job was marked
   done, a retry): re-read the state, act through guarded updates (`UPDATE ... WHERE id = $1 AND status = $2`) and unique
   idempotency keys for ledger postings (decision 024).
@@ -168,7 +168,9 @@ Scheduled housekeeping: group promotion, data retention, integrity checks, FX re
   inserted; the job id is `manual-<run id>`.
 - **Idempotency:** none yet. Rule: each run is safe to repeat; `JobRunsService.run` skips a run while another run of the same
   job is going on.
-- **Retry policy:** 3 attempts, exponential backoff from 1 min (jitter 50 %); each attempt is its own `job_runs` row.
+- **Retry policy:** 3 attempts, exponential backoff from 1 min (jitter 50 %); each attempt of a scheduled run is its own
+  `job_runs` row. A manual run is one row: a retry after it failed ends the job as failed (`UnrecoverableError`), a retry
+  after it succeeded returns it unchanged.
 - **Schedule:** none yet (registered with `JobSchedulerRegistry` by the owning features).
 
 ## alerts

@@ -1,5 +1,5 @@
 // Deterministic BullMQ job ids. BullMQ refuses a custom id that contains ":" or is only digits, so ids are
-// "<kind>-<id>" (decision 020 wrote "outbox:<id>"; docs/queues.md explains the change).
+// "<kind>-<id>": BullMQ refuses ":" in custom ids (decision 020, docs/queues.md).
 
 const MAX_JOB_ID_LENGTH = 200;
 const PART = /^[A-Za-z0-9._-]+$/;

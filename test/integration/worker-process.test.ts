@@ -119,7 +119,7 @@ describe('the real worker (bun src/worker.ts)', () => {
       Number(
         (
           await pool.query<{ n: string }>(
-            `select count(*) as n from pg_stat_activity where application_name = 'gsm-outbox-listener'`,
+            `select count(*) as n from pg_stat_activity where datname = current_database() and application_name = 'gsm-outbox-listener'`,
           )
         ).rows[0]?.n,
       );

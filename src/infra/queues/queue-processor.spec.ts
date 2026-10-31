@@ -1,7 +1,8 @@
 // Unit tests of the processor table (decision 020): which combinations of @QueueProcessor are valid, and how a job finds
 // its processor.
 import { describe, expect, it } from 'bun:test';
-import { type DiscoveredProcessor, buildProcessorTable, handlerFor } from './queue-processor';
+import type { DiscoveryService } from '@nestjs/core';
+import { type DiscoveredProcessor, buildProcessorTable, findQueueProcessors, handlerFor } from './queue-processor';
 
 const instance = { process: () => Promise.resolve(undefined) };
 const processor = (label: string, queue: DiscoveredProcessor['queue'], jobName?: string): DiscoveredProcessor => ({
@@ -62,5 +63,29 @@ describe('handlerFor', () => {
     expect(handlerFor(named, 'other')).toBeUndefined();
     const all = buildProcessorTable([processor('All', 'files')]).get('files')!;
     expect(handlerFor(all, 'anything')?.label).toBe('All');
+  });
+});
+
+describe('findQueueProcessors', () => {
+  /** A discovery service that finds one marked provider. */
+  const discoveryWith = (wrapper: { static: boolean; instance: unknown }) =>
+    ({
+      getProviders: () => [
+        {
+          metatype: { name: 'SomeProcessor' },
+          instance: wrapper.instance,
+          isDependencyTreeStatic: () => wrapper.static,
+        },
+      ],
+      getMetadataByDecorator: () => ({ queue: 'notifications' }),
+    }) as unknown as DiscoveryService;
+
+  it('finds a static processor', () => {
+    const found = findQueueProcessors(discoveryWith({ static: true, instance }));
+    expect(found.map((entry) => entry.label)).toEqual(['SomeProcessor']);
+  });
+
+  it('refuses a request-scoped processor at boot instead of skipping it (its jobs would pile up unnoticed)', () => {
+    expect(() => findQueueProcessors(discoveryWith({ static: false, instance: undefined }))).toThrow(/request-scoped/);
   });
 });

@@ -76,9 +76,16 @@ export function findQueueProcessors(discovery: DiscoveryService): DiscoveredProc
   const found: DiscoveredProcessor[] = [];
   for (const wrapper of discovery.getProviders({ metadataKey: Marker.KEY })) {
     const metadata = discovery.getMetadataByDecorator(Marker, wrapper);
-    const instance: unknown = wrapper.instance;
-    if (!metadata || !wrapper.isDependencyTreeStatic() || typeof instance !== 'object' || instance === null) continue;
+    if (!metadata) continue;
     const label = wrapper.metatype?.name ?? 'a provider';
+    // A request-scoped processor has no singleton the worker could run: refuse it at boot instead of skipping it.
+    if (!wrapper.isDependencyTreeStatic()) {
+      throw new Error(
+        `${label} is marked @QueueProcessor but is request-scoped (or depends on a request-scoped provider).`,
+      );
+    }
+    const instance: unknown = wrapper.instance;
+    if (typeof instance !== 'object' || instance === null) continue;
     if (typeof (instance as { process?: unknown }).process !== 'function') {
       throw new Error(`${label} is marked @QueueProcessor but has no process(job) method.`);
     }

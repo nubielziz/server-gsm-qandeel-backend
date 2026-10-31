@@ -5,8 +5,8 @@ Single source of truth for status. The lead updates it after every step. Read it
 ## Resume here
 
 **Phase 2, foundation, in progress** (Sonnet implements, Opus reviews). **P2.1 runtime-core, P2.2 docs-tooling and
-P2.3 data are done.** P2.4a infra-core and P2.7 contract-tests are done too. **P2.4b
-queues-outbox** is running; then **P2.5 security**, then **P2.6 staff sign-in**. Briefs: `docs/briefs/` (`_common.md` first; `_feature.md` is the
+P2.3 data are done.** P2.4a infra-core, P2.4b queues-outbox and P2.7 contract-tests are done
+too. Next: **P2.5 security**, then **P2.6 staff sign-in** (the last Phase 2 features). Briefs: `docs/briefs/` (`_common.md` first; `_feature.md` is the
 Phase 3 recipe). Parallel implementers work in sibling worktrees of this repo (`git worktree add
 ../backend-p2-<name> -b feat/backend-p2-<name>`, then `bun install` there; a sibling path keeps the relative
 `reference` symlink working; the workflow tool's worktree isolation targets the frontend repo, not this one). Each
@@ -41,7 +41,7 @@ and `docs/slices/<module>.json`, `docs/contract/RULES.md` for its frontend featu
 |---|---|---|---|
 | 0 Setup + Bun spike | done | `25282af` | 0 |
 | 1 Architecture + contract | done | see `git log` (`docs: phase 1 ...`) | 6 (Opus analysts, one workflow, 3 at once) |
-| 2 Foundation | in progress (P2.1-P2.4a, P2.7 done) | per feature, see below | 14 so far |
+| 2 Foundation | in progress (P2.1-P2.4b, P2.7 done; P2.5, P2.6 left) | per feature, see below | 16 so far |
 | 3 Feature loop (by stage) | | | |
 | 4 Frontend integration | | | |
 
@@ -72,7 +72,7 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 | P2.2 | docs-tooling | OpenAPI 3.1 generation (internal + public), Scalar `/docs` and `/reference`, `/openapi.json`, ESLint (jsdoc, boundaries, env rule) + prettier, module READMEs, CONTRIBUTING, CI script | | done (`feat(docs-tooling)` commit) |
 | P2.3 | data | Drizzle schema for all 66 tables (per module) + schema additions (MISMATCHES), constraints, indexes, ledger triggers, first migration, migrator, resetDb, Postgres health indicator, seed from the frontend demo state | | done (`feat(data)` commit) |
 | P2.4a | infra-core | two Redis clients + health indicators, CacheService + CacheKeys, RateLimitService + semaphore, crypto (AES-GCM keyring, token hashing, argon2, webhook signatures), S3 storage, outbound http + SSRF guard (brief P2.4 items 1-5) | | done (`feat(infra-core)` commit) |
-| P2.4b | queues-outbox | BullMQ base (queues, worker registry, schedulers), job runs (health module), outbox + relay (platform module), Prometheus in compose; retire `spike/` (brief P2.4 items 6-10) | | in progress (worktree `../backend-p2-queues`) |
+| P2.4b | queues-outbox | BullMQ base (queues, worker registry, schedulers), job runs (health module), outbox + relay (platform module), Prometheus in compose; retire `spike/` (brief P2.4 items 6-10) | | done (`feat(queues-outbox)` commit) |
 | P2.5 | security | IP rules hook, maintenance hook, rate-limit hook, auth guards (staff/merchant/customer sessions, CSRF, API key, Dhru, webhook signatures), permission guard + catalog, audit interceptor, `/reference` staff gate | admin-team (part), ip-rules (part) | |
 | P2.6 | staff-sign-in | `POST /admin/auth/login`, `/2fa`, `/2fa/setup`, `/logout`, `/password/set`, `GET /admin/auth/me` (6) | | |
 | P2.7 | contract-tests | route/shape/error parity tests, fixture harvest from the frontend mocks, allowlist, `pending.ts` | | done (`test(contract)` commit) |
@@ -112,7 +112,8 @@ re-review), max 2 review rounds.
 | P2.3 data | 2 (implementer, review: pass, no blocking) |
 | P2.4a infra-core | 2 (implementer, review: pass, no blocking) |
 | P2.7 contract-tests | 4 (implementer, review: 1 blocking, fix, re-review: pass) |
-| **Total** | **20** |
+| P2.4b queues-outbox | 2 (implementer, review: pass, no blocking) |
+| **Total** | **22** |
 
 ## Decisions
 
@@ -169,6 +170,13 @@ None.
   "Known limits"): `GET /admin/permissions` needs a B-entry (`Permission[]` vs `string[]`, feature 2a);
   `GET /admin/files/:id` is a 302 that `defineRoute` cannot declare yet; route parity needs an allowance for the Dhru
   transport `POST /api/index.php` (feature 7a); `fixtures.test` does not notice a vanished mutation fixture.
+- Queues (P2.4b) notes: BullMQ refuses `:` in custom job ids, so ids are `<kind>-<id>` (`outbox-<id>`,
+  `manual-<run id>`; decision 020 updated); the outbox relay's one-second tick writes no `job_runs` (decision 020);
+  an event type must be registered in a module the worker loads; for the health feature (9): schedule
+  `JobRunsService.failStuck`, test Bull Board under Bun again, enqueue manual runs as `manual-<run id>`; when the worker
+  runs in a container, give it `stop_grace_period: 30s` (its shutdown grace is 25 s); Prometheus (compose,
+  `prom/prometheus:v3.15.1`) is running and scrapes `host.docker.internal:3000` and `:9464` (check the targets turn up
+  once the API and the worker run).
 - Run Bun entry points from the repo root: Bun reads `tsconfig.json` (decorator flags) from the working directory.
 - `TRUST_PROXY` as a hop count becomes a trust function (Fastify 5.12 ignores numbers); use it only when the app port
   is reachable solely through the proxy chain, otherwise list the proxy addresses.

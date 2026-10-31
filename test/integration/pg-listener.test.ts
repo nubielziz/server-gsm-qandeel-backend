@@ -39,9 +39,10 @@ function listen(connectionString = TEST_DATABASE_URL, channels = ['gsm_test_chan
 /** The server-side processes of the listener connections. */
 async function backends(): Promise<number[]> {
   const { pool } = await testDb();
-  const { rows } = await pool.query<{ pid: number }>('select pid from pg_stat_activity where application_name = $1', [
-    NAME,
-  ]);
+  const { rows } = await pool.query<{ pid: number }>(
+    'select pid from pg_stat_activity where datname = current_database() and application_name = $1',
+    [NAME],
+  );
   return rows.map((row) => row.pid);
 }
 

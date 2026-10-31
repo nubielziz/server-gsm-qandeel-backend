@@ -392,7 +392,7 @@
           "key": "POST /admin/system/jobs/:name/run",
           "successStatus": 202,
           "query": "",
-          "request": "No body; :name = a scheduled job name (tabs/queues/ActionDialogs.tsx:109). Insert job_runs {job, trigger 'manual', status 'running', started_at now, triggered_by staff} and enqueue the job now outside its schedule (BullMQ add, jobId 'manual:<run id>'); audit_logs.",
+          "request": "No body; :name = a scheduled job name (tabs/queues/ActionDialogs.tsx:109). Insert job_runs {job, trigger 'manual', status 'running', started_at now, triggered_by staff} and enqueue the job now outside its schedule (BullMQ add, jobId 'manual-<run id>'); audit_logs.",
           "response": "202 + the new JobRun (status running, trigger manual). The console ignores the body (toast from its own label) and polls jobs every 5 s until the run ends.",
           "errors": [
             {
