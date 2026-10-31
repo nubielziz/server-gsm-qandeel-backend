@@ -1,7 +1,12 @@
 // Error catalog (decision 028): every code the backend may emit, with its HTTP status and a fixed English title.
 // Mirrors docs/contract/error-codes.md (a unit test keeps both lists equal); routes, mocks and docs use these names.
 
-/** One catalog entry: the HTTP status of the code and the fixed, user-facing title of its problem+json body. */
+/**
+ * One catalog entry: the HTTP status of the code and the fixed, user-facing title of its problem+json body.
+ *
+ * Why: the console reacts to the code and shows the title, so each code has one fixed status and wording (decision
+ * 028).
+ */
 export interface ErrorCatalogEntry {
   readonly status: number;
   readonly title: string;
@@ -137,7 +142,12 @@ export const ERROR_CATALOG = {
   SUPPLIER_TIMEOUT: { status: 504, title: 'The supplier took too long to answer.' },
 } as const satisfies Record<string, ErrorCatalogEntry>;
 
-/** The union of all catalog codes, so `new AppError('NOT_FOUND')` is checked by the compiler. */
+/**
+ * The union of all catalog codes, so `new AppError('NOT_FOUND')` is checked by the compiler.
+ *
+ * Why: an unknown code is a compile error, so no handler can answer with a code the catalog and
+ * `docs/contract/error-codes.md` do not know.
+ */
 export type ErrorCode = keyof typeof ERROR_CATALOG;
 
 /**

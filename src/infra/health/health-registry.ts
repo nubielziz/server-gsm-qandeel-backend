@@ -2,10 +2,19 @@
 // (src/infra) can register their checks without importing a domain module; the health module only reads it.
 import { Injectable, Module } from '@nestjs/common';
 
-/** Overall state: ok, degraded (a non-critical dependency is down) or down (a critical one is). */
+/**
+ * Overall state: ok, degraded (a non-critical dependency is down) or down (a critical one is).
+ *
+ * Why: the console shows one overall state and treats any non-2xx as 'API unreachable' (B11), so degraded is told apart
+ * from down in the body.
+ */
 export type HealthStatus = 'ok' | 'degraded' | 'down';
 
-/** One dependency check. */
+/**
+ * One dependency check.
+ *
+ * Why: each infrastructure module registers its own check without the health module importing it (decision 016).
+ */
 export interface HealthIndicator {
   /** Key in the response `checks` object; lower case with underscores (`postgres`, `redis`, `redis_queue`). */
   readonly name: string;
@@ -45,7 +54,11 @@ export class HealthRegistry {
     this.indicators.set(indicator.name, indicator);
   }
 
-  /** @returns the registered indicators in registration order */
+  /**
+   * Lists the indicators `GET /health` runs.
+   *
+   * @returns the registered indicators in registration order
+   */
   list(): readonly HealthIndicator[] {
     return [...this.indicators.values()];
   }

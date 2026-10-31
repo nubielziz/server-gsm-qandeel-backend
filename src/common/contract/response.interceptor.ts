@@ -7,7 +7,11 @@ import { z } from 'zod';
 import { AppError } from '../errors/app-error';
 import type { AnyRouteContract } from './define-route';
 
-/** The part of a reply the interceptor uses (a Fastify reply). */
+/**
+ * The part of a reply the interceptor uses (a Fastify reply).
+ *
+ * Why: the interceptor only sets and reads headers, so tests can hand it a tiny fake instead of a Fastify reply.
+ */
 export interface HeaderSink {
   header(name: string, value: string): unknown;
   getHeader(name: string): unknown;
@@ -62,6 +66,14 @@ export function shapeResponse(contract: AnyRouteContract, result: unknown, reply
 export class ContractResponseInterceptor implements NestInterceptor {
   constructor(private readonly contract: AnyRouteContract) {}
 
+  /**
+   * Runs the handler and shapes its result with {@link shapeResponse}.
+   *
+   * @param context the request being handled (gives the reply used for headers)
+   * @param next the rest of the pipeline, ending in the handler
+   * @returns the stream of the shaped body
+   * @throws {AppError} `RESPONSE_CONTRACT_VIOLATION` (500) when the handler result breaks the contract
+   */
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const reply = context.switchToHttp().getResponse<FastifyReply>();
     return next.handle().pipe(map((result: unknown) => shapeResponse(this.contract, result, reply)));

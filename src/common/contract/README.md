@@ -117,9 +117,14 @@ never with numbers.
 - `@Route` adds the `@nestjs/swagger` metadata: operation id (`getAdminStaffById`), tags, parameters (list dialect
   included), request body with example, the success response, one `application/problem+json` response per error status
   listing its codes with an example each, `x-total-count`, `x-request-id`, security by `access`
-  (`SECURITY_SCHEME`), and `x-gsm-key`, `x-gsm-access`, `x-gsm-permission`. When P2.2 builds the document, pass
-  `autoTagControllers: false` to `SwaggerModule.createDocument` so controllers add no tag of their own, and define the
-  security schemes named in `SECURITY_SCHEME`.
+  (`SECURITY_SCHEME`), and `x-gsm-key`, `x-gsm-access`, `x-gsm-surface`, `x-gsm-permission`.
+- The platform module turns that metadata into two documents (`src/modules/platform/docs`, decision 017):
+  `docs/contract/openapi.json` (every route) and `openapi.public.json` (surfaces `v1` and `dhru`, plus the outgoing
+  events as `webhooks`). It passes `autoTagControllers: false`, so a route's `tags` are the ones in its contract (use
+  the map group; tags are grouped by surface and prefixed with it when two surfaces share one), and it defines every
+  security scheme named in `SECURITY_SCHEME`. Regenerate with `bun run docs:openapi`; CI runs the `--check`.
+- `defineEvent({ key: 'EVENT order.status_changed', summary, payload, example })` registers an outgoing webhook event in
+  `eventRegistry` (same rules as `defineRoute`); the public document lists it under `webhooks`.
 - Do not chain `.meta()`/`.describe()` on the result of `listQuery()`: zod clones the schema and drops its list marker.
 
 ## Testing a route

@@ -235,9 +235,7 @@ describe('configuration checks', () => {
   it('rejects inconsistent definitions at build time', () => {
     const base = { sorts: ['id'] as const, defaultSort: { field: 'id', order: 'asc' } as const };
     expect(() => listQuery({ ...base, defaultSort: { field: 'nope' as 'id', order: 'asc' } })).toThrow(/default sort/);
-    expect(() => listQuery({ sorts: [] as unknown as readonly ['id'], defaultSort: base.defaultSort })).toThrow(
-      /at least one/,
-    );
+    expect(() => listQuery({ sorts: [] as never, defaultSort: base.defaultSort })).toThrow(/at least one/);
     expect(() => listQuery({ ...base, filters: { q: { type: 'string' } } })).toThrow(/reserved/);
     expect(() => listQuery({ ...base, filters: { a: { type: 'enum' } } })).toThrow(/needs values/);
     expect(() => listQuery({ ...base, filters: { a: { type: 'boolean', ops: ['gte'] } } })).toThrow(/does not apply/);

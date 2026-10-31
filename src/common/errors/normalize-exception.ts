@@ -4,7 +4,11 @@ import { HttpException } from '@nestjs/common';
 import { AppError } from './app-error';
 import type { ErrorCode } from './catalog';
 
-/** Result of {@link normalizeException}. */
+/**
+ * Result of {@link normalizeException}.
+ *
+ * Why: the exception filter needs both the error to send and whether it is a server fault to log (decision 028).
+ */
 export interface NormalizedException {
   /** What to send to the client. */
   readonly error: AppError;
@@ -75,7 +79,7 @@ function httpMessage(exception: HttpException): string | undefined {
   const response = exception.getResponse();
   if (typeof response === 'string' && response !== '') return response;
   if (typeof response === 'object' && response !== null && 'message' in response) {
-    const message = (response as { message: unknown }).message;
+    const message = response.message;
     if (typeof message === 'string' && message !== '') return message;
   }
   return undefined;

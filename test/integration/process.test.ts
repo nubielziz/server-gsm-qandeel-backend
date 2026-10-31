@@ -26,6 +26,14 @@ function start(script: 'src/main.ts' | 'src/worker.ts', env: Record<string, stri
   return child;
 }
 
+/** True when nothing answers at the URL any more (the connection is refused). */
+async function refuses(url: string): Promise<boolean> {
+  return fetch(url).then(
+    () => false,
+    () => true,
+  );
+}
+
 async function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -132,7 +140,7 @@ describe('API process', () => {
     // Nest re-raises the signal after cleanup (decision 001): 143 = SIGTERM, 0 also counts as clean.
     expect([0, 143]).toContain(code as number);
     expect(ms).toBeLessThan(5000);
-    await expect(fetch(`http://127.0.0.1:${port}/health`)).rejects.toThrow();
+    expect(await refuses(`http://127.0.0.1:${port}/health`)).toBe(true);
   });
 
   it('refuses to start when the port is taken, with a non-zero exit code', async () => {
@@ -170,7 +178,7 @@ describe('worker process', () => {
     const { code, ms } = await stop(child);
     expect([0, 143]).toContain(code as number);
     expect(ms).toBeLessThan(5000);
-    await expect(fetch(`http://127.0.0.1:${port}/metrics`)).rejects.toThrow();
+    expect(await refuses(`http://127.0.0.1:${port}/metrics`)).toBe(true);
   });
 
   it('applies the same access rule as the API: the token when one is set', async () => {

@@ -12,7 +12,12 @@ const TEXT = /^-?\d+(\.\d{1,4})?$/;
 const WIRE = /^-?\d+\.\d{4}$/;
 const FACTOR = /^-?\d+(\.\d{1,30})?$/;
 
-/** A rate, percent or quantity applied to a {@link Money}: a decimal string, a safe integer or a bigint. */
+/**
+ * A rate, percent or quantity applied to a {@link Money}: a decimal string, a safe integer or a bigint.
+ *
+ * Why: rates, percents and quantities are decimal strings or integers, never floats, so rounding stays exact (decision
+ * 011).
+ */
 export type Factor = string | number | bigint;
 
 function toDecimal(input: string | number | bigint, pattern: RegExp, what: string): Decimal {
@@ -103,6 +108,8 @@ export class Money {
   }
 
   /**
+   * Adds two amounts exactly.
+   *
    * @param other the amount to add
    * @returns this plus other (exact)
    * @throws {RangeError} when the result does not fit `numeric(18,4)`
@@ -112,6 +119,8 @@ export class Money {
   }
 
   /**
+   * Subtracts an amount exactly.
+   *
    * @param other the amount to subtract
    * @returns this minus other (exact)
    * @throws {RangeError} when the result does not fit `numeric(18,4)`
@@ -143,17 +152,27 @@ export class Money {
     return Money.checked(this.value.times(toDecimal(percent, FACTOR, 'Percent')).div(100));
   }
 
-  /** @returns the same amount with the opposite sign (zero stays zero) */
+  /**
+   * Flips the sign.
+   *
+   * @returns the same amount with the opposite sign (zero stays zero)
+   */
   neg(): Money {
     return new Money(this.value.negated());
   }
 
-  /** @returns the amount without its sign */
+  /**
+   * Drops the sign.
+   *
+   * @returns the absolute amount
+   */
   abs(): Money {
     return new Money(this.value.abs());
   }
 
   /**
+   * Orders two amounts.
+   *
    * @param other the amount to compare with
    * @returns -1, 0 or 1 when this is less than, equal to or greater than other
    */
@@ -161,22 +180,39 @@ export class Money {
     return this.value.cmp(other.value) as -1 | 0 | 1;
   }
 
-  /** @returns true when both amounts are equal */
+  /**
+   * Compares two amounts for equality.
+   *
+   * @param other the amount to compare with
+   * @returns true when both amounts are equal
+   */
   eq(other: Money): boolean {
     return this.value.eq(other.value);
   }
 
-  /** @returns true for `0.0000` */
+  /**
+   * Tells whether the amount is zero.
+   *
+   * @returns true for `0.0000`
+   */
   isZero(): boolean {
     return this.value.isZero();
   }
 
-  /** @returns true when below zero */
+  /**
+   * Tells whether the amount is below zero.
+   *
+   * @returns true when below zero
+   */
   isNegative(): boolean {
     return this.value.isNegative() && !this.value.isZero();
   }
 
-  /** @returns true when above zero */
+  /**
+   * Tells whether the amount is above zero.
+   *
+   * @returns true when above zero
+   */
   isPositive(): boolean {
     return this.value.isPositive() && !this.value.isZero();
   }
@@ -190,12 +226,20 @@ export class Money {
     return this.value.isZero() ? '0.0000' : this.value.toFixed(SCALE);
   }
 
-  /** @returns the wire form, so `JSON.stringify` of a Money never leaks a float or an object */
+  /**
+   * Serialises the amount for `JSON.stringify`.
+   *
+   * @returns the wire form, so a Money never leaks a float or an object
+   */
   toJSON(): string {
     return this.toWire();
   }
 
-  /** @returns the wire form */
+  /**
+   * Formats the amount as text.
+   *
+   * @returns the wire form
+   */
   toString(): string {
     return this.toWire();
   }

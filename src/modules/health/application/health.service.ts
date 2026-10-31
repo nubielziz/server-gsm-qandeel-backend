@@ -4,7 +4,11 @@ import { Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { type HealthIndicator, type HealthStatus, HealthRegistry } from '../../../infra/health';
 
-/** The answer of `GET /health`. */
+/**
+ * The answer of `GET /health`.
+ *
+ * Why: the console reads `{ status, checks }` and nothing internal (map B11).
+ */
 export interface HealthReport {
   readonly status: HealthStatus;
   readonly checks: Record<string, 'ok' | 'down'>;

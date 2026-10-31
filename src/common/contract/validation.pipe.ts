@@ -12,7 +12,12 @@ import type { AnyRouteContract } from './define-route';
  */
 export const CONTRACT_HEADERS_MARKER = '__gsm_contract_headers__';
 
-/** The four request inputs a contract can validate. */
+/**
+ * The four request inputs a contract can validate.
+ *
+ * Why: a validation failure names the input (`body`, `query`, `params`, `headers`), so the console can tell which part
+ * of the request is wrong (decision 028).
+ */
 export type InputLocation = 'params' | 'query' | 'body' | 'headers';
 
 /**
@@ -83,7 +88,12 @@ export function validationFailed(location: InputLocation, error: z.ZodError): Ap
 /** Parsed inputs by the raw object they came from, so the guard parses once and the pipe reuses the result. */
 const parsedByRaw = new WeakMap<object, unknown>();
 
-/** The request parts a contract validates. */
+/**
+ * The request parts a contract validates.
+ *
+ * Why: the guard validates every input the contract declares before the handler runs, whether or not the handler reads
+ * it (decision 008).
+ */
 export interface RawInputs {
   readonly params?: unknown;
   readonly query?: unknown;
@@ -133,6 +143,13 @@ function failure(errors: readonly FieldError[]): AppError {
 export class ContractInputGuard implements CanActivate {
   constructor(private readonly contract: AnyRouteContract) {}
 
+  /**
+   * Validates every input the contract declares before the handler runs.
+   *
+   * @param context the request being handled
+   * @returns always true; a failure throws instead
+   * @throws {AppError} `VALIDATION_FAILED` (422) when an input does not satisfy its schema
+   */
   canActivate(context: ExecutionContext): boolean {
     validateInputs(this.contract, context.switchToHttp().getRequest<RawInputs>());
     return true;
@@ -152,6 +169,15 @@ export class ContractInputGuard implements CanActivate {
 export class ContractValidationPipe implements PipeTransform {
   constructor(private readonly contract: AnyRouteContract) {}
 
+  /**
+   * Parses one handler parameter with the contract schema of its input.
+   *
+   * @param value the raw value Nest extracted (`@Param()`, `@Query()`, `@Body()` or the headers)
+   * @param metadata which input the parameter reads
+   * @returns the parsed value, or the raw value for parameters the contract does not validate (`@Req()`)
+   * @throws {AppError} `VALIDATION_FAILED` (422) when the input does not satisfy its schema
+   * @throws {Error} when the handler reads an input the contract does not declare (a programming error)
+   */
   transform(value: unknown, metadata: ArgumentMetadata): unknown {
     const location = locationOf(metadata);
     if (!location) return value;

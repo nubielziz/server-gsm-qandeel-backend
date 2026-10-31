@@ -1,7 +1,12 @@
 // The HTTP surfaces of the API (docs/route-manifest.json) and how a request path maps to one.
 // Used for metrics labels, error envelopes (Dhru keeps its own, decision 026) and contract consistency checks.
 
-/** HTTP surfaces served by this process; outgoing `events` and `supplier` calls are not routes of ours. */
+/**
+ * HTTP surfaces served by this process; outgoing `events` and `supplier` calls are not routes of ours.
+ *
+ * Why: metrics labels, error envelopes and the OpenAPI filter all switch on the surface of a route (decisions 015, 017,
+ * 026, 028).
+ */
 export type Surface = 'admin' | 'client' | 'v1' | 'store' | 'dhru' | 'hooks' | 'system';
 
 const PREFIXES: ReadonlyArray<readonly [RegExp, Surface]> = [

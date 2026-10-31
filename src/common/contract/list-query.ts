@@ -21,14 +21,33 @@ const MAX_IN_VALUES = 100;
 const MAX_TEXT_LENGTH = 200;
 const MAX_SORT_FIELDS = 5;
 
-/** Comparison of a filter; `eq` with several values is IN, `ne` with several values is NOT IN. */
+/**
+ * Comparison of a filter; `eq` with several values is IN, `ne` with several values is NOT IN.
+ *
+ * Why: the console's simple-rest dialect (ALIGNMENT § 2) writes operators as key suffixes (`_ne`, `_gte`, `_like`);
+ * this is the closed list of them.
+ */
 export type FilterOp = 'eq' | 'ne' | 'gte' | 'lte' | 'gt' | 'lt' | 'like';
-/** How the text of a filter value is read. */
+/**
+ * How the text of a filter value is read.
+ *
+ * Why: every filter value arrives as text in the query string and must be read as its real type before it reaches SQL.
+ */
 export type FilterType = 'string' | 'enum' | 'boolean' | 'number' | 'decimal' | 'id' | 'datetime';
-/** One parsed filter value: strings (also `decimal`, kept exact), numbers, booleans or dates. */
+/**
+ * One parsed filter value: strings (also `decimal`, kept exact), numbers, booleans or dates.
+ *
+ * Why: repositories compare typed values, never raw strings; decimals stay strings so no precision is lost (decision
+ * 011).
+ */
 export type FilterValue = string | number | boolean | Date;
 
-/** What may be filtered on one field. Field names are the camelCase response fields (dotted paths allowed). */
+/**
+ * What may be filtered on one field. Field names are the camelCase response fields (dotted paths allowed).
+ *
+ * Why: only the filters an endpoint declares are accepted, so a client cannot filter on a column the endpoint never
+ * meant to expose.
+ */
 export interface FilterSpec {
   readonly type: FilterType;
   /** Allowed operators; defaults by type (string: eq, ne, like; numbers, ids: all but like; datetime: no ne, like). */
@@ -37,7 +56,12 @@ export interface FilterSpec {
   readonly values?: readonly string[];
 }
 
-/** Configuration of {@link listQuery}. */
+/**
+ * Configuration of {@link listQuery}.
+ *
+ * Why: one declaration per list endpoint gives validation, the parsed request type and the OpenAPI parameters (decision
+ * 008).
+ */
 export interface ListQueryConfig<S extends string, X extends z.ZodRawShape> {
   /** Fields `_sort` may name. */
   readonly sorts: readonly S[];
@@ -53,20 +77,34 @@ export interface ListQueryConfig<S extends string, X extends z.ZodRawShape> {
   readonly extra?: X;
 }
 
-/** One sort key. */
+/**
+ * One sort key.
+ *
+ * Why: repositories turn sort keys into ORDER BY from a closed list of fields, never from client text.
+ */
 export interface ListSort<S extends string = string> {
   readonly field: S;
   readonly order: 'asc' | 'desc';
 }
 
-/** One parsed filter: `values` has one element except for `eq`/`ne` with a repeated key. */
+/**
+ * One parsed filter: `values` has one element except for `eq`/`ne` with a repeated key.
+ *
+ * Why: repositories apply filters from this shape; equality with several values means IN, because the console repeats
+ * the key.
+ */
 export interface ParsedFilter {
   readonly field: string;
   readonly op: FilterOp;
   readonly values: readonly FilterValue[];
 }
 
-/** The parsed list request a handler receives. */
+/**
+ * The parsed list request a handler receives.
+ *
+ * Why: list handlers get paging, sorting, filters and search already validated, so no handler parses `_start` or
+ * `_sort` by hand.
+ */
 export interface ParsedListQuery<S extends string = string, X = Record<string, never>> {
   /** `start` is 0-based and inclusive, `end` exclusive, `limit = end - start`. */
   readonly range: { readonly start: number; readonly end: number; readonly limit: number };
@@ -78,7 +116,12 @@ export interface ParsedListQuery<S extends string = string, X = Record<string, n
   readonly extra: X;
 }
 
-/** What documentation needs to know about a list query. */
+/**
+ * What documentation needs to know about a list query.
+ *
+ * Why: the zod schema is a transform over a free-form object, so the OpenAPI builder reads the dialect from this
+ * descriptor instead.
+ */
 export interface ListQueryDescriptor {
   readonly sorts: readonly string[];
   readonly defaultSort: readonly ListSort[];
@@ -90,10 +133,19 @@ export interface ListQueryDescriptor {
 
 const LIST_QUERY = Symbol.for('gsm.listQuery');
 
-/** The marker property that tells routes and docs a schema came from {@link listQuery}. */
+/**
+ * The marker property that tells routes and docs a schema came from {@link listQuery}.
+ *
+ * Why: `defineRoute` and the response interceptor must know that a route answers an array plus `x-total-count`.
+ */
 export type ListQueryBrand = { readonly [LIST_QUERY]: ListQueryDescriptor };
 
-/** The schema returned by {@link listQuery}; carries its descriptor so routes and docs can recognise it. */
+/**
+ * The schema returned by {@link listQuery}; carries its descriptor so routes and docs can recognise it.
+ *
+ * Why: a route contract needs one value that is both the zod schema (validation) and the carrier of the descriptor
+ * (documentation).
+ */
 export type ListQuerySchema<S extends string = string, X = Record<string, never>> = z.ZodType<
   ParsedListQuery<S, X>,
   Record<string, unknown>
@@ -200,7 +252,7 @@ function convert(spec: Required<Pick<FilterSpec, 'type'>> & Pick<FilterSpec, 'va
 /** Splits the raw value of a key into texts; `undefined` when it is not a string or an array of strings. */
 function textsOf(raw: unknown): string[] | undefined {
   if (typeof raw === 'string') return [raw];
-  if (Array.isArray(raw) && raw.every((item) => typeof item === 'string')) return raw as string[];
+  if (Array.isArray(raw) && raw.every((item) => typeof item === 'string')) return raw;
   return undefined;
 }
 
@@ -216,7 +268,8 @@ function buildDescriptor<S extends string, X extends z.ZodRawShape>(
   const maxPage = config.maxPage ?? DEFAULT_MAX_PAGE;
   if (!Number.isInteger(maxPage) || maxPage < 1) throw new Error('listQuery: maxPage must be a positive integer');
   if (config.sorts.length === 0) throw new Error('listQuery: sorts must name at least one field');
-  const defaultSort = Array.isArray(config.defaultSort) ? config.defaultSort : [config.defaultSort as ListSort<S>];
+  // `Array.isArray` does not narrow a readonly array, so a single sort is told apart by its `field`.
+  const defaultSort: readonly ListSort<S>[] = 'field' in config.defaultSort ? [config.defaultSort] : config.defaultSort;
   for (const sort of defaultSort) {
     if (!config.sorts.includes(sort.field)) throw new Error(`listQuery: default sort "${sort.field}" is not in sorts`);
   }
@@ -430,7 +483,11 @@ export function listQuery<const S extends string, X extends z.ZodRawShape = Reco
   return Object.assign(schema, { [LIST_QUERY]: descriptor }) as unknown as ListQuerySchema<S, z.output<z.ZodObject<X>>>;
 }
 
-/** One documented query parameter of a list endpoint. */
+/**
+ * One documented query parameter of a list endpoint.
+ *
+ * Why: every parameter of the dialect (range, sort, search, each filter and operator) appears in the OpenAPI document.
+ */
 export interface ListQueryParameter {
   readonly name: string;
   readonly description: string;

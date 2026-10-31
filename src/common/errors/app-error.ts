@@ -2,14 +2,23 @@
 // The global exception filter turns it into problem+json; codes come from catalog.ts (docs/contract/error-codes.md).
 import { ERROR_CATALOG, type ErrorCode } from './catalog';
 
-/** One invalid field in a problem+json `errors[]` list; `field` is a dotted camelCase path such as `items.0.imei`. */
+/**
+ * One invalid field in a problem+json `errors[]` list; `field` is a dotted camelCase path such as `items.0.imei`.
+ *
+ * Why: the console maps `errors[].field` onto form fields (ALIGNMENT § 5), so the path must equal the request key.
+ */
 export interface FieldError {
   readonly field: string;
   readonly code: string;
   readonly message: string;
 }
 
-/** Optional details of one occurrence of an error. */
+/**
+ * Optional details of one occurrence of an error.
+ *
+ * Why: an occurrence adds what went wrong this time (detail, field errors, cause) to the fixed catalog entry (decision
+ * 028).
+ */
 export interface AppErrorOptions {
   /** A human sentence for this occurrence (shown to staff verbatim; plain English, never HTML). */
   readonly detail?: string;

@@ -1,0 +1,503 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "GSM Supplier API: internal reference",
+    "version": "1.0.0",
+    "description": "Every route of the API: admin console, merchant portal, storefront, REST API v1, Dhru Fusion, incoming webhooks and system routes. Generated from the route contracts; the public subset is `/openapi.json`.\n\nEach operation shows its access kind (`x-gsm-access`), the permission a staff route needs (`x-gsm-permission`) and the manifest key (`x-gsm-key`).\n\n**Conventions.** JSON bodies use camelCase names. Money is a string with exactly four decimals (`\"12.4900\"`), timestamps are ISO 8601 UTC with milliseconds (`\"2026-03-01T09:30:00.000Z\"`) and ids are numbers. Errors are `application/problem+json` with a stable `code`; quote the `requestId` when you contact support."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "The server that serves this document"
+    }
+  ],
+  "tags": [
+    {
+      "name": "docs"
+    },
+    {
+      "name": "system"
+    }
+  ],
+  "x-tagGroups": [
+    {
+      "name": "System",
+      "tags": [
+        "docs",
+        "system"
+      ]
+    }
+  ],
+  "paths": {
+    "/docs": {
+      "get": {
+        "description": "An HTML page (Scalar) that shows `/openapi.json`. It is served with its own Content-Security-Policy; every other route of the API keeps `default-src 'none'`.",
+        "operationId": "getDocs",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "REST API v1 documentation page",
+        "tags": [
+          "docs"
+        ],
+        "x-gsm-access": "public",
+        "x-gsm-key": "GET /docs",
+        "x-gsm-surface": "system"
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "Checks Postgres and the two Redis roles. Always answers 200 with `{ status, checks }`; with `?strict=1` it answers 503 and the same body when the status is not `ok`, for load balancers and readiness probes. Contains no versions, hostnames or error texts.",
+        "operationId": "getHealth",
+        "parameters": [
+          {
+            "name": "strict",
+            "required": false,
+            "in": "query",
+            "description": "Answer 503 when the status is not ok (`1` or `true`).",
+            "schema": {
+              "description": "Answer 503 when the status is not ok (`1` or `true`).",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "degraded",
+                        "down"
+                      ]
+                    },
+                    "checks": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "string",
+                        "enum": [
+                          "ok",
+                          "down"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "status": "degraded",
+                  "checks": {
+                    "postgres": "ok",
+                    "redis": "down"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Same body, other status (see the route description).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "degraded",
+                        "down"
+                      ]
+                    },
+                    "checks": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "string",
+                        "enum": [
+                          "ok",
+                          "down"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Service health check",
+        "tags": [
+          "system"
+        ],
+        "x-gsm-access": "public",
+        "x-gsm-key": "GET /health",
+        "x-gsm-surface": "system"
+      }
+    },
+    "/metrics": {
+      "get": {
+        "description": "Prometheus text exposition: default process metrics, `http_request_duration_seconds` and `api_errors_total`. Allowed from loopback and private networks, or with `Authorization: Bearer <METRICS_TOKEN>` when a token is configured (then the token is required from everyone).",
+        "operationId": "getMetrics",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to do this.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FORBIDDEN"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "metricsAccess": []
+          }
+        ],
+        "summary": "Prometheus metrics",
+        "tags": [
+          "system"
+        ],
+        "x-gsm-access": "internal-or-token",
+        "x-gsm-key": "GET /metrics",
+        "x-gsm-surface": "system"
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "description": "The public OpenAPI 3.1 document: the REST API v1 operations, the Dhru Fusion reference operation and the webhook events we send. Generated from the route contracts and committed as `docs/contract/openapi.public.json`.",
+        "operationId": "getOpenapiJson",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "REST API v1 specification (OpenAPI 3.1)",
+        "tags": [
+          "docs"
+        ],
+        "x-gsm-access": "public",
+        "x-gsm-key": "GET /openapi.json",
+        "x-gsm-surface": "system"
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "apiKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "API key",
+        "description": "Merchant API key sent as `Authorization: Bearer <key>`. A key has scopes (each operation names the one it needs), an optional list of allowed IP addresses and its own requests-per-minute limit."
+      },
+      "capabilityToken": {
+        "type": "http",
+        "scheme": "capability-token",
+        "description": "An unguessable token in the path (checkout, order tracking, support ticket or sign-in link) that authorises exactly one record. Sent by email or shown once; stored only as a hash."
+      },
+      "customerSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "gsm_store_session",
+        "description": "Storefront customer session cookie, set by the sign-in routes under `/store/v1/auth` (password or sign-in link). HttpOnly; carries the `__Host-` prefix in production. Requests that change data also send `X-CSRF-Token`."
+      },
+      "dhruCredentials": {
+        "type": "http",
+        "scheme": "dhru",
+        "description": "Dhru Fusion credentials are not an HTTP header: send `username` and `apiaccesskey` as form fields in the request body. The key must carry the `dhru` scope and passes the same IP and rate-limit checks as a REST v1 key."
+      },
+      "gatewaySignature": {
+        "type": "http",
+        "scheme": "gateway-signature",
+        "description": "Payment gateway webhook, verified per gateway with its signing secret. Deliveries outside a 5-minute window are refused and events are de-duplicated by the gateway event id."
+      },
+      "merchantSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "gsm_client_session",
+        "description": "Merchant portal session cookie, set by the sign-in routes under `/client/auth`. HttpOnly; carries the `__Host-` prefix in production. Requests that change data also send `X-CSRF-Token`."
+      },
+      "metricsAccess": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Prometheus scrape access: loopback and private networks, or `Authorization: Bearer <METRICS_TOKEN>`. When a token is configured it is required from every caller."
+      },
+      "staffSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "gsm_admin_session",
+        "description": "Staff session cookie, set by the sign-in steps under `/admin/auth` (password, then the 2FA code). HttpOnly; carries the `__Host-` prefix in production. Requests that change data also send the `X-CSRF-Token` header returned by sign-in. The permission a route needs is shown in `x-gsm-permission`."
+      },
+      "urlSecret": {
+        "type": "http",
+        "scheme": "url-secret",
+        "description": "A secret path segment (for example `/webhooks/telegram/{secret}`) that only the provider knows; a wrong secret answers as if the route did not exist."
+      },
+      "webhookSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-GSM-Signature",
+        "description": "Header we add to every outgoing webhook event: `t=<unix seconds>,v1=<hex HMAC-SHA256 of \"<t>.<raw body>\">`, keyed with the secret of the webhook endpoint. Recompute it over the raw body and refuse deliveries older than 5 minutes. Documented for receivers; it cannot be used to call this API."
+      }
+    }
+  }
+}

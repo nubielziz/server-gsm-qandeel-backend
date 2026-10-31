@@ -18,6 +18,13 @@ import { authorizeMetricsRequest, hasForwardingHeaders } from './metrics-access'
 export class MetricsAccessGuard implements CanActivate {
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
 
+  /**
+   * Decides whether the caller may read the metrics.
+   *
+   * @param context the request being handled
+   * @returns true when the caller is internal or sent the token
+   * @throws {AppError} `FORBIDDEN` (403) otherwise
+   */
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<FastifyRequest>();
     const allowed = authorizeMetricsRequest(

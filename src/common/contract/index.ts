@@ -15,6 +15,8 @@ export type {
   SuccessSpec,
   SuccessStatus,
 } from './define-route';
+export { EventRegistry, defineEvent, eventRegistry } from './define-event';
+export type { EventContract, EventKey, EventSpec } from './define-event';
 export { toJsonSchema } from './json-schema';
 export type { JsonSchema } from './json-schema';
 export {

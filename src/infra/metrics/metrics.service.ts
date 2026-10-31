@@ -3,7 +3,12 @@
 import { Injectable, type OnApplicationShutdown } from '@nestjs/common';
 import { Counter, Histogram, Registry, collectDefaultMetrics } from 'prom-client';
 
-/** Labels of `http_request_duration_seconds`. */
+/**
+ * Labels of `http_request_duration_seconds`.
+ *
+ * Why: the System health pages chart latency per surface and route (decision 015); labels stay low-cardinality (route
+ * templates, not URLs).
+ */
 export interface HttpMetricLabels {
   readonly method: string;
   /** The route template (`/admin/staff/:id`) or `unmatched`; never the raw path, so cardinality stays small. */
@@ -11,7 +16,11 @@ export interface HttpMetricLabels {
   readonly status: string;
 }
 
-/** Labels of `api_errors_total`. */
+/**
+ * Labels of `api_errors_total`.
+ *
+ * Why: the System health errors page counts failures per surface, route, status and code (decision 015).
+ */
 export interface ApiErrorLabels {
   readonly surface: string;
   readonly method: string;

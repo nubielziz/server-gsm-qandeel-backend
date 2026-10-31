@@ -35,6 +35,8 @@ export interface TestAppOptions {
   /** Controllers added to the root module (use the sample ones in routes.ts or your own). */
   readonly controllers?: Type<unknown>[];
   readonly providers?: ModuleMetadata['providers'];
+  /** Modules added to the root module, for example a global one that provides a token a real module will provide later. */
+  readonly imports?: ModuleMetadata['imports'];
 }
 
 /** A running test app. */
@@ -53,7 +55,7 @@ export interface TestApp {
 export async function createTestApp(options: TestAppOptions = {}): Promise<TestApp> {
   const config = parseEnv({ NODE_ENV: 'test', ...options.env });
   const moduleRef = await Test.createTestingModule({
-    imports: [AppModule],
+    imports: [AppModule, ...(options.imports ?? [])],
     controllers: options.controllers ?? [],
     providers: options.providers ?? [],
   })

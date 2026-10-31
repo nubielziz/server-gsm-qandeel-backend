@@ -3,18 +3,34 @@
 import net from 'node:net';
 import { z } from 'zod';
 
-/** The three runtime modes; the mode decides which variables are required and which defaults apply. */
+/**
+ * The three runtime modes; the mode decides which variables are required and which defaults apply.
+ *
+ * Why: the mode decides which variables are required and which local defaults apply (decision 013).
+ */
 export type NodeEnv = 'development' | 'test' | 'production';
 
-/** pino level names accepted by `LOG_LEVEL`. */
+/**
+ * pino level names accepted by `LOG_LEVEL`.
+ *
+ * Why: an invalid `LOG_LEVEL` must stop the deploy instead of silently logging nothing (decision 013).
+ */
 export type LogLevel = 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent';
 
-/** How the API serves the reference docs (decision 017): everyone, staff with `system:read`, or nobody. */
+/**
+ * How the API serves the reference docs (decision 017): everyone, staff with `system:read`, or nobody.
+ *
+ * Why: the internal API reference lists every route, so production defaults to staff only and it can be switched off
+ * (decision 017).
+ */
 export type ReferenceDocsMode = 'open' | 'staff' | 'off';
 
 /**
  * Which proxies may set `X-Forwarded-*`: `false` (none), a hop count (the last N hops) or a list of
  * IP/CIDR entries and named ranges (`loopback`, `linklocal`, `uniquelocal`).
+ *
+ * Why: the client IP feeds IP rules and rate limits (decision 018); trusting the wrong proxies would let a client forge
+ * it.
  */
 export type TrustProxy = false | number | readonly string[];
 
@@ -69,7 +85,11 @@ export interface AppConfig {
   };
 }
 
-/** One problem found while reading the environment, named by its variable. */
+/**
+ * One problem found while reading the environment, named by its variable.
+ *
+ * Why: an operator must see every configuration problem in one run, each named by its variable (decision 013).
+ */
 export interface ConfigIssue {
   readonly variable: string;
   readonly message: string;
@@ -168,8 +188,7 @@ export const ENV_VARIABLES: readonly string[] = Object.keys(rawSchema.shape);
 const KNOWN_VARIABLES = ENV_VARIABLES;
 
 type TrustProxyResult =
-  | { readonly ok: true; readonly value: TrustProxy }
-  | { readonly ok: false; readonly message: string };
+  { readonly ok: true; readonly value: TrustProxy } | { readonly ok: false; readonly message: string };
 
 /** True for `a.b.c.d/n` or `ipv6/n` with a prefix inside the family's range, or a bare address. */
 function isIpOrCidr(entry: string): boolean {
@@ -411,7 +430,7 @@ function salvage(env: Record<string, string>): RawEnv {
     const result = field?.safeParse(env[name]);
     if (result?.success && result.data !== undefined) kept[name] = result.data;
   }
-  return kept as RawEnv;
+  return kept;
 }
 
 /**
@@ -470,6 +489,7 @@ export function loadConfigOrExit(): AppConfig {
   try {
     return loadConfig();
   } catch (error) {
+    // eslint-disable-next-line no-console -- the logger needs a valid config, so this is the last message before exit.
     console.error(error instanceof ConfigError ? error.message : error);
     process.exit(1);
   }

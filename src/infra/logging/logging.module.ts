@@ -28,6 +28,8 @@ export const LOG_DESTINATION = Symbol.for('gsm.LOG_DESTINATION');
 @Module({})
 export class LoggingModule {
   /**
+   * Builds the logging module for one process.
+   *
    * @param options which process is logging (`api` or `worker`)
    * @returns the dynamic module; import it once in the root module of each process
    */

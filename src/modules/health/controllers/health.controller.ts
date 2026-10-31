@@ -16,6 +16,8 @@ export class HealthController {
   constructor(private readonly health: HealthService) {}
 
   /**
+   * Runs the registered health checks and reports the overall status.
+   *
    * @param query `strict`: answer 503 when the status is not ok
    * @returns `{ status, checks }`
    * @throws {AlternateResponse} 503 with the same body, only with `?strict=1` and a status other than `ok`

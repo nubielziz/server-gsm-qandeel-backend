@@ -15,6 +15,10 @@
     "dev:worker": "bun --watch src/worker.ts",
     "start": "bun src/main.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "bun --bun eslint .",
+    "lint:fix": "bun --bun eslint . --fix",
+    "format": "bun --bun prettier --write .",
+    "format:check": "bun --bun prettier --check .",
     "test": "bun test ./src ./test",
     "test:unit": "bun test ./src",
     "test:integration": "bun test ./test/integration",
@@ -23,10 +27,12 @@
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
     "spike": "bun spike/bun-compat/run.ts",
-    "check": "bun run typecheck && bun run routes:check && bun run contract:check && bun run test",
+    "check": "bun run typecheck && bun run lint && bun run format:check && bun run routes:check && bun run contract:check && bun run docs:openapi:check && bun run test",
     "contract:extract": "bun scripts/extract-frontend-contract.mjs",
     "contract:docs": "bun scripts/build-contract-docs.mjs",
-    "contract:check": "bun scripts/extract-frontend-contract.mjs --check && bun scripts/build-contract-docs.mjs --check"
+    "contract:check": "bun scripts/extract-frontend-contract.mjs --check && bun scripts/build-contract-docs.mjs --check",
+    "docs:openapi": "bun --no-env-file scripts/gen-openapi.ts",
+    "docs:openapi:check": "bun --no-env-file scripts/gen-openapi.ts --check"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1161.0",
@@ -59,11 +65,19 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@eslint-community/eslint-plugin-eslint-comments": "^4.8.1",
+    "@eslint/js": "^10.0.1",
     "@nestjs/testing": "^12.3.2",
     "@types/bun": "^1.4.4",
     "@types/pg": "^8.23.1",
     "drizzle-kit": "^0.31.11",
+    "eslint": "^10.14.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-jsdoc": "^65.4.2",
+    "globals": "^17.13.0",
     "pino-pretty": "^13.2.0",
-    "typescript": "~6.0.3"
+    "prettier": "^3.9.10",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.1"
   }
 }

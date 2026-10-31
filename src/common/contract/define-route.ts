@@ -5,11 +5,26 @@ import { ERROR_CATALOG, isErrorCode, type ErrorCode } from '../errors/catalog';
 import { surfaceOfPath, type Surface } from '../surface';
 import { isListQuerySchema, type ListQueryBrand } from './list-query';
 
-/** HTTP methods of the map's routes. */
+/**
+ * HTTP methods of the map's routes.
+ *
+ * Why: the map's routes use exactly these five methods; any other method in a route key is a typo the compiler should
+ * catch.
+ */
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-/** `METHOD /path`, exactly as in `docs/route-manifest.json` (`GET /admin/staff/:id`). */
+/**
+ * `METHOD /path`, exactly as in `docs/route-manifest.json` (`GET /admin/staff/:id`).
+ *
+ * Why: the key is a route's identity in the contract registry, in the contract tests (decision 009) and in the OpenAPI
+ * `x-gsm-key`.
+ */
 export type RouteKey = `${HttpMethod} /${string}`;
-/** Who may call a route (the `access` values of the manifest for HTTP routes). */
+/**
+ * Who may call a route (the `access` values of the manifest for HTTP routes).
+ *
+ * Why: guards pick how a route authenticates from this value (decision 018) and the OpenAPI document names the security
+ * scheme from it.
+ */
 export type AccessKind =
   | 'public'
   | 'staff-session'
@@ -25,13 +40,23 @@ export type AccessKind =
   | 'link-token'
   | 'ticket-token'
   | 'internal-or-token';
-/** Success statuses the API uses: 200, 201 (create), 202 (accepted) and 204 (no body). */
+/**
+ * Success statuses the API uses: 200, 201 (create), 202 (accepted) and 204 (no body).
+ *
+ * Why: ALIGNMENT § 1 fixes one success status per endpoint (201 for creates, 204 for deletes and bodiless actions) and
+ * `defineRoute` refuses any other.
+ */
 export type SuccessStatus = 200 | 201 | 202 | 204;
 
 type MaybeSchema = z.ZodType | undefined;
 type MaybeObject = z.ZodObject | undefined;
 
-/** How a route answers when it works. */
+/**
+ * How a route answers when it works.
+ *
+ * Why: a route answers with one status and one body shape, so the response schema can strip unknown fields and the docs
+ * can describe it (decision 008).
+ */
 export interface SuccessSpec<S extends MaybeSchema> {
   readonly status: SuccessStatus;
   /** JSON body schema (strips unknown keys). For a list route (`listQuery`) it is the schema of ONE row. */
@@ -42,7 +67,12 @@ export interface SuccessSpec<S extends MaybeSchema> {
   readonly alsoStatuses?: readonly number[];
 }
 
-/** The input of {@link defineRoute}. */
+/**
+ * The input of {@link defineRoute}.
+ *
+ * Why: everything about an endpoint is written once, here, and feeds validation, handler types, serialisation and
+ * OpenAPI (decision 008).
+ */
 export interface RouteSpec<
   P extends MaybeObject,
   Q extends MaybeSchema,
@@ -73,7 +103,12 @@ export interface RouteSpec<
   readonly examples?: { readonly request?: unknown; readonly response?: unknown };
 }
 
-/** The frozen contract of one route. */
+/**
+ * The frozen contract of one route.
+ *
+ * Why: guards, the response interceptor, the OpenAPI builder and the contract tests (decision 009) read this one shape,
+ * never the author's spec.
+ */
 export interface RouteContract<
   P extends MaybeObject,
   Q extends MaybeSchema,
@@ -107,21 +142,48 @@ export interface RouteContract<
   readonly examples: { readonly request: unknown; readonly response: unknown };
 }
 
-/** A contract whose schemas are not known statically (what decorators and the registry accept). */
+/**
+ * A contract whose schemas are not known statically (what decorators and the registry accept).
+ *
+ * Why: decorators and the registry handle contracts of every shape, so they need a type that does not depend on one
+ * route's schemas.
+ */
 export type AnyRouteContract = RouteContract<MaybeObject, MaybeSchema, MaybeSchema, MaybeObject, MaybeSchema>;
 
 type Out<T> = T extends z.ZodType ? z.output<T> : undefined;
-/** The validated path parameters a handler receives. */
+/**
+ * The validated path parameters a handler receives.
+ *
+ * Why: handlers receive path ids already parsed to numbers; deriving the type from the contract keeps handler and
+ * contract in step (decision 008).
+ */
 export type ParamsOf<C extends AnyRouteContract> = Out<C['params']>;
-/** The validated query a handler receives (the parsed list request for `listQuery()`). */
+/**
+ * The validated query a handler receives (the parsed list request for `listQuery()`).
+ *
+ * Why: list routes receive a parsed list request instead of raw strings; deriving the type from the contract keeps
+ * handler and contract in step.
+ */
 export type QueryOf<C extends AnyRouteContract> = Out<C['query']>;
-/** The validated body a handler receives. */
+/**
+ * The validated body a handler receives.
+ *
+ * Why: a handler must never see an unvalidated body; the type comes from the same schema the validation pipe runs.
+ */
 export type BodyOf<C extends AnyRouteContract> = Out<C['body']>;
-/** The validated headers a handler receives through `@ContractHeaders()`. */
+/**
+ * The validated headers a handler receives through `@ContractHeaders()`.
+ *
+ * Why: headers such as `Idempotency-Key` are validated like any other input; the type comes from the same schema the
+ * pipe runs.
+ */
 export type HeadersOf<C extends AnyRouteContract> = Out<C['headers']>;
 /**
  * What a handler returns: `{ rows, total }` for a list route, otherwise the body before the response schema strips
  * it (anything for a non-JSON or 204 route).
+ *
+ * Why: the compiler checks that a handler returns what its contract promises, before the response schema strips what
+ * the contract does not name.
  */
 export type ResultOf<C extends AnyRouteContract> = C['query'] extends ListQueryBrand
   ? {
@@ -141,6 +203,10 @@ const ALLOWED_STATUSES: readonly number[] = [200, 201, 202, 204];
  * Splits a manifest key into method, path and path parameter names.
  *
  * Why: the key is a route's identity in the map; one parser keeps the registry, path derivation and checks consistent.
+ *
+ * @param key a manifest key such as `GET /admin/staff/:id`
+ * @returns the HTTP method, the path template and the `:name` parameters in order of appearance
+ * @throws {Error} when the key is not `METHOD /path`, has an invalid segment or repeats a parameter
  */
 export function parseRouteKey(key: string): { method: HttpMethod; path: string; paramNames: string[] } {
   const match = KEY_PATTERN.exec(key);
@@ -178,22 +244,40 @@ export class ContractRegistry {
     this.contracts.set(contract.key, contract);
   }
 
-  /** @returns the contract for a manifest key, or `undefined` */
+  /**
+   * Looks a contract up by its manifest key.
+   *
+   * @param key a manifest key such as `GET /admin/staff/:id`
+   * @returns the contract, or `undefined` when none is registered
+   */
   get(key: string): AnyRouteContract | undefined {
     return this.contracts.get(key as RouteKey);
   }
 
-  /** @returns true when the key has a contract */
+  /**
+   * Tells whether a manifest key has a contract.
+   *
+   * @param key a manifest key such as `GET /admin/staff/:id`
+   * @returns true when the key is registered
+   */
   has(key: string): boolean {
     return this.contracts.has(key as RouteKey);
   }
 
-  /** @returns every contract in definition order */
+  /**
+   * Lists every contract.
+   *
+   * @returns the contracts in definition order
+   */
   all(): readonly AnyRouteContract[] {
     return [...this.contracts.values()];
   }
 
-  /** @returns every registered key */
+  /**
+   * Lists every registered manifest key.
+   *
+   * @returns the keys in definition order
+   */
   keys(): readonly RouteKey[] {
     return [...this.contracts.keys()];
   }
@@ -353,7 +437,7 @@ export function defineRoute<
     errors: Object.freeze([...spec.errors]),
     examples: Object.freeze({ request: examples.request, response: examples.response }),
   });
-  contractRegistry.register(contract as unknown as AnyRouteContract);
+  contractRegistry.register(contract);
   return contract;
 }
 

@@ -38,6 +38,7 @@ export const CONTRACT_METADATA = Symbol.for('gsm.contract');
  * @route the contract's own `METHOD /path`
  *
  * @example
+ * ```ts
  * @Controller()
  * class StaffController {
  *   @Route(showStaff)
@@ -45,6 +46,7 @@ export const CONTRACT_METADATA = Symbol.for('gsm.contract');
  *     return this.staff.show(params.id);
  *   }
  * }
+ * ```
  */
 export function Route(contract: AnyRouteContract): MethodDecorator {
   return applyDecorators(
@@ -55,7 +57,7 @@ export function Route(contract: AnyRouteContract): MethodDecorator {
     UsePipes(new ContractValidationPipe(contract)),
     UseInterceptors(new ContractResponseInterceptor(contract)),
     ...openApiDecorators(contract),
-  ) as MethodDecorator;
+  );
 }
 
 /**
@@ -66,7 +68,7 @@ export function Route(contract: AnyRouteContract): MethodDecorator {
  * @param handler the controller method (`context.getHandler()`)
  * @returns the contract, or `undefined` for a handler without `@Route`
  */
-export function getContract(handler: Function): AnyRouteContract | undefined {
+export function getContract(handler: object): AnyRouteContract | undefined {
   return Reflect.getMetadata(CONTRACT_METADATA, handler) as AnyRouteContract | undefined;
 }
 

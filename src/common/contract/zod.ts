@@ -9,9 +9,18 @@ import { z } from 'zod';
  */
 export const MAX_ID = Number.MAX_SAFE_INTEGER;
 
-/** Any JSON value, as the frontend's `JsonValue` type. */
+/**
+ * Any JSON value, as the frontend's `JsonValue` type.
+ *
+ * Why: jsonb columns and free-form payloads travel as exactly this shape, so the frontend's type and ours match
+ * (ALIGNMENT § 1).
+ */
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
-/** A JSON object, as the frontend's `JsonObject` type. */
+/**
+ * A JSON object, as the frontend's `JsonObject` type.
+ *
+ * Why: settings, payloads and metadata are JSON objects, never arbitrary values (ALIGNMENT § 1).
+ */
 export type JsonObject = { [key: string]: JsonValue };
 
 /**

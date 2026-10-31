@@ -10,7 +10,11 @@ import { problemSlug } from './catalog';
  */
 export const PROBLEM_CONTENT_TYPE = 'application/problem+json; charset=utf-8';
 
-/** The error body sent to clients; `errors` is present only when there are field problems. */
+/**
+ * The error body sent to clients; `errors` is present only when there are field problems.
+ *
+ * Why: the console reads `code`, `title`, `detail`, `errors` and `requestId` from every failed answer (ALIGNMENT § 5).
+ */
 export interface ProblemDocument {
   readonly type: string;
   readonly title: string;

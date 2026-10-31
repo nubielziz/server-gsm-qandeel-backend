@@ -23,7 +23,7 @@ afterAll(async () => {
 
 const call = (app: TestApp, method: 'GET' | 'POST' | 'OPTIONS', url: string, headers: Record<string, string> = {}) =>
   app.app.inject({ method, url, headers });
-const varyHas = (value: unknown, name: string) =>
+const varyHas = (value: string | string[] | number | undefined, name: string) =>
   String(value ?? '')
     .toLowerCase()
     .split(',')

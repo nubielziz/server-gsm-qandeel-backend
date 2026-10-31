@@ -10,6 +10,7 @@ import { REQUEST_ID_HEADER, resolveRequestId, runWithRequestId } from './common/
 import type { AppConfig, TrustProxy } from './config';
 import { registerAccessLog } from './infra/logging';
 import { MetricsService, registerHttpMetrics } from './infra/metrics';
+import { OpenApiService } from './modules/platform';
 
 /**
  * Methods a cross-origin console may use (ALIGNMENT § 6).
@@ -119,6 +120,8 @@ export function registerRequestIdHooks(fastify: FastifyInstance): void {
  *
  * @param app the Nest application, created but not initialised yet
  * @param config the process configuration
+ * @throws {Error} when the OpenAPI documents cannot be built from the contracts (a programming error: the app must
+ *   not start)
  */
 export async function configureApp(app: NestFastifyApplication, config: AppConfig): Promise<void> {
   const logger = app.get(Logger);
@@ -144,7 +147,8 @@ export async function configureApp(app: NestFastifyApplication, config: AppConfi
   });
   registerRequestIdHooks(fastify);
   await app.register(fastifyCookie);
-  // JSON-only API: deny everything by default. P2.2 relaxes the CSP for /docs and /reference only.
+  // JSON-only API: deny everything by default. Only the documentation pages (GET /docs, GET /reference) send their own,
+  // wider policy, set by their controllers (src/modules/platform/docs).
   await app.register(fastifyHelmet, {
     contentSecurityPolicy: {
       useDefaults: false,
@@ -154,4 +158,6 @@ export async function configureApp(app: NestFastifyApplication, config: AppConfi
   });
   registerHttpMetrics(fastify, app.get(MetricsService));
   registerAccessLog(fastify, logger);
+  // The OpenAPI documents come from the contracts of every controller registered so far, so build them last.
+  app.get(OpenApiService).publish(app);
 }

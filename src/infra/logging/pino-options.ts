@@ -6,7 +6,11 @@ import { getRequestId } from '../../common/request-id';
 import type { AppConfig } from '../../config';
 import { PII_SERIALIZERS, REDACT_CENSOR, REDACT_PATHS } from './redaction';
 
-/** The processes that log; becomes the `service` field of every line. */
+/**
+ * The processes that log; becomes the `service` field of every line.
+ *
+ * Why: one request id joins API and worker logs (decision 012); the `service` field says which process wrote a line.
+ */
 export type ServiceName = 'api' | 'worker';
 
 /**

@@ -5,7 +5,12 @@ import type { Surface } from '../surface';
 import type { AppError } from './app-error';
 import type { ProblemDocument } from './problem';
 
-/** What the filter sends: status, media type, optional extra headers and the body object. */
+/**
+ * What the filter sends: status, media type, optional extra headers and the body object.
+ *
+ * Why: the Dhru surface keeps its own envelope (decision 026), so the filter sends whatever a formatter built, not
+ * always problem+json.
+ */
 export interface ErrorResponse {
   readonly status: number;
   readonly contentType: string;
@@ -13,7 +18,11 @@ export interface ErrorResponse {
   readonly body: unknown;
 }
 
-/** Everything a formatter may use to build the response. */
+/**
+ * Everything a formatter may use to build the response.
+ *
+ * Why: a formatter must build the right body for its surface from the error alone, without reading the request itself.
+ */
 export interface ErrorFormatContext {
   readonly error: AppError;
   /** The default problem+json document of this error. */
@@ -23,7 +32,12 @@ export interface ErrorFormatContext {
   readonly surface: Surface;
 }
 
-/** Builds the error response of one surface. */
+/**
+ * Builds the error response of one surface.
+ *
+ * Why: decision 028 gives every surface problem+json except Dhru; one formatter per surface keeps that rule in one
+ * place.
+ */
 export interface ErrorFormatter {
   /** Unique name, shown in boot errors. */
   readonly name: string;

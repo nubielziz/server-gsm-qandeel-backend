@@ -2,7 +2,12 @@
 // Strips `$schema` and the very long ISO `pattern` that zod adds next to `format: date-time` / `date`.
 import { z } from 'zod';
 
-/** A JSON Schema object as plain data. */
+/**
+ * A JSON Schema object as plain data.
+ *
+ * Why: the OpenAPI builder and the shape comparison of the contract tests (decision 009) both handle schemas as plain
+ * data.
+ */
 export type JsonSchema = Record<string, unknown>;
 
 function clean(node: unknown, isRoot: boolean): unknown {

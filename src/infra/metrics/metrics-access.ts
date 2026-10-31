@@ -3,7 +3,11 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import net from 'node:net';
 
-/** What the access rule needs to know about a request. */
+/**
+ * What the access rule needs to know about a request.
+ *
+ * Why: the access rule is a pure function of these few facts, so it is unit-tested without HTTP (decision 015).
+ */
 export interface MetricsAccessRequest {
   /** The `Authorization` header value. */
   readonly authorization: string | undefined;

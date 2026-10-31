@@ -31,7 +31,8 @@ You implement one brief in the GSM backend. These rules apply to every brief; th
 ## Code rules
 - TypeScript strict; no `any` without a one-line reason; no floats for money (decision 011).
 - Every file starts with 1–3 comment lines: what it is and which decision or route group it serves.
-- TSDoc on every exported symbol: one-line summary; a "Why" line (business reason, decision or map route/scenario);
+- TSDoc on every exported symbol: one-line summary; a "Why" line (business reason, decision or map route/scenario;
+  derived types such as `typeof table.$inferSelect` or `(typeof VALUES)[number]` need only the summary);
   `@param`, `@returns`, `@throws` (with error codes); side effects (DB writes, jobs, cache keys, notifications); `@see`.
   Controllers add `@route METHOD /path`. Inline comments only for rules, invariants, lock order, idempotency and
   non-obvious choices. No comments that restate the code.
@@ -41,7 +42,10 @@ You implement one brief in the GSM backend. These rules apply to every brief; th
   `docs/contract/error-codes.md` and the catalog (and say so in your report).
 
 ## Finish
-- Run `bun run typecheck`, `bun run lint` (once it exists) and `bun test` for your paths (integration tests need the
-  docker services); leave them green, or report exactly what fails and why.
+- Run `bun run format`, then `bun run check` (typecheck, lint, format check, route/contract/OpenAPI checks, all tests;
+  integration tests need the docker services); leave it green, or report exactly what fails and why. Every
+  `eslint-disable` comment needs a reason (`-- why`). After changing a route contract, run `bun run docs:openapi` and
+  include the regenerated `docs/contract/openapi*.json`.
+- Never run `docker compose` from a worktree (it would re-create the shared containers with the worktree's paths).
 - Reply in at most 200 words: files created/changed (by folder), what is covered, tests added, open questions,
   anything you could not do (BLOCKED: reason).

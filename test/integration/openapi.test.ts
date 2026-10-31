@@ -1,5 +1,6 @@
 // Integration test: the @Route decorator feeds @nestjs/swagger, so SwaggerModule builds a faithful OpenAPI 3.1 document
-// from the contracts (decision 008). P2.2 serves it; here only the metadata is checked.
+// from the contracts (decision 008). The platform module serves the documents (src/modules/platform/docs, see
+// docs.test.ts); here only the metadata is checked.
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { type TestApp, createTestApp } from '../support/app';
@@ -12,7 +13,7 @@ let t: TestApp;
 let doc: Json;
 beforeAll(async () => {
   t = await createTestApp({ controllers: [TestController] });
-  // autoTagControllers: false keeps the contract's own tags (P2.2 must pass it too, or controllers add a tag each).
+  // autoTagControllers: false keeps the contract's own tags (buildOpenApiDocuments passes it too, or controllers add a tag each).
   doc = SwaggerModule.createDocument(
     t.app,
     new DocumentBuilder().setTitle('test').setVersion('0').setOpenAPIVersion('3.1.0').build(),
@@ -36,6 +37,10 @@ describe('operations', () => {
     expect(op.tags).toEqual(['test']);
     expect(op['x-gsm-key']).toBe('GET /t/items/:id');
     expect(op['x-gsm-access']).toBe('public');
+    // The surface lets the documents be filtered (the public one keeps v1 and the Dhru reference, decision 017).
+    expect(op['x-gsm-surface']).toBe('system');
+    expect(doc.paths['/admin/t/secure'].get['x-gsm-surface']).toBe('admin');
+    expect(doc.paths['/api/index.php'].post['x-gsm-surface']).toBe('dhru');
   });
 
   it('documents the path id as the text a client sends, with the Id alias', () => {
@@ -148,6 +153,10 @@ describe('response documentation', () => {
 
   it('documents a file answer by its media type', () => {
     expect(doc.paths['/t/report'].get.responses['200'].content['text/csv'].schema).toEqual({ type: 'string' });
+    // A free-form JSON answer (GET /openapi.json) is an object, not text.
+    expect(doc.paths['/openapi.json'].get.responses['200'].content['application/json'].schema).toEqual({
+      type: 'object',
+    });
     expect(doc.paths['/metrics'].get.responses['200'].content['text/plain']).toBeDefined();
   });
 

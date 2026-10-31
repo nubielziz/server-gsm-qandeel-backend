@@ -1,5 +1,6 @@
 // OpenAPI 3.1 metadata of a route contract (decision 008, 017): the operation, its parameters, body, responses and
-// security, built as plain data and applied with @nestjs/swagger decorators. P2.2 collects them into the documents.
+// security, built as plain data and applied with @nestjs/swagger decorators. The platform module's docs collect them
+// into the documents (src/modules/platform/docs).
 import {
   ApiBody,
   ApiExtension,
@@ -18,9 +19,10 @@ import { toJsonSchema, type JsonSchema } from './json-schema';
 import { isListQuerySchema, listQueryParameters } from './list-query';
 
 /**
- * Security scheme name used in `security` for each access kind; P2.2 defines the schemes in the document.
+ * Security scheme name used in `security` for each access kind; the schemes themselves are defined in
+ * `src/modules/platform/docs/security-schemes.ts`.
  *
- * Why: the docs name how each access kind authenticates (decisions 017, 018); P2.2 defines the schemes themselves.
+ * Why: the docs name how each access kind authenticates (decisions 017, 018).
  */
 export const SECURITY_SCHEME: Readonly<Record<AccessKind, string | undefined>> = {
   public: undefined,
@@ -39,7 +41,12 @@ export const SECURITY_SCHEME: Readonly<Record<AccessKind, string | undefined>> =
   'internal-or-token': 'metricsAccess',
 };
 
-/** A documented parameter. */
+/**
+ * A documented parameter.
+ *
+ * Why: OpenAPI parameters are built as plain data first, so the document can be unit-tested without Nest (decision
+ * 008).
+ */
 export interface OperationParameter {
   readonly in: 'path' | 'query' | 'header';
   readonly name: string;
@@ -50,7 +57,11 @@ export interface OperationParameter {
   readonly repeatable: boolean;
 }
 
-/** A documented response. */
+/**
+ * A documented response.
+ *
+ * Why: OpenAPI responses are built as plain data first, so the document can be unit-tested without Nest (decision 008).
+ */
 export interface OperationResponse {
   readonly description: string;
   readonly content?: Record<
@@ -60,7 +71,12 @@ export interface OperationResponse {
   readonly headers?: Record<string, { description: string; schema: JsonSchema }>;
 }
 
-/** Everything the decorators need, as plain data (unit-testable without Nest). */
+/**
+ * Everything the decorators need, as plain data (unit-testable without Nest).
+ *
+ * Why: documentation is generated from the contract that validates requests, so it cannot drift; plain data keeps it
+ * testable without Nest (decision 008).
+ */
 export interface OperationParts {
   readonly operationId: string;
   readonly parameters: readonly OperationParameter[];
@@ -193,6 +209,14 @@ function problemResponse(status: number, codes: readonly ErrorCode[]): Operation
   };
 }
 
+/** The schema documented for an answer that has a media type but no zod schema (a file, text or a free-form document). */
+function schemaWithoutBody(type: string): JsonSchema {
+  // A JSON answer without a schema is a free-form document (GET /openapi.json), not text.
+  if (type.includes('json')) return { type: 'object' };
+  if (type.startsWith('text/')) return { type: 'string' };
+  return { type: 'string', format: 'binary' };
+}
+
 function successResponses(contract: AnyRouteContract): Record<string, OperationResponse> {
   const { status, schema, contentType, list, alsoStatuses } = contract.success;
   const out: Record<string, OperationResponse> = {};
@@ -202,10 +226,9 @@ function successResponses(contract: AnyRouteContract): Record<string, OperationR
   }
   if (!schema) {
     const type = contentType ?? 'application/octet-stream';
-    const binary = !type.startsWith('text/') && !type.includes('json');
     out[String(status)] = {
       description: 'Success.',
-      content: { [type]: { schema: binary ? { type: 'string', format: 'binary' } : { type: 'string' } } },
+      content: { [type]: { schema: schemaWithoutBody(type) } },
       headers: { ...REQUEST_ID_HEADER },
     };
     return out;
@@ -287,6 +310,8 @@ export function openApiDecorators(contract: AnyRouteContract): MethodDecorator[]
     ApiTags(...contract.tags),
     ApiExtension('x-gsm-key', contract.key),
     ApiExtension('x-gsm-access', contract.access),
+    // Lets the documents be filtered by surface (the public one keeps v1 and the Dhru reference, decision 017).
+    ApiExtension('x-gsm-surface', contract.surface),
   ];
   if (contract.permission) decorators.push(ApiExtension('x-gsm-permission', contract.permission));
   if (parts.security) decorators.push(ApiSecurity(parts.security));
@@ -324,8 +349,8 @@ export function openApiDecorators(contract: AnyRouteContract): MethodDecorator[]
       ApiResponse({
         status: Number(status),
         description: response.description,
-        ...(response.content ? { content: response.content as never } : {}),
-        ...(response.headers ? { headers: response.headers as never } : {}),
+        ...(response.content ? { content: response.content } : {}),
+        ...(response.headers ? { headers: response.headers } : {}),
       }),
     );
   }

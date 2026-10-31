@@ -52,6 +52,12 @@ export class ProblemExceptionFilter implements ExceptionFilter {
     this.logger.setContext(ProblemExceptionFilter.name);
   }
 
+  /**
+   * Nest's exception-filter hook: answers whatever was thrown while handling a request.
+   *
+   * @param exception whatever was thrown
+   * @param host the request being handled
+   */
   catch(exception: unknown, host: ArgumentsHost): void {
     const http = host.switchToHttp();
     this.handle(exception, http.getRequest<FastifyRequest>(), http.getResponse<Reply>());

@@ -16,6 +16,8 @@ export class MetricsController {
   constructor(private readonly metrics: MetricsService) {}
 
   /**
+   * Renders this process's Prometheus metrics.
+   *
    * @returns the exposition text
    * @throws {AppError} `FORBIDDEN` (403) from the guard when the caller is neither internal nor holds the token
    */

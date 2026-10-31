@@ -18,13 +18,15 @@ afterAll(async () => {
   await Promise.all(apps.map((t) => t.close()));
 });
 
-const up = (name: string, critical: boolean): HealthIndicator => ({ name, critical, check: async () => undefined });
+const up = (name: string, critical: boolean): HealthIndicator => ({
+  name,
+  critical,
+  check: () => Promise.resolve(),
+});
 const down = (name: string, critical: boolean): HealthIndicator => ({
   name,
   critical,
-  check: async () => {
-    throw new Error(`${name} refused the connection at 10.0.0.5 with password hunter2`);
-  },
+  check: () => Promise.reject(new Error(`${name} refused the connection at 10.0.0.5 with password hunter2`)),
 });
 
 describe('GET /health', () => {
@@ -72,7 +74,7 @@ describe('GET /health', () => {
 
   it('counts a false result and a hung indicator as down, and still answers in about two seconds', async () => {
     const t = await appWith(
-      { name: 'flag', critical: false, check: async () => false },
+      { name: 'flag', critical: false, check: () => Promise.resolve(false) },
       { name: 'hung', critical: true, check: () => new Promise<void>(() => undefined) },
     );
     const started = performance.now();

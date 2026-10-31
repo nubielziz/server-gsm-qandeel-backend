@@ -1,0 +1,25 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "GSM Supplier API",
+    "version": "1.0.0",
+    "description": "REST API v1 and the Dhru Fusion compatible endpoint for GSM merchants, plus the webhook events we send.\n\n**Authentication.** REST API v1 takes `Authorization: Bearer <API key>`; a key has scopes, an optional IP allowlist and its own rate limit. The Dhru Fusion endpoint takes the `username` and `apiaccesskey` form fields.\n\n**Conventions.** JSON bodies use camelCase names. Money is a string with exactly four decimals (`\"12.4900\"`), timestamps are ISO 8601 UTC with milliseconds (`\"2026-03-01T09:30:00.000Z\"`) and ids are numbers. Errors are `application/problem+json` with a stable `code`; quote the `requestId` when you contact support."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "The server that serves this document"
+    }
+  ],
+  "paths": {},
+  "components": {
+    "securitySchemes": {
+      "apiKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "API key",
+        "description": "Merchant API key sent as `Authorization: Bearer <key>`. A key has scopes (each operation names the one it needs), an optional list of allowed IP addresses and its own requests-per-minute limit."
+      }
+    }
+  }
+}

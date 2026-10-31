@@ -1,0 +1,22 @@
+# Not formatted by Prettier (`bun run format`, `bun run format:check`).
+node_modules
+bun.lock
+coverage
+dist
+# The frontend's API design map and demo (symlink, read-only input).
+reference
+# Documents: generated JSON (docs/contract/openapi*.json, slices, manifest) and hand-written Markdown.
+docs
+# Generated SQL migrations (drizzle-kit).
+drizzle
+# The Phase 0 spike is retired by P2.4.
+spike
+# Phase 0 and 1 scripts, kept as they were written (a reformat would bury their history).
+scripts/*.mjs
+scripts/lib/*.mjs
+# Hand-written Markdown and YAML (compose, agent definitions, Serena project file) are not reformatted.
+*.md
+*.yaml
+*.yml
+.claude
+.serena

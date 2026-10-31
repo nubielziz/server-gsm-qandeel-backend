@@ -18,8 +18,8 @@ Requirements: Bun ≥ 1.4.4 (`npm i -g bun`), Docker with Compose, and the front
 bun install --frozen-lockfile
 cp .env.example .env
 docker compose up -d          # Postgres, queue Redis, cache Redis, MinIO (+ bucket init)
-bun run check                 # typecheck + route manifest/slices + contract docs + tests
-bun run dev                   # API on :3000 (GET /health, GET /metrics)
+bun run check                 # typecheck + lint + route manifest/slices + contract docs + OpenAPI documents + tests
+bun run dev                   # API on :3000 (GET /health, GET /metrics, API docs at /docs and /reference)
 bun run dev:worker            # worker process (its own /metrics on :9464)
 bun run spike                 # Bun compatibility spike: every dependency as real processes
 ```
@@ -41,7 +41,11 @@ Local services (host ports can be changed with `GSM_PG_PORT`, `GSM_REDIS_QUEUE_P
 | `bun run dev` / `start` | API process (watch / plain) |
 | `bun run dev:worker` / `start:worker` | Worker process (watch / plain) |
 | `bun run typecheck` | `tsc --noEmit` (TypeScript 6, decision 003) |
-| `bun run test` | Unit tests (`src/**/*.spec.ts`) and integration tests (`test/integration`) with `bun test` |
+| `bun run lint` / `lint:fix` | ESLint (type-aware typescript-eslint, TSDoc on exports, module boundaries, `process.env` only in `src/config`, no `console` in `src`); `lint:fix` applies the safe fixes |
+| `bun run format` / `format:check` | Prettier over the code (Markdown, YAML and generated JSON are left alone) |
+| `bun run docs:openapi` | Regenerate `docs/contract/openapi.json` (every route) and `openapi.public.json` (REST v1, Dhru reference, webhook events) from the route contracts, without any infrastructure |
+| `bun run docs:openapi:check` | Fail when those two files differ from what the contracts generate (CI) |
+| `bun run test` | Unit tests (`src/**/*.spec.ts`), integration tests (`test/integration`) and the lint-rule tests (`test/lint`) with `bun test` |
 | `bun run test:unit` / `test:integration` | Only one of the two |
 | `bun run routes:build` | Rebuild `docs/route-manifest.{json,md}` and `docs/slices/*.json` from the map |
 | `bun run routes:check` | Fail when those files are stale (CI) |
@@ -49,7 +53,27 @@ Local services (host ports can be changed with `GSM_PG_PORT`, `GSM_REDIS_QUEUE_P
 | `bun run contract:docs` | Re-render the contract docs from the extraction and `docs/contract/lead-decisions.json` |
 | `bun run contract:check` | Fail when the extract or the contract docs are stale (CI) |
 | `bun run spike` | Re-run the Bun compatibility spike (decision 001) |
-| `bun run check` | Everything CI runs today (typecheck, route manifest, contract docs, tests) |
+| `bun run check` | Everything CI runs: typecheck, lint, route manifest, contract docs, OpenAPI documents, tests |
+| `scripts/ci.sh` | The CI pipeline in one command: `bun install --frozen-lockfile`, start the Docker services, `bun run check`; exits non-zero on any failure |
+
+## CI
+
+There is no hosted CI file yet (the hosting is not decided); any CI system can run `scripts/ci.sh`. It needs Bun, Docker
+(or `CI_SKIP_SERVICES=1` with the services provided elsewhere) and the frontend checkout next to this repo
+(`FRONTEND_DIR`, default `../frontend-admin`: `contract:check` reads its TypeScript). It runs
+`bun install --frozen-lockfile`, starts the Docker services that are not running yet (`docker compose up -d --wait`,
+only for the missing ones: running services are left alone, because `docker compose up` from a second checkout such as a
+git worktree would recreate them), waits until they are healthy, then runs `bun run check` and prints the step that
+failed.
+
+## API documentation
+
+Generated from the route contracts (decisions 008, 009, 017) and committed under `docs/contract/`:
+
+| URL | What |
+|---|---|
+| `GET /openapi.json`, `GET /docs` | Public: REST API v1, the Dhru Fusion reference and the webhook events we send (Scalar page) |
+| `GET /reference/openapi.json`, `GET /reference` | Internal: every route. `REFERENCE_DOCS` = `open` (default outside production), `staff` (default in production; answers 404 until the security feature provides its guard) or `off` (404) |
 
 ## Where things are
 
@@ -62,4 +86,7 @@ Local services (host ports can be changed with `GSM_PG_PORT`, `GSM_REDIS_QUEUE_P
   follows; `docs/contract/endpoints/<module>.md`: per-endpoint contract; `error-codes.md`, `MISMATCHES.md`,
   `ANSWERS.md`, `RULES.md`, `OPEN-QUESTIONS.md`, `TESTS.md` next to it.
 - `docs/decisions/`: decision records. `CLAUDE.md`: working rules for agents. `PROGRESS.md`: status.
+  `CONTRIBUTING.md`: how to run everything, add an endpoint, a job, a cache key or a money event.
+- `src/modules/<id>/README.md`: per module its purpose, owned tables, routes, scenarios, permissions, events, jobs and
+  cache keys. `docs/contract/openapi.json` and `openapi.public.json`: the generated API documents.
 - `spike/bun-compat/`: the Phase 0 spike (removed once Phase 2 tests cover the same ground).
