@@ -34,14 +34,20 @@ describe('a constructed but not initialised app', () => {
 });
 
 describe('with Redis running', () => {
-  it('connects both roles to database 1 under their own connection names', async () => {
+  it('connects both roles to their test database (1 by default) under their own connection names', async () => {
     const redis = (await infra()).get(RedisService);
     expect(await redis.cache.ping()).toBe('PONG');
     expect(await redis.queue.ping()).toBe('PONG');
     expect(await redis.cache.call('CLIENT', 'GETNAME')).toBe('gsm-cache');
     expect(await redis.queue.call('CLIENT', 'GETNAME')).toBe('gsm-queue-producer');
-    for (const client of [redis.cache, redis.queue]) {
-      expect(String(await client.call('CLIENT', 'INFO'))).toMatch(/\bdb=1\b/);
+    // A worktree may point its tests at another database (REDIS_*_URL_TEST in .env.test); the default is 1.
+    const config = parseEnv({ NODE_ENV: 'test', ...testInstanceEnv() });
+    const databaseOf = (url: string) => new URL(url).pathname.slice(1) || '0';
+    const expected = [databaseOf(config.redis.cacheUrl), databaseOf(config.redis.queueUrl)];
+    if (Object.keys(testInstanceEnv()).every((name) => !name.startsWith('REDIS_')))
+      expect(expected).toEqual(['1', '1']);
+    for (const [index, client] of [redis.cache, redis.queue].entries()) {
+      expect(String(await client.call('CLIENT', 'INFO'))).toMatch(new RegExp(`\\bdb=${expected[index]}\\b`));
     }
   });
 
