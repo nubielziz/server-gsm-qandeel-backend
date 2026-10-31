@@ -1,0 +1,26 @@
+# 015: Metrics, health and tracing
+
+Status: accepted, 2026-10-31.
+
+**Decision.**
+- Metrics: prom-client, one registry per process. Default process metrics; `http_request_duration_seconds`
+  (labels: method, route template, status); BullMQ gauges per queue and state, read on scrape; business counters
+  (orders placed/completed/rejected by channel, ledger transactions by kind, supplier calls by supplier, action and
+  outcome with a duration histogram, webhook deliveries by outcome, cache hits/misses by key family). The API serves
+  `GET /metrics`; the worker serves its own `/metrics` on `WORKER_METRICS_PORT`. Access: internal network or
+  `Authorization: Bearer <METRICS_TOKEN>` (map rule).
+- Health: `GET /health` checks Postgres and both Redis roles and always answers 200 JSON
+  `{ status: ok | degraded | down, checks }` (the console reads any non-2xx as "API unreachable");
+  `GET /health?strict=1` answers 503 when a dependency is down, for load balancers and readiness probes.
+- History: a Prometheus server (`PROMETHEUS_URL`; added to compose) scrapes both processes; the System health
+  metrics and errors routes query it with PromQL (`query_range`), time-boxed to 2 s; unset or unreachable →
+  `503 MONITORING_UNAVAILABLE`. A worker job writes a per-minute health snapshot to the cache Redis, which
+  `GET /admin/system/health` serves even during a Postgres outage (status `unknown` while monitoring is missing).
+- Errors: every problem+json answer increments `api_errors_total{surface,method,route,status,code}`; a cache-Redis hash
+  keeps first seen, last seen and the last request id per (route, code) for the System health errors table. Sentry
+  (optional, `SENTRY_DSN`) receives unexpected 5xx only and supplies links.
+- Tracing: OpenTelemetry is not added now; request-id correlation (decision 012) covers API → outbox → worker →
+  supplier. Adding OTel later needs no code change outside `src/infra`.
+
+**Consequences.** System health routes read live BullMQ counts and these metrics; Grafana/Prometheus can scrape both
+processes.

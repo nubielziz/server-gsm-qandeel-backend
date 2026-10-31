@@ -7,7 +7,7 @@ APIs: IMEI, Server, Remote and File services sold to B2B merchants (prepaid wall
 Stack: NestJS 12 on Fastify, run by Bun 1.4 · Drizzle ORM + PostgreSQL 18 · BullMQ on Redis 8 (a queue instance and
 a cache instance) · S3-compatible storage (MinIO locally) · zod contracts → OpenAPI 3.1 → Scalar.
 
-> Status: Phase 0 (setup and Bun spike) is done; see `PROGRESS.md` for what exists and what is next.
+> Status: Phase 0 (setup, Bun spike) and Phase 1 (architecture, contract alignment) are done; see `PROGRESS.md`.
 
 ## Run locally
 
@@ -41,6 +41,9 @@ Local services (host ports can be changed with `GSM_PG_PORT`, `GSM_REDIS_QUEUE_P
 | `bun run typecheck` | `tsc --noEmit` (TypeScript 6, decision 003) |
 | `bun run routes:build` | Rebuild `docs/route-manifest.{json,md}` and `docs/slices/*.json` from the map |
 | `bun run routes:check` | Fail when those files are stale (CI) |
+| `bun run contract:extract` | Re-extract the frontend's endpoint types into `docs/contract/frontend-endpoints.json` |
+| `bun run contract:docs` | Re-render the contract docs from the extraction and `docs/contract/lead-decisions.json` |
+| `bun run contract:check` | Fail when the extract or the contract docs are stale (CI) |
 | `bun run spike` | Re-run the Bun compatibility spike (decision 001) |
 | `bun run check` | Everything CI runs today |
 
@@ -51,5 +54,8 @@ Local services (host ports can be changed with `GSM_PG_PORT`, `GSM_REDIS_QUEUE_P
 - `docs/route-manifest.json`: all 274 map rows expanded to 382 endpoints with access rules, owning module and, for
   admin routes, the frontend function that calls them. `docs/slices/<module>.json`: the brief input per module.
 - `scripts/module-map.mjs`: which module owns each table and each route.
+- `docs/ARCHITECTURE.md`: the system on four pages. `docs/contract/ALIGNMENT.md`: the wire conventions every route
+  follows; `docs/contract/endpoints/<module>.md`: per-endpoint contract; `error-codes.md`, `MISMATCHES.md`,
+  `ANSWERS.md`, `RULES.md`, `OPEN-QUESTIONS.md`, `TESTS.md` next to it.
 - `docs/decisions/`: decision records. `CLAUDE.md`: working rules for agents. `PROGRESS.md`: status.
 - `spike/bun-compat/`: the Phase 0 spike (removed once Phase 2 tests cover the same ground).

@@ -1,0 +1,1548 @@
+{
+  "features": [
+    {
+      "feature": "system-health",
+      "summary": "The System health page (/system-health; no demo page, docs/system-health-design.md) shows a server-computed verdict, a six-tile KPI row and seven tabs (Overview, API, Orders & suppliers, Queues & jobs, Alerts & incidents, Data stores, Integrity) over the 30 routes of map group health; the app shell shows a maintenance banner from the same health read. Every figure is a server-judged Measure; the console only polls (15 s / 30 s / 5 s while a run is going) and runs operator actions (maintenance, queue retry/pause, run job, integrity run, ack, rule CRUD/mute, incident declare/update/close) through confirm dialogs that show the server's problem+json. File paths without src/ are under src/features/system-health/.",
+      "endpoints": [
+        {
+          "key": "GET /admin/system/health",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "UI: polled every 15 s by the page (verdict, KPI 'Uptime 30 days' and 'Open alerts', Overview, Build card) AND by the app-shell maintenance banner on every admin page for system:read holders, deduped by React Query (staleTime 5 s, refetch on focus) (hooks/useHealth.ts:13-15, header/MaintenanceBanner.tsx:20) -> serve a snapshot the worker rebuilds every minute in the cache Redis + a live read of settings 'maintenance'. status: 'outage' when a core component is down, 'degraded' when any component is down/degraded or a critical alert is open, else 'operational'; never 'operational' while monitoring.status is 'unavailable' (send 'unknown' unless service_checks prove outage/degraded) (mocks/facts.ts:172-177, M216). since = start of the current status: earliest current problem (component since, open critical alert started_at); operational = last incident resolved_at or null; unknown = monitoring.lastScrapeAt (mocks/buildHealth.ts:100-121). checkedAt = snapshot time. monitoring = Prometheus reachability, detail text when not, lastScrapeAt of the API target. build = APP_VERSION as built (e.g. v1.42.0), 7-char GIT_SHA, APP_ENV, deploy time. components (service_checks, latest row per component): core keys api, postgres, redis, redis_queue, storage, workers, mail (kind core), 'supplier:<suppliers.id>' for EVERY supplier (disabled: status unknown, since null, lastCheckedAt null, detail 'checks are off'), 'gateway:<payment_gateways.id>'; latency = last latency_ms as Measure (thresholds per kind); uptime h24/d7/d30 = (checks not down)/checks x 100, value null without checks; detail = failure text only while failing. uptime = platform uptime (minutes with no core component down / minutes with checks) for 24h/7d/30d + daily = 30 UTC-day points oldest first, null for a day without checks. alerts (alert_events): open = Measure {value = firing + acknowledged count, unit count, warn 1, no crit/direction; state crit when any open critical (acknowledged included, M214), warn when any open, ok when none; {value null, state unknown} when rules could not be evaluated and nothing is open (M213)}; critical = open critical count incl. acknowledged; items = open alerts as AlertSummary, critical first then newest; trend = 96 x 15-min points of the open count over 24 h (from started_at/resolved_at). incidents = unresolved incidents newest first (IncidentSummary; components = component keys). maintenance = settings 'maintenance' (off: enabled false, the other five fields null).",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks system:read (detail must name it: 'You need the system:read permission.')",
+              "ui": "the console does not call it without system:read (enabled=false); header shows the no-status-access note and the banner stays hidden"
+            },
+            {
+              "status": 503,
+              "code": "DATABASE_UNAVAILABLE",
+              "when": "Postgres not accepting connections (no snapshot available)",
+              "ui": "card error with the server title, detail and request id + Retry"
+            },
+            {
+              "status": 500,
+              "code": "INTERNAL_ERROR",
+              "when": "any other failure",
+              "ui": "verdict 'Status unavailable' (neutral) with request id and Retry; uptime/open-alerts KPI cells show the error; never green"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map lists Operational, Degraded or Outage; the console also needs 'unknown' (monitoring data missing, never drawn green): include it in the enum. Map tables are Postgres only, yet the mock keeps this route answering during a Postgres outage (M212): serve the last worker snapshot from Redis with postgres 'down' and status 'outage' instead of 503."
+        },
+        {
+          "key": "GET /admin/system/checks",
+          "successStatus": 200,
+          "query": "range=1h|6h|24h|7d (default 24h; any other value -> 422 errors[{field:'range'}], mocks/http.ts:72-75) and optional component=<HealthComponent.key> (unknown key -> 404). Overview sends ?range=<page range> for every component (tabs/overview/ComponentsCard.tsx:81) and ?range=<r>&component=<key> for the picked chart (tabs/overview/ResponseTimeCard.tsx:79).",
+          "request": "",
+          "response": "UI: polled every 30 s (hooks/useHealth.ts:21-29). Source service_checks aggregated with date_bin: bucketSeconds 60/300/1800/10800 for 1h/6h/24h/7d = 60/72/48/56 buckets, oldest first, the last one still filling (mocks/clock.ts:65-80). Bucket: status = worst check in it (down > degraded > ok), 'unknown' with no checks (worker restart, disabled supplier); checks = rows; failures = rows with status down; latencyMs = p95 of answered checks' latency_ms, null when none. Component: uptime = (checks - failures)/checks x 100 over the range (uptime thresholds; null without checks); latency = last check latency with its thresholds (drawn on the chart); key/name as in health, same order; range echoed. Cache each (range, component) answer ~30 s: the all-components 7d read aggregates ~150k rows (index service_checks(component, checked_at)).",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks system:read (detail must name it: 'You need the system:read permission.')",
+              "ui": "card shows its forbidden state with the server detail (lib/errors.ts:6-8)"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "unknown component key",
+              "ui": "chart card error state"
+            },
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[] with field 'range'",
+              "ui": "card error state"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "PUT /admin/system/maintenance",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body {enabled:true, scope:'store'|'checkout'|'api_orders'|'all', message (trimmed, 1-300 chars), expectedEndAt: future ISO time or null} (header/MaintenanceDialog.tsx:80-87) or exactly {enabled:false} (header/MaintenanceOffDialog.tsx:23). Enabling while on changes scope/message/end but keeps startedAt/startedBy (mocks/routes/health.ts:73-82); off resets the other fields to null. Stored in settings key 'maintenance'; audit_logs on every on/change/off with the staff member. Effect: requests in scope answer 503 MAINTENANCE (problem+json with the message and expectedEndAt): store = storefront API /store/v1; checkout = starting a storefront checkout only (no checkout session created, nothing held); api_orders = merchant order placement over v1 and Dhru (running orders and the portal keep working); all = the three. The admin surface is never affected. expectedEndAt only informs customers; only PUT {enabled:false} ends maintenance (dialog copy: 'until you turn it off').",
+          "response": "200 + the new MaintenanceState (startedBy {id,name}). The console ignores the body and refetches health (header, verdict, shell banner).",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks system:manage (detail must name it: 'You need the system:manage permission.')",
+              "ui": "button disabled without it; otherwise dialog error slot"
+            },
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[] with field enabled, scope, message, expectedEndAt",
+              "ui": "under the field (alias expectedEndAt -> end field)"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/system/metrics",
+          "successStatus": 200,
+          "query": "range=1h|6h|24h|7d (default 24h) and optional surface=v1|dhru|client|store|admin|hooks; a bad value -> 422 on that field (mocks/routes/traffic.ts:12-17). Sent three ways, each polled every 30 s: KPI row ?range=24h without surface whatever the page range (header/useKpis.ts:55); API tab surfaces table ?range=<r>; API tab charts/slowest ?range=<r>&surface=<s> (tabs/api/ApiTab.tsx:44-45).",
+          "request": "",
+          "response": "Source: Prometheus HTTP API (query_range) over prom-client http_request_duration_seconds with a surface label (D015). Series step = bucketSeconds 60/300/900/3600 for 1h/6h/24h/7d = 60/72/96/168 points per series, oldest first, null where no samples (gap). 'Now' Measures cover the last 5 min: requestsPerMin = sum(rate) x 60 (no thresholds: ok with a value, unknown when null); p50/p95/p99 in ms = histogram_quantile; rate4xx/rate5xx = share of 4xx/5xx answers in percent 0-100 (exclude 503 MAINTENANCE from rate5xx); count429 = 429 answers in the last 5 min. total = all surfaces (surface 'total', label 'All surfaces'); with ?surface= the whole answer is that surface: total = it, surfaces = [it], slowest = its endpoints (M215). slowest = at most 10 route templates (method, manifest path, surface) by p95 over the range, slowest first, requestsPerMin = average over the range. Every Measure carries unit, server state, warn/crit and direction (defaults mocks/thresholds.ts:12-21). KPI 'API p95'/'5xx rate' read total.p95/total.rate5xx + total.series (header/kpi.ts:54-70).",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks system:read (detail must name it: 'You need the system:read permission.')",
+              "ui": "card shows its forbidden state with the server detail (lib/errors.ts:6-8)"
+            },
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[] with field 'range' or 'surface'",
+              "ui": "card error state"
+            },
+            {
+              "status": 503,
+              "code": "MONITORING_UNAVAILABLE",
+              "when": "Prometheus (or Sentry for errors) does not answer or times out",
+              "ui": "neutral 'Monitoring unavailable' card with the server detail, never red or green; matched only on status 503 + this exact code (hooks/monitoring.ts:14-16)"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map: 'Read from the monitoring system'; D015 only defines per-process prom-client registries and GET /metrics, which cannot answer 1h-7d history. Proposal: a Prometheus server (PROMETHEUS_URL) queried with PromQL, time-boxed ~2 s (5xx reads are retried once, src/lib/query/useApiQuery.ts:26-28); unset or unreachable -> 503 MONITORING_UNAVAILABLE and health.monitoring 'unavailable'."
+        },
+        {
+          "key": "GET /admin/system/errors",
+          "successStatus": 200,
+          "query": "range and optional surface exactly as for /metrics (same 422s); the API tab sends the picked surface or none (tabs/api/ApiTab.tsx:46).",
+          "request": "",
+          "response": "UI: polled every 30 s. groups = top 10 (code, method, route template) groups by count in the range (surface-scoped when given), most frequent first; total = every problem answer in the range incl. groups not listed. code = problem+json code; status = HTTP status; endpoint = route template; firstSeenAt/lastSeenAt inside the range; lastRequestId = X-Request-Id of the latest occurrence (nullable); sentryUrl = full Sentry issue URL or null (shown only when VITE_SENTRY_URL is set, M200). Proposed source (D015 deferred error aggregation to this page): prom-client counter http_problems_total{surface,method,route,status,code} queried with increase() for counts + a Redis hash per group (first/last seen, last request id, Sentry issue id) written by the problem+json filter, TTL 8 days. 503 MAINTENANCE answers form their own group.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks system:read (detail must name it: 'You need the system:read permission.')",
+              "ui": "card shows its forbidden state with the server detail (lib/errors.ts:6-8)"
+            },
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[] with field 'range' or 'surface'",
+              "ui": "card error state"
+            },
+            {
+              "status": 503,
+              "code": "MONITORING_UNAVAILABLE",
+              "when": "Prometheus (or Sentry for errors) does not answer or times out",
+              "ui": "neutral 'Monitoring unavailable' card with the server detail, never red or green; matched only on status 503 + this exact code (hooks/monitoring.ts:14-16)"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map: first/last seen, request_id and a Sentry link, no tables. Sentry only captures unexpected (5xx) errors while the console lists 4xx codes too (INSUFFICIENT_FUNDS, RATE_LIMITED, VALIDATION_FAILED in mocks/specsApi.ts): counts must come from our own counter; Sentry only resolves links."
+        },
+        {
+          "key": "GET /admin/system/orders-health",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "UI: polled every 30 s; feeds the Orders tab, the verdict's impact line and KPI 'Orders past SLA' (hooks/usePipeline.ts:8-15, header/ImpactLine.tsx:60, header/kpi.ts:90-94). Sources: orders (+ the service SLA minutes), order_events, risk_assessments, ledger holds. stuck.total = Measure count (warn 5, crit 20, above) of open orders older than their service SLA (now - placed_at > SLA) in pending, processing or needs_attention; stuck.heldAmount = Money (4 dp, base currency) held for them (client_hold for B2B, captured payment for paid B2C); byStatus rows {status, label, count, oldestAgeSeconds, heldAmount} with status exactly 'pending' (queue pending), 'processing' or 'needs_attention' (dispatch queue; those orders are not counted again under pending/processing); the console links them to Orders tabs queued/processing/review + pastSla=true (M230); rows with count 0 may be omitted (mock); trend = 96 x 15-min points of the past-SLA count over 24 h. needsAttention = every order in the needs_attention queue (any age). dispatchP95 = p95 seconds from placed to sent to the supplier (sent_at) over 24 h (unit s, warn 120, crit 300). byServiceType = one row per type imei, server, remote, file: total = finished (completed + rejected) in the last 24 h, success/failure = percent Measures (success below 97/90, failure above 3/10). heldByRisk = paid storefront orders held by the risk rules: count, amount (Money), oldestAt.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks system:read (detail must name it: 'You need the system:read permission.')",
+              "ui": "card shows its forbidden state with the server detail (lib/errors.ts:6-8)"
+            },
+            {
+              "status": 503,
+              "code": "DATABASE_UNAVAILABLE",
+              "when": "Postgres not accepting connections (mock outage scenario, mocks/profile.ts:28-34,94)",
+              "ui": "card error with the server title, detail and request id + Retry"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "pastSla: the orders extraction proposes that GET /admin/orders?pastSla=true excludes the review queues, but map scenario system-alert step 9 counts needs_attention orders among those stuck past SLA ('how many of them in needs_attention') and the console links that row to Review + pastSla=true. Proposal: one age-only predicate (open and older than the service SLA) shared by both routes; tabs and queues filter separately."
+        },
+        {
+          "key": "GET /admin/system/suppliers",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "UI: polled every 30 s (hooks/usePipeline.ts:18-25). One row per supplier, all statuses. status = the switch active|disabled|paused (M197). health = latest service_checks status of 'supplier:<id>' (a paused supplier keeps its checks; disabled -> 'unknown'); since = start of the current health. lastSuccessAt = last successful supplier call (supplier_api_logs) or check. latency = last check latency (ms; warn 2000, crit 5000). errorRate/timeoutRate = percent of supplier_api_logs calls that failed / timed out in the last 15 min (warn 5, crit 20), {value null, state unknown} without calls; Postgres-sourced, so valid while Prometheus is down. circuit = outbound breaker state closed|open|half_open (D023, shared state). lastSyncAt = last balance/price sync. balance = our balance with the supplier: amount Money in the supplier's currency, currency code, state = server low-balance verdict (warn below the supplier's low-balance alert amount, crit at or below 10 % of it, mocks/buildPipeline.ts:98-104), checkedAt; must agree with lowBalance on GET /admin/suppliers (M65). Pause/Resume buttons call PATCH /admin/suppliers/:id {status:'paused'|'active'} (suppliers:update), then refetch this route, health and the dashboard (hooks/useSetSupplierStatus.ts:14).",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks system:read (detail must name it: 'You need the system:read permission.')",
+              "ui": "card shows its forbidden state with the server detail (lib/errors.ts:6-8)"
+            },
+            {
+              "status": 503,
+              "code": "DATABASE_UNAVAILABLE",
+              "when": "Postgres not accepting connections (propose)",
+              "ui": "card error with the server title, detail and request id + Retry"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map pauses a supplier with status = paused, while the suppliers feature had settled on active|disabled (M60): suppliers.status and PATCH /admin/suppliers/:id must accept 'paused' (no new orders; routing skips it) (M197)."
+        },
+        {
+          "key": "GET /admin/system/queues",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "UI: polled every 15 s (Queues tab + KPI 'Oldest queued job': hooks/useQueues.ts:9-11, header/kpi.ts:78-82). Source: live BullMQ counts on the queue Redis for every D020 queue: waiting (wait + prioritized), active, delayed, failed (getJobCounts), paused (isPaused), workers (getWorkersCount); oldestAge = seconds since the oldest waiting job was added ({value 0, state ok} when nothing waits, M236); ratePerMin = jobs completed per minute over the last 5 min (no thresholds). state = server verdict = worst of oldestAge state (warn 120 s, crit 600 s), failed count (>= 10 warn, >= 50 crit), paused (warn) and zero workers (crit) (mocks/buildQueues.ts:56-95). The outbox backlog (outbox_events with processed_at null, the map table) shows as the outbox-relay queue's waiting/oldestAge. Top-level oldestAge = max over queues (same thresholds); trend = 96 x 15-min points of that max over 24 h from the BullMQ gauges scraped by Prometheus (null points when Prometheus is down; this read must not fail for that).",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks system:read (detail must name it: 'You need the system:read permission.')",
+              "ui": "card shows its forbidden state with the server detail (lib/errors.ts:6-8)"
+            },
+            {
+              "status": 500,
+              "code": "INTERNAL_ERROR",
+              "when": "queue Redis unreachable (mock partial-failure scenario, mocks/profile.ts:26-27,96)",
+              "ui": "Queues card and KPI cell show the error with request id; the other cards stay"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map lists only outbox_events; counters are live BullMQ data (D015/D020). Queue names are the server's (D020: outbox-relay, supplier-dispatch, ...), not the mock's; the console hardcodes none but builds Bull Board links <VITE_BULL_BOARD_URL>/queue/<name> (tabs/queues/QueueRowActions.tsx:54, M199)."
+        },
+        {
+          "key": "GET /admin/system/queues/:name/failed",
+          "successStatus": 200,
+          "query": "_start, _end (25 a page) and _sort=failedAt&_order=desc on every call (hooks/useQueues.ts:26); no filters, no q.",
+          "request": ":name = BullMQ queue name (URL-encoded).",
+          "response": "UI: polled every 30 s while the failed-jobs drawer is open. BullMQ failed set newest failure first (getJobs(['failed'], start, end - 1, false)); x-total-count = getFailedCount() (exposed). Row: id = job.id (STRING), name = job.name, failedReason, attemptsMade, maxAttempts = opts.attempts, failedAt = finishedOn as ISO, subject = '<aggregate type> #<id>' from the payload (ids only, D020) or null. Jobs removed by removeOnFail (14 days) disappear.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks system:read (detail must name it: 'You need the system:read permission.')",
+              "ui": "card shows its forbidden state with the server detail (lib/errors.ts:6-8)"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "unknown queue",
+              "ui": "drawer error state"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map row is one action without a list dialect; the console reads it as a simple-rest list (M203)."
+        },
+        {
+          "key": "POST /admin/system/queues/:name/retry",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body exactly one of {jobId: string} (one failed row) or {all: true} (tabs/queues/ActionDialogs.tsx:65,89); neither (or both) -> 422 errors[{field:'jobId'}] (mocks/routes/queues.ts:43-55). Moves failed jobs back to waiting (job.retry('failed') / queue.retryJobs({state:'failed'})). No Idempotency-Key. audit_logs with queue, jobId or all, and the count.",
+          "response": "200 {retried} = jobs moved back to waiting (0 allowed: toast 'No failed jobs were retried'). The console reads retried for its toast (hooks/useOpsMutations.ts:39): a JSON body is required (no 204). Then it refetches queues and the failed list.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks system:manage (detail must name it: 'You need the system:manage permission.')",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "unknown queue, or jobId not in the failed set",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            },
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[] with field 'jobId'",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/system/queues/:name/pause",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body {paused:true, reason} to pause (reason trimmed, 3+ chars; tabs/queues/PauseQueueDialog.tsx:32) or {paused:false} to resume (tabs/queues/ActionDialogs.tsx:41). paused not boolean -> 422 field paused; pausing without a reason -> 422 field reason (mocks/routes/queues.ts:71-81). queue.pause()/resume() (global: workers stop taking jobs, waiting jobs stay queued); pausing a paused queue keeps the original pause. audit_logs with the reason.",
+          "response": "200 + the queue's QueueStats after the change (state at least warn while paused). The console ignores the body and refetches queues.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks system:manage (detail must name it: 'You need the system:manage permission.')",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "unknown queue",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            },
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[] with field 'paused' or 'reason'",
+              "ui": "reason message under the reason field (PauseQueueDialog.tsx:34)"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map body is paused: true or false only; the console adds reason (M204): accept it, require it when pausing, keep it in audit_logs."
+        },
+        {
+          "key": "GET /admin/system/jobs",
+          "successStatus": 200,
+          "query": "Optional job=<name> (History drawer, tabs/queues/JobHistoryDrawer.tsx:24); without it runs is [].",
+          "request": "",
+          "response": "UI: polled every 30 s, every 5 s while any jobs[].running or runs[].status is 'running' (hooks/useQueues.ts:41-53). jobs = every scheduled job (BullMQ job schedulers of D020 joined with job_runs): name (stable key, e.g. ledger_integrity), label (English), schedule = cron pattern, scheduleText = cron in words (server-rendered, may be ''), state = verdict of the last finished run (failed crit, skipped warn, succeeded ok, none unknown; an overdue job may be warn), running = a job_runs row of the job is 'running', lastRun = newest FINISHED run, never the running one (mocks/buildQueues.ts:131), nextRunAt from the scheduler. runs (with ?job=) = that job's job_runs newest first, at most 50, running ones included (mocks/buildQueues.ts:143). JobRun: durationMs and processed are non-null numbers (0 while running), finishedAt null while running, result = small object of counters printed as one line (no secrets), error text or null, triggeredBy {id,name} for manual runs.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks system:read (detail must name it: 'You need the system:read permission.')",
+              "ui": "card shows its forbidden state with the server detail (lib/errors.ts:6-8)"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "unknown ?job= name",
+              "ui": "History drawer error"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/system/jobs/:name/run",
+          "successStatus": 202,
+          "query": "",
+          "request": "No body; :name = a scheduled job name (tabs/queues/ActionDialogs.tsx:109). Insert job_runs {job, trigger 'manual', status 'running', started_at now, triggered_by staff} and enqueue the job now outside its schedule (BullMQ add, jobId 'manual:<run id>'); audit_logs.",
+          "response": "202 + the new JobRun (status running, trigger manual). The console ignores the body (toast from its own label) and polls jobs every 5 s until the run ends.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks system:manage (detail must name it: 'You need the system:manage permission.')",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "unknown job",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            },
+            {
+              "status": 409,
+              "code": "JOB_ALREADY_RUNNING",
+              "when": "a run of this job is 'running' (detail names the job)",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/system/webhooks",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "UI: polled every 30 s. Last 24 h. outgoing (webhook_deliveries to merchants): delivered, failed (gave up), retrying (pending with next_retry_at), successRate = delivered/(delivered + failed) x 100 (below 97 warn, 90 crit; null without deliveries), oldestUndeliveredAt = created_at of the oldest delivery not delivered yet (null when none), oldestAge = its age in s ({value 0, state ok} when none; warn 300, crit 1800) (mocks/buildQueues.ts:167-178). incoming (gateway callbacks POST /webhooks/payments|disputes/:gateway): delivered = accepted (2xx), failed = refused (non-2xx, signature failures included), retrying = callbacks queued for reprocessing (else 0), oldest* = oldest unprocessed outbox_events row created by a callback.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks system:read (detail must name it: 'You need the system:read permission.')",
+              "ui": "card shows its forbidden state with the server detail (lib/errors.ts:6-8)"
+            },
+            {
+              "status": 503,
+              "code": "DATABASE_UNAVAILABLE",
+              "when": "Postgres not accepting connections (propose)",
+              "ui": "card error with the server title, detail and request id + Retry"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map tables webhook_deliveries and outbox_events: nothing records incoming callbacks by outcome. Proposal: hourly outcome counters in the cache Redis (48 h TTL) written by the hooks controller, so the figures do not depend on Prometheus."
+        },
+        {
+          "key": "GET /admin/system/database",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "UI: polled every 30 s; one read feeds the Postgres card and the slow-query and long-transaction lists (M250). connections.used = count(pg_stat_activity), max = max_connections, usage = used/max x 100 (warn 70, crit 90; the meter colour is usage.state, M252), poolWait = p95 pool acquire wait in ms over 5 min (app pg pool, prom-client), waitingClients = pool waiting count; locks.waiting = ungranted pg_locks, longestWait = longest lock wait in s; replicaLag = max replay_lag of pg_stat_replication in s, null when there is no replica; size.bytes = pg_database_size, growthPerDayBytes from a daily size sample (null until measured); pendingMigrations = bundled Drizzle migrations not applied (names); slowQueries = top 10 pg_stat_statements by mean_exec_time (id = queryid as a STRING: bigint, often negative; normalized query; calls; meanMs; totalMs since the nightly reset); longTransactions = sessions with xact_start older than 60 s (pid, durationSeconds, state, query truncated). status ok|degraded|down. Postgres down: 200 with status 'down', usage/longestWait/replicaLag value null, lists [] and counts 0 (read as 'could not be read', M247/M251).",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks system:read (detail must name it: 'You need the system:read permission.')",
+              "ui": "card shows its forbidden state with the server detail (lib/errors.ts:6-8)"
+            },
+            {
+              "status": 503,
+              "code": "DATABASE_UNAVAILABLE",
+              "when": "accepted alternative to 200 status down",
+              "ui": "Postgres card shows the error; the two lists say the same read failed (M250)"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/system/cache",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "UI: polled every 30 s. Redis INFO of the cache Redis (D006): memory.usedBytes = used_memory, maxBytes = maxmemory (null when 0 = no limit), usage = percent (warn 75, crit 90; value null without a limit); evictionsPerMin = evicted_keys delta per minute (warn 10, crit 100); hitRate = keyspace hits/(hits + misses) over the last minutes, not since restart (below 90 warn, 70 crit); clients = connected_clients (warn 400, crit 900); latency = PING round trip in ms, one decimal under 10 (warn 5, crit 25); status ok|degraded|down. Deltas come from INFO samples the health worker stores each minute. Redis down: status down, Measures {value null, state unknown}, usedBytes 0, maxBytes null.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks system:read (detail must name it: 'You need the system:read permission.')",
+              "ui": "card shows its forbidden state with the server detail (lib/errors.ts:6-8)"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map describes one Redis; D006 runs two (queue Redis noeviction, cache Redis allkeys-lru). Proposal: /cache reports the cache Redis; the queue Redis is its own component in health.components (key 'redis_queue') and gets a memory alert rule (with noeviction a full memory fails writes)."
+        },
+        {
+          "key": "GET /admin/system/integrity",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "UI: polled every 30 s, every 5 s while running (hooks/useIntegrity.ts:10-16). From job_runs of job 'ledger_integrity' (nightly + manual): running = a run is 'running'; lastRun = newest FINISHED run (a running lastRun makes the badge read 'Not checked', tabs/integrity/report.ts:52-66); lastSuccessAt = finished_at of the newest succeeded run with zero failed checks (mocks/seedIntegrity.ts:48-54); checks = the four checks of lastRun.result in map order entries_balanced, accounts_match_lines, stuck_holds, payments_without_entry: label, status pass|fail|unknown (unknown when never run or the run failed/skipped), count = full number of findings, difference = Money sum (4 dp, '-37.5000'; '0.0000' on a pass; null for stuck_holds), findings = the first 20: entry (id = ledger_transactions.id, ref = journal number, difference), account (id = ledger_accounts.id, ref '<kind>:<owner_id>' e.g. 'client_wallet:4', label e.g. 'Wallet · <merchant>', difference, lastEntryAt), hold (id, ref, ageSeconds), payment (id = payments.id, ref = gateway txn id, difference). Read-only: never corrects anything.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks system:read (detail must name it: 'You need the system:read permission.')",
+              "ui": "card shows its forbidden state with the server detail (lib/errors.ts:6-8)"
+            },
+            {
+              "status": 503,
+              "code": "DATABASE_UNAVAILABLE",
+              "when": "Postgres not accepting connections (mock outage scenario)",
+              "ui": "card error with the server title, detail and request id + Retry"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "job_runs.result must carry the per-check details incl. findings (map: 'result holds the job summary; the last money integrity result comes from it'): keep counters as top-level simple fields (the console prints those) and nest checks under one key."
+        },
+        {
+          "key": "POST /admin/system/integrity/run",
+          "successStatus": 202,
+          "query": "",
+          "request": "No body (tabs/integrity/RunCheckDialog.tsx:28). Starts ledger_integrity now as a background job: job_runs {trigger 'manual', status 'running', started_at now, triggered_by staff}; audit_logs.",
+          "response": "202 + the JobRun (status running, startedAt): the dialog passes it on so the card can say 'Running, started ...' because the report has no running start (M254); then the report polls every 5 s. A run that finds no difference resolves the open ledger_mismatch alert (scenario system-integrity step 7).",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks system:manage (detail must name it: 'You need the system:manage permission.')",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            },
+            {
+              "status": 409,
+              "code": "JOB_ALREADY_RUNNING",
+              "when": "a nightly or manual integrity run is going",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            },
+            {
+              "status": 503,
+              "code": "DATABASE_UNAVAILABLE",
+              "when": "Postgres not accepting connections (mock outage scenario)",
+              "ui": "card error with the server title, detail and request id + Retry"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/alert-rules",
+          "successStatus": 200,
+          "query": "_start, _end only (25 a page; no sort, filters or q: hooks/useAlerts.ts:51). Default order name asc (mocks/routes/rules.ts:117); the console then lifts rules with open alerts to the top of the page. q (unused) over name, key, metric.",
+          "request": "",
+          "response": "UI: polled every 30 s. AlertRule rows: threshold and windowSeconds as JSON numbers (convert pg numeric), unit from the server's metric registry (null for plain numbers), open = an alert of the rule is firing or acknowledged (computed), mutedUntil ISO or null (a past time = not muted; propose an extra computed muted), channels subset of telegram|email, updatedAt null until edited. x-total-count. Soft-deleted rules are not listed.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks alerts:read (detail must name it: 'You need the alerts:read permission.')",
+              "ui": "Rules view forbidden state"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map permission 'alerts:*' expands to alerts:read (list, show), alerts:create, alerts:update, alerts:delete, as the console uses."
+        },
+        {
+          "key": "GET /admin/alert-rules/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "Same row shape as the list (open computed). Used by Refine data hooks (api/resources.ts).",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks alerts:read (detail must name it: 'You need the alerts:read permission.')",
+              "ui": "Refine error"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "unknown or deleted rule",
+              "ui": "Refine error"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/alert-rules",
+          "successStatus": 201,
+          "query": "",
+          "request": "Form sends every field incl. isActive (tabs/alerts/rules.ts:139-151). 422 per field (mocks/routes/rules.ts:24-86): key ^[a-z][a-z0-9_]{2,40}$ and unique (a duplicate is 422 on key, not 409: the dialog places only field errors), name 3-80, metric in the server registry, comparator gt|gte|lt|lte, threshold finite number in the metric's unit, windowSeconds integer 60-86400, severity info|warning|critical, channels non-empty subset of telegram|email, isActive boolean (default true). Server sets unit, created_by, mutedUntil null; audit_logs.",
+          "response": "201 + the new AlertRule (open false); the console refetches the rules.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks alerts:create (detail must name it: 'You need the alerts:create permission.')",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            },
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[] with field 'key','name','metric','comparator','threshold','windowSeconds','severity','channels','isActive'",
+              "ui": "under the field (RuleFormDialog FIELDS)"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map: the metric comes 'from a fixed list' and the server sets the unit, but neither is named (M243). The backend owns the registry; the console offers 11 keys (tabs/alerts/rules.ts:26-38) and keeps an unknown one as a choice."
+        },
+        {
+          "key": "PATCH /admin/alert-rules/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "Partial: only present fields are validated (same rules) and applied. Senders: edit form = changed fields only, never empty (tabs/alerts/rules.ts:160-174); switch = {isActive} (tabs/alerts/RulesView.tsx:70, errors toasted); mute = {mutedUntil: future ISO} (tabs/alerts/MuteRuleDialog.tsx:35, field alias until); unmute = {mutedUntil: null} (RulesView.tsx:71). mutedUntil past or invalid -> 422 field mutedUntil. A metric change recomputes unit. Set updated_by/updatedAt; audit_logs. isActive false resolves the rule's open alerts; a mute keeps open alerts but stops new ones and their messages until mutedUntil.",
+          "response": "200 + the updated AlertRule; the console refetches rules, alerts and health.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks alerts:update (detail must name it: 'You need the alerts:update permission.')",
+              "ui": "switch/unmute: error toast; dialogs: error slot"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "unknown or deleted rule",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            },
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[] with field of any sent field (mutedUntil -> until)",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "DELETE /admin/alert-rules/:id",
+          "successStatus": 204,
+          "query": "",
+          "request": "",
+          "response": "204, no body. Soft-delete the rule (it stops alerting), resolve its open alerts, keep its alert history (AlertEvent.rule is non-null); audit_logs. The console refetches rules, alerts and health.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks alerts:delete (detail must name it: 'You need the alerts:delete permission.')",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "unknown or already deleted rule",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "alert_events.rule_id references the rule and the console renders alert.rule for every alert: propose alert_rules.deleted_at (soft delete; the map has no such column) or a rule snapshot on alert_events."
+        },
+        {
+          "key": "GET /admin/alerts",
+          "successStatus": 200,
+          "query": "_start, _end (25 a page), _sort=startedAt&_order=desc, filters status (firing|acknowledged|resolved) and severity (hooks/useAlerts.ts:10-27). The default 'Open' view makes two reads, status=firing and status=acknowledged, first page each; Firing/Acknowledged/Resolved/All make one read (tabs/alerts/useAlertList.ts:21-23). Also accept repeated status (IN) and open=true; q (unused) over rule name, subjectLabel, note.",
+          "request": "",
+          "response": "UI: polled every 15 s. AlertEvent rows: rule = {id,key,name,metric,comparator,threshold,windowSeconds,unit} (soft-deleted rules included), severity copied at fire time, value = the metric value that fired (JSON number), subjectType 'system'|'supplier'|'queue'|'gateway'|'ledger_account'|'client', subjectId = number (0 when the subject has no id, e.g. system or a queue; never null), subjectLabel = supplier name, queue name, 'Wallet · <merchant>', null for system; acknowledgedBy {id,name} or null (null with acknowledgedAt set prints 'Unknown'); note; incidentId = the incident whose alert_event_id is this alert. x-total-count.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks alerts:read (detail must name it: 'You need the alerts:read permission.')",
+              "ui": "Alerts view forbidden state"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "alert_events.subject_id is polymorphic (FK to suppliers) and system or queue alerts have no id, while the console types subjectId as a non-null number: store or map null as 0 on the wire."
+        },
+        {
+          "key": "GET /admin/alerts/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "Same shape as a list row. Used by Refine show (api/resources.ts).",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks alerts:read (detail must name it: 'You need the alerts:read permission.')",
+              "ui": "Refine error"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "unknown alert",
+              "ui": "Refine error"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/alerts/:id/ack",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body {note?}: trimmed, at most 500 chars; an empty note sends {} (tabs/alerts/AckAlertDialog.tsx:26-33). Conditional update (WHERE status = 'firing') so double clicks get 409. Records acknowledged_by/acknowledged_at and note, stops the reminders, writes audit_logs. The alert stays open (still counted in health.alerts, critical included) until the value is back in range.",
+          "response": "200 + the updated AlertEvent; the console ignores it and refetches the alert lists and health.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks alerts:update (detail must name it: 'You need the alerts:update permission.')",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "unknown alert",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            },
+            {
+              "status": 409,
+              "code": "ALERT_ACKNOWLEDGED",
+              "when": "already acknowledged (detail names who)",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            },
+            {
+              "status": 409,
+              "code": "ALERT_RESOLVED",
+              "when": "already resolved by the server",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            },
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[] with field 'note' (over 500 chars)",
+              "ui": "under the note field"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/incidents",
+          "successStatus": 200,
+          "query": "_start, _end (25 a page), _sort=startedAt&_order=desc; filter open=true (default 'Ongoing' = every status but resolved), status=resolved ('Resolved') or none ('All') (tabs/alerts/incidents.ts:34-38). q (unused) over title, summary.",
+          "request": "",
+          "response": "UI: polled every 30 s. Full Incident rows incl. timeline (oldest line first; {at, status, text, by {id,name}|null}), components = HealthComponent keys, rootCause (null until closed), createdBy/resolvedBy {id,name}, startedAt, resolvedAt, alertEventId. x-total-count.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks incidents:read (detail must name it: 'You need the incidents:read permission.')",
+              "ui": "Incidents view forbidden state"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/incidents/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "Same shape with the whole timeline; the incident drawer polls it every 30 s.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks incidents:read (detail must name it: 'You need the incidents:read permission.')",
+              "ui": "drawer 'You need the incidents:read permission' with the detail"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "unknown incident",
+              "ui": "drawer 'Incident not found' (tabs/alerts/IncidentDrawer.tsx:28)"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/incidents",
+          "successStatus": 201,
+          "query": "",
+          "request": "Body {title 3-120, severity minor|major|critical, components (1+ known HealthComponent keys), summary 10-2000, alertEventId only when declared from an alert} (tabs/alerts/DeclareIncidentDialog.tsx:38-44). The prefill from an alert proposes 'supplier:<subjectId>' for supplier alerts and 'workers' for queue alerts (tabs/alerts/incidents.ts:82-83). Server sets status 'investigating', startedAt now, timeline [{at, status 'investigating', text 'Incident declared. We are investigating.', by staff}], created_by; links the alert; audit_logs.",
+          "response": "201 + the new Incident; the console refetches incidents, alerts and health.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks incidents:create (detail must name it: 'You need the incidents:create permission.')",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            },
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[] with field 'title','severity','components' (empty or unknown key),'summary','alertEventId' (no such alert, or it already has an incident)",
+              "ui": "under the field; alertEventId in the dialog error slot"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "PATCH /admin/incidents/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "Partial: title, severity, components, summary, status, update (at most 1000), rootCause. Update dialog sends {status: investigating|identified|monitoring, update: non-empty} (tabs/alerts/UpdateIncidentDialog.tsx:32-35); close sends {status:'resolved', rootCause (10+), update?: the action taken} (tabs/alerts/CloseIncidentDialog.tsx:32-39). A status change or a non-empty update appends one timeline line {at now, status, text = update or a default sentence, by staff}; 'resolved' also sets resolvedAt, resolvedBy and root_cause. audit_logs.",
+          "response": "200 + the updated Incident; drawer, list and health are refetched.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired staff session",
+              "ui": "global handler signs out to /login"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "staff lacks incidents:update (detail must name it: 'You need the incidents:update permission.')",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "unknown incident",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            },
+            {
+              "status": 409,
+              "code": "INCIDENT_CLOSED",
+              "when": "any change to a resolved incident (no reopen)",
+              "ui": "shown in the dialog error slot (toastErrors false); field errors go under their field"
+            },
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[] with field 'status','update','rootCause' (closing without 10+ chars),'title','summary','components'",
+              "ui": "under the field"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map: 'close it with the cause and the action taken', but incidents has only root_cause and timeline: the action taken is the closing update, written as the 'resolved' timeline line (M205)."
+        }
+      ],
+      "businessRules": [
+        "The server judges every number: each figure is a Measure whose state comes from server-side thresholds; warn/crit are the limits applied, direction says which side is bad, value null => state unknown. The console never compares (types/common.ts:23-34; mocks/thresholds.ts:45-72).",
+        "No data is never healthy: while Prometheus is unavailable health is never 'operational' (map scenario system-alert step 5; M216); a figure without data is 'unknown', never 'ok' (mocks/thresholds.ts:45-47).",
+        "Overall status: 'outage' when a core component is down, 'degraded' when any component is down or degraded or a critical alert is open, else 'operational' (mocks/facts.ts:172-177).",
+        "A worker checks every minute: database, cache, storage, payment gateways and every supplier (accountinfo), writing status and latency to service_checks; uptime and outages derive from those rows, which are deleted after 90 days (scenario system-alert step 1; table service_checks).",
+        "Rules are evaluated every minute over their window; a breach creates one alert_events row (firing, severity, value, subject) unless the rule is muted (muted_until in the future) or switched off; e.g. supplier timeout rate > 20 % for 3 min -> critical alert on that supplier (scenario system-alert step 3; mocks/seedRules.ts).",
+        "Notifications: one message per rule channel (telegram, email), repeated only after the reminder interval until acknowledged (scenario system-alert step 4).",
+        "Acknowledge moves firing -> acknowledged only, records acknowledged_by/at + audit_logs and stops reminders; the alert stays open and an acknowledged critical alert still counts as critical (step 6; M214); otherwise 409 ALERT_ACKNOWLEDGED / ALERT_RESOLVED (mocks/routes/alerts.ts:35-51).",
+        "Only the server resolves alerts: after 3 consecutive ok minutes (resolved_at + a 'resolved' message); an acknowledged alert never closes earlier (step 10). There is no resolve endpoint.",
+        "Incidents: declaring starts the timeline at 'investigating' and links the alert (step 7); one incident per alert (mocks/routes/incidents.ts:53-58); every status change or update adds a server-written timeline line; closing needs rootCause (10+) and the optional update is the action taken (step 11; M205); a resolved incident is a record -> any PATCH 409 INCIDENT_CLOSED; incidents are never deleted (map ops LSCU).",
+        "Supplier pause (PATCH /admin/suppliers/:id status=paused) routes new orders to the next supplier by priority in service_supplier_links; orders already sent stay as they are (step 8); a paused supplier keeps its checks, a disabled one is unchecked (health 'unknown') (mocks/facts.ts:104-128).",
+        "Maintenance: the chosen scope answers 503 MAINTENANCE with the message and expected end; checkout maintenance creates no checkout session and holds nothing; the admin console and running merchant orders keep working; on/off/change are audited with the staff member; only PUT {enabled:false} ends it (scenario system-integrity steps 4, 5, 8; manifest PUT /admin/system/maintenance).",
+        "Ledger integrity: the nightly ledger_integrity job runs four read-only checks (entries sum to zero, account balance = sum of its lines, holds stuck > 24 h, confirmed payments without an entry) and stores the result in job_runs.result; a difference fires the critical ledger_mismatch rule naming the account and difference; corrections are reversing entries (POST /admin/clients/:id/wallet/adjust), never edits; a clean manual run resolves the alert (scenario system-integrity steps 1-3, 6-7).",
+        "Every scheduled or manual run writes job_runs (trigger schedule|manual|event; triggered_by for manual) (D020; manifest POST /admin/system/jobs/:name/run); one run per job at a time -> 409 JOB_ALREADY_RUNNING (mocks/routes/queues.ts:109-116, mocks/routes/integrity.ts:19-27); proposal: a reaper fails runs stuck in 'running' past a timeout so the guard cannot block forever.",
+        "Queue actions: pausing needs a reason (3+ chars) kept in audit_logs (M204); retry touches failed jobs only and answers how many moved (mocks/routes/queues.ts:34-87).",
+        "Every write of the group writes audit_logs with the staff member (manifest tables of every health write).",
+        "Permissions (manifest): system:read for every /admin/system read; system:manage for maintenance, retry, pause, run job and integrity run; alerts:read for alerts and rules, alerts:create/update/delete for rules, alerts:update for ack; incidents:read/create/update; suppliers:update for pause/resume. 403 detail names the missing permission (mocks/http.ts:44-46). Default roles: Owner and Admin manage; Finance, Support, Risk reviewer and Read only view (M198).",
+        "Database outage: reads that need live Postgres rows answer 503 DATABASE_UNAVAILABLE (mock: orders-health, integrity, integrity run; mocks/profile.ts:94), while health keeps answering from the snapshot and /database answers 200 status 'down' (M212).",
+        "Component keys are stable ids: fixed core keys incl. 'workers', plus 'supplier:<id>' and 'gateway:<id>'; incident components are validated against the known keys (422 'Unknown component', mocks/routes/incidents.ts:42-51); the declare prefill maps supplier alerts to 'supplier:<subjectId>' and queue alerts to 'workers' (tabs/alerts/incidents.ts:82-83).",
+        "Seed the rules the map scenarios need: supplier_timeout_rate (gt 20, 180 s, critical) and ledger_mismatch (gt 0, critical); the mock seeds ten rules with defaults worth copying (mocks/seedRules.ts).",
+        "Range: tabs send range=1h|6h|24h|7d (default 24h); the KPI row always reads metrics?range=24h, queues, orders-health and health (30-day uptime) whatever the page range (header/useKpis.ts:53-58; ASSUMED_CONTRACTS 'Health summary details').",
+        "Polling: health, alerts and queues every 15 s; other cards every 30 s; jobs and integrity every 5 s while a run is going; hidden tabs pause, focus refetches, answers younger than 5 s are reused, 5xx GETs are retried once (hooks/keys.ts:47; hooks/useHealthQuery.ts:26-45; src/lib/query/useApiQuery.ts:26-28). Serve health from a per-minute snapshot and checks/metrics/errors/database from ~15-30 s caches keyed by params."
+      ],
+      "questions": [
+        {
+          "n": 1,
+          "question": "Confirm the Measure shape and that every state and threshold is computed server-side.",
+          "proposedAnswer": "Yes. Every judged number is {value number|null, unit, state, warn?, crit?, direction?}; one server Measure builder computes state from configured thresholds; value null => unknown; the thresholds sent are the ones applied.",
+          "basis": "scenario system-alert step 5; mocks/thresholds.ts:45-72; types/common.ts:23-34",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 2,
+          "question": "Are the proposed KPI thresholds right (uptime 99.9/99.5 %, API p95 800/1500 ms, 5xx 0.5/2 %, oldest queued job 2/10 min, orders past SLA 5/20)?",
+          "proposedAnswer": "Adopt them as defaults in a server threshold config (code constants overridable by a settings key, e.g. health.thresholds); other figures default to mocks/thresholds.ts:17-42. The final SLO targets are an ops/business call.",
+          "basis": "docs/system-health-design.md KPI table; mocks/thresholds.ts:9-43; the map gives no numbers",
+          "confidence": "medium",
+          "needsUser": true
+        },
+        {
+          "n": 3,
+          "question": "Should acknowledging an alert have its own permission?",
+          "proposedAnswer": "No: keep alerts:update, as the map row states.",
+          "basis": "manifest POST /admin/alerts/:id/ack permission alerts:update",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 4,
+          "question": "Could the maintenance state also come with GET /admin/auth/me (or GET /health) so the banner reaches staff without system:read (M201)?",
+          "proposedAnswer": "Yes via GET /admin/auth/me: add maintenance {enabled, scope, message, expectedEndAt} (staff-only, already loaded on every page). Keep the public GET /health probe free of it. Until the console switches, the banner keeps reading /admin/system/health.",
+          "basis": "M201; manifest GET /health is a public readiness probe (D015)",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 5,
+          "question": "Which surfaces does /metrics report and with which labels?",
+          "proposedAnswer": "The six inbound manifest surfaces v1, dhru, client, store, admin, hooks (system excluded; events and supplier are outgoing), labelled with the manifest names (REST API v1, Dhru Fusion API, Merchant portal, Public storefront API (B2C), Admin console, Incoming webhooks); surface is a label on http_request_duration_seconds.",
+          "basis": "route-manifest surfaces[]; D015; mocks/specsApi.ts:18-80",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 6,
+          "question": "Do the actions answer with the changed record, or 204?",
+          "proposedAnswer": "As the mock: pause -> 200 QueueStats; run job and integrity run -> 202 JobRun (running, trigger manual); maintenance -> 200 MaintenanceState; ack -> 200 AlertEvent; rules/incidents -> the record (201 on create); rule delete -> 204; retry -> 200 {retried} (body required).",
+          "basis": "ASSUMED_CONTRACTS 'Answers of the writes'; mocks/routes/*.ts status codes; hooks/useOpsMutations.ts:39",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 7,
+          "question": "Does POST .../queues/:name/pause require reason to pause (422 on reason)?",
+          "proposedAnswer": "Yes: paused=true needs reason (trimmed, 3+ chars) else 422 VALIDATION_FAILED errors[{field:'reason'}]; resume takes none; the reason goes to audit_logs.",
+          "basis": "M204; mocks/routes/queues.ts:71-81; manifest tables audit_logs",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 8,
+          "question": "Where does 'the action taken' go when an incident closes: rootCause, or the closing timeline update (M205)?",
+          "proposedAnswer": "rootCause -> incidents.root_cause; the optional closing update (action taken) becomes the 'resolved' timeline line (default sentence when absent). No new column.",
+          "basis": "map row CRUD /admin/incidents; table incidents (root_cause, timeline jsonb); scenario system-alert step 11; M205",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 9,
+          "question": "Do /admin/alerts and /admin/incidents take status, severity, open=true and _sort=startedAt; does .../failed take _sort=failedAt and send x-total-count?",
+          "proposedAnswer": "Yes, in the shared list dialect (repeated key = IN, x-total-count exposed). Alerts: status, severity, open=true; incidents: status, open=true (severity too); failed jobs: _sort=failedAt only (BullMQ order), _start/_end, x-total-count = failed count.",
+          "basis": "hooks/useAlerts.ts:10-75; hooks/useQueues.ts:18-34; mocks/http.ts:78-92",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 10,
+          "question": "Is MONITORING_UNAVAILABLE the code on both metrics and errors, and does health then send status 'unknown' with monitoring.status 'unavailable' (M216)?",
+          "proposedAnswer": "Yes: both answer 503 MONITORING_UNAVAILABLE (detail names the backend) when Prometheus (or Sentry) fails or times out (~2 s). Health sets monitoring.status 'unavailable' and is never 'operational': 'outage'/'degraded' only when service_checks prove it, else 'unknown'.",
+          "basis": "scenario system-alert step 5; M216; hooks/monitoring.ts:14-16; mocks/facts.ts:172-177",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 11,
+          "question": "Does every Measure with a threshold carry direction?",
+          "proposedAnswer": "Yes: the Measure builder requires direction whenever warn or crit is set (enforced by a contract test). Informational figures (requests/min, ratePerMin) carry no thresholds.",
+          "basis": "types/common.ts:20-34; mocks/thresholds.ts:64-72",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 12,
+          "question": "How many buckets does GET /admin/system/checks return per range?",
+          "proposedAnswer": "1h 60 x 60 s, 6h 72 x 300 s, 24h 48 x 1800 s, 7d 56 x 10800 s (bucketSeconds sent), oldest first, last one partial; always at most 100.",
+          "basis": "mocks/clock.ts:65-80; ASSUMED_CONTRACTS 'Series sizes'",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 13,
+          "question": "GET /admin/system/database while Postgres is down: 200 with status 'down' or 503? Does health keep answering (M212)?",
+          "proposedAnswer": "200 with status 'down' (lists [], counts 0, measures null/unknown, pool figures from the app pool); 503 is also handled. Health keeps answering from the worker's Redis snapshot (postgres 'down', status 'outage'); reads that need live rows (orders-health, integrity, integrity run, webhooks, lists) answer 503 DATABASE_UNAVAILABLE.",
+          "basis": "M212, M247; mocks/profile.ts:94; ASSUMED_CONTRACTS Data stores tab",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 14,
+          "question": "Does ?surface= scope total too (M215)? Is an acknowledged critical alert still critical until it resolves (M214)?",
+          "proposedAnswer": "Yes and yes: with surface the whole answer (total, surfaces, slowest) is that surface; acknowledging only stops reminders, so an acknowledged critical alert keeps alerts.open at crit and counts in alerts.critical until it resolves.",
+          "basis": "M215; M214; scenario system-alert steps 6 and 10",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 15,
+          "question": "With Prometheus down, can alert rules still be evaluated (M213)?",
+          "proposedAnswer": "Partly: rules on Prometheus metrics (api.p95, api.rate5xx) cannot; rules on Postgres, BullMQ, Redis or supplier-log metrics can. alerts.open.value = the real count of open alert_events; when none is open but an active rule could not be evaluated in the last 2 min, send {value: null, state: unknown}.",
+          "basis": "M213; mocks/buildHealth.ts:78-82; mocks/seedRules.ts metrics",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 16,
+          "question": "Does the maintenance message have a maximum length? Does expectedEndAt only inform customers, or end maintenance by itself? With status unknown, what is since?",
+          "proposedAnswer": "message 1-300 chars (trimmed); expectedEndAt is informational only, never auto-ends (the dialog says 'until you turn it off'); since for 'unknown' = monitoring.lastScrapeAt (last good scrape).",
+          "basis": "mocks/routes/health.ts:60-71; docs/system-health-design.md Controls table; mocks/buildHealth.ts:100-106",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 17,
+          "question": "Are version and commit sent as shown (v1.42.0, short 9c4e1fa)? Are MAINTENANCE 503 answers counted in the 5xx rate?",
+          "proposedAnswer": "version = the release string as built (APP_VERSION, e.g. v1.42.0), commit = 7-char short SHA (GIT_SHA), printed as sent. Exclude 503 MAINTENANCE from rate5xx (intended answers); they still show as their own group in /errors.",
+          "basis": "types/health.ts BuildInfo; mocks/specsApi.ts:302-309",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 18,
+          "question": "Could GET /admin/system/checks offer a lean form (status only) for the uptime bars, and is the number of components capped?",
+          "proposedAnswer": "Keep one form, no cap (about 6 core + suppliers + gateways, roughly 20 components); cache each (range, component) answer ~30 s in the cache Redis and aggregate with date_bin on index (component, checked_at). A ?fields=status option can be added later without breaking the shape.",
+          "basis": "manifest GET /admin/system/checks (service_checks); hooks/useHealth.ts:21-29",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 19,
+          "question": "Is HealthComponent.key stable (supplier:<id>, gateway:<id>)?",
+          "proposedAnswer": "Yes: fixed core keys (api, postgres, redis, redis_queue, storage, workers, mail) plus supplier:<suppliers.id> and gateway:<payment_gateways.id>; ids never change; incident components keep a key after its supplier or gateway is deleted.",
+          "basis": "table service_checks (component, supplier_id, gateway_id); tabs/alerts/incidents.ts:82-83",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 20,
+          "question": "Can SurfaceMetrics carry its own state, so a surface's badge is the server's?",
+          "proposedAnswer": "Yes, as an extra field: state = worst of the surface figure states (crit > warn > unknown > ok); contract tests allow extra fields and the console can drop its own roll-up (M225).",
+          "basis": "M225; docs/contract/TESTS.md (extra backend fields allowed)",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 21,
+          "question": "Which window do count429 and the other current figures of /metrics cover? Does slowest follow range? Is an error group's firstSeenAt the first time ever or inside the range?",
+          "proposedAnswer": "'Now' figures cover the last 5 minutes (rate windows [5m]; count429 = 429 answers in 5 min); slowest follows range (p95 over the range); firstSeenAt/lastSeenAt are inside the range, like count.",
+          "basis": "types/traffic.ts:22-25; manifest GET /admin/system/metrics ('over a time range')",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 22,
+          "question": "Which words does stuck.byStatus[].status use, and is needs_attention an order status or a queue?",
+          "proposedAnswer": "Exactly pending, processing, needs_attention. needs_attention is a queue (dispatch_state), not an order status; its orders are excluded from the pending/processing rows so no order counts twice.",
+          "basis": "orders scenario timeout step 8; scenario system-alert step 9; M230; tabs/orders/links.ts:11-17",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 23,
+          "question": "After a supplier is paused, do its checks and balance sync keep running, or does its health become unknown?",
+          "proposedAnswer": "They keep running: paused only stops routing new orders, so health stays meaningful. A disabled supplier has its checks off -> health 'unknown', lastCheckedAt null, detail says checks are off.",
+          "basis": "scenario system-alert steps 1 and 8; mocks/facts.ts:104-128",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 24,
+          "question": "Do supplier latency, error and timeout rates come from Prometheus?",
+          "proposedAnswer": "No: from Postgres (supplier_api_logs over the last 15 min; latency = last service check), per the map tables, so they stay valid while monitoring is down; no calls in the window -> {value null, state unknown}.",
+          "basis": "manifest GET /admin/system/suppliers tables (suppliers, supplier_api_logs, service_checks); scenario system-alert step 2",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 25,
+          "question": "Is scheduleText always sent, and in which time zone does the cron run? When nothing waits, is oldestAge {0 or null, ok} and oldestUndeliveredAt null?",
+          "proposedAnswer": "scheduleText is always sent (server renders the cron in English; '' allowed); crons run in UTC. Nothing waiting -> oldestAge {value 0, unit s, state ok, warn, crit, direction} and oldestUndeliveredAt null.",
+          "basis": "mocks/buildQueues.ts:167-178; M236; D020 job schedulers",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 26,
+          "question": "Does POST .../retry with all:true retry only failed jobs, and what does retried count? Does the server mark a paused queue itself (state warn)?",
+          "proposedAnswer": "Only jobs in the failed set; retried = jobs moved back to waiting (0 when none). Yes: a paused queue's state is at least 'warn' (paused is also its own boolean).",
+          "basis": "mocks/routes/queues.ts:43-59; mocks/buildQueues.ts:82-87",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 27,
+          "question": "How many runs does GET .../jobs?job= return, with paging? Is a JobRun.result free of secrets and stable enough to print?",
+          "proposedAnswer": "The newest 50 runs, newest first, no paging. result holds counters and ids only (no secrets, no personal data); nested detail (integrity checks) sits under one key the console does not print.",
+          "basis": "mocks/buildQueues.ts:143; mocks/seedOps.ts:70-93; table job_runs (result)",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 28,
+          "question": "Will GET /admin/alerts take open=true (as incidents do) or several status values? Today 'Open' is two reads.",
+          "proposedAnswer": "Both: repeated status (status=firing&status=acknowledged = IN, the shared list dialect) and open=true (firing or acknowledged), with x-total-count over the union.",
+          "basis": "src/lib/api/query.ts appendParams (repeated keys); M239",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 29,
+          "question": "What does a mute do: no messages while alerts are still recorded, or no evaluation at all? Can the rule carry a muted flag?",
+          "proposedAnswer": "A muted rule creates no new alert_events and sends no messages until mutedUntil; alerts already open stay open and still auto-resolve; reminders stop. Add a computed muted boolean as an extra field.",
+          "basis": "scenario system-alert step 3 ('unless the rule is muted by muted_until'); table alert_rules; M242",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 30,
+          "question": "Which metrics may a rule watch, with which units?",
+          "proposedAnswer": "A fixed server registry, published in OpenAPI as an enum; start with the 11 keys the console offers: supplier.timeout_rate %, supplier.error_rate %, supplier.balance (no unit), api.p95 ms, api.rate5xx %, queue.oldest_age s, orders.past_sla count, ledger.mismatch_count count, db.connection_usage %, redis.memory_usage %, webhooks.success_rate %. Unknown key -> 422 field metric.",
+          "basis": "table alert_rules ('metric from a fixed list', server sets the unit); tabs/alerts/rules.ts:26-38; mocks/specs.ts:210-222",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 31,
+          "question": "Can one alert start more than one incident, or an incident start from a resolved alert? What happens to the alerts of a deleted rule, and do alerts keep their rule's name and limit after an edit?",
+          "proposedAnswer": "One incident per alert (a second -> 422 field alertEventId); a resolved alert may still start one (post-incident record). Deleting a rule soft-deletes it and resolves its open alerts; history keeps the rule. Snapshot name/comparator/threshold/window/unit on alert_events at fire time so later edits do not rewrite what fired.",
+          "basis": "mocks/routes/incidents.ts:53-58; table incidents (alert_event_id); types/alerts.ts AlertRuleRef",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 32,
+          "question": "While Postgres is down, can the lists of GET .../database be null (not []) and locks.waiting / waitingClients null rather than 0? Should these two counts be Measures?",
+          "proposedAnswer": "No: keep the console's non-null types (arrays, numbers): send [] and 0 with status 'down'; the console reads them as 'could not be read' (M247). Keep them plain numbers.",
+          "basis": "types/stores.ts; docs/contract/TESTS.md shape parity (nullability must match); M247",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 33,
+          "question": "When usage has no reading, are used and usedBytes zeros, last known values, or absent? Does Redis send maxBytes null or 0 without a limit?",
+          "proposedAnswer": "Send 0 with usage {value null, state unknown} (the console then omits the counts, M251). maxBytes null when maxmemory is 0; both Redis roles set maxmemory (D006).",
+          "basis": "M251; types/stores.ts CacheHealth; D006",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 34,
+          "question": "Over which window do a slow query's calls, meanMs and totalMs count, how many statements does slowQueries hold, and from which age is a transaction long?",
+          "proposedAnswer": "Since the last pg_stat_statements reset, done nightly by the data_retention job (about the last 24 h); top 10 by mean_exec_time with calls >= 20; a transaction is long when xact_start is older than 60 s (top 10 by duration, query truncated to 500 chars).",
+          "basis": "manifest GET /admin/system/database (pg_stat_statements); types/stores.ts SlowQuery/LongTransaction",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 35,
+          "question": "Could GET /admin/system/integrity carry an overall result (or a count of failed checks), and the start time of a run that is going now?",
+          "proposedAnswer": "Yes, as extra fields: result ('pass'|'fail'|'unknown' = worst check of lastRun) and runningSince (started_at of the running run); keep lastRun = the last finished run.",
+          "basis": "M253, M254; tabs/integrity/report.ts:45-86",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 36,
+          "question": "What is the ref format of an account finding, and can the ledger be filtered to one account? For entry and payment findings, is id the journal entry id and the payment id? How many findings per check?",
+          "proposedAnswer": "ref = '<ledger_accounts.kind>:<owner_id>' (client_wallet:4; bare kind for owner-less accounts); entry finding id = ledger_transactions.id (ref = journal number); payment finding id = payments.id (ref = gateway_txn_id); first 20 findings per check, count = full number. A one-account ledger filter (accountId) belongs to Finance and can be added there.",
+          "basis": "tables ledger_accounts (kind, owner_type, owner_id), ledger_transactions, payments; M256; mocks/seedIntegrity.ts:7-39",
+          "confidence": "medium",
+          "needsUser": false
+        }
+      ],
+      "mismatches": [
+        {
+          "id": "M196",
+          "summary": "No demo page: every body of the 30 health routes is an assumed contract designed in docs/system-health-design.md.",
+          "backendImpact": "Implement the frontend types (src/features/system-health/types/) as the wire format; corrections go back to that one place."
+        },
+        {
+          "id": "M197",
+          "summary": "Supplier pause is status 'paused' (the suppliers feature had active|disabled).",
+          "backendImpact": "suppliers.status and PATCH /admin/suppliers/:id accept 'paused'; routing skips paused suppliers; GET /admin/system/suppliers sends it."
+        },
+        {
+          "id": "M198",
+          "summary": "New permission prefixes system, alerts, incidents with role defaults.",
+          "backendImpact": "Add system:read/manage, alerts:read/create/update/delete, incidents:read/create/update to the catalog; Owner/Admin manage; Finance, Support, Risk reviewer, Read only view."
+        },
+        {
+          "id": "M199",
+          "summary": "Bull Board per-queue links <VITE_BULL_BOARD_URL>/queue/<name>, normally <api>/admin/queues (M8).",
+          "backendImpact": "Mount Bull Board at GET /admin/queues (queues:read) with per-queue pages /admin/queues/queue/<name> for the real BullMQ queue names."
+        },
+        {
+          "id": "M200",
+          "summary": "Error groups carry sentryUrl, shown only when VITE_SENTRY_URL is set.",
+          "backendImpact": "Send a full Sentry issue URL or null, never a relative or dead link."
+        },
+        {
+          "id": "M201",
+          "summary": "The maintenance banner reads GET /admin/system/health, so only system:read holders see it.",
+          "backendImpact": "Optional: add maintenance to GET /admin/auth/me so every staff member sees it (question 4)."
+        },
+        {
+          "id": "M202",
+          "summary": "GET /metrics is internal/token only and never called by the console.",
+          "backendImpact": "Protect it (internal network or METRICS_TOKEN); health routes read Prometheus, not this endpoint."
+        },
+        {
+          "id": "M203",
+          "summary": "Failed jobs are a simple-rest list.",
+          "backendImpact": "_start/_end, _sort=failedAt desc, x-total-count exposed."
+        },
+        {
+          "id": "M204",
+          "summary": "Pausing a queue takes a reason.",
+          "backendImpact": "Require reason (3+ chars) when pausing; 422 on reason; keep it in audit_logs."
+        },
+        {
+          "id": "M205",
+          "summary": "Closing: rootCause is the cause, the closing update is the action taken.",
+          "backendImpact": "No new column: write the update as the 'resolved' timeline line."
+        },
+        {
+          "id": "M210/M211",
+          "summary": "Open-alerts tile ignores warn 1; the uptime tile prints warn as the target.",
+          "backendImpact": "alerts.open keeps warn 1 and no crit; uptime warn = SLO target (99.9), crit = floor (99.5)."
+        },
+        {
+          "id": "M212",
+          "summary": "In a DB outage only orders-health, integrity and integrity run fail (503 DATABASE_UNAVAILABLE); health keeps answering.",
+          "backendImpact": "Snapshot health in Redis every minute; 503 only on reads that need live rows."
+        },
+        {
+          "id": "M213",
+          "summary": "With monitoring down the mock sends alerts.open {value null, state unknown}.",
+          "backendImpact": "Never send 0/ok when rules could not be evaluated and nothing is open (question 15)."
+        },
+        {
+          "id": "M214",
+          "summary": "An acknowledged critical alert still counts as critical.",
+          "backendImpact": "alerts.critical and alerts.open.state include acknowledged alerts until they resolve."
+        },
+        {
+          "id": "M215",
+          "summary": "?surface= scopes the whole metrics answer, total included.",
+          "backendImpact": "Filter total, surfaces and slowest by surface."
+        },
+        {
+          "id": "M216",
+          "summary": "The server should send unknown when monitoring data is missing.",
+          "backendImpact": "Never 'operational' while monitoring.status is 'unavailable'."
+        },
+        {
+          "id": "M217/M226",
+          "summary": "KPI tiles and API charts aggregate full-resolution series client-side (96 x 15 min for 24 h; 60/72/96/168 points per range).",
+          "backendImpact": "Send every bucket, oldest first, with null gaps; do not pre-aggregate."
+        },
+        {
+          "id": "M225",
+          "summary": "A surface's badge is the worst of its figure states (no state on SurfaceMetrics).",
+          "backendImpact": "Optional extra state on SurfaceMetrics (question 20)."
+        },
+        {
+          "id": "M227",
+          "summary": "The surfaces table reads without surface; charts, slowest and errors read with it.",
+          "backendImpact": "Expect two metrics reads + one errors read per 30 s per open API tab; cache per (range, surface)."
+        },
+        {
+          "id": "M230",
+          "summary": "byStatus words processing/pending/needs_attention open Orders tabs Processing/Queued/Review with pastSla=true.",
+          "backendImpact": "Use exactly these words; align the pastSla predicate of GET /admin/orders with orders-health (see its mapConflict)."
+        },
+        {
+          "id": "M232",
+          "summary": "A healthy supplier = active and every sent state ok; a low balance alone keeps it listed.",
+          "backendImpact": "Send a state for every supplier figure; balance.state is the server low-balance verdict."
+        },
+        {
+          "id": "M234",
+          "summary": "A queue folds only when its state is ok and it is not paused.",
+          "backendImpact": "The server decides state; mark paused queues at least warn (mock)."
+        },
+        {
+          "id": "M236",
+          "summary": "Nothing waiting reads 'None waiting'.",
+          "backendImpact": "Send oldestAge {value 0, state ok} and oldestUndeliveredAt null when nothing waits."
+        },
+        {
+          "id": "M239",
+          "summary": "'Open' alerts are two reads (firing, acknowledged).",
+          "backendImpact": "Support repeated status (IN) and open=true so it can become one read."
+        },
+        {
+          "id": "M241",
+          "summary": "Incidents default to open=true.",
+          "backendImpact": "Support open=true (status != resolved)."
+        },
+        {
+          "id": "M242",
+          "summary": "Muted = mutedUntil in the future, read against the browser clock.",
+          "backendImpact": "mutedUntil must be a future time or null; optional computed muted flag."
+        },
+        {
+          "id": "M243",
+          "summary": "The rule metric list is assumed (11 keys).",
+          "backendImpact": "Own the metric registry: validate metric (422) and set unit."
+        },
+        {
+          "id": "M244",
+          "summary": "Declare-incident prefill: supplier alert -> 'supplier:<subjectId>', queue alert -> 'workers'.",
+          "backendImpact": "Keep 'workers' and 'supplier:<id>' valid component keys."
+        },
+        {
+          "id": "M247",
+          "summary": "Empty lists or zero counts from a down database read as 'could not be read'.",
+          "backendImpact": "Send status 'down' with [] and 0 (types are non-null), not null."
+        },
+        {
+          "id": "M251/M252",
+          "summary": "usage.value null hides the counts; meters take their colour from usage.state.",
+          "backendImpact": "Send usage {value null, state unknown} when not measured; always a server state."
+        },
+        {
+          "id": "M253",
+          "summary": "No overall integrity result: the console rolls up the worst check.",
+          "backendImpact": "Check statuses must be exact; optional extra result field (question 35)."
+        },
+        {
+          "id": "M254",
+          "summary": "'Running, started' uses lastRun when running, else the POST answer.",
+          "backendImpact": "POST integrity/run returns the JobRun with startedAt; keep lastRun = last finished run."
+        },
+        {
+          "id": "M255",
+          "summary": "Integrity differences keep 4 decimals.",
+          "backendImpact": "Money strings with 4 decimals ('-37.5000')."
+        },
+        {
+          "id": "M256",
+          "summary": "The account finding link uses the part of ref before ':'.",
+          "backendImpact": "ref = '<ledger_accounts.kind>:<owner_id>'."
+        },
+        {
+          "id": "M257",
+          "summary": "An unchecked check prints 'No data'.",
+          "backendImpact": "status unknown when a check did not run (count/difference then ignored)."
+        },
+        {
+          "id": "M65",
+          "summary": "Suppliers page health and lowBalance are server fields.",
+          "backendImpact": "Use the same service_checks and low-balance rule for GET /admin/suppliers and GET /admin/system/suppliers so the pages agree."
+        }
+      ],
+      "fixtures": [
+        {
+          "routes": [
+            "GET /admin/system/health",
+            "GET /admin/system/checks",
+            "PUT /admin/system/maintenance"
+          ],
+          "file": "src/features/system-health/mocks/routes/health.ts",
+          "note": "Answers from mocks/buildHealth.ts over mocks/facts.ts (core/gateway specs in mocks/specs.ts + supplier rows of src/features/suppliers/mocks) and mocks/history.ts (uptime, buckets); scenarios ?mock=healthy|degraded|outage|monitoring-down|partial-failure|maintenance|readonly (mocks/profile.ts)."
+        },
+        {
+          "routes": [
+            "GET /admin/system/metrics",
+            "GET /admin/system/errors"
+          ],
+          "file": "src/features/system-health/mocks/routes/traffic.ts",
+          "note": "mocks/buildMetrics.ts and mocks/buildErrors.ts over mocks/specsApi.ts (surfaces, slow endpoints, error groups incl. MAINTENANCE); 503 MONITORING_UNAVAILABLE in monitoring-down."
+        },
+        {
+          "routes": [
+            "GET /admin/system/orders-health",
+            "GET /admin/system/suppliers"
+          ],
+          "file": "src/features/system-health/mocks/routes/pipeline.ts",
+          "note": "mocks/buildPipeline.ts (calm and slow-supplier figures, Money strings, low-balance verdict); supplier rows from the suppliers mock so a pause shows here."
+        },
+        {
+          "routes": [
+            "GET /admin/system/queues",
+            "GET /admin/system/queues/:name/failed",
+            "POST /admin/system/queues/:name/retry",
+            "POST /admin/system/queues/:name/pause",
+            "GET /admin/system/jobs",
+            "POST /admin/system/jobs/:name/run",
+            "GET /admin/system/webhooks"
+          ],
+          "file": "src/features/system-health/mocks/routes/queues.ts",
+          "note": "mocks/buildQueues.ts (queue state rule, job verdicts, webhooks), mocks/seedOps.ts (failed jobs, runs, result shapes), mocks/specs.ts (QUEUES, JOBS, METRIC_UNITS), mocks/runs.ts (manual run lifecycle, 409)."
+        },
+        {
+          "routes": [
+            "GET /admin/system/database",
+            "GET /admin/system/cache"
+          ],
+          "file": "src/features/system-health/mocks/routes/stores.ts",
+          "note": "mocks/buildStores.ts (calm/slow/outage figures, slow queries with string queryids, no-replica case)."
+        },
+        {
+          "routes": [
+            "GET /admin/system/integrity",
+            "POST /admin/system/integrity/run"
+          ],
+          "file": "src/features/system-health/mocks/routes/integrity.ts",
+          "note": "mocks/buildIntegrity.ts + mocks/seedIntegrity.ts (four checks; mismatch on client_wallet:4, -37.5000; lastCleanRun) + mocks/runs.ts (202, settle, alert close)."
+        },
+        {
+          "routes": [
+            "GET /admin/alerts",
+            "GET /admin/alerts/:id",
+            "POST /admin/alerts/:id/ack"
+          ],
+          "file": "src/features/system-health/mocks/routes/alerts.ts",
+          "note": "Rows from mocks/seedAlerts.ts (subject types system/supplier/queue/ledger_account, acked and resolved history)."
+        },
+        {
+          "routes": [
+            "GET /admin/alert-rules",
+            "GET /admin/alert-rules/:id",
+            "POST /admin/alert-rules",
+            "PATCH /admin/alert-rules/:id",
+            "DELETE /admin/alert-rules/:id"
+          ],
+          "file": "src/features/system-health/mocks/routes/rules.ts",
+          "note": "Ten seeded rules in mocks/seedRules.ts; field validation in routes/rules.ts:24-86."
+        },
+        {
+          "routes": [
+            "GET /admin/incidents",
+            "GET /admin/incidents/:id",
+            "POST /admin/incidents",
+            "PATCH /admin/incidents/:id"
+          ],
+          "file": "src/features/system-health/mocks/routes/incidents.ts",
+          "note": "Rows from mocks/seedIncidents.ts; timeline writing and close rules in routes/incidents.ts."
+        },
+        {
+          "routes": [
+            "GET /admin/system/health",
+            "GET /admin/system/metrics",
+            "GET /admin/system/orders-health",
+            "GET /admin/system/queues",
+            "GET /admin/system/webhooks",
+            "GET /admin/system/database",
+            "GET /admin/system/cache"
+          ],
+          "file": "src/features/system-health/mocks/thresholds.ts",
+          "note": "Default warn/crit/direction per figure and the Measure builder (state on the rounded value)."
+        }
+      ]
+    }
+  ],
+  "crossCutting": [
+    "System health figures are JSON numbers, not decision-011 decimal strings: Measure.value, warn/crit (src/features/system-health/types/common.ts:27-34), AlertRule.threshold and AlertEvent.value (src/lib/api/schema.gen.ts:810,832); convert pg numeric to number in these DTOs. Money stays a 4-decimal string (heldAmount, heldByRisk.amount, balance.amount, integrity difference; src/features/system-health/mocks/buildPipeline.ts:13).",
+    "Fields picked from generated rows are non-null: AlertEvent.subjectId (src/lib/api/schema.gen.ts:834) and JobRun.durationMs/processed (schema.gen.ts:879-880); send 0 for system/queue alerts and running runs (src/features/system-health/mocks/runs.ts:34-35), never null.",
+    "Two string ids in an otherwise numeric API: FailedJob.id (BullMQ job id; src/features/system-health/types/queues.ts:33) and SlowQuery.id (bigint pg queryid; src/features/system-health/types/stores.ts:7).",
+    "503 MONITORING_UNAVAILABLE is recognised by status AND code (src/features/system-health/hooks/monitoring.ts:14-16); any other 5xx is a red error. 5xx GETs are retried once (src/lib/query/useApiQuery.ts:26-28): time-box Prometheus/Sentry (~2 s) and cache a down verdict briefly.",
+    "List dialect for alerts, incidents, rules and failed jobs: _start/_end/_sort/_order, plain filter keys, repeated key = IN, total in x-total-count exposed via Access-Control-Expose-Headers (src/features/system-health/mocks/http.ts:78-92; src/lib/api/client.ts:140-153 falls back to the page length without it); page size 25 (src/features/system-health/hooks/keys.ts:53).",
+    "422 errors[].field must be the body's camelCase field: dialogs place them by name with aliases (MaintenanceDialog expectedEndAt -> end, MuteRuleDialog mutedUntil -> until; src/components/ui/dialogSubmit.ts:23-56); a uniqueness clash (rule key) is a 422 on the field, not a 409.",
+    "403 FORBIDDEN detail names the permission ('You need the x:y permission.'; src/features/system-health/mocks/http.ts:44-46); any 403 renders the card's forbidden state (src/features/system-health/lib/errors.ts:6-8).",
+    "Polling load: health every 15 s from the page and the app-shell banner on every admin page (src/features/system-health/header/MaintenanceBanner.tsx:20), alerts and queues 15 s, the rest 30 s, runs 5 s (src/features/system-health/hooks/keys.ts:47); hidden tabs pause, focus refetches, 5 s staleTime (src/features/system-health/hooks/useHealthQuery.ts:26-45). Build health from a per-minute snapshot; cache checks/metrics/errors/database ~15-30 s per param set.",
+    "Range parameter: range=1h|6h|24h|7d, default 24h, anything else 422 on field range (src/features/system-health/mocks/http.ts:72-75); series are oldest first with ISO UTC at and null = gap (src/features/system-health/types/common.ts:37-40).",
+    "No write of this group sends Idempotency-Key (src/lib/api/client.ts:73 sets only X-CSRF-Token): double submits are absorbed by state guards (409 ALERT_ACKNOWLEDGED, JOB_ALREADY_RUNNING, INCIDENT_CLOSED) and conditional updates.",
+    "The console hardcodes no queue or job names; only Bull Board deep links use queue names (src/features/system-health/tabs/queues/QueueRowActions.tsx:54) and incident prefill uses component keys 'workers' and 'supplier:<id>' (src/features/system-health/tabs/alerts/incidents.ts:82-83).",
+    "Problem codes used here are all in the global catalog: VALIDATION_FAILED 422, NOT_FOUND 404, FORBIDDEN 403, ALERT_ACKNOWLEDGED / ALERT_RESOLVED / INCIDENT_CLOSED / JOB_ALREADY_RUNNING 409, MONITORING_UNAVAILABLE / DATABASE_UNAVAILABLE 503, INTERNAL_ERROR 500 (src/features/system-health/mocks/profile.ts:11-42; mocks/routes/*.ts)."
+  ]
+}

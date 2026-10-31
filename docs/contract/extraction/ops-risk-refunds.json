@@ -1,0 +1,884 @@
+{
+  "features": [
+    {
+      "feature": "settings",
+      "summary": "The Settings page (7 tabs, settings/lib/tabs.ts:16-24) reads and edits payment gateways, tax rates, currencies with the FX refresh, the 8 storefront policies (flat keys of the settings table, saved through PATCH /admin/storefront/settings), notification templates with a server-rendered preview, the sent-notification log, the merchant webhook log with Retry, and a System tab that shows every other settings key (typed field for imeiRetentionDays, adminAllowlistOnly as a link, unknown keys as read-only JSON). Short tables load whole (_start=0&_end=200), logs page by 25 newest first. Every body is an assumed contract (M10).",
+      "endpoints": [
+        {
+          "key": "GET /admin/settings",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "One flat JSON object {key: value} of every non-secret settings row (settings.key -> value jsonb); no wrapper, no paging. Values keep their JSON type or the console drops them silently (settings/lib/policies.ts:81-89, lib/system.ts:62-65): guestCheckout, require3ds, withdrawalWaiver, autoRefundFailed, imeiPrecheck are booleans; refundHoursBeforeDispatch, abandonedMinutes, imeiRetentionDays are JSON integers; adminAllowlistOnly is a boolean (read by the access page, M14). A key never set is absent. Any other key (maintenance, risk rules...) is shown read-only as JSON on the System tab (M174), so secret-bearing keys (tokens, passwords) must be omitted or masked. Also read by customers/components/PrivacyPanel.tsx:22 (imeiRetentionDays) and access/hooks/useRestriction.ts:17 (adminAllowlistOnly).",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks settings:read", "ui": "Policies and System tabs hidden; access page restriction switch disabled with the reason" }
+          ],
+          "assumed": true,
+          "mapConflict": "Map row gives no body; the table is key/value. Proposal: flat object of typed values (M174, M14)."
+        },
+        {
+          "key": "PATCH /admin/settings",
+          "successStatus": 200,
+          "query": "",
+          "request": "Partial flat object {key: value}, merged (listed keys upserted, others untouched). The console sends one key per call; today only {imeiRetentionDays: integer 0-3650} from the System tab (SystemTab.tsx:26, lib/system.ts:20-30). Refuse with 422 (errors[].field = the key) keys owned by stricter routes: adminAllowlistOnly (PUT /admin/access/restriction, lock-out guard), the maintenance key (PUT /admin/system/maintenance), the risk rules key (PUT /admin/risk/rules) and the storefront policy keys other than imeiRetentionDays (PATCH /admin/storefront/settings). Validate imeiRetentionDays like the policies route. Writes audit_logs with before/after.",
+          "response": "The whole settings object after the change (same shape as GET). The console invalidates and re-reads GET /admin/settings.",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "value out of range, wrong JSON type, or a key owned by another route", "ui": "message under the System tab field (matched by key or any prefix.key), typed text kept" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks settings:update", "ui": "field disabled with the permission named; server message otherwise" }
+          ],
+          "assumed": true,
+          "mapConflict": "Map lets settings:update write any key, but adminAllowlistOnly, maintenance and risk rules have their own guarded routes (access:update with self-lock-out check, system:manage, risk:*). Proposal: PATCH refuses those keys so settings:update cannot bypass them. The frontend mock test sets adminAllowlistOnly through it (settings/api/settings.test.ts:17-22); the UI never does."
+        },
+        {
+          "key": "PATCH /admin/storefront/settings",
+          "successStatus": 200,
+          "query": "",
+          "request": "Flat partial object of the 8 policy keys only; the Policies tab sends one key per call (PoliciesTab.tsx:25-26). Switches guestCheckout, require3ds, withdrawalWaiver, autoRefundFailed, imeiPrecheck must be JSON booleans; refundHoursBeforeDispatch integer 0-72, abandonedMinutes integer 5-1440, imeiRetentionDays integer 0-3650 (mock storefrontRoutes.ts:8-14). Any other key is a 422 on that key ('This is not a storefront setting.'). A number saves on blur/Enter, a switch at once (M169). Writes audit_logs; a require3ds change also flips the risk rule require3ds.",
+          "response": "The 8 policy keys with their values after the change (not the whole settings, storefrontRoutes.ts:35-36). GET /admin/settings must show the same values right after.",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "value not boolean / not an integer in range / unknown key", "ui": "server message under that policy row (policyMessage matches key or prefix.key, lib/policies.ts:101-109); typed number stays" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks settings:storefront", "ui": "switch or box disabled with the permission named" }
+          ],
+          "assumed": true,
+          "mapConflict": "Map says the route also writes payment_gateways and notification_templates. The console uses it for the 8 policies only; the gateway switch uses PATCH /admin/payment-gateways/:id (payments:gateways) and the email switch the template CRUD (notifications:update) (M168). Proposal: accept policy keys only."
+        },
+        {
+          "key": "GET /admin/currencies",
+          "successStatus": 200,
+          "query": "_start=0&_end=200&_sort=code&_order=asc, no filters (hooks/useCurrencies.ts:12-21). Mock q searches code, name.",
+          "request": "",
+          "response": "JSON array + x-total-count. Row = currencies columns: rateToBase = units of the currency per 1 USD (GBP 0.7900, M167); markupPercent percent decimal string (0-10); rateUpdatedAt = when the rate itself last changed (null = never), distinct from updatedAt. Send isStale = non-base currency whose rateUpdatedAt is null or older than 24 h, so the panel and the dashboard fx_stale item agree (lib/currencies.ts:18-27, M166). USD is the base row (rate 1.0000, markup 0.0000, never stale).",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks settings:update (the map's permission even for reading)", "ui": "Currencies panel says the permission is needed (M165)" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/currencies/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": ":id numeric currency id.",
+          "response": "Same row as the list, including isStale.",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "no currency with that id", "ui": "Refine read error" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks settings:update", "ui": "panel no-access text" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/currencies",
+          "successStatus": 201,
+          "query": "",
+          "request": "Body {code, name, rateToBase, markupPercent, charmRounding, isStorefront, decimals} (CurrencyDialog.tsx:44-52). Decimals arrive as typed text with any number of places ('0.79', '1.5'). code upper-cased, ^[A-Z]{3}$, unique; name non-blank; rateToBase > 0; markupPercent 0-10; decimals integer 0-4. Stamp rateUpdatedAt = now. Audit.",
+          "response": "The created row with normalised decimal strings and isStale.",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "code format or already in the list, blank name, rate <= 0, markup outside 0-10, decimals outside 0-4", "ui": "messages under the dialog fields (code, name, rateToBase, markupPercent, decimals)" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks settings:update", "ui": "dialog error slot" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "PATCH /admin/currencies/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "Partial. The Offered switch sends {isStorefront}; the edit dialog sends only the changed rateToBase, markupPercent, charmRounding (CurrencyDialog.tsx:55-60); code, name, decimals are not sent on edit. A new rateToBase stamps rateUpdatedAt = now (mock currencyRoutes.ts:31-36). Refuse a rate or markup change on the base currency USD. Audit.",
+          "response": "The updated row including isStale.",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "no currency with that id", "ui": "dialog error slot" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "rate <= 0, markup outside 0-10, change to the base currency", "ui": "under the dialog field; the switch shows the default error toast" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks settings:update", "ui": "default error toast" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/currencies/refresh-fx",
+          "successStatus": 200,
+          "query": "",
+          "request": "No body and no Content-Type (api/currencies.ts:56-58). Refreshes every active non-base currency (at least every isStorefront one) from the FX provider in one call; there is no per-currency refresh (M164).",
+          "response": "{refreshed: [{code, rateToBase, rateUpdatedAt}], failed: [{code, message}], source} (send all three; the console tolerates missing parts). Refreshed rows get rateUpdatedAt = now and isStale false; writes audit_logs (map tables currencies, audit_logs). The dialog lists exactly what is returned; the toast counts refreshed and failed.",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks currencies:update", "ui": "button disabled with the permission in its title" },
+            { "status": 502, "code": "FX_PROVIDER_UNAVAILABLE", "when": "proposed: no rate could be fetched at all (partial failure is a 200 with failed[])", "ui": "default error toast with the server detail" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/payment-gateways",
+          "successStatus": 200,
+          "query": "_start=0&_end=200&_sort=name&_order=asc, no filters (hooks/useGateways.ts:13-23). Mock q searches name, code, driver.",
+          "request": "",
+          "response": "JSON array + x-total-count. Row = payment_gateways columns without config_enc and webhook_secret_enc: audience b2c|b2b|both; feePercent percent decimal string; feeFixed, minAmount, maxAmount 4-dp money (0 = no limit on that side); allowedGroupIds [] = all merchant groups; holdHours integer; instructions text. Extra: secretHint = '••••' + last 4 characters of the stored secret, null when none (never the secret); volume30d = sum of captured payments through the gateway in the last 30 days (USD money, null allowed).",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks payments:gateways", "ui": "Payment methods tab hidden or its error state" }
+          ],
+          "assumed": true,
+          "mapConflict": "volume30d needs a payments aggregate; the map row lists payment_gateways only. Proposal: allow the read join (M162)."
+        },
+        {
+          "key": "GET /admin/payment-gateways/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": ":id numeric gateway id.",
+          "response": "Same row as the list (secretHint, volume30d; never the secret).",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "no gateway with that id", "ui": "read error" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks payments:gateways", "ui": "no-access state" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/payment-gateways",
+          "successStatus": 201,
+          "query": "",
+          "request": "Full body (GatewayDialog.tsx:34-53): decimals as typed text ('2.9', '0.30'); secret optional and write-only (store encrypted in config_enc, never echo). Validation (mock gatewayRoutes.ts:30-71): name, driver, code non-blank; code unique; audience b2c|b2b|both; feePercent 0-100; money fields >= 0; when maxAmount > 0 it must be >= minAmount (error on maxAmount); holdHours integer 0-720; allowedGroupIds positive ids of existing client_groups. Audit.",
+          "response": "The created gateway: secretHint set when a secret was given, volume30d null or 0.0000, no secret field.",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "blank name/code/driver, code taken ('Another payment method already uses this code.'), bad audience, fee outside 0-100, bad amount, max below min, holdHours outside 0-720, bad group ids", "ui": "messages under the dialog fields" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks payments:gateways", "ui": "dialog error slot" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "PATCH /admin/payment-gateways/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "Only the changed fields (GatewayDialog.tsx:56-77); the card switch sends {isActive}. code is never sent: it is immutable because it is part of /webhooks/payments/:gateway (M162); refuse a code change with 422. A non-empty secret replaces the stored one; no secret keeps it. Validate the merged row like create. Turning off the last storefront gateway is allowed (the console asks first). Audit.",
+          "response": "The updated gateway (same shape as a list row).",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "no gateway with that id", "ui": "dialog error slot" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "invalid field or code change", "ui": "under the dialog field; the switch shows the default error toast" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks payments:gateways", "ui": "default error toast" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "DELETE /admin/payment-gateways/:id",
+          "successStatus": 204,
+          "query": "",
+          "request": "No body.",
+          "response": "204, empty body.",
+          "errors": [
+            { "status": 409, "code": "GATEWAY_IN_USE", "when": "payments reference the gateway", "ui": "delete dialog shows the detail ('Turn it off instead of deleting it.')" },
+            { "status": 404, "code": "NOT_FOUND", "when": "no gateway with that id", "ui": "dialog error slot" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks payments:gateways", "ui": "dialog error slot" }
+          ],
+          "assumed": true,
+          "mapConflict": "Mock refuses only when volume30d > 0 (gatewayRoutes.ts:150-156); payments.gateway_id is a foreign key, so refuse whenever any payment references the gateway (proposal)."
+        },
+        {
+          "key": "GET /admin/tax-rates",
+          "successStatus": 200,
+          "query": "_start=0&_end=200&_sort=country&_order=asc, no filters (hooks/useTaxRates.ts:12-21); the console re-sorts by country name, then validFrom newest first. Mock q searches country, label.",
+          "request": "",
+          "response": "JSON array + x-total-count. Several rows per country (history). ratePercent percent decimal string (20.0000); taxType vat|gst|sales_tax|none (other values shown raw); appliesTo text (default digital_services); region and label text; ossScheme text ('' shows 'Not collected'); validFrom/validTo = calendar dates as midnight-UTC ISO instants (validTo null = open-ended).",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks tax:read", "ui": "Tax panel no-access text (tab opens with tax:read or settings:update)" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/tax-rates/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": ":id numeric tax rate id.",
+          "response": "Same row as the list.",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "no tax rate with that id", "ui": "read error" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks tax:read", "ui": "no-access state" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/tax-rates",
+          "successStatus": 201,
+          "query": "",
+          "request": "Body {country, region, ratePercent, taxType, appliesTo, validFrom, validTo, label, ossScheme} (TaxRateDialog.tsx:35-47): country upper-cased ^[A-Z]{2}$; ratePercent typed text 0-100; validFrom required as 'YYYY-MM-DDT00:00:00.000Z' (lib/tax.ts:82-85); validTo the same or null and not before validFrom. Proposed: refuse a window that overlaps another row of the same country and region (422 on validFrom). Audit.",
+          "response": "The created row.",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "bad country, rate outside 0-100, missing taxType or validFrom, validTo before validFrom, overlapping window", "ui": "messages under the dialog fields" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks tax:create", "ui": "Add button disabled; dialog error slot" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "PATCH /admin/tax-rates/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "Only the changed fields among region, taxType, appliesTo, label, ossScheme, ratePercent, validFrom, validTo (TaxRateDialog.tsx:50-60); validTo: null clears the end date; country is never sent (immutable). There is no delete: a rate that stops applying gets a validTo (M163). Same date and overlap checks as create. Audit.",
+          "response": "The updated row.",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "no tax rate with that id", "ui": "dialog error slot" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "invalid field, dates or overlap", "ui": "under the dialog field" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks tax:update", "ui": "dialog error slot" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/notification-templates",
+          "successStatus": 200,
+          "query": "_start=0&_end=200&_sort=event&_order=asc plus audience=customer|merchant|staff (absent when the console asks for all audiences) and channel=email|telegram (hooks/useTemplates.ts:18-31, EmailsTab.tsx:24-28). An isActive filter is documented but not sent.",
+          "request": "",
+          "response": "JSON array + x-total-count. Row = notification_templates columns; event is the key text (order.completed); channel email|telegram; audience customer|merchant|staff. Optional sentLast30Days = notifications sent in the last 30 days for the same event, channel and audience (null or absent hides the column, M170).",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks notifications:read", "ui": "Customer emails tab hidden" }
+          ],
+          "assumed": true,
+          "mapConflict": "sentLast30Days needs a count over notifications (not in the row's table). Proposal: allow the read aggregate."
+        },
+        {
+          "key": "GET /admin/notification-templates/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": ":id numeric template id.",
+          "response": "Same row as the list.",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "no template with that id", "ui": "read error" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks notifications:read", "ui": "no-access state" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/notification-templates",
+          "successStatus": 201,
+          "query": "",
+          "request": "Body {event, channel, audience, locale, subject, body, isActive}. event = dot-separated lowercase key such as order.completed; locale 'en' or 'en-GB' style; an email needs a subject; Telegram templates send subject ''; body non-blank (mock templateRoutes.ts:34-63). Placeholders use double braces {{customerName}}. (event, channel, audience, locale) is unique: a duplicate is a 422 on event (templateRoutes.ts:116-125). Audit.",
+          "response": "The created template.",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "bad event key or duplicate ('A template for this event, channel and language already exists.'), bad channel/audience/locale, missing subject for email, empty body", "ui": "messages under the dialog fields" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks notifications:create", "ui": "dialog error slot" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "PATCH /admin/notification-templates/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "Only the changed subject, body, isActive (TemplateDialog.tsx:62-65); the Send switch sends {isActive}. event, channel, audience and locale are fixed after create (the dialog locks them, TemplateDialog.tsx:47): refuse a change with 422. Turning off the customer emails order.received, order.completed, order.failed is allowed (the console confirms first, lib/templates.ts:52-61). Audit.",
+          "response": "The updated template.",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "no template with that id", "ui": "dialog error slot" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "empty body, email without subject, change of a fixed field", "ui": "under the dialog field; the switch shows the default error toast" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks notifications:update", "ui": "default error toast" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "DELETE /admin/notification-templates/:id",
+          "successStatus": 204,
+          "query": "",
+          "request": "No body.",
+          "response": "204, empty body. Audit.",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "no template with that id", "ui": "delete dialog error slot" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks notifications:delete", "ui": "delete dialog error slot" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/notification-templates/:id/preview",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body {} = preview the saved text (the only call the console makes today, TemplatePreviewDialog.tsx:17), or {subject?, body?} to preview unsaved text. Never sends a message.",
+          "response": "{subject, body, format: 'text'|'html', from, note}: placeholders filled with sample data (customerName, orderId, amount, service, device); an unknown placeholder is left as typed so a typo shows (mock templateRoutes.ts:14-25, 67-82). Always send format: without it the console guesses from the markup; HTML is shown only in a sandboxed iframe (M171). Telegram previews have subject ''.",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "no template with that id", "ui": "preview dialog error state" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks notifications:read", "ui": "preview dialog error state" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/notifications",
+          "successStatus": 200,
+          "query": "Pages of 25 (_start/_end), _sort=createdAt&_order=desc, filters status=queued|sent|failed and channel=email|telegram (hooks/useLogs.ts:21-31, NotificationLogTab.tsx:52). An event filter is documented but not sent.",
+          "request": "",
+          "response": "JSON array + x-total-count. Row = notifications columns plus recipient: the address or chat already masked by the server (d***l@example.com, @acme_***), derived from recipient_type/recipient_id; event is the key text; status queued|sent|failed; sentAt null until sent. List rows may omit payload and error.",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks notifications:read", "ui": "Notification log tab hidden" }
+          ],
+          "assumed": true,
+          "mapConflict": "notifications stores recipient_type/recipient_id only and the entity types call event an id (M172). Proposal: event = key text; masked recipient built from customers/clients/staff_users joins."
+        },
+        {
+          "key": "GET /admin/notifications/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": ":id numeric notification id.",
+          "response": "The row plus payload (jsonb as stored) and error (failure reason; null unless status failed).",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "no notification with that id", "ui": "drawer error state" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks notifications:read", "ui": "drawer error state" }
+          ],
+          "assumed": true,
+          "mapConflict": "notifications has no error column. Proposal: add error text (or keep it in payload and expose it as error)."
+        },
+        {
+          "key": "GET /admin/webhook-deliveries",
+          "successStatus": 200,
+          "query": "Pages of 25 (_start/_end), _sort=createdAt&_order=desc, filter status=delivered|pending|failed, q = case-insensitive contains over client.name, event and endpoint.url (hooks/useLogs.ts:34-44, WebhooksTab.tsx:77-79, mock logRoutes.ts:44-51). event and clientId filters are documented but not sent.",
+          "request": "",
+          "response": "JSON array + x-total-count. Row = webhook_deliveries columns plus joins endpoint {id, url} and client {id, name} (each null if removed); responseCode 0 = no answer; attempt integer; nextRetryAt null when finished. event values are the map's outgoing event names (order.status_changed, wallet.low_balance, invoice.paid); the mock's order.completed values are illustrative.",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks webhooks:read", "ui": "Webhook deliveries tab hidden" }
+          ],
+          "assumed": true,
+          "mapConflict": "Map row lists webhook_deliveries only; the joins need webhook_endpoints and clients (M173). Proposal: allow the read joins."
+        },
+        {
+          "key": "GET /admin/webhook-deliveries/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": ":id numeric delivery id.",
+          "response": "The row plus payload (the signed request body that was sent), responseBody (the merchant's answer body, truncated, null when none) and error (network error such as a timeout, null otherwise).",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "no delivery with that id", "ui": "drawer error state" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks webhooks:read", "ui": "drawer error state" }
+          ],
+          "assumed": true,
+          "mapConflict": "webhook_deliveries has no response_body or error columns. Proposal: add both (truncate the body to a few KB)."
+        },
+        {
+          "key": "POST /admin/webhook-deliveries/:id/retry",
+          "successStatus": 200,
+          "query": "",
+          "request": "No body and no Content-Type (api/webhooks.ts:43-45).",
+          "response": "The delivery after a new attempt is queued now: status pending, attempt + 1, nextRetryAt = now (mock logRoutes.ts:34-40). The worker sends it signed with the endpoint secret and updates status and responseCode; the drawer re-reads it.",
+          "errors": [
+            { "status": 409, "code": "DELIVERY_SUCCEEDED", "when": "the delivery already has status delivered", "ui": "drawer shows the refusal (no toast)" },
+            { "status": 429, "code": "RATE_LIMITED", "when": "proposed: repeated manual retries of one delivery within a minute (Retry-After)", "ui": "drawer shows the message" },
+            { "status": 404, "code": "NOT_FOUND", "when": "no delivery with that id", "ui": "drawer shows the refusal" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks webhooks:update", "ui": "Retry disabled with the permission named" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        }
+      ],
+      "businessRules": [
+        "GET /admin/settings is the read source for policies and for keys owned by other routes: values keep JSON types (booleans, integers), secrets are never returned (System tab shows unknown keys as JSON, M174; lib/system.ts:52-59).",
+        "Keys with their own guarded route cannot be written through PATCH /admin/settings: adminAllowlistOnly (PUT /admin/access/restriction refuses enabling when the caller's IP is outside the allowlist, scenario ip-rules step 2), maintenance (PUT /admin/system/maintenance, scenario system-integrity steps 4-8), risk rules (PUT /admin/risk/rules) and storefront policies except imeiRetentionDays (map rows; M14).",
+        "Storefront policies and ranges (mock storefrontRoutes.ts:8-14): switches guestCheckout, require3ds, withdrawalWaiver, autoRefundFailed, imeiPrecheck; refundHoursBeforeDispatch 0-72 h, abandonedMinutes 5-1440, imeiRetentionDays 0-3650 days. imeiRetentionDays is writable from both PATCH /admin/storefront/settings and PATCH /admin/settings with the same validation (lib/system.ts:20-30).",
+        "require3ds is one value: the storefront policy and the risk rule require3ds must always agree; changing either changes the other (demo 12-state-b2c.js:411-415 setPolicy flips rr6; M168; risk/lib/rules.ts:41-45 sameAsSettings).",
+        "Policy effects the server enforces (settings/lib/policies.ts:16-62): guestCheckout off = account required at checkout; require3ds = card sessions demand 3D Secure; withdrawalWaiver = checkout records the waiver consent (consent_records); autoRefundFailed = a supplier-rejected storefront order is refunded by the system (refund requestedBy type system); imeiPrecheck = blacklisted IMEI refused before payment (scenario b2c-paid step 1); refundHoursBeforeDispatch = customer self-cancel window before dispatch; abandonedMinutes = delay of the one recovery email; imeiRetentionDays = IMEIs erased or hashed from orders and imei_checks after that many days.",
+        "Gateways: code unique and immutable (used in POST /webhooks/payments/:gateway, M162); the secret is write-only, stored encrypted, shown only as secretHint; maxAmount 0 = no maximum else >= minAmount; holdHours 0-720; a gateway with payments cannot be deleted (409 GATEWAY_IN_USE, turn it off instead) (mock gatewayRoutes.ts:30-71, 145-160).",
+        "Currencies: rateToBase = units per 1 USD (M167), > 0; markupPercent 0-10; decimals 0-4; code ^[A-Z]{3}$ unique; USD is the base (rate 1, no markup, no refresh); a manual rate change stamps rateUpdatedAt; isStale = non-base and rateUpdatedAt null or older than 24 h, the same rule as the dashboard fx_stale item (settings/lib/currencies.ts:8-27; dashboard/mocks/attentionStorefront.ts:83-94). Storefront prices use the session's locked fx (scenario b2c-paid step 3).",
+        "refresh-fx refreshes all active non-base currencies in one provider call, stamps rateUpdatedAt, reports refreshed/failed/source and writes audit_logs (map tables currencies, audit_logs; M164).",
+        "Tax rates: country immutable after create; ratePercent 0-100; validFrom required, validTo null or >= validFrom; no delete (map ops LSCU, M163); the server picks the rate in force for the customer's country at checkout (scenario b2c-paid step 3), so overlapping windows for one country and region must be refused.",
+        "Templates: unique per (event, channel, audience, locale) -> 422 on event; email needs a subject; event/channel/audience/locale fixed after create; an inactive template is not sent; preview never sends and leaves unknown {{placeholders}} visible (mock templateRoutes.ts:14-63, 116-125).",
+        "Notification log and webhook log are read-only; recipients are masked server-side; a webhook retry is refused for delivered (409 DELIVERY_SUCCEEDED) and otherwise queues a new signed attempt immediately (mock logRoutes.ts:22-42; map EVENT rows outbound-hmac).",
+        "Every write in this feature (settings, policies, gateways, currencies, refresh, tax, templates, retry) writes audit_logs with before/after (map PATCH /admin/settings and refresh-fx tables; demo logAudit in 12-state-b2c.js:405-425)."
+      ],
+      "questions": [
+        { "n": 1, "question": "GET /admin/settings: are the policy keys named guestCheckout, require3ds, withdrawalWaiver, autoRefundFailed, imeiPrecheck, refundHoursBeforeDispatch, abandonedMinutes, imeiRetentionDays? Does the answer carry the other keys as {key: value} for the System tab?", "proposedAnswer": "Yes, those exact camelCase keys with typed JSON values. The answer is one flat object of every non-secret key (adminAllowlistOnly, maintenance, risk rules key...), so the System tab can show unknown ones read-only; secret keys are omitted.", "basis": "map GET /admin/settings (settings key/value jsonb); demo S.settings.policies; M14, M174; settings/lib/policies.ts:16-62", "confidence": "high", "needsUser": false },
+        { "n": 2, "question": "PATCH /admin/storefront/settings: is the body a flat set of policy keys? The map says it also changes payment methods and email templates: should the console send those through it, or through their own CRUD routes?", "proposedAnswer": "Flat set of the 8 policy keys only (422 on any other key). Gateways change through PATCH /admin/payment-gateways/:id (payments:gateways) and templates through the template CRUD (notifications:*), each with its own permission and audit; the storefront route answers the 8 policies after the change.", "basis": "map PATCH /admin/storefront/settings (settings:storefront) vs CRUD rows payment-gateways and notification-templates; M168", "confidence": "high", "needsUser": false },
+        { "n": 3, "question": "Gateways: are audience values b2c | b2b | both? Is a zero limit 'no limit'? What does holdHours hold? Can the server send secretHint and volume30d? Is code fixed after creation?", "proposedAnswer": "audience b2c|b2b|both (payment_gateways.audience split by audience); 0 min or max = no limit; secretHint ('••••' + last 4) and volume30d (captured payments, 30 days) are sent; code is immutable because it names the webhook path /webhooks/payments/:gateway. holdHours meaning: see question 9.", "basis": "map payment_gateways columns; POST /webhooks/payments/:gateway; M162; mock gatewayRoutes.ts", "confidence": "high", "needsUser": false },
+        { "n": 4, "question": "Currencies: is rateToBase units of the currency per dollar? Will the list carry isStale? Is settings:update really the permission to read the list? What does refresh-fx answer, and can it refresh one currency?", "proposedAnswer": "rateToBase = units per 1 USD (GBP 0.79). Rows carry isStale (non-base, rate older than 24 h or never set). Reading needs settings:update as the map says. refresh-fx answers {refreshed[], failed[], source}; it refreshes every active non-base currency, no per-currency refresh.", "basis": "map CRUD /admin/currencies (settings:update), POST /admin/currencies/refresh-fx (currencies:update); demo 12-state-b2c.js:440 staleCurrencies; M164-M167", "confidence": "high", "needsUser": false },
+        { "n": 5, "question": "Templates: what are the event keys (the console confirms before turning off order.received, order.completed, order.failed)? Does the preview take subject and body for unsaved text and say format? Are templates ever HTML?", "proposedAnswer": "Event keys are dot-separated: order.received, order.completed, order.failed, support.reply, checkout.abandoned, payment.failed, deposit.approved, plus any event the server emits. Preview takes optional {subject, body} and always returns format. Templates are plain text with {{placeholders}} (format text); HTML is allowed for email only if the server supports it, and the console renders it sandboxed.", "basis": "map notification_templates (event, channel, audience, locale, subject, body); demo NOTIF_SAMPLE; mock seedMessages.ts:9-37; lib/templates.ts:52-74; M170, M171", "confidence": "medium", "needsUser": false },
+        { "n": 6, "question": "Notification log: is recipient sent already masked? Which status values exist? Is event the event key rather than an id?", "proposedAnswer": "Yes: recipient is masked by the server from recipient_type/recipient_id; statuses queued, sent, failed (failed carries error in the detail); event is the key text.", "basis": "map notifications columns; M172", "confidence": "high", "needsUser": false },
+        { "n": 7, "question": "Webhook deliveries: are endpoint and client joined into each row? Which status values exist? Does the detail carry responseBody and a network error? Does a retry make a new attempt at once, and is it rate limited?", "proposedAnswer": "Yes, endpoint {id, url} and client {id, name} are joined (null if removed); statuses delivered, pending, failed; the detail carries responseBody (truncated) and error; a retry queues a new signed attempt immediately (status pending, attempt + 1) and is refused for delivered; manual retries of one delivery are limited to one per minute (429 with Retry-After).", "basis": "map webhook_deliveries + webhook_endpoints + clients; POST /admin/webhook-deliveries/:id/retry; M173; mock logRoutes.ts:22-42", "confidence": "medium", "needsUser": false },
+        { "n": 8, "question": "Tax rates: should two rates for one country be refused when their dates overlap? Which taxType values exist?", "proposedAnswer": "Yes: refuse an overlapping validFrom-validTo window for the same country and region (422 on validFrom), because the server must pick exactly one rate per order. taxType values: vat, gst, sales_tax, none.", "basis": "map tax_rates (valid_from, valid_to, oss_scheme); scenario b2c-paid step 3; settings/lib/tax.ts:28-34; M163", "confidence": "medium", "needsUser": false },
+        { "n": 9, "question": "What does payment_gateways.hold_hours do (the form hint says 'Manual review time', the card 'Held for N hours')?", "proposedAnswer": "Proposed: hours a payment through this gateway stays pending for manual review before the wallet is credited (0 = credit when confirmed); after that time the pending deposit becomes more urgent on the dashboard, nothing is credited or cancelled automatically.", "basis": "map payment_gateways.hold_hours (no semantics given); GatewayFields.tsx:104; GatewayCard.tsx:61", "confidence": "low", "needsUser": true }
+      ],
+      "mismatches": [
+        { "id": "M10", "summary": "The map gives no bodies; every settings body is an assumed contract.", "backendImpact": "Implement the shapes in this file or the frontend changes one type file per route." },
+        { "id": "M14", "summary": "The admin restriction state is read from GET /admin/settings key adminAllowlistOnly.", "backendImpact": "Include adminAllowlistOnly (boolean) in GET /admin/settings; change it only through PUT /admin/access/restriction." },
+        { "id": "M161", "summary": "Three tabs added: Notification log, Webhook deliveries, System.", "backendImpact": "Serve the notification log, webhook log + retry and the flat settings object with the shapes above." },
+        { "id": "M162", "summary": "Gateway card: driver, instructions, isManual, secretHint, optional volume30d; code fixed after creation.", "backendImpact": "Send secretHint and volume30d; never return the secret; refuse code changes." },
+        { "id": "M163", "summary": "Tax rates keep a history per country with validFrom/validTo; no delete.", "backendImpact": "Support several rows per country, end-date instead of delete, pick the rate in force per order; refuse overlaps." },
+        { "id": "M164", "summary": "One Refresh rates action calls POST /admin/currencies/refresh-fx; no per-currency refresh.", "backendImpact": "Server chooses which rates to refresh and answers refreshed/failed/source." },
+        { "id": "M165", "summary": "Currency list needs settings:update, refresh needs currencies:update.", "backendImpact": "Enforce exactly the map permissions." },
+        { "id": "M166", "summary": "Stale rate: server isStale wins, else rateUpdatedAt older than 24 h.", "backendImpact": "Send isStale with the same rule as the dashboard fx_stale item; keep rateUpdatedAt separate from updatedAt." },
+        { "id": "M167", "summary": "rateToBase read as units of the currency per 1 USD.", "backendImpact": "Store and answer rates in that direction." },
+        { "id": "M168", "summary": "Policies saved through PATCH /admin/storefront/settings as flat keys; gateway and email switches use their own CRUD; server owns the 3D Secure rule sync.", "backendImpact": "Accept flat policy keys; keep the require3ds policy and risk rule in sync." },
+        { "id": "M169", "summary": "Number policies save on blur; the server checks the range and its message shows under the field.", "backendImpact": "422 errors[].field must be the policy key (a prefix like policies.key also works)." },
+        { "id": "M170", "summary": "Templates named from event keys; Sent 30 days shown only when sentLast30Days is sent; proof-email keys assumed.", "backendImpact": "Use the event keys above; optionally send sentLast30Days." },
+        { "id": "M171", "summary": "Preview HTML is shown only in a sandboxed iframe.", "backendImpact": "Return format; HTML is never executed so templates may contain it, but send format to avoid guessing." },
+        { "id": "M172", "summary": "Notification event is a key text, recipient masked, statuses queued/sent/failed.", "backendImpact": "Build the masked recipient server-side; add an error field for failures." },
+        { "id": "M173", "summary": "Webhook rows join endpoint and client; detail adds responseBody and error; statuses delivered/pending/failed; responseCode 0 = no answer.", "backendImpact": "Add response_body and error storage; join endpoint and client." },
+        { "id": "M174", "summary": "System tab: typed field for imeiRetentionDays, adminAllowlistOnly as a link, other keys read-only JSON.", "backendImpact": "Never return secret keys; keep JSON types." }
+      ],
+      "fixtures": [
+        { "routes": ["GET /admin/settings", "PATCH /admin/settings"], "file": "src/mocks/handlers/settings.ts", "note": "Flat object from src/mocks/settings.ts: demo S.settings.policies plus adminAllowlistOnly from S.access.restrict (src/mocks/seed/demo-state.json). PATCH merges any key (the real server refuses guarded keys)." },
+        { "routes": ["PATCH /admin/storefront/settings"], "file": "src/features/settings/mocks/storefrontRoutes.ts", "note": "Ranges, 422 messages per key, answer = the 8 policy keys; writes into the shared settings store." },
+        { "routes": ["GET /admin/currencies", "GET /admin/currencies/:id", "POST /admin/currencies", "PATCH /admin/currencies/:id", "POST /admin/currencies/refresh-fx"], "file": "src/features/settings/mocks/currencyRoutes.ts", "note": "Validation and refresh answer; rows from seedPayments.ts currencyRows over demo S.settings.currencies (USD, GBP 0.79, EUR 0.92, SEK, CAD, AED, SAR)." },
+        { "routes": ["GET /admin/payment-gateways", "GET /admin/payment-gateways/:id", "POST /admin/payment-gateways", "PATCH /admin/payment-gateways/:id", "DELETE /admin/payment-gateways/:id"], "file": "src/features/settings/mocks/gatewayRoutes.ts", "note": "Validation, secretHint, 409 GATEWAY_IN_USE; rows from seedPayments.ts gatewayRows over demo S.settings.gateways." },
+        { "routes": ["GET /admin/tax-rates", "GET /admin/tax-rates/:id", "POST /admin/tax-rates", "PATCH /admin/tax-rates/:id"], "file": "src/features/settings/mocks/taxRoutes.ts", "note": "Validation (no overlap check); rows from seedPayments.ts taxRows over demo S.settings.taxes (12 countries)." },
+        { "routes": ["GET /admin/notification-templates", "GET /admin/notification-templates/:id", "POST /admin/notification-templates", "PATCH /admin/notification-templates/:id", "DELETE /admin/notification-templates/:id", "POST /admin/notification-templates/:id/preview"], "file": "src/features/settings/mocks/templateRoutes.ts", "note": "Duplicate check, preview sample values; rows from seedMessages.ts templateRows (demo S.settings.notifs mapped to event keys plus two merchant templates)." },
+        { "routes": ["GET /admin/notifications", "GET /admin/notifications/:id", "GET /admin/webhook-deliveries", "GET /admin/webhook-deliveries/:id", "POST /admin/webhook-deliveries/:id/retry"], "file": "src/features/settings/mocks/logRoutes.ts", "note": "Made-up logs: seedMessages.ts notificationRows (masked recipients) and seedWebhooks.ts deliveryRows (36 deliveries over the first 4 demo merchants, deterministic outcomes)." }
+      ]
+    },
+    {
+      "feature": "risk",
+      "summary": "The Risk page has four tabs: the review queue of paid storefront orders held by the rules (approve sends the order to its supplier; refund cancels it and can blocklist the email and/or the IMEI), the IMEI check log with four counted figures and a details drawer, the blocklist (add email/domain/IMEI/card, remove), and the rules editor where each switch or number saves the whole rule set at once. The server scores, holds and decides; the console only lists and sends decisions. Every body is an assumed contract (M10).",
+      "endpoints": [
+        {
+          "key": "GET /admin/risk/queue",
+          "successStatus": 200,
+          "query": "No parameters; polled every 30 s (risk/hooks/keys.ts:31, useRiskQueue.ts).",
+          "request": "",
+          "response": "{held, stats, recent}. held = every storefront order whose latest risk_assessments decision is review with reviewed_at null (paid, never dispatched), oldest paidAt first, no paging (risk/mocks/store.ts:20-22, 55-59): orderId, paidAt (payments.captured_at), score (JSON number), service {id, name}, supplier {id, name} or null, imei (or the main input), device (brand and model or null), capturedAmount (USD incl. VAT = total_price + tax_amount), currency and fxRate (the checkout session's), paymentMethod card|wallet|crypto, signals (plain strings; the first seeds the refund reason), customer {id, name, email, country ISO-2, riskLevel low|medium|high, history {earlierOrders, refunds, disputes} not counting this order}. stats over the last 30 days: decided30d, approved30d, refunded30d, heldShare (JSON number percent with 1 decimal: held storefront orders / storefront paid orders). recent = the 6 latest decisions, newest first: orderId, score, customer {id, name}, capturedAmount, currency, fxRate, outcome approved|refunded, reviewedBy {id, name} or null, reviewedAt.",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks risk:read", "ui": "Risk page no-access state" }
+          ],
+          "assumed": true,
+          "mapConflict": "Map tables orders, risk_assessments; the rows need read joins customers, services, suppliers, payments, checkout_sessions, refunds, disputes. stats and recent are not in the map description (M105). Proposal: send them; without them the strip shows dashes."
+        },
+        {
+          "key": "POST /admin/risk/orders/:id/approve",
+          "successStatus": 204,
+          "query": "",
+          "request": ":id is the order id (not the assessment id). No body and no Content-Type (api/queue.ts:22-24).",
+          "response": "204, empty (the console ignores any body and re-reads the queue, the order, the blocklist count and the dashboard). Effects: assessment reviewed_by, reviewed_at, outcome approved; order_events risk line; the order is released to dispatch through the outbox (status processing once sent); audit_logs.",
+          "errors": [
+            { "status": 409, "code": "NOT_HELD", "when": "the order is not held for review any more (decided by someone else, refunded elsewhere)", "ui": "default error toast with the server detail" },
+            { "status": 404, "code": "NOT_FOUND", "when": "no such order or no assessment for it", "ui": "default error toast" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks risk:decide", "ui": "buttons disabled with the permission named; toast otherwise" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/risk/orders/:id/refund",
+          "successStatus": 204,
+          "query": "",
+          "request": "Body {reason?, blockEmail, blockDevice} (RefundHeldDialog.tsx:42-55): both booleans always sent; reason left out when blank, then the server uses 'Refunded after risk review: <first signal>' (mock decisions.ts:13-15). blockEmail = the customer's email (kind email); blockDevice = the order's IMEI (kind imei), not a browser fingerprint (M106).",
+          "response": "204, empty. Effects in one transaction: order rejected without contacting a supplier and its outbox dispatch cancelled; a refunds row (full amount, method original, requested_by staff); ledger b2c_refund (Dr customer_funds net, Dr vat_payable VAT, Cr gateway_clearing gross); assessment outcome refunded; order_events; the chosen blocklist entries (source manual, createdBy caller, reason; an identical existing entry is skipped silently, decisions.ts:37-55); audit_logs. Gateway refund via the outbox (scenario b2c-refund steps 4-6). customers.status is not changed.",
+          "errors": [
+            { "status": 409, "code": "NOT_HELD", "when": "the order is not held for review any more", "ui": "refund dialog error slot" },
+            { "status": 404, "code": "NOT_FOUND", "when": "no such order or assessment", "ui": "refund dialog error slot" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "proposed: reason longer than the stored limit", "ui": "message under Reason" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks risk:decide", "ui": "dialog error slot" }
+          ],
+          "assumed": true,
+          "mapConflict": "Demo refundAndBlock also sets the customer to blocked; the map route tables are orders, refunds, risk_assessments, blocklist_entries (no customers) and M106 leaves it to the server. Proposal: blocklist entries only; customer blocking stays POST /admin/customers/:id/block."
+        },
+        {
+          "key": "GET /admin/imei-checks",
+          "successStatus": 200,
+          "query": "Pages of 15 (_start/_end); _sort in model|checkType|status|createdAt (default createdAt desc), _order; filters checkType=blacklist|basic|icloud|sim_lock, status=clean|blacklisted|locked|unknown, source=pre_order|storefront_free; q = IMEI digits (spaces stripped by the console), brand or model (risk/lib/view.ts:24-32, 71-84). Four count calls every 30 s with _start=0&_end=1: no filter, source=storefront_free, source=pre_order, status=blacklisted (hooks/useImeiChecks.ts:50-66).",
+          "request": "",
+          "response": "JSON array + x-total-count. imei = the 15 digits while imei_enc exists; after imeiRetentionDays a non-null mask or hash string (e.g. the TAC plus bullets), shown as sent. brand, model; checkType; status; source; country and ip nullable; orderId = the order the check led to (via checkout_sessions.order_id) or null; customer {id, name} or null; supplier {id, name} or null; result = result jsonb or null; cost and price 4-dp money; cachedUntil; createdAt. No updatedAt.",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks risk:read", "ui": "table error state" }
+          ],
+          "assumed": true,
+          "mapConflict": "imei is stored as imei_hash + imei_enc, so substring search on the IMEI cannot run in SQL. Proposal: q of 15 digits matches imei_hash, 8-14 digits match the tac prefix, other text matches brand/model case-insensitively. Joins customers, suppliers, checkout_sessions are beyond the map table list."
+        },
+        {
+          "key": "GET /admin/imei-checks/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": ":id numeric check id (opened from ?check=<id>).",
+          "response": "Same row as the list.",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "no check with that id", "ui": "details drawer error state" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks risk:read", "ui": "drawer error state" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/blocklist",
+          "successStatus": 200,
+          "query": "Pages of 25 (_start/_end); _sort in kind|display|createdAt (default createdAt desc); filter kind=email|domain|imei|card|device|country; tab count _start=0&_end=1 without filter (hooks/useBlocklist.ts:31-36). Mock q searches display, reason (not sent by the UI).",
+          "request": "",
+          "response": "JSON array + x-total-count. Row = blocklist_entries without value_hash: kind, display (server-made: masked email, domain, IMEI as '35 389011 884201 9', card fingerprint text), reason, expiresAt or null, source manual|auto|chargeback, createdBy {id, name} for staff or null for the system, createdAt. No updatedAt.",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks risk:read", "ui": "table error state" }
+          ],
+          "assumed": true,
+          "mapConflict": "Map tags the CRUD row risk:*; read as risk:read (M7, M111). createdBy needs a staff_users join."
+        },
+        {
+          "key": "GET /admin/blocklist/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": ":id numeric entry id.",
+          "response": "Same row as the list.",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "no entry with that id", "ui": "read error" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks risk:read", "ui": "read error" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/blocklist",
+          "successStatus": 201,
+          "query": "",
+          "request": "Body {kind: email|domain|imei|card, value, reason} (risk/lib/blocklist.ts:29-37): an IMEI goes as its 15 digits; value and reason trimmed and non-empty. The server normalises (lower-case email/domain, digits for IMEI), stores value_hash and derives display; source manual, createdBy = caller, expiresAt null. Audit.",
+          "response": "The new entry (same shape as a list row).",
+          "errors": [
+            { "status": 409, "code": "ALREADY_BLOCKED", "when": "an entry with the same kind and value_hash exists (send no errors[])", "ui": "message under Value (codeFields, AddBlockDialog.tsx:30)" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "kind not addable (device, country), empty value, IMEI not 15 digits ('An IMEI has 15 digits.'), empty reason", "ui": "messages under kind, value, reason" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks risk:create", "ui": "Add disabled with the permission named; dialog error slot" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "DELETE /admin/blocklist/:id",
+          "successStatus": 204,
+          "query": "",
+          "request": "No body. Entries of any source (manual, auto, chargeback) can be removed; audit with the entry.",
+          "response": "204, empty; whatever it blocked can order again.",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "no entry with that id", "ui": "remove dialog error slot" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks risk:delete", "ui": "Remove disabled with the permission named" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/risk/rules",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "{rules: [{id, on, value, label?, hint?, unit?}]} in display order. Ids: blockBlacklistedImei, reviewThreshold, blockThreshold, maxOrdersPerEmail, reviewFirstOrderAbove, require3ds, reviewIpCountryMismatch, blockDisposableEmail (M110). value = whole JSON number (points, orders per 24 h, whole USD) or null for a plain switch. label/hint/unit optional: the console has the demo's words per id and prefers the server's. require3ds.on mirrors the storefront policy require3ds.",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks risk:read", "ui": "Rules tab error state" }
+          ],
+          "assumed": true,
+          "mapConflict": "Rules live in the settings table (map); the require3ds rule and policy must be one stored value (M168)."
+        },
+        {
+          "key": "PUT /admin/risk/rules",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body {rules: [{id, on, value}]}: the whole set with one change applied (risk/lib/rules.ts:103-111); every switch or number saves at once. Validate: unknown id -> 422 on that id; value null or whole number >= 0; reviewThreshold.value < blockThreshold.value regardless of on (422 on reviewThreshold, message 'The review threshold must be lower than the block threshold.'). A missing known id keeps its stored value. No If-Match: last write wins. Audit with before/after.",
+          "response": "The saved set {rules} (same shape as GET); the console puts it straight into its cache (useRiskRules.ts:45-48).",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "unknown rule, non-whole or negative value, review threshold not below block threshold", "ui": "message under that rule (errors[].field = rule id, rules.<id>.value or rules.<index>.value); other messages in one line above the list" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks risk:* (the literal whole-area grant, or *)", "ui": "controls disabled; toast otherwise" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        }
+      ],
+      "businessRules": [
+        "Held = a paid storefront order whose risk assessment decided review and nobody reviewed it yet; held orders never reach the supplier until approved (map GET /admin/risk/queue; scenario b2c-paid steps 3, 6-7; risk/mocks/store.ts:20-22).",
+        "Approve and refund only act on a held order: anything else is 409 NOT_HELD; the decision stamps reviewed_by, reviewed_at, outcome (approved|refunded) and writes order_events and audit_logs (mock queue.ts:30-50; demo 12-state-b2c.js:296-313; map approve tables orders, risk_assessments, order_events).",
+        "Refund of a held order: order rejected, supplier never contacted, refunds row created, ledger b2c_refund posted (Dr customer_funds net, Dr vat_payable VAT, Cr gateway_clearing gross) in one transaction, gateway refund queued with an idempotency key (map moneyEvent b2c_refund; scenario b2c-refund steps 4-6; src/mocks/ordersActions.ts:77-111).",
+        "Blocking on refund adds blocklist entries only (email, IMEI), skipping duplicates silently; customers.status is not changed (map route tables; M106, M73).",
+        "Blocklist: addable kinds email, domain, imei, card; device and country are system-only; value normalised and stored as value_hash, display derived; duplicate kind+hash = 409 ALREADY_BLOCKED; entries are enforced at checkout and account creation (scenario b2c-paid step 1, b2c-account step 1; mock lists.ts:34-62); IP addresses live in ip_rules, not here.",
+        "Rules: reviewThreshold < blockThreshold always (map PUT /admin/risk/rules); score >= blockThreshold blocks (payment cancelled), >= reviewThreshold holds for review; maxOrdersPerEmail per 24 h; reviewFirstOrderAbove in whole USD for a new customer's first order; reviewIpCountryMismatch adds 25 points; blockDisposableEmail; blockBlacklistedImei at checkout (risk/lib/rules.ts:16-54). Rules are stored in settings and every change is audited (demo 12-state-b2c.js setRule).",
+        "IMEI retention: after imeiRetentionDays the IMEI is erased or hashed (map GET /admin/imei-checks description); the list keeps sending a non-null masked or hashed text and matching uses imei_hash.",
+        "Permissions: page and reads risk:read; approve/refund risk:decide; blocklist add risk:create, remove risk:delete; rules PUT needs the whole area risk:* (risk/lib/permissions.ts:4-13; M111)."
+      ],
+      "questions": [
+        { "n": 1, "question": "What does GET /admin/risk/queue send: only the held orders, or also the 30-day figures and the latest decisions (stats, recent)? Are signals plain strings or {label, points}?", "proposedAnswer": "All three: held (all, oldest first), stats over the last 30 days (decided30d, approved30d, refunded30d, heldShare as a percent number) and recent (6 latest decisions). Signals are plain strings; risk_assessments.signals entries are rendered to text, points may be appended ('IP country differs from card (+25)').", "basis": "map GET /admin/risk/queue (orders, risk_assessments.signals jsonb); M105; mock store.ts:55-75", "confidence": "high", "needsUser": false },
+        { "n": 2, "question": "POST .../refund: are reason, blockEmail and blockDevice the right body? Does blocking the email also set the customer to blocked? Is 'device' the order's IMEI or a device fingerprint?", "proposedAnswer": "Yes, that body. Blocking adds blocklist entries only (email kind email, device kind imei = the order's IMEI); the customer's status is not changed, because the route's tables exclude customers; blocking the customer stays POST /admin/customers/:id/block.", "basis": "map POST /admin/risk/orders/:id/refund tables (orders, refunds, risk_assessments, blocklist_entries); M106, M73", "confidence": "medium", "needsUser": false },
+        { "n": 3, "question": "Rules: which ids and units? Does PUT replace the whole set (two editors can overwrite each other; is there a version or If-Match)? Which field name carries the 'review below block' message?", "proposedAnswer": "The 8 ids of M110 with units points, points, orders per 24 h, whole USD; the others are switches (value null). PUT carries the whole set and last write wins (no If-Match, the console sends none; every change is audited). The message is on field reviewThreshold.", "basis": "map PUT /admin/risk/rules ('the review threshold must be lower than the block threshold'); M110; risk/lib/rules.ts:8-54, 129-137", "confidence": "high", "needsUser": false },
+        { "n": 4, "question": "Blocklist: does POST take value (deriving display) or display? Which code answers a duplicate? Can the console set expiresAt? Can system entries (chargebacks) be removed?", "proposedAnswer": "POST takes value; the server normalises, hashes and derives display. A duplicate is 409 ALREADY_BLOCKED. The console cannot set expiresAt (server sets it for auto entries, e.g. 30 days). Any entry, system ones included, can be removed with risk:delete, audited.", "basis": "map blocklist_entries (kind, value_hash, display, reason, expires_at, source, created_by); scenario ip-rules step 7 (auto, 30 days); M109", "confidence": "high", "needsUser": false },
+        { "n": 5, "question": "IMEI checks: what does imei look like after retention (hash, mask, null)? Can the list send the 30-day figures (conversion to an order, lookup cost)? Which sort fields and filters are supported?", "proposedAnswer": "A non-null masked string (TAC plus bullets) once imei_enc is erased; imei_hash stays for matching. The conversion and lookup-cost figures are not provided now (no route; M107). Sort: model, checkType, status, createdAt; filters checkType, status, source and q.", "basis": "map imei_checks (imei_hash, imei_enc, tac) and route description 'erased or hashed after the retention period'; M107, M108", "confidence": "medium", "needsUser": false },
+        { "n": 6, "question": "Permissions: are blocklist create and delete risk:create and risk:delete, and does the rules PUT need the literal risk:*?", "proposedAnswer": "Yes: the CRUD row risk:* is read as risk:read/create/delete per operation (M7); the PUT action row keeps the literal risk:* (or *).", "basis": "map CRUD /admin/blocklist (risk:*), PUT /admin/risk/rules (risk:*); M7, M111", "confidence": "high", "needsUser": false },
+        { "n": 7, "question": "Does approve or refund return the updated order?", "proposedAnswer": "No: both answer 204 with no body; the console re-reads the queue, the order and the dashboard.", "basis": "mock queue.ts:47-48; api/queue.ts (Promise<void>)", "confidence": "high", "needsUser": false }
+      ],
+      "mismatches": [
+        { "id": "M28", "summary": "Held storefront orders are decided only on the Risk page; the order drawer links to /risk?tab=queue.", "backendImpact": "Approve/refund exist only as POST /admin/risk/orders/:id/approve|refund (risk:decide)." },
+        { "id": "M73", "summary": "Copy says the email is blocklisted; map says the customer fingerprint.", "backendImpact": "The server decides what it stores; the held-order refund stores email and/or IMEI entries." },
+        { "id": "M82", "summary": "Risk level is low|medium|high on the wire.", "backendImpact": "customers.risk_level values must be low, medium, high (not med)." },
+        { "id": "M105", "summary": "Queue answer {held, stats?, recent?}; figures and recent decisions come from the server.", "backendImpact": "Send stats and recent, or the strip shows dashes and the list is hidden." },
+        { "id": "M106", "summary": "One refund dialog with reason and two ticks (email, device = IMEI); console never sets customer status.", "backendImpact": "Accept {reason?, blockEmail, blockDevice}; do not change customers.status." },
+        { "id": "M107", "summary": "IMEI figures are four counted list calls; conversion and lookup cost left out.", "backendImpact": "x-total-count must be exact for source and status filters." },
+        { "id": "M108", "summary": "IMEI search without spaces; IMEI shown as sent (hash or mask after retention); sort on device, type, result, time.", "backendImpact": "Support q over IMEI/brand/model (hash or TAC matching) and the four sort fields." },
+        { "id": "M109", "summary": "Add sends {kind, value, reason}; server derives display and refuses duplicates (409 ALREADY_BLOCKED); six kinds filterable.", "backendImpact": "Implement normalisation, value_hash, display and the 409." },
+        { "id": "M110", "summary": "Eight named rule ids; PUT sends the whole set; review-below-block checked by the server too.", "backendImpact": "Use the ids; 422 on reviewThreshold; optional label/hint/unit." },
+        { "id": "M111", "summary": "Reads risk:read, add risk:create, remove risk:delete, rules risk:*.", "backendImpact": "Enforce the same mapping on the server." }
+      ],
+      "fixtures": [
+        { "routes": ["GET /admin/risk/queue", "POST /admin/risk/orders/:id/approve", "POST /admin/risk/orders/:id/refund"], "file": "src/features/risk/mocks/queue.ts", "note": "204 answers and 409 NOT_HELD; decisions.ts changes the shared order store (rejectMock posts the refund ledger); store.ts buildQueue builds held/stats/recent; seed.ts from the demo storefront orders' risk blocks (S.orders[].risk)." },
+        { "routes": ["GET /admin/imei-checks", "GET /admin/imei-checks/:id", "GET /admin/blocklist", "GET /admin/blocklist/:id", "POST /admin/blocklist", "DELETE /admin/blocklist/:id"], "file": "src/features/risk/mocks/lists.ts", "note": "List engine, 409 ALREADY_BLOCKED and 422 fields; rows from seed.ts over demo S.imeiChecks and S.risk.block. Counts expected in api/risk.test.ts:113-127." },
+        { "routes": ["GET /admin/risk/rules", "PUT /admin/risk/rules"], "file": "src/features/risk/mocks/rules.ts", "note": "Validation incl. reviewThreshold < blockThreshold; rules from demo S.risk.rules rr1..rr8 mapped to ids in seed.ts:40-49 (answers carry id, on, value only)." }
+      ]
+    },
+    {
+      "feature": "refunds",
+      "summary": "The Refunds page lists storefront refund requests (approve in full or in part, decline with a message to the customer, retry a gateway failure), card disputes (evidence pack built by the server: submit the chosen lines with a note, or accept the loss), and the storefront payments report (method comparison, one page of payments, the strip's totals). Counts are one-row list calls; every money sum comes from the server. The VAT report lives in the finance feature, not here. Every body is an assumed contract (M10).",
+      "endpoints": [
+        {
+          "key": "GET /admin/refunds",
+          "successStatus": 200,
+          "query": "Pages of 12 (_start/_end); _sort in id|amount|status|createdAt (default createdAt desc; amount sorted numerically); filter status=requested|completed|failed|rejected; chip counts every 30 s with _start=0&_end=1&status=requested and status=failed (hooks/useRefundFigures.ts:10-36; lib/view.ts:24-38). Mock q searches id, reason, customer.name (not sent by the UI).",
+          "request": "",
+          "response": "JSON array + x-total-count; storefront refunds only (customer_id set). Row: id, orderId, amount (USD 4 dp), reason (the requester's), status, method original|manual, currency (customer's ISO) and fx (rate the order was priced with, display only), partial (amount < paid), gatewayRefundId or null, note (gateway failure text or the decline message) or null, requestedBy {type customer|staff|system, name or null}, approvedBy {id, name} or null, customer {id, name} or null, order {id, deliveredAt (completed_at once delivered, else null), cost (total_cost)}, payment {id, method card|wallet|crypto, brand ('Visa •••• 4242', 'USDT TRC-20'), amount (paid incl. VAT, USD), taxAmount}, netAmount and taxAmount (revenue and VAT parts of the refund's ledger transaction; null until it is posted), completedAt, createdAt.",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks refunds:read", "ui": "Refunds tab hidden; chip counts left out" }
+          ],
+          "assumed": true,
+          "mapConflict": "Map lists the refunds table only; rows need customers, orders, payments, staff_users, ledger_entries and checkout_sessions joins. refunds has no note column (proposal: add note). Map method values (card, wallet, store credit) differ from the wire values original|manual: map to those two."
+        },
+        {
+          "key": "GET /admin/refunds/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": ":id numeric refund id. Read when the approve or decline dialog opens, to show a decision someone else made meanwhile (ApproveRefundDialog.tsx:36-37).",
+          "response": "Same row as the list.",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "no refund with that id", "ui": "dialog error state" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks refunds:read", "ui": "dialog error state" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/refunds/:id/approve",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body {} = refund the requested amount, or {amount: '7.5000'} (4-dp string, sent only when it differs, ApproveRefundDialog.tsx:42-45). Allowed: 0 < amount <= payment.amount minus completed refunds on the same payment.",
+          "response": "The updated refund with netAmount and taxAmount filled (the toast prints the amount and its VAT part; an empty body is tolerated). Effects: one ledger transaction (kind refund, ref order): delivered order -> Dr revenue net share + Dr vat_payable VAT share, Cr gateway_clearing; not delivered -> Dr customer_funds + Dr vat_payable, Cr gateway_clearing (moneyEvent b2c_refund) and the order is rejected with its dispatch cancelled (scenario b2c-refund step 4); cogs is never reversed; VAT share = round(tax x amount / paid, 2), net = amount - VAT share; payment status partial_refund or refunded; order_events line; audit; gateway refund through the outbox with an idempotency key. Crypto payment: method manual, no gateway call, note says it is paid out by hand in USDT.",
+          "errors": [
+            { "status": 409, "code": "REFUND_NOT_PENDING", "when": "status is not requested", "ui": "dialog error slot (it also re-reads and says it was decided)" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "amount <= 0 or above what can still be refunded (field amount, 'Enter an amount between $0.01 and $X.')", "ui": "message under the amount field" },
+            { "status": 404, "code": "NOT_FOUND", "when": "no refund with that id", "ui": "dialog error slot" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks refunds:approve", "ui": "Approve disabled with the permission named" }
+          ],
+          "assumed": true,
+          "mapConflict": "Map scenario b2c-refund step 6 has a processing status (worker sent to the gateway) that the console enum lacks (requested|completed|failed|rejected): see refunds question 9. The mock always debits revenue; the map reverses according to delivery."
+        },
+        {
+          "key": "POST /admin/refunds/:id/decline",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body {reason}: at least a sentence (mock minimum 10 characters); the text reaches the customer by email.",
+          "response": "The updated refund: status rejected, note = reason, approvedBy = caller. Effects: customer email (notifications), order_events 'Refund request declined: <reason>', audit_logs.",
+          "errors": [
+            { "status": 409, "code": "REFUND_NOT_PENDING", "when": "status is not requested", "ui": "dialog error slot" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "reason shorter than a sentence ('Give the customer a reason, at least a sentence.')", "ui": "message under the reason field" },
+            { "status": 404, "code": "NOT_FOUND", "when": "no refund with that id", "ui": "dialog error slot" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks refunds:approve", "ui": "Decline disabled with the permission named" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/refunds/:id/retry",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body {} with application/json (api/refunds.ts:69).",
+          "response": "The updated refund after re-sending it to the gateway with the original idempotency key (status per the gateway answer). No new ledger entry: the reversal was posted at approval (map retry tables refunds, payments).",
+          "errors": [
+            { "status": 409, "code": "REFUND_NOT_FAILED", "when": "status is not failed", "ui": "default error toast with the server detail" },
+            { "status": 404, "code": "NOT_FOUND", "when": "no refund with that id", "ui": "default error toast" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks refunds:approve", "ui": "Retry disabled with the permission named" }
+          ],
+          "assumed": true,
+          "mapConflict": "The mock and the demo post the ledger again on retry (refundActions.ts:23-69 via refundRoutes.ts:80-90; demo 12-state-b2c.js:258-263); the map's retry tables exclude ledger_entries. Proposal: post the reversal once at approval, never at retry."
+        },
+        {
+          "key": "GET /admin/disputes",
+          "successStatus": 200,
+          "query": "Pages of 25 (_start/_end); _sort in id|amount|evidenceDueAt|status (default evidenceDueAt asc); the table sends no filter. Figures every 30 s: status=needs_response&_sort=evidenceDueAt&_order=asc&_start=0&_end=1 (count plus the next due row) and status=under_review&_start=0&_end=1 (hooks/useRefundFigures.ts:37-60). Mock q searches id, reasonCode, note, customer.name.",
+          "request": "",
+          "response": "JSON array + x-total-count; rows WITHOUT evidence and strength. Row: id, orderId, amount (USD), fee (this dispute's fee from the gateway), reasonCode, note (the bank's reason in a sentence) or null, status needs_response|under_review|won|lost, currency and fx (order's rate, display only), customer {id, name} or null, evidenceDueAt, submittedAt, resolvedAt, createdAt. With _sort=evidenceDueAt&_order=asc list needs_response first, then the rest; null due dates last.",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks disputes:read", "ui": "Card disputes tab hidden; dispute figures left out" }
+          ],
+          "assumed": true,
+          "mapConflict": "disputes has no note column: derive it from reason_code (proposal). customer and fx need customers and checkout_sessions joins."
+        },
+        {
+          "key": "GET /admin/disputes/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": ":id numeric dispute id; read when the dispute dialog opens.",
+          "response": "The row plus evidence [{key, title, body, ok}] and strength strong|fair|weak, built by the server: keys payment, three_ds, delivery, consents, history, contact; weights 1/3/3/2/1/1 counted when ok; strong >= 8, fair >= 5 (refunds/mocks/evidence.ts); sources order_events, payments (3-D Secure), consent_records with IP and time, notifications, the customer's earlier undisputed orders, support tickets around the order (scenario b2c-chargeback step 4).",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "no dispute with that id", "ui": "dialog error state" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks disputes:read", "ui": "dialog error state" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/disputes/:id/evidence",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body {items: string[] (keys of the pack), note? (<= 1000 characters)} (DisputeDialog.tsx:52-55).",
+          "response": "The updated dispute: status under_review, submittedAt. Effects: the chosen lines and the note are rendered to files (evidence_file_ids) and uploaded through the gateway API (scenario b2c-chargeback step 5); order_events; audit_logs.",
+          "errors": [
+            { "status": 409, "code": "DISPUTE_NOT_OPEN", "when": "status is not needs_response", "ui": "dialog error slot" },
+            { "status": 409, "code": "EVIDENCE_DEADLINE_PASSED", "when": "evidenceDueAt is in the past", "ui": "dialog error slot" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "no items, an item that is not in the pack (field items), note too long (field note)", "ui": "note message under the note field; items message in the dialog error slot" },
+            { "status": 404, "code": "NOT_FOUND", "when": "no dispute with that id", "ui": "dialog error slot" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks disputes:manage", "ui": "dialog buttons disabled with the permission named" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/disputes/:id/accept",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body {} with application/json (api/disputes.ts:58).",
+          "response": "The updated dispute: status lost, resolvedAt. Effects: ledger chargeback transaction Dr chargeback_loss (amount + fee), Cr gateway_clearing (moneyEvent b2c_chargeback), kept in disputes.ledger_tx_id so a later dispute-lost webhook does not post again; payment status chargeback; order_events; audit_logs. The customer is not blocked (M115).",
+          "errors": [
+            { "status": 409, "code": "DISPUTE_NOT_OPEN", "when": "status is not needs_response", "ui": "dialog error slot" },
+            { "status": 404, "code": "NOT_FOUND", "when": "no dispute with that id", "ui": "dialog error slot" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks disputes:manage", "ui": "Accept disabled with the permission named" }
+          ],
+          "assumed": true,
+          "mapConflict": "Demo acceptDispute also blocks the customer; the map's accept tables are disputes and ledger_entries only. Proposal: no block; blocking is POST /admin/customers/:id/block."
+        },
+        {
+          "key": "GET /admin/reports/payments",
+          "successStatus": 200,
+          "query": "method=card|wallet|crypto (absent = all), _start/_end (pages of 12; the strip asks _start=0&_end=1), _sort one of orderId|method|amount|feeAmount|status|createdAt with _order (default createdAt desc) (api/reports.ts:16-28, lib/view.ts:24-38).",
+          "request": "",
+          "response": "One JSON object, no x-total-count. methods = always the three methods card, wallet, crypto in that order, whatever the filter and page: payments (count), volume and fees (4-dp money), feeRate (percent decimal string), refunds and disputes (counts). payments = one page of storefront payments only (never merchant top-ups, M113): id, orderId, amount (paid incl. VAT, USD), feeAmount, createdAt, method, brand, status captured|refunded|partial_refund|disputed|chargeback, currency, fx, customer {id, name} or null. total = payments matching the method filter. totals: refundedCount and refundedAmount (completed refunds of the last 30 days), refundedPercentOfSales (percent decimal string of those days' storefront sales), awaitingAmount (requested + failed refunds), chargebackLoss (all time, fees included).",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks reports:finance", "ui": "Payments tab hidden; the strip's money figures left out" }
+          ],
+          "assumed": true,
+          "mapConflict": "Map: 'Storefront payments by method: fees, net amount and settlements'. The console reads neither net amount nor settlements; they may be added as extra fields."
+        }
+      ],
+      "businessRules": [
+        "Refund states: requested -> completed (approve) or rejected (decline); failed -> completed (retry). Only requested can be approved or declined (409 REFUND_NOT_PENDING); only failed can be retried (409 REFUND_NOT_FAILED) (mock refundRoutes.ts:41-90; demo 12-state-b2c.js:243-263).",
+        "Refundable amount = payment amount minus completed refunds on the same payment; approve refuses 0 or more than that with 422 on amount (mock refundRoutes.ts:49-67; demo refundable 12-state-b2c.js:294). Storefront orders are refunded here; completed merchant orders through POST /admin/orders/:id/refund (M25).",
+        "Ledger on approval, once per refund (idempotency key per refund, refunds.ledger_tx_id): delivered order -> Dr revenue + Dr vat_payable, Cr gateway_clearing; undelivered -> Dr customer_funds + Dr vat_payable, Cr gateway_clearing and the order is cancelled (map approve 'reversed according to whether the order was delivered'; moneyEvent b2c_refund; scenario b2c-refund step 4). Supplier cost is never recovered once delivered. VAT goes back in proportion (M118). Retry posts nothing.",
+        "Gateway flow: outbox job refunds.process sends the refund with an idempotency key; webhook refund.succeeded sets completed and gateway_refund_id; a failure sets failed with the gateway's note (scenario b2c-refund steps 5-7). Crypto payments are refunded by hand: method manual, completed at once, no gateway call (demo 12-state-b2c.js:234-241).",
+        "Payment status follows refunds and disputes: partial_refund while refunded total < paid, refunded when equal, chargeback after a lost dispute (mock refundActions.ts:46, disputeActions.ts:28).",
+        "Decline needs a reason of at least a sentence, emails it to the customer and writes the order timeline (map decline tables refunds, notifications; mock refundRoutes.ts:71-78).",
+        "Dispute states: needs_response -> under_review (evidence) or lost (accept); won/lost also arrive by POST /webhooks/disputes/:gateway. Evidence only before evidence_due_at (409 EVIDENCE_DEADLINE_PASSED); answering a dispute not in needs_response is 409 DISPUTE_NOT_OPEN (mock disputeRoutes.ts:54-83).",
+        "A lost dispute posts exactly one chargeback transaction, Dr chargeback_loss amount + fee, Cr gateway_clearing (moneyEvent b2c_chargeback), whether it comes from accept or from the webhook (disputes.ledger_tx_id guards double posting). Accept does not block the customer (M115; map accept tables).",
+        "The evidence pack and its strength are computed on the server from the order record; the console only chooses lines and adds a note (M117; scenario b2c-chargeback steps 4-5).",
+        "Every refund and dispute action writes audit_logs and an order_events line (demo logAudit in 12-state-b2c.js:243-290)."
+      ],
+      "questions": [
+        { "n": 1, "question": "Does /admin/refunds also return merchant (client) refunds? The table has clientId; this page shows customers only and prints 'Unknown' for a refund without a customer.", "proposedAnswer": "No: the list returns storefront refunds only (customer_id set). Completed merchant orders are refunded through POST /admin/orders/:id/refund (reopen then reject, a wallet release), not through this page.", "basis": "map POST /admin/orders/:id/refund ('storefront orders are refunded from /admin/refunds'); M25", "confidence": "high", "needsUser": false },
+        { "n": 2, "question": "Report shape: is the method comparison plus one page of payments plus totals in one answer right? The route also names 'net amount and settlements'. Should the page's totals come from this report or another route?", "proposedAnswer": "Yes, one answer {methods, payments, total, totals}; the strip's money comes from totals of this report (counts from list calls). Net amount and settlements may be added as extra fields per method; the console ignores them.", "basis": "map GET /admin/reports/payments (payments, ledger_entries, payment_gateways; reports:finance); M113, M114", "confidence": "high", "needsUser": false },
+        { "n": 3, "question": "Approve: is a missing amount the amount on the request? What is the upper limit? Does the answer carry the revenue/VAT split (netAmount, taxAmount)?", "proposedAnswer": "Yes, missing amount = the requested amount. Upper limit = paid amount minus completed refunds on that payment (422 on amount above it). The answer is the updated refund with netAmount and taxAmount from the posted ledger transaction.", "basis": "map POST /admin/refunds/:id/approve (refunds, payments, orders, ledger_entries); M118; mock refundRoutes.ts:49-69", "confidence": "high", "needsUser": false },
+        { "n": 4, "question": "Crypto payments: approve records it as paid out by hand (method manual); is there a separate 'mark as paid' step?", "proposedAnswer": "No separate step: approving a refund of a crypto payment records method manual and completes it at once (staff send the USDT themselves); the ledger is the same reversal as any refund (Cr gateway_clearing).", "basis": "demo 12-state-b2c.js:234-241 finishRefund; mock refundActions.ts:29-38", "confidence": "medium", "needsUser": false },
+        { "n": 5, "question": "Evidence: does the server build the pack and its strength, and what does the submit body look like? The console cannot attach files (evidenceFileIds); is that done on the server from the order record?", "proposedAnswer": "Yes: the server builds evidence[] and strength for GET /admin/disputes/:id; submit takes {items: keys, note?}; the server renders the chosen lines to files (evidence_file_ids) and uploads them to the gateway.", "basis": "map POST /admin/disputes/:id/evidence (disputes, orders, order_events, consent_records, files); scenario b2c-chargeback steps 4-5; M117", "confidence": "high", "needsUser": false },
+        { "n": 6, "question": "Does accepting a loss block the customer (the demo says it does; the map's tables do not include customers)?", "proposedAnswer": "No. Accept writes the dispute and the chargeback_loss entry only; blocking is a separate POST /admin/customers/:id/block on the customer's page.", "basis": "map POST /admin/disputes/:id/accept (disputes, ledger_entries); POST /admin/customers/:id/block; M115", "confidence": "high", "needsUser": false },
+        { "n": 7, "question": "Default order of disputes: with _sort=evidenceDueAt&_order=asc old closed disputes come before open ones. Can the server list needs_response first for that sort?", "proposedAnswer": "Yes: for _sort=evidenceDueAt the server orders needs_response disputes first (soonest deadline first), then the others by evidenceDueAt, nulls last. Other sorts stay plain.", "basis": "demo tabDisputes default sort; lib/view.ts:34-38; useRefundFigures.ts:37-54 (filtered call unaffected)", "confidence": "medium", "needsUser": false },
+        { "n": 8, "question": "Is fee per dispute (the demo always has $15)? Is fx the rate the order was priced with?", "proposedAnswer": "Yes: fee is disputes.fee as the gateway reported it (the scenario's 15 USD is an example); fx is the rate locked on the checkout session the order came from.", "basis": "map disputes.fee; scenario b2c-chargeback step 1; checkout_sessions.fx_rate; M121", "confidence": "high", "needsUser": false },
+        { "n": 9, "question": "The map's refund flow has a processing status (sent to the gateway, waiting for refund.succeeded) that the console's RefundStatus (requested|completed|failed|rejected) lacks. Which way?", "proposedAnswer": "Preferred: add processing to the console enum (one type and one badge) and send it until the gateway confirms. Fallback if the console stays: report a queued gateway refund as completed and switch to failed on refund.failed.", "basis": "scenario b2c-refund steps 6-7 (refunds.status processing then completed); refunds/types/index.ts:19; contract rule backend enum must be a subset of the frontend enum (docs/contract/TESTS.md)", "confidence": "medium", "needsUser": true }
+      ],
+      "mismatches": [
+        { "id": "M25", "summary": "Merchant orders are refunded from the order (reopen then reject); storefront orders from /admin/refunds.", "backendImpact": "GET /admin/refunds lists storefront refunds; merchant refunds stay on POST /admin/orders/:id/refund." },
+        { "id": "M32", "summary": "RF-, DP-, SF- prefixes are display only.", "backendImpact": "Ids are plain numbers; search does not need the prefixes." },
+        { "id": "M113", "summary": "The Payments tab shows storefront payments by method (three methods: card, wallet, crypto), not merchant top-ups.", "backendImpact": "The report covers storefront payments only and always lists the three methods." },
+        { "id": "M114", "summary": "Strip counts are one-row list calls; money and the refund percentage come from the report's totals.", "backendImpact": "Exact x-total-count for status filters; totals computed server-side." },
+        { "id": "M115", "summary": "Accepting a loss records amount and fee in chargeback_loss and does not block the customer.", "backendImpact": "No customer change on accept; one chargeback transaction per dispute." },
+        { "id": "M117", "summary": "The server sends the evidence pack and strength; the console sends {items, note?}.", "backendImpact": "Build evidence[] with stable keys and the strength on the single read; accept the submit body." },
+        { "id": "M118", "summary": "VAT goes back in proportion as the server states it; amount compared as exact 4-dp strings and sent only when changed.", "backendImpact": "Return netAmount/taxAmount; accept an absent amount as the requested amount." },
+        { "id": "M120", "summary": "Server-side lists: refunds sort id/amount/status/createdAt, disputes id/amount/evidenceDueAt/status, payments orderId/method/amount/feeAmount/status/createdAt; page sizes 12/25/12.", "backendImpact": "Support exactly these sort fields with numeric sort for money." },
+        { "id": "M121", "summary": "Each dispute carries its own fee.", "backendImpact": "Send disputes.fee per row." }
+      ],
+      "fixtures": [
+        { "routes": ["GET /admin/refunds", "GET /admin/refunds/:id", "POST /admin/refunds/:id/approve", "POST /admin/refunds/:id/decline", "POST /admin/refunds/:id/retry"], "file": "src/features/refunds/mocks/refundRoutes.ts", "note": "Refusals and answers; refundActions.ts posts the ledger and the order timeline; split.ts the VAT split; rows from seed.ts over demo S.refunds (a mock payment takes its order's id). Expectations in api/refunds.test.ts." },
+        { "routes": ["GET /admin/disputes", "GET /admin/disputes/:id", "POST /admin/disputes/:id/evidence", "POST /admin/disputes/:id/accept"], "file": "src/features/refunds/mocks/disputeRoutes.ts", "note": "List without the pack, single read with it; disputeActions.ts posts the chargeback; evidence.ts builds the pack and strength like the demo's evidenceFor; seed over demo S.disputes." },
+        { "routes": ["GET /admin/reports/payments"], "file": "src/features/refunds/mocks/reportRoutes.ts", "note": "Method summaries, page of payments, totals; built from the demo's storefront orders (not S.payments). Expectations in api/reports.test.ts." }
+      ]
+    },
+    {
+      "feature": "dashboard",
+      "summary": "The dashboard makes one GET /admin/dashboard call per scope and period: stats with the previous period, ranked attention facts, queues by service type, supplier health, two charts, the storefront funnel, top customers and the sidebar counts. The app shell reuses the scope=all&days=7 call every 60 s on every page for the sidebar counts. Top merchants come from GET /admin/reports/top-clients (reports:read only); GET /admin/queues is only linked (Bull Board). Every body is an assumed contract (M35).",
+      "endpoints": [
+        {
+          "key": "GET /admin/dashboard",
+          "successStatus": 200,
+          "query": "scope=all|b2b|b2c and days=1|7|14, both always sent (api/dashboard.ts:14-16); the sidebar sends scope=all&days=7 every 60 s from every page for staff with dashboard:read (hooks/useDashboardNavCounts.ts:16-20, useDashboard.ts:8,14). The mock defaults to all/7 when a parameter is absent.",
+          "request": "",
+          "response": "One object, every section from one snapshot. generatedAt = server time. stats.current = orders created in the rolling window [now - days x 24 h, now] within scope: revenue = sum total_price (excl. VAT) of completed ones, profit = revenue - total_cost (before gateway fees), orders = count of all statuses, successRate = completed/(completed+rejected) x 100 (JSON number, null when none), medianTurnaroundSeconds = median of completed_at - created_at (null when none); previous = the same-length window before, null when it has no order (mocks/stats.ts:5-37). attention = every item, ranked critical > high > medium > low (stable), facts only, opaque string ids (rules in businessRules). queues = 4 rows imei, server, remote, file: open (pending|processing), review (waiting for a person: manual, needs_attention, verification, risk hold), pastSla (open, not in review, older than the service target), oldestCreatedAt or null. suppliers = every supplier incl. disabled: enabled (status active), health up|degraded|down, successRate1h (0-100) or null, p50Ms or null, balance, lowBalance. ordersByType.daily = 30 UTC days oldest first {date 'YYYY-MM-DD', imei, server, remote, file} of orders created; monthly = 12 UTC months {month 'YYYY-MM', ...} oldest first, null only for a scope with no history. revenueByChannel (scope=all only, else null) = 30 UTC days of completed revenue excl. VAT by completed_at {date, b2b, b2c} plus totals last7Days and last30Days. storefront (null for b2b) = always the last 30 days: funnel {visitorsEstimated, imeiChecks, checkoutsStarted (paid + abandoned sessions), paid, delivered}, averageOrder (paid incl. VAT) or null, refundRate (% of money taken refunded) or null, disputeRate (% disputes per order) or null, firstReplySeconds (median) or null, satisfaction {average out of 5, ratings} or null, heldForReview (now). topCustomers (null for b2b) = top 5 storefront customers by spend incl. VAT over non-rejected orders created in the window {id, name, country, orders, spend}. navCounts = whole console whatever the scope: orders {open, pastSla}, finance {pendingDeposits}, merchants {pendingApproval}, support {open, late}, refunds {open = requested + failed refunds + needs_response disputes, disputesDueSoon = needs_response due within 3 days}, risk {held}. Units: money 4-dp strings, rates JSON numbers 0-100, durations named in the field.",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "scope or days outside the choices (errors[].field = scope or days)", "ui": "page error state with the request id and Retry (cannot happen from the console's own controls)" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks dashboard:read", "ui": "dashboard no-access; the sidebar makes no call and shows no counts" }
+          ],
+          "assumed": true,
+          "mapConflict": "Map: 'KPIs for today: sales, profit, queues and supplier balances' with scope only, tables orders, suppliers, payments. The console adds days, attention facts, charts, storefront, top customers and navCounts (M35, M36, M39, M40), which read refunds, disputes, support_tickets, clients, ledger_accounts, currencies, commission accruals, services, imei_checks, checkout_sessions and customers. Proposal: accept this body as the dashboard read model, cached per (scope, days)."
+        },
+        {
+          "key": "GET /admin/queues",
+          "successStatus": 200,
+          "query": "",
+          "request": "Never fetched: the console builds the absolute URL <API base>/admin/queues and opens it in a new tab for staff with queues:read (api/dashboard.ts:37-39, hooks/useDashboardGrants.ts:17-21, M8).",
+          "response": "The Bull Board HTML UI (text/html) with its assets and JSON calls under /admin/queues/*. Authenticated by the staff session cookie on a top-level navigation (no CSRF header, no Authorization header) and the queues:read permission; when not signed in, redirect to the console sign-in or answer an HTML 401.",
+          "errors": [
+            { "status": 401, "code": "UNAUTHORIZED", "when": "no valid staff session cookie", "ui": "the new tab shows the server's page" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks queues:read", "ui": "link hidden in the console; the new tab shows the server's page" }
+          ],
+          "assumed": false,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/reports/top-clients",
+          "successStatus": 200,
+          "query": "days=1|7|14&limit=6 (hooks/useTopClients.ts:8-20); called only when the caller has reports:read.",
+          "request": "",
+          "response": "A JSON array (not a paged list, no x-total-count) of up to limit merchants ranked by spend, highest first: id, name, country (ISO-2), orders (count created in the window), spend (sum total_price of non-rejected orders created in the window), profit (completed orders: total_price - total_cost), walletBalance (merchant-side wallet balance, may be negative). Excludes merchants with status pending and merchants with no order in the window (mocks/topClients.ts:10-41). Window = the last days x 24 h.",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "days outside 1|7|14 or limit not a positive integer (proposed max 50)", "ui": "panel error state" },
+            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks reports:read", "ui": "Top merchants panel not rendered" }
+          ],
+          "assumed": true,
+          "mapConflict": "Map: 'Top merchants by volume and by profit' (orders, clients). Proposal: one list ranked by spend that carries profit (M41); walletBalance needs ledger_accounts."
+        }
+      ],
+      "businessRules": [
+        "Windows: stats and top lists use the rolling window of days x 24 h ending now and the same length before it for previous; chart buckets are UTC calendar days and months; the storefront block is always the last 30 days (types/index.ts:7-20, 131-149; mocks/util.ts:1-27).",
+        "Order rules shared with the Orders page: open = status pending or processing; in review = queue manual, needs_attention, verification or review; past SLA = open, not in review, older than the service's target; held = storefront order in the risk review queue (mocks/orderRules.ts:1-28; M20).",
+        "Attention kinds and severities (mocks/attention.ts, attentionStorefront.ts): orders_past_sla critical (count, oldest order, overdue and target seconds); orders_review high (merchant orders only, top review reason); supplier_down critical and supplier_degraded high (enabled suppliers only, last-hour success rate, open orders); supplier_balance_low medium (balance, minimum, runwayDays); services_below_floor high (active services priced below cost + minimum profit); deposits_pending medium; wallets_negative medium; merchants_pending low; commissions_accrued low (count, total, distinct agents); orders_held high (captured incl. VAT, oldest); disputes_due critical when the first is due within 3 days else high; tickets_late medium (customer spoke last and waits longer than the priority target 2 h/8 h/24 h, mocks/support.ts:4-21); refunds_requested medium; refunds_failed high (first refund and its note); fx_stale medium (non-USD rates older than 24 h, same rule as currencies isStale).",
+        "Scope: order items follow scope; supplier and below-floor items are shared; merchant items only for all and b2b; storefront items only for all and b2c; navCounts always cover the whole console (mocks/attention.ts:161-171, navCounts.ts:10-29).",
+        "Supplier low balance: balance below suppliers.low_balance_alert, or less than 2 days of volume at the last 7 days' completed-order cost rate; runwayDays = balance / (7-day cost / 7), null when nothing was spent (mocks/queues.ts:39-58).",
+        "Top merchants: only non-pending merchants with at least one order in the window; spend counts non-rejected orders, profit completed ones; walletBalance is the merchant-side balance (mocks/topClients.ts:10-41).",
+        "Dashboard reads are side-effect free; the payload is requested by every console page every 60 s, so it must be cached briefly (about 15 s, the console's STALE_MS) per (scope, days)."
+      ],
+      "questions": [
+        { "n": 1, "question": "Please confirm the GET /admin/dashboard body, the days parameter (1, 7, 14) and the units (percentages 0 to 100, seconds, milliseconds).", "proposedAnswer": "Confirmed as typed: days in {1, 7, 14} (422 otherwise), percentages as JSON numbers 0-100, durations in seconds or ms as the field name says, runwayDays in days, money as 4-dp strings, chart buckets as UTC 'YYYY-MM-DD' and 'YYYY-MM'.", "basis": "map GET /admin/dashboard (dashboard:read, scope); M35; mocks/handlers.ts:12-36", "confidence": "high", "needsUser": false },
+        { "n": 2, "question": "Can the orders_past_sla item carry the channel of the oldest order (oldestOrderChannel: 'b2b' | 'b2c')?", "proposedAnswer": "Yes: add oldestOrderChannel to orders_past_sla (from the order's client_id/customer_id). Extra fields are allowed, so the console can start using it whenever it wants.", "basis": "map orders (client_id or customer_id, exactly one set); M36", "confidence": "high", "needsUser": false },
+        { "n": 3, "question": "Is there room for a lighter counts route (or ?fields=navCounts)? The sidebar needs six numbers and loads the whole dashboard once a minute.", "proposedAnswer": "Not in the map; keep navCounts in the payload and cache the payload per (scope, days) for about 15 s with index-backed counts. A later ?fields=navCounts can skip the heavy sections without a contract change for the console.", "basis": "map has no counts route; M40; hooks/useDashboardNavCounts.ts:16-20", "confidence": "medium", "needsUser": false },
+        { "n": 4, "question": "top-clients is 'by volume and by profit': one list sorted by spend, or two lists? Does it take days and limit?", "proposedAnswer": "One list ranked by spend, each row carrying profit; query days (1|7|14) and limit (default 6, max 50).", "basis": "map GET /admin/reports/top-clients (reports:read; orders, clients); M41; mocks/topClients.ts", "confidence": "high", "needsUser": false },
+        { "n": 5, "question": "Is the storefront block always the last 30 days, or should it follow days? Should reports/funnel replace it?", "proposedAnswer": "Always the last 30 days, as typed. GET /admin/reports/funnel (checkouts page) stays separate but should share the same counting code. visitorsEstimated has no data source in the map (no visit tracking): keep the demo's estimate round(imeiChecks x 5.6) so it stays >= imeiChecks and the funnel bars stay within 100%.", "basis": "M39, M138; dashboard/mocks/storefront.ts:13-48; lib/storefront.ts:16-35", "confidence": "medium", "needsUser": false },
+        { "n": 6, "question": "Are ordersByType days UTC calendar days, and does monthly for All include the storefront?", "proposedAnswer": "Yes, UTC calendar days and months. monthly for scope=all counts every channel from real data (the demo's folding of the last 30 storefront days into the newest month is not needed); monthly is null only when the scope has no history.", "basis": "dashboard/mocks/charts.ts:12-43, util.ts:1-27; M38", "confidence": "medium", "needsUser": false },
+        { "n": 7, "question": "Supplier lowBalance: below the supplier's minimum balance or under two days of volume at the 7-day cost rate: is that the server's rule, and where does successRate1h come from?", "proposedAnswer": "Yes: lowBalance = balance < suppliers.low_balance_alert or runway < 2 days at the 7-day completed-order cost rate. successRate1h and p50Ms come from the last hour of supplier calls (supplier_api_logs / service_checks), the same health source as the suppliers page.", "basis": "map suppliers (balance, low_balance_alert), service_checks; mocks/queues.ts:39-58; M60", "confidence": "medium", "needsUser": false },
+        { "n": 8, "question": "Will a route to record a supplier top-up exist? Until then the balance warning links to the supplier.", "proposedAnswer": "No: the map has no supplier top-up route; balances come from the supplier sync and the topup ledger event is finance's. Keep the 'Open supplier' link.", "basis": "map suppliers group (no top-up row); moneyEvent topup; M37, M61", "confidence": "high", "needsUser": false }
+      ],
+      "mismatches": [
+        { "id": "M8", "summary": "GET /admin/queues is the Bull Board UI; the console only links to it.", "backendImpact": "Serve Bull Board at /admin/queues behind the staff session cookie and queues:read." },
+        { "id": "M35", "summary": "One Dashboard DTO with a days parameter (1, 7, 14); units fixed by field names.", "backendImpact": "Implement the body and the days parameter; validate both parameters." },
+        { "id": "M36", "summary": "Attention items are facts (kind, numbers, severity, order); the console writes the sentences.", "backendImpact": "Send the 16 kinds with their fields, ranked by severity; unknown future kinds still show." },
+        { "id": "M37", "summary": "No route records a supplier top-up; the button opens the supplier.", "backendImpact": "No top-up endpoint needed." },
+        { "id": "M38", "summary": "Demo chart notes about synthetic months dropped; storefront note shows when monthly is null.", "backendImpact": "Send real monthly data; null only when the scope has no history." },
+        { "id": "M39", "summary": "The storefront funnel and its figures ride in the dashboard payload (last 30 days, null for merchants).", "backendImpact": "Compute the storefront block server-side; reuse the funnel report's counting." },
+        { "id": "M40", "summary": "Sidebar counts ride in the dashboard payload, polled every minute by every page.", "backendImpact": "navCounts must ignore scope; cache the payload." },
+        { "id": "M41", "summary": "Top merchants: days and limit, ranked by spend; panel only with reports:read.", "backendImpact": "Implement days/limit and the ranking; refuse without reports:read." },
+        { "id": "M60", "summary": "Supplier status is active|disabled with separate health fields.", "backendImpact": "Dashboard suppliers[]: enabled = status active, health from health checks." }
+      ],
+      "fixtures": [
+        { "routes": ["GET /admin/dashboard"], "file": "src/features/dashboard/mocks/handlers.ts", "note": "Payload from dashboard.ts over world.ts (live order store, ledger and demo seed); section builders stats.ts, attention.ts, attentionStorefront.ts, queues.ts, charts.ts, storefront.ts, navCounts.ts. A fixed complete payload for exact numbers lives in src/features/dashboard/test/fixtures.ts (FIXTURE_NOW 2026-10-30T10:00:00.000Z)." },
+        { "routes": ["GET /admin/reports/top-clients"], "file": "src/features/dashboard/mocks/topClients.ts", "note": "Ranking over the demo merchants (S.merchants) and the live order store; wallet balances from the mock ledger." },
+        { "routes": ["GET /admin/queues"], "file": "src/features/dashboard/api/dashboard.ts", "note": "No mock: the route is an HTML page; queuesBoardUrl() only builds the link." }
+      ]
+    }
+  ],
+  "crossCutting": [
+    "Bodiless action POSTs: risk approve, refresh-fx and webhook retry send no body and no Content-Type (risk/api/queue.ts:23, settings/api/currencies.ts:57, settings/api/webhooks.ts:44; the client sets Content-Type only when a body exists, src/lib/api/client.ts:61-68), while refunds retry, dispute accept and template preview send '{}' as JSON (refunds/api/refunds.ts:69, refunds/api/disputes.ts:58, settings/api/templates.ts:80-83). Action body schemas must be optional and accept both forms.",
+    "Settings values keep their JSON types: booleans as true/false and counts as JSON integers; the console silently drops a value of another type (settings/lib/policies.ts:81-89, settings/lib/system.ts:62-65), so jsonb setting values must never be stringified.",
+    "Field-error names are matched loosely here: a policy message by key or any 'prefix.key' (settings/lib/policies.ts:101-109); a rule message by id, 'rules.<id>.value' or 'rules.<index>.value' (risk/lib/rules.ts:129-137); a bare 409 ALREADY_BLOCKED without errors[] lands on the value field (risk/components/AddBlockDialog.tsx:30, src/components/ui/dialogSubmit.ts:58-66), so keep errors[] empty on that 409.",
+    "Decimal inputs on settings forms are typed text with any number of decimals ('2.9', '0.30', '0.79'; settings/lib/decimal.ts:14-17, settings/components/GatewayDialog.tsx:34-53, CurrencyDialog.tsx:44-52, TaxRateDialog.tsx:35-47); edits are compared by trimmed text (decimal.ts:19-22). Accept 0-8 decimals and answer normalised strings (4 dp for money and percents, mock settings/mocks/http.ts:66-69).",
+    "Ratios differ by field: JSON numbers 0-100 for dashboard rates and risk heldShare (dashboard/types/index.ts:7-10, risk/types/index.ts:70-71); percent decimal strings, not padded, for report feeRate and refundedPercentOfSales (refunds/types/index.ts:145-156; mock refunds/mocks/reportRoutes.ts:32,52); risk rule values are whole JSON numbers, including a USD amount (risk/types/index.ts:165-172).",
+    "Polling load: the sidebar polls GET /admin/dashboard?scope=all&days=7 every 60 s on every page (dashboard/hooks/useDashboardNavCounts.ts:16-20, dashboard/hooks/useDashboard.ts:8,14); the Risk page polls the queue and four IMEI counts every 30 s (risk/hooks/keys.ts:31, risk/hooks/useImeiChecks.ts:57-66); the Refunds page five figure calls and its lists every 30 s (refunds/hooks/useRefundFigures.ts:20-67, refunds/hooks/keys.ts:18). Cache the dashboard per (scope, days) about 15 s and back filtered counts with indexes.",
+    "GET /admin/queues is a top-level browser navigation to the API origin (dashboard/api/dashboard.ts:37-39, src/lib/api/client.ts:33-40): Bull Board must authenticate by the staff session cookie (sent on cross-subdomain top-level GETs, SameSite=Lax), check queues:read, need no CSRF header, and bypass the JSON, problem+json and CORS layers.",
+    "Calendar dates travel as midnight-UTC instants: tax validFrom/validTo are sent as 'YYYY-MM-DDT00:00:00.000Z' and shown as UTC days (settings/lib/tax.ts:70-85); dashboard chart buckets are UTC 'YYYY-MM-DD' and 'YYYY-MM' strings (dashboard/types/index.ts:7-10, dashboard/mocks/util.ts:1-27). Store tax dates as date and answer midnight UTC.",
+    "Most reads in these features need joins beyond the map's table lists (held-order customer and payment, IMEI check customer/supplier/order, blocklist createdBy, refund order/payment/ledger split, dispute customer, webhook endpoint/client, masked notification recipient, gateway volume30d, template sentLast30Days, dashboard sections): risk/types/index.ts:34-63, refunds/types/index.ts:53-75, settings/types/webhooks.ts:12-17, settings/types/gateways.ts:14-19, dashboard/types/index.ts:171-182. Module boundaries must allow cross-module read models.",
+    "Ids: RF-, DP-, SF- prefixes are added by the console only (refunds/lib/labels.ts:8-15, M32); dashboard attention item ids are opaque strings (dashboard/types/index.ts:48); every other id is a JSON number. :id in POST /admin/risk/orders/:id/* is the order id (risk/api/queue.ts:22-33)."
+  ]
+}

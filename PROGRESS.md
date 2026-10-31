@@ -4,43 +4,84 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
-**Phase 0 is done.** Next: **Phase 1, architecture and contract (Opus only)**:
-1. `docs/contract/ALIGNMENT.md` from the frontend (`../frontend-admin`): transport conventions (Refine simple-rest
-   `_start/_end/_sort/_order` + `x-total-count`, ids, dates, money, casing, enums), auth flow (staff session cookie,
-   CSRF via readable `csrf_token` cookie / `X-CSRF-Token` header, login → 2FA, forced password change, invite/reset
-   token, `ACCOUNT_SUSPENDED`, IP-not-allowed, expiry, `/admin/auth/me` + permissions), error contract
-   (problem+json codes the frontend handles → `docs/contract/error-codes.md`), per-endpoint shapes for the 269
-   frontend `@route` functions. Inputs to read first: frontend `docs/ASSUMED_CONTRACTS.md` (assumed bodies + backend
-   questions), `docs/MISMATCHES.md`, `docs/decisions/005,006,007,011,016`, `src/lib/api/*`, `src/lib/auth/*`.
-2. Decision records 008+ (validation/contract layer, contract sync mechanism, logging, config, money
-   representation, ids, test tooling, metrics, tracing, repo layout, process code sharing, reference docs exposure,
-   security details: token hashing, sessions, CSRF, encryption keys).
-3. `docs/ARCHITECTURE.md` (≤ 4 pages, module diagram), review of `scripts/module-map.mjs` row placement, build order
-   by stage (`st` 0→19), contract test design (`test/contract/`).
+**Phase 1 is done** (architecture + contract). Next: **Phase 2, foundation** (Sonnet implements, Opus reviews), in this
+order: **P2.1 foundation-runtime** first (everything else builds on the contract layer, config, errors and
+bootstrap); then P2.2 data and P2.3 infra in parallel; then P2.4 security and P2.5 staff sign-in; then P2.6 contract
+tests. Parallel implementers need separate git worktrees of this repo (`git worktree add ../worktrees/backend-<f>`;
+the workflow tool's worktree isolation targets the frontend repo, not this one).
+
+Read before briefing any implementer: `docs/contract/ALIGNMENT.md`, the feature's `docs/contract/endpoints/<module>.md`
+and `docs/slices/<module>.json`, `docs/contract/RULES.md` for its frontend features, decisions 008-028.
 
 ## Status (2026-10-31)
 
 - Backend repo: `/home/saifi/gsm-project/backend`, branch `feat/backend` (from the NestJS 12 starter, `master`).
   Frontend: `/home/saifi/gsm-project/frontend-admin` (read-only; `FRONTEND_DIR` default `../frontend-admin`).
 - Map verified: **274 rows, 382 endpoints, 9 surfaces, 66 tables, 13 scenarios, 13 money events, 14 ledger
-  accounts**. `docs/route-manifest.json` holds all endpoints; the frontend's **269 `@route` tags** all exist in it
-  (268 admin + `GET /health`).
-- Module map (draft, reviewed in Phase 1): 12 modules, table ownership = map domains (system health takes 5 tables
-  from domain G). Endpoints: identity 59, money 57, catalog 43, orders 40, platform 33, health 33, customers 28,
+  accounts**. `docs/route-manifest.json` holds all endpoints; the frontend's **269 `@route` tags** all exist in it.
+- Module map reviewed in Phase 1 (no change): 12 modules, table ownership = map domains (system health takes 5
+  tables from domain G). Endpoints: identity 59, money 57, catalog 43, orders 40, platform 33, health 33, customers 28,
   storefront 25, suppliers 18, risk 17, commissions 15, support 14.
+- Contract (Phase 1): `docs/contract/ALIGNMENT.md` (conventions), `frontend-endpoints.json` (exact shapes of the 269
+  console endpoints, extracted from the frontend's TypeScript), `extraction/*.json` (per-endpoint semantics, 6 Opus
+  analysts, all validated), `endpoints/<module>.md`, `error-codes.md` (119 codes), `MISMATCHES.md` (B1-B116),
+  `ANSWERS.md` (201), `RULES.md` (216), `OPEN-QUESTIONS.md` (8), `TESTS.md` (contract-test design).
 - Local stack (`compose.yaml`): Postgres 18.6 (`gsm`, `gsm_test`), queue Redis 8.10 (noeviction + AOF), cache Redis
-  8.10 (allkeys-lru), MinIO (Chainguard image, buckets created by `minio-init`).
-- Bun spike: **27/27 pass** on Bun 1.4.4 (decision 001). `bun run check` green (typecheck + routes:check).
+  8.10 (allkeys-lru), MinIO (Chainguard image). Prometheus is added in Phase 2 (decision 015).
+- Bun spike: **27/27 pass** on Bun 1.4.4 (decision 001). `bun run check` green (typecheck, routes:check,
+  contract:check).
 
 ## Phases
 
 | Phase | Status | Commit | Agents used |
 |---|---|---|---|
-| 0 Setup + Bun spike | done | see `git log` (`chore: phase 0 ...`) | 0 |
-| 1 Architecture + contract | next | | |
-| 2 Foundation | | | |
+| 0 Setup + Bun spike | done | `25282af` | 0 |
+| 1 Architecture + contract | done | see `git log` (`docs: phase 1 ...`) | 6 (Opus analysts, one workflow, 3 at once) |
+| 2 Foundation | next | | |
 | 3 Feature loop (by stage) | | | |
 | 4 Frontend integration | | | |
+
+## Open questions for the user
+
+Eight business rules with lead defaults (`docs/contract/OPEN-QUESTIONS.md`): group promotion, credit limits, manual
+invoices, manual bank deposits, commission on refunded orders, gateway hold_hours, the refund `processing` status,
+pricing-rule stacking. None blocks Phase 2; each touches a later stage (3, 4, 8, 11, 16). Update
+`docs/contract/lead-decisions.json` and rerun `bun run contract:docs` when the user answers.
+
+## Feature plan (Phase 2 and 3)
+
+Each feature: ≤ 6 agent calls (≤ 2 implementer, ≤ 3 reader, 1 Opus review + 1 re-review), one commit. Scenario e2e
+tests are added by the feature that completes the scenario. Endpoint counts from `docs/slices/index.json`.
+
+| # | Feature | Scope | Scenarios completed | Status |
+|---|---|---|---|---|
+| P2.1 | foundation-runtime | config, logging, request id, problem+json + catalog, contract layer (defineRoute, @Route, lists), OpenAPI + Scalar, /health, /metrics, api + worker bootstrap + shutdown, ESLint (jsdoc, boundaries), bunfig, CI script | | |
+| P2.2 | foundation-data | Drizzle schema for all 66 tables (per module), constraints, indexes, ledger triggers, first migration, migrator, resetDb, seed from the frontend demo state | | |
+| P2.3 | foundation-infra | two Redis clients, CacheService, RateLimitService, BullMQ base (queues, worker registry, schedulers, job_runs), outbox + relay, S3 storage, outbound http, crypto (AES-GCM keyring, token hashing, argon2), money helper | | |
+| P2.4 | foundation-security | IP rules hook, maintenance hook, rate-limit hook, auth guards (staff, merchant, customer sessions + CSRF, API key, Dhru, webhook signatures), permission guard, audit interceptor, CORS, helmet, cookies, body limits | | |
+| P2.5 | staff-sign-in | `POST /admin/auth/login`, `/2fa`, `/2fa/setup`, `/logout`, `/password/set`, `GET /admin/auth/me` (6) | | |
+| P2.6 | contract-tests | route/shape/error parity tests, fixture harvest from the frontend mocks, allowlist, CI wiring | | |
+| 2a | identity-staff-access | staff, roles, permissions, sessions, IP rules, access restriction, audit logs, settings (st2 admin, 31) | admin-team, ip-rules | |
+| 2b | identity-merchant-auth | merchant portal sign-in, security, sessions (st2 client, 15) | | |
+| 3 | money-wallets-ledger | postTransaction, money events, wallets, statement, adjust, credit limit, ledger, reconcile, currencies (st3, 14) | | |
+| 4a | catalog-structure | client groups, categories, services, fields, options, inventory (st4/5) | | |
+| 4b | catalog-pricing | group/client prices, pricing rules, bulk price, resolve, merchant catalog and price export | | |
+| 5 | orders-engine | state machine, placement + hold, admin order actions, bulk reply, export, merchant orders, files (st5) | manual | |
+| 6 | suppliers | suppliers admin, Dhru supplier client, dispatch/poll jobs, dispatch/fetch/change-supplier, sync, import (st6) | success, reject, timeout | |
+| 7a | dhru-and-rest-v1 | Dhru surface (8 actions), REST v1 (12), idempotency (st7) | | |
+| 7b | merchant-api-webhooks | API keys, webhook endpoints, deliveries, outgoing events, public docs (st7) | | |
+| 8 | billing | gateways, invoices, payments, approve/reject, KYC, payment webhook (B2B), invoice.paid (st8) | | |
+| 9 | health-dashboard | system health routes, dashboard, queues board (st9) | | |
+| 11 | commissions-reports | plans, assignments, accruals, approve, reports (st11) | | |
+| 12a | notifications | templates, notifications, preferences, Telegram link + webhook (st12) | | |
+| 12b | alerts-integrity | alert rules, alerts, incidents, integrity job (st12) | system-alert, system-integrity | |
+| 14a | storefront-checkout | store config, listings, IMEI check (checksum + TAC), checkout sessions, consents (st14) | | |
+| 14b | customers-accounts | store sign-in, account, admin customers, tax rates, TAC catalog, FX refresh (st14) | b2c-account | |
+| 15 | storefront-content | listings admin, content pages, help, legal documents (st15) | | |
+| 16 | b2c-payments-refunds | pay, receipt, B2C payment webhook, refunds, disputes, VAT/payments reports, storefront settings (st16) | b2c-paid, b2c-refund, b2c-chargeback | |
+| 17 | support | tickets (store + admin), replies, notes, templates, CSAT (st17) | b2c-ticket | |
+| 18 | risk-privacy | IMEI checks via supplier, blocklist, risk queue and rules, data requests, export/anonymize (st18) | | |
+| 19 | growth | abandoned checkouts, recovery, funnel, content generation (st19) | | |
 
 ## Agent budget
 
@@ -50,12 +91,17 @@ re-review), max 2 review rounds.
 | Step | Calls |
 |---|---|
 | Phase 0 | 0 (lead only) |
-| **Total** | **0** |
+| Phase 1 | 6 (contract extraction: Opus analysts, max 3 at once) |
+| **Total** | **6** |
 
 ## Decisions
 
 001 runtime Bun · 002 package manager bun · 003 TypeScript 6.0 · 004 local S3 = Chainguard MinIO · 005 pg driver ·
-006 two Redis roles · 007 argon2id via @node-rs/argon2.
+006 two Redis roles · 007 argon2id via @node-rs/argon2 · 008 zod contract layer · 009 contract sync tests ·
+010 ids and tokens · 011 money · 012 logging · 013 config · 014 testing · 015 observability (+ Prometheus) ·
+016 repo layout · 017 API docs exposure · 018 auth, sessions, CSRF, pipeline · 019 encryption and token hashing ·
+020 outbox and queues · 021 rate limiting · 022 caching · 023 outbound HTTP · 024 ledger · 025 order state machine ·
+026 Dhru compatibility · 027 database conventions · 028 error format.
 
 ## Blockers
 
@@ -67,4 +113,7 @@ None.
   with an active job is proven by the spike).
 - Retire `spike/` and the `postgres` and `argon2` dependencies once Phase 2 integration tests cover the spike checks.
 - zod's JSON Schema output carries `$schema`; strip it when building OpenAPI components.
+- The spike's validation answered 400; the real contract layer answers `422 VALIDATION_FAILED` (decision 028).
+- Fixture harvest runs under Node with the frontend's own Vitest (ALIGNMENT § 8), not under Bun.
+- CI needs the frontend checkout next to this repo (contract:check runs the frontend's TypeScript).
 - The `origin` remote still points at `nestjs/typescript-starter` (never pushed; the user may change it).

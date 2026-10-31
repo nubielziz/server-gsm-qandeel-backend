@@ -18,7 +18,10 @@
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
     "spike": "bun spike/bun-compat/run.ts",
-    "check": "bun run typecheck && bun run routes:check"
+    "check": "bun run typecheck && bun run routes:check && bun run contract:check",
+    "contract:extract": "bun scripts/extract-frontend-contract.mjs",
+    "contract:docs": "bun scripts/build-contract-docs.mjs",
+    "contract:check": "bun scripts/extract-frontend-contract.mjs --check && bun scripts/build-contract-docs.mjs --check"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1161.0",

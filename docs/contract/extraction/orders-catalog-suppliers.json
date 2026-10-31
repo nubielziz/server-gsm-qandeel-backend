@@ -1,0 +1,919 @@
+{
+  "features": [
+    {
+      "feature": "orders",
+      "summary": "The Orders page (/orders) is the staff queue for B2B and B2C orders: a server-paged list with tabs (Open, Needs review, Queued, Processing, Completed, Rejected, All), toolbar filters, per-tab counts read from x-total-count, a CSV export and a drawer per order (detail, timeline, ledger trail, pricing snapshot). The drawer and bulk bar run every order action (accept, reply, reject, reopen, refund, verification, notes, dispatch, fetch, change-supplier) and the paste-based bulk reply. The same list is embedded on merchant/customer pages (fixed clientId/customerId), in the command palette and in the supplier reroute dialog.",
+      "endpoints": [
+        {
+          "key": "GET /admin/files/:id",
+          "successStatus": 302,
+          "query": "",
+          "request": "Never fetched: the console renders a plain link `<a href=API_BASE/admin/files/:id target=_blank>` (orders.ts:63, OrderResult.tsx:26-31, OrderDetails.tsx:30), so the browser sends only the session cookie (no X-CSRF-Token, no Accept: application/json). :id is orders.input_file_id (`inputFileId`) or orders.result_file_id (`result.fileId`); merchants' KYC document links use the same route (M47).",
+          "response": "302 with Location = short-lived presigned object-storage URL (Content-Disposition attachment; filename from files.filename). Any error is rendered raw in the new tab, so keep `detail` readable. Proposal: audit-log the access (files hold personal data).",
+          "errors": [
+            { "status": 401, "code": "UNAUTHORIZED", "when": "no or expired staff session", "ui": "raw error page in the new tab" },
+            { "status": 403, "code": "FORBIDDEN", "when": "staff lacks files:read", "ui": "links are hidden without files:read; raw page if reached" },
+            { "status": 404, "code": "NOT_FOUND", "when": "file id unknown", "ui": "raw page in the new tab" }
+          ],
+          "assumed": false,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/orders",
+          "successStatus": 200,
+          "query": "Simple-rest. `_start`/`_end`: 25 per page; tab and past-SLA counts use `_start=0&_end=1` (8 calls every 30 s, useOrderCounts.ts:20-31); palette `_end=5&_sort=createdAt&_order=desc` (paletteSource.ts:18-21); supplier reroute `_end=200&_sort=createdAt&_order=asc&supplierId=X&status=pending&status=processing` (useSupplierOrders.ts:16-24). `_sort` is only createdAt | totalPrice | status (filters.ts:89); queue tabs default createdAt asc, others desc (filters.ts:99). Filters, repeated key = IN: `status` (pending|processing|completed|rejected), `queue` (pending|manual|needs_attention|verification|review), `type` (service type imei|server|remote|file), `supplierId`, `clientId` (merchant page), `customerId` (customer page), `channel` (b2b|b2c), `pastSla=true`. Tabs: Open = status pending+processing; Needs review = queue manual+needs_attention+verification+review; Queued = queue pending; Processing/Completed/Rejected = status (status.ts:89-106). `q`: case-insensitive contains over id, imei, supplier_ref, client name, customer name, service name (mock handlers/orders.ts:15); the console strips ORD-/SF-/# so a numeric q must match the order id exactly (filters.ts:141).",
+          "request": "",
+          "response": "JSON array + `x-total-count` (total before paging, CORS-exposed). Row = orders columns plus derived fields: `status` Dhru word; `queue` derived (see businessRules) or null; `reviewReason` readable text or null; `channel` b2b when client_id is set, b2c when customer_id is set; `source` dhru|v1|portal|store|admin (status.ts:129-138); `service` {id, name, type, slaMinutes, category name}; `client` {id,name} or null; `customer` {id,name,email} with the full email (masked in the browser, BuyerCell.tsx:15) or null; `supplier` {id,name} or null; `supplierRef`; `attempts` (supplier send attempts); `result` {code: result_code, comment: result_comment, fileId: result_file_id}; money (unitPrice, totalPrice, unitCost, totalCost, taxAmount) as 4-dp USD strings, totalPrice net of VAT (gross = totalPrice + taxAmount, lib/money.ts:13-16); `currency` = buyer display currency (USD for B2B, checkout currency for B2C) with `pricingSnapshot.fx` (USD to that currency) and `pricingSnapshot.taxRate` as a fraction (lib/money.ts:18-28, OrderMoney.tsx:70-73); `completedAt` set for both completed and rejected (SlaCell). `dispatchState` is passed through but unused by screens.",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "no orders:read", "ui": "page hidden; merchant/customer tabs show a lock" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "unknown sort field or bad filter value", "ui": "table error state with Retry" }
+          ],
+          "assumed": true,
+          "mapConflict": "orders has no queue, review_reason, channel or attempts columns (only dispatch_state, verification_status, client_id/customer_id). Proposal: derive them in the read model (queue from dispatch_state + status + verification_status + risk hold; reviewReason from the latest review order_event; attempts = count of dispatch/retry events or supplier place* log rows). The map's order example uses source `rest_api`; the console labels dhru|v1|portal|store|admin, so store those values."
+        },
+        {
+          "key": "GET /admin/orders/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "Same shape as a list row. Read after every action (drawer refresh) and for deep links `/orders?order=<id>` from the palette, supplier API log, refunds, support, audit and dashboard.",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "order id unknown (orders.test.ts:124-126 expects this code)", "ui": "drawer error state" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no orders:read", "ui": "order numbers render as plain text, drawer not mounted" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/orders/:id/events",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "Bare JSON array of every order_events row of the order (no paging, no x-total-count); any order, the console sorts oldest first. Event = {id, type, fromStatus|null, toStatus|null, actor {type staff|client|customer|system|supplier, id|null, name|null}, data, createdAt}. `data.message` is shown verbatim when present; otherwise the console words these types from data fields: created(source), hold, dispatch(supplier), ack(ref), accepted, completed, settle, rejected(reason), release, refund(reason), retry, review(reason), reopened(reason), supplier_changed, verification(decision), note(body), paid, risk, notify, dispute; an `order.`/`order_` prefix is tolerated (lib/events.ts:9-60). actor.name is joined (staff, merchant, customer or supplier name). Internal notes appear here but must never reach client/store/v1 timelines.",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "order id unknown", "ui": "timeline error state" }
+          ],
+          "assumed": true,
+          "mapConflict": "order_events.actor_id is polymorphic over staff_users, clients and customers only; the console also expects actor types `system` (id null) and `supplier`. Proposal: allow actor_type supplier (actor_id = suppliers.id) and system (null)."
+        },
+        {
+          "key": "GET /admin/orders/export",
+          "successStatus": 200,
+          "query": "Same filters, `q`, `_sort` and `_order` as GET /admin/orders; `_start`/`_end` are never sent (useOrderExport.ts:15, orders.test.ts:312-316): export every matching row.",
+          "request": "Sent with Accept: */* and credentials; downloaded as a blob.",
+          "response": "text/csv body with `Content-Disposition: attachment; filename=...` (the console uses that name, else `orders-<tab>.csv`; the header must be listed in Access-Control-Expose-Headers). Mock columns: id,created,channel,buyer,service,input,status,supplier,price,cost (handlers/orders.ts:74-91). The toast says 'Exported N orders' with the list total, so include all matching rows. Stream it; proposal: audit-log the export and cap very large files.",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "no orders:read", "ui": "error toast" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "bad filter or sort value", "ui": "error toast" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/orders/:id/accept",
+          "successStatus": 204,
+          "query": "",
+          "request": "Body `{}`. No Idempotency-Key.",
+          "response": "204, no body (console refetches order, events and counts). Manual order (status pending, dispatch_state manual) moves to status processing with queue null (orders.test.ts expects {status: processing, queue: null}); order_events `accepted` (actor staff); audit_logs; outbox order.status_changed (STATUS 1). No money moves; the hold stays (map scenario manual step 6).",
+          "errors": [
+            { "status": 409, "code": "NOT_MANUAL", "when": "order is not in the manual queue (mock ordersActionRoutes.ts:23-27)", "ui": "error toast with the server detail" },
+            { "status": 409, "code": "ORDER_NOT_OPEN", "when": "order already completed or rejected", "ui": "error toast" },
+            { "status": 404, "code": "NOT_FOUND", "when": "order id unknown", "ui": "error toast" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no orders:update", "ui": "button disabled with a hint; toast if reached" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/orders/:id/change-supplier",
+          "successStatus": 204,
+          "query": "",
+          "request": "Body `{ supplierId?, resetReference? }`. The console always sends `{ supplierId, resetReference: true }` and then calls dispatch (drawer reroute useOrderMutations.ts:169-183, bulk useBulkSend.ts:20-35, supplier Reroute dialog). supplierId is a SUPPLIER id: the server must resolve orders.supplier_service_id from the order service's service_supplier_links whose supplier_services.supplier_id = supplierId (active link, lowest priority). resetReference=true clears supplier_ref so the next dispatch places a new supplier order.",
+          "response": "204. Does not contact the supplier (map). order_events `supplier_changed` (data: from/to supplier, resetReference), audit_logs. Proposal: refresh unit_cost/total_cost from the new supplier service credit x credit_rate (price unchanged). If the following dispatch fails, the move stands (useBulkSend.ts:26-34), so the order must stay dispatchable.",
+          "errors": [
+            { "status": 409, "code": "ORDER_NOT_OPEN", "when": "order closed", "ui": "toast / reroute summary line" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[{field: supplierId}]: unknown supplier, or (proposal) the service has no link to that supplier", "ui": "toast / summary line with the message" },
+            { "status": 409, "code": "SUPPLIER_DISABLED", "when": "proposal: target supplier is disabled or paused", "ui": "toast / summary line" },
+            { "status": 404, "code": "NOT_FOUND", "when": "order id unknown", "ui": "toast" }
+          ],
+          "assumed": true,
+          "mapConflict": "Map: change-supplier only changes the supplier or resets the reference, and its body has no supplierServiceId, so the server picks the supplier service from the links. PROGRESS.md:252 asks for an optional `dispatch: true` to make reroute one atomic call; proposal: accept it (change + enqueue dispatch in one transaction) while keeping the two-call flow working."
+        },
+        {
+          "key": "POST /admin/orders/:id/dispatch",
+          "successStatus": 204,
+          "query": "",
+          "request": "Body `{}`. Used by Retry (RetryMenu.tsx:24-29), bulk retry (one call per order, sequential, useBulkSend.ts:25) and right after change-supplier.",
+          "response": "204. Force-send to the order's supplier service: dispatch_state pending and a `supplier-dispatch` job (decision 020), attempts +1, order_events `retry`/`dispatch`, supplier_api_logs row; on REFERENCEID the worker stores supplier_ref and sets status processing (STATUS 1). No money moves (hold stays). Map timeout step 10: staff dispatch only after checking the supplier did not run it; never auto-resend. The console toast says 'Status is now Processing' and refetches.",
+          "errors": [
+            { "status": 409, "code": "ORDER_NOT_OPEN", "when": "order closed", "ui": "toast (single) / summary line (bulk)" },
+            { "status": 409, "code": "NO_SUPPLIER", "when": "proposal: no active supplier link for the service (manual order)", "ui": "toast / summary line" },
+            { "status": 409, "code": "SUPPLIER_DISABLED", "when": "proposal: the order's supplier is disabled or paused", "ui": "toast / summary line" },
+            { "status": 409, "code": "ORDER_HELD", "when": "proposal: B2C order held by risk (decisions are POST /admin/risk/orders/:id/*, M28)", "ui": "toast" },
+            { "status": 401, "code": "UNAUTHORIZED", "when": "session expired", "ui": "bulk run stops; remaining orders listed as not sent" }
+          ],
+          "assumed": true,
+          "mapConflict": "The UI copy assumes the send happened now; with the outbox/queue design the status becomes processing only when the worker gets a REFERENCEID. Proposal: enqueue and answer 204 at once (any 2xx is accepted)."
+        },
+        {
+          "key": "POST /admin/orders/:id/fetch",
+          "successStatus": 204,
+          "query": "",
+          "request": "Body `{}`.",
+          "response": "204. Calls getimeiorder for supplier_ref now (supplier_api_logs row). STATUS 4: complete the order (result_code, ledger complete); STATUS 3: reject (ledger reject); still running: order_events `fetch` saying not ready, and dispatch_state needs_attention becomes sent once the supplier confirms it has the order. Recommended first action after a timeout when supplier_ref exists (lib/actions.ts:44-71).",
+          "errors": [
+            { "status": 409, "code": "NO_REFERENCE", "when": "order has no supplier_ref (mock ordersActionRoutes.ts:103-113)", "ui": "error toast" },
+            { "status": 409, "code": "ORDER_NOT_OPEN", "when": "order closed", "ui": "error toast" },
+            { "status": 409, "code": "SUPPLIER_UNAVAILABLE", "when": "proposal: supplier unreachable or timed out during the poll", "ui": "error toast" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/orders/:id/notes",
+          "successStatus": 204,
+          "query": "",
+          "request": "Body `{ body }` (trimmed, required; the form caps it at 500 chars, OrderNoteForm.tsx:34).",
+          "response": "204. Appends order_events `note` (data.body, actor staff) and sets orders.admin_note to the latest note (drawer 'Internal note'). Any status. Never exposed to buyers or webhooks.",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[{field: body}]: empty note", "ui": "message under the note field" },
+            { "status": 404, "code": "NOT_FOUND", "when": "order id unknown", "ui": "form error" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/orders/:id/refund",
+          "successStatus": 204,
+          "query": "",
+          "request": "Body `{ reason }` (required, buyer-visible). Permission orders:reopen.",
+          "response": "204. Completed B2B order only, reopen + reject in one DB transaction: status rejected, result_code = reason, completed_at = now; ledger revenue to client_hold to client_wallet (net revenue to client_wallet, total_price); cogs is NOT reversed (UI: 'A refund after delivery loses the supplier cost', OrderFooter.tsx:140-141); order_events rejected + refund (data.reason); webhook STATUS 3; audit. The drawer's money trail reads GET /admin/ledger/transactions?refType=order&refId=<id> (mock kind `refund`).",
+          "errors": [
+            { "status": 409, "code": "ORDER_NOT_COMPLETED", "when": "order is not completed (mock ordersActionRoutes.ts:55-63)", "ui": "message in the refund dialog" },
+            { "status": 409, "code": "USE_REFUNDS", "when": "B2C order: refunded from /admin/refunds (map row)", "ui": "message in the dialog (UI normally shows 'Open Refunds' instead)" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[{field: reason}]: empty", "ui": "message under the reason field" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no orders:reopen", "ui": "button disabled with a hint" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/orders/:id/reject",
+          "successStatus": 204,
+          "query": "",
+          "request": "Body `{ reason }`: a preset (lib/reply.ts:51-58) or typed text up to 120 chars (RejectDialog.tsx:114); buyer-visible. Bulk reject = one call per order, sequential, same reason (useBulkReject.ts).",
+          "response": "204. Open order (pending|processing) becomes rejected; result_code = reason; completed_at = now; a not-yet-sent outbox dispatch is cancelled; a reserved inventory code returns to available. B2B: ledger reject client_hold to client_wallet (total_price), events rejected + release. B2C: full refund before delivery as map scenario b2c-refund: refunds row (method original, gross amount), ledger customer_funds to gateway_clearing (net) + vat_payable to gateway_clearing (tax), gateway refund, events rejected + refund. Webhook STATUS 3; audit.",
+          "errors": [
+            { "status": 409, "code": "ORDER_NOT_OPEN", "when": "order already closed (second call too, orders.test.ts:190)", "ui": "dialog error (single) or bulk summary line" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[{field: reason}]: empty", "ui": "message under the reason field" },
+            { "status": 409, "code": "ORDER_HELD", "when": "proposal: B2C order held by risk", "ui": "dialog error" }
+          ],
+          "assumed": true,
+          "mapConflict": "The map row lists orders, order_events, ledger_entries only; a B2C reject also needs refunds/payments and the gateway (scenario b2c-refund). Proposal: reject on a B2C order runs the money module's full-refund path inside the same transaction."
+        },
+        {
+          "key": "POST /admin/orders/:id/reopen",
+          "successStatus": 204,
+          "query": "",
+          "request": "Body `{ reason? }` (optional, up to 140 chars, ReopenDialog.tsx:39); the console sends `{}` when empty. Permission orders:reopen.",
+          "response": "204. Completed order goes back to processing; completed_at = null; queue null; ledger revenue to client_hold (B2B) or customer_funds (B2C), total_price; event reopened (data.reason); webhook STATUS 1; audit. Offered for both channels (lib/actions.ts:70).",
+          "errors": [
+            { "status": 409, "code": "ORDER_NOT_COMPLETED", "when": "order is not completed (mock ordersActionRoutes.ts:43-51, orders.test.ts)", "ui": "message in the reopen dialog" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no orders:reopen", "ui": "button disabled with a hint" }
+          ],
+          "assumed": true,
+          "mapConflict": "Mock reopen also moves cogs back to supplier_prepaid (ordersActions.ts:114-133) while its refund keeps cogs (136-158); the map defines refund = reopen + reject and the UI says a refund loses the supplier cost. Proposal: reopen reverses revenue only, and a later reply on that order must not book cogs a second time unless a new supplier charge happened."
+        },
+        {
+          "key": "POST /admin/orders/:id/reply",
+          "successStatus": 204,
+          "query": "",
+          "request": "Body `{ code, comment? }`: code = result text (trimmed, required); comment optional, up to 200 chars. The field-error name is `code` (CompleteDialog maps it to its reply input, CompleteDialog.tsx:83). Several orders are completed through bulk-reply/apply instead.",
+          "response": "204. Open order becomes completed: result_code/result_comment, completed_at, outbox dispatch cancelled if not sent, reserved inventory code becomes sold. B2B ledger complete: client_hold to revenue (total_price), plus supplier_prepaid to cogs (total_cost) only when a supplier executed it (map manual scenario step 8 books revenue only). B2C: b2c_deliver (customer_funds to revenue net; VAT stays in vat_payable). Events completed + settle; webhook STATUS 4; audit. Toast: '<price> settled to revenue'.",
+          "errors": [
+            { "status": 409, "code": "ORDER_NOT_OPEN", "when": "order closed (orders.test.ts expects this code)", "ui": "message in the complete dialog" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[{field: code}]: empty reply", "ui": "message under the reply box" },
+            { "status": 409, "code": "ORDER_HELD", "when": "proposal: B2C order held by risk", "ui": "dialog error" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/orders/:id/verification",
+          "successStatus": 204,
+          "query": "",
+          "request": "Body `{ decision: accept | refund, note? }` (note up to 140 chars, VerificationDialog.tsx:50).",
+          "response": "204. Only a completed order whose verification_status is requested (queue verification). accept: verification_status accepted, charge stands, event verification (data.decision). refund: verification_status refunded and the same money as POST refund (revenue to client_wallet, cogs kept), status rejected, result_code = note or a default text, webhook STATUS 3.",
+          "errors": [
+            { "status": 409, "code": "NOT_IN_VERIFICATION", "when": "no pending verification request (mock ordersActionRoutes.ts:77-85)", "ui": "message in the verification dialog" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "decision not accept|refund (field decision) or note too long", "ui": "dialog error slot / under the note" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/orders/bulk-reply/apply",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body `{ items: [{ orderId, code }] }` from the paste preview's matched lines, or from bulk Complete with the reply's `{input}` already replaced per order in the browser (CompleteDialog.tsx:51-60). No comment. Proposal: cap the item count (e.g. 500) with a 422.",
+          "response": "200 `{ applied, failed: [{ orderId, title }] }`. Each item is an independent POST reply (own DB transaction, same checks and ledger); a refused item goes to `failed` with a readable reason, shown verbatim in the summary dialog. Per-item refusals never turn the call into a 4xx.",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "items missing, empty or malformed", "ui": "dialog error slot" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no orders:update", "ui": "Bulk reply button disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/orders/bulk-reply/preview",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body `{ text }`: the pasted lines as typed.",
+          "response": "200 `{ lines: [{ line, raw, imei, code, orderId, status }] }`; line is 1-based over the pasted text, blank lines skipped. First token (split on whitespace, comma or semicolon) = input, the rest = code. status: invalid (no input or no code), not_found (no order with that input), not_open (only closed orders), ambiguous (several open orders), matched (orderId set). Match orders.imei with whitespace removed (mock handlers/orders.ts:50-63). Changes nothing.",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[{field: text}]: nothing pasted", "ui": "message under the text area (BulkReplyDialog.tsx:99)" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        }
+      ],
+      "businessRules": [
+        "Status = map Dhru codes pending 0, processing 1, completed 4, rejected 3 (orders slice statuses). Open = pending|processing (status.ts:14-16); state-changing actions on a closed order answer 409 ORDER_NOT_OPEN (mock ordersShared.ts:13-14), so double clicks are harmless (no Idempotency-Key is sent).",
+        "queue derivation (mock src/mocks/orders.ts:110-138, map scenarios manual/timeout): review = B2C order held by risk (dispatch_state held, risk_assessments review undecided); manual = status pending and dispatch_state manual (manual step 5); needs_attention = dispatch_state needs_attention (timeout step 8; status stays pending until a REFERENCEID, the mock uses processing, the UI renders both); verification = status completed and verification_status requested; pending = status pending and dispatch_state pending (waiting in the outbox); otherwise null. After accept the queue must become null although no supplier is involved.",
+        "reviewReason is readable text per queue: manual 'Manual service: operator dispatch required' (src/mocks/orders.ts:59), verification 'The merchant asked for the result to be checked', needs_attention = the supplier error or timeout text, review = risk summary; stored in the review order_event data.reason.",
+        "pastSla=true (demo isBreach 11-state.js:64, mock handlers/orders.ts:19-22): open, not in a review queue (manual, needs_attention, verification, review), and now - created_at > the service's SLA minutes.",
+        "Ledger per action (map moneyEvents): placement = order (client_wallet to client_hold) or b2c_pay; reply = complete (cogs leg only when a supplier executed the order) or b2c_deliver; reject = reject or b2c_refund; refund = revenue to client_wallet (cogs kept); reopen = revenue back to client_hold/customer_funds; verification refund = refund; accept, notes, change-supplier, dispatch and an unfinished fetch move no money. Each posting goes through postTransaction with ref_type order, ref_id = order id and one idempotency key per transition (decision 024); the drawer reads GET /admin/ledger/transactions?refType=order&refId=<id> sorted createdAt asc (useLedgerTrail.ts:12-13); mock tx kinds order_settle, order_release, refund, adjustment (orders.test.ts:157-189).",
+        "Every staff action writes order_events and audit_logs (map manual step 8); every status change emits outbox order.status_changed with the whole order (EVENT row).",
+        "Supplier timeout: no automatic resend; the order waits in needs_attention with the balance still held (map timeout step 8, decision 020). The UI recommends Fetch when supplier_ref exists, else Retry (lib/actions.ts:44-71).",
+        "Refund route only for completed B2B orders; B2C is refunded via /admin/refunds (map row, M25). Reopen and refund need orders:reopen; other actions orders:update (map).",
+        "Held B2C orders (queue review) are decided only through POST /admin/risk/orders/:id/approve|refund (risk:decide, M28); the UI offers no order action on them, the server should refuse reply/reject/dispatch with 409 (proposal ORDER_HELD).",
+        "Inventory-backed services: reserve a code at placement (inventory_codes.status reserved, order_id), mark it sold on completion (result_code = the code), release it to available when the order is rejected before delivery; a delivered code never returns to stock (refund/reopen leave it sold).",
+        "A service with no active supplier link, or executionMode manual, puts new orders in the manual queue (dispatch_state manual) (useReplaceLinks.ts:29-31, map manual scenario).",
+        "Field lengths the server must accept: reject reason 120, reopen reason 140, note 500, reply comment 200, verification note 140 (component maxLength attributes).",
+        "orders.source values dhru | v1 | portal | store | admin (status.ts:129-138); service types lower case imei|server|remote|file (M21).",
+        "Register GET /admin/orders/export (and other static sub-routes) before GET /admin/orders/:id (handlers/orders.ts:1-3)."
+      ],
+      "questions": [
+        { "n": 1, "question": "Could POST /admin/orders/:id/change-supplier take `dispatch: true` so a reroute is one atomic call? (PROGRESS.md:252)", "proposedAnswer": "Yes: optional `dispatch: true` changes the supplier and enqueues the dispatch in one transaction; without it the route keeps today's behaviour so the console's two-call flow still works.", "basis": "map row POST /admin/orders/:id/change-supplier; M26; useBulkSend.ts:20-35", "confidence": "medium", "needsUser": false },
+        { "n": 2, "question": "Could the list sort by SLA urgency, the demo's default order? (PROGRESS.md:252)", "proposedAnswer": "Not needed now: the console only sends createdAt, totalPrice or status (filters.ts:89). Later the server could add `_sort=slaDueAt` (created_at + sla minutes) as an indexed expression; the UI would need a small change to offer it.", "basis": "M22; filters.ts:89-99; demo 41-p-orders.js", "confidence": "high", "needsUser": false },
+        { "n": 3, "question": "The order DTO fields queue, reviewReason, channel and attempts have no columns. Derive or store them?", "proposedAnswer": "Derive in the admin read model: queue from status + dispatch_state + verification_status + risk hold, reviewReason from the latest review order_event, channel from client_id/customer_id, attempts from dispatch/retry events. No new columns.", "basis": "orders slice columns; scenarios manual and timeout; src/mocks/orders.ts:110-138", "confidence": "medium", "needsUser": false },
+        { "n": 4, "question": "Which status does an order have while it waits in needs_attention after a supplier timeout?", "proposedAnswer": "Keep the Dhru status it had: pending (STATUS 0) when no REFERENCEID was received, processing when the timeout happened while polling; only dispatch_state changes. The console derives its words from queue, so both render.", "basis": "map timeout scenario (step 8 sets dispatch, not status; track pending to processing); status.ts:28-34", "confidence": "high", "needsUser": false },
+        { "n": 5, "question": "What does pastSla=true include? System health links needs_attention + pastSla (M230), but the demo excludes review queues.", "proposedAnswer": "Follow the demo for /admin/orders: open, not in a review queue, older than the service SLA. Then the System health needs_attention link lists nothing; better change that link to queue=needs_attention without pastSla.", "basis": "demo 11-state.js:64 isBreach; mock handlers/orders.ts:19-22; M230", "confidence": "medium", "needsUser": false },
+        { "n": 6, "question": "What does reopen do to the ledger, and is the supplier cost reversed?", "proposedAnswer": "Reverse revenue only (revenue to client_hold, or customer_funds for B2C); cogs stays because the supplier already consumed the credit. A later reply posts hold to revenue without a second cogs leg unless a new supplier charge happened.", "basis": "map row refund = reopen then reject; OrderFooter.tsx:140-141 copy; ordersActions.ts:114-158", "confidence": "medium", "needsUser": false },
+        { "n": 7, "question": "What does reject do for a B2C (storefront) order?", "proposedAnswer": "A full refund before delivery as scenario b2c-refund: refunds row (method original, gross incl. VAT), gateway refund, ledger customer_funds + vat_payable to gateway_clearing, outbox dispatch cancelled, order rejected, all in one transaction.", "basis": "scenario b2c-refund steps 3-4; moneyEvent b2c_refund; RejectDialog copy 'customers to their card'; ordersActions.ts:77-111", "confidence": "medium", "needsUser": false },
+        { "n": 8, "question": "A completed B2C order can be reopened from the drawer; may a later reject refund the card at once, bypassing /admin/refunds approval?", "proposedAnswer": "Proposal: no. Reject on a B2C order that was delivered before answers 409 USE_REFUNDS, so post-delivery refunds always go through /admin/refunds (refunds:approve).", "basis": "map row POST /admin/orders/:id/refund (storefront orders refunded from /admin/refunds); lib/actions.ts:70 offers reopen for both channels", "confidence": "low", "needsUser": true },
+        { "n": 9, "question": "change-supplier sends a supplier id, but orders store supplier_service_id. How is the supplier service chosen?", "proposedAnswer": "Use the order service's service_supplier_links row whose supplier service belongs to that supplier (active, lowest priority); refuse with 422 errors[{field: supplierId}] when the service has no link to that supplier. Optionally also accept supplierServiceId.", "basis": "orders/suppliers tables; RetryMenu.tsx:30-37 offers every enabled supplier", "confidence": "high", "needsUser": false },
+        { "n": 10, "question": "Is dispatch synchronous (supplier answered) or queued when the route returns?", "proposedAnswer": "Queued: set dispatch_state pending, enqueue supplier-dispatch and answer 204; the worker sets processing on REFERENCEID. The console's 'Status is now Processing' toast is optimistic; it refetches the order anyway.", "basis": "decision 020; map scenario dispatch steps; useOrderMutations.ts:139-150", "confidence": "medium", "needsUser": false },
+        { "n": 11, "question": "Which values does verification_status take and who sets requested?", "proposedAnswer": "none | requested | accepted | refunded. POST /v1/orders/:id/verify and /client/orders/:id/verify set requested on a completed order within services.verify_window_h when allow_verify is true; the admin decision sets accepted or refunded.", "basis": "map v1/client verify rows; services.allow_verify, verify_window_h; map order example verification none; ordersActions.ts:161-180", "confidence": "high", "needsUser": false },
+        { "n": 12, "question": "Export: which columns, and is there a row cap?", "proposedAnswer": "Columns id, created, channel, buyer, service, input, status, supplier, price, cost (mock); every matching row, streamed; audit-log each export; a hard cap (e.g. 100k rows) answers 422 with a readable detail.", "basis": "map rule: export returns CSV with the list filters; handlers/orders.ts:66-99; M125 reasoning", "confidence": "medium", "needsUser": false },
+        { "n": 13, "question": "Bulk-reply preview: how are lines matched?", "proposedAnswer": "As the mock: first token is the input matched against orders.imei (whitespace removed) among all orders; statuses matched, not_found, not_open, ambiguous, invalid. Optionally accept `#<id>` as the first token to match an order id.", "basis": "map row 'Match IMEI and CODE lines to orders'; handlers/orders.ts:50-63", "confidence": "high", "needsUser": false }
+      ],
+      "mismatches": [
+        { "id": "M10", "summary": "The map gives no bodies; every order body and DTO is an assumed contract.", "backendImpact": "Confirm or correct the shapes in this file; the frontend changes types in one place." },
+        { "id": "M20", "summary": "Demo's five states become status + queue + reviewReason; tabs are filters; counts are list calls read from x-total-count.", "backendImpact": "Expose queue and reviewReason, support status/queue IN filters and cheap COUNTs (partial index on open orders)." },
+        { "id": "M21", "summary": "Service types are lower case imei|server|remote|file.", "backendImpact": "Filter `type` and DTO values in lower case." },
+        { "id": "M22", "summary": "Server-side list, 25 per page; sorts only createdAt, totalPrice, status; q strips ORD-/SF-/#.", "backendImpact": "Support exactly these sorts; a numeric q matches the id." },
+        { "id": "M23", "summary": "Bulk Reject/Retry/Reroute are sequential single calls; bulk Complete is bulk-reply/apply.", "backendImpact": "Per-item results in apply; readable refusals on single routes; rate limits tolerant of ~200 sequential POSTs." },
+        { "id": "M24", "summary": "Reply sends code (+comment); no admin upload; files download via GET /admin/files/:id.", "backendImpact": "Result files come only from suppliers; the file route redirects to a signed link." },
+        { "id": "M25", "summary": "Refund only for completed B2B orders; B2C refunds live on /admin/refunds.", "backendImpact": "409 USE_REFUNDS for B2C on POST refund." },
+        { "id": "M26", "summary": "Retry = dispatch; Reroute = change-supplier (resetReference) then dispatch; Fetch is new.", "backendImpact": "change-supplier must not contact the supplier and must leave the order dispatchable." },
+        { "id": "M27", "summary": "Past SLA is the server's call (pastSla=true).", "backendImpact": "Implement the pastSla filter (definition in businessRules)." },
+        { "id": "M28", "summary": "Held storefront orders are decided on the Risk page.", "backendImpact": "Order actions must not bypass the risk decision (refuse with 409)." },
+        { "id": "M29", "summary": "'How was this priced?' reads orders.pricing_snapshot: source, steps[], floor, clamped, fx, taxRate.", "backendImpact": "Write the snapshot at order time in the same step shape as GET /admin/pricing/resolve." },
+        { "id": "M32", "summary": "Ids are numbers; ORD-/SF- prefixes are display only.", "backendImpact": "No prefixes in data; numeric q matches the id." },
+        { "id": "M33", "summary": "Palette searches orders on the server (q, 5 rows, newest first).", "backendImpact": "q must be indexed and fast (trigram or exact id/imei)." },
+        { "id": "M34", "summary": "Orders reads GET /admin/suppliers and /admin/clients (first 200 by name) for its menus.", "backendImpact": "Those lists must accept _sort=name and carry supplier health and status." },
+        { "id": "M230", "summary": "System health links needs_attention with pastSla=true.", "backendImpact": "With the demo's pastSla definition such a link lists nothing; see question 5." }
+      ],
+      "fixtures": [
+        { "routes": ["GET /admin/orders", "GET /admin/orders/:id", "GET /admin/orders/:id/events", "GET /admin/orders/export", "POST /admin/orders/bulk-reply/preview", "POST /admin/orders/bulk-reply/apply", "GET /admin/files/:id"], "file": "src/mocks/handlers/orders.ts", "note": "Reads, export columns, paste matching and per-item apply; rows from src/mocks/orders.ts (demo orders from src/mocks/seed/demo-state.json mapped to status/queue, ids without prefix, pricing snapshots). The file route returns text in the mock; the real one redirects." },
+        { "routes": ["POST /admin/orders/:id/accept", "POST /admin/orders/:id/reply", "POST /admin/orders/:id/reject", "POST /admin/orders/:id/reopen", "POST /admin/orders/:id/refund", "POST /admin/orders/:id/verification", "POST /admin/orders/:id/notes", "POST /admin/orders/:id/dispatch", "POST /admin/orders/:id/fetch", "POST /admin/orders/:id/change-supplier"], "file": "src/mocks/handlers/ordersActionRoutes.ts", "note": "Refusal codes and 204 answers (ordersShared.ts:28-38); state changes, timeline lines and ledger lines in src/mocks/ordersActions.ts and src/mocks/ledger.ts; expected transitions in src/features/orders/api/orders.test.ts." }
+      ]
+    },
+    {
+      "feature": "services",
+      "summary": "The Services & pricing page (/services) manages the catalog: a server-paged services table with filters and below-floor chips, create/edit/delete, price and switch edits, replace-all dialogs for custom fields, option lists and group prices, and a bulk price change (preview, then apply). Other tabs: Categories (CRUD), Rules and groups (pricing rules CRUD plus the floor policy), Price resolver (server-resolved price with steps for one merchant) and Code inventory (masked code list, import, void). It also reads the merchants feature's client groups and clients as private lookups.",
+      "endpoints": [
+        {
+          "key": "DELETE /admin/pricing-rules/:id",
+          "successStatus": 204,
+          "query": "",
+          "request": "",
+          "response": "204. New orders stop using the rule; existing orders keep their pricing_snapshot. Audit-logged.",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "rule id unknown", "ui": "message in the delete confirm" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no pricing:delete", "ui": "Delete hidden/disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "DELETE /admin/service-categories/:id",
+          "successStatus": 204,
+          "query": "",
+          "request": "",
+          "response": "204.",
+          "errors": [
+            { "status": 409, "code": "CATEGORY_IN_USE", "when": "services still belong to it; detail like '<name> still has N services. Move them to another category first.' (categoryRoutes.ts:93-105)", "ui": "message in the delete dialog" },
+            { "status": 404, "code": "NOT_FOUND", "when": "category id unknown", "ui": "dialog message" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no catalog:delete", "ui": "Delete disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "DELETE /admin/services/:id",
+          "successStatus": 204,
+          "query": "",
+          "request": "",
+          "response": "204. Proposal: cascade the service's fields, options, group prices, client prices and supplier links; refuse when orders or inventory codes reference it.",
+          "errors": [
+            { "status": 409, "code": "SERVICE_IN_USE", "when": "the service has orders; detail '<name> has N orders, so it cannot be deleted. Disable it instead.' (serviceRoutes.ts:169-185)", "ui": "message in the delete dialog" },
+            { "status": 404, "code": "NOT_FOUND", "when": "service id unknown", "ui": "dialog message" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no catalog:delete", "ui": "Delete disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/inventory-codes",
+          "successStatus": 200,
+          "query": "`_start`/`_end` (25 per page), always `_sort=createdAt&_order=desc` (useInventory.ts:28; default newest first), filters `serviceId` and `status` (available|reserved|sold|void). No q from the UI.",
+          "request": "",
+          "response": "Array + x-total-count. Row: id, maskedCode (every character but the last four replaced by bullets, dto.ts:94; the plain code is never sent), service {id,name}, status, orderId or null, batchRef, createdAt.",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "no inventory:read", "ui": "tab hidden" }
+          ],
+          "assumed": true,
+          "mapConflict": "inventory_codes has only code_enc. Masking and global duplicate detection on import need a deterministic keyed hash (e.g. code_hash, HMAC per decision 019) plus decrypt-on-read or a stored last-4."
+        },
+        {
+          "key": "GET /admin/pricing-rules",
+          "successStatus": 200,
+          "query": "Whole list: `_start=0&_end=200&_sort=priority&_order=asc` (usePricingRules.ts:16-17). JSDoc also names filters scope, kind, isActive (not sent today).",
+          "request": "",
+          "response": "Array + x-total-count. percent in percent units as a decimal string ('2.0000' = 2%), fixed and minProfit 4-dp money, all non-negative (kind gives the direction); target {id,name} of the category or service (null for global); group {id,name} or null (every group); startsAt/endsAt ISO or null.",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "no pricing:read", "ui": "Rules and groups tab hidden" }
+          ],
+          "assumed": true,
+          "mapConflict": "pricing_rules has no starts_at/ends_at, but the console sends and reads them for promos (M97). Proposal: add nullable timestamptz columns; a rule outside its window does not apply."
+        },
+        {
+          "key": "GET /admin/pricing-rules/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "Same shape as a list row (Refine show; no screen calls it today).",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "rule id unknown", "ui": "generic error" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/pricing/resolve",
+          "successStatus": 200,
+          "query": "`serviceId` and `clientId`, both required integers (pricing.ts:40).",
+          "request": "",
+          "response": "price (final, after the floor clamp), rawPrice (before the clamp), floor, clamped, source (client|group|base), cost, minProfit, margin (price - cost), marginPct (margin / price x 100, 4-dp), steps[], optional otherGroups. Steps in the demo's order: client override, group service price, base price, category rule, group discount (mock pricing.ts:63-141); step = {id, label, state win|apply|skip|none, value, after, note}; value is a price except for ids `category` and `discount`, where it is a signed fraction (-0.02 = -2%); value/after may be numbers or decimal strings. otherGroups = the same service priced for each merchant group without a client override: [{group {id,name}, price, clamped}] (table hidden when absent). Same step shape as orders.pricing_snapshot (M29, M98).",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "serviceId or clientId missing (errors[{field}])", "ui": "resolver error state" },
+            { "status": 404, "code": "NOT_FOUND", "when": "service or merchant unknown", "ui": "resolver error state" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no pricing:read", "ui": "tab hidden" }
+          ],
+          "assumed": true,
+          "mapConflict": "Minimum profit exists only on pricing_rules in the map; the floor row needs a per-service effective minProfit (see GET /admin/services)."
+        },
+        {
+          "key": "GET /admin/service-categories",
+          "successStatus": 200,
+          "query": "Whole list: `_start=0&_end=200&_sort=sort&_order=asc` (useChoices.ts:27-28). No filters or q.",
+          "request": "",
+          "response": "Array + x-total-count. Row: id, name, type, allowedGroupIds (client_groups ids; empty = every group), sort, isActive, serviceCount (services in the category; optional, shown when sent).",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "no catalog:read", "ui": "tab hidden" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/service-categories/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "Same shape as a list row (Refine show).",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "category id unknown", "ui": "generic error" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/services",
+          "successStatus": 200,
+          "query": "`_start`/`_end` (25 per page; pickers `_end=200&_sort=name&_order=asc`, palette small `_end`; counts `_start=0&_end=1`). `_sort` name|type|cost|basePrice (lib/filters.ts:64; default name asc). Filters: `type`, `status` (active|disabled), `belowFloor=true`, `categoryId`; the chips combine (M104). Header count = `belowFloor=true&status=active` (useServiceCounts.ts:22). `q`: contains over name, code and category name (serviceRoutes.ts:13). Also read by the storefront feature's service picker.",
+          "request": "",
+          "response": "Array + x-total-count. Row: id, name, code, type, status, executionMode (auto|manual), categoryId, category {id,name}, basePrice, cost (USD), costChangedFrom (previous cost when the cost changed since the price was set, else null), minProfit (effective), floorPrice = cost + minProfit, marginPct = (basePrice - cost) / basePrice x 100 as a 4-dp string, belowFloor = basePrice < floorPrice, slaMinutes, supplier and fallbackSupplier {id,name} from service_supplier_links priority 1 and 2 (dto.ts:10-34).",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "no catalog:read", "ui": "tab hidden" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "unknown sort field or filter value", "ui": "table error state" }
+          ],
+          "assumed": true,
+          "mapConflict": "services lacks code, sla_minutes, min_profit and a previous-cost column (M91). Proposal: add code (unique, case-insensitive), sla_minutes int (delivery_time text can be derived, seedData.ts:62), min_profit numeric nullable (null = default policy), cost_was numeric nullable; executionMode = fulfillment (auto|manual). belowFloor must be filterable in SQL."
+        },
+        {
+          "key": "GET /admin/services/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "List row plus `fields` (service_fields by sort: key, label, fieldType text|number|select|textarea, required, options text[], regex and supplierKey as '' when none), `options` (service_options: list model|network|mep, value, label, supplierValue) and `groupPrices` ({groupId, price}). The replace-all dialogs start from this read, so it must return the complete lists.",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "service id unknown", "ui": "dialog load error" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "PATCH /admin/pricing-rules/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "Partial: only changed fields (changedRuleFields, ruleForm.ts); Turn off/on sends `{ isActive }` alone. Validate the merged rule as on create.",
+          "response": "The updated rule (list-row shape).",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "same field checks as create (ruleRoutes.ts:23-80)", "ui": "messages under the rule form fields" },
+            { "status": 404, "code": "NOT_FOUND", "when": "rule id unknown", "ui": "dialog error" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no pricing:update", "ui": "toggle/edit disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "PATCH /admin/service-categories/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "Partial: any of name, type, allowedGroupIds, sort, isActive.",
+          "response": "The updated category (with serviceCount).",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "empty name, unknown type, sort not a whole number >= 0, unknown group ids (categoryRoutes.ts:12-40)", "ui": "messages under name/type/sort/isActive, others in the dialog slot" },
+            { "status": 404, "code": "NOT_FOUND", "when": "category id unknown", "ui": "dialog error" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "PATCH /admin/services/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "Partial: the switches send `{ status }` or `{ executionMode }` alone; Edit price sends `{ basePrice?, minProfit? }` (4-dp strings); Edit service sends any of name, code, categoryId, type, slaMinutes.",
+          "response": "The updated service with floorPrice, marginPct and belowFloor worked out again (the toast shows the floor and margin).",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[{field: basePrice}] when the price is under the floor computed with the minProfit being saved, message naming cost and minimum profit (serviceRoutes.ts:145-155); other field checks (name, code, type, slaMinutes >= 1, minProfit >= 0, status, executionMode, categoryId)", "ui": "message under the field" },
+            { "status": 409, "code": "CODE_TAKEN", "when": "code used by another service (case-insensitive), with errors[{field: code}]", "ui": "message under Code" },
+            { "status": 404, "code": "NOT_FOUND", "when": "service id unknown", "ui": "dialog error" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no catalog:update", "ui": "switches/edits disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/inventory-codes/void",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body `{ ids }`; the console only sends codes it shows as available.",
+          "response": "`{ voided, skipped }`: only status available becomes void; reserved, sold, void or unknown ids are skipped and counted.",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[{field: ids}]: empty list", "ui": "message in the confirm dialog" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no inventory:write", "ui": "Void disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/pricing-rules",
+          "successStatus": 201,
+          "query": "",
+          "request": "Full body: blank percent/fixed/minProfit as '0.0000', blank dates null, targetId null for global, groupId null = every group, priority integer; startsAt/endsAt are the first and last instant of the admin's local calendar days as UTC ISO (ruleForm.ts:58-67).",
+          "response": "The new rule (list-row shape). The frontend accepts 200 or 201.",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "scope/kind/rounding not in the enums, targetId missing or not existing for the scope, unknown groupId, percent/fixed/minProfit negative or both percent and fixed zero (field percent), priority not an integer >= 0, endsAt before startsAt (ruleRoutes.ts:23-80)", "ui": "messages under the rule form fields" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no pricing:create", "ui": "New rule disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/service-categories",
+          "successStatus": 201,
+          "query": "",
+          "request": "Full body `{ name, type, allowedGroupIds, sort, isActive }`.",
+          "response": "The new category (serviceCount 0).",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "name missing, bad type/sort/group ids", "ui": "messages under the fields" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no catalog:create", "ui": "New category disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/services",
+          "successStatus": 201,
+          "query": "",
+          "request": "Full body `{ name (up to 120), code (up to 40, unique), categoryId, type, slaMinutes (integer >= 1), basePrice (4-dp, > 0) }`. Defaults: status active, executionMode auto, minProfit null (default policy), cost 0 until a supplier is linked or imported.",
+          "response": "The new service (list-row shape with the worked-out figures).",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "name, code or basePrice missing, unknown categoryId, bad type or slaMinutes (serviceRoutes.ts:89-121)", "ui": "messages under the form fields" },
+            { "status": 409, "code": "CODE_TAKEN", "when": "code already used (case-insensitive), errors[{field: code}]", "ui": "message under Code" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no catalog:create", "ui": "New service disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/services/:id/inventory/import",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body `{ codes: string[], batchRef? }`: one entry per pasted or uploaded line, trimmed, duplicates kept for the server to count (lib/codes.ts). Plain codes travel once; encrypt at rest and never log them.",
+          "response": "`{ imported, duplicates, rejected, batchRef }`. Mock: rejected = shorter than 6 chars or containing whitespace; duplicates = already in stock (any service) or repeated in the batch; batchRef generated when absent (inventoryRoutes.ts:25-56).",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[{field: codes}]: no codes", "ui": "message under the codes box (fields serviceId, codes, batchRef)" },
+            { "status": 404, "code": "NOT_FOUND", "when": "service id unknown", "ui": "dialog error" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no inventory:write", "ui": "Import disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/services/bulk-price/apply",
+          "successStatus": 200,
+          "query": "",
+          "request": "Same body as the preview; recompute from current prices (the preview is not a token).",
+          "response": "`{ updated, belowFloor }`. Every computed price is saved, including those under the floor (counted; toast says they 'still are under the floor', useBulkPrice.ts:25-29); one audit_logs entry (map tables services, audit_logs); orders then pay max(price, floor).",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "same checks as the preview", "ui": "dialog error slot / field" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no pricing:update", "ui": "Bulk price change disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/services/bulk-price/preview",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body `{ categoryId }` or `{ serviceIds: [] }` plus `change { type: percent|fixed, value }`; value is signed decimal text with 0-4 decimals ('5', '-0.25'; lib/bulk.ts:29). percent = % of the current base price; fixed = amount added.",
+          "response": "`{ lines: [{ serviceId, name, code, oldPrice, newPrice, floorPrice, belowFloor }], belowFloor }` (count). newPrice = round to cents of old x (1 + v/100) or old + v (pricing.ts:172). Nothing is saved.",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "field amount: value 0, not a number or bad type; field scope: neither categoryId nor serviceIds; field amount: a new price <= 0 ('would make X free') (pricingRoutes.ts:15-49)", "ui": "under the input for fields amount/scope/categoryId/type (BulkPriceDialog.tsx:57), otherwise the dialog slot" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no pricing:update", "ui": "button disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "PUT /admin/services/:id/fields",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body `{ fields: [...] }`: the whole list in order (index = sort); a field left out is deleted. Replace in one transaction.",
+          "response": "The saved list in order.",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "dotted paths fields.N.key (empty or duplicate), fields.N.label (empty), fields.N.fieldType (not text|number|select|textarea) (servicePartRoutes.ts:19-52)", "ui": "dialog shows the messages" },
+            { "status": 404, "code": "NOT_FOUND", "when": "service id unknown", "ui": "dialog error" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no catalog:update", "ui": "Fields... disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "PUT /admin/services/:id/group-prices",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body `{ prices: [{ groupId, price }] }`: the whole set; a group left out loses its fixed price (pays base price less its discount). The dialog lists every group including the b2c_retail group and keeps groups it does not show, so the Retail price survives (M101, M102). Proposal: refuse a price under the floor like PATCH basePrice and the storefront retailPrice.",
+          "response": "The saved list.",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "prices.N.groupId unknown, prices.N.price <= 0 (servicePartRoutes.ts:79-104), or (proposal) under the floor", "ui": "dialog shows the messages" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no pricing:update", "ui": "Group prices... disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "PUT /admin/services/:id/options",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body `{ options: [...] }`: all three lists together (model, network, mep); entries left out are deleted. A model list can hold hundreds of entries (M101): allow a large body.",
+          "response": "The saved list.",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "options.N.list unknown, options.N.value empty (servicePartRoutes.ts:54-77)", "ui": "dialog shows the messages" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no catalog:update", "ui": "Options... disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        }
+      ],
+      "businessRules": [
+        "Floor = cost + minProfit; minProfit = the service's own min_profit when set, else a matching pricing rule's min_profit (> 0), else max(round(6% x cost, 2), 0.02) (demo 10-data.js:215, FloorPolicy.tsx:8-10). A PATCH basePrice under the floor is refused with 422 on basePrice (demo setPrice, serviceRoutes.ts:145-155); orders always pay max(resolved price, floor) with clamped=true (map: selling below the minimum price is blocked).",
+        "Bulk price apply saves prices under the floor and reports their count (useBulkPrice.ts:25-29); the floor is still enforced at order time.",
+        "Resolver order (demo resolveWith, mock pricing.ts:63-141): client override (service_client_prices) wins; else group service price (service_group_prices); else base price, then the category rule (active, scope category, target = the service's category, group null or the merchant's group, lowest priority number), then the group discount (client_groups.discount_percent); then the floor clamp. A fixed price (client or group) skips the rule and the discount.",
+        "Rule direction comes from kind: margin adds, discount and promo subtract; percent and fixed are >= 0 with at least one > 0 (ruleRoutes.ts:46-75); a promo applies only between startsAt and endsAt; rule changes affect new orders only.",
+        "Categories: allowed_group_ids empty = visible to every group (M94); no parent category; category type is one of the four service types.",
+        "Delete guards: category with services 409 CATEGORY_IN_USE; service with orders 409 SERVICE_IN_USE ('Disable it instead'); rules delete freely.",
+        "Service code is unique case-insensitive: 409 CODE_TAKEN with errors[{field: code}] on create and edit.",
+        "Replace-all PUTs (fields, options, group-prices) delete and insert in one transaction and answer the saved list in order.",
+        "Inventory: codes encrypted (code_enc), deduplicated globally on a keyed hash, never returned in clear or logged; the list shows the last four characters; void affects only available codes (reserved belong to open orders, sold were delivered).",
+        "A disabled service is hidden from merchants (imeiservicelist) while its open orders continue; executionMode manual sends new orders to the manual queue (types/service.ts ServiceStatus/ExecutionMode JSDoc, map manual scenario).",
+        "Money maths in decimal: prices rounded half-up to 2 decimals at the named points (mock round), emitted as 4-dp strings (decision 011); marginPct and percent are decimal strings.",
+        "Lookups read by these screens (merchants feature routes, no @route here): GET /admin/client-groups?_start=0&_end=200&_sort=sort&_order=asc (groups:read; rows need kind incl. b2c_retail and discountPercent, optional merchantCount) and GET /admin/clients?_start=0&_end=200&_sort=name&_order=asc (clients:read; optional group join) (api/lookups.ts).",
+        "Every catalog and pricing write is audit-logged (map: any admin mutation goes to audit_logs).",
+        "Register POST /admin/services/bulk-price/* (and GET /admin/pricing/resolve) so they never fall into /admin/services/:id handlers (mocks/index.ts:16-17)."
+      ],
+      "questions": [
+        { "n": 1, "question": "Which route returns a service's custom fields, option lists and group prices? We assume GET /admin/services/:id embeds them.", "proposedAnswer": "Yes: GET /admin/services/:id embeds fields (by sort), options and groupPrices; the map has no other admin read route for service_fields, service_options or service_group_prices.", "basis": "route manifest (only PUT routes for the parts); M101", "confidence": "high", "needsUser": false },
+        { "n": 2, "question": "Does a service carry code, slaMinutes, minProfit, floorPrice, marginPct, belowFloor, costChangedFrom and the supplier names? Is executionMode the fulfillment column?", "proposedAnswer": "Yes. Add columns code (unique), sla_minutes, min_profit (nullable) and cost_was; compute floorPrice, marginPct and belowFloor; costChangedFrom = cost_was, cleared when a price is saved; supplier/fallbackSupplier from links priority 1 and 2; executionMode = fulfillment with values auto|manual.", "basis": "catalog slice services columns; M91, M93; demo 10-data.js:215", "confidence": "medium", "needsUser": false },
+        { "n": 3, "question": "Does belowFloor=true mean active and disabled services both? (The header count adds status=active.)", "proposedAnswer": "Yes: belowFloor and status are independent filters; belowFloor alone covers both statuses.", "basis": "M104; useServiceCounts.ts:22", "confidence": "high", "needsUser": false },
+        { "n": 4, "question": "Is a price under the floor refused on save (422), or saved with orders charged the floor? And what does bulk apply do with a price that would fall under it?", "proposedAnswer": "Single PATCH: refused with 422 on basePrice. Orders: always charged at least the floor when the cost rises (clamped). Bulk apply: saves the prices and returns how many are under the floor.", "basis": "demo setPrice; FloorPolicy copy; map storefront row 'selling below the minimum price is blocked'; useBulkPrice.ts; pricingRoutes.ts:64-74", "confidence": "medium", "needsUser": false },
+        { "n": 5, "question": "allowedGroupIds empty: visible to every group? Is there really no parent category?", "proposedAnswer": "Yes, empty = every group; no parent: service_categories has no parent column and maps to the flat Dhru GROUPNAME.", "basis": "catalog slice service_categories; M94", "confidence": "high", "needsUser": false },
+        { "n": 6, "question": "Pricing rules: the kinds, whether percent and fixed are signed, the rounding values, the dates (starts_at / ends_at are not in the table) and what priority decides.", "proposedAnswer": "Kinds margin|discount|promo; percent and fixed unsigned, kind sets the direction; rounding none|nearest_0.05|nearest_0.10|ends_99 applied to the rule's result; add nullable starts_at/ends_at. Proposal: most specific scope wins (service, then category, then global), lowest priority number within a scope, one rule per order, rule min_profit feeds the floor.", "basis": "pricing_rules columns; M97; mock pricing.ts:39-52 (category rule only)", "confidence": "low", "needsUser": true },
+        { "n": 7, "question": "The resolve answer: the step shape (fractions for category and discount), otherGroups, and where cost and minProfit of the floor row come from.", "proposedAnswer": "Step {id, label, state, value, after, note} with value a signed fraction for category and discount, a price otherwise; otherGroups = every merchant group (not b2c_retail) without client override; cost = services.cost in USD; minProfit = the effective minimum profit used for the floor.", "basis": "M98, M29; mock pricing.ts:144-169", "confidence": "medium", "needsUser": false },
+        { "n": 8, "question": "Inventory: the masked field name, the status values, whether import takes codes or raw text, and whether reserved codes may be voided.", "proposedAnswer": "`maskedCode` (last four visible); statuses available|reserved|sold|void; import takes `codes: string[]` (the browser splits lines); reserved codes cannot be voided (skipped, they belong to an open order).", "basis": "inventory_codes columns; dto.ts:88-100; inventoryRoutes.ts:58-77", "confidence": "high", "needsUser": false },
+        { "n": 9, "question": "Is the Floor policy text true (minimum profit defaults to 6% of cost, at least $0.02)?", "proposedAnswer": "Yes: use max(round(6% x cost, 2), 0.02) as the default minimum profit when neither the service nor a rule sets one.", "basis": "demo 10-data.js:215; FloorPolicy.tsx:8-10", "confidence": "medium", "needsUser": false },
+        { "n": 10, "question": "Does GET /admin/client-groups need groups:read, and does a group price for the Retail group belong in this PUT or on the storefront page?", "proposedAnswer": "groups:read (map groups:* expanded per M7). The Retail price is a service_group_prices row of the b2c_retail group: this PUT and the storefront listing's retailPrice both write the same row.", "basis": "route manifest GET /admin/client-groups; catalog slice service_group_prices ('including the storefront Retail price'); M182", "confidence": "high", "needsUser": false }
+      ],
+      "mismatches": [
+        { "id": "M91", "summary": "Rows carry code, slaMinutes, minProfit, costChangedFrom, executionMode and category/supplier joins that services lacks.", "backendImpact": "New columns (code, sla_minutes, min_profit, cost_was) and joins from links." },
+        { "id": "M92", "summary": "Floor, margin and below-floor are server figures; the header count is belowFloor=true&status=active.", "backendImpact": "Compute and filter them server-side; PATCH returns recomputed figures." },
+        { "id": "M93", "summary": "Auto switch = PATCH { executionMode: auto|manual }.", "backendImpact": "Map executionMode to services.fulfillment." },
+        { "id": "M94", "summary": "Categories and Code inventory tabs; empty allowedGroupIds = every group; no parent.", "backendImpact": "Category CRUD with serviceCount; inventory list/import/void." },
+        { "id": "M95", "summary": "Fixed prices block replaced by a note; group prices read per service, client prices belong to merchants.", "backendImpact": "No list route needed; groupPrices embedded in GET /admin/services/:id." },
+        { "id": "M96", "summary": "No global 'sync supplier costs'; a raised cost shows as costChangedFrom.", "backendImpact": "Keep the previous cost when the cost changes (import of changed items)." },
+        { "id": "M97", "summary": "Rules CRUD with kinds margin/discount/promo, unsigned amounts, promo dates as an assumed extra.", "backendImpact": "Add starts_at/ends_at; validate amounts >= 0." },
+        { "id": "M98", "summary": "Resolver drawn from server steps; category/discount values are fractions.", "backendImpact": "Return steps in the shared snapshot shape." },
+        { "id": "M99", "summary": "Server-side list; sorts name, type, cost, basePrice; 25 per page.", "backendImpact": "Support those sorts and filters with x-total-count." },
+        { "id": "M100", "summary": "Bulk price change by category or ticked services, preview then apply.", "backendImpact": "Preview saves nothing; apply recomputes and audits." },
+        { "id": "M101", "summary": "Row actions: edit, group prices, fields, options, delete; options edited as large lists.", "backendImpact": "Replace-all PUTs, large bodies, complete lists on GET :id." },
+        { "id": "M102", "summary": "Groups and merchants read through private lookups (first 200).", "backendImpact": "client-groups/clients lists must sort by sort/name and carry kind/discountPercent." },
+        { "id": "M103", "summary": "Tabs gated by catalog:read, pricing:read, inventory:read (+clients:read for the resolver menu).", "backendImpact": "Enforce the manifest permissions per route." },
+        { "id": "M104", "summary": "Below floor and Disabled chips combine.", "backendImpact": "belowFloor and status filters are independent." },
+        { "id": "M182", "summary": "Retail price is a group price shared with the storefront listing.", "backendImpact": "One service_group_prices row written by both routes." }
+      ],
+      "fixtures": [
+        { "routes": ["GET /admin/services", "GET /admin/services/:id", "POST /admin/services", "PATCH /admin/services/:id", "DELETE /admin/services/:id"], "file": "src/features/services/mocks/serviceRoutes.ts", "note": "Validation, floor refusal, CODE_TAKEN, SERVICE_IN_USE; DTO in mocks/dto.ts; seed mocks/seed.ts from the demo's S.services and GROUPS (Standard 1, Wholesale 2 -4%, VIP 3 -8%)." },
+        { "routes": ["GET /admin/service-categories", "GET /admin/service-categories/:id", "POST /admin/service-categories", "PATCH /admin/service-categories/:id", "DELETE /admin/service-categories/:id"], "file": "src/features/services/mocks/categoryRoutes.ts", "note": "Categories seeded from the services' category names." },
+        { "routes": ["GET /admin/pricing-rules", "GET /admin/pricing-rules/:id", "POST /admin/pricing-rules", "PATCH /admin/pricing-rules/:id", "DELETE /admin/pricing-rules/:id"], "file": "src/features/services/mocks/ruleRoutes.ts", "note": "Rule validation; the demo's category promo seeded as one discount rule." },
+        { "routes": ["POST /admin/services/bulk-price/preview", "POST /admin/services/bulk-price/apply", "GET /admin/pricing/resolve"], "file": "src/features/services/mocks/pricingRoutes.ts", "note": "Price maths and resolver steps in mocks/pricing.ts." },
+        { "routes": ["GET /admin/inventory-codes", "POST /admin/services/:id/inventory/import", "POST /admin/inventory-codes/void"], "file": "src/features/services/mocks/inventoryRoutes.ts", "note": "Codes seeded for the Z3X credits and UnlockTool licence services." },
+        { "routes": ["PUT /admin/services/:id/fields", "PUT /admin/services/:id/options", "PUT /admin/services/:id/group-prices"], "file": "src/features/services/mocks/servicePartRoutes.ts", "note": "Replace-all checks with dotted error paths." }
+      ]
+    },
+    {
+      "feature": "suppliers",
+      "summary": "The Suppliers page (/suppliers) lists every supplier with server-computed health, success rates, latency, open-order counts and balance runway, and shows a detail with 24 hourly points, connection settings, the services linked to it and a live API log polled every 10 s. Actions: connect, edit connection, disable/enable, delete, test connection, sync now, import services (pick from the supplier catalogue, preview, import), edit a service's supplier chain, reroute open orders (via the orders routes) and a 7-day spend/rejection/speed line from the supplier report. System health pauses/resumes suppliers through the same PATCH.",
+      "endpoints": [
+        {
+          "key": "DELETE /admin/suppliers/:id",
+          "successStatus": 204,
+          "query": "",
+          "request": "",
+          "response": "204. Disable is the way to stop a supplier that has history.",
+          "errors": [
+            { "status": 409, "code": "SUPPLIER_IN_USE", "when": "open orders or linked services (handlers.ts:136-156); proposal: also any order history, since orders.supplier_id is ON DELETE RESTRICT", "ui": "server detail shown in the delete dialog" },
+            { "status": 404, "code": "NOT_FOUND", "when": "supplier id unknown", "ui": "dialog message" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no suppliers:delete", "ui": "menu item disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/reports/suppliers",
+          "successStatus": 200,
+          "query": "`days` integer (the UI always sends 7; default 7) (useSupplierReport.ts:16).",
+          "request": "",
+          "response": "Bare array (no paging, no x-total-count), one row per supplier including suppliers with no orders: orders = orders with that supplier_id created in the last `days`; completed, rejected counts; spend = sum of total_cost of completed orders (4-dp USD); rejectionRate = rejected / (completed + rejected) x 100 or null; averageSeconds = mean of completed_at - coalesce(sent_at, created_at) over completed orders or null (logRoutes.ts:81-113). The page picks the open supplier's row.",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "no reports:read", "ui": "read not made; the line is hidden" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "days not a positive integer", "ui": "line hidden" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/supplier-api-logs",
+          "successStatus": 200,
+          "query": "`supplierId` filter, `_sort=createdAt&_order=desc`, `_start=0&_end=25`; polled every 10 s while the tab is visible and not paused (useSupplierLogs.ts:13-20). No q from the UI.",
+          "request": "",
+          "response": "Array + x-total-count. Rows WITHOUT request/response bodies: id, supplierId, orderId (null for test/sync calls), action (placeimeiorder, getimeiorder, accountinfo, imeiservicelist...), httpStatus, durationMs, error ('' or null when it worked; the UI then shows OK), createdAt. For a call with no HTTP answer (timeout), httpStatus null/0 renders red and error must carry the reason. Index (supplier_id, created_at desc).",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "no suppliers:read", "ui": "log panel error state" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/supplier-api-logs/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "List row plus request and response (any JSON) with secrets masked at write time (apiaccesskey, password, key replaced by bullets; seedData.ts:47-58); printed as is.",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "log id unknown", "ui": "drawer error state" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/suppliers",
+          "successStatus": 200,
+          "query": "The page loads `_start=0&_end=200` with no sort (useSuppliers.ts:17; default order id asc), polled every 30 s; orders lookups `_start=0&_end=200&_sort=name&_order=asc` (orders useLookups.ts:20); palette `q` + `_sort=name`. `q`: contains on name (mock also baseUrl and driver).",
+          "request": "",
+          "response": "Array + x-total-count. Supplier columns minus api_key_enc and param_format, plus status (active|disabled|paused), apiKeyHint (first 5 chars of the key, kept at write), health (up|degraded|down), successRate1h and successRate24h (numbers 0-100 or null), p50Ms and p95Ms (numbers or null), openOrders, reviewOrders, lowBalance, runwayDays (number or null). balance and lowBalanceAlert are 4-dp strings, creditRate a decimal string. Also read by orders (menus use health and status), dashboard and System health.",
+          "errors": [
+            { "status": 403, "code": "FORBIDDEN", "when": "no suppliers:read", "ui": "page hidden; order menus left out" }
+          ],
+          "assumed": true,
+          "mapConflict": "None of health, rates, latency, counts or runway are columns (M65). Compute them from supplier_api_logs (window aggregates), service_checks (accountinfo every minute, scenario system-alert step 1) and orders; GET /admin/system/suppliers needs the same health, so share one implementation."
+        },
+        {
+          "key": "GET /admin/suppliers/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "List row plus history (24 hourly points {at = hour start UTC ISO, successRate 0-100, medianMs}, oldest first; [] hides the two charts) and links: one entry per service_supplier_links row whose supplier service belongs to this supplier: {serviceId, serviceName, serviceCode, serviceStatus, supplierServiceId, supplierServiceName, priority (1 = primary), cost, slaMinutes, chain = the service's whole ordered chain}. Proposal: cost = supplier_services.credit x credit_rate (USD); the mock sends the service cost (store.ts:59).",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "supplier id unknown", "ui": "detail error state" }
+          ],
+          "assumed": true,
+          "mapConflict": "No route lists a supplier's linked services, so they ride on the detail (M66)."
+        },
+        {
+          "key": "GET /admin/suppliers/:id/services",
+          "successStatus": 200,
+          "query": "Paged `_start`/`_end`, `_sort=name&_order=asc`, `q` (contains on name; mock also remoteGroup and remoteId), optional filter `imported=false` (useSupplierCatalogue.ts:33-41).",
+          "request": "",
+          "response": "Array + x-total-count. supplier_services rows without requires/custom_fields/raw, plus imported (some service_supplier_links row points at it) and linkedServiceId (that service, lowest id, else null); credit 4-dp in the supplier's currency; time = the supplier's delivery text; isAvailable false once a sync no longer sees the service.",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "supplier id unknown", "ui": "picker error state" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no suppliers:read", "ui": "picker hidden" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "PATCH /admin/suppliers/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "Partial: only changed fields (input.ts changedFields); an empty key field is omitted (keep the stored key); apiKey replaces the key (encrypt, refresh apiKeyHint); status active|disabled|paused (Disable/Enable send `{ status }` alone, useSupplierMutations.ts:61-62; System health sends paused/active, useSetSupplierStatus.ts); lowBalanceAlert 4-dp string; limits integers.",
+          "response": "Detail shape (toast lists the changed field labels). paused/disabled: new orders go to the next active link by priority, open orders stay as they are (scenario system-alert step 8); audit-logged.",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "name under 2 chars or already used (case-insensitive), baseUrl not http(s) with a host, bad currency or limits (handlers.ts:18-39)", "ui": "messages under the connection form fields" },
+            { "status": 404, "code": "NOT_FOUND", "when": "supplier id unknown", "ui": "dialog error" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no suppliers:update (also System health's Pause)", "ui": "error toast / buttons disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/suppliers",
+          "successStatus": 201,
+          "query": "",
+          "request": "Body `{ name, driver (dhru|rest, connection.ts:8-11), baseUrl (no trailing slash), username, apiKey (write-only), currency (3 upper-case letters), lowBalanceAlert?, maxConcurrency?, rateLimitPerMin?, timeoutMs? }`; omitted optionals take server defaults (mock 150.0000, 5, 60, 15000; handlers.ts:96-111).",
+          "response": "Detail shape: status active, rates null, balance '0.0000', balanceCheckedAt null, history [], links []; health up until checks say otherwise (proposal). The page selects it and offers Test connection.",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "name, baseUrl or apiKey missing/invalid, name taken (handlers.ts:18-39)", "ui": "messages under the connect form fields" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no suppliers:create", "ui": "Connect disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/suppliers/:id/import",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body `{ supplierServiceIds }`; the console sends only new and changed items (importPlan.ts:37-39); ids of another supplier are ignored.",
+          "response": "`{ created, updated, unchanged }`. new: create a service (category found or created from remote_group + type, code e.g. IMP-<supplierServiceId>, base_price = suggested price, cost = credit x credit_rate, SLA from time, status active), service_fields from the supplier's custom fields (supplier_key = the supplier field name), link priority 1. changed: update the linked service's cost and keep the old one as costChangedFrom (price untouched). matching: unchanged.",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[{field: supplierServiceIds}]: none belongs to this supplier", "ui": "import dialog error" },
+            { "status": 404, "code": "NOT_FOUND", "when": "supplier id unknown", "ui": "dialog error" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no catalog:create", "ui": "Import services... disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": "The mock creates services without a category (catalogueRoutes.ts:100-107); services.category_id is required, so the server must choose one."
+        },
+        {
+          "key": "POST /admin/suppliers/:id/import/preview",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body `{ supplierServiceIds }` (the picked items, any state).",
+          "response": "`{ items }`, one per picked id of this supplier: state new (no service links it), matching (linked and the service cost equals credit x credit_rate), changed (linked, cost differs; previousCost = the service's current cost); cost in USD; suggestedPrice for new and changed (null for matching); serviceId/serviceName of the linked service. Changes nothing.",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[{field: supplierServiceIds}]: nothing picked", "ui": "import dialog error" },
+            { "status": 404, "code": "NOT_FOUND", "when": "supplier id unknown", "ui": "dialog error" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/suppliers/:id/sync",
+          "successStatus": 200,
+          "query": "",
+          "request": "No body (the console sends none).",
+          "response": "`{ services, added, changed, removed, balance, balanceCheckedAt }`, answered when the sync is done (the toast uses the counts, useSupplierMutations.ts:104-110): imeiservicelist upserts supplier_services (credit change sets price_changed_at; not seen sets is_available false = removed), accountinfo sets suppliers.balance and balance_checked_at ('Last sync'); both calls logged with order_id null. Sync does not change services or prices (map tables supplier_services, suppliers).",
+          "errors": [
+            { "status": 409, "code": "SUPPLIER_DISABLED", "when": "supplier status disabled (actionRoutes.ts:52-58)", "ui": "error toast with the detail" },
+            { "status": 409, "code": "SUPPLIER_UNAVAILABLE", "when": "supplier down, unreachable or timed out (actionRoutes.ts:60-66)", "ui": "error toast" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no suppliers:update", "ui": "Sync now disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": "Decision 020 lists a supplier-sync queue, but the console needs the counts in the answer: run synchronously (bounded by timeout_ms) or wait for the job."
+        },
+        {
+          "key": "POST /admin/suppliers/:id/test",
+          "successStatus": 200,
+          "query": "",
+          "request": "No body.",
+          "response": "Calls accountinfo, logs it (order_id null) and on success refreshes balance and balance_checked_at. A supplier-side failure (auth refused, timeout, 5xx) is 200 with ok false, a readable message shown verbatim, httpStatus and durationMs (actionRoutes.ts:34-43); ok true also carries accountName and balance. Problem responses only for our side (404, 403).",
+          "errors": [
+            { "status": 404, "code": "NOT_FOUND", "when": "supplier id unknown", "ui": "error toast" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no suppliers:update", "ui": "Test connection disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "PUT /admin/services/:id/supplier-links",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body `{ links: [{ supplierServiceId, priority }] }`: the whole chain, priorities from 1; [] unlinks (the toast says its orders now wait for manual dispatch, useReplaceLinks.ts:29-31). Replace in one transaction.",
+          "response": "The new chain ordered by priority and renumbered 1..n (catalogueRoutes.ts:131-141): [{priority, supplierId, supplierName, supplierServiceId, supplierServiceName}]. imported/linkedServiceId of the affected supplier services follow; field_map default {}, is_active true.",
+          "errors": [
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[{field: links}]: unknown or duplicate supplier service (catalogueRoutes.ts:127-130)", "ui": "links dialog error" },
+            { "status": 404, "code": "NOT_FOUND", "when": "service id unknown", "ui": "dialog error" },
+            { "status": 403, "code": "FORBIDDEN", "when": "no catalog:update", "ui": "Edit links... disabled" }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        }
+      ],
+      "businessRules": [
+        "suppliers.status is active | disabled | paused (M60, M197; scenario system-alert steps 8 and 11). Only active takes new orders (state.ts:21-23); paused or disabled makes routing skip to the next link by priority while open orders stay (system-alert step 8); Enable (status active) resumes both.",
+        "health up | degraded | down is computed by the server (service_checks plus supplier_api_logs error/timeout rate, circuit breaker); the console only words it; reroute targets are active and not down (state.ts:37-39, RetryMenu.tsx:30-37).",
+        "lowBalance = balance < low_balance_alert or runway under 2 days (demo rule, M65); runwayDays = balance / (supplier cost of the last 7 days / 7), null with no spend.",
+        "The API key is write-only: stored encrypted (api_key_enc), never returned; apiKeyHint = first 5 characters kept at write (handlers.ts:54); an omitted key on edit keeps the stored one (M68).",
+        "Every supplier call (dispatch, poll, test, sync) writes supplier_api_logs with masked request/response; order_id is null for test and sync.",
+        "Delete only when no order references the supplier and no service links it; otherwise 409 SUPPLIER_IN_USE (Disable instead).",
+        "Sync touches supplier_services and suppliers only; services.cost changes through import of changed items, with the old cost kept for costChangedFrom.",
+        "A service whose chain is empty (or has no active supplier) sends new orders to the manual queue; dispatch uses the first active link by priority.",
+        "Reroute (M62) uses the orders routes: GET /admin/orders?supplierId=<id>&status=pending&status=processing&_sort=createdAt&_order=asc&_start=0&_end=200, then change-supplier { supplierId, resetReference: true } and dispatch per order, sequentially; a 401 stops the run (lib/reroute.ts:18-40).",
+        "Amounts are shown with $: balance is in the supplier's currency as reported by accountinfo; costs are converted to USD with credit_rate.",
+        "Permissions (map): import and preview catalog:create; supplier-links catalog:update; report reports:read; logs and supplier services suppliers:read; test and sync suppliers:update; CRUD suppliers:* (M7).",
+        "Validation the UI relies on: name at least 2 chars and unique (case-insensitive), baseUrl http(s) with a host, apiKey required on create (handlers.ts:18-39); field names as in SUPPLIER_FIELDS (input.ts:21-32)."
+      ],
+      "questions": [
+        { "n": 1, "question": "Which values does suppliers.status take, and where do health, the success rates, latency percentiles, open-order counts, lowBalance and runwayDays come from? Can GET /admin/suppliers carry them, and GET /admin/suppliers/:id the 24 hourly points?", "proposedAnswer": "status active|disabled|paused. health from service_checks + supplier_api_logs; rates and p50/p95 from supplier_api_logs over 1 h/24 h; openOrders/reviewOrders from open orders of the supplier; lowBalance and runwayDays from balance vs 7-day cost. Yes, the list carries them (a handful of suppliers) and the detail carries 24 hourly points.", "basis": "scenario system-alert steps 1, 8, 11; GET /admin/system/suppliers description; M60, M65, M197", "confidence": "medium", "needsUser": false },
+        { "n": 2, "question": "No route lists the services linked to a supplier: is links on the detail right, or should GET /admin/services accept supplierId?", "proposedAnswer": "Keep `links` on GET /admin/suppliers/:id (with each service's chain); no supplierId filter on services is needed.", "basis": "M66; manifest has no such route", "confidence": "high", "needsUser": false },
+        { "n": 3, "question": "Is balance in the supplier's own currency or in USD? What is creditRate for?", "proposedAnswer": "balance is the supplier-reported amount in suppliers.currency; credit_rate converts one supplier credit to the base currency (cost USD = credit x credit_rate). The console shows $, which is only right for USD suppliers until it uses `currency`.", "basis": "suppliers columns currency, credit_rate, balance; decision 011 (ledger in base currency)", "confidence": "medium", "needsUser": false },
+        { "n": 4, "question": "PUT /admin/services/:id/supplier-links: is { links: [{ supplierServiceId, priority }] } right, and how should the console choose the supplier service for a newly added supplier (today it lists that supplier's first 100 services)?", "proposedAnswer": "Body is right: whole chain, priorities renumbered 1..n, [] unlinks. The server cannot pick for the console: use GET /admin/suppliers/:id/services with q (paged search) instead of the first 100.", "basis": "map row 'Link the service to suppliers in priority order'; catalogueRoutes.ts:117-155", "confidence": "high", "needsUser": false },
+        { "n": 5, "question": "Test connection: a failed test as ok: false or as an error response? Which fields come with a good one?", "proposedAnswer": "Supplier-side failures as 200 ok:false with message, httpStatus, durationMs; errors only for our side. A good test returns ok:true, message, httpStatus, durationMs, accountName and balance, and refreshes the stored balance.", "basis": "map row 'Test the connection through accountinfo' (tables suppliers, supplier_api_logs); actionRoutes.ts:18-45", "confidence": "high", "needsUser": false },
+        { "n": 6, "question": "Sync: the answer fields, and the refusal codes for a disabled or unreachable supplier.", "proposedAnswer": "{ services, added, changed, removed, balance, balanceCheckedAt }; 409 SUPPLIER_DISABLED when disabled, 409 SUPPLIER_UNAVAILABLE when down, unreachable or timed out, each with a readable detail.", "basis": "map row 'Sync services and balance now'; actionRoutes.ts:47-81; M69", "confidence": "high", "needsUser": false },
+        { "n": 7, "question": "Import: do matching items need to be sent, who sets the suggested price, and what does the server do with fields (service_fields)?", "proposedAnswer": "Matching items need not be sent (counted unchanged anyway). The server sets the suggested price: cost x (1 + the global margin rule), never under the floor; the default markup without such a rule is a business choice (mock uses +60%). Supplier custom fields become service_fields with supplier_key.", "basis": "map rows import/preview ('with the suggested price') and import ('services, fields and links'); catalogueRoutes.ts:13", "confidence": "medium", "needsUser": true },
+        { "n": 8, "question": "API log: does the list leave out request and response? Is order_id null for tests and syncs? Are secrets masked in both bodies?", "proposedAnswer": "Yes to all three: the list omits the bodies, order_id is null for test and sync calls, and both bodies are stored already masked.", "basis": "supplier_api_logs columns; logRoutes.ts:66-79; seedData.ts:47-58; M64", "confidence": "high", "needsUser": false },
+        { "n": 9, "question": "GET /admin/reports/suppliers: the period parameter and the row fields.", "proposedAnswer": "`days` (default 7); rows { supplierId, supplierName, orders, completed, rejected, spend, rejectionRate|null, averageSeconds|null } for every supplier, definitions as in the endpoint record.", "basis": "map row 'Supplier spend, rejection rate and speed' (tables orders, suppliers); logRoutes.ts:81-113", "confidence": "high", "needsUser": false },
+        { "n": 10, "question": "Reroute: could change-supplier take dispatch: true, so a reroute is one call (the same question as for the orders feature)?", "proposedAnswer": "Yes, as an optional flag (see orders question 1); the two-call flow keeps working.", "basis": "M26, M62", "confidence": "medium", "needsUser": false },
+        { "n": 11, "question": "Delete: which code and text come with the refusal when orders or services still use the supplier?", "proposedAnswer": "409 SUPPLIER_IN_USE, title '<name> is still in use', detail 'It has N open orders and M linked services. Disable it instead, or move them first.' (or 'has order history' when only past orders block it).", "basis": "handlers.ts:141-151; orders.supplier_id ON DELETE RESTRICT (decision 027)", "confidence": "high", "needsUser": false }
+      ],
+      "mismatches": [
+        { "id": "M37", "summary": "No route records a supplier top-up; balances come from sync.", "backendImpact": "Balance only from accountinfo (test/sync); no top-up endpoint." },
+        { "id": "M60", "summary": "status active/disabled switched by PATCH; health is a separate read-only field.", "backendImpact": "Expose status and health separately." },
+        { "id": "M62", "summary": "Reroute = list open orders, then change-supplier + dispatch per order; one target supplier.", "backendImpact": "Orders list filters supplierId+status; reliable per-order refusals." },
+        { "id": "M63", "summary": "Live log polls every 10 s.", "backendImpact": "Cheap indexed newest-25 query per supplier." },
+        { "id": "M64", "summary": "Log rows show action, status, latency, order id without channel; bodies in a drawer.", "backendImpact": "List without bodies; detail with masked bodies." },
+        { "id": "M65", "summary": "Health, rates, history, runway and low-balance are server figures.", "backendImpact": "Compute them for list and detail." },
+        { "id": "M66", "summary": "Linked services ride on the detail; chain edited via supplier-links PUT.", "backendImpact": "Detail `links` with each service's chain." },
+        { "id": "M67", "summary": "Connect form adds username, currency, alert and limits; drivers dhru and rest.", "backendImpact": "Accept those fields with defaults." },
+        { "id": "M68", "summary": "Key is write-only; the UI shows apiKeyHint.", "backendImpact": "Store a hint at write; never return the key." },
+        { "id": "M69", "summary": "Sync refusals come from the server; toast uses counts and balance.", "backendImpact": "Synchronous answer with counts; 409 refusals." },
+        { "id": "M70", "summary": "Import, edit, delete and the report are new.", "backendImpact": "Implement those routes as described." },
+        { "id": "M72", "summary": "No 24-hour rate shows as a dash.", "backendImpact": "Send null when unknown, never 0." },
+        { "id": "M197", "summary": "status also takes paused (System health).", "backendImpact": "Allow paused in PATCH and the CHECK constraint." }
+      ],
+      "fixtures": [
+        { "routes": ["GET /admin/suppliers", "GET /admin/suppliers/:id", "POST /admin/suppliers", "PATCH /admin/suppliers/:id", "DELETE /admin/suppliers/:id"], "file": "src/features/suppliers/mocks/handlers.ts", "note": "DTOs in mocks/store.ts (open counts from the shared orders mock); seed mocks/seed.ts from the demo's suppliers (24-hour hist, balances, health)." },
+        { "routes": ["POST /admin/suppliers/:id/test", "POST /admin/suppliers/:id/sync"], "file": "src/features/suppliers/mocks/actionRoutes.ts", "note": "ok:false failures for degraded/down suppliers; SUPPLIER_DISABLED and SUPPLIER_UNAVAILABLE refusals." },
+        { "routes": ["GET /admin/suppliers/:id/services", "POST /admin/suppliers/:id/import/preview", "POST /admin/suppliers/:id/import", "PUT /admin/services/:id/supplier-links"], "file": "src/features/suppliers/mocks/catalogueRoutes.ts", "note": "Classification and chain renumbering; mocks/seedData.ts EXTRAS gives each supplier three unimported services." },
+        { "routes": ["GET /admin/supplier-api-logs", "GET /admin/supplier-api-logs/:id", "GET /admin/reports/suppliers"], "file": "src/features/suppliers/mocks/logRoutes.ts", "note": "Masked bodies from seedData.ts bodiesOf; report computed from the shared orders mock." }
+      ]
+    }
+  ],
+  "crossCutting": [
+    "Every list must send x-total-count and expose it via Access-Control-Expose-Headers: apiList silently falls back to the page length when it is missing (src/lib/api/client.ts:140-153), and tab/header counts are list calls with _start=0&_end=1 (src/features/orders/hooks/useOrderCounts.ts:31, src/features/services/hooks/useServiceCounts.ts:22).",
+    "Also expose Content-Disposition (the CSV export reads its file name, src/lib/api/client.ts:159-170, else falls back to orders-<tab>.csv), X-Request-Id, X-CSRF-Token (read from responses, src/lib/api/csrf.ts:31) and Retry-After; the mocks expose only x-total-count (src/mocks/crud.ts:167) because they are same-origin.",
+    "List dialect: repeated key = IN (status=pending&status=processing; src/lib/api/query.ts appendParams), operator suffixes _like/_gte/_lte/_ne/_gt/_lt (src/mocks/crud.ts:26-47), booleans sent as the text true/false (pastSla, belowFloor, imported=false), sort fields and directions comma-joined (query.ts listQueryToParams).",
+    "No-body actions should answer 204: the client treats 204/205 or an empty 2xx body as void, but a non-JSON 2xx body raises INVALID_RESPONSE (src/lib/api/client.ts:96-112). Creates may answer 200 or 201 (mocks use 201, src/mocks/crud.ts:190).",
+    "problem+json errors[] items {field, message} with dotted paths (fields.0.key, prices.1.price, options.3.value) land on form inputs (src/lib/api/errors.ts:125-163, applyServerErrors); field names must equal body keys, the dialogs list them (CompleteDialog.tsx:83 aliases code to reply, ServiceFormDialog.tsx:81, suppliers lib/input.ts:21-32); unknown fields still show in the dialog's error slot.",
+    "Static sub-routes must win over :id routes: GET /admin/orders/export vs /admin/orders/:id (src/mocks/handlers/orders.ts:1-3), POST /admin/services/bulk-price/* vs /admin/services/:id (src/features/services/mocks/index.ts:16-17); :id params are integers (decision 010).",
+    "Decimal inputs are not always 4-dp padded: bulk change.value is signed with 0-4 decimals ('5', '-0.25', src/features/services/lib/bulk.ts:29) while rule percent/fixed/minProfit are padded ('0.0000', ruleForm.ts:67). Accept 0-4 decimals with an optional minus sign where signed, and always emit 4-dp strings (decision 011).",
+    "Ratios are JSON numbers 0-100 on suppliers and the report (successRate1h, rejectionRate) but decimal strings on services and rules (marginPct, percent) (suppliers types/index.ts, services types/service.ts and types/pricing.ts); keep each field's type as typed.",
+    "Admin actions send no Idempotency-Key (no header in src/features/*/api): reply, reject, refund, verification and bulk-reply/apply must be safe against double submit through state checks (409) plus ledger idempotency keys (decision 024).",
+    "GET /admin/files/:id is a top-level navigation in a new tab carrying only cookies (src/features/orders/components/OrderResult.tsx:26-31): the session cookie must travel on cross-subdomain top-level GETs (SameSite=Lax) and the route answers 302 to a signed URL without a CSRF check.",
+    "Rule dates are ISO instants computed from the admin's local day bounds (src/features/services/lib/ruleForm.ts:58-67): store them as timestamptz, never truncate to a date.",
+    "Bulk work is sequential single calls (src/features/orders/lib/bulk.ts:20-44, src/features/suppliers/lib/reroute.ts): admin rate limits must tolerate about 200 sequential POSTs from one session; a 401 stops the run."
+  ]
+}

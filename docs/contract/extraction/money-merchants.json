@@ -1,0 +1,1826 @@
+{
+  "features": [
+    {
+      "feature": "merchants",
+      "summary": "Merchants page: status tabs All/Active/Pending approval/Suspended with server counts (one-row list calls), a Groups tab (client-groups CRUD) and a Verification tab (KYC review). Merchant page: header actions (approve, suspend, reactivate, group move, adjust wallet, credit limit), tabs Orders, Wallet ledger (four balances, paged statement, official statement download, journal dialog), Pricing (client overrides) and API access (list/revoke keys). Every figure (wallet, 30-day stats, group price, floor) comes from the server; the console only formats and shows problem+json refusals.",
+      "endpoints": [
+        {
+          "key": "GET /admin/clients",
+          "successStatus": 200,
+          "query": "Paging _start/_end (25 per page). Tab counts: _start=0&_end=1 with only status (or nothing for All). Other features (orders, finance, commissions, services) read _start=0&_end=200&_sort=name&_order=asc; palette sends q with _end=5. _sort: name | status only (default name asc; merchants/lib/filters.ts:70). Filters (eq): status=active|pending|suspended, groupId=<id>. q: case-insensitive contains over name, email, company (mock also username, country: mocks/clientRoutes.ts:12). Refetched every 30 s.",
+          "request": "",
+          "response": "JSON array + x-total-count. Row = clients columns id, username, email, name, company, phone, country, groupId, status (active|pending|suspended), kycStatus (none|pending|approved|rejected), referralCode, emailVerifiedAt, createdAt, plus joins group {id, name, discountPercent} or null and referredBy {id, name} or null. Only for callers holding wallet:read: wallet {balance, reserved, creditLimit, available} (same meaning as GET /admin/clients/:id/wallet) and stats over a rolling 30 days of orders.created_at: orders (count), spend (sum total_price of non-rejected orders), profit (sum total_price - total_cost of completed), margin (profit/spend*100 as decimal string with 1 dp, null when spend is 0), successRate (completed/(completed+rejected)*100 as a JSON number, null when none finished), lastOrderAt (latest order created_at or null). Without wallet:read omit both (UI shows dashes). Build joins in one batched query per page. Never send password_hash, totp_secret_enc, telegram_chat_id or notification_prefs.",
+          "errors": [
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks clients:read",
+              "ui": "table error state with Retry; tabs hidden when the role lacks it"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map row CRUD /admin/clients lists only table clients; the rows need client_groups (group join), ledger_accounts (wallet) and orders (stats). Proposal: allow these read joins and gate wallet + stats on wallet:read (ASSUMED merchants Q1, MISMATCHES M53)."
+        },
+        {
+          "key": "GET /admin/clients/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": ":id is the numeric client id.",
+          "response": "Same Client shape as a list row (wallet and stats included when the caller has wallet:read). Re-read after every action on the merchant page.",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no merchant with that id",
+              "ui": "MerchantNotFound page (MerchantDetail.tsx:62)"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks clients:read",
+              "ui": "page shows the no-access state"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/clients",
+          "successStatus": 201,
+          "query": "",
+          "request": "Body {name, email (trimmed, lower-cased), country (ISO-2, upper-cased), groupId? (omitted when groups are unreadable: use the is_default group), creditLimit? (4-dp money string, may be \"0.0000\"), invite: true (always)}. Server: insert clients with status=pending, kyc_status=none, a generated unique username (Dhru username) and referral_code; create the merchant ledger accounts client_wallet (overdraft_limit = creditLimit or 0) and client_hold; issue a one-time sign-up token in auth_tokens (hash only, like the admin-team invite) and email the link through outbox/notifications; audit_logs entry. No money event.",
+          "response": "201 with the new Client (same shape as GET; status pending, kycStatus none, wallet zeros). The console toasts \"Invitation sent\" and refetches lists and counts.",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "bad input; errors[].field in name | email | country | groupId | creditLimit (e.g. country not ISO-2, unknown group, group of kind b2c_retail, negative credit limit)",
+              "ui": "message under the named field"
+            },
+            {
+              "status": 409,
+              "code": "EMAIL_TAKEN",
+              "when": "a merchant already uses that email (detail e.g. \"A merchant with x already exists.\"; no field needed)",
+              "ui": "console maps the code to the Email field and shows detail there (InviteMerchantDialog.tsx:53)"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks clients:create",
+              "ui": "Invite button disabled with the permission named"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map row touches only clients; an invite also writes auth_tokens (invite token), outbox_events/notifications (email), ledger_accounts (wallet + credit limit) and audit_logs. Proposal: add those tables to the route."
+        },
+        {
+          "key": "PATCH /admin/clients/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "Partial body, one action per call: approve {status:\"active\"} from pending; reactivate {status:\"active\"} from suspended; suspend {status:\"suspended\", reason} from active (reason trimmed, 3-140 chars, staff-only); group move {groupId}. Server enforces pending->active, active->suspended, suspended->active; writes audit_logs (field from/to, reason). Suspension refuses new orders on Dhru, v1 and portal while open orders keep processing and the wallet is untouched; a group move prices new orders only (open orders keep pricing_snapshot). No money event.",
+          "response": "200 with the full updated Client.",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no merchant with that id",
+              "ui": "toast or dialog error slot"
+            },
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[].field reason (missing on suspend) | groupId (unknown or b2c_retail) | status",
+              "ui": "suspend dialog shows it under Reason; group menu/approve show the default error toast"
+            },
+            {
+              "status": 409,
+              "code": "INVALID_TRANSITION",
+              "when": "status change not allowed from the current status, or a policy refusal (tests use KYC_REQUIRED / LAST_ACTIVE as examples)",
+              "ui": "approve, reactivate and group menu: default error toast (title + detail); suspend dialog: detail in its error slot"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks clients:update",
+              "ui": "buttons disabled with the permission named"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "clients has no column for the suspension reason (staff_users has suspended_at/suspended_reason/suspended_by). Proposal: add suspended_at, suspended_reason, suspended_by to clients, or keep the reason only in audit_logs."
+        },
+        {
+          "key": "GET /admin/clients/:id/wallet",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "{balance, reserved, creditLimit, available}, 4-dp strings, merchant side (positive = merchant money). balance = client_wallet account balance, already net of holds (moneyEvent \"order\" moves the price client_wallet -> client_hold), negative while credit is used; reserved = client_hold balance (open orders); creditLimit = client_wallet.overdraft_limit; available = balance + creditLimit (spendable now; the \"available balance\" of DHRU accountinfo and EVENT wallet.low_balance). Zeros when the merchant has no accounts yet.",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no merchant with that id",
+              "ui": "balances strip shows \"Could not load the balances. Retry\""
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks wallet:read",
+              "ui": "not called without the permission; strip shows dashes"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map says three figures (available, reserved, limit); the console needs four incl. balance (MISMATCHES M56). Proposal: send all four exactly as defined here."
+        },
+        {
+          "key": "GET /admin/clients/:id/statement",
+          "successStatus": 200,
+          "query": "_start/_end (25 per page), _sort=createdAt only, _order=desc (default) or asc. No filters.",
+          "request": "",
+          "response": "JSON array + x-total-count, one row per ledger_entries line on this merchant client_wallet account: id = ledger_entries.id; transactionId = ledger_transactions.id (the id GET /admin/ledger/transactions/:id takes for \"View journal\"); kind and memo from the transaction (order_hold, order_release, deposit, adjustment, commission...); amount signed from the merchant side (credit to the wallet positive = minus the debit-positive ledger amount); balanceAfter = wallet balance right after the line, merchant side (ledger_entries.balance_after flipped); createdAt = transaction time. Tie-break equal createdAt by entry id. order_settle lines never appear (they move client_hold, not the wallet).",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no merchant with that id",
+              "ui": "table error state"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks wallet:read",
+              "ui": "Wallet ledger tab hidden"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/clients/:id/wallet/adjust",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body {amount: positive 4-dp string in USD, direction: \"credit\" | \"debit\", reason: trimmed 5-140 chars}. No Idempotency-Key header is sent. Posts map moneyEvent \"adjust\": credit = Dr adjustments / Cr client_wallet; debit = the mirror (Dr client_wallet / Cr adjustments). One DB transaction: ledger_transactions (kind \"adjustment\", memo \"Manual <direction>: <reason>\", ref_type client, ref_id client id, created_by staff), two ledger_entries summing to zero with balance_after, ledger_accounts balance update under the version check, audit_logs (wallet before/after, reason). Allowed for any merchant status.",
+          "response": "200 {transactionId, wallet} with the four wallet figures after posting (toast quotes wallet.balance; useWalletMutations.ts:17-23).",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[].field amount (<= 0, not 4-dp) | direction | reason (< 5 chars)",
+              "ui": "message under the field; nothing posted"
+            },
+            {
+              "status": 409,
+              "code": "APPROVAL_REQUIRED",
+              "when": "amount above the approval limit (demo $10,000; detail \"Adjustments over $10,000 need a second approver. Split it or ask Finance.\")",
+              "ui": "dialog error slot; nothing posted"
+            },
+            {
+              "status": 409,
+              "code": "CREDIT_LIMIT_EXCEEDED",
+              "when": "a debit would make balance < -creditLimit (available < 0); detail names the limit",
+              "ui": "dialog error slot; nothing posted"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no merchant with that id",
+              "ui": "dialog error slot"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks wallet:adjust",
+              "ui": "Adjust wallet button disabled"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map moneyEvent \"adjust\" shows only the credit direction and no approval limit or second-approver flow; route tables omit ledger_accounts (balance/version update). Proposal: debit is the exact mirror; approval limit is a setting (default 10000.0000 USD) refused with 409, no maker-checker route."
+        },
+        {
+          "key": "PATCH /admin/clients/:id/credit-limit",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body {creditLimit: 4-dp string >= 0}; \"0.0000\" removes the credit. Sets client_wallet.overdraft_limit (version check) and writes audit_logs. No money event (no ledger entry).",
+          "response": "200 with the wallet {balance, reserved, creditLimit, available} after the change.",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[].field creditLimit: negative/malformed, or > 0 while the merchant group has overdraft_allowed = false",
+              "ui": "message under Credit limit"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no merchant with that id",
+              "ui": "dialog error slot"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks wallet:credit_limit",
+              "ui": "Credit limit button disabled"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/reports/client-statement/:clientId",
+          "successStatus": 200,
+          "query": "",
+          "request": "No query parameters are sent (no period). Accept: */*.",
+          "response": "The official statement as a file (PDF proposed, Content-Type application/pdf) with Content-Disposition: attachment; filename=\"...\" (console falls back to statement-<id>.pdf when the header is missing or not exposed by CORS). Content: the merchant wallet lines (ledger_entries) and invoices; default period = whole history, optional from/to (YYYY-MM-DD) accepted.",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no merchant with that id",
+              "ui": "default error toast (problem+json is still parsed)"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks reports:read",
+              "ui": "Download button disabled"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/clients/:id/api-keys",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "Plain JSON array (no paging, no x-total-count), newest first (id desc), every key incl. revoked and expired: id, clientId, name, prefix, scopes[], allowedIps[] (CIDR strings), rateLimitPerMin, lastUsedAt, lastUsedIp, expiresAt, revokedAt, createdAt. Never key_hash or the secret. The console derives Active/Revoked/Expired from revokedAt and expiresAt.",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no merchant with that id",
+              "ui": "tab error state"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks api_keys:read",
+              "ui": "API access tab hidden"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "DELETE /admin/api-keys/:id",
+          "successStatus": 204,
+          "query": "",
+          "request": "No body.",
+          "response": "204 empty. Revoke = set revoked_at = now (row kept for orders.api_key_id and audit); effective at once (drop it from the key cache so Dhru/v1 calls fail); audit_logs entry.",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no API key with that id",
+              "ui": "revoke dialog error slot"
+            },
+            {
+              "status": 409,
+              "code": "ALREADY_REVOKED",
+              "when": "the key already has revoked_at",
+              "ui": "revoke dialog shows the detail"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks api_keys:revoke",
+              "ui": "Revoke disabled"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "HTTP DELETE but the map semantic is a soft revoke (\"Revoke a merchant API key\", tables api_keys, audit_logs). No admin create/rotate route exists (MISMATCHES M45)."
+        },
+        {
+          "key": "GET /admin/client-groups",
+          "successStatus": 200,
+          "query": "Whole list: _start=0&_end=200&_sort=sort&_order=asc (also used by settings gateways and services lookups); tab count _start=0&_end=1. No filters.",
+          "request": "",
+          "response": "JSON array + x-total-count: id, name, kind (\"b2b\" for merchant groups, \"b2c_retail\" for the single storefront group, which must be included), discountPercent (percent decimal string, \"4.0000\" = 4%), isDefault, earnThreshold (USD money), depositLimit (USD money, most a merchant may add at once), overdraftAllowed, sort, createdAt, merchantCount (clients in the group; recommended: Delete is disabled when > 0, retail count not shown).",
+          "errors": [
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks groups:read",
+              "ui": "Groups tab hidden; group menus fall back to server default"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/client-groups/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "Same row as the list, incl. merchantCount.",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no group with that id",
+              "ui": "error state"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/client-groups",
+          "successStatus": 201,
+          "query": "",
+          "request": "Body {name, discountPercent, earnThreshold, depositLimit, overdraftAllowed, isDefault}. discountPercent arrives as plain decimal text (\"4\", \"2.5\"; 0-100, max 2 dp); money fields as 4-dp strings. Server sets kind = \"b2b\" (a b2c_retail group cannot be created) and sort = last + 1; isDefault = true clears it on every other group.",
+          "response": "201 with the group (decimals normalised to 4 dp, merchantCount 0).",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[].field name (missing or duplicate, case-insensitive) | discountPercent | earnThreshold | depositLimit | overdraftAllowed | isDefault",
+              "ui": "under the field; console aliases discountPercent->discount, earnThreshold->threshold, depositLimit->deposit (GroupDialog.tsx:21)"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks groups:create",
+              "ui": "New group disabled"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "PATCH /admin/client-groups/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "Partial body: only the changed fields of the create body (the dialog sends a diff). A new discount applies to the next order of the group merchants; open orders keep their pricing_snapshot. isDefault = true moves the default mark to this group.",
+          "response": "200 with the updated group incl. merchantCount.",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "same field rules as POST",
+              "ui": "under the field (aliases as POST)"
+            },
+            {
+              "status": 409,
+              "code": "DEFAULT_GROUP_REQUIRED",
+              "when": "the change would leave no default group",
+              "ui": "dialog error slot"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no group with that id",
+              "ui": "dialog error slot"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks groups:update",
+              "ui": "Edit disabled"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "DELETE /admin/client-groups/:id",
+          "successStatus": 204,
+          "query": "",
+          "request": "",
+          "response": "204 empty.",
+          "errors": [
+            {
+              "status": 409,
+              "code": "GROUP_IN_USE",
+              "when": "merchants are still in the group (detail names how many); also for the b2c_retail group and the default group",
+              "ui": "delete dialog shows the detail"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no group with that id",
+              "ui": "dialog error slot"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks groups:delete",
+              "ui": "Delete disabled"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map does not say what happens to service_group_prices, payment_gateways.allowed_group_ids and service_categories.allowed_group_ids that reference the group. Proposal: when no merchant is in it, delete its group prices and drop the id from those arrays in the same transaction."
+        },
+        {
+          "key": "GET /admin/client-prices",
+          "successStatus": 200,
+          "query": "clientId=<id> (eq) with _start=0&_end=200; no _sort sent (propose service name asc). A serviceId filter is declared but unused.",
+          "request": "",
+          "response": "JSON array + x-total-count: id, serviceId, clientId, price, note, createdAt plus service {id, name, type (imei|server|remote|file), basePrice, floorPrice (cost + minimum profit: the lowest price accepted)} and groupPrice = what this merchant pays without the override (the PriceResolver of GET /admin/pricing/resolve without the client price: the group fixed price from service_group_prices, else base price less the group discount), null when unknown.",
+          "errors": [
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks pricing:read",
+              "ui": "Pricing tab hidden"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map row is LCUD (no show route) on service_client_prices only; the joins read services, service_group_prices, client_groups and pricing_rules. Proposal: allow these read joins."
+        },
+        {
+          "key": "POST /admin/client-prices",
+          "successStatus": 201,
+          "query": "",
+          "request": "Body {clientId, serviceId, price (4-dp string > 0), note? (omitted when empty)}. created_by = staff; audit entry. The fixed price beats the group price, the category rule and every discount from the next order.",
+          "response": "201 with the row incl. the service and groupPrice joins.",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[].field price (<= 0 or below the floor, message naming it, e.g. \"Below the floor of $X (cost $Y plus $Z minimum profit).\") | serviceId (unknown/inactive) | clientId (unknown; mock answers 404)",
+              "ui": "under the field"
+            },
+            {
+              "status": 409,
+              "code": "PRICE_EXISTS",
+              "when": "the merchant already has a fixed price for that service",
+              "ui": "dialog error slot"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks pricing:create",
+              "ui": "Add override disabled"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "PATCH /admin/client-prices/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "Partial {price?, note?}; note may be \"\" to clear it. Same floor check as POST.",
+          "response": "200 with the row and joins.",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[].field price below the floor or <= 0",
+              "ui": "under Price"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no price with that id",
+              "ui": "dialog error slot"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks pricing:update",
+              "ui": "Edit disabled"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "DELETE /admin/client-prices/:id",
+          "successStatus": 204,
+          "query": "",
+          "request": "",
+          "response": "204 empty; the merchant pays the group price again from the next order; audit entry.",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no price with that id",
+              "ui": "confirm dialog error slot"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks pricing:delete",
+              "ui": "Remove disabled"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/kyc-submissions",
+          "successStatus": 200,
+          "query": "status=pending|approved|rejected (omitted for All; the tab opens on pending), _sort=createdAt&_order=desc, _start/_end 25 per page; pending count = status=pending&_start=0&_end=1; refetched every 30 s. A clientId filter is declared but unused.",
+          "request": "",
+          "response": "JSON array + x-total-count: id, clientId, status, fileIds[], files [{id, filename, mime, size}] (join on files; console falls back to \"Document n\"), reviewedAt, note (reviewer note / rejection reason), createdAt, client {id, name, email, country, status}, reviewedBy {id, name} or null. Documents open as plain links to GET /admin/files/:id (files:read).",
+          "errors": [
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks kyc:read",
+              "ui": "Verification tab hidden"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/kyc-submissions/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "Same row as the list, with files.",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no verification request with that id",
+              "ui": "drawer error state"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/kyc-submissions/:id/decide",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body {decision: \"approve\" | \"reject\", note?} (note trimmed, max 300; the console requires it for reject and may send it with approve). Pending only. Sets status approved|rejected, reviewed_by, reviewed_at, note, and clients.kyc_status to the same word; does not change clients.status; notifies the merchant (rejection reason included); audit entry.",
+          "response": "200 with the submission after the decision (full shape).",
+          "errors": [
+            {
+              "status": 409,
+              "code": "ALREADY_DECIDED",
+              "when": "the request is not pending (detail \"This request was already approved.\")",
+              "ui": "dialog error slot"
+            },
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[].field decision | note (reject without a note)",
+              "ui": "under Note"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no verification request with that id",
+              "ui": "dialog error slot"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks kyc:decide",
+              "ui": "Approve/Reject disabled"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        }
+      ],
+      "businessRules": [
+        "Status machine: pending->active (approve), active->suspended (reason 3-140 chars), suspended->active (reactivate); anything else 409. Suspended merchants cannot place new orders on any surface; open orders keep processing; wallet untouched (SuspendMerchantDialog.tsx:1-2; demo 42-p-merchants.js m-suspend; MerchantHeader.tsx:76-106). Each change writes audit_logs with from/to and reason (demo 11-state.js:329-335).",
+        "Approving an account does not require an approved verification: the demo pending note says \"KYC is in review. The merchant cannot place orders until you approve the account.\" (MerchantNote.tsx:34-38). Any policy refusal must be a problem+json the toast can show (MerchantsActions.test.tsx:40-56).",
+        "Group move prices new orders only (open orders keep orders.pricing_snapshot); merchants can never be put in the b2c_retail group (lib/groups.ts:6-16; client_groups kind = b2c_retail is the single storefront group).",
+        "Wallet figures come from the ledger: moneyEvent \"order\" (Dr client_wallet / Cr client_hold) holds the price, \"reject\" returns it (Dr client_hold / Cr client_wallet), \"complete\" moves it to revenue (Dr client_hold / Cr revenue, plus Dr cogs / Cr supplier_prepaid). So balance excludes reserved and available = balance + creditLimit; an order is refused when available < price (money.json order.need \"اشحن الرصيد أولاً\"; mocks/dto.ts:14-21).",
+        "Manual adjustment = moneyEvent \"adjust\" (credit: Dr adjustments / Cr client_wallet; debit mirrored), ledger kind \"adjustment\", in one DB transaction with the balance update and audit_logs; entries are never edited or deleted, corrections are reverse entries (scenario system-integrity step 6: \"القيود لا تُعدَّل ولا تُحذف\").",
+        "Adjustment refusals the dialog shows: amount over the approval limit -> 409 APPROVAL_REQUIRED (demo $10,000, walletRoutes.ts:14,47); debit taking balance below -creditLimit -> 409 CREDIT_LIMIT_EXCEEDED (walletRoutes.ts:55; demo 42-p-merchants.js:126); reason at least 5 characters (AdjustWalletDialog.tsx:86-90).",
+        "Credit limit = client_wallet.overdraft_limit, >= 0, 0 removes the credit; only for merchants whose group has overdraft_allowed (GroupDialog label \"Merchants in this group can use a credit limit\"); audit entry; no ledger entry (M55).",
+        "Balance updates use ledger_accounts.version (optimistic lock) so concurrent holds, deposits and adjustments cannot overspend; the statement, wallet and reconciliation all read the same client_wallet account.",
+        "API keys: staff can only list and revoke (M45); revoke sets revoked_at, acts immediately (key cache), writes audit_logs (manifest tables api_keys, audit_logs); key_hash is never returned; a second revoke is 409 ALREADY_REVOKED (kycRoutes.ts:69).",
+        "Client groups: exactly one default group (groupRoutes.ts:26-31); names unique case-insensitive (groupRoutes.ts:33-34); delete refused while merchants are in it with 409 GROUP_IN_USE (groupRoutes.ts:96); groups created through the API get kind \"b2b\" (groupRoutes.ts:60); the b2c_retail group cannot be deleted; a discount change applies to the next orders only (useClientGroups.ts:41-53).",
+        "Client prices: price must be >= the service floor (cost + minimum profit) else 422 on price (priceRoutes.ts:13-21; demo setPrice floor rule in 11-state.js); one price per (client, service) else 409 PRICE_EXISTS (priceRoutes.ts:48); it beats group price, category rule and discounts (api/prices.ts:1-3); deleting returns the merchant to the group price from the next order.",
+        "KYC decide: pending only (409 ALREADY_DECIDED, kycRoutes.ts:41); reject needs a note (kycRoutes.ts:39); sets clients.kyc_status (kycRoutes.ts:51; manifest tables kyc_submissions, clients), reviewed_by, reviewed_at; the merchant is notified.",
+        "Invite: account starts pending with kyc_status none, unique email (409 EMAIL_TAKEN), default group when groupId is omitted (clientRoutes.ts:57-74), sign-up link emailed with a hashed one-time token (identity scenario admin-team step 2 pattern).",
+        "Permissions per route (M7 reading of x:*): clients:read/create/update; wallet:read, wallet:adjust, wallet:credit_limit; reports:read (official statement); api_keys:read, api_keys:revoke; groups:read/create/update/delete; pricing:read/create/update/delete; kyc:read, kyc:decide. Wallet and 30-day stats inside client rows require wallet:read (M52)."
+      ],
+      "questions": [
+        {
+          "n": 1,
+          "question": "List rows: may GET /admin/clients carry the joined group, and (with wallet:read) wallet and the 30-day stats?",
+          "proposedAnswer": "Yes. Always join group {id, name, discountPercent} and referredBy {id, name}; with wallet:read add wallet (four figures) and stats (orders, spend, profit, margin, successRate, lastOrderAt over a rolling 30 days), computed in one batched query per page.",
+          "basis": "map CRUD /admin/clients (clients:*); ledger_accounts and orders columns; ASSUMED merchants; mocks/dto.ts:23-33, figures.ts:12-34; M53",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 2,
+          "question": "Wallet: what do available, reserved and limit mean, and is the balance a separate figure?",
+          "proposedAnswer": "balance = client_wallet balance on the merchant side (holds already left it: moneyEvent order Dr client_wallet / Cr client_hold); reserved = client_hold balance; creditLimit = client_wallet.overdraft_limit; available = balance + creditLimit (spendable; the \"available balance\" of DHRU accountinfo and EVENT wallet.low_balance). Balance is the fourth, separate figure.",
+          "basis": "money.json moneyEvents order/reject/complete; ledger_accounts columns balance, overdraft_limit; mocks/dto.ts:14-21; demo 42-p-merchants.js:62 (avail = wallet + credit)",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 3,
+          "question": "Statement: sign of amount, meaning of balanceAfter, and is transactionId the id GET /admin/ledger/transactions/:id takes?",
+          "proposedAnswer": "amount is signed from the merchant side (credit to the wallet positive, i.e. minus the debit-positive ledger amount); balanceAfter is the wallet balance right after that line (ledger_entries.balance_after flipped); transactionId is ledger_transactions.id, accepted by GET /admin/ledger/transactions/:id.",
+          "basis": "ledger_entries columns amount, balance_after; mocks/figures.ts:41-70; M58",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 4,
+          "question": "Adjustment: answer shape, codes for past-the-credit-limit and needs-a-second-approver, and is $10,000 the rule?",
+          "proposedAnswer": "Answer {transactionId, wallet}. 409 CREDIT_LIMIT_EXCEEDED when a debit would leave available < 0; 409 APPROVAL_REQUIRED when amount exceeds the approval limit. The limit is a setting (wallet.adjust_approval_limit, default 10000.0000 USD from the demo); no second-approver route exists, so the server only refuses.",
+          "basis": "demo 42-p-merchants.js:124-126; mocks/walletRoutes.ts:14,47,55; map POST /admin/clients/:id/wallet/adjust (wallet:adjust) gives no limit",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 5,
+          "question": "Status changes: does PATCH take status and reason, or are approve/suspend/reactivate separate? Does approving need an approved verification?",
+          "proposedAnswer": "One route: PATCH takes status (+ reason when suspending) or groupId; the map has no separate approve/suspend endpoints. Allowed: pending->active, active->suspended, suspended->active, else 409. Approving does not require an approved verification (the demo approves while KYC is in review); a future policy refusal is a 409 with its own code.",
+          "basis": "map CRUD /admin/clients \"creation, group, status and blocking\"; demo 11-state.js setMerchantStatus; MerchantNote.tsx:34-38; MerchantHeader.tsx:76-106",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 6,
+          "question": "Invitation: is POST /admin/clients with invite:true right, is country required, and what does 409 EMAIL_TAKEN carry?",
+          "proposedAnswer": "Yes: {name, email, country, groupId?, creditLimit?, invite: true}; country is required (ISO 3166-1 alpha-2). 409 EMAIL_TAKEN is problem+json with code EMAIL_TAKEN and a detail sentence (no field needed; the console puts the detail under Email). Answer 201 with the pending merchant.",
+          "basis": "clients.country, unique email; InviteMerchantDialog.tsx:41-53; mocks/clientRoutes.ts:37-93; frontend decision 007 code list",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 7,
+          "question": "Groups: what is earn_threshold and its unit? Is merchantCount available? Can the retail group be edited or deleted? What is kind for ordinary groups?",
+          "proposedAnswer": "earn_threshold is USD money: the spend at which a merchant is promoted into this group; proposal: cumulative completed-order spend checked by a nightly job, promotion only. merchantCount: yes. The b2c_retail group is listed and editable (discount, limits) but never deletable or assignable to merchants. Ordinary groups have kind \"b2b\".",
+          "basis": "client_groups columns kind, earn_threshold; route description \"upgrade threshold and deposit limit\"; groupRoutes.ts:60; lib/groups.ts:6-16",
+          "confidence": "low",
+          "needsUser": true
+        },
+        {
+          "n": 8,
+          "question": "Client prices: are service and groupPrice joined, is a second price for the same service a 409, and does the 422 name price?",
+          "proposedAnswer": "Yes: join service {id, name, type, basePrice, floorPrice} and groupPrice (PriceResolver result without the client override). A second price for the same merchant and service is 409 PRICE_EXISTS (unique index client_id + service_id). Below the floor is 422 VALIDATION_FAILED with errors [{field: \"price\", message naming the floor}]. No show route (LCUD), as in the map.",
+          "basis": "map CRUD /admin/client-prices LCUD; GET /admin/pricing/resolve; priceRoutes.ts:13-21,48; demo setPrice floor rule",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 9,
+          "question": "Verification: are files joined, are statuses pending|approved|rejected, does approving activate the merchant or only set kyc_status, and is the rejection reason sent to the merchant?",
+          "proposedAnswer": "files joined as [{id, filename, mime, size}]; statuses pending|approved|rejected; deciding sets kyc_submissions.status and clients.kyc_status only (clients.status changes only through PATCH /admin/clients); the rejection note is sent to the merchant (notification) and shown by GET /client/kyc.",
+          "basis": "map POST /admin/kyc-submissions/:id/decide tables kyc_submissions, clients; kyc_submissions columns file_ids, note; kycRoutes.ts:39-51",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 10,
+          "question": "API keys: plain array or paged list? Status field, or revokedAt/expiresAt as the truth?",
+          "proposedAnswer": "Plain array of all the merchant keys, newest first; no status field: revokedAt and expiresAt are the truth (the console derives the state).",
+          "basis": "api_keys columns revoked_at, expires_at; kycRoutes.ts:61; merchants/lib/keys.ts",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 11,
+          "question": "Official statement: PDF or CSV, and does it take a period (from, to)?",
+          "proposedAnswer": "PDF (application/pdf) with Content-Disposition attachment filename; optional from/to (YYYY-MM-DD), default whole history; the console sends none. CSV stays on GET /client/wallet/statement?format=csv.",
+          "basis": "map GET /admin/reports/client-statement/:clientId (reports:read, tables ledger_entries, invoices); walletRoutes.ts:84-93; M57",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 12,
+          "question": "Dhru endpoint: is <API base>/api/index.php the address merchants should use?",
+          "proposedAnswer": "Yes: merchants call POST <API base>/api/index.php with username + apiaccesskey (the Dhru surface).",
+          "basis": "manifest DHRU rows (path /api/index.php); M51",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 13,
+          "question": "Credit limit: may it be lowered below the credit already in use, and is it allowed when the merchant group has overdraft_allowed = false?",
+          "proposedAnswer": "Lowering below the used credit is allowed (available goes negative, new orders are refused until a top-up); a limit above zero on a group without overdraft_allowed is 422 on creditLimit.",
+          "basis": "client_groups.overdraft_allowed, ledger_accounts.overdraft_limit; money.json order.need; walletRoutes.ts:71-81 (mock only checks >= 0)",
+          "confidence": "low",
+          "needsUser": true
+        }
+      ],
+      "mismatches": [
+        {
+          "id": "M10",
+          "summary": "The map gives no bodies; every merchants body and answer is an assumed contract.",
+          "backendImpact": "Implement the shapes in this file (or the frontend changes the one type file per route)."
+        },
+        {
+          "id": "M45",
+          "summary": "No admin create/rotate key; staff list and revoke only.",
+          "backendImpact": "Only GET /admin/clients/:id/api-keys and soft-revoke DELETE /admin/api-keys/:id; key creation stays on /client/api-keys."
+        },
+        {
+          "id": "M46",
+          "summary": "Groups tab with client-groups CRUD; the b2c_retail group is never offered as a merchant group.",
+          "backendImpact": "List the retail group with kind b2c_retail; refuse assigning merchants to it; 409 GROUP_IN_USE on delete."
+        },
+        {
+          "id": "M47",
+          "summary": "Verification tab with document links to /admin/files/:id.",
+          "backendImpact": "Join file metadata on KYC rows; the files route must serve KYC documents to files:read."
+        },
+        {
+          "id": "M48",
+          "summary": "Clients table sorts only by name and status on the server; default alphabetical.",
+          "backendImpact": "Support _sort=name|status with _order asc|desc."
+        },
+        {
+          "id": "M50",
+          "summary": "Pricing tab shows a Group price column next to each override.",
+          "backendImpact": "Join groupPrice and service.floorPrice on client-price rows."
+        },
+        {
+          "id": "M51",
+          "summary": "Dhru endpoint shown as <API base>/api/index.php.",
+          "backendImpact": "Serve the Dhru surface at POST /api/index.php."
+        },
+        {
+          "id": "M52",
+          "summary": "Each tab and action is gated by its own permission.",
+          "backendImpact": "Every route enforces its manifest permission; wallet/stats inside client rows need wallet:read."
+        },
+        {
+          "id": "M53",
+          "summary": "No city/agent/lastSeen; Last order and 30-day figures come from server stats.",
+          "backendImpact": "Send stats (incl. lastOrderAt) on client rows."
+        },
+        {
+          "id": "M54",
+          "summary": "Dialogs keep only format hints; the $10,000 limit, credit-limit check and floor are server rules.",
+          "backendImpact": "Validate everything and answer 422 (field errors) or 409 (business code + detail)."
+        },
+        {
+          "id": "M55",
+          "summary": "New Credit limit dialog; zero removes the credit.",
+          "backendImpact": "PATCH /admin/clients/:id/credit-limit answers the wallet."
+        },
+        {
+          "id": "M56",
+          "summary": "Wallet answer must carry balance, reserved, creditLimit and available; the console never adds.",
+          "backendImpact": "Send the four figures as defined (available = balance + creditLimit)."
+        },
+        {
+          "id": "M57",
+          "summary": "Official statement download names the file from Content-Disposition.",
+          "backendImpact": "Send and CORS-expose Content-Disposition."
+        },
+        {
+          "id": "M58",
+          "summary": "Statement lines carry a signed amount (merchant side) and balanceAfter; View journal uses transactionId.",
+          "backendImpact": "Statement rows as specified; transactionId accepted by GET /admin/ledger/transactions/:id."
+        }
+      ],
+      "fixtures": [
+        {
+          "routes": [
+            "GET /admin/clients",
+            "GET /admin/clients/:id",
+            "POST /admin/clients",
+            "PATCH /admin/clients/:id"
+          ],
+          "file": "src/features/merchants/mocks/clientRoutes.ts",
+          "note": "List/search/invite/patch behaviour; rows from mocks/dto.ts toClient over mocks/seed.ts (demo S.merchants in src/mocks/seed/demo-state.json), stats from mocks/figures.ts statsOf over the orders mock. Exact query/body expectations in api/clients.test.ts."
+        },
+        {
+          "routes": [
+            "GET /admin/clients/:id/wallet",
+            "GET /admin/clients/:id/statement",
+            "POST /admin/clients/:id/wallet/adjust",
+            "PATCH /admin/clients/:id/credit-limit",
+            "GET /admin/reports/client-statement/:clientId"
+          ],
+          "file": "src/features/merchants/mocks/walletRoutes.ts",
+          "note": "Refusal codes and the $10,000 limit; mocks/adjustment.ts posts the adjustment journal; mocks/figures.ts statementOf builds statements from src/mocks/ledger.ts (demo journals)."
+        },
+        {
+          "routes": [
+            "GET /admin/client-groups",
+            "GET /admin/client-groups/:id",
+            "POST /admin/client-groups",
+            "PATCH /admin/client-groups/:id",
+            "DELETE /admin/client-groups/:id"
+          ],
+          "file": "src/features/merchants/mocks/groupRoutes.ts",
+          "note": "Seed groups in mocks/seed.ts (Standard default, Wholesale, VIP, Storefront retail with kind b2c_retail); merchantCount from dto.ts toGroup."
+        },
+        {
+          "routes": [
+            "GET /admin/client-prices",
+            "POST /admin/client-prices",
+            "PATCH /admin/client-prices/:id",
+            "DELETE /admin/client-prices/:id"
+          ],
+          "file": "src/features/merchants/mocks/priceRoutes.ts",
+          "note": "Floor and groupPrice computed in mocks/dto.ts floorOf/toPrice from the demo services and group prices; tests in api/catalog.test.ts."
+        },
+        {
+          "routes": [
+            "GET /admin/kyc-submissions",
+            "GET /admin/kyc-submissions/:id",
+            "POST /admin/kyc-submissions/:id/decide",
+            "GET /admin/clients/:id/api-keys",
+            "DELETE /admin/api-keys/:id"
+          ],
+          "file": "src/features/merchants/mocks/kycRoutes.ts",
+          "note": "KYC rows are synthetic (mocks/kycSeed.ts, the demo has none); API keys from mocks/seed.ts keysOf (demo key + IPs per merchant plus extras)."
+        }
+      ]
+    },
+    {
+      "feature": "finance",
+      "summary": "Finance page: key-figures strip (trial-balance rows bank and supplier_prepaid, wallet-exposure totals, pending deposit count), Ledger tab (paged journal entries with a drawer), Trial balance tab with Run reconciliation, Deposits tab (top-up review queue: approve credits the wallet through the ledger, reject with a reason), Invoices tab (list, drawer, issue a manual invoice) and Reports tab (profit, wallet exposure, VAT). The server owns every sum; counts are x-total-count of one-row list calls and the console never adds money.",
+      "endpoints": [
+        {
+          "key": "GET /admin/ledger/transactions",
+          "successStatus": 200,
+          "query": "_start/_end (25 per page; palette _end=5). _sort: createdAt | id | kind (default createdAt desc; record trails use createdAt asc). Filters (eq): refType + refId (order drawer refType=order&refId=<orderId>, orders/hooks/useLedgerTrail.ts:13; deposit dialog refType=payment&refId=<paymentId>, usePaymentEntries.ts:13), kind (ledger_transactions.kind), accountKind (transactions with at least one line on an account of that kind, e.g. client_wallet from the trial balance or the integrity finding link, M256). q: the console strips \"JRN-\"/\"#\" and leading zeros, so a numeric q must match the transaction id; text q matches memo, kind and account owner names (placeholder \"Search journal, memo, merchant\").",
+          "request": "",
+          "response": "JSON array + x-total-count of transactions: id, kind, memo, refType, refId, createdAt, createdBy {type: staff|system|client|customer, id|null, name|null}, entries [{id, amount, balanceAfter, account {id, kind, ownerType: client|supplier|customer|null, ownerId|null, ownerName|null}}]. amount is signed debit-positive and the entries of one transaction sum to zero; balanceAfter = that account balance after the line, same sign. The table shows the merchant from the line whose owner is a client and the amount as the sum of debit lines.",
+          "errors": [
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks ledger:read",
+              "ui": "table error state with Retry; Ledger tab hidden"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map ledger_transactions.ref_id targets only orders, invoices, refunds and disputes; the console finds deposit entries by refType=payment (ref_id = payments.id), commission batches use accrual, adjustments reference the merchant, supplier top-ups the supplier. Proposal: ref_type in {order, payment, invoice, refund, dispute, accrual, supplier, client, system}."
+        },
+        {
+          "key": "GET /admin/ledger/transactions/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "Same shape as a list row. Opened by the Ledger drawer (?journal=<id>) and by the merchant statement \"View journal\" (transactionId).",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no journal entry with that id",
+              "ui": "drawer/dialog error state"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks ledger:read",
+              "ui": "View journal hidden without the permission"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/ledger/accounts",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "One JSON object (not a list, no x-total-count): {currency (base code, \"USD\"), rows: [{kind, balance, accounts}], totalDebit, totalCredit}. One row per account kind: balance = sum of every account of that kind, debit-positive (client_wallet normally negative = credit), accounts = number of ledger_accounts of that kind. totalDebit = sum of positive row balances, totalCredit = sum of absolute negative row balances (equal when the books balance; the console compares them for \"Debits equal credits\"). Kind ids are the map ones (bank, gateway_clearing, supplier_prepaid, client_wallet, client_hold, customer_funds, vat_payable, revenue, fee_income, cogs, commission_expense, gateway_fees, chargeback_loss, adjustments); the strip reads rows \"bank\" and \"supplier_prepaid\" by kind.",
+          "errors": [
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks ledger:read",
+              "ui": "Trial balance tab and strip cells left out"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Route says \"Accounts and their balances\" (could be per account); the console wants one row per kind. The map 14 accounts have no equity account although bank and supplier_prepaid start with balances (init 1000/200); the console already names owner_capital (Equity) and kind \"opening\". Proposal: per-kind rows; add owner_capital for opening entries."
+        },
+        {
+          "key": "POST /admin/ledger/reconcile",
+          "successStatus": 200,
+          "query": "",
+          "request": "No body. Synchronous and read-only: for every ledger account compare the stored balance with SUM(ledger_entries.amount); count accounts and lines checked. Never corrects anything (scenario system-integrity: corrections are reverse entries through wallet/adjust). Record the run (job_runs) and an audit entry. No money event.",
+          "response": "200 {ranAt, accountsChecked, entriesChecked, differences: [{accountId, kind, ownerName (merchant/supplier name or null), stored, expected, difference = stored - expected}]}; money in the ledger debit-positive sign with 4 dp (console prints 2 dp, or 4 when needed, M255); empty differences = every account matched.",
+          "errors": [
+            {
+              "status": 409,
+              "code": "RECONCILE_RUNNING",
+              "when": "a run is already in progress (FinancePage.test.tsx:240-262 uses code CONFLICT)",
+              "ui": "error shown, no result dialog"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks ledger:reconcile",
+              "ui": "Run reconciliation disabled"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map does not say whether unbalanced transactions are reported here or only by GET /admin/system/integrity (which lists entry sums, stuck holds, captured payments without entries). Proposal: reconcile reports account differences only (shape above); the other checks stay in system integrity."
+        },
+        {
+          "key": "GET /admin/payments",
+          "successStatus": 200,
+          "query": "Deposits tab always sends purpose=topup plus status=pending|approved|rejected (omitted for All; finance/lib/paymentView.ts:41). _sort: createdAt | id | amount | status (default createdAt desc), _start/_end 25 per page. Sub-tab counts and the header \"waiting for review\" figure: same filters with _start=0&_end=1, refetched every 30 s. q and clientId are declared but not sent (support q over gateway reference and merchant name, as the mock does).",
+          "request": "",
+          "response": "JSON array + x-total-count: id, purpose (topup|order), status (pending|approved|rejected), methodType (bank|card|usdt|wise; other words shown via the gateway name), amount (gross the merchant paid), feeAmount, netAmount (= amount - feeAmount, credited to the wallet), currency (ISO code), gatewayTxnId, capturedAt, createdAt, invoiceId|null, receiptFileId|null (download via /admin/files/:id), client {id, name, group (the group NAME as a string), walletBalance (current client_wallet balance, merchant side) | null} | null, gateway {id, name} | null, reviewedBy {id|null, name} | null, reviewedAt | null, note | null (while pending: a hint for the reviewer such as a large or first deposit; once rejected: the reason).",
+          "errors": [
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks payments:read",
+              "ui": "Deposits tab and pending cell left out"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "payments has no note, reviewed_at, net_amount or client column (the merchant is reached through invoices.client_id) and no status vocabulary. Proposal: add reviewed_at and review_note columns, derive netAmount, expose top-up statuses as pending/approved/rejected."
+        },
+        {
+          "key": "GET /admin/payments/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "Same row as the list. Read when the review dialog opens from a link (ledger refType payment, audit log) and again after a decision.",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no payment with that id",
+              "ui": "dialog error state"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks payments:read",
+              "ui": "dialog shows no access"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/payments/:id/approve",
+          "successStatus": 200,
+          "query": "",
+          "request": "No body, no Idempotency-Key. Only a pending purpose=topup payment. One DB transaction: payment status approved with captured_at, reviewed_by, reviewed_at; map moneyEvent \"deposit\": Dr gateway_clearing (amount) / Cr client_wallet (netAmount) / Cr fee_income (feeAmount, omitted when 0), ledger kind \"deposit\", ref_type payment, ref_id payment id, memo \"Deposit PAY-<id> (<method>)\", idempotency_key derived from the payment id; linked invoice -> paid with paid_at; outbox EVENT invoice.paid to the merchant webhook and a notification; audit entry.",
+          "response": "200 with the updated Payment; client.walletBalance must already include the credit (toast \"<net> credited to <merchant>. Wallet is now <balance>.\", usePaymentMutations.ts:16-31).",
+          "errors": [
+            {
+              "status": 409,
+              "code": "PAYMENT_ALREADY_REVIEWED",
+              "when": "payment not pending (detail \"PAY-<id> was already approved.\")",
+              "ui": "review dialog error slot"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no payment with that id",
+              "ui": "dialog error slot"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks payments:approve",
+              "ui": "Approve disabled"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map posts gateway_clearing for both webhook and receipt top-ups; the demo and mock debit bank for bank/Wise transfers (paymentHandlers.ts:28, demo 10-data.js:515-520). Proposal: debit bank when payment_gateways.is_manual, gateway_clearing otherwise (moved to bank later by \"payout\"). Route tables also need ledger_transactions, ledger_accounts, outbox_events, audit_logs."
+        },
+        {
+          "key": "POST /admin/payments/:id/reject",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body {reason}: one non-empty string the merchant sees, composed by the console as \"<chosen reason>. <message>\", the message alone for \"Other\", or \"Rejected\" (finance/lib/payments.ts rejectReason). Pending only. Sets status rejected, review note = reason, reviewed_by, reviewed_at; voids the linked top-up invoice; notifies the merchant; audit entry. No money event.",
+          "response": "200 with the updated Payment (note = reason).",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[].field reason empty",
+              "ui": "under the reason select"
+            },
+            {
+              "status": 409,
+              "code": "PAYMENT_ALREADY_REVIEWED",
+              "when": "payment not pending",
+              "ui": "dialog error slot"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no payment with that id",
+              "ui": "dialog error slot"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks payments:approve",
+              "ui": "Reject disabled (same permission as approve)"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map tables list only payments; voiding the invoice touches invoices (and the merchant notification). Proposal: add invoices and notifications to the route."
+        },
+        {
+          "key": "GET /admin/invoices",
+          "successStatus": 200,
+          "query": "q (invoice number or merchant/customer name, placeholder \"Search number or merchant\"), status=open|paid|void, kind=topup|manual|receipt|statement, _sort: createdAt | total | status (default createdAt desc), _start/_end 25 per page. clientId declared, unused.",
+          "request": "",
+          "response": "JSON array + x-total-count: id, number (e.g. INV-2026-0042), kind, status, amount, fee, netAmount, taxAmount, taxRate (percent string, \"20.0000\"), taxCountry, customerVatId, total, currency (ISO code, not the currencies id), client {id, name} | null or customer {id, name, email} | null (the console masks the email; server may pre-mask), orderId | null, pdfFileId | null (download via /admin/files/:id), description | null, dueAt, paidAt, createdAt. Unknown kind/status words show greyed.",
+          "errors": [
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks invoices:read",
+              "ui": "Invoices tab hidden"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "invoices has no description column and currency is an FK id in the generated rows. Proposal: add invoices.description (text) and send currency as the code."
+        },
+        {
+          "key": "GET /admin/invoices/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "Same row as the list (drawer; also read after issuing).",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no invoice with that id",
+              "ui": "drawer error state"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/invoices",
+          "successStatus": 201,
+          "query": "",
+          "request": "Body {clientId, amount (4-dp string > 0), description (non-empty)}. Server: kind manual, status open, number INV-<year>-<sequence>, fee 0, net = amount, tax by the server rule (proposal: 0 for B2B), total = net + tax, currency = base, due_at = now + 14 days (mock), audit entry. No ledger entry and no money event at issue. The merchant picker reads GET /admin/clients (needs clients:read).",
+          "response": "201 with the new Invoice.",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[].field clientId (unknown merchant, no billing country) | amount (<= 0, malformed, out of range) | description (empty)",
+              "ui": "under the field"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks invoices:create",
+              "ui": "Issue manual invoice disabled"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map: invoices are top-up invoices and statements, and EVENT invoice.paid means \"the wallet was credited from an invoice\"; the console copy says a manual invoice bills \"outside the wallet top-up flow\" (IssueInvoiceDialog.tsx:45). Needs a decision on what paying it does (finance Q6)."
+        },
+        {
+          "key": "GET /admin/reports/profit",
+          "successStatus": 200,
+          "query": "groupBy=day|service|supplier|client, from=YYYY-MM-DD, to=YYYY-MM-DD (both inclusive; presets last 7/30/90 days ending today, computed in the browser time zone, finance/lib/reports.ts:39-43).",
+          "request": "",
+          "response": "Object {groupBy, from, to (echo the dates used), currency, rows: [{key, label, orders, revenue, cost, profit}], totals: {orders, revenue, cost, profit}}. Completed orders by completion time; revenue = selling price without VAT (revenue lines of moneyEvents complete and b2c_deliver), cost = supplier cost (cogs lines), profit = revenue - cost (may be negative). day: key = the date, oldest first, days without orders omitted; other splits: key = record id as a string, sorted by profit desc; supplier key \"0\" label \"No supplier\"; client key \"0\" label \"Storefront customers\" for B2C orders (mocks/reports.ts:25-74).",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "unknown groupBy or bad dates",
+              "ui": "report error state with the detail"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks reports:read",
+              "ui": "Profit report not offered"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/reports/wallet-exposure",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "Object {currency, totals: {clients, balance, reserved, overdraftLimit, overdraftUsed, inOverdraft}, rows: [{clientId, name, balance, reserved, overdraftLimit, overdraftUsed}]}. Merchant side: balance from client_wallet, reserved from client_hold, overdraftLimit = overdraft_limit, overdraftUsed = max(0, -balance) (the mock caps it at the limit), inOverdraft = merchants with balance < 0. Rows largest balance first, capped (mock 50); totals cover every merchant, not just the rows. The strip shows totals.balance, totals.reserved and totals.overdraftUsed (mocks/books.ts:56-92).",
+          "errors": [
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks reports:read",
+              "ui": "Wallet exposure report and strip cells left out"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/reports/vat",
+          "successStatus": 200,
+          "query": "from, to (YYYY-MM-DD inclusive; this/last month or quarter computed in the browser time zone, finance/lib/reports.ts:45-55).",
+          "request": "",
+          "response": "Object {from, to, currency, rows: [{country, period (YYYY-MM), rate (percent string), orders, taxable, vat}], totals: {orders, taxable, vat}}, computed from vat_payable ledger lines (moneyEvent b2c_pay minus b2c_refund), not from invoices; one row per tax country and month, newest period first then country (mocks/reports.ts:86-125).",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "bad dates",
+              "ui": "report error state"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks reports:finance",
+              "ui": "VAT report not offered"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        }
+      ],
+      "businessRules": [
+        "Deposit approval posts map moneyEvent \"deposit\" (Dr gateway_clearing or bank for the gross, Cr client_wallet net, Cr fee_income fee) in one DB transaction with payment -> approved and invoice -> paid, ref_type payment, then emits EVENT invoice.paid (manifest EVENT invoice.paid; finance/mocks/paymentHandlers.ts:19-41,80-100; demo 10-data.js:515-520).",
+        "A deposit is decided once: approve and reject only from pending, else 409 PAYMENT_ALREADY_REVIEWED (paymentHandlers.ts:51; demo 11-state.js reviewPayment).",
+        "Reject needs a reason, stores it as the payment note shown to the merchant, voids the top-up invoice and moves no money (paymentHandlers.ts:102-119; RejectPaymentDialog copy \"The merchant wallet is not changed\").",
+        "The merchant pays the gateway fee on top: netAmount = amount - feeAmount is credited (money.json deposit note \"التاجر يدفع 103$ والرسوم 3$ عليه\"); card/USDT top-ups confirmed by the signed webhook arrive approved and post the same deposit event exactly once (ledger_transactions.idempotency_key; types/payments.ts:10).",
+        "The ledger is append-only: entries are never edited or deleted, every transaction sums to zero, corrections are reverse entries (money.json ledger_entries \"مجموعها صفر\"; scenario system-integrity step 6).",
+        "Reconciliation is read-only (\"الفحص يقرأ فقط ولا يصحّح شيئاً بنفسه\", scenario system-integrity step 3) and compares stored balances with entry sums; difference = stored - expected (types/accounts.ts:28-37).",
+        "Trial balance is per account kind, debit-positive, totals from the same rows (finance/mocks/books.ts:13-33); the finance strip reads kinds bank and supplier_prepaid and the exposure totals (M129).",
+        "Manual invoices: kind manual, status open, numbered by the server (INV-YYYY-NNNN, mocks/invoices.ts:36-38), due in 14 days (invoiceHandlers.ts:81), no ledger entry at issue.",
+        "Profit report counts completed orders only; revenue is net of VAT (b2c_deliver moves 12.49 net to revenue, VAT stays in vat_payable) and cost is cogs; a loss shows as negative profit (ReportsTab chart draws it as zero).",
+        "VAT is computed from ledger entries (vat_payable lines), by tax country and month, not from invoices (manifest GET /admin/reports/vat description).",
+        "Supplier top-ups (moneyEvent topup: Dr supplier_prepaid / Cr bank) and gateway settlements (payout: Dr bank / Cr gateway_clearing) feed the trial balance; no admin route records them in this feature (M37/M61).",
+        "Withdrawals are out of scope: no route reads or decides withdrawal_requests (M3).",
+        "Permissions: ledger:read (ledger list/show, trial balance), ledger:reconcile, payments:read, payments:approve (approve and reject), invoices:read/create (M7 reading of invoices:*), reports:read (profit, wallet exposure), reports:finance (VAT)."
+      ],
+      "questions": [
+        {
+          "n": 1,
+          "question": "Is there a ledger export (CSV) route, with its own permission and an audit entry?",
+          "proposedAnswer": "No: the map has no ledger export, so the button stays out (M125). If wanted later, add GET /admin/ledger/transactions/export (CSV, same filters, permission ledger:export, audit entry, row cap).",
+          "basis": "manifest has no ledger export row (orders has GET /admin/orders/export); M125",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 2,
+          "question": "GET /admin/ledger/accounts: one line per account kind or one per account? Which currency do the totals use?",
+          "proposedAnswer": "One row per account kind (sum of that kind, debit-positive) with accounts = count; totals in the base currency (USD), the only ledger currency for now.",
+          "basis": "ledger_accounts columns kind, currency, balance; finance/mocks/books.ts:13-33; FinanceStrip reads kinds bank, supplier_prepaid",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 3,
+          "question": "Ledger list: which fields does q search? Is there an accountKind filter? What ref_type do deposits carry?",
+          "proposedAnswer": "A numeric q matches the transaction id (the console strips JRN-/#) and ref_id; text q matches memo, kind and the owner names of the lines (merchant, supplier, customer). accountKind: yes (transactions with a line on an account of that kind). Deposits carry ref_type payment with ref_id = payments.id.",
+          "basis": "M126; finance/lib/ledgerView.ts:51-65; usePaymentEntries.ts:13; demo postDeposit refType payment (10-data.js:519)",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 4,
+          "question": "Reconciliation: only report or also correct? Can it run long (job)? Does it check that every entry sums to zero?",
+          "proposedAnswer": "Report only, never corrects (corrections are reverse entries via wallet/adjust). Synchronous (aggregate queries); a concurrent second run answers 409. Entry sums, stuck holds and captured payments without entries stay in GET /admin/system/integrity; reconcile compares stored balances with entry sums.",
+          "basis": "scenario system-integrity steps 1, 3, 6; GET /admin/system/integrity description; finance/mocks/accountHandlers.ts:18-30",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 5,
+          "question": "Payments: status values of a manual deposit, meaning of note, does approve return the payment with the wallet, does approve need an idempotency key?",
+          "proposedAnswer": "Top-ups use pending|approved|rejected (card/USDT confirmed by webhook arrive approved; manual bank/Wise wait as pending). note = reviewer hint while pending (large or first deposit) and the rejection reason after. approve answers the payment with client.walletBalance already credited. No Idempotency-Key needed: the pending-only guard (409) and the ledger idempotency_key (payment id) prevent a double credit.",
+          "basis": "map POST /admin/payments/:id/approve (payments:approve, idempotencyKey false); payments columns; paymentHandlers.ts:51,80-100; usePaymentMutations.ts:16-31",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 6,
+          "question": "Invoices: kind and status words; where does a manual invoice text go; does a manual invoice get VAT and a due date?",
+          "proposedAnswer": "kind topup|manual|receipt|statement; status open|paid|void. Add invoices.description (text) for the manual text. Proposal: B2B manual invoices carry no VAT (VAT is booked only for storefront sales) and the server sets due_at (issue + 14 days, a setting). Whether paying one credits the wallet (EVENT invoice.paid) or is a service charge (revenue) needs a decision.",
+          "basis": "invoices columns (no description, due_at exists); EVENT invoice.paid \"The wallet was credited from an invoice\"; IssueInvoiceDialog.tsx:45 \"outside the wallet top-up flow\"; invoiceHandlers.ts:38-86",
+          "confidence": "low",
+          "needsUser": true
+        },
+        {
+          "n": 7,
+          "question": "Reports: parameter names and time zone of from/to; how many rows wallet exposure caps at; are VAT rows split by month?",
+          "proposedAnswer": "Params as sent: groupBy=day|service|supplier|client, from, to (YYYY-MM-DD inclusive), interpreted in one business time-zone setting (default UTC) and echoed back. Wallet exposure returns the 50 largest wallets with totals over all merchants. VAT rows are split by tax country and month (period YYYY-MM).",
+          "basis": "finance/api/reports.ts:13-37; finance/lib/reports.ts:33-55; mocks/books.ts:56-92; mocks/reports.ts:86-125; map GET /admin/reports/vat \"by country and period\"",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 8,
+          "question": "Deposit approval: which account is debited for manual bank/Wise transfers?",
+          "proposedAnswer": "Keep moneyEvent \"deposit\" (Cr client_wallet net, Cr fee_income fee) but debit bank when the payment gateway is_manual and gateway_clearing for automatic gateways (cleared to bank later by \"payout\"); the map shows gateway_clearing for both.",
+          "basis": "money.json deposit; system.mjs link g-s; demo 10-data.js:515-520; finance/mocks/paymentHandlers.ts:19-41",
+          "confidence": "medium",
+          "needsUser": true
+        }
+      ],
+      "mismatches": [
+        {
+          "id": "M3",
+          "summary": "Withdrawals tab left out: no admin route reads or decides withdrawal_requests.",
+          "backendImpact": "No withdrawal routes now; ledger kind withdrawal stays unused."
+        },
+        {
+          "id": "M123",
+          "summary": "New Invoices tab: kinds topup/manual/receipt/statement and statuses open/paid/void are assumed; the issue dialog picks merchants from GET /admin/clients.",
+          "backendImpact": "Use these words or tell the frontend; Issue needs invoices:create plus clients:read."
+        },
+        {
+          "id": "M124",
+          "summary": "New Reports tab with profit (day/service/supplier/merchant over 7/30/90 days), wallet exposure and VAT.",
+          "backendImpact": "Implement the three report bodies above; VAT needs reports:finance."
+        },
+        {
+          "id": "M125",
+          "summary": "Export ledger CSV left out (no route).",
+          "backendImpact": "No export unless a new route with permission and audit is added."
+        },
+        {
+          "id": "M126",
+          "summary": "Ledger search, type and account filters and sort are server-side; JRN-/# stripped from q; sort only Time, Journal, Type.",
+          "backendImpact": "Support q (id/memo/owner), kind, accountKind and _sort=createdAt|id|kind."
+        },
+        {
+          "id": "M127",
+          "summary": "Deposit dialog shows Wallet now only from client.walletBalance; receipt is a file download.",
+          "backendImpact": "Join client.walletBalance on payments and serve receipt_file_id through /admin/files/:id."
+        },
+        {
+          "id": "M128",
+          "summary": "Browser integrity checks replaced by Run reconciliation.",
+          "backendImpact": "POST /admin/ledger/reconcile answers the differences list."
+        },
+        {
+          "id": "M129",
+          "summary": "Strip cells read trial balance, wallet exposure and the pending-deposit count, each behind its own permission.",
+          "backendImpact": "Trial balance rows keyed by kind; exposure totals; exact x-total-count for purpose=topup&status=pending."
+        },
+        {
+          "id": "M130",
+          "summary": "Deposits tab lists only purpose=topup.",
+          "backendImpact": "Support the purpose filter; storefront order payments never wait for review here."
+        },
+        {
+          "id": "M131",
+          "summary": "Reject dialog sends one reason string (chosen reason + message).",
+          "backendImpact": "Store and show the single reason; 422 when empty."
+        },
+        {
+          "id": "M255",
+          "summary": "Reconcile differences are printed with 2 dp, 4 when needed.",
+          "backendImpact": "Send 4-dp strings; never round differences away."
+        },
+        {
+          "id": "M256",
+          "summary": "Integrity finding link opens the ledger filtered by account kind (?account=client_wallet).",
+          "backendImpact": "accountKind filter on GET /admin/ledger/transactions."
+        }
+      ],
+      "fixtures": [
+        {
+          "routes": [
+            "GET /admin/ledger/transactions",
+            "GET /admin/ledger/transactions/:id"
+          ],
+          "file": "src/mocks/ledger.ts",
+          "note": "Shared mock ledger seeded from the demo journals (signed lines, positive = debit); served by src/mocks/handlers/ledger.ts (search memo, kind). New entries posted by the orders, payments, adjustment and commission mocks."
+        },
+        {
+          "routes": [
+            "GET /admin/ledger/accounts",
+            "POST /admin/ledger/reconcile"
+          ],
+          "file": "src/features/finance/mocks/accountHandlers.ts",
+          "note": "Trial balance from mocks/books.ts trialBalanceOf (per kind, 1/10000 units); reconcile always answers no differences."
+        },
+        {
+          "routes": [
+            "GET /admin/payments",
+            "GET /admin/payments/:id",
+            "POST /admin/payments/:id/approve",
+            "POST /admin/payments/:id/reject"
+          ],
+          "file": "src/features/finance/mocks/paymentHandlers.ts",
+          "note": "Demo S.payments mapped in mocks/paymentStore.ts (PAY-1000 -> id 1000, invoice id = payment id - 999, gateways 1-4); approval posts the deposit journal and pays the invoice; walletBalance joined from books.ts walletsOf."
+        },
+        {
+          "routes": [
+            "GET /admin/invoices",
+            "GET /admin/invoices/:id",
+            "POST /admin/invoices"
+          ],
+          "file": "src/features/finance/mocks/invoiceHandlers.ts",
+          "note": "Seed in mocks/invoices.ts: one topup invoice per demo payment, three manual invoices, storefront tax receipts."
+        },
+        {
+          "routes": [
+            "GET /admin/reports/profit",
+            "GET /admin/reports/wallet-exposure",
+            "GET /admin/reports/vat"
+          ],
+          "file": "src/features/finance/mocks/reports.ts",
+          "note": "Profit from the orders mock (completed, by completedAt), VAT from demo storefront orders, exposure from mocks/books.ts exposureOf."
+        }
+      ]
+    },
+    {
+      "feature": "commissions",
+      "summary": "Commissions page: Accruals tab (status Ready/Approved/All, agent filter, server sort, counts and header strip from x-total-count, tick rows or \"Select all N\", then \"Approve and pay out\"), Agents tab (assignments: assign a plan, change plan, end) and Plans tab (CRUD with rate, basis, period, JSON conditions, active flag). Approval pays the agents wallets through the ledger; the console only previews the sum and shows the server answer (approved, total, skipped reasons).",
+      "endpoints": [
+        {
+          "key": "GET /admin/commission-plans",
+          "successStatus": 200,
+          "query": "Whole list: _start=0&_end=200&_sort=id&_order=asc. No filters.",
+          "request": "",
+          "response": "JSON array + x-total-count: id, name, kind (referral|rebate), basis (free text, e.g. \"Order revenue of referred merchants\"), percent (percent string, \"3.0000\" = 3%), tiers (JSON object, {} when none; e.g. {minPayout: \"50.0000\", minReferrals: 3} or {brackets: [{from: \"1000\", percent: \"1.0\"}]}; shown as key: value, never interpreted), period (free text, e.g. \"monthly\"), isActive, createdAt, updatedAt.",
+          "errors": [
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks commissions:read",
+              "ui": "Plans tab error state"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/commission-plans/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "Same row as the list.",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no plan with that id",
+              "ui": "error state"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/commission-plans",
+          "successStatus": 201,
+          "query": "",
+          "request": "Body {name, kind, percent (decimal text as typed, e.g. \"3.5\"), basis, period, tiers (JSON object), isActive}. name, kind, percent, basis and period are required (mocks/planRoutes.ts:87). No money event.",
+          "response": "201 with the plan, percent normalised to 4 dp.",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[].field name | kind (not referral/rebate) | percent (outside 0.5-15, demo rule; console only checks > 0 and <= 100) | basis | period | tiers (not an object)",
+              "ui": "message under the field"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks commissions:create",
+              "ui": "New plan disabled"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "PATCH /admin/commission-plans/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "Partial: only the changed fields (the dialog sends a diff). A rate change applies to orders completed after the save; accruals already earned keep their percent.",
+          "response": "200 with the updated plan (updatedAt bumped).",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "same field rules as POST",
+              "ui": "under the field"
+            },
+            {
+              "status": 409,
+              "code": "PLAN_LOCKED",
+              "when": "business refusal, e.g. plans cannot change during a settlement run (example from CommissionsAgents.test.tsx)",
+              "ui": "dialog error slot"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no plan with that id",
+              "ui": "dialog error slot"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks commissions:update",
+              "ui": "Edit disabled"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "DELETE /admin/commission-plans/:id",
+          "successStatus": 204,
+          "query": "",
+          "request": "",
+          "response": "204 empty.",
+          "errors": [
+            {
+              "status": 409,
+              "code": "PLAN_IN_USE",
+              "when": "current assignments use the plan (detail names how many: \"End or move those assignments first.\"); also when accruals reference it (suggest isActive=false instead)",
+              "ui": "delete dialog shows the detail"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no plan with that id",
+              "ui": "dialog error slot"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks commissions:delete",
+              "ui": "Delete disabled"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/commission-assignments",
+          "successStatus": 200,
+          "query": "Whole list: _start=0&_end=200&_sort=createdAt&_order=desc. No filters (also feeds the accrual agent filter and the plans agent counts).",
+          "request": "",
+          "response": "JSON array + x-total-count: id, planId, beneficiaryId, scope, startsAt, endsAt, createdAt, updatedAt, beneficiary {id, name, country?} | null (the merchant), plan {id, name, percent} | null. Return current assignments only by default (ended rows would inflate the plans agent counts); the console shows \"Until <endsAt>\" when an end date is present.",
+          "errors": [
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks commissions:read",
+              "ui": "Agents tab error state with Retry"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map keeps starts_at/ends_at on commission_assignments, but the mock DELETE removes the row. Proposal: DELETE sets ends_at; the list hides ended rows unless asked (e.g. includeEnded=true)."
+        },
+        {
+          "key": "GET /admin/commission-assignments/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "Same row as the list.",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no assignment with that id",
+              "ui": "error state"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/commission-assignments",
+          "successStatus": 201,
+          "query": "",
+          "request": "Body {beneficiaryId (merchant id), planId}. Server sets scope (\"referrals\" for referral plans, own orders for rebate plans), starts_at = now, ends_at = null. The merchant menu reads GET /admin/clients (_start=0&_end=200&_sort=name). No money event.",
+          "response": "201 with the assignment incl. beneficiary and plan joins.",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[].field beneficiaryId (unknown merchant) | planId (unknown or inactive plan; the menu also offers plans marked \"off\")",
+              "ui": "under the field"
+            },
+            {
+              "status": 409,
+              "code": "ALREADY_ASSIGNED",
+              "when": "the merchant already has a current plan (detail \"<merchant> is already on the <plan> plan. Change its plan instead.\")",
+              "ui": "dialog error slot"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks commissions:create",
+              "ui": "Assign plan disabled (also needs clients:read for the menu)"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "PATCH /admin/commission-assignments/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body {planId} only. Orders completed from now earn the new plan rate; accruals already earned keep theirs.",
+          "response": "200 with the updated assignment and joins.",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[].field planId unknown or inactive",
+              "ui": "under Plan"
+            },
+            {
+              "status": 409,
+              "code": "PLAN_LOCKED",
+              "when": "business refusal (example from CommissionsAgents.test.tsx:207)",
+              "ui": "dialog error slot"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no assignment with that id",
+              "ui": "dialog error slot"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks commissions:update",
+              "ui": "Change plan disabled"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "DELETE /admin/commission-assignments/:id",
+          "successStatus": 204,
+          "query": "",
+          "request": "No body. Ends the assignment: set ends_at = now; no accrual on orders completed afterwards; accruals already earned stay approvable.",
+          "response": "204 empty.",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no assignment with that id",
+              "ui": "dialog error slot"
+            },
+            {
+              "status": 409,
+              "code": "HAS_PENDING",
+              "when": "optional policy refusal, e.g. ready accruals must be approved first (example from CommissionsAgents.test.tsx:245)",
+              "ui": "end dialog shows the detail"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks commissions:delete",
+              "ui": "End disabled"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/commission-accruals",
+          "successStatus": 200,
+          "query": "status=accrued|approved (omitted for All; the tab opens on accrued), beneficiaryId=<agent merchant id>, createdAt_gte=<ISO date-time at UTC midnight 30 days back> (header strip), _sort: createdAt | basisAmount | percent | amount | status (default createdAt desc; agent and merchant names are not sortable), _start/_end 25 per page. \"Select all N\" reads _start=0&_end=1000 with status=accrued (+ beneficiaryId) sorted createdAt desc (useAccrualMutations.ts:22-28); counts use _start=0&_end=1 (status=accrued; status=approved&createdAt_gte=...).",
+          "request": "",
+          "response": "JSON array + x-total-count: id, planId, beneficiaryId, orderId, period (YYYY-MM), basisAmount (order revenue), percent (rate at accrual, percent string), amount (basisAmount x percent / 100, rounded to cents in the demo: 20.9900 at 5% = 1.0500), status (accrued|approved; any other word shown as sent), ledgerTxId (null until paid), createdAt (when earned), updatedAt, beneficiary {id, name} (the agent), merchant {id, name} (the referred merchant = the order client).",
+          "errors": [
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks commissions:read",
+              "ui": "page no-access state"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/commission-accruals/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "Same row as the list.",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no accrual with that id",
+              "ui": "error state"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/commission-accruals/approve",
+          "successStatus": 200,
+          "query": "",
+          "request": "Body {ids: number[]} (1 to 1000, from ticked rows or Select all). Skip, do not fail: unknown id -> \"This accrual does not exist.\", status not accrued -> \"Already approved.\" (and an accrual whose order was refunded -> skipped with that reason). Group the ready accruals by beneficiary and post one map moneyEvent \"commission\" per agent for the batch sum: Dr commission_expense / Cr client_wallet (agent), ledger kind \"commission\", ref_type accrual, ref_id = first accrual id, memo \"Commission batch, N accruals to <agent>\"; set each accrual status approved and ledger_tx_id (approved_at proposed); audit entry per agent; all in one DB transaction.",
+          "response": "200 {approved (count approved), total (money actually posted, 4 dp), skipped: [{id, reason}]}. Clean run: toast \"N commissions approved\" / \"$X credited to M agent wallets.\" from total; any skipped: summary dialog with each reason (ApproveResultDialog).",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "errors[].field ids: empty, not an array of ids, or above the cap",
+              "ui": "review dialog error slot; ticks kept"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks commissions:approve",
+              "ui": "Approve and Select all disabled"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map route tables are commission_accruals and ledger_entries only; posting also writes ledger_transactions, ledger_accounts (agent wallet balance) and audit_logs. The map books the commission expense at approval, not at accrual (moneyEvent commission)."
+        }
+      ],
+      "businessRules": [
+        "Accruals are created by the system when an order of a referred merchant completes (moneyEvent commission need: \"العمولة تُستحق على طلب مكتمل\"): plan_id, beneficiary_id, order_id, period YYYY-MM, basis_amount (order revenue), percent (plan rate at that moment), amount = basis x percent / 100, status accrued, no ledger entry yet (commissions/mocks/seed.ts:125-127).",
+        "Approval posts map moneyEvent \"commission\" once per agent: Dr commission_expense / Cr client_wallet(agent) for the sum of that agent ready accruals, ref_type accrual, ref_id first accrual id; accruals become approved with ledger_tx_id (mocks/accrualRoutes.ts:34-72, mocks/ledger.ts:23-41; demo 11-state.js:292-313).",
+        "Bulk approval skips instead of failing: unknown -> \"This accrual does not exist.\", not accrued -> \"Already approved.\" (accrualRoutes.ts:46-47); an empty or invalid ids list is 422 on ids (accrualRoutes.ts:40). The answer total is what was really posted; the console preview is display only (M157).",
+        "The 7-day refund wait is a hint, not a rule: \"Normally approved after 7 days to cover refunds. You can approve earlier.\" (AccrualsToolbar.tsx:44).",
+        "A plan rate change applies only to orders completed after the save; existing accruals keep their percent (api/plans.ts:45-47; PlanDialog hint \"Applies to orders completed from now on\").",
+        "Plan rate between 0.5 and 15 percent (planRoutes.ts:28, demo plan-edit); kind referral|rebate; basis and period required; tiers must be a JSON object.",
+        "Deleting a plan that agents are assigned to is refused with 409 PLAN_IN_USE (planRoutes.ts:118).",
+        "One current plan per merchant: a second assignment is 409 ALREADY_ASSIGNED (assignmentRoutes.ts:48); scope and starts_at are set by the server (assignmentRoutes.ts:57).",
+        "Ending an assignment stops accruals on new orders only; earned accruals stay as they are (EndAssignmentDialog.tsx:1-2).",
+        "Approval changes the agent wallet at once: GET /admin/clients/:id/wallet, the statement and the client list wallet read the same client_wallet account (ASSUMED commissions Q7).",
+        "Permissions: commissions:read (page, accruals list/show), commissions:create/update/delete (plans and assignments, M7 reading of commissions:*), commissions:approve (approve, Select all); Assign plan also needs clients:read for its menu (M160)."
+      ],
+      "questions": [
+        {
+          "n": 1,
+          "question": "Approve: is the body {ids} and the answer {approved, total, skipped: [{id, reason}]}? Skip or fail on a not-ready accrual? Enforce the 7-day wait?",
+          "proposedAnswer": "Yes to both shapes. Not-ready accruals are skipped with a reason; the request fails only on bad input (422 on ids). The 7-day wait is not enforced (the demo copy says \"You can approve earlier\").",
+          "basis": "map POST /admin/commission-accruals/approve; mocks/accrualRoutes.ts:34-72; demo 11-state.js:292-313; AccrualsToolbar.tsx:44",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 2,
+          "question": "Accrual list: does it join beneficiary and the referred merchant? Which filters and sort fields? Other statuses (reversed, void)?",
+          "proposedAnswer": "Yes: beneficiary {id, name} and merchant {id, name} (the order client). Filters status, beneficiaryId, createdAt_gte (plus createdAt_lte, orderId, period); sort createdAt, basisAmount, percent, amount, status. Statuses accrued, approved, and reversed for an accrual whose order was refunded before approval.",
+          "basis": "commission_accruals columns; M153, M159; commissions/lib/filters.ts:52",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 3,
+          "question": "Is there a summary read (ready amount and agents, approved and earned amounts over a period, commission share of referred revenue)?",
+          "proposedAnswer": "Not in the map, so none for v1 (the strip keeps dashes). If wanted later: GET /admin/commission-accruals/summary?days=30 -> {ready {amount, agents, count}, approved {amount, count}, earned {amount}, revenueShare} under commissions:read.",
+          "basis": "manifest commissions rows (no summary route); M154",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 4,
+          "question": "Is there an approval date (approvedAt on the row)?",
+          "proposedAnswer": "Add commission_accruals.approved_at and send approvedAt (null until approved); then the strip can count approved accruals by approvedAt_gte.",
+          "basis": "commission_accruals columns (no approved_at); demo approveAccruals sets approvedAt (11-state.js:297)",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 5,
+          "question": "Plans: values of kind, basis and period; what percent is and its range; shape of tiers; fixed amount instead of a rate?",
+          "proposedAnswer": "kind referral|rebate; basis and period are free text stored as sent (e.g. \"Order revenue of referred merchants\", \"monthly\"); percent is a percent string (\"3.0000\" = 3%), allowed 0.5-15 (demo rule); tiers is a free JSON object (e.g. {minPayout: \"50.0000\", minReferrals: 3} or brackets) stored as-is and read by the settlement job; no fixed-amount plans (the schema has only percent).",
+          "basis": "commission_plans columns; planRoutes.ts:28; commissions/mocks/seed.ts:43-70; M156",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 6,
+          "question": "Assignments: scope values, more than one plan per merchant, does DELETE end or remove, refused while accruals are ready, per-agent figures?",
+          "proposedAnswer": "scope \"referrals\" (earn on orders of merchants whose referred_by_id is the agent) or \"own\" (rebate on own orders). One current plan per merchant (409 ALREADY_ASSIGNED). DELETE sets ends_at = now and the list hides ended rows; not refused while accruals are ready (they stay approvable). Per-agent figures (referredCount, revenue30d, readyAmount, approvedAmount) can be added later as optional fields.",
+          "basis": "commission_assignments columns scope, starts_at, ends_at; clients.referred_by_id; assignmentRoutes.ts:48,57,86; M155",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 7,
+          "question": "Does approving credit the wallet and post the journal in one transaction, and does it change the merchant wallet figures the merchants page shows?",
+          "proposedAnswer": "Yes: one DB transaction per request posts the commission journals, updates the agents client_wallet balances and marks the accruals approved with ledger_tx_id; the merchants page figures read the same account, so they change at once.",
+          "basis": "money.json moneyEvent commission; map route \"with a ledger entry on the wallet\"; accrualRoutes.ts:54-70",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 8,
+          "question": "What happens to an accrual when its order is refunded or reopened?",
+          "proposedAnswer": "Before approval: mark it reversed (approve skips it). After approval: post a reverse commission entry (Dr client_wallet / Cr commission_expense) on the agent wallet and mark the accrual reversed.",
+          "basis": "money.json commission need \"accrues on a completed order\"; POST /admin/orders/:id/refund; AccrualsToolbar 7-day refund copy",
+          "confidence": "low",
+          "needsUser": true
+        }
+      ],
+      "mismatches": [
+        {
+          "id": "M152",
+          "summary": "Agents are commission assignments (assign, change plan, end), not a merchant flag.",
+          "backendImpact": "Full assignments CRUD with joins; one current plan per merchant."
+        },
+        {
+          "id": "M153",
+          "summary": "Accrual rows need the agent and referred merchant names as joins; no approval date in the table.",
+          "backendImpact": "Join beneficiary and merchant; consider approved_at."
+        },
+        {
+          "id": "M154",
+          "summary": "Header strip shows only server counts (x-total-count with status and createdAt_gte); amounts stay dashes.",
+          "backendImpact": "Exact totals for status=accrued and status=approved&createdAt_gte=<ISO>; optional summary route later."
+        },
+        {
+          "id": "M155",
+          "summary": "Agents table lacks referred count, 30-day revenue and ready/approved amounts.",
+          "backendImpact": "Optional per-agent figures on assignment rows."
+        },
+        {
+          "id": "M156",
+          "summary": "Plans get full CRUD; conditions are the tiers JSON; the 0.5-15 limit is checked by the server.",
+          "backendImpact": "Validate percent range and tiers object; 409 PLAN_IN_USE on delete."
+        },
+        {
+          "id": "M157",
+          "summary": "Bulk approval can partly fail; the console shows the server answer.",
+          "backendImpact": "Answer {approved, total, skipped [{id, reason}]}."
+        },
+        {
+          "id": "M158",
+          "summary": "\"Select all N\" reads up to 1,000 matching accruals to get their ids.",
+          "backendImpact": "Allow _end=1000 on the accrual list and up to 1000 ids per approve."
+        },
+        {
+          "id": "M159",
+          "summary": "Server sorts accruals only by createdAt, basisAmount, percent, amount, status; names are not sortable.",
+          "backendImpact": "Support those _sort fields."
+        },
+        {
+          "id": "M160",
+          "summary": "Permissions: read, create/update/delete and approve are separate.",
+          "backendImpact": "Enforce commissions:read, commissions:create/update/delete, commissions:approve per route."
+        }
+      ],
+      "fixtures": [
+        {
+          "routes": [
+            "GET /admin/commission-plans",
+            "GET /admin/commission-plans/:id",
+            "POST /admin/commission-plans",
+            "PATCH /admin/commission-plans/:id",
+            "DELETE /admin/commission-plans/:id"
+          ],
+          "file": "src/features/commissions/mocks/planRoutes.ts",
+          "note": "Demo S.plans mapped in mocks/seed.ts (rate fraction -> percent string, tiers {minPayout, minReferrals}, one rebate plan with brackets, period monthly)."
+        },
+        {
+          "routes": [
+            "GET /admin/commission-assignments",
+            "GET /admin/commission-assignments/:id",
+            "POST /admin/commission-assignments",
+            "PATCH /admin/commission-assignments/:id",
+            "DELETE /admin/commission-assignments/:id"
+          ],
+          "file": "src/features/commissions/mocks/assignmentRoutes.ts",
+          "note": "One assignment per demo agent merchant (mocks/seed.ts); joins in mocks/dto.ts toAssignment."
+        },
+        {
+          "routes": [
+            "GET /admin/commission-accruals",
+            "GET /admin/commission-accruals/:id",
+            "POST /admin/commission-accruals/approve"
+          ],
+          "file": "src/features/commissions/mocks/accrualRoutes.ts",
+          "note": "Demo S.accruals (CA-0001 -> 1, ledgerTxId from the demo commission journals); approval posts per-agent journals via mocks/ledger.ts; tests in api/accruals.test.ts show exact query strings and the answer."
+        }
+      ]
+    }
+  ],
+  "crossCutting": [
+    "List dialect (simple-rest): _start/_end row range (end exclusive), _sort/_order comma-joined parallel lists, field filters by bare name (repeated key = IN) or with suffix _ne/_gte/_lte/_gt/_lt/_like, free text q; total in x-total-count (missing header -> total = rows received). Evidence: src/lib/api/query.ts:34-55, src/lib/api/client.ts:140-153, src/mocks/crud.ts:24-137.",
+    "CORS: requests use credentials: include and send X-CSRF-Token on non-GET; responses must expose x-total-count, Content-Disposition, X-Request-Id, Retry-After and X-CSRF-Token (Access-Control-Expose-Headers) with an explicit origin and Allow-Credentials. Evidence: src/lib/api/client.ts:71-84,149,167; src/lib/api/errors.ts:205-206; src/lib/api/csrf.ts:30-33; src/mocks/crud.ts:167.",
+    "Page size: the console asks for up to 1000 rows (commissions Select all, src/features/commissions/hooks/keys.ts:34) and 200 for whole-list lookups (src/features/merchants/hooks/keys.ts:28, src/features/finance/api/lookups.ts:7, src/features/commissions/hooks/keys.ts:25-28); the server page cap must be >= 1000.",
+    "Money: every money field is a decimal string with exactly 4 fraction digits in responses; requests send 4-dp strings (src/features/merchants/lib/amount.ts:13-19, src/features/finance/lib/invoices.ts:47-51). Percents/rates are decimal strings: requests may send \"4\", \"2.5\", \"3.5\" (merchants/lib/amount.ts:31-38, commissions/components/PlanDialog.tsx:67), responses normalise to \"4.0000\". Never JSON numbers for money (src/lib/api/types.ts:7-11).",
+    "Ledger sign: ledger_entries.amount and account balances are debit-positive, credit-negative; the lines of one transaction sum to zero (src/features/finance/types/index.ts:26-29, types/accounts.ts:8). Merchant-facing figures (client wallet, statement, wallet-exposure, payments client.walletBalance) are flipped to the merchant side, positive = merchant money (src/features/merchants/mocks/figures.ts:41-70, src/features/finance/mocks/books.ts:46-47).",
+    "Map moneyEvent -> ledger_transactions.kind the console labels (src/features/finance/lib/kinds.ts:4-18): deposit->deposit, order->order_hold, complete and b2c_deliver->order_settle, reject->order_release, topup->supplier_topup, commission->commission, adjust->adjustment, b2c_pay->b2c_payment, b2c_fee->gateway_fee, b2c_refund->refund, b2c_chargeback->chargeback, payout->settlement, opening balances->opening (withdrawal unused, M3). Account kinds = the map ids (src/features/finance/lib/accounts.ts:10-25, which also names owner_capital).",
+    "Dates: date-times are ISO 8601 UTC strings (src/lib/api/types.ts:13-14); date-only params from/to are YYYY-MM-DD, both inclusive, computed in the browser time zone (src/features/finance/lib/reports.ts:33-55), so the server needs one business time-zone setting; createdAt_gte receives a full ISO date-time (src/features/commissions/lib/figures.ts:16-18).",
+    "Errors: application/problem+json {type, title, status, code, detail, errors[{field, message}]} plus X-Request-Id (src/mocks/problem.ts:10-24, src/lib/api/errors.ts:190-208). errors[].field must equal the request body camelCase name (dialogs map by name; only GroupDialog aliases, GroupDialog.tsx:21); 422 VALIDATION_FAILED for bad input; business refusals 409 with a specific code and a human detail (dialogs show detail, direct buttons toast title + detail); only EMAIL_TAKEN is mapped to a field by code (src/components/ui/dialogSubmit.ts:35-51, InviteMerchantDialog.tsx:53).",
+    "Success statuses: create POST 201 with the created row (src/mocks/crud.ts:190); action POST 200 with a JSON body; PATCH 200 with the full updated row; DELETE 204 empty (src/lib/api/client.ts:96-99 treats 204/empty as no body).",
+    "Joins are nested objects ({id, name, ...}) or null; unknown extra fields are ignored, so adding fields is safe; ids are JSON numbers and the PAY-/JRN-/INV-/CA-/ORD- prefixes are display only (src/lib/api/types.ts:5, src/features/finance/lib/payments.ts:25, finance/lib/ledgerView.ts:51-55 strips JRN-/# before sending q).",
+    "Counts are one-row list calls read from x-total-count (useMerchantCounts.ts:13-23, finance usePaymentCounts.ts, commissions useAccrualCounts.ts/useStripCounts.ts:17), so filtered totals must be exact; the console never sums money, so all totals come from report routes (M49, M129, M154).",
+    "Currency: all ledger money is in the base currency (USD); responses carry currency as the ISO code string where a body has one (trial balance, reports, invoices, payments) although generated rows type it as an id (src/lib/api/schema.gen.ts:452,501).",
+    "Permissions: CRUD rows tagged x:* are read as x:read/x:create/x:update/x:delete (MISMATCHES M7); response parts can be permission-gated (GET /admin/clients wallet/stats need wallet:read); the console hides or disables controls but always shows the server 403."
+  ]
+}

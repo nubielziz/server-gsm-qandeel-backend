@@ -12,6 +12,9 @@ Status: accepted, 2026-10-31.
 - One shared ioredis client per role per process. Queue producers fail fast (`enableOfflineQueue: false`); Worker
   connections use `maxRetriesPerRequest: null` and reconnect forever.
 
+Health: the System health cache card reports the cache Redis; the queue Redis is its own component (`redis_queue`)
+with a memory alert, because a full noeviction instance refuses writes.
+
 **Consequences.** Idempotency results, balances, holds and statuses never live in either Redis (Postgres only).
 Production may use managed Redis or Valkey with the same two policies; the env has two URLs (`REDIS_QUEUE_URL`,
 `REDIS_CACHE_URL`).

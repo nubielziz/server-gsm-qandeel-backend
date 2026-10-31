@@ -1,0 +1,2485 @@
+{
+  "features": [
+    {
+      "feature": "auth",
+      "summary": "Four public screens (/login, /login/2fa, /login/setup-2fa, /set-password) run a two-step staff sign-in through Refine's authProvider (src/app/providers/authProvider.ts). GET /admin/auth/me then feeds identity, every permission gate and 'your address' (lastLoginIp). Logout ends the server session; invite/reset links and the forced change of a temporary password both go through POST /admin/auth/password/set.",
+      "endpoints": [
+        {
+          "key": "POST /admin/auth/login",
+          "successStatus": 200,
+          "query": "",
+          "request": "`{email,password}` JSON. Email is trimmed by the client (SignInForm.tsx:65); match it case-insensitively (mock session.ts:199-201). Public: no session and no CSRF check (ignore a stale X-CSRF-Token the client may still send). Server order: IP rules first (map scenario admin-team step 5, ip-rules step 3) → rate limit per email+IP (backend decision 021) → credentials → suspended → create the pre-2FA session. Revoke/replace any session cookie already on the request (fixation).",
+          "response": "`{next}`: `password` when must_change_password (checked first), else `totp` when twofa_enabled, else `totp_setup` (mock session.ts:216). The client routes to /set-password, /login/2fa or /login/setup-2fa (authProvider.ts:24-28) and treats a missing/unknown value as `totp` (authProvider.ts:70). Sets the pre-2FA session cookie (httpOnly) and the readable CSRF cookie (VITE_CSRF_COOKIE, default `csrf_token`) and repeats the token in the `X-CSRF-Token` response header (session.ts:213-217). last_login_* are NOT written yet (they are set at the 2FA step).",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "email or password missing/blank; `errors[{field:'email'|'password', message}]` (session.ts:192-198)",
+              "ui": "messages under the fields + \"N fields need attention\" summary"
+            },
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "unknown email, wrong password, or no password chosen yet (invited by link): one indistinguishable answer",
+              "ui": "fixed text \"Email or password is incorrect\" + request id; password cleared, email kept (authErrors.ts:35-43)"
+            },
+            {
+              "status": 403,
+              "code": "ACCOUNT_SUSPENDED",
+              "when": "correct password but status suspended (session.ts:205-212; map admin-team step 8)",
+              "ui": "form replaced by the \"This account is suspended\" card (SignInBlocked.tsx)"
+            },
+            {
+              "status": 403,
+              "code": "IP_NOT_ALLOWED",
+              "when": "an active block (scope admin|all) covers the request IP, or the console restriction is on and no live allow rule covers it; decided before the credentials",
+              "ui": "form replaced by the \"Sign-in is not allowed from this network\" card"
+            },
+            {
+              "status": 429,
+              "code": "RATE_LIMITED",
+              "when": "too many attempts; send Retry-After (seconds)",
+              "ui": "\"Too many sign-in attempts. Sign-in is paused for now. Try again in N seconds/minutes\" (authErrors.ts:44-50)"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/auth/2fa",
+          "successStatus": 204,
+          "query": "",
+          "request": "`{code}`: exactly 6 digits (client strips spaces/dashes, codeInput.ts:3-8). Needs the pre-2FA session cookie + `X-CSRF-Token` (mock requireSession(['password']), session.ts:223-224); a full session must not use it. Verify against the confirmed secret or, when twofa_enabled=false, against the pending secret created by /2fa/setup and then set twofa_enabled=true. Allow ±1 time step, refuse a code already used in its step, rate-limit per staff member.",
+          "response": "204, body ignored. Upgrade to a full session (rotate the session token; if the CSRF token rotates too, send it in the cookie AND the `X-CSRF-Token` header: the mock re-sends the same token, session.ts:235). Side effects: last_login_at=now and last_login_ip=request IP (map admin-team step 5; the mock only sets lastLoginAt, session.ts:230-233), status invited→active on the first full sign-in (staff_users description), audit entry. The client then refreshes its auth state, calls GET /admin/auth/me and opens `?to=` or `/` (useCodeStep.ts:18-27).",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "wrong, expired or reused code; `errors[{field:'code', message}]` (session.ts:226-229)",
+              "ui": "message under the code field, digits selected for retyping (CodeForm.tsx:52-56)"
+            },
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no or expired pre-2FA session",
+              "ui": "banner with the server title/detail; the person uses \"Back to sign in\" (no automatic sign-out on this step, authProvider.ts:71-73)"
+            },
+            {
+              "status": 403,
+              "code": "CSRF_FAILED",
+              "when": "X-CSRF-Token missing or not matching the session (session.ts:108-110)",
+              "ui": "banner with the server words"
+            },
+            {
+              "status": 429,
+              "code": "RATE_LIMITED",
+              "when": "too many codes; Retry-After",
+              "ui": "banner \"Too many requests. Try again in N\" (authErrors.ts:12-19)"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Manifest access is 'public'; console and mock need the pre-2FA session created by login. Proposal: 'public' means no full session/permission, but the pre-2FA session is mandatory."
+        },
+        {
+          "key": "POST /admin/auth/2fa/setup",
+          "successStatus": 200,
+          "query": "",
+          "request": "No body (empty POST, CSRF header sent). Only for a pre-2FA session whose staff member has twofa_enabled=false and must_change_password=false (login answered `totp_setup`). Each call starts a new setup: fresh base32 secret, stored encrypted as pending (backend decision 019), replacing an older pending one. The screen sends it once per visit and again only on Retry; never retried automatically, never cancelled (useTwoFactorSetup.ts:12-21).",
+          "response": "`{secret, otpauthUrl, qrSvg?}`. `secret` = base32 (shown in groups of four, AuthenticatorSetup.tsx:5-8). `otpauthUrl` = `otpauth://totp/<issuer>:<email>?secret=…&issuer=…` (mock issuer 'GSM Supply', session.ts:244-248). `qrSvg` = optional raw SVG markup string, not a data URL: the client wraps it in data:image/svg+xml (AuthenticatorSetup.tsx:17-22); without it only the key is shown. Cache-Control: no-store.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no pre-2FA session",
+              "ui": "authProvider.onError signs out to /login"
+            },
+            {
+              "status": 409,
+              "code": "TWOFA_ALREADY_ENABLED",
+              "when": "proposed code: the staff member is already enrolled (login said totp). Must refuse, or a password alone could enrol a new authenticator",
+              "ui": "\"Could not start the setup\" card with the server detail + Retry (SetupFailure.tsx)"
+            },
+            {
+              "status": 403,
+              "code": "CSRF_FAILED",
+              "when": "missing/mismatched X-CSRF-Token",
+              "ui": "same failure card"
+            },
+            {
+              "status": 429,
+              "code": "RATE_LIMITED",
+              "when": "too many setups",
+              "ui": "failure card with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Manifest access 'public'; console + mock need the pre-2FA session (session.ts:241). Same proposal as POST /admin/auth/2fa."
+        },
+        {
+          "key": "POST /admin/auth/logout",
+          "successStatus": 204,
+          "query": "",
+          "request": "No body; `X-CSRF-Token`. Accept both pre-2FA and full sessions (mock session.ts:254).",
+          "response": "204. Revoke the session (revoked_at), clear the session cookie and the CSRF cookie (Max-Age=0). The client forgets its remembered CSRF token and its me cache (authProvider.ts:115-117) and shows /login without `?to=` (useSignOut.ts).",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "session already gone",
+              "ui": "counted as signed out (authProvider.ts:110-114)"
+            },
+            {
+              "status": 403,
+              "code": "CSRF_FAILED",
+              "when": "missing/mismatched X-CSRF-Token",
+              "ui": "stays signed in, error toast with the server title (authProvider.test.ts:233-244)"
+            },
+            {
+              "status": 500,
+              "code": "INTERNAL_ERROR",
+              "when": "server failure",
+              "ui": "stays signed in, error toast (AppShell.test.tsx:526)"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/auth/me",
+          "successStatus": 200,
+          "query": "",
+          "request": "Full (post-2FA) session only; a pre-2FA session gets 401 (session.ts:263). Called on every route check but cached 60 s and shared client-side (meCache.ts:15-52): keep it cheap.",
+          "response": "`permissions` = the role's stored strings incl. wildcards (`*`, `x:*`), no duplicates; a deleted role gives `[]` (session.ts:141-142). `lastLoginAt`/`lastLoginIp` = this session's own sign-in: the console uses lastLoginIp as 'your address' for every IP lockout hint (MISMATCHES M15). `status` is 'active' for any session that passes. Repeat `X-CSRF-Token` as a response header (session.ts:270): after a reload a cross-site console can only recover the token from it. Cache-Control: no-store.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no, expired, revoked or pre-2FA session",
+              "ui": "signed out to /login?to=<current path> (SignInRedirect.tsx), note \"Sign in to continue to <path>\""
+            },
+            {
+              "status": 403,
+              "code": "ACCOUNT_SUSPENDED",
+              "when": "the session's staff member is suspended (session.ts:267-269)",
+              "ui": "signed out to /login?reason=suspended card"
+            },
+            {
+              "status": 403,
+              "code": "IP_NOT_ALLOWED",
+              "when": "request IP refused by the IP rules",
+              "ui": "signed out to /login?reason=ip card"
+            },
+            {
+              "status": 500,
+              "code": "INTERNAL_ERROR",
+              "when": "any 5xx, 429 or network failure",
+              "ui": "shell stays up; start page shows \"Could not load your account\" + Retry (authProvider.ts:79-87, HomeRedirect.tsx)"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/auth/password/set",
+          "successStatus": 204,
+          "query": "",
+          "request": "Two modes. (a) `{token, password}`: public; token from the emailed link `<console>/set-password?token=…` (auth_tokens: hash only, 1 h, single use). (b) `{password}` without token: needs the pre-2FA session of a staff member with must_change_password=true, plus `X-CSRF-Token` (session.ts:287-291). Policy: at least 10 characters (SetPasswordForm.tsx:13, session.ts:292-295); the demo also refused trivial passwords and ones containing the email name (12-state-b2c.js:61-66). Hash with argon2id.",
+          "response": "204. password_changed_at=now, must_change_password=false; mode (a) sets auth_tokens.used_at and voids other unused tokens of the account; revoke every session of the account incl. the pre-2FA one (mock resetSession, session.ts:296-299). It does not sign in: the client opens /login?reason=password-set (\"Password updated\") and the person signs in again (then sets up 2FA if needed). Status stays 'invited' until the first full sign-in.",
+          "errors": [
+            {
+              "status": 410,
+              "code": "TOKEN_INVALID",
+              "when": "token unknown, expired, used, superseded, or its account suspended (session.ts:279-286)",
+              "ui": "form replaced by the dead-link card with the server detail (SetPasswordPage.tsx:22-37)"
+            },
+            {
+              "status": 422,
+              "code": "WEAK_PASSWORD",
+              "when": "policy failed; include `errors[{field:'password'}]`",
+              "ui": "message under \"New password\" (authErrors.ts:95-105)"
+            },
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "password missing; `errors[{field:'password'}]`",
+              "ui": "message under the field"
+            },
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no token and no pre-2FA session",
+              "ui": "banner, no sign-out"
+            },
+            {
+              "status": 429,
+              "code": "RATE_LIMITED",
+              "when": "per-IP limit on token routes (decision 021)",
+              "ui": "banner with the wait"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "The map row covers only the token case; the console also calls it without a token for the forced change after a temporary password (no other route exists). Proposal: accept both modes as described."
+        }
+      ],
+      "businessRules": [
+        "2FA is mandatory: no full session without a TOTP code (staff_users description; admin surface \"staff session + 2FA + permission\").",
+        "IP rules run before the password on login and before authentication on every /admin route: active block (scope admin|all) or restriction on + IP not allowlisted → 403 IP_NOT_ALLOWED, and the deciding rule gets hit_count+1 / last_hit_at (map ip-rules step 3; backend decision 028).",
+        "A suspended account is refused with 403 ACCOUNT_SUSPENDED even with the right password, and none of its old sessions work (map admin-team step 8).",
+        "Pre-2FA session scope: only POST /admin/auth/2fa, /2fa/setup (2FA off), /password/set without token (must_change_password) and /logout accept it; every other route answers 401 (mock requireSession stages, session.ts:103-121). Short lifetime (proposed 10 min).",
+        "next order at login: must_change_password → password; else twofa_enabled → totp; else totp_setup (session.ts:216).",
+        "Without a token, POST /admin/auth/password/set is allowed only for a pre-2FA session whose staff member has must_change_password=true; otherwise a stolen password alone could change the password without the TOTP step (the mock only checks the pre-2FA stage, session.ts:287-291).",
+        "last_login_at and last_login_ip are written at 2FA completion from the request (map admin-team step 5); the console uses lastLoginIp as the caller's address.",
+        "status 'invited' becomes 'active' at the first full sign-in (staff_users description).",
+        "Invite/reset tokens are stored as hashes, valid 1 h, single use (auth_tokens description); setting a password consumes the token and ends all sessions of the account.",
+        "A temporary password forces a change before anything else (next=password); passwords and TOTP secrets never appear in later responses, logs or audit entries (POST /admin/staff/:id/password description).",
+        "Rate limits with Retry-After on login, 2fa, 2fa/setup and password/set (backend decision 021).",
+        "CSRF: every mutation that carries a session needs a matching X-CSRF-Token (decision 006); login and token-mode password/set have no session to bind to (rely on SameSite cookies + Origin check)."
+      ],
+      "questions": [
+        {
+          "n": 1,
+          "question": "Session lifetime and idle timeout for staff sessions?",
+          "proposedAnswer": "Absolute 8 h (the mock seeds staff expiresAt ≤ now+8 h, src/mocks/sessions.ts:59), sliding idle timeout 30 min via last_seen_at (writes throttled to ~1/min), pre-2FA stage 10 min. Expiry shows up as 401 on the next call; the console has no idle timer.",
+          "basis": "mock sessions.ts:59; no map rule",
+          "confidence": "medium",
+          "needsUser": true
+        },
+        {
+          "n": 2,
+          "question": "Rotate the session token and the CSRF token when 2FA completes?",
+          "proposedAnswer": "Yes: new session token at the 2FA step (fixation defence); if the CSRF token changes, set the cookie and the X-CSRF-Token header in the same 204 (the client re-reads it, csrf.ts:30-33).",
+          "basis": "decision 006; csrf.ts",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 3,
+          "question": "Order of checks at login?",
+          "proposedAnswer": "IP rules → rate limit → credentials (401) → suspended (403) → pre-2FA session + next. Suspension is revealed only to someone with the right password.",
+          "basis": "map admin-team steps 5 and 8; mock session.ts:199-216; decisions 021/028",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 4,
+          "question": "TOTP parameters and issuer name?",
+          "proposedAnswer": "RFC 6238: SHA-1, 6 digits, 30 s step, ±1 step drift; issuer from config (mock uses \"GSM Supply\") and the staff email as the account label.",
+          "basis": "codeInput.ts:3; mock session.ts:244-248",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 5,
+          "question": "What happens to outstanding invite/reset tokens?",
+          "proposedAnswer": "A new link voids older unused links of the account; setting the password voids all; suspension voids all (later use → 410 TOKEN_INVALID).",
+          "basis": "auth_tokens description (single use); admin-team step 7",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 6,
+          "question": "Should 2fa/setup be refused once 2FA is enabled?",
+          "proposedAnswer": "Yes, 409 TWOFA_ALREADY_ENABLED; re-enrolment only after an Owner runs POST /admin/staff/:id/reset-2fa.",
+          "basis": "map admin-team step 9 (reset-2fa is the recovery path)",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 7,
+          "question": "Could GET /admin/auth/me carry the maintenance state so every staff member sees the banner (MISMATCHES M201, system-health question 4)?",
+          "proposedAnswer": "Not needed now: the banner reads GET /admin/system/health for system:read staff. If wanted later, add an optional me.maintenance object; the console ignores unknown fields until then.",
+          "basis": "M201; map system-integrity scenario (admin keeps working during checkout maintenance)",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 8,
+          "question": "Self-service password change or 2FA re-enrolment for a signed-in staff member?",
+          "proposedAnswer": "None: the map has no such routes; recovery is an Owner sending a reset link (POST /admin/staff/:id/password) or resetting 2FA. The sign-in form only says \"Ask an Owner to send you a reset link\".",
+          "basis": "docs/login-design.md States; ForgotPassword.tsx",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 9,
+          "question": "Does POST /admin/auth/password/set sign the person in?",
+          "proposedAnswer": "No. Answer 204 and revoke sessions; the console always sends the person to /login?reason=password-set and a normal sign-in follows (next = totp or totp_setup).",
+          "basis": "authProvider.ts:121-129; mock session.ts:296-300",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 10,
+          "question": "A signed-in staff member gets must_change_password=true (temporary password set with revokeSessions=false): what happens to the open session?",
+          "proposedAnswer": "The session keeps working: the console never redirects on me.mustChangePassword, so blocking routes would only produce errors. The change is forced at the next sign-in (next=password). The dialog defaults to revokeSessions=true, so this is rare.",
+          "basis": "PasswordDialog.tsx:40; features/auth/types Me JSDoc; authProvider.ts",
+          "confidence": "medium",
+          "needsUser": false
+        }
+      ],
+      "mismatches": [
+        {
+          "id": "M5",
+          "summary": "The demo has no sign-in, 2FA or set-password screens; they were built from the map in the demo style.",
+          "backendImpact": "The backend contract for sign-in is decision 006 as implemented here: login → {next} → 2fa | 2fa/setup + 2fa | password/set → me."
+        },
+        {
+          "id": "M6",
+          "summary": "The map names the auth routes but not their bodies (next step, QR format, me fields, CSRF token source).",
+          "backendImpact": "All auth bodies are assumptions isolated in features/auth/api and lib/api/csrf.ts; implement these exact shapes or the console needs a change."
+        }
+      ],
+      "fixtures": [
+        {
+          "routes": [
+            "POST /admin/auth/login",
+            "POST /admin/auth/2fa",
+            "POST /admin/auth/2fa/setup",
+            "POST /admin/auth/logout",
+            "GET /admin/auth/me",
+            "POST /admin/auth/password/set"
+          ],
+          "file": "src/mocks/session.ts",
+          "note": "Any seeded staff email + password 'demo-password', TOTP '123456', invite token 'demo-token'. rami@gsm-supply.example (Owner, next=totp), nadia@ (invited, no 2FA → totp_setup), yusuf@ (suspended → 403). Staff from src/mocks/staff.ts (demo-state.json 'admins'), role/permissions from src/mocks/roles.ts. One global session in localStorage (memory Map under Node)."
+        }
+      ]
+    },
+    {
+      "feature": "access",
+      "summary": "\"Admins and access\" (/access): five tabs gated by staff:read (Admins), access:read (Allowed IPs, Blocked IPs + tester), roles:read (Roles) and sessions:read (Sessions); any one opens the page (M19). Short lists are loaded whole (staff and roles up to 200, IP rules up to 500 per kind) and sorted, filtered and counted client-side; sessions page by 25. Actions run in dialogs that show the server's problem detail or field errors; client guards (yourself, last Owner, /16, self-lockout) are hints only and the server must enforce them.",
+      "endpoints": [
+        {
+          "key": "GET /admin/staff",
+          "successStatus": 200,
+          "query": "`_start=0&_end=200`, no `_sort`, no filters (useStaffList.ts:7-18; the same call feeds the audit person filter and the support assignee picker). Also support `q` (name, email; mock searchFields), `status` and repeated `id` (Refine getMany). No sort is sent: use a stable default (proposed createdAt asc, then id); the table sorts client-side.",
+          "request": "",
+          "response": "Rows (StaffMember): `role {id,name}`; `createdBy`/`suspendedBy` = `{id,name}` or null (seed/system or deleted account); `activeSessions` = live, fully signed-in staff sessions (not revoked, not expired); `resetSentAt` = when the latest invite/reset link was issued (auth_tokens), null when none or when a temporary password was set after it (mock accessStaff.ts:178-183); `passwordChangedAt` is set when a temporary password is issued: for an invited account the drawer reads \"Temporary password set …\" from it, else \"Invitation link sent … / expired\" from resetSentAt (staffText.ts:14-26); `suspendedReason` as sent (\"Reason: note\"; the table shows the part before the colon); `lastLoginIp` null until the first sign-in. x-total-count required (tab count, truncation note). Never send password_hash or TOTP data.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no full session",
+              "ui": "signed out to /login?to="
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks staff:read",
+              "ui": "tab is hidden client-side; otherwise \"Could not load the admin accounts\" + request id + Retry (AccessPage.test.tsx:120-131)"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Manifest permission staff:* on a CRUD row = staff:read for list/show (M7). The support assignee picker and the audit person filter call it only with staff:read (M146, support question 6). Proposal: keep staff:read; no narrower names-only route."
+        },
+        {
+          "key": "GET /admin/staff/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "Called after every staff action to refresh the open drawer (useStaffMember.ts, invalidations in useStaffMutations.ts).",
+          "response": "Same shape and joins as a list row.",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no staff member with this id",
+              "ui": "dialog/drawer shows the server detail"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks staff:read",
+              "ui": "never signs out; dialog error slot or tab error state with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/staff",
+          "successStatus": 201,
+          "query": "",
+          "request": "`{name, email, roleId, onboarding}`: name trimmed with single spaces, email trimmed + lower-case, roleId a number, onboarding 'invite' (default) or 'temporary_password' (AddAdminDialog.tsx:64-70). Re-clean and validate server-side: name ≥ 2 chars, email shape, role exists, email unique among staff (case-insensitive). invite: auth_tokens row (purpose invite, 1 h, hash only) + email with the link `<console>/set-password?token=<token>` (needs the console base URL in config). temporary_password: generate one (mock: 14 chars from an alphabet without look-alikes, accessStaff.ts:55-58), store the argon2id hash, must_change_password=true, password_changed_at=now. created_by = caller; audit 'added admin'.",
+          "response": "201 StaffMember (status 'invited', twofaEnabled false, activeSessions 0, createdBy = caller, resetSentAt = now for invite / null for temporary) plus `temporaryPassword` in plain text ONLY in this response and only for temporary_password (shown once; the client keeps it with gcTime 0; never logged, never retrievable).",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "`errors[{field:'name'|'email'|'roleId'}]` (accessStaff.ts:121-126)",
+              "ui": "messages under the matching fields"
+            },
+            {
+              "status": 409,
+              "code": "EMAIL_TAKEN",
+              "when": "another staff account has this email (accessStaff.ts:127-129)",
+              "ui": "detail under the email field (codeFields, AddAdminDialog.tsx:71)"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks staff:create (map admin-team step 1)",
+              "ui": "never signs out; dialog error slot or tab error state with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "PATCH /admin/staff/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "Partial body with only the changed keys among `roleId`, `name`, `email`; never empty (the client sends nothing when unchanged, staffInput.ts:45-58). The role field is locked client-side for yourself and for the last active Owner (staffGuards.ts:43-49).",
+          "response": "200 updated StaffMember (same joins). A role change takes effect on the next request (permissions are resolved per request); audit 'edited admin' with before/after of the changed fields.",
+          "errors": [
+            {
+              "status": 409,
+              "code": "EMAIL_TAKEN",
+              "when": "another staff account uses the new email (accessStaff.ts:167-169)",
+              "ui": "detail under the email field"
+            },
+            {
+              "status": 409,
+              "code": "CANNOT_CHANGE_OWN_ROLE",
+              "when": "proposed code: roleId sent for the caller's own account (demo updateAdmin, 14-state-access.js:61); add `errors[{field:'roleId'}]`",
+              "ui": "message under Role (or the dialog error slot)"
+            },
+            {
+              "status": 409,
+              "code": "LAST_OWNER",
+              "when": "demoting the last active Owner (map admin-team step 6; demo 14-state-access.js:62); add `errors[{field:'roleId'}]`",
+              "ui": "message under Role"
+            },
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "name < 2 chars, bad email, unknown roleId",
+              "ui": "under the fields"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no staff member with this id",
+              "ui": "dialog/drawer shows the server detail"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks staff:update",
+              "ui": "never signs out; dialog error slot or tab error state with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "The mock PATCH enforces neither the own-role nor the last-Owner rule (accessStaff.ts:155-172); the map requires both (admin-team step 6). Proposal: enforce them with the codes above."
+        },
+        {
+          "key": "POST /admin/staff/:id/password",
+          "successStatus": 200,
+          "query": "",
+          "request": "`{mode:'reset_link'|'temporary_password', revokeSessions:boolean}` (dialog defaults: reset_link, revokeSessions true, PasswordDialog.tsx:40). reset_link: issue a token (1 h; purpose invite while the account is still 'invited', reset otherwise — proposed) and email `/set-password?token=…`; the current password keeps working until the link is used. temporary_password: generate + hash, must_change_password=true, password_changed_at=now, void unused reset tokens. revokeSessions=true: revoke every session of the target (when the target is the caller, the caller's next request answers 401).",
+          "response": "200 `{temporaryPassword}` for temporary_password (once, never stored in clear); `{}` or 204 for reset_link (the client only reads `result?.temporaryPassword`). Update resetSentAt (link) or set it null (temporary; mock accessStaff.ts:175-186). Audit 'set a temporary password for admin' / 'sent a password reset link to admin' without any secret (map: never readable, never in the log).",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "bad mode or revokeSessions",
+              "ui": "dialog error slot"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no staff member with this id",
+              "ui": "dialog/drawer shows the server detail"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks staff:update",
+              "ui": "never signs out; dialog error slot or tab error state with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/staff/:id/sessions/revoke",
+          "successStatus": 204,
+          "query": "",
+          "request": "No body. Revoke every live session of the target (incl. a pre-2FA one). The button is disabled when activeSessions = 0.",
+          "response": "204. Audit 'signed out all devices of admin' (sessions n → 0, demo signOutAdmin). Target = caller ⇒ the caller is signed out on the next request.",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no staff member with this id",
+              "ui": "dialog/drawer shows the server detail"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks staff:update",
+              "ui": "never signs out; dialog error slot or tab error state with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/staff/:id/suspend",
+          "successStatus": 204,
+          "query": "",
+          "request": "`{reason}` = \"Reason\" or \"Reason: note\"; reason from Left the team / Account may be compromised / On leave / Under investigation / Other, note ≤ 140 chars (staffInput.ts:6-12, 36-39). Required.",
+          "response": "204. status=suspended, suspended_at=now, suspended_reason, suspended_by=caller; revoke all sessions at once and void unused auth tokens; history kept, the name stays on old audit entries (map admin-team step 7). Audit 'suspended admin'.",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "empty reason; `errors[{field:'reason'}]` (accessStaff.ts:194-195)",
+              "ui": "message under Reason"
+            },
+            {
+              "status": 409,
+              "code": "CANNOT_SUSPEND_SELF",
+              "when": "target is the caller (accessStaff.ts:196-198)",
+              "ui": "dialog error slot, dialog stays open"
+            },
+            {
+              "status": 409,
+              "code": "ALREADY_SUSPENDED",
+              "when": "target already suspended (accessStaff.ts:199-201)",
+              "ui": "dialog error slot"
+            },
+            {
+              "status": 409,
+              "code": "LAST_OWNER",
+              "when": "target is the last active Owner (accessStaff.ts:202-215)",
+              "ui": "dialog error slot, dialog stays open (AccessPage.test.tsx:273-293)"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no staff member with this id",
+              "ui": "dialog/drawer shows the server detail"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks staff:suspend",
+              "ui": "never signs out; dialog error slot or tab error state with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/staff/:id/reactivate",
+          "successStatus": 204,
+          "query": "",
+          "request": "No body.",
+          "response": "204. status = 'active' if the account ever signed in (last_login_at not null), else 'invited'; clear suspended_at/reason/by; no session is restored; the existing password and 2FA work again (map admin-team step 9; mock accessStaff.ts:225-232). Audit 'reactivated admin'.",
+          "errors": [
+            {
+              "status": 409,
+              "code": "NOT_SUSPENDED",
+              "when": "proposed: the account is not suspended (same code the customers mock uses)",
+              "ui": "confirm dialog shows the detail"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no staff member with this id",
+              "ui": "dialog/drawer shows the server detail"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks staff:suspend",
+              "ui": "never signs out; dialog error slot or tab error state with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/staff/:id/reset-2fa",
+          "successStatus": 204,
+          "query": "",
+          "request": "No body. The button is disabled when twofaEnabled is false.",
+          "response": "204. twofa_enabled=false, TOTP secret cleared; revoke the target's sessions unless the target is the caller (mock accessStaff.ts:234-238; demo resetAdmin2fa). The next sign-in answers next=totp_setup (map admin-team step 9). Audit 'reset 2FA of admin'.",
+          "errors": [
+            {
+              "status": 409,
+              "code": "TWOFA_NOT_ENABLED",
+              "when": "proposed: 2FA already off",
+              "ui": "confirm dialog shows the detail"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no staff member with this id",
+              "ui": "dialog/drawer shows the server detail"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks staff:update",
+              "ui": "never signs out; dialog error slot or tab error state with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/ip-rules",
+          "successStatus": 200,
+          "query": "`_start=0&_end=500&_sort=createdAt&_order=desc&kind=allow` and the same with `kind=block` (two lists, useIpRules.ts:10-23). Also support `q` (cidr, label, reason in the mock), `scope`, `source` and repeated `id`.",
+          "request": "",
+          "response": "Rows newest first. `createdBy {id,name}` or null for source 'auto' (risk engine) or a deleted account; allow rules always have scope 'admin'; `label` and `reason` are '' when unset (never null); `expiresAt` null = until removed; `hitCount`/`lastHitAt` = real requests the rule decided. Exclude expired rules (the client hides them anyway, access/lib/ipRules.ts:71-79) so x-total-count matches what is shown; total > 500 shows \"Showing the newest 500\".",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no full session",
+              "ui": "signed out"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks access:read (the IP tabs are hidden)",
+              "ui": "never signs out; dialog error slot or tab error state with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/ip-rules/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "Same shape as a list row (audit links and detail views).",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no IP rule with this id",
+              "ui": "dialog/drawer shows the server detail"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks access:read",
+              "ui": "never signs out; dialog error slot or tab error state with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/ip-rules",
+          "successStatus": 201,
+          "query": "",
+          "request": "`{kind, scope, cidr, label?, reason?, expiresAt?}`. Allow (AllowIpDialog.tsx:42-51): kind 'allow', scope 'admin', label (may be ''), expiresAt optional (now + 24 h / 7 d / 30 d), no reason. Block (BlockIpDialog.tsx:57-66; also used by the customers page with scope 'store', 7 days by default): scope store|api|admin|all, reason (required by the UI), expiresAt optional (1 h / 24 h / 7 d / 30 d), no label. `cidr` arrives normalised: IPv4 network address with '/n' only when n < 32, or one lower-case IPv6 address (no IPv6 ranges) (ip.ts:18-44); re-normalise server-side. Force scope 'admin' for allow (accessIpRules.ts:84). source 'manual', created_by = caller; invalidate the Redis rule cache; audit 'allowed IP for the admin console' / 'blocked IP' (entityType ip_rule).",
+          "response": "201 IpRule (hitCount 0, lastHitAt null, createdBy = caller).",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "`errors[{field:'cidr'}]` for a bad shape, an IPv4 range wider than /16, or a duplicate live rule (same cidr and kind; same scope too for blocks; demo wording \"That address is already on the list.\" / \"…already blocked for this audience.\") (map ip-rules step 1); `errors[{field:'reason'}]` for a block without reason (map ip-rules step 5); `errors[{field:'expiresAt'}]` for a past time",
+              "ui": "field messages go under the address field (alias cidr→ip, AllowIpDialog.tsx:53) or the dialog error slot"
+            },
+            {
+              "status": 409,
+              "code": "SELF_LOCKOUT",
+              "when": "proposed: a block with scope admin|all covering the caller's request IP (map ip-rules step 5); add `errors[{field:'cidr'}]`",
+              "ui": "message under the address field"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks access:create",
+              "ui": "never signs out; dialog error slot or tab error state with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "The mock enforces none of the /16 limit, duplicates or the self-block (accessIpRules.ts:68-96); the map requires all three. \"The caller's address\" must be the real request IP (trusted proxy chain), not me.lastLoginIp, which is only the console's hint (M15)."
+        },
+        {
+          "key": "DELETE /admin/ip-rules/:id",
+          "successStatus": 204,
+          "query": "",
+          "request": "No body.",
+          "response": "204; invalidate the rule cache; audit 'removed allowed IP' / 'unblocked IP'.",
+          "errors": [
+            {
+              "status": 409,
+              "code": "SELF_LOCKOUT",
+              "when": "proposed: removing an allow rule while the restriction is on and no other live allow rule covers the caller's request IP (map ip-rules step 9; demo removeIpRule)",
+              "ui": "confirm dialog shows the detail and stays open (RemoveIpRuleDialog.tsx)"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no IP rule with this id",
+              "ui": "dialog/drawer shows the server detail"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks access:delete",
+              "ui": "never signs out; dialog error slot or tab error state with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "The mock removes without the guard (accessIpRules.ts:98-104). Proposal: enforce it as above; removing a rule that does not cover the caller stays allowed (M17)."
+        },
+        {
+          "key": "POST /admin/ip-rules/check",
+          "successStatus": 200,
+          "query": "",
+          "request": "`{ip, scope}`: ip as typed in the tester after normalising (IpTester sends parseIp().text, so it may be a range: evaluate a range by its first address like the mock's ipIn); scope admin|store|api (the UI never sends 'all'; the mock maps unknown scopes to 'admin', accessIpRules.ts:50). Read-only: no hit counts, no audit (access/api/ipRules.ts:64-69). Also drives the \"Blocked\"/\"Not on the allowlist\" chips on admins' and customers' last addresses and the \"Your address\" line.",
+          "response": "`{decision, rule}`: a live block rule with the requested scope or 'all' covering the address → 'refused' + that rule; else, scope 'admin' with the restriction on → a covering live allow rule → 'allowed' + rule, none → 'refused' + null; otherwise 'allowed' + null (accessIpRules.ts:28-39; demo ipVerdict). The UI derives blocked / not on the allowlist / allowed by / open from decision + (rule != null) (ipVerdict.ts:14-20), so return an allow rule only when it decided.",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "bad address; `errors[{field:'ip'}]` (accessIpRules.ts:48-49)",
+              "ui": "tester shows the message"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks access:read (chips and lines just stay hidden)",
+              "ui": "never signs out; dialog error slot or tab error state with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "PUT /admin/access/restriction",
+          "successStatus": 200,
+          "query": "",
+          "request": "`{enabled:boolean}`. Turning on: refuse unless a live allow rule covers the caller's request IP. Turning off: always allowed (the UI asks first). Idempotent. Stores settings key `adminAllowlistOnly` (read back through GET /admin/settings, M14); invalidate the rule cache; audit 'turned on/off the IP restriction for the admin console'.",
+          "response": "200 `{enabled}` = the stored state. The client derives the state from what it asked and tolerates 204 (useRestriction.ts:39-44).",
+          "errors": [
+            {
+              "status": 409,
+              "code": "IP_NOT_IN_ALLOWLIST",
+              "when": "turning on while the caller's request IP is not covered by a live allow rule (accessIpRules.ts:112-124)",
+              "ui": "error toast with title + detail (RestrictionPanel.tsx:79-84) or the \"Add your address first\" dialog error slot"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks access:update",
+              "ui": "never signs out; dialog error slot or tab error state with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/roles",
+          "successStatus": 200,
+          "query": "`_start=0&_end=200`, no sort or filters (useRoles.ts:10-18). Also support `q` (name).",
+          "request": "",
+          "response": "Rows `{id, name, permissions, staffCount}`: permissions = stored text[] incl. wildcards; `staffCount` = staff holding the role, any status (accessRoles.ts:24-27); the UI disables Delete when > 0 and warns that edits apply to N admins.",
+          "errors": [
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks roles:read",
+              "ui": "never signs out; dialog error slot or tab error state with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/roles/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "Same shape as a list row.",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no role with this id",
+              "ui": "dialog/drawer shows the server detail"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks roles:read",
+              "ui": "never signs out; dialog error slot or tab error state with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "POST /admin/roles",
+          "successStatus": 201,
+          "query": "",
+          "request": "`{name, permissions}`: name trimmed, ≤ 60 chars; permissions = catalog keys, area wildcards `x:*` or `*` (the \"Everything (*)\" switch), possibly empty (RoleDialog.tsx; PermissionPicker.tsx:22-31). Reject unknown keys or prefixes.",
+          "response": "201 Role with staffCount 0. Audit.",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "`errors[{field:'name'}]` (blank; duplicate name proposed) or `errors[{field:'permissions'}]` (unknown entries)",
+              "ui": "name under the field; permissions messages in the dialog error slot as \"permissions: …\""
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks roles:create",
+              "ui": "never signs out; dialog error slot or tab error state with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map: roles are free records with permissions text[] (M11); the demo's six roles are only the mock seed."
+        },
+        {
+          "key": "PATCH /admin/roles/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "Partial `{name?, permissions?}` with only the changed keys (RoleDialog.tsx). Applies at once to everyone holding the role.",
+          "response": "200 Role; include staffCount (the mock omits it on PATCH, accessRoles.ts:51-52). Audit.",
+          "errors": [
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "blank name, unknown permission entries",
+              "ui": "name under the field, others in the error slot"
+            },
+            {
+              "status": 409,
+              "code": "ROLE_PROTECTED",
+              "when": "proposed: renaming the Owner role or removing '*' from it (see question 2)",
+              "ui": "dialog error slot"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no role with this id",
+              "ui": "dialog/drawer shows the server detail"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks roles:update",
+              "ui": "never signs out; dialog error slot or tab error state with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "DELETE /admin/roles/:id",
+          "successStatus": 204,
+          "query": "",
+          "request": "No body.",
+          "response": "204. Audit.",
+          "errors": [
+            {
+              "status": 409,
+              "code": "ROLE_IN_USE",
+              "when": "any staff member (any status) still holds the role (accessRoles.ts:61-69)",
+              "ui": "delete dialog shows the detail"
+            },
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "no role with this id",
+              "ui": "dialog/drawer shows the server detail"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks roles:delete",
+              "ui": "never signs out; dialog error slot or tab error state with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/permissions",
+          "successStatus": 200,
+          "query": "",
+          "request": "",
+          "response": "The whole catalog, no paging, no x-total-count: `string[]` (mock: the 115 concrete keys of the map, src/mocks/roles.ts:44-89) or `[{key, label?, group?}]`. The client normalises both (access/lib/permissions.ts:30-45: label defaults to the humanised action, group to the prefix; order kept, duplicates dropped). List every concrete permission the server checks, without wildcards: the role summary computes area levels from it.",
+          "errors": [
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks roles:read",
+              "ui": "never signs out; dialog error slot or tab error state with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        },
+        {
+          "key": "GET /admin/sessions",
+          "successStatus": 200,
+          "query": "`_start`/`_end` pages of 25 (useSessions.ts:8-26), optional `subjectType=staff` or `subjectType=client`. No `_sort` is sent: server default (proposed lastSeenAt desc, then id desc).",
+          "request": "",
+          "response": "Only live sessions (revoked_at null, expires_at in the future) of staff (fully signed in) and merchants; exclude storefront customer sessions and pre-2FA sessions. `subject {id, name, email}` joined from staff_users/clients; `current: true` only on the session making the request (the mock marks the caller's first session, accessSessions.ts:11-23); lastSeenAt null reads \"Unknown\", expiresAt null \"Never\". x-total-count drives the pager.",
+          "errors": [
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks sessions:read",
+              "ui": "never signs out; dialog error slot or tab error state with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "The sessions table also holds storefront customer sessions (magic link); the route description and the frontend type cover only staff and client. Proposal: filter subject_type IN ('staff','client')."
+        },
+        {
+          "key": "DELETE /admin/sessions/:id",
+          "successStatus": 204,
+          "query": "",
+          "request": "No body; any session id from the list (staff or merchant).",
+          "response": "204; revoked_at=now; audit (entityType 'session'). Ending your own session signs you out (next request 401; EndSessionDialog.tsx warns).",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "unknown or already ended session (accessSessions.ts:26-32)",
+              "ui": "confirm dialog shows the detail"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks sessions:revoke",
+              "ui": "never signs out; dialog error slot or tab error state with the server detail"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        }
+      ],
+      "businessRules": [
+        "Cannot suspend yourself; the last active Owner cannot be suspended (manifest POST /admin/staff/:id/suspend; map admin-team step 7; mock accessStaff.ts:196-215).",
+        "Cannot change your own role; the last active Owner cannot be demoted (map admin-team step 6; demo updateAdmin 14-state-access.js:61-62).",
+        "Suspension ends every session at once and keeps the record and audit history; reactivation restores sign-in with the existing password and 2FA, status active if the account ever signed in else invited (admin-team steps 7 and 9; mock accessStaff.ts:225-232).",
+        "Staff email is unique (case-insensitive): 409 EMAIL_TAKEN on create and edit (admin-team step 1; mock accessStaff.ts:96-98).",
+        "Adding staff needs staff:create; the invite token is a hash, 1 h, single use; a temporary password is generated by the server, hashed, returned once, and forces a change at first sign-in (admin-team steps 1-3; M12).",
+        "Passwords are never readable and never written to the audit log; only the fact of a change is logged (manifest POST /admin/staff/:id/password).",
+        "Reset 2FA clears the secret and ends the target's sessions except the caller's own; the next sign-in enrols a new authenticator (admin-team step 9; mock accessStaff.ts:234-238).",
+        "IP rules: block beats allow; allow rules are only for the admin console (scope admin); a rule may expire (expires_at) and then drops out by itself; active rules are cached in Redis and invalidated on every change (ip_rules description; ip-rules steps 3-4).",
+        "A range wider than /16 and a duplicate live rule are refused (ip-rules step 1).",
+        "Turning the console restriction on is refused when the requester's IP is outside the allow list; the switch lives in settings (manifest PUT /admin/access/restriction; ip-rules step 2).",
+        "A block whose scope is admin or all and that covers the caller's own IP is refused (ip-rules step 5).",
+        "Removing the only live allow rule that admits the caller while the restriction is on is refused (ip-rules step 9).",
+        "POST /admin/ip-rules/check is read-only and decides block → allowlist (admin scope with the restriction on) → open (ip-rules step 8; demo ipVerdict).",
+        "hit_count/last_hit_at grow on the rule that decided a real request (ip-rules step 3); the risk engine adds source=auto block rules (ip-rules step 7).",
+        "All lockout guards use the real request IP (behind a trusted proxy), not me.lastLoginIp (M15).",
+        "A role still held by any staff member cannot be deleted (mock ROLE_IN_USE, accessRoles.ts:61-69); role edits apply immediately to every holder (RoleDialog copy).",
+        "Staff accounts are never deleted (no DELETE route: suspend instead; access/api/resources.ts).",
+        "Every change to staff, IP rules, the restriction, roles and sessions writes audit_logs (manifest tables of each row).",
+        "GET /admin/settings must expose adminAllowlistOnly (boolean); PATCH /admin/settings must not change it, because only PUT /admin/access/restriction applies the lockout guard (settings LINKED_SETTINGS, src/features/settings/lib/system.ts:35-43).",
+        "Permissions: staff:read (list/show), staff:create, staff:update (edit, password, sessions/revoke, reset-2fa), staff:suspend (suspend, reactivate), access:read (rules, check), access:create, access:delete, access:update (restriction), roles:read (+ permissions), roles:create/update/delete, sessions:read, sessions:revoke (manifest + M7)."
+      ],
+      "questions": [
+        {
+          "n": 1,
+          "question": "Who counts as an Owner for the LAST_OWNER rules?",
+          "proposedAnswer": "An active staff member whose role permissions include '*'. The console hint also accepts a role named 'Owner' (staffGuards.ts:16-19, M18); the mock server uses the name 'Owner' (accessStaff.ts:202-208). Seed the Owner role with ['*'] so both readings agree.",
+          "basis": "M18; map admin-team steps 6-7",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 2,
+          "question": "Is the Owner role protected (no rename, no delete, keeps \"*\")?",
+          "proposedAnswer": "Yes: 409 ROLE_PROTECTED. Otherwise editing the Owner role could strip the last Owner's power and bypass LAST_OWNER.",
+          "basis": "map last-Owner rules; no explicit source",
+          "confidence": "medium",
+          "needsUser": true
+        },
+        {
+          "n": 3,
+          "question": "Codes for refusals the frontend does not name?",
+          "proposedAnswer": "CANNOT_CHANGE_OWN_ROLE, LAST_OWNER (also for demotion), SELF_LOCKOUT (self-block, last allow rule), NOT_SUSPENDED, TWOFA_NOT_ENABLED, ROLE_PROTECTED, TWOFA_ALREADY_ENABLED. The console shows any code's title/detail; only EMAIL_TAKEN is mapped to a field, so add errors[] with a field where a field is to blame.",
+          "basis": "dialogSubmit.ts:35-51; decision 007",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 4,
+          "question": "GET /admin/permissions: plain keys or objects?",
+          "proposedAnswer": "Objects [{key, label, group}] with group = the prefix and a short English label; plain strings (the mock) stay valid because the client normalises both.",
+          "basis": "access/lib/permissions.ts:30-45; mock roles.ts:86-89",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 5,
+          "question": "Should the sessions list show pre-2FA sessions or storefront customer sessions?",
+          "proposedAnswer": "No: only live, fully signed-in staff sessions and merchant (client) sessions; the type allows only staff|client.",
+          "basis": "manifest GET /admin/sessions description; access/types Session",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 6,
+          "question": "Should GET /admin/ip-rules return expired rules?",
+          "proposedAnswer": "No: filter expires_at > now (or purge with a job) so totals match the rows the console shows.",
+          "basis": "access/lib/ipRules.ts:71-79; ip-rules step 4",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 7,
+          "question": "May a non-Owner with staff:update / sessions:revoke act on an Owner (temporary password, reset 2FA, sign out, edit)?",
+          "proposedAnswer": "Proposed: actions on an account holding '*' require the caller to hold '*'. Otherwise staff:update could take over an Owner (temporary password shown to the caller + reset 2FA).",
+          "basis": "no source; security analysis of the access routes",
+          "confidence": "medium",
+          "needsUser": true
+        },
+        {
+          "n": 8,
+          "question": "How does the server know \"your address\"?",
+          "proposedAnswer": "From the request (trusted proxy chain) for every guard; keep last_login_ip = the IP of the current sign-in so the console's hint (me.lastLoginIp, M15) usually agrees. No new field needed.",
+          "basis": "M15; map admin-team step 5",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 9,
+          "question": "Re-sending an invitation for an invited account?",
+          "proposedAnswer": "Through POST /admin/staff/:id/password mode reset_link (the drawer says 'send a new one from Password', staffText.ts:15-26); issue the token with purpose invite while status is invited, void the older link, update resetSentAt.",
+          "basis": "staffText.ts; auth_tokens purposes",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 10,
+          "question": "Status after reactivating an account that never signed in?",
+          "proposedAnswer": "'invited' (mock and demo); otherwise 'active'.",
+          "basis": "mock accessStaff.ts:225-232; demo reactivateAdmin",
+          "confidence": "high",
+          "needsUser": false
+        }
+      ],
+      "mismatches": [
+        {
+          "id": "M7",
+          "summary": "CRUD rows carry x:*; the console reads them as x:read (list/show), x:create, x:update, x:delete; granted x:* matches all.",
+          "backendImpact": "Server maps each CRUD operation to the concrete permission and matches granted x:* / * the same way."
+        },
+        {
+          "id": "M10",
+          "summary": "The map gives routes and tables but no bodies; every access body is an assumed contract.",
+          "backendImpact": "Implement the shapes in this file (StaffMember, IpRule, Role, Session, CheckIpResult, …)."
+        },
+        {
+          "id": "M11",
+          "summary": "Six fixed demo roles became editable records from CRUD /admin/roles and GET /admin/permissions.",
+          "backendImpact": "Permissions come only from the server; the six demo roles are a suggested initial seed."
+        },
+        {
+          "id": "M12",
+          "summary": "Admins no longer type a temporary password; the server makes one and returns temporaryPassword once.",
+          "backendImpact": "Generate, hash, return once; no client strength rule exists, so the server owns the policy."
+        },
+        {
+          "id": "M13",
+          "summary": "IP verdicts moved from the browser to POST /admin/ip-rules/check.",
+          "backendImpact": "Implement the verdict order exactly; the console keeps only shape, width and own-address hints."
+        },
+        {
+          "id": "M14",
+          "summary": "The restriction state is read from GET /admin/settings key adminAllowlistOnly (needs settings:read).",
+          "backendImpact": "Expose adminAllowlistOnly in GET /admin/settings; PUT /admin/access/restriction writes it."
+        },
+        {
+          "id": "M15",
+          "summary": "No route tells the console the caller's current IP; me.lastLoginIp stands in.",
+          "backendImpact": "Judge every lockout by the real request IP; keep last_login_ip = the IP of the current sign-in."
+        },
+        {
+          "id": "M16",
+          "summary": "resetSentAt (latest invite/reset link time) is an optional extra on StaffMember (links live in auth_tokens).",
+          "backendImpact": "Send resetSentAt so the drawer can say \"link sent 5m ago / expired\"."
+        },
+        {
+          "id": "M17",
+          "summary": "The remove-allowed-IP hint applies only when the removed rule is the one admitting the caller.",
+          "backendImpact": "Refuse only that case (409 SELF_LOCKOUT proposed); other removals succeed."
+        },
+        {
+          "id": "M18",
+          "summary": "An Owner is a member of the role named 'Owner' or of any role with '*' (client hint).",
+          "backendImpact": "Define the Owner rule server-side (proposed: role contains '*') and use it for LAST_OWNER."
+        },
+        {
+          "id": "M19",
+          "summary": "The access page opens with any of staff:read, access:read, roles:read, sessions:read; each tab needs its own.",
+          "backendImpact": "Each route enforces its own permission; 403 FORBIDDEN never signs out."
+        },
+        {
+          "id": "M146",
+          "summary": "The support assignee picker lists staff from GET /admin/staff (staff:read).",
+          "backendImpact": "GET /admin/staff stays behind staff:read; support agents without it see only themselves and the current assignee."
+        }
+      ],
+      "fixtures": [
+        {
+          "routes": [
+            "GET /admin/staff",
+            "GET /admin/staff/:id",
+            "POST /admin/staff",
+            "PATCH /admin/staff/:id",
+            "POST /admin/staff/:id/password",
+            "POST /admin/staff/:id/sessions/revoke",
+            "POST /admin/staff/:id/suspend",
+            "POST /admin/staff/:id/reactivate",
+            "POST /admin/staff/:id/reset-2fa"
+          ],
+          "file": "src/mocks/handlers/accessStaff.ts",
+          "note": "Over src/mocks/staff.ts (demo-state.json admins: 1 Rami Owner, 2 Lina Support, 3 Omar Finance, 4 Dana Admin, 5 Nadia invited, 6 Yusuf suspended) and src/mocks/sessions.ts (activeSessions). Refusals: EMAIL_TAKEN, CANNOT_SUSPEND_SELF, ALREADY_SUSPENDED, LAST_OWNER, VALIDATION_FAILED."
+        },
+        {
+          "routes": [
+            "GET /admin/ip-rules",
+            "GET /admin/ip-rules/:id",
+            "POST /admin/ip-rules",
+            "DELETE /admin/ip-rules/:id",
+            "POST /admin/ip-rules/check",
+            "PUT /admin/access/restriction"
+          ],
+          "file": "src/mocks/handlers/accessIpRules.ts",
+          "note": "Over src/mocks/ipRules.ts (demo ipRules: 3 allow incl. 203.0.113.24 for Rami, 4 block incl. auto ones) and src/mocks/settings.ts (adminAllowlistOnly from demo access.restrict = true). decide() is the verdict reference."
+        },
+        {
+          "routes": [
+            "GET /admin/roles",
+            "GET /admin/roles/:id",
+            "POST /admin/roles",
+            "PATCH /admin/roles/:id",
+            "DELETE /admin/roles/:id",
+            "GET /admin/permissions"
+          ],
+          "file": "src/mocks/handlers/accessRoles.ts",
+          "note": "Over src/mocks/roles.ts: six demo roles (ids 1-6) with permissions derived from ROLE_MATRIX, and PERMISSION_CATALOG (115 keys) answered as string[]."
+        },
+        {
+          "routes": [
+            "GET /admin/sessions",
+            "DELETE /admin/sessions/:id"
+          ],
+          "file": "src/mocks/handlers/accessSessions.ts",
+          "note": "Over src/mocks/sessions.ts: one session per demo admin device (4) plus 3 merchant sessions; current marks the caller."
+        }
+      ]
+    },
+    {
+      "feature": "audit",
+      "summary": "Audit log page (/audit, audit:read): a server-paged list, newest first, 25 entries per page, where \"Show more\" appends the next page; filters for person or system, record type, free text and a day range live in the URL. Each entry expands to a Field / Before / After table the console computes from the before and after snapshots, plus an \"Open record\" deep link when the target page exists and is permitted.",
+      "endpoints": [
+        {
+          "key": "GET /admin/audit-logs",
+          "successStatus": 200,
+          "query": "`_start`/`_end` in pages of 25 (0-25, 25-50, …; Refine useInfiniteList, view.ts:14, useAuditLogs.ts:16-23) and always `_sort=createdAt&_order=desc`. Optional plain filters: `actorType=staff&actorId=<id>` (a person) or `actorType=system`; `entityType=<singular name>` from the fixed list order, merchant, service, supplier, payment, withdrawal, plan, session, customer, staff, ip_rule, checkout, refund, dispute, ticket, listing, blocklist, legal, setting (entities.ts:7-27; a type from the URL outside the list is passed through); `q` = case-insensitive contains over actorName, action and entityLabel (mock routes.ts:13); `from=YYYY-MM-DD` and `to=YYYY-MM-DD`, both days included (mock: whole UTC days, routes.ts:17-27) — NOT createdAt_gte/lte (view.ts:41-51).",
+          "request": "",
+          "response": "Array newest first + exact x-total-count for the filter: it drives \"Show more\", the toolbar count and \"of N remaining\" (Refine computes hasNextPage from total/pageSize). Rows: `actorName` and `entityLabel` joined or snapshotted at write time so deleted records and accounts still read well (without them the screen falls back to \"Staff #3\" / \"Order #4812\"); `actorType` 'staff' or 'system' (system: actorId null and ip null, shown as \"automatic\"); `action` = a readable verb phrase that follows the person's name (\"suspended admin\", \"blocked IP\", \"changed price of\"; demo logAudit verbs) — a code like order.completed is rendered as \"order completed\"; `entityId` a number, 0 when no numeric record exists (then no link, link.ts:34); `before`/`after` = JSON snapshots (objects of the changed fields; whole row for create/delete), both null for a plain action such as a sign-in; they may be omitted from list rows, and the screen then calls GET /:id on expand (AuditDetails.tsx:22-23). Secrets masked. The client dedupes rows by id across pages (pages.ts), so a growing log is tolerated.",
+          "errors": [
+            {
+              "status": 401,
+              "code": "UNAUTHORIZED",
+              "when": "no full session",
+              "ui": "signed out"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks audit:read",
+              "ui": "page gate shows the no-access page; the list shows the error with Retry"
+            },
+            {
+              "status": 500,
+              "code": "INTERNAL_ERROR",
+              "when": "server failure",
+              "ui": "list error state with request id and Retry; earlier pages stay when only \"Show more\" fails (useAuditLogs.ts:29-37)"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map: CRUD row with ops LS and no filters or bodies (M188-M191). The console adds the from/to day filters and the joined actorName/entityLabel; audit_logs has no label column in the map (proposal: add an entity_label snapshot column; resolve actorName by joining staff_users)."
+        },
+        {
+          "key": "GET /admin/audit-logs/:id",
+          "successStatus": 200,
+          "query": "",
+          "request": "Read when an entry whose list row came without before/after is expanded (useAuditLog, enabled only then).",
+          "response": "Same shape as a list row with before and after present (null allowed).",
+          "errors": [
+            {
+              "status": 404,
+              "code": "NOT_FOUND",
+              "when": "unknown id (mock routes.ts:45-51)",
+              "ui": "the expanded row shows the error"
+            },
+            {
+              "status": 403,
+              "code": "FORBIDDEN",
+              "when": "caller lacks audit:read",
+              "ui": "error in the expanded row"
+            }
+          ],
+          "assumed": true,
+          "mapConflict": ""
+        }
+      ],
+      "businessRules": [
+        "Append-only: no create, update or delete route; entries are never edited (manifest CRUD /admin/audit-logs ops LS).",
+        "Every admin mutation writes one entry with actor type/id, action, entity type/id, before/after and the request IP (audit_logs columns; tables of each admin mutation row in the manifest; platform scenario manual: \"every staff action is logged\").",
+        "Passwords, TOTP secrets, token hashes, API key hashes and gateway secrets never enter before/after (manifest POST /admin/staff/:id/password: \"never enters the log\"); log only that a change happened.",
+        "System and worker actions log actorType system with actorId null and ip null (console reads null ip as \"automatic\", AuditDetails.tsx:45).",
+        "A suspended staff member keeps their name on old entries (map admin-team step 7).",
+        "The label of the record is captured at write time so later renames or deletions do not change history (frontend AuditLog JSDoc, types/index.ts:10-17)."
+      ],
+      "questions": [
+        {
+          "n": 1,
+          "question": "Which entityType values does the server write, and is there an endpoint (or a fixed list) for the record-type filter?",
+          "proposedAnswer": "Write the 19 singular names the console lists (order, merchant, service, supplier, payment, withdrawal, plan, session, customer, staff, ip_rule, checkout, refund, dispute, ticket, listing, blocklist, legal, setting) and add new ones only together with the console's ENTITY_LABEL; no endpoint. Table names are tolerated by the console but should not be sent.",
+          "basis": "entities.ts:7-54; demo TYPE_LABEL (47-p-audit.js)",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 2,
+          "question": "Does the list join actorName and entityLabel? If not, can it, so a deleted record or account still reads well?",
+          "proposedAnswer": "Yes: actorName from staff_users by actor_id (null for system), entityLabel from a snapshot column written with the entry (proposed new audit_logs column entity_label).",
+          "basis": "types/index.ts:10-17; map audit_logs columns",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 3,
+          "question": "Is action a readable phrase or a code? If a code, which codes exist?",
+          "proposedAnswer": "Send the readable English verb phrase the demo uses ('suspended admin', 'blocked IP', 'turned on the IP restriction for the admin console', …); keep an internal code if needed. Codes would render as words ('order completed') but read worse.",
+          "basis": "verb.ts:8-11; demo logAudit calls in 14-state-access.js and other state files",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 4,
+          "question": "Which filters does GET /admin/audit-logs take, and are from/to whole days, both included, in which time zone?",
+          "proposedAnswer": "actorType, actorId, entityType, q, from, to plus _start/_end/_sort/_order; from/to are whole days, both included, in UTC (the mock uses UTC; the console sends only YYYY-MM-DD and groups days in the browser time zone).",
+          "basis": "view.ts:41-58; mock routes.ts:17-27",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 5,
+          "question": "Does the list send before and after, or only the single read? Full rows or changed fields? Are secrets always masked?",
+          "proposedAnswer": "Send both in list rows (they are small): only the changed fields for updates, the full row for create/delete; secrets always masked or left out.",
+          "basis": "AuditDetails.tsx:22-23; diff.ts; manifest password row",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 6,
+          "question": "Is ip null for system entries, and should the console show the staff session behind an entry?",
+          "proposedAnswer": "ip is null for system/worker entries; no session id in the row (the console has no field for it).",
+          "basis": "AuditDetails.tsx:45; types/index.ts",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 7,
+          "question": "Offset paging of a growing log shifts rows; would a cursor (before=<id>) be better?",
+          "proposedAnswer": "Keep offset paging: the console dedupes by id across pages (pages.ts) and needs x-total-count; a cursor is not used by the console.",
+          "basis": "pages.ts; useAuditLogs.ts",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 8,
+          "question": "Will the server offer an audit export (CSV), permission-checked and itself audited?",
+          "proposedAnswer": "Not now: no map route (M192). If added: GET /admin/audit-logs/export with the same filters, audit:read, writing its own audit entry.",
+          "basis": "M192",
+          "confidence": "medium",
+          "needsUser": true
+        }
+      ],
+      "mismatches": [
+        {
+          "id": "M188",
+          "summary": "The demo paged an in-memory list; the console pages GET /admin/audit-logs (25 per page) and appends on \"Show more\".",
+          "backendImpact": "Exact x-total-count and a stable newest-first order; the client dedupes by id."
+        },
+        {
+          "id": "M189",
+          "summary": "Entries have no names in the map; the console assumes joined actorName and entityLabel and shows action as the demo verb.",
+          "backendImpact": "Send actorName, entityLabel (snapshot) and a readable action phrase."
+        },
+        {
+          "id": "M190",
+          "summary": "The demo stored a ready diff; the API has before/after snapshots and the console computes the changed fields.",
+          "backendImpact": "Store JSON snapshots (changed fields for updates); mask secrets."
+        },
+        {
+          "id": "M191",
+          "summary": "The map names no filters; the console sends actorType/actorId, entityType, q and a from/to day range.",
+          "backendImpact": "Accept those filters with inclusive days."
+        },
+        {
+          "id": "M192",
+          "summary": "No audit export route; the demo button is not ported.",
+          "backendImpact": "Any future export must be permission-checked and audited."
+        },
+        {
+          "id": "M193",
+          "summary": "Open record links only to order, merchant, customer, supplier, service, blocklist, refund, dispute and staff.",
+          "backendImpact": "entityId must be the record's numeric id (0 when there is none)."
+        },
+        {
+          "id": "M194",
+          "summary": "The IP shows in the expanded details; null reads \"automatic\".",
+          "backendImpact": "ip null for system entries."
+        }
+      ],
+      "fixtures": [
+        {
+          "routes": [
+            "GET /admin/audit-logs",
+            "GET /admin/audit-logs/:id"
+          ],
+          "file": "src/features/audit/mocks/routes.ts",
+          "note": "Over src/features/audit/mocks/store.ts: the demo S.audit (42 entries in demo-state.json audit) mapped to AuditLog (actor id/name, verb as action, entity type/id/label, diff → before/after, ip). Filters, q, from/to (UTC days), sort and paging honoured; 404 for unknown ids."
+        }
+      ]
+    },
+    {
+      "feature": "system",
+      "summary": "The sidebar footer polls GET /health every 60 s (only while the tab is visible, no retry) and shows \"API healthy\", \"API degraded\" with the failing dependencies, or \"API unreachable\". Any non-2xx answer, non-JSON body, network or CORS failure reads as unreachable.",
+      "endpoints": [
+        {
+          "key": "GET /health",
+          "successStatus": 200,
+          "query": "",
+          "request": "Public: no session, no CSRF, no permission. Sent with credentials:'include' and Accept: application/json from the console origin, at the same base as /admin (VITE_API_BASE_URL + '/health'; the dev proxy forwards /health too, vite.config.ts). Keep it cheap (ping Postgres and Redis with short timeouts) and do not rate-limit normal polling (one call per open tab per minute, useHealth.ts:5-15).",
+          "response": "Always 200 JSON while the process can answer: `{status:'ok'|'degraded'|'down', checks?:{<name>:'ok'|'down'}}` (mock: ok with postgres/redis ok; outage: down with postgres down, src/mocks/handlers/system.ts:18-25). UI: status ok → \"API healthy\"; anything else → \"API degraded\" (critical tone for down, warning for degraded) listing every check equal to 'down' (healthStatus.ts:18-31). Proposed: down when Postgres fails, degraded when only Redis (cache or queue) fails. No versions, hostnames or error texts in the body.",
+          "errors": [
+            {
+              "status": 503,
+              "code": "UNAVAILABLE",
+              "when": "any non-2xx (e.g. a 503 when Postgres is down)",
+              "ui": "shows \"API unreachable\" and ignores the body (healthStatus.ts:19)"
+            },
+            {
+              "status": 0,
+              "code": "NETWORK_ERROR",
+              "when": "CORS does not allow the console origin with credentials, or the server is down",
+              "ui": "shows \"API unreachable\""
+            }
+          ],
+          "assumed": true,
+          "mapConflict": "Map: \"Service health check: Postgres and Redis\" with no body. A conventional health check answers 503 when a dependency is down, but the console reads any non-2xx as \"API unreachable\". Proposal: answer 200 with status down/degraded; give load balancers their own signal (the body, or GET /metrics on the internal network)."
+        }
+      ],
+      "businessRules": [
+        "Public route on the system surface; reports Postgres and Redis (manifest GET /health).",
+        "Answers JSON (a non-JSON 2xx becomes INVALID_RESPONSE in the client and reads as unreachable, client.ts:100-111).",
+        "Same CORS policy as /admin: exact console origin + credentials (the client always sends credentials:include).",
+        "Must not leak internals (versions, hostnames, stack traces)."
+      ],
+      "questions": [
+        {
+          "n": 1,
+          "question": "Answer 200 or 503 when a dependency is down?",
+          "proposedAnswer": "200 with status 'down' or 'degraded' and the failing checks, so the console can say what is down; use the body or GET /metrics for load-balancer decisions.",
+          "basis": "healthStatus.ts:18-31; useHealth.ts",
+          "confidence": "medium",
+          "needsUser": false
+        },
+        {
+          "n": 2,
+          "question": "Which check names?",
+          "proposedAnswer": "postgres and redis as in the mock; if the two Redis roles (queue, cache) are checked separately, any names work (the footer prints '<name> down').",
+          "basis": "src/mocks/handlers/system.ts:21-24; backend CLAUDE.md Redis roles",
+          "confidence": "high",
+          "needsUser": false
+        },
+        {
+          "n": 3,
+          "question": "Should GET /health carry the maintenance state (MISMATCHES M201)?",
+          "proposedAnswer": "No: it is public, and the maintenance message belongs to GET /admin/system/health (system:read); checkout maintenance answers 503 MAINTENANCE on the store routes only.",
+          "basis": "M201; map system-integrity scenario",
+          "confidence": "medium",
+          "needsUser": false
+        }
+      ],
+      "mismatches": [
+        {
+          "id": "M9",
+          "summary": "The demo footer says the data is synthetic; the console footer shows API health from GET /health instead.",
+          "backendImpact": "GET /health is polled every 60 s from every open console tab with credentials: keep it cheap, JSON, CORS-enabled."
+        },
+        {
+          "id": "M201",
+          "summary": "The maintenance banner reads GET /admin/system/health and only staff with system:read see it; question whether me or /health should carry it.",
+          "backendImpact": "No change required now; see questions (auth 7, system 3)."
+        }
+      ],
+      "fixtures": [
+        {
+          "routes": [
+            "GET /health"
+          ],
+          "file": "src/mocks/handlers/system.ts",
+          "note": "Scenario-driven: healthy → {status:'ok', checks:{postgres:'ok', redis:'ok'}}; ?mock=outage → {status:'down', checks:{postgres:'down', redis:'ok'}}. Matches only <base path>/health."
+        }
+      ]
+    }
+  ],
+  "crossCutting": [
+    "Ids are JSON numbers everywhere (src/lib/api/types.ts:4-5); path params are URL-encoded (client.ts:19-27).",
+    "Money is a 4-decimal string (\"12.4900\"), other exact decimals are strings, never floats (types.ts:7-11).",
+    "Dates are ISO 8601 UTC strings with milliseconds and Z, e.g. \"2026-03-01T09:30:00.000Z\" (types.ts:13-14; mock toIso, src/mocks/seed/index.ts:63-66); a missing date is null, never \"\".",
+    "JSON is camelCase in both directions (types.ts:2); request bodies are JSON with Content-Type application/json (client.ts:62-69).",
+    "Every request uses credentials:\"include\" and Accept: application/json (downloads */*) (client.ts:58-60, 78-84, 165).",
+    "Non-GET requests carry X-CSRF-Token when the client has one (client.ts:71-74; csrf.ts:25-33); GETs must never change state (queries are retried once on 5xx/network, useApiQuery.ts:26-28).",
+    "Errors are application/problem+json {type,title,status,code,detail,errors[]} (errors.ts:185-208); title and detail are shown verbatim to staff, so write user-facing English; always send code (else the client invents HTTP_<status>, errors.ts:64).",
+    "errors[] items: {field, message} (field may also be path/pointer/name/param; message may be detail/title/code); dotted paths like items.0.name, JSON pointers accepted, a leading body. is stripped (errors.ts:100-164). Field names must equal the request body keys (camelCase).",
+    "X-Request-Id on every response (errors.ts:205; ErrorState.tsx:31-35 shows it); body.requestId accepted as a fallback.",
+    "429 must carry Retry-After in seconds or as an HTTP date (errors.ts:166-173); the UI shows the wait.",
+    "Session-ending codes: any 401, and 403 with code ACCOUNT_SUSPENDED or IP_NOT_ALLOWED, sign the CALLER out wherever they appear (authProvider.ts:43-54, 97-105; useApiMutation.ts:66). Never use them for business refusals about another record (a suspended customer or staff target, an IP-rule validation error, a wrong secret in an authenticated action).",
+    "403 FORBIDDEN never signs out (authProvider.ts:97-98); its detail should name the missing permission like the UI hint \"You need the x:y permission\" (accessControlProvider.ts:40-41).",
+    "204 or an empty body means no result (client.ts:96-99); a 2xx with a non-JSON body throws INVALID_RESPONSE (client.ts:100-111), so never answer text or HTML on success.",
+    "Creates may answer 201 or 200 (any 2xx is accepted; the mocks use 201); deletes answer 204 and the data provider hands Refine the id (dataProvider.ts:98-106).",
+    "Lists: JSON array + x-total-count = total matching rows before the range (client.ts:140-153); without the header, pagers, tab counts and \"Show more\" break. Count-only calls use _start=0&_end=1.",
+    "CORS: exact console origin + Allow-Credentials on every /admin and /health response including errors; expose x-total-count, x-request-id, x-csrf-token, retry-after, content-disposition (decision 006 `5); a CORS refusal surfaces as NETWORK_ERROR with status 0 (errors.ts:80-89).",
+    "Base URL: VITE_API_BASE_URL (config.ts:3-7); /admin/* and /health live under the same base; the dev proxy forwards /admin and /health (vite.config.ts).",
+    "A 404 on a show endpoint renders a not-found view (MerchantDetail.tsx:62, useCustomer.ts:20, TicketThread.tsx:49, IncidentDrawer.tsx:28): always answer problem+json NOT_FOUND.",
+    "Permissions: CRUD rows x:* mean x:read/create/update/delete per operation (M7, permissions.ts:32-41); granted x:* covers every x:action; a required x:* needs x:* or * (permissions.ts:11-18).",
+    "The client caches GET /admin/auth/me for 60 s (meCache.ts:15): enforce permission and role changes on the next request server-side; never snapshot permissions per session.",
+    "Query strings come from URLSearchParams: space as +, repeated keys for arrays, booleans \"true\"/\"false\", empty values omitted (query.ts:11-22); accept string or string[] for every filter.",
+    "All server strings are rendered as text, never HTML; the UI limits labels to 60 chars, block reasons to 120 and notes to 140, but the server must validate lengths itself.",
+    "Proposed new error codes (not referenced by the frontend; the UI shows any code's title/detail): TWOFA_ALREADY_ENABLED, CANNOT_CHANGE_OWN_ROLE, SELF_LOCKOUT, TWOFA_NOT_ENABLED, ROLE_PROTECTED; reuse NOT_SUSPENDED and LAST_OWNER for staff.",
+    "Test-only placeholder codes in frontend tests (X, BOOM, REFUSED, A1, B2, FIVE, FIRST_CODE, SECOND_CODE, THIRD_CODE, WITH_ISSUE, WITHOUT_ISSUE) are not server codes; country/currency literals (GB, USD, SEK…) only matched the scan.",
+    "The mock layer checks no permissions (except system-health and supplier writes) and fakes only simple state changes (decision 014; src/test/mockApi.ts:36-40); rules missing from the mocks still apply (see each endpoint's mapConflict).",
+    "Lockout guards (restriction on, self-block, last allow rule) must use the real request IP from a trusted proxy chain; the console's own hints use me.lastLoginIp (M15), so keep last_login_ip = the IP of the current sign-in."
+  ],
+  "authFlow": "# Staff sign-in flow (as the console implements it)\n\nScreens: `/login` (LoginPage), `/login/2fa` (TwoFactorPage), `/login/setup-2fa` (SetupTwoFactorPage), `/set-password[?token=]` (SetPasswordPage), all public (src/features/auth/paths.ts). Refine's authProvider (src/app/providers/authProvider.ts) drives them. A safe in-console `?to=<path>` travels through every step (destination.ts) and is where a finished sign-in lands; without it `/` forwards to the first page the role may open (HomeRedirect.tsx).\n\n## 1. POST /admin/auth/login `{email, password}`\n- Client trims the email. No session exists yet, so no CSRF check (the client may still send a stale X-CSRF-Token: ignore it).\n- Server order: IP rules (403 IP_NOT_ALLOWED) → rate limit (429 + Retry-After) → credentials (401 UNAUTHORIZED, identical for unknown email, wrong password, or no password chosen yet) → suspended (403 ACCOUNT_SUSPENDED) → create the pre-2FA session.\n- 200 `{next}`: `password` (must_change_password, checked first) | `totp` (twofa_enabled) | `totp_setup` (first enrolment). Client routes: password → /set-password (no token), totp → /login/2fa, totp_setup → /login/setup-2fa (authProvider.ts:24-28); unknown → /login/2fa.\n- Cookies on the 200: session cookie (httpOnly, Secure, SameSite=Lax, Path=/; short pre-2FA lifetime, proposed 10 min) + readable CSRF cookie named by VITE_CSRF_COOKIE (default `csrf_token`, not httpOnly, readable by the console origin) + the same token in the `X-CSRF-Token` response header (mock session.ts:213-217).\n- UI per error: 422 VALIDATION_FAILED with `errors[{field:'email'|'password'}]` → under the fields; 401 → fixed \"Email or password is incorrect\" + request id, password cleared (authErrors.ts:35-43); 403 ACCOUNT_SUSPENDED → \"This account is suspended\" card; 403 IP_NOT_ALLOWED → \"Sign-in is not allowed from this network\" card (SignInBlocked.tsx); 429 → \"Too many sign-in attempts … Try again in N seconds/minutes\" from Retry-After; anything else → banner with the server title/detail + request id.\n\n## 2a. POST /admin/auth/2fa `{code}` (from /login/2fa)\n- Needs the pre-2FA cookie + X-CSRF-Token. Exactly 6 digits (client strips other characters).\n- 204 → the session becomes full: rotate the session token (and the CSRF token if desired: then set the cookie and send X-CSRF-Token in this response); set last_login_at/last_login_ip from this request; invited → active on the first full sign-in; audit. The client invalidates its auth cache, calls GET /admin/auth/me, then opens `?to=` or `/`.\n- 422 VALIDATION_FAILED `errors[{field:'code'}]` → under the field, code selected; 401 (pre-2FA session expired) → banner + \"Back to sign in\"; 403 CSRF_FAILED → banner; 429 → banner with the wait.\n\n## 2b. First enrolment (next = totp_setup, /login/setup-2fa)\n- POST /admin/auth/2fa/setup (no body, CSRF) once per visit → 200 `{secret, otpauthUrl, qrSvg?}` (qrSvg = raw SVG markup); \"Retry\" asks again and the new pending secret replaces the old one (useTwoFactorSetup.ts).\n- Then POST /admin/auth/2fa `{code}` with the first code → as 2a; the server confirms the pending secret and sets twofa_enabled=true.\n- Setup errors: 401 → signed out to /login; anything else → \"Could not start the setup\" + server detail + Retry. Refuse setup when 2FA is already enabled (proposed 409 TWOFA_ALREADY_ENABLED).\n\n## 2c. Forced password change (next = password)\n- /set-password without a token: POST /admin/auth/password/set `{password}` with the pre-2FA cookie + CSRF → 204 → server clears must_change_password and ends the pre-2FA session (mock resetSession) → client opens `/login?reason=password-set` (\"Password updated. Sign in with your new password.\") → the person signs in again → next = totp or totp_setup.\n\n## 3. GET /admin/auth/me\n- After 2FA and on every navigation (client cache 60 s, meCache.ts). 200 Me: id, email, name, status, role {id,name}, permissions (drive every gate), twofaEnabled, mustChangePassword, lastLoginAt, lastLoginIp (the console's \"your address\"). Send X-CSRF-Token on this response too: it is the first call after every reload, and a cross-site console cannot read the CSRF cookie.\n\n## Invite and reset links\n- Emailed link: `<console>/set-password?token=<token>` (auth_tokens: hash only, 1 h, single use). POST /admin/auth/password/set `{token, password}` → 204 (no session is created) → `/login?reason=password-set` → normal sign-in (a new staff member then gets next = totp_setup).\n- 410 TOKEN_INVALID → the form is replaced by a dead-link card with the server detail (\"Ask an Owner to send you a new link.\" is added only when the server gave no detail); 422 WEAK_PASSWORD or any `errors[{field:'password'}]` → under \"New password\"; anything else → banner. The console hints at least 10 characters.\n- There is no self-service \"forgot password\" route: the form only says \"Ask an Owner to send you a reset link.\"\n\n## Logout\n- POST /admin/auth/logout (CSRF) → 204, revoke the session, clear both cookies (Max-Age=0). 401 means already signed out and counts as success; any other failure keeps the user signed in with an error toast. The client then forgets its in-memory CSRF token and me cache and lands on /login without ?to=.\n\n## Session expiry and idle handling\n- No client idle timer: the server owns absolute and idle expiry (proposed 8 h absolute, 30 min idle, 10 min pre-2FA). Any 401 on any request → the client clears the me cache, runs logout (a 401 there is fine) and redirects to `/login?to=<current path>`, where the form says \"Sign in to continue to <path>\". Role or permission changes reach the UI within the 60 s me cache; the server must apply them on the next request.\n\n## 401 versus 403 (authProvider.ts:43-54, 97-105)\n- 401 UNAUTHORIZED: no, expired, revoked or pre-2FA session → sign out. Exceptions: on the login form it means \"wrong email or password\"; on the 2FA and set-password forms it shows as a banner.\n- 403 FORBIDDEN: signed in but missing the permission → never signs out; shown in place (detail should name the permission).\n- 403 ACCOUNT_SUSPENDED: the caller's account is suspended → sign out to `/login?reason=suspended`.\n- 403 IP_NOT_ALLOWED: the caller's IP is refused (block or console restriction) → sign out to `/login?reason=ip`. Decided per request, before authentication.\n- These three codes end the caller's session wherever they appear: never reuse them for refusals about other records (a suspended target account, an IP-rule validation error).\n- 403 CSRF_FAILED: stays signed in, shows the error. 5xx, 429 and network failures never sign out (429 shows the wait from Retry-After).\n\n## CSRF\n- The client sends X-CSRF-Token on every non-GET request when it has a token: the readable cookie (VITE_CSRF_COOKIE, default csrf_token) first, else the last X-CSRF-Token response header kept in memory (lost on reload) (csrf.ts:25-33).\n- Server: validate on every mutation that carries a session (2fa, 2fa/setup, password/set without token, logout and all /admin mutations); there is nothing to validate on login and token-mode password/set. Send X-CSRF-Token on the login, 2fa and me responses.",
+  "permissions": "# Permissions\n\n## Grammar and matching\n- `<area>:<action>`, lower snake_case on both sides (`staff:read`, `wallet:credit_limit`, `api_keys:revoke`). `<area>:*` = every action of the area; `*` = everything; the client also accepts `*:*` as `*` (src/lib/auth/permissions.ts:5-9).\n- Granted g covers required r when g = r, g = `*`/`*:*`, or g = `x:*` and r starts with `x:`. A list of required permissions means any-of (permissions.ts:15-18). The server must match the same way.\n- A REQUIRED `x:*` is covered only by `x:*` or `*`, never by the set of concrete `x:…` actions (permissions.ts:11-14). Only two action rows need a literal wildcard: `PUT /admin/risk/rules` → `risk:*` and `POST /admin/content-pages/generate` → `storefront:*`.\n\n## CRUD mapping (MISMATCHES M7)\n- Manifest CRUD rows carry `x:*`; the operation decides the concrete permission: list/show → `x:read`, create (POST) → `x:create`, update (PATCH) → `x:update`, delete → `x:delete` (crudPermission, permissions.ts:32-41; accessControlProvider.ts:14-26). Action rows carry their exact permission. `/admin/auth/*` need none (public or session only); `GET /health` is public.\n- Access feature: staff:read (GET /admin/staff, /:id), staff:create (POST /admin/staff), staff:update (PATCH, /password, /sessions/revoke, /reset-2fa), staff:suspend (/suspend, /reactivate); access:read (GET /admin/ip-rules, /:id, POST /check), access:create (POST /admin/ip-rules), access:delete (DELETE), access:update (PUT /admin/access/restriction); roles:read (GET /admin/roles, /:id, GET /admin/permissions), roles:create/update/delete; sessions:read, sessions:revoke; audit:read (GET /admin/audit-logs, /:id). Reading the restriction state needs settings:read (GET /admin/settings).\n\n## Where the console checks (always from GET /admin/auth/me .permissions, cached 60 s)\n- Page gate: each page resource's meta.permission (src/app/resources.ts; any-of lists from the feature manifests). access: staff:read | access:read | roles:read | sessions:read; finance: ledger:read | payments:read | invoices:read | reports:read | reports:finance; merchants: clients:read | groups:read | kyc:read; refunds: refunds:read | disputes:read | reports:finance; services: catalog:read | pricing:read | inventory:read; storefront: storefront:read | legal:read | catalog:read; settings: settings:read | payments:gateways | tax:read | notifications:read | webhooks:read; system-health: system:read | alerts:read | incidents:read; single permission: dashboard:read, orders:read, customers:read, support:read, risk:read, growth:read (checkouts), suppliers:read, commissions:read, audit:read. Without it the ForbiddenPage shows; `/` forwards to the first permitted page.\n- Tabs: shown only with their read permission (e.g. AccessPage.tsx TABS).\n- Buttons and links: `needs('x:y')` disables the control with the title \"You need the x:y permission\" (useAccessGrants.ts:20-24); deep links show only when useCanOpenPage allows the target page (M44).\n- `can({ action })`: an action containing a colon is the permission itself; a CRUD action maps through the resource meta; the refusal reason reads \"You need the <perm> permission\" (accessControlProvider.ts:19-42).\n- All of this is a hint: every route enforces its permission; 403 FORBIDDEN (detail naming the missing permission) never signs out.\n\n## GET /admin/permissions (roles:read)\n- The whole catalog, no paging: `string[]` (mock: the 115 concrete keys of the manifest, src/mocks/roles.ts:44-89) or `[{key, label?, group?}]`; normalised client-side (access/lib/permissions.ts:30-45: label defaults to the humanised action, group to the prefix; order kept, duplicates dropped). No wildcards in the catalog; wildcard or unknown entries already on a role are shown under \"Other entries\" (permissions.ts:57-76).\n- The role summary groups prefixes into nine areas: Orders (orders, inventory, files), Customers (customers, clients, wallet, groups, kyc, api_keys, growth), Support (support), Risk (risk), Money (ledger, payments, invoices, commissions, refunds, disputes, reports), Catalog (catalog, pricing, suppliers, storefront, legal), Settings (settings, tax, currencies, webhooks, notifications), Admins (staff, access, roles, sessions, audit, queues), System (system, alerts, incidents); dashboard belongs to none (permissions.ts:85-119). Levels (full / view / partial / none) are computed against the catalog, so the catalog must list every permission the server checks.\n\n## Roles\n- `{id, name, permissions: string[], staffCount?}`; permissions stored as given (`*`, `x:*`, concrete keys); me.permissions = the role's list. Roles are editable records (M11); a role held by anyone cannot be deleted (409 ROLE_IN_USE).\n- Owner: the console treats a member of a role named \"Owner\" or of any role containing `*` as an Owner (staffGuards.ts:16-19, M18); the mock server uses the name \"Owner\" (accessStaff.ts:202-208). Proposed server rule: role contains `*`.\n\n## Built-in roles (mock seed only, src/mocks/roles.ts; MISMATCHES M11, M198)\n- 1 Owner: `[\"*\"]`.\n- 2 Admin: dashboard:read; `x:*` for orders, inventory, files, customers, clients, wallet, groups, kyc, api_keys, growth, support, risk, ledger, payments, invoices, commissions, refunds, disputes, reports, catalog, pricing, suppliers, storefront, legal, settings, tax, currencies, webhooks, notifications, system, alerts, incidents; read only for staff, access, roles, sessions, audit, queues.\n- 3 Finance: dashboard:read; `x:read` for orders, inventory, files, customers, clients, wallet, groups, kyc, api_keys, growth, risk, catalog, pricing, suppliers, storefront, legal, system, alerts, incidents; `x:*` for ledger, payments, invoices, commissions, refunds, disputes, reports.\n- 4 Support: dashboard:read; `x:read` for orders, inventory, files, risk, catalog, pricing, suppliers, storefront, legal, system, alerts, incidents; `x:*` for customers, clients, wallet, groups, kyc, api_keys, growth, support.\n- 5 Risk reviewer: dashboard:read; `x:read` for orders, inventory, files, customers, clients, wallet, groups, kyc, api_keys, growth, support, ledger, payments, invoices, commissions, refunds, disputes, reports, system, alerts, incidents; `risk:*`.\n- 6 Read only: dashboard:read; `x:read` for orders, inventory, files, customers, clients, wallet, groups, kyc, api_keys, growth, support, risk, ledger, payments, invoices, commissions, refunds, disputes, reports, catalog, pricing, suppliers, storefront, legal, system, alerts, incidents (no settings, no admin areas).\n- The `?mock=readonly` scenario signs everyone in with the Read only role (session.ts:143-148).",
+  "listConventions": "# List conventions (simple-rest dialect)\n\n## What the console sends (src/lib/api/query.ts, src/app/providers/dataProvider.ts)\n- Range: `_start` (0-based, inclusive) and `_end` (exclusive). Page N of size S → `_start=(N-1)*S&_end=N*S` (query.ts:97-114). Every list call sends a range (Refine pagination mode 'server'). Sizes in use: 25 (paged tables, sessions, audit \"Show more\"), 200 (whole short lists: staff, roles, and the merchants/commissions/storefront caps), 500 (IP rules per kind), 1 (count-only calls `_start=0&_end=1` that read only x-total-count: tab counts and figure strips in orders, merchants, customers, finance (payments), refunds, risk, services, storefront, commissions, support).\n- Sort: `_sort=f1,f2&_order=asc,desc`, comma lists in the same order (query.ts:41-42), camelCase field names, only the fields each screen offers (e.g. support tickets `_sort=late,updatedAt`).\n- Search: `q=<text>` (query.ts:43; a Refine filter on the pseudo field `q`, query.ts:75-86). Meaning: case-insensitive substring over endpoint-specific fields (mock searchFields; default every top-level string field, crud.ts:93-106). Access/audit: staff → name, email; roles → name; ip-rules → cidr, label, reason; sessions → ip, subject.name, subject.email; audit → actorName, action, entityLabel.\n- Field filters: `field=value` = equality on the camelCase response field; a repeated key = IN (`status=a&status=b`, `id=1&id=2`); operator suffixes `_ne` (repeated = NOT IN), `_gte`, `_lte`, `_gt`, `_lt`, `_like` (case-insensitive contains) (query.ts:47-55; crud.ts:24-35). Refine 'or'/'and' and any other operator are rejected client-side (query.ts:76-93).\n- Values: strings as typed; numbers as decimal text; booleans `true`/`false`; Date objects become ISO UTC strings (query.ts:57-61); undefined, null and '' are never sent (query.ts:17); URLSearchParams encoding (space = '+', parse it as a space).\n- getMany (Refine): one list call `id=<a>&id=<b>&_start=0&_end=<n>` (dataProvider.ts:63-74).\n\n## What the console expects back\n- 200 JSON array of rows + `x-total-count: <rows matching the filters, before the range>` (client.ts:140-153). A missing or non-numeric header makes total = rows received, which breaks pagers, tab counts, \"Show more\" and \"not all shown\" notes. Expose the header through CORS.\n- How the mock list engine answers (crud.ts:112-137, applyListQuery): filters (text equality; numeric or ISO-string comparison for range operators; dotted paths such as `role.id`) → `q` → multi-field sort (numbers numerically, otherwise localeCompare with numeric collation; nulls last ascending, first descending) → `slice(_start, _end)`. No `_sort` → insertion order (≈ id asc). No `_end` → to the end. x-total-count + `access-control-expose-headers`.\n- Server proposal: whitelist sort and filter fields per endpoint (unknown → 422 VALIDATION_FAILED naming `_sort` or the field), a stable documented default order when `_sort` is absent (staff: createdAt asc; roles: id asc; sessions: lastSeenAt desc; ip-rules and audit: createdAt desc, which the console sends anyway), exact counts, and a maximum page of at least 500 (IP rules ask for 500).\n\n## Endpoints that deviate\n- Plain arrays with no paging and no x-total-count: GET /admin/permissions, GET /admin/orders/:id/events, GET /admin/clients/:id/api-keys, GET /admin/reports/suppliers, GET /admin/reports/top-clients; replace-all PUTs that answer arrays: PUT /admin/services/:id/fields, /group-prices, /options, /supplier-links.\n- Objects, not arrays: GET /admin/settings (one flat key → value object), GET /admin/auth/me, GET /health and every summary/report GET (system-health, dashboard, reports).\n- Extra list parameters: GET /admin/audit-logs `from`/`to` (YYYY-MM-DD, both days included; UTC in the mock) with `actorType`/`actorId`/`entityType`; GET /admin/commission-accruals `createdAt_gte`; GET /admin/incidents `open=true`; GET /admin/support-tickets multi-field `_sort=late,updatedAt`; repeated keys on GET /admin/content-pages `kind`, GET /admin/customers `riskLevel`, GET /admin/data-requests `status`, GET /admin/support-tickets `status`; path-scoped lists GET /admin/clients/:id/statement, GET /admin/suppliers/:id/services, GET /admin/system/queues/:name/failed (`_sort=failedAt&_order=desc`).\n- Loaded whole and sorted/filtered/counted client-side (cap → \"not all shown\" note when total is larger): /admin/staff (200, no sort sent), /admin/roles (200), /admin/ip-rules (500 per kind, `kind` filter, createdAt desc), plus short lookups in other features (groups, suppliers, reply templates).\n- No endpoint uses cursor paging (audit question 7 asks; the console dedupes by id instead).",
+  "errorCatalog": [
+    {
+      "code": "UNAUTHORIZED",
+      "status": 401,
+      "where": [
+        "src/lib/api/errors.ts:7",
+        "src/app/providers/authProvider.ts:47",
+        "src/features/auth/components/authErrors.ts:37",
+        "src/mocks/session.ts:106",
+        "src/mocks/session.ts:203",
+        "src/mocks/session.ts:266"
+      ],
+      "meaning": "No, expired, revoked or pre-2FA session (any route); on POST /admin/auth/login: wrong email or password.",
+      "ui": "Any route: sign out to /login?to=<path> (authProvider.onError). Login form: fixed \"Email or password is incorrect\". 2FA / set-password forms: banner. Logout: counted as success."
+    },
+    {
+      "code": "FORBIDDEN",
+      "status": 403,
+      "where": [
+        "src/lib/api/errors.ts:8",
+        "src/app/providers/authProvider.ts:97",
+        "src/features/system-health/lib/errors.ts:7",
+        "src/features/system-health/mocks/http.ts:45",
+        "src/features/suppliers/mocks/handlers.ts:124"
+      ],
+      "meaning": "Signed in but the role lacks the permission; detail should name it (\"You need the x:y permission\").",
+      "ui": "Never signs out; lists show an error state in place, dialogs show the detail, some cards hide."
+    },
+    {
+      "code": "ACCOUNT_SUSPENDED",
+      "status": 403,
+      "where": [
+        "src/lib/api/errors.ts:9",
+        "src/app/providers/authProvider.ts:37",
+        "src/app/providers/authProvider.ts:48",
+        "src/features/auth/components/authErrors.ts:65",
+        "src/mocks/session.ts:206",
+        "src/mocks/session.ts:268"
+      ],
+      "meaning": "The CALLER's staff account is suspended (login with the right password, or any request on a session of a suspended account). Never use it for an action on another (suspended) account.",
+      "ui": "Sign out to /login?reason=suspended; on the login form the \"This account is suspended\" card."
+    },
+    {
+      "code": "IP_NOT_ALLOWED",
+      "status": 403,
+      "where": [
+        "src/lib/api/errors.ts:10",
+        "src/app/providers/authProvider.ts:38",
+        "src/app/providers/authProvider.ts:49",
+        "src/features/auth/components/authErrors.ts:66"
+      ],
+      "meaning": "The caller's IP is blocked (scope admin|all) or not allowlisted while the console restriction is on; decided before authentication on every /admin route incl. login. Never use it for IP-rule validation errors.",
+      "ui": "Sign out to /login?reason=ip; on the login form the \"Sign-in is not allowed from this network\" card."
+    },
+    {
+      "code": "VALIDATION_FAILED",
+      "status": 422,
+      "where": [
+        "src/lib/api/errors.ts:11",
+        "src/mocks/session.ts:197",
+        "src/mocks/session.ts:228",
+        "src/mocks/handlers/accessShared.ts:30",
+        "src/features/services/mocks/http.ts:42",
+        "src/features/settings/mocks/http.ts:37"
+      ],
+      "meaning": "Invalid input; errors[] items {field, message} with camelCase dotted paths.",
+      "ui": "Field messages go under their fields (applyServerErrors / dialogSubmit, with aliases such as cidr→ip); the rest goes to the dialog error slot; sign-in forms place email/password/code messages under those fields."
+    },
+    {
+      "code": "WEAK_PASSWORD",
+      "status": 422,
+      "where": [
+        "src/lib/api/errors.ts:12",
+        "src/features/auth/components/authErrors.ts:100",
+        "src/mocks/session.ts:294"
+      ],
+      "meaning": "POST /admin/auth/password/set refuses the password (policy: ≥ 10 characters, not trivial).",
+      "ui": "Message under \"New password\" (field errors win, else detail)."
+    },
+    {
+      "code": "EMAIL_TAKEN",
+      "status": 409,
+      "where": [
+        "src/lib/api/errors.ts:13",
+        "src/features/access/components/AddAdminDialog.tsx:71",
+        "src/features/access/components/EditAdminDialog.tsx:47",
+        "src/features/customers/components/AddCustomerDialog.tsx:58",
+        "src/features/customers/components/EditCustomerDialog.tsx:46",
+        "src/features/merchants/components/InviteMerchantDialog.tsx:53",
+        "src/mocks/handlers/accessStaff.ts:128",
+        "src/features/customers/mocks/customerHandlers.ts:20",
+        "src/features/merchants/mocks/clientRoutes.ts:55"
+      ],
+      "meaning": "The email already belongs to another staff member / customer / merchant.",
+      "ui": "Detail shown under the email field when the problem has no field errors (dialogSubmit codeFields)."
+    },
+    {
+      "code": "TOKEN_INVALID",
+      "status": 410,
+      "where": [
+        "src/lib/api/errors.ts:14",
+        "src/features/auth/components/authErrors.ts:97",
+        "src/mocks/session.ts:280"
+      ],
+      "meaning": "Invite/reset token unknown, expired, already used or superseded.",
+      "ui": "Set-password form replaced by the dead-link card with the server detail and \"Back to sign in\"."
+    },
+    {
+      "code": "NOT_FOUND",
+      "status": 404,
+      "where": [
+        "src/lib/api/errors.ts:15",
+        "src/mocks/crud.ts:140",
+        "src/mocks/handlers/accessShared.ts:25",
+        "src/features/merchants/components/MerchantDetail.tsx:62",
+        "src/features/customers/hooks/useCustomer.ts:20",
+        "src/features/support/components/TicketThread.tsx:49",
+        "src/features/system-health/tabs/alerts/IncidentDrawer.tsx:28"
+      ],
+      "meaning": "No record with this id (also unknown routes).",
+      "ui": "Show views render a not-found state (merchant, customer, ticket, incident); dialogs show the detail."
+    },
+    {
+      "code": "RATE_LIMITED",
+      "status": 429,
+      "where": [
+        "src/lib/api/errors.ts:16",
+        "src/lib/query/toast.ts:18",
+        "src/features/auth/components/authErrors.ts:14",
+        "src/features/auth/components/authErrors.ts:44",
+        "src/features/system-health/mocks/specsApi.ts:151"
+      ],
+      "meaning": "Too many requests; must carry Retry-After (seconds or HTTP date).",
+      "ui": "Toast \"Too many requests. Try again in N\"; sign-in form \"Too many sign-in attempts … Try again in N\"."
+    },
+    {
+      "code": "NETWORK_ERROR",
+      "status": 0,
+      "where": [
+        "src/lib/api/errors.ts:17",
+        "src/lib/api/errors.ts:84"
+      ],
+      "meaning": "Client-made (status 0): fetch failed — offline, DNS, server down, or a CORS refusal (missing Allow-Origin/Allow-Credentials).",
+      "ui": "Error state \"Could not reach the server\" with Retry; never signs out; /health footer shows \"API unreachable\"."
+    },
+    {
+      "code": "INVALID_RESPONSE",
+      "status": 200,
+      "where": [
+        "src/lib/api/client.ts:105"
+      ],
+      "meaning": "Client-made: a 2xx response whose body is not valid JSON (status = the response status).",
+      "ui": "Error with the request id; for /health it reads as unreachable."
+    },
+    {
+      "code": "HTTP_<status>",
+      "status": 500,
+      "where": [
+        "src/lib/api/errors.ts:64",
+        "src/lib/api/errors.test.ts:96",
+        "src/lib/api/errors.test.ts:128"
+      ],
+      "meaning": "Client fallback when an error body has no code (HTTP_500, HTTP_400, …; any status).",
+      "ui": "Generic error; the backend should always send a code."
+    },
+    {
+      "code": "CSRF_FAILED",
+      "status": 403,
+      "where": [
+        "src/mocks/session.ts:109",
+        "src/app/providers/authProvider.test.ts:233",
+        "src/mocks/session.test.ts:144"
+      ],
+      "meaning": "A mutation with a session but a missing or mismatched X-CSRF-Token.",
+      "ui": "Stays signed in; error shown in the dialog/banner/toast."
+    },
+    {
+      "code": "INTERNAL_ERROR",
+      "status": 500,
+      "where": [
+        "src/features/system-health/mocks/profile.ts:27",
+        "src/features/system-health/mocks/specsApi.ts:210"
+      ],
+      "meaning": "Unexpected server failure (backend decision 028 name); also a data value in System health top errors.",
+      "ui": "Error state with request id + Retry (GETs are retried once automatically, useApiQuery.ts:26-28)."
+    },
+    {
+      "code": "INTERNAL",
+      "status": 500,
+      "where": [
+        "src/app/layout/AppShell.test.tsx:526",
+        "src/features/audit/pages/AuditPage.test.tsx:81"
+      ],
+      "meaning": "Test-only spelling of a generic 500; the server should use INTERNAL_ERROR.",
+      "ui": "Same as INTERNAL_ERROR."
+    },
+    {
+      "code": "UNAVAILABLE",
+      "status": 503,
+      "where": [
+        "src/features/access/pages/AccessPage.test.tsx:127",
+        "src/features/finance/pages/FinancePage.test.tsx:183"
+      ],
+      "meaning": "Test-only generic \"service unavailable\".",
+      "ui": "Error state with request id + Retry."
+    },
+    {
+      "code": "BAD_REQUEST",
+      "status": 400,
+      "where": [
+        "src/features/risk/pages/RiskChecks.test.tsx:165",
+        "src/features/refunds/pages/PaymentsTab.test.tsx:163"
+      ],
+      "meaning": "Malformed request (decision 028: malformed JSON); tested on list reads.",
+      "ui": "Error state with the server detail."
+    },
+    {
+      "code": "CONFLICT",
+      "status": 409,
+      "where": [
+        "src/features/dashboard/pages/DashboardStates.test.tsx:93",
+        "src/features/finance/pages/FinancePage.test.tsx:252"
+      ],
+      "meaning": "Test-only generic conflict; the server should use a specific code.",
+      "ui": "Error with the server title."
+    },
+    {
+      "code": "DATABASE_UNAVAILABLE",
+      "status": 503,
+      "where": [
+        "src/features/system-health/mocks/profile.ts:29",
+        "src/features/system-health/mocks/profile.ts:36",
+        "src/features/system-health/mocks/specsApi.ts:251"
+      ],
+      "meaning": "Postgres not accepting connections (system-health order-health and integrity reads); also a data value in top errors.",
+      "ui": "Card or tab error with the server detail."
+    },
+    {
+      "code": "MONITORING_UNAVAILABLE",
+      "status": 503,
+      "where": [
+        "src/features/system-health/hooks/monitoring.ts:6",
+        "src/features/system-health/hooks/monitoring.ts:15",
+        "src/features/system-health/mocks/profile.ts:13"
+      ],
+      "meaning": "Prometheus/Sentry could not be asked (GET /admin/system/metrics, /errors…).",
+      "ui": "Neutral \"Monitoring unavailable\" card with the detail — never green, never a red error (only for 503 + this code)."
+    },
+    {
+      "code": "MAINTENANCE",
+      "status": 503,
+      "where": [
+        "src/features/system-health/mocks/specsApi.ts:302"
+      ],
+      "meaning": "Storefront checkout maintenance answer (map scenario system-integrity); appears only as data in System health top errors — the admin console keeps working.",
+      "ui": "Shown as a row in the API errors card."
+    },
+    {
+      "code": "CANNOT_SUSPEND_SELF",
+      "status": 409,
+      "where": [
+        "src/mocks/handlers/accessStaff.ts:197",
+        "src/features/access/api/access.test.ts:160"
+      ],
+      "meaning": "POST /admin/staff/:id/suspend on your own account.",
+      "ui": "Suspend dialog error slot; dialog stays open."
+    },
+    {
+      "code": "ALREADY_SUSPENDED",
+      "status": 409,
+      "where": [
+        "src/mocks/handlers/accessStaff.ts:200"
+      ],
+      "meaning": "Suspending an account that is already suspended.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "LAST_OWNER",
+      "status": 409,
+      "where": [
+        "src/mocks/handlers/accessStaff.ts:209",
+        "src/features/access/pages/AccessPage.test.tsx:277"
+      ],
+      "meaning": "Suspending (and, proposed, demoting) the last active Owner.",
+      "ui": "Dialog error slot; dialog stays open."
+    },
+    {
+      "code": "ROLE_IN_USE",
+      "status": 409,
+      "where": [
+        "src/mocks/handlers/accessRoles.ts:65"
+      ],
+      "meaning": "DELETE /admin/roles/:id while staff still hold the role.",
+      "ui": "Delete dialog shows the detail."
+    },
+    {
+      "code": "IP_NOT_IN_ALLOWLIST",
+      "status": 409,
+      "where": [
+        "src/mocks/handlers/accessIpRules.ts:119",
+        "src/features/access/pages/AccessPage.test.tsx:522"
+      ],
+      "meaning": "PUT /admin/access/restriction enabled=true while the caller's IP is not covered by a live allow rule.",
+      "ui": "Error toast with title + detail (RestrictionPanel.tsx:79-84) or the Add-my-IP dialog error slot."
+    },
+    {
+      "code": "ACCOUNT_EXISTS",
+      "status": 409,
+      "where": [
+        "src/features/customers/mocks/actionHandlers.ts:108"
+      ],
+      "meaning": "POST /admin/customers/:id/account for a customer who already has an account.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "ALERT_ACKNOWLEDGED",
+      "status": 409,
+      "where": [
+        "src/features/system-health/mocks/routes/alerts.ts:45"
+      ],
+      "meaning": "POST /admin/alerts/:id/ack on an alert already acknowledged.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "ALERT_RESOLVED",
+      "status": 409,
+      "where": [
+        "src/features/system-health/mocks/routes/alerts.ts:36"
+      ],
+      "meaning": "POST /admin/alerts/:id/ack on an alert that already closed.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "ALREADY_ASSIGNED",
+      "status": 409,
+      "where": [
+        "src/features/commissions/mocks/assignmentRoutes.ts:47"
+      ],
+      "meaning": "POST /admin/commission-assignments for an agent/plan already assigned.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "ALREADY_BLOCKED",
+      "status": 409,
+      "where": [
+        "src/features/risk/mocks/lists.ts:59",
+        "src/features/customers/mocks/actionHandlers.ts:176",
+        "src/features/risk/components/AddBlockDialog.tsx:30"
+      ],
+      "meaning": "POST /admin/blocklist for a value already listed; POST /admin/customers/:id/block on a blocked customer.",
+      "ui": "Blocklist dialog: detail under the value field (codeFields); otherwise dialog error slot."
+    },
+    {
+      "code": "ALREADY_CURRENT",
+      "status": 409,
+      "where": [
+        "src/features/storefront/mocks/legalRoutes.ts:30"
+      ],
+      "meaning": "POST /admin/legal-documents/:id/publish on the version already current.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "ALREADY_DECIDED",
+      "status": 409,
+      "where": [
+        "src/features/merchants/mocks/kycRoutes.ts:41"
+      ],
+      "meaning": "POST /admin/kyc-submissions/:id/decide on a decided request.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "ALREADY_REVOKED",
+      "status": 409,
+      "where": [
+        "src/features/merchants/mocks/kycRoutes.ts:69"
+      ],
+      "meaning": "DELETE /admin/api-keys/:id on a revoked key.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "ANONYMIZED",
+      "status": 409,
+      "where": [
+        "src/features/customers/mocks/actionHandlers.ts:32",
+        "src/features/customers/mocks/customerHandlers.ts:117"
+      ],
+      "meaning": "Any change to an anonymised customer.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "APPROVAL_REQUIRED",
+      "status": 409,
+      "where": [
+        "src/features/merchants/mocks/walletRoutes.ts:45"
+      ],
+      "meaning": "POST /admin/clients/:id/wallet/adjust above the single-approver limit.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "CATALOG_LOCKED",
+      "status": 409,
+      "where": [
+        "src/features/services/pages/ServiceSwitches.test.tsx:49"
+      ],
+      "meaning": "PATCH /admin/services/:id refused because the catalog is locked (test only).",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "CATEGORY_IN_USE",
+      "status": 409,
+      "where": [
+        "src/features/services/mocks/categoryRoutes.ts:100"
+      ],
+      "meaning": "DELETE /admin/service-categories/:id while services use it.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "CODE_TAKEN",
+      "status": 409,
+      "where": [
+        "src/features/services/mocks/serviceRoutes.ts:125",
+        "src/features/services/mocks/serviceRoutes.ts:162"
+      ],
+      "meaning": "POST/PATCH /admin/services with a code already used.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "CREDIT_LIMIT_EXCEEDED",
+      "status": 409,
+      "where": [
+        "src/features/merchants/mocks/walletRoutes.ts:53"
+      ],
+      "meaning": "Wallet debit beyond the credit limit.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "DELIVERY_SUCCEEDED",
+      "status": 409,
+      "where": [
+        "src/features/settings/mocks/logRoutes.ts:28"
+      ],
+      "meaning": "POST /admin/webhook-deliveries/:id/retry on a delivered webhook.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "DISPUTE_NOT_OPEN",
+      "status": 409,
+      "where": [
+        "src/features/refunds/mocks/disputeRoutes.ts:25"
+      ],
+      "meaning": "Dispute action when the dispute no longer waits for evidence.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "EVIDENCE_DEADLINE_PASSED",
+      "status": 409,
+      "where": [
+        "src/features/refunds/mocks/disputeRoutes.ts:57"
+      ],
+      "meaning": "POST /admin/disputes/:id/evidence after the deadline.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "FX_PROVIDER_DOWN",
+      "status": 502,
+      "where": [
+        "src/features/settings/pages/Currencies.test.tsx:213"
+      ],
+      "meaning": "POST /admin/currencies/refresh-fx when the rate provider fails.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "GATEWAY_ERROR",
+      "status": 502,
+      "where": [
+        "src/features/refunds/pages/RefundActions.test.tsx:299"
+      ],
+      "meaning": "POST /admin/refunds/:id/retry when the payment gateway fails.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "GATEWAY_IN_USE",
+      "status": 409,
+      "where": [
+        "src/features/settings/mocks/gatewayRoutes.ts:151"
+      ],
+      "meaning": "DELETE /admin/payment-gateways/:id while in use.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "GROUP_IN_USE",
+      "status": 409,
+      "where": [
+        "src/features/merchants/mocks/groupRoutes.ts:94"
+      ],
+      "meaning": "DELETE /admin/client-groups/:id while merchants are in it.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "HAS_PENDING",
+      "status": 409,
+      "where": [
+        "src/features/commissions/pages/CommissionsAgents.test.tsx:245"
+      ],
+      "meaning": "DELETE /admin/commission-assignments/:id with pending accruals (test only).",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "INCIDENT_CLOSED",
+      "status": 409,
+      "where": [
+        "src/features/system-health/mocks/routes/incidents.ts:141"
+      ],
+      "meaning": "PATCH /admin/incidents/:id on a resolved incident.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "IN_USE",
+      "status": 409,
+      "where": [
+        "src/features/support/pages/SupportTemplates.test.tsx:250"
+      ],
+      "meaning": "DELETE /admin/reply-templates/:id while in use (test only).",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "JOB_ALREADY_RUNNING",
+      "status": 409,
+      "where": [
+        "src/features/system-health/mocks/routes/integrity.ts:20",
+        "src/features/system-health/mocks/routes/queues.ts:110"
+      ],
+      "meaning": "POST /admin/system/integrity/run or /admin/system/jobs/:name/run while a run is in progress.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "KEY_IN_USE",
+      "status": 409,
+      "where": [
+        "src/features/merchants/pages/MerchantPageTabs.test.tsx:424"
+      ],
+      "meaning": "DELETE /admin/api-keys/:id refused (test only).",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "KYC_REQUIRED",
+      "status": 409,
+      "where": [
+        "src/features/merchants/pages/MerchantsActions.test.tsx:46"
+      ],
+      "meaning": "PATCH /admin/clients/:id activation without approved KYC (test only).",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "LAST_ACTIVE",
+      "status": 409,
+      "where": [
+        "src/features/merchants/pages/MerchantPage.test.tsx:109"
+      ],
+      "meaning": "PATCH /admin/clients/:id refused for the last active item (test only).",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "LAST_CURRENCY",
+      "status": 409,
+      "where": [
+        "src/features/settings/pages/Currencies.test.tsx:89"
+      ],
+      "meaning": "PATCH /admin/currencies/:id would leave no offered currency (test only).",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "LAST_SUPPLIER",
+      "status": 409,
+      "where": [
+        "src/features/suppliers/pages/SupplierActions.test.tsx:219"
+      ],
+      "meaning": "PATCH /admin/suppliers/:id would leave services without a supplier (test only).",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "LINK_CONFLICT",
+      "status": 409,
+      "where": [
+        "src/features/suppliers/pages/SupplierServices.test.tsx:141"
+      ],
+      "meaning": "PUT /admin/services/:id/supplier-links conflict (test only).",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "LISTING_EXISTS",
+      "status": 409,
+      "where": [
+        "src/features/storefront/mocks/listingRoutes.ts:82"
+      ],
+      "meaning": "POST /admin/service-listings for a service already listed.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "LISTING_LOCKED",
+      "status": 409,
+      "where": [
+        "src/features/storefront/mocks/listingRoutes.ts:66",
+        "src/features/storefront/mocks/listingRoutes.ts:111"
+      ],
+      "meaning": "Listing changes refused while the listing is locked to B2B.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "LOCKED",
+      "status": 409,
+      "where": [
+        "src/features/risk/pages/RiskBlocklist.test.tsx:195"
+      ],
+      "meaning": "DELETE /admin/blocklist/:id on a locked entry (test only).",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "NOT_ACTIVE",
+      "status": 409,
+      "where": [
+        "src/features/customers/mocks/actionHandlers.ts:46"
+      ],
+      "meaning": "Customer action that needs an active account.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "NOT_BLOCKED",
+      "status": 409,
+      "where": [
+        "src/features/customers/mocks/actionHandlers.ts:165"
+      ],
+      "meaning": "Unblocking a customer who is not blocked.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "NOT_HELD",
+      "status": 409,
+      "where": [
+        "src/features/risk/mocks/queue.ts:40"
+      ],
+      "meaning": "POST /admin/risk/orders/:id/approve|refund on an order not held.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "NOT_IN_VERIFICATION",
+      "status": 409,
+      "where": [
+        "src/mocks/handlers/ordersActionRoutes.ts:79"
+      ],
+      "meaning": "Order verification action on an order not in the verification queue.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "NOT_MANUAL",
+      "status": 409,
+      "where": [
+        "src/mocks/handlers/ordersActionRoutes.ts:25"
+      ],
+      "meaning": "Order accept action on an order not in the manual queue.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "NOT_SUSPENDED",
+      "status": 409,
+      "where": [
+        "src/features/customers/mocks/actionHandlers.ts:151"
+      ],
+      "meaning": "Reactivating a customer who is not suspended (proposed for staff reactivate too).",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "NO_ACCOUNT",
+      "status": 409,
+      "where": [
+        "src/features/customers/mocks/actionHandlers.ts:123"
+      ],
+      "meaning": "Password action on a guest customer without an account.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "NO_REFERENCE",
+      "status": 409,
+      "where": [
+        "src/mocks/handlers/ordersActionRoutes.ts:106"
+      ],
+      "meaning": "Order fetch action without a supplier reference.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "OPEN_DISPUTE",
+      "status": 409,
+      "where": [
+        "src/features/customers/hooks/usePrivacyMutations.test.tsx:63"
+      ],
+      "meaning": "POST /admin/customers/:id/anonymize while a dispute is open (test only).",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "ORDER_NOT_COMPLETED",
+      "status": 409,
+      "where": [
+        "src/mocks/handlers/ordersActionRoutes.ts:45",
+        "src/mocks/handlers/ordersActionRoutes.ts:57"
+      ],
+      "meaning": "Reopen/refund on an order that is not completed.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "ORDER_NOT_OPEN",
+      "status": 409,
+      "where": [
+        "src/mocks/handlers/ordersShared.ts:14"
+      ],
+      "meaning": "Change to an order that is no longer pending/processing.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "PAYMENT_ALREADY_REVIEWED",
+      "status": 409,
+      "where": [
+        "src/features/finance/mocks/paymentHandlers.ts:49"
+      ],
+      "meaning": "POST /admin/payments/:id/approve|reject on a reviewed payment.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "PLAN_IN_USE",
+      "status": 409,
+      "where": [
+        "src/features/commissions/mocks/planRoutes.ts:117"
+      ],
+      "meaning": "DELETE /admin/commission-plans/:id while assigned.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "PLAN_LOCKED",
+      "status": 409,
+      "where": [
+        "src/features/commissions/pages/CommissionsAgents.test.tsx:207"
+      ],
+      "meaning": "PATCH /admin/commission-assignments/:id plan change refused (test only).",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "PRICE_EXISTS",
+      "status": 409,
+      "where": [
+        "src/features/merchants/mocks/priceRoutes.ts:46"
+      ],
+      "meaning": "POST /admin/client-prices for a merchant/service that already has one.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "REFUND_NOT_FAILED",
+      "status": 409,
+      "where": [
+        "src/features/refunds/mocks/refundRoutes.ts:82"
+      ],
+      "meaning": "POST /admin/refunds/:id/retry on a refund that did not fail.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "REFUND_NOT_PENDING",
+      "status": 409,
+      "where": [
+        "src/features/refunds/mocks/refundRoutes.ts:42"
+      ],
+      "meaning": "Approve/decline on a refund no longer waiting.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "REQUEST_CLOSED",
+      "status": 409,
+      "where": [
+        "src/features/customers/mocks/requestHandlers.ts:49"
+      ],
+      "meaning": "PATCH /admin/data-requests/:id on a closed request.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "REVIEW_REQUIRED",
+      "status": 409,
+      "where": [
+        "src/features/storefront/pages/ContentTab.test.tsx:155"
+      ],
+      "meaning": "POST /admin/legal-documents/:id/publish without review (test only).",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "SERVICE_DISABLED",
+      "status": 409,
+      "where": [
+        "src/features/storefront/mocks/listingRoutes.ts:136"
+      ],
+      "meaning": "Listing a disabled service.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "SERVICE_IN_USE",
+      "status": 409,
+      "where": [
+        "src/features/services/mocks/serviceRoutes.ts:176"
+      ],
+      "meaning": "DELETE /admin/services/:id while referenced.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "SETTLEMENT_PENDING",
+      "status": 409,
+      "where": [
+        "src/features/settings/pages/Payments.test.tsx:59"
+      ],
+      "meaning": "PATCH /admin/payment-gateways/:id with settlements pending (test only).",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "SHORTCUT_TAKEN",
+      "status": 409,
+      "where": [
+        "src/features/support/mocks/templateHandlers.ts:42",
+        "src/features/support/components/TemplateDialog.tsx:52"
+      ],
+      "meaning": "Reply template shortcut already used.",
+      "ui": "Detail under the shortcut field (codeFields)."
+    },
+    {
+      "code": "SLUG_TAKEN",
+      "status": 409,
+      "where": [
+        "src/features/storefront/mocks/pageRoutes.ts:38"
+      ],
+      "meaning": "Content page slug already used in the locale (with errors[{field:\"slug\"}]).",
+      "ui": "Message under the slug field."
+    },
+    {
+      "code": "SUPPLIERS_FAILED",
+      "status": 500,
+      "where": [
+        "src/features/suppliers/pages/SuppliersPage.test.tsx:204"
+      ],
+      "meaning": "GET /admin/suppliers failure (test only).",
+      "ui": "Error state with Retry."
+    },
+    {
+      "code": "SUPPLIER_DISABLED",
+      "status": 409,
+      "where": [
+        "src/features/suppliers/mocks/actionRoutes.ts:53"
+      ],
+      "meaning": "POST /admin/suppliers/:id/sync on a disabled supplier.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "SUPPLIER_IN_USE",
+      "status": 409,
+      "where": [
+        "src/features/suppliers/mocks/handlers.ts:146"
+      ],
+      "meaning": "DELETE /admin/suppliers/:id while services route to it.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "SUPPLIER_REFUSED",
+      "status": 409,
+      "where": [
+        "src/features/suppliers/pages/SupplierReroute.test.tsx:85"
+      ],
+      "meaning": "POST /admin/orders/:id/dispatch refused by the supplier (test only).",
+      "ui": "Recorded per order in the reroute run."
+    },
+    {
+      "code": "SUPPLIER_UNAVAILABLE",
+      "status": 409,
+      "where": [
+        "src/features/suppliers/mocks/actionRoutes.ts:61",
+        "src/features/system-health/mocks/specsApi.ts:240"
+      ],
+      "meaning": "POST /admin/suppliers/:id/sync when the supplier cannot be reached (409 in the mock; 502 as a data value in top errors).",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "SUPPLIER_UNREACHABLE",
+      "status": 502,
+      "where": [
+        "src/features/suppliers/pages/SupplierActions.test.tsx:128"
+      ],
+      "meaning": "POST /admin/suppliers/:id/test when the supplier does not answer (test only).",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "SYNC_NEEDED",
+      "status": 409,
+      "where": [
+        "src/features/suppliers/pages/SupplierServices.test.tsx:243"
+      ],
+      "meaning": "POST /admin/suppliers/:id/import/preview before a sync (test only).",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "TAC_TAKEN",
+      "status": 409,
+      "where": [
+        "src/features/storefront/mocks/tacRoutes.ts:14"
+      ],
+      "meaning": "TAC catalogue entry already exists (with errors[{field:\"tac\"}]).",
+      "ui": "Message under the TAC field."
+    },
+    {
+      "code": "TEMPLATE_BROKEN",
+      "status": 409,
+      "where": [
+        "src/features/settings/pages/Emails.test.tsx:100"
+      ],
+      "meaning": "PATCH /admin/notification-templates/:id leaves a broken template (test only).",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "TEMPLATE_INVALID",
+      "status": 422,
+      "where": [
+        "src/features/settings/pages/Emails.test.tsx:176"
+      ],
+      "meaning": "POST /admin/notification-templates/:id/preview with invalid template syntax (test only).",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "TICKET_LOCKED",
+      "status": 409,
+      "where": [
+        "src/features/support/pages/SupportThread.test.tsx:424"
+      ],
+      "meaning": "PATCH /admin/support-tickets/:id on a locked ticket (test only).",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "TICKET_RESOLVED",
+      "status": 409,
+      "where": [
+        "src/features/support/mocks/ticketHandlers.ts:80"
+      ],
+      "meaning": "Reply/note on a resolved ticket.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "USE_REFUNDS",
+      "status": 409,
+      "where": [
+        "src/mocks/handlers/ordersActionRoutes.ts:65"
+      ],
+      "meaning": "Order refund action on a storefront order (refunds go through /admin/refunds).",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "VERSION_EXISTS",
+      "status": 409,
+      "where": [
+        "src/features/storefront/mocks/legalRoutes.ts:77"
+      ],
+      "meaning": "POST /admin/legal-documents with a version already present.",
+      "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
+    },
+    {
+      "code": "INSUFFICIENT_FUNDS",
+      "status": 402,
+      "where": [
+        "src/features/system-health/mocks/specsApi.ts:144"
+      ],
+      "meaning": "Data value: merchant order refused for wallet balance (v1/Dhru surfaces).",
+      "ui": "Listed in the System health API errors card."
+    },
+    {
+      "code": "INVALID_IMEI",
+      "status": 422,
+      "where": [
+        "src/features/system-health/mocks/specsApi.ts:153"
+      ],
+      "meaning": "Data value: IMEI failed validation (Luhn/format) on order placement.",
+      "ui": "Listed in the API errors card."
+    },
+    {
+      "code": "PAYMENT_DECLINED",
+      "status": 402,
+      "where": [
+        "src/features/system-health/mocks/specsApi.ts:177"
+      ],
+      "meaning": "Data value: storefront payment declined.",
+      "ui": "Listed in the API errors card."
+    },
+    {
+      "code": "WEBHOOK_SIGNATURE_INVALID",
+      "status": 400,
+      "where": [
+        "src/features/system-health/mocks/specsApi.ts:193"
+      ],
+      "meaning": "Data value: incoming gateway webhook with a bad signature.",
+      "ui": "Listed in the API errors card."
+    },
+    {
+      "code": "SUPPLIER_TIMEOUT",
+      "status": 504,
+      "where": [
+        "src/features/system-health/mocks/specsApi.ts:201",
+        "src/features/system-health/mocks/specsApi.ts:220"
+      ],
+      "meaning": "Data value: supplier call timed out.",
+      "ui": "Listed in the API errors card."
+    }
+  ],
+  "headersAndCors": "# Headers, cookies and CORS\n\n## Request headers the console sends (src/lib/api/client.ts)\n- `Accept: application/json` on every call (client.ts:58-60); `Accept: */*` for downloads (apiDownload, client.ts:159-170: orders export, customer data export, merchant statement PDF).\n- `Content-Type: application/json` whenever a body is sent (client.ts:62-69). No multipart uploads exist in the console.\n- `X-CSRF-Token: <token>` on every non-GET request when the client knows a token (client.ts:71-74; csrf.ts:25-33).\n- `Idempotency-Key`: possible through ApiInit.headers (client.ts:10-11), but no admin call sends it (the manifest requires it only on POST /store/v1/checkout-sessions/:token/pay).\n- Cookies via `credentials: 'include'` on every fetch, GET /health included (client.ts:78-84). No Authorization header, no X-Requested-With; the browser adds Origin.\n\n## Response headers the console reads\n- `x-total-count` (lists, client.ts:149), `X-Request-Id` (every error and INVALID_RESPONSE, errors.ts:205, client.ts:108; shown as \"Request <id>\"; body.requestId/request_id accepted as fallback), `Retry-After` (429; seconds or an HTTP date, errors.ts:166-173), `X-CSRF-Token` (any response; remembered in memory, csrf.ts:29-33), `Content-Disposition` (downloads; `filename*=UTF-8''…` wins over `filename=\"…\"`, download.ts:3-17), `Content-Type` (JSON or problem+json; any JSON error body is parsed).\n\n## Cookies\n- Session: httpOnly, Secure, SameSite=Lax, Path=/; a name distinct from the merchant portal's session cookie (both live on the API host); short pre-2FA lifetime, then the full-session lifetime; never readable by JS. Cleared (Max-Age=0) on logout.\n- CSRF: readable (not httpOnly) cookie named `csrf_token` (VITE_CSRF_COOKIE), Secure, SameSite=Lax, Path=/, with a Domain the console origin can read (e.g. `Domain=.example.com` for console admin.example.com + API api.example.com); value bound to the session (synchronizer token or HMAC double-submit). Issued at login, rotated with the session at 2FA if desired, cleared at logout. The mock writes `csrf_token=<token>; path=/; SameSite=Lax` (session.ts:64-68).\n- Cross-site deployment (console and API on different registrable domains): the session cookie must be SameSite=None; Secure, and the console cannot read the CSRF cookie, so it lives on the X-CSRF-Token response header: send it on login, 2fa and me (me is the first call after every reload).\n- Plain links (`/admin/files/:id` downloads, the Bull Board link `/admin/queues`) are top-level navigations that rely on the session cookie; SameSite=Lax sends it on top-level GET.\n\n## CORS (when VITE_API_BASE_URL is another origin)\n- `Access-Control-Allow-Origin: <exact console origin from config>` (never `*`), `Access-Control-Allow-Credentials: true`, `Vary: Origin` on EVERY /admin/* and /health response, errors included: without them the browser hides the answer and the client sees NETWORK_ERROR (status 0), so a 401 would not even sign out.\n- Preflight (OPTIONS): `Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE`; `Access-Control-Allow-Headers: Content-Type, X-CSRF-Token, Idempotency-Key, Accept`; `Access-Control-Max-Age: 600`. Answer preflights before IP rules, rate limits, auth and CSRF, so that the real request can carry a readable 403 IP_NOT_ALLOWED.\n- `Access-Control-Expose-Headers: x-total-count, x-request-id, x-csrf-token, retry-after, content-disposition` (decision 006 lists the first three; Retry-After and Content-Disposition are not CORS-safelisted, so expose them too).\n- Same-origin deployment (reverse proxy, or the dev proxy VITE_DEV_PROXY_TARGET forwarding /admin and /health, vite.config.ts): no CORS, first-party cookies; VITE_API_BASE_URL is then empty.\n\n## Other\n- X-Request-Id on every response, success included; problem bodies may repeat it as requestId.\n- Cache-Control: no-store on /admin/auth/* and on any answer carrying a secret (temporaryPassword, the 2FA secret).\n- Problem responses: `Content-Type: application/problem+json` with `{type, title, status, code, detail, errors[]}`; 2xx bodies must be JSON or empty (client.ts:96-111).",
+  "mockInfra": "# Mock layer (dev and tests only; decision 014)\n\n## How it is built\n- MSW 2 (`msw ^2.15`). Browser: src/mocks/browser.ts (`setupWorker`, started from main.tsx only when `import.meta.env.DEV && VITE_API_MOCKS === 'true'`; the worker script src/mocks/worker/mockServiceWorker.js is served by a dev-only Vite plugin). Node/Vitest: src/mocks/node.ts exports `mockServer = setupServer(...handlers)`.\n- Handler list (src/mocks/handlers/index.ts): `handlers` = sessionHandlers (src/mocks/session.ts: /admin/auth/*) + systemHandlers (GET /health) + accessHandlers (handlers/accessStaff.ts, accessIpRules.ts, accessRoles.ts, accessSessions.ts) + orders + ledger + settings (GET/PATCH /admin/settings) + every `src/features/*/mocks/index.ts` (each exports `mocks: FeatureMocks = { handlers, reset }`), found with `import.meta.glob(..., { eager: true })`. Specific routes come before `/:id`. `resetMockState()` resets the scenario, the session and every store.\n- URL matching: handlers use `*/admin/...` (any origin); /health answers only at `<path of VITE_API_BASE_URL>/health` (handlers/system.ts:9-25).\n- Seed: src/mocks/seed/demo-state.json (1.9 MB, `{capturedAt, state}` written by scripts/extract-demo-seed.mjs, which runs the demo's own data generator). Loaded with `import('./demo-state.json?raw')`; every timestamp is rebased to now (seed/index.ts:38-42); demo ids become numbers (`'ad1'` → 1, demoNumericId), money becomes 4-decimal strings (toMoney), times ISO strings (toIso). Stores are in-memory `Collection`s (db.ts: auto ids, PATCH merge) in src/mocks/staff.ts, roles.ts (6 demo roles + the permission catalog), ipRules.ts, sessions.ts, settings.ts, orders.ts, ledger.ts and each feature's mocks/store.ts.\n- `problem(status, code, title, detail?, errors?)` (problem.ts) → application/problem+json with `type: urn:gsm:problem:<code>` and `X-Request-Id: mock-req-<n>`. Helpers notFound / invalid / conflict wrap it (handlers/accessShared.ts, features/*/mocks/http.ts).\n- List engine: `applyListQuery` / `crudHandlers` (crud.ts) implement the simple-rest dialect and set `x-total-count` + `access-control-expose-headers`.\n- Session: session.ts keeps ONE session `{staffId, stage: 'password' | 'signed-in', csrf}` in localStorage (an in-memory Map when storage is missing, e.g. under Node), not in cookies. `guard(request)` answers 401 UNAUTHORIZED without a signed-in session and 403 CSRF_FAILED when a mutation's X-CSRF-Token differs. Demo credentials: any seeded staff email + `demo-password`, TOTP `123456`, invite token `demo-token`. `startSignedInSession(id)` signs in without the calls (then read the token from the X-CSRF-Token header of GET /admin/auth/me).\n- Scenarios: `?mock=healthy|degraded|outage|monitoring-down|partial-failure|maintenance|readonly` (scenario.ts, kept per tab in sessionStorage; switcher panel scenarioSwitcher.ts). `readonly` gives everyone the Read only role in me; `outage` makes /health down; system-health reads fail per scenario profile. In code: `setMockScenario(name)`.\n- Limits: mocks fake responses and simple state changes; they do not re-implement server rules. No permission checks outside system-health and supplier writes, no IP rules on requests, no /16 / duplicate / lockout guards, no rate limits, invited staff can sign in with the demo password. Use them for shapes, status codes and the refusals they do implement.\n\n## Harvesting one real example per route (recipe tested on 2026-10-31 with Vitest 4.1.12 and Node 26.4; it wrote nothing into the frontend repo)\n1. Two files OUTSIDE the frontend repo, e.g. `backend/test/contract/harvest/vitest.config.mjs` and `harvest.test.ts`.\n2. `vitest.config.mjs` is a plain object (a config outside the frontend cannot import `vitest/config`):\n   `const FE = '/home/saifi/gsm-project/frontend-admin'; const HERE = '<absolute path of this folder>';`\n   `export default { root: HERE, cacheDir: HERE + '/.cache', resolve: { alias: { '@': FE + '/src' } }, test: { globals: true, environment: 'node', execArgv: ['--no-experimental-webstorage'], include: ['harvest.test.ts'], env: { VITE_API_BASE_URL: 'http://api.test' }, server: { deps: { inline: ['@refinedev/react-router'] } }, css: false, testTimeout: 60000 } };`\n   - root and cacheDir outside the frontend keep Vite/Vitest caches out of it. `@` is the only alias the mocks need. MODE is 'test', so latency() is skipped. VITE_API_BASE_URL without a path makes /health match `/health`. `globals: true` because a test file outside the frontend cannot resolve `vitest`. `--no-experimental-webstorage` is needed on Node ≥ 25 (its built-in localStorage). `environment: 'node'` works (the session falls back to the in-memory Map and the CSRF cookie write is skipped); use `'jsdom'` only to observe document.cookie.\n3. `harvest.test.ts`: `import { mockServer } from '@/mocks/node'` (import msw only through this module, so one msw copy is used), `import { resetMockState } from '@/mocks/handlers'`, `import { DEMO_CODE, DEMO_PASSWORD, DEMO_INVITE_TOKEN } from '@/mocks/session'`, `import { setMockScenario } from '@/mocks/scenario'`. `beforeAll(() => mockServer.listen({ onUnhandledRequest: 'error' }))`, `afterAll(() => mockServer.close())`. With plain `fetch` against `http://api.test`: POST /admin/auth/login `{email: 'rami@gsm-supply.example', password: DEMO_PASSWORD}` → read the X-CSRF-Token response header → POST /admin/auth/2fa `{code: DEMO_CODE}` with it → call each route, sending X-CSRF-Token on non-GET calls. Record `{status, headers (x-total-count, x-csrf-token, x-request-id, content-type, content-disposition), body}` per route and write the fixtures under the backend with absolute paths (writeFileSync).\n4. Run with Node, not Bun (the mocks need Vite transforms: import.meta.glob, `?raw` imports, import.meta.env): `/home/saifi/gsm-project/frontend-admin/node_modules/.bin/vitest run --config <backend>/test/contract/harvest/vitest.config.mjs`.\n5. Normalise before comparing: timestamps are rebased to the run time, CSRF tokens and temporary passwords are random, request ids count up. Compare shapes, types and status codes, not values. Call `resetMockState()` (and `setMockScenario`) between groups. Refusals are harvested by sending the input a handler checks (e.g. POST /admin/staff with rami@gsm-supply.example → 409 EMAIL_TAKEN; POST /admin/staff/1/suspend as Rami → 409 CANNOT_SUSPEND_SELF).\n- Seed ids: staff 1 Rami (Owner, allowlisted 203.0.113.24), 2 Lina (Support), 3 Omar (Finance), 4 Dana (Admin), 5 Nadia (invited, no 2FA), 6 Yusuf (suspended); roles 1-6; IP rules 1-7 (3 allow, 4 block); audit entries 1-42; sessions 1-7 (4 staff, then 3 merchants). The restriction (adminAllowlistOnly) starts ON."
+}
