@@ -1,0 +1,1491 @@
+{
+  "module": "health",
+  "name": "System health (checks, alerts, incidents, jobs, queues)",
+  "domain": "G",
+  "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
+  "counts": {
+    "rows": 25,
+    "endpoints": 33,
+    "bySurface": {
+      "admin": 31,
+      "system": 2
+    },
+    "frontendCalled": 32
+  },
+  "stages": [
+    0,
+    9,
+    12
+  ],
+  "ownedTables": [
+    {
+      "name": "service_checks",
+      "description": "Results of the periodic health checks: every minute the worker checks the database, the cache, storage, every supplier and every payment gateway, and writes the status and the response time. Uptime is computed from these rows and outages are detected from them. High-resolution metrics (requests, latency) are not stored here but in the monitoring system. Rows are deleted after 90 days.",
+      "descriptionAr": "نتائج فحوص الصحة الدورية: كل دقيقة يفحص الـ Worker قاعدة البيانات والكاش والتخزين وكل مورد وبوابة دفع ويكتب الحالة وزمن الاستجابة. منها تُحسب نسبة التشغيل ويُكتشف العطل. المقاييس عالية الدقة (الطلبات والـ latency) لا تُخزَّن هنا بل في نظام المراقبة. تُحذف بعد 90 يوماً",
+      "b2c": null,
+      "columns": [
+        "component",
+        "supplier_id nullable",
+        "gateway_id nullable",
+        "status",
+        "latency_ms",
+        "detail jsonb",
+        "checked_at"
+      ],
+      "foreignKeys": [
+        {
+          "column": "supplier_id",
+          "target": "suppliers",
+          "kind": "fk"
+        },
+        {
+          "column": "gateway_id",
+          "target": "payment_gateways",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "alert_rules",
+      "description": "Alert rules: metric, comparator, threshold, window, severity and channels (Telegram or email). A temporary mute, for example during maintenance, uses muted_until.",
+      "descriptionAr": "قواعد التنبيه: المقياس والمقارنة والعتبة والمدة والخطورة والقنوات (Telegram أو إيميل). الكتم المؤقت بـ muted_until أثناء الصيانة",
+      "b2c": null,
+      "columns": [
+        "key",
+        "name",
+        "metric",
+        "comparator",
+        "threshold",
+        "window_seconds",
+        "severity",
+        "channels text[]",
+        "is_active",
+        "muted_until",
+        "created_by",
+        "updated_by"
+      ],
+      "foreignKeys": [
+        {
+          "column": "created_by",
+          "target": "staff_users",
+          "kind": "fk"
+        },
+        {
+          "column": "updated_by",
+          "target": "staff_users",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "alert_events",
+      "description": "Each time a rule fires: firing, then acknowledged, then resolved. It closes on its own when the value is back in range, and the message is not repeated until a staff member acknowledges it or the reminder interval passes.",
+      "descriptionAr": "كل انطلاقة لقاعدة: firing ثم acknowledged ثم resolved. تُغلق آلياً عند عودة القيمة لمجالها، ولا تتكرر الرسالة حتى يؤكد الموظف أو تمر مدة التذكير",
+      "b2c": null,
+      "columns": [
+        "rule_id",
+        "status",
+        "severity",
+        "value",
+        "subject_type",
+        "subject_id",
+        "started_at",
+        "acknowledged_by",
+        "acknowledged_at",
+        "resolved_at",
+        "note"
+      ],
+      "foreignKeys": [
+        {
+          "column": "rule_id",
+          "target": "alert_rules",
+          "kind": "fk"
+        },
+        {
+          "column": "subject_id",
+          "target": "suppliers",
+          "kind": "poly"
+        },
+        {
+          "column": "acknowledged_by",
+          "target": "staff_users",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "incidents",
+      "description": "Operational incidents: declared by a staff member or opened from a critical alert. Severity, affected components, the timeline (timeline jsonb), and the root cause and action taken at closing.",
+      "descriptionAr": "حوادث التشغيل: يعلنها موظف أو تُفتح من تنبيه حرج. الخطورة والمكوّنات المتأثرة والخط الزمني (timeline jsonb) والسبب والإجراء عند الإغلاق",
+      "b2c": null,
+      "columns": [
+        "title",
+        "severity",
+        "status",
+        "components text[]",
+        "summary",
+        "timeline jsonb",
+        "root_cause",
+        "started_at",
+        "resolved_at",
+        "alert_event_id nullable",
+        "created_by",
+        "resolved_by"
+      ],
+      "foreignKeys": [
+        {
+          "column": "alert_event_id",
+          "target": "alert_events",
+          "kind": "fk"
+        },
+        {
+          "column": "created_by",
+          "target": "staff_users",
+          "kind": "fk"
+        },
+        {
+          "column": "resolved_by",
+          "target": "staff_users",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "job_runs",
+      "description": "Run log of scheduled and background jobs (price sync, ledger integrity check, expired-data deletion, reminders): start, end, result and error. result holds the job summary; the last money integrity result comes from it.",
+      "descriptionAr": "سجل تشغيل المهام المجدولة والخلفية (مزامنة الأسعار، فحص سلامة الـ ledger، حذف البيانات المنتهية، تذكيرات): البداية والنهاية والنتيجة والخطأ. result يحمل ملخص الفحص، ومنه آخر نتيجة لفحص المال",
+      "b2c": null,
+      "columns": [
+        "job",
+        "trigger",
+        "status",
+        "started_at",
+        "finished_at",
+        "duration_ms",
+        "processed",
+        "result jsonb",
+        "error",
+        "triggered_by nullable"
+      ],
+      "foreignKeys": [
+        {
+          "column": "triggered_by",
+          "target": "staff_users",
+          "kind": "fk"
+        }
+      ]
+    }
+  ],
+  "foreignTables": [
+    {
+      "table": "audit_logs",
+      "owner": "platform"
+    },
+    {
+      "table": "ledger_accounts",
+      "owner": "money"
+    },
+    {
+      "table": "ledger_entries",
+      "owner": "money"
+    },
+    {
+      "table": "order_events",
+      "owner": "orders"
+    },
+    {
+      "table": "orders",
+      "owner": "orders"
+    },
+    {
+      "table": "outbox_events",
+      "owner": "platform"
+    },
+    {
+      "table": "payments",
+      "owner": "money"
+    },
+    {
+      "table": "risk_assessments",
+      "owner": "risk"
+    },
+    {
+      "table": "settings",
+      "owner": "platform"
+    },
+    {
+      "table": "supplier_api_logs",
+      "owner": "suppliers"
+    },
+    {
+      "table": "suppliers",
+      "owner": "suppliers"
+    },
+    {
+      "table": "webhook_deliveries",
+      "owner": "platform"
+    }
+  ],
+  "endpoints": [
+    {
+      "key": "GET /admin/queues",
+      "method": "GET",
+      "path": "/admin/queues",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "Bull Board لمراقبة الـ queues (واجهة)",
+      "access": "staff-permission",
+      "permission": "queues:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "queues:read",
+      "stage": 9,
+      "tables": [],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/queues",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/queues"
+      },
+      "module": "health",
+      "description": "Bull Board UI for monitoring the queues.",
+      "frontend": {
+        "file": "src/features/dashboard/api/dashboard.ts",
+        "line": 35,
+        "fn": "queuesBoardUrl"
+      }
+    },
+    {
+      "key": "GET /admin/system/health",
+      "method": "GET",
+      "path": "/admin/system/health",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "الحالة العامة Operational أو Degraded أو Outage، ونسخة التشغيل (version و commit والبيئة)، وحالة كل مكوّن، ونسبة التشغيل 24 ساعة و7 و30 يوماً، والتنبيهات المفتوحة والحوادث الجارية ووضع الصيانة",
+      "access": "staff-permission",
+      "permission": "system:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "system:read",
+      "stage": 9,
+      "tables": [
+        "service_checks",
+        "alert_events",
+        "incidents",
+        "settings"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/system/health",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/system/health"
+      },
+      "module": "health",
+      "description": "Overall status (Operational, Degraded or Outage), the running build (version, commit, environment), the status of each component, uptime over 24 hours, 7 and 30 days, open alerts, ongoing incidents and the maintenance state.",
+      "frontend": {
+        "file": "src/features/system-health/api/health.ts",
+        "line": 12,
+        "fn": "getSystemHealth"
+      }
+    },
+    {
+      "key": "GET /admin/system/checks",
+      "method": "GET",
+      "path": "/admin/system/checks",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "سجل الفحوص لمكوّن بمدى زمني: شرائط التشغيل وزمن الاستجابة",
+      "access": "staff-permission",
+      "permission": "system:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "system:read",
+      "stage": 9,
+      "tables": [
+        "service_checks"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/system/checks",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/system/checks"
+      },
+      "module": "health",
+      "description": "Check history of a component over a time range: uptime bars and response time.",
+      "frontend": {
+        "file": "src/features/system-health/api/health.ts",
+        "line": 23,
+        "fn": "getChecks"
+      }
+    },
+    {
+      "key": "GET /admin/system/metrics",
+      "method": "GET",
+      "path": "/admin/system/metrics",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "أداء الـ API لكل surface بمدى زمني: requests/min و latency p50 و p95 و p99 ونسبة 4xx و5xx وعدد 429، وأبطأ 10 endpoints. تُقرأ من نظام المراقبة",
+      "access": "staff-permission",
+      "permission": "system:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "system:read",
+      "stage": 9,
+      "tables": [],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/system/metrics",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/system/metrics"
+      },
+      "module": "health",
+      "description": "API performance per surface over a time range: requests/min, latency p50, p95 and p99, 4xx and 5xx rates, 429 count and the 10 slowest endpoints. Read from the monitoring system.",
+      "frontend": {
+        "file": "src/features/system-health/api/traffic.ts",
+        "line": 12,
+        "fn": "getApiMetrics"
+      }
+    },
+    {
+      "key": "GET /admin/system/errors",
+      "method": "GET",
+      "path": "/admin/system/errors",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "أكثر الأخطاء تكراراً حسب code والـ endpoint بمدى زمني، مع أول وآخر ظهور وrequest_id ورابط Sentry",
+      "access": "staff-permission",
+      "permission": "system:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "system:read",
+      "stage": 9,
+      "tables": [],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/system/errors",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/system/errors"
+      },
+      "module": "health",
+      "description": "Most frequent errors by code and endpoint over a time range, with first and last seen, request_id and a Sentry link.",
+      "frontend": {
+        "file": "src/features/system-health/api/traffic.ts",
+        "line": 23,
+        "fn": "getApiErrors"
+      }
+    },
+    {
+      "key": "GET /admin/system/orders-health",
+      "method": "GET",
+      "path": "/admin/system/orders-health",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "صحة خط الطلبات: العالق أكثر من SLA لكل حالة، وزمن الإرسال p95، ونسبة النجاح والفشل لكل نوع خدمة، والموقوف عند المخاطر",
+      "access": "staff-permission",
+      "permission": "system:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "system:read",
+      "stage": 9,
+      "tables": [
+        "orders",
+        "order_events",
+        "risk_assessments"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/system/orders-health",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/system/orders-health"
+      },
+      "module": "health",
+      "description": "Order pipeline health: orders stuck beyond SLA per status, dispatch time p95, success and failure rate per service type, and orders held by risk.",
+      "frontend": {
+        "file": "src/features/system-health/api/pipeline.ts",
+        "line": 11,
+        "fn": "getOrdersHealth"
+      }
+    },
+    {
+      "key": "GET /admin/system/suppliers",
+      "method": "GET",
+      "path": "/admin/system/suppliers",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "صحة كل مورد: يعمل أو متوقف، آخر نداء ناجح، زمن الاستجابة، نسبة الخطأ والـ timeout، حالة circuit breaker، آخر مزامنة، ورصيدنا عنده. الإيقاف المؤقت بـ PATCH /admin/suppliers/:id (status = paused)",
+      "access": "staff-permission",
+      "permission": "system:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "system:read",
+      "stage": 9,
+      "tables": [
+        "suppliers",
+        "supplier_api_logs",
+        "service_checks"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/system/suppliers",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/system/suppliers"
+      },
+      "module": "health",
+      "description": "Health of each supplier: up or down, last successful call, response time, error and timeout rate, circuit-breaker state, last sync and our balance with them. Pausing uses PATCH /admin/suppliers/:id (status = paused).",
+      "frontend": {
+        "file": "src/features/system-health/api/pipeline.ts",
+        "line": 23,
+        "fn": "getSuppliersHealth"
+      }
+    },
+    {
+      "key": "GET /admin/system/queues",
+      "method": "GET",
+      "path": "/admin/system/queues",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "عدّادات BullMQ لكل queue: waiting و active و delayed و failed وعمر أقدم مهمة والمعدل وعدد الـ workers. التفاصيل العميقة في Bull Board",
+      "access": "staff-permission",
+      "permission": "system:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "system:read",
+      "stage": 9,
+      "tables": [
+        "outbox_events"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/system/queues",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/system/queues"
+      },
+      "module": "health",
+      "description": "BullMQ counters per queue: waiting, active, delayed, failed, age of the oldest job, rate and number of workers. Deep details stay in Bull Board.",
+      "frontend": {
+        "file": "src/features/system-health/api/queues.ts",
+        "line": 17,
+        "fn": "getQueues"
+      }
+    },
+    {
+      "key": "GET /admin/system/queues/:name/failed",
+      "method": "GET",
+      "path": "/admin/system/queues/:name/failed",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "المهام الفاشلة بسبب الفشل وعدد المحاولات",
+      "access": "staff-permission",
+      "permission": "system:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "system:read",
+      "stage": 9,
+      "tables": [
+        "outbox_events"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/system/queues/:name/failed",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/system/queues/:name/failed"
+      },
+      "module": "health",
+      "description": "Failed jobs with the failure reason and the number of attempts.",
+      "frontend": {
+        "file": "src/features/system-health/api/queues.ts",
+        "line": 28,
+        "fn": "listFailedJobs"
+      }
+    },
+    {
+      "key": "POST /admin/system/queues/:name/retry",
+      "method": "POST",
+      "path": "/admin/system/queues/:name/retry",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "إعادة محاولة مهمة فاشلة أو كل الفاشلة",
+      "access": "staff-permission",
+      "permission": "system:manage",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "system:manage",
+      "stage": 9,
+      "tables": [
+        "outbox_events",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/system/queues/:name/retry",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/system/queues/:name/retry"
+      },
+      "module": "health",
+      "description": "Retry one failed job or all failed jobs.",
+      "frontend": {
+        "file": "src/features/system-health/api/queues.ts",
+        "line": 47,
+        "fn": "retryQueue"
+      }
+    },
+    {
+      "key": "POST /admin/system/queues/:name/pause",
+      "method": "POST",
+      "path": "/admin/system/queues/:name/pause",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "إيقاف معالجة queue أو استئنافها (paused: true أو false) أثناء حادثة",
+      "access": "staff-permission",
+      "permission": "system:manage",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "system:manage",
+      "stage": 9,
+      "tables": [
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/system/queues/:name/pause",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/system/queues/:name/pause"
+      },
+      "module": "health",
+      "description": "Pause or resume processing of a queue (paused: true or false) during an incident.",
+      "frontend": {
+        "file": "src/features/system-health/api/queues.ts",
+        "line": 58,
+        "fn": "pauseQueue"
+      }
+    },
+    {
+      "key": "GET /admin/system/jobs",
+      "method": "GET",
+      "path": "/admin/system/jobs",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "المهام المجدولة: الاسم والجدول وآخر تشغيل والقادم والنتيجة، مع تاريخ تشغيل مهمة واحدة بـ ?job=",
+      "access": "staff-permission",
+      "permission": "system:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "system:read",
+      "stage": 9,
+      "tables": [
+        "job_runs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/system/jobs",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/system/jobs"
+      },
+      "module": "health",
+      "description": "Scheduled jobs: name, schedule, last run, next run and result; ?job= returns the run history of one job.",
+      "frontend": {
+        "file": "src/features/system-health/api/jobs.ts",
+        "line": 10,
+        "fn": "getJobs"
+      }
+    },
+    {
+      "key": "POST /admin/system/jobs/:name/run",
+      "method": "POST",
+      "path": "/admin/system/jobs/:name/run",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "تشغيل مهمة الآن يدوياً (مثل مزامنة الأسعار)، وتُسجَّل في job_runs بـ trigger = manual",
+      "access": "staff-permission",
+      "permission": "system:manage",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "system:manage",
+      "stage": 9,
+      "tables": [
+        "job_runs",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/system/jobs/:name/run",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/system/jobs/:name/run"
+      },
+      "module": "health",
+      "description": "Run a job now by hand (for example the price sync); the run is recorded in job_runs with trigger = manual.",
+      "frontend": {
+        "file": "src/features/system-health/api/jobs.ts",
+        "line": 21,
+        "fn": "runJob"
+      }
+    },
+    {
+      "key": "GET /admin/system/database",
+      "method": "GET",
+      "path": "/admin/system/database",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "Postgres: الاتصالات من الحد الأقصى وانتظار الـ pool، وأبطأ الاستعلامات (pg_stat_statements)، والـ locks والمعاملات الطويلة، وتأخر النسخة، والحجم والنمو، والـ migrations المعلّقة",
+      "access": "staff-permission",
+      "permission": "system:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "system:read",
+      "stage": 9,
+      "tables": [],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/system/database",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/system/database"
+      },
+      "module": "health",
+      "description": "Postgres: connections out of the maximum and pool wait, slowest queries (pg_stat_statements), locks and long transactions, replica lag, size and growth, and pending migrations.",
+      "frontend": {
+        "file": "src/features/system-health/api/stores.ts",
+        "line": 11,
+        "fn": "getDatabaseHealth"
+      }
+    },
+    {
+      "key": "GET /admin/system/cache",
+      "method": "GET",
+      "path": "/admin/system/cache",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "Redis: الذاكرة المستعملة من الحد، والإخلاءات، ونسبة الإصابة hit rate، والعملاء، والـ latency",
+      "access": "staff-permission",
+      "permission": "system:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "system:read",
+      "stage": 9,
+      "tables": [],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/system/cache",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/system/cache"
+      },
+      "module": "health",
+      "description": "Redis: memory used out of the limit, evictions, hit rate, clients and latency.",
+      "frontend": {
+        "file": "src/features/system-health/api/stores.ts",
+        "line": 21,
+        "fn": "getCacheHealth"
+      }
+    },
+    {
+      "key": "GET /admin/system/webhooks",
+      "method": "GET",
+      "path": "/admin/system/webhooks",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "نجاح الـ webhooks الصادرة للتجار والواردة من البوابات: النسبة والفاشل والمحاولات وأقدم رسالة لم تُسلَّم",
+      "access": "staff-permission",
+      "permission": "system:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "system:read",
+      "stage": 9,
+      "tables": [
+        "webhook_deliveries",
+        "outbox_events"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/system/webhooks",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/system/webhooks"
+      },
+      "module": "health",
+      "description": "Delivery health of outgoing webhooks to merchants and incoming ones from gateways: success rate, failures, attempts and the oldest undelivered message.",
+      "frontend": {
+        "file": "src/features/system-health/api/jobs.ts",
+        "line": 31,
+        "fn": "getWebhooksHealth"
+      }
+    },
+    {
+      "key": "GET /admin/system/integrity",
+      "method": "GET",
+      "path": "/admin/system/integrity",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "فحوص سلامة المال: مجموع كل قيد صفر، ورصيد كل حساب يساوي مجموع أسطره، وحجوزات عالقة أكثر من 24 ساعة، ودفعات مؤكدة بلا قيد، وآخر نتيجة",
+      "access": "staff-permission",
+      "permission": "system:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "system:read",
+      "stage": 12,
+      "tables": [
+        "ledger_entries",
+        "ledger_accounts",
+        "payments",
+        "job_runs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/system/integrity",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/system/integrity"
+      },
+      "module": "health",
+      "description": "Money integrity checks: every entry sums to zero, every account balance equals the sum of its lines, holds stuck over 24 hours, confirmed payments without an entry, and the last result.",
+      "frontend": {
+        "file": "src/features/system-health/api/integrity.ts",
+        "line": 11,
+        "fn": "getIntegrity"
+      }
+    },
+    {
+      "key": "POST /admin/system/integrity/run",
+      "method": "POST",
+      "path": "/admin/system/integrity/run",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "تشغيل فحص السلامة الآن كمهمة خلفية؛ النتيجة تظهر بـ GET /admin/system/integrity",
+      "access": "staff-permission",
+      "permission": "system:manage",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "system:manage",
+      "stage": 12,
+      "tables": [
+        "job_runs",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/system/integrity/run",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/system/integrity/run"
+      },
+      "module": "health",
+      "description": "Run the integrity check now as a background job; the result appears in GET /admin/system/integrity.",
+      "frontend": {
+        "file": "src/features/system-health/api/integrity.ts",
+        "line": 21,
+        "fn": "runIntegrityCheck"
+      }
+    },
+    {
+      "key": "PUT /admin/system/maintenance",
+      "method": "PUT",
+      "path": "/admin/system/maintenance",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "وضع الصيانة بنطاق: المتجر أو الدفع (checkout) أو طلبات API أو الكل، مع رسالة ووقت متوقع. يرجع 503 MAINTENANCE للنطاق المحدد، ولا يمس لوحة الإدارة فلا يُقفل الموظف خارجها. المفتاح يُخزَّن في settings",
+      "access": "staff-permission",
+      "permission": "system:manage",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "system:manage",
+      "stage": 9,
+      "tables": [
+        "settings",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin PUT /admin/system/maintenance",
+        "method": "PUT",
+        "ops": null,
+        "path": "/admin/system/maintenance"
+      },
+      "module": "health",
+      "description": "Maintenance mode with a scope (store, checkout, API orders or all), a message and an expected time. The chosen scope answers 503 MAINTENANCE; the admin console is never affected, so staff are not locked out. The switch is stored in settings.",
+      "frontend": {
+        "file": "src/features/system-health/api/maintenance.ts",
+        "line": 12,
+        "fn": "setMaintenance"
+      }
+    },
+    {
+      "key": "GET /admin/alert-rules",
+      "method": "GET",
+      "path": "/admin/alert-rules",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "قواعد التنبيه: المقياس والعتبة والمدة والخطورة والقنوات، وكتم مؤقت بـ muted_until",
+      "access": "staff-permission",
+      "permission": "alerts:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "alerts:*",
+      "stage": 12,
+      "tables": [
+        "alert_rules",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/alert-rules",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/alert-rules"
+      },
+      "module": "health",
+      "description": "Alert rules: metric, threshold, window, severity and channels, with a temporary mute through muted_until.",
+      "frontend": {
+        "file": "src/features/system-health/api/alertRules.ts",
+        "line": 22,
+        "fn": "listAlertRules"
+      }
+    },
+    {
+      "key": "GET /admin/alert-rules/:id",
+      "method": "GET",
+      "path": "/admin/alert-rules/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "قواعد التنبيه: المقياس والعتبة والمدة والخطورة والقنوات، وكتم مؤقت بـ muted_until",
+      "access": "staff-permission",
+      "permission": "alerts:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "alerts:*",
+      "stage": 12,
+      "tables": [
+        "alert_rules",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/alert-rules",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/alert-rules"
+      },
+      "module": "health",
+      "description": "Alert rules: metric, threshold, window, severity and channels, with a temporary mute through muted_until.",
+      "frontend": {
+        "file": "src/features/system-health/api/alertRules.ts",
+        "line": 31,
+        "fn": "getAlertRule"
+      }
+    },
+    {
+      "key": "POST /admin/alert-rules",
+      "method": "POST",
+      "path": "/admin/alert-rules",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "قواعد التنبيه: المقياس والعتبة والمدة والخطورة والقنوات، وكتم مؤقت بـ muted_until",
+      "access": "staff-permission",
+      "permission": "alerts:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "alerts:*",
+      "stage": 12,
+      "tables": [
+        "alert_rules",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/alert-rules",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/alert-rules"
+      },
+      "module": "health",
+      "description": "Alert rules: metric, threshold, window, severity and channels, with a temporary mute through muted_until.",
+      "frontend": {
+        "file": "src/features/system-health/api/alertRules.ts",
+        "line": 40,
+        "fn": "createAlertRule"
+      }
+    },
+    {
+      "key": "PATCH /admin/alert-rules/:id",
+      "method": "PATCH",
+      "path": "/admin/alert-rules/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "قواعد التنبيه: المقياس والعتبة والمدة والخطورة والقنوات، وكتم مؤقت بـ muted_until",
+      "access": "staff-permission",
+      "permission": "alerts:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "alerts:*",
+      "stage": 12,
+      "tables": [
+        "alert_rules",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/alert-rules",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/alert-rules"
+      },
+      "module": "health",
+      "description": "Alert rules: metric, threshold, window, severity and channels, with a temporary mute through muted_until.",
+      "frontend": {
+        "file": "src/features/system-health/api/alertRules.ts",
+        "line": 50,
+        "fn": "updateAlertRule"
+      }
+    },
+    {
+      "key": "DELETE /admin/alert-rules/:id",
+      "method": "DELETE",
+      "path": "/admin/alert-rules/:id",
+      "op": "delete",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "قواعد التنبيه: المقياس والعتبة والمدة والخطورة والقنوات، وكتم مؤقت بـ muted_until",
+      "access": "staff-permission",
+      "permission": "alerts:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "alerts:*",
+      "stage": 12,
+      "tables": [
+        "alert_rules",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/alert-rules",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/alert-rules"
+      },
+      "module": "health",
+      "description": "Alert rules: metric, threshold, window, severity and channels, with a temporary mute through muted_until.",
+      "frontend": {
+        "file": "src/features/system-health/api/alertRules.ts",
+        "line": 59,
+        "fn": "deleteAlertRule"
+      }
+    },
+    {
+      "key": "GET /admin/alerts",
+      "method": "GET",
+      "path": "/admin/alerts",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "التنبيهات المنطلقة وحالتها: firing أو acknowledged أو resolved",
+      "access": "staff-permission",
+      "permission": "alerts:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "alerts:read",
+      "stage": 12,
+      "tables": [
+        "alert_events",
+        "alert_rules"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/alerts",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/alerts"
+      },
+      "module": "health",
+      "description": "Fired alerts and their status: firing, acknowledged or resolved.",
+      "frontend": {
+        "file": "src/features/system-health/api/alerts.ts",
+        "line": 20,
+        "fn": "listAlerts"
+      }
+    },
+    {
+      "key": "GET /admin/alerts/:id",
+      "method": "GET",
+      "path": "/admin/alerts/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "التنبيهات المنطلقة وحالتها: firing أو acknowledged أو resolved",
+      "access": "staff-permission",
+      "permission": "alerts:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "alerts:read",
+      "stage": 12,
+      "tables": [
+        "alert_events",
+        "alert_rules"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/alerts",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/alerts"
+      },
+      "module": "health",
+      "description": "Fired alerts and their status: firing, acknowledged or resolved.",
+      "frontend": {
+        "file": "src/features/system-health/api/alerts.ts",
+        "line": 29,
+        "fn": "getAlert"
+      }
+    },
+    {
+      "key": "POST /admin/alerts/:id/ack",
+      "method": "POST",
+      "path": "/admin/alerts/:id/ack",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "تأكيد الاستلام: يوقف تكرار الرسائل ويسجّل اسم الموظف ووقته",
+      "access": "staff-permission",
+      "permission": "alerts:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "alerts:update",
+      "stage": 12,
+      "tables": [
+        "alert_events",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/alerts/:id/ack",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/alerts/:id/ack"
+      },
+      "module": "health",
+      "description": "Acknowledge: stops repeated messages and records the staff member and the time.",
+      "frontend": {
+        "file": "src/features/system-health/api/alerts.ts",
+        "line": 39,
+        "fn": "ackAlert"
+      }
+    },
+    {
+      "key": "GET /admin/incidents",
+      "method": "GET",
+      "path": "/admin/incidents",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "الحوادث: إعلان حادثة، وتحديث خطها الزمني، وإغلاقها مع السبب والإجراء",
+      "access": "staff-permission",
+      "permission": "incidents:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "incidents:*",
+      "stage": 12,
+      "tables": [
+        "incidents",
+        "alert_events",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/incidents",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/incidents"
+      },
+      "module": "health",
+      "description": "Incidents: declare an incident, update its timeline and close it with the cause and the action taken.",
+      "frontend": {
+        "file": "src/features/system-health/api/incidents.ts",
+        "line": 21,
+        "fn": "listIncidents"
+      }
+    },
+    {
+      "key": "GET /admin/incidents/:id",
+      "method": "GET",
+      "path": "/admin/incidents/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "الحوادث: إعلان حادثة، وتحديث خطها الزمني، وإغلاقها مع السبب والإجراء",
+      "access": "staff-permission",
+      "permission": "incidents:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "incidents:*",
+      "stage": 12,
+      "tables": [
+        "incidents",
+        "alert_events",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/incidents",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/incidents"
+      },
+      "module": "health",
+      "description": "Incidents: declare an incident, update its timeline and close it with the cause and the action taken.",
+      "frontend": {
+        "file": "src/features/system-health/api/incidents.ts",
+        "line": 30,
+        "fn": "getIncident"
+      }
+    },
+    {
+      "key": "POST /admin/incidents",
+      "method": "POST",
+      "path": "/admin/incidents",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "الحوادث: إعلان حادثة، وتحديث خطها الزمني، وإغلاقها مع السبب والإجراء",
+      "access": "staff-permission",
+      "permission": "incidents:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "incidents:*",
+      "stage": 12,
+      "tables": [
+        "incidents",
+        "alert_events",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/incidents",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/incidents"
+      },
+      "module": "health",
+      "description": "Incidents: declare an incident, update its timeline and close it with the cause and the action taken.",
+      "frontend": {
+        "file": "src/features/system-health/api/incidents.ts",
+        "line": 40,
+        "fn": "createIncident"
+      }
+    },
+    {
+      "key": "PATCH /admin/incidents/:id",
+      "method": "PATCH",
+      "path": "/admin/incidents/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "health",
+      "descriptionAr": "الحوادث: إعلان حادثة، وتحديث خطها الزمني، وإغلاقها مع السبب والإجراء",
+      "access": "staff-permission",
+      "permission": "incidents:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "incidents:*",
+      "stage": 12,
+      "tables": [
+        "incidents",
+        "alert_events",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/incidents",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/incidents"
+      },
+      "module": "health",
+      "description": "Incidents: declare an incident, update its timeline and close it with the cause and the action taken.",
+      "frontend": {
+        "file": "src/features/system-health/api/incidents.ts",
+        "line": 50,
+        "fn": "updateIncident"
+      }
+    },
+    {
+      "key": "GET /health",
+      "method": "GET",
+      "path": "/health",
+      "op": "action",
+      "surface": "system",
+      "kind": "http",
+      "group": null,
+      "descriptionAr": "فحص الخدمة: Postgres و Redis",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 0,
+      "tables": [],
+      "dhruResponse": null,
+      "origin": {
+        "row": "system GET /health",
+        "method": "GET",
+        "ops": null,
+        "path": "/health"
+      },
+      "module": "health",
+      "description": "Service health check: Postgres and Redis.",
+      "frontend": {
+        "file": "src/features/system/api/health.ts",
+        "line": 8,
+        "fn": "getHealth"
+      }
+    },
+    {
+      "key": "GET /metrics",
+      "method": "GET",
+      "path": "/metrics",
+      "op": "action",
+      "surface": "system",
+      "kind": "http",
+      "group": null,
+      "descriptionAr": "مقاييس Prometheus: الطلبات والـ latency والـ queues. للشبكة الداخلية أو بـ token فقط، وتقرأ منها لوحة الإدارة صفحة الصحة",
+      "access": "internal-or-token",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "شبكة داخلية أو token",
+      "stage": 9,
+      "tables": [],
+      "dhruResponse": null,
+      "origin": {
+        "row": "system GET /metrics",
+        "method": "GET",
+        "ops": null,
+        "path": "/metrics"
+      },
+      "module": "health",
+      "description": "Prometheus metrics: requests, latency and queues. Internal network or token only; the admin health page reads it.",
+      "frontend": null
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "system-alert",
+      "nameAr": "تنبيه وحادثة: مورد يتباطأ",
+      "group": "ops",
+      "steps": [
+        {
+          "step": 1,
+          "from": "worker",
+          "to": "db",
+          "label": "فحص دوري",
+          "textAr": "كل دقيقة يفحص الـ Worker قاعدة البيانات والكاش والتخزين وبوابات الدفع وكل مورد (accountinfo)، ويكتب في service_checks الحالة وزمن الاستجابة. منها تُحسب نسبة التشغيل، ولا تُخزَّن فيها مقاييس عالية الدقة.",
+          "tables": [
+            "service_checks",
+            "suppliers"
+          ]
+        },
+        {
+          "step": 3,
+          "from": "worker",
+          "to": "db",
+          "label": "تقييم القواعد",
+          "textAr": "كل دقيقة تُقيَّم قواعد alert_rules على آخر نافذة. نسبة مهلات المورد فوق 20% لثلاث دقائق تنشئ alert_events بحالة firing وموضوعها المورد، إلا إن كانت القاعدة مكتومة بـ muted_until.",
+          "tables": [
+            "alert_rules",
+            "alert_events",
+            "service_checks"
+          ]
+        },
+        {
+          "step": 4,
+          "from": "worker",
+          "to": "admin",
+          "label": "تنبيه Telegram وإيميل",
+          "textAr": "حسب قنوات القاعدة، مرة واحدة. لا تتكرر الرسالة حتى يؤكد الموظف الاستلام أو تمر مدة التذكير.",
+          "tables": [
+            "notifications",
+            "alert_events"
+          ]
+        },
+        {
+          "step": 5,
+          "from": "admin",
+          "to": "api",
+          "label": "GET /admin/system/health",
+          "textAr": "الموظف يفتح صفحة صحة النظام: الحالة Degraded، المورد باللون الأحمر، وتنبيه مفتوح. لا يُعرض الأخضر إن كان مصدر المقاييس نفسه متوقفاً: يظهر «Monitoring unavailable».",
+          "tables": [
+            "service_checks",
+            "alert_events",
+            "incidents",
+            "settings"
+          ]
+        },
+        {
+          "step": 6,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/alerts/:id/ack",
+          "textAr": "يؤكد استلام التنبيه فتتوقف التذكيرات، ويُسجَّل اسمه ووقته في acknowledged_by وaudit_logs.",
+          "tables": [
+            "alert_events",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 7,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/incidents",
+          "textAr": "التأثير يصل الطلبات، فيعلن حادثة بخطورة major: المكوّن المتأثر وملخص قصير. تُربط بالتنبيه، ويبدأ خطها الزمني بسطر «investigating».",
+          "tables": [
+            "incidents",
+            "alert_events",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 10,
+          "from": "worker",
+          "to": "db",
+          "label": "تعافٍ",
+          "textAr": "الفحوص ترجع ok لثلاث دقائق متتالية، فيُغلق التنبيه آلياً (resolved_at) وتصل رسالة resolved. التنبيه المؤكَّد لا يُغلق قبل ذلك حتى لو نسيه الموظف.",
+          "tables": [
+            "alert_events",
+            "service_checks",
+            "notifications"
+          ]
+        },
+        {
+          "step": 11,
+          "from": "admin",
+          "to": "api",
+          "label": "PATCH /admin/incidents/:id",
+          "textAr": "يعيد المورد إلى active ويغلق الحادثة بالسبب والإجراء المتخذ (root_cause)، فيبقى سجل الحوادث مرجعاً لسبب التأخر عند أي استفسار.",
+          "tables": [
+            "incidents",
+            "suppliers",
+            "audit_logs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "system-integrity",
+      "nameAr": "فرق في الـ ledger ووضع الصيانة",
+      "group": "ops",
+      "steps": [
+        {
+          "step": 1,
+          "from": "worker",
+          "to": "db",
+          "label": "فحص سلامة المال",
+          "textAr": "ليلاً تعمل مهمة ledger_integrity: هل مجموع أسطر كل قيد صفر؟ وهل رصيد كل حساب يساوي مجموع أسطره؟ وهل من حجوزات عالقة أكثر من 24 ساعة، أو دفعات مؤكدة بلا قيد؟ النتيجة في job_runs.result.",
+          "tables": [
+            "ledger_entries",
+            "ledger_accounts",
+            "payments",
+            "job_runs"
+          ]
+        },
+        {
+          "step": 2,
+          "from": "worker",
+          "to": "admin",
+          "label": "فرق مكتشف",
+          "textAr": "رصيد محفظة تاجر لا يطابق مجموع أسطره: تنطلق قاعدة ledger_mismatch بخطورة critical، وتصل الإدارة رسالة بالحساب والفرق.",
+          "tables": [
+            "alert_events",
+            "alert_rules",
+            "notifications"
+          ]
+        },
+        {
+          "step": 3,
+          "from": "admin",
+          "to": "api",
+          "label": "GET /admin/system/integrity",
+          "textAr": "يفتح التفاصيل: الحساب والفرق وآخر قيد كتبه وزمن آخر فحص ناجح. الفحص يقرأ فقط ولا يصحّح شيئاً بنفسه.",
+          "tables": [
+            "ledger_accounts",
+            "ledger_entries",
+            "job_runs"
+          ]
+        },
+        {
+          "step": 7,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/system/integrity/run",
+          "textAr": "يعيد تشغيل الفحص الآن كمهمة خلفية، فتظهر النتيجة بلا فروق ويُغلق التنبيه.",
+          "tables": [
+            "job_runs",
+            "audit_logs"
+          ]
+        }
+      ]
+    }
+  ]
+}

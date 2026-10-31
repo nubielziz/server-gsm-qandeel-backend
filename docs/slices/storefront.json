@@ -1,0 +1,995 @@
+{
+  "module": "storefront",
+  "name": "Storefront & content",
+  "domain": "H",
+  "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
+  "counts": {
+    "rows": 14,
+    "endpoints": 25,
+    "bySurface": {
+      "store": 6,
+      "admin": 19
+    },
+    "frontendCalled": 19
+  },
+  "stages": [
+    14,
+    15,
+    16,
+    19
+  ],
+  "ownedTables": [
+    {
+      "name": "service_listings",
+      "description": "The public service page in the storefront: title, slug and SEO fields per language.",
+      "descriptionAr": "صفحة الخدمة العامة في المتجر: العنوان والـ slug والـ SEO لكل لغة",
+      "b2c": "new",
+      "columns": [
+        "service_id",
+        "locale",
+        "slug",
+        "public_title",
+        "summary",
+        "description_md",
+        "eta_text",
+        "requirements_md",
+        "brand",
+        "carrier",
+        "country",
+        "is_listed",
+        "is_featured",
+        "sort",
+        "seo_title",
+        "seo_description",
+        "og_file_id"
+      ],
+      "foreignKeys": [
+        {
+          "column": "service_id",
+          "target": "services",
+          "kind": "fk"
+        },
+        {
+          "column": "og_file_id",
+          "target": "files",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "content_pages",
+      "description": "Landing pages, static pages and the blog, in several languages.",
+      "descriptionAr": "صفحات الهبوط والصفحات الثابتة والمدونة بعدة لغات",
+      "b2c": "new",
+      "columns": [
+        "kind",
+        "slug",
+        "locale",
+        "title",
+        "body_md",
+        "seo_title",
+        "seo_description",
+        "canonical_url",
+        "status",
+        "published_at",
+        "author_id",
+        "template_params jsonb"
+      ],
+      "foreignKeys": [
+        {
+          "column": "author_id",
+          "target": "staff_users",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "help_articles",
+      "description": "The help centre and FAQ; an article can be linked to a service.",
+      "descriptionAr": "مركز المساعدة والأسئلة الشائعة، ويمكن ربط مقال بخدمة",
+      "b2c": "new",
+      "columns": [
+        "category",
+        "question",
+        "answer_md",
+        "locale",
+        "service_id",
+        "sort",
+        "is_published",
+        "helpful_yes",
+        "helpful_no"
+      ],
+      "foreignKeys": [
+        {
+          "column": "service_id",
+          "target": "services",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "legal_documents",
+      "description": "Terms, privacy, refund and cookie documents, with archived versions.",
+      "descriptionAr": "الشروط والخصوصية والاسترداد والكوكيز بنسخ مؤرشفة",
+      "b2c": "new",
+      "columns": [
+        "type",
+        "version",
+        "locale",
+        "body_md",
+        "effective_from",
+        "is_current",
+        "requires_reacceptance",
+        "created_by"
+      ],
+      "foreignKeys": [
+        {
+          "column": "created_by",
+          "target": "staff_users",
+          "kind": "fk"
+        }
+      ]
+    }
+  ],
+  "foreignTables": [
+    {
+      "table": "audit_logs",
+      "owner": "platform"
+    },
+    {
+      "table": "currencies",
+      "owner": "money"
+    },
+    {
+      "table": "notification_templates",
+      "owner": "platform"
+    },
+    {
+      "table": "payment_gateways",
+      "owner": "money"
+    },
+    {
+      "table": "service_fields",
+      "owner": "catalog"
+    },
+    {
+      "table": "services",
+      "owner": "catalog"
+    },
+    {
+      "table": "settings",
+      "owner": "platform"
+    },
+    {
+      "table": "tac_catalog",
+      "owner": "catalog"
+    },
+    {
+      "table": "tax_rates",
+      "owner": "money"
+    }
+  ],
+  "endpoints": [
+    {
+      "key": "GET /store/v1/config",
+      "method": "GET",
+      "path": "/store/v1/config",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "البلدان والعملات والضريبة وطرق الدفع المفعّلة",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 14,
+      "tables": [
+        "currencies",
+        "tax_rates",
+        "payment_gateways"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/config",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/config"
+      },
+      "module": "storefront",
+      "description": "Countries, currencies, tax and enabled payment methods.",
+      "frontend": null
+    },
+    {
+      "key": "GET /store/v1/services",
+      "method": "GET",
+      "path": "/store/v1/services",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "الخدمات المعروضة بسعر Retail شامل الضريبة بعملة الزبون؛ فلترة بالماركة والشبكة والبلد",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 14,
+      "tables": [
+        "service_listings",
+        "services",
+        "tax_rates",
+        "currencies"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/services",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/services"
+      },
+      "module": "storefront",
+      "description": "Listed services at the retail price including tax, in the customer's currency; filter by brand, network and country.",
+      "frontend": null
+    },
+    {
+      "key": "GET /store/v1/services/:slug",
+      "method": "GET",
+      "path": "/store/v1/services/:slug",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "صفحة الخدمة: الوصف والمدة وحقول الطلب وأسئلة شائعة",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 14,
+      "tables": [
+        "service_listings",
+        "services",
+        "service_fields"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/services/:slug",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/services/:slug"
+      },
+      "module": "storefront",
+      "description": "Service page: description, duration, order fields and FAQs.",
+      "frontend": null
+    },
+    {
+      "key": "GET /store/v1/pages/:slug",
+      "method": "GET",
+      "path": "/store/v1/pages/:slug",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "content",
+      "descriptionAr": "صفحة محتوى أو هبوط أو قانونية بنسختها الحالية",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 15,
+      "tables": [
+        "content_pages",
+        "legal_documents"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/pages/:slug",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/pages/:slug"
+      },
+      "module": "storefront",
+      "description": "A content, landing or legal page in its current version.",
+      "frontend": null
+    },
+    {
+      "key": "GET /store/v1/help",
+      "method": "GET",
+      "path": "/store/v1/help",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "content",
+      "descriptionAr": "مقالات مركز المساعدة مع بحث",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 15,
+      "tables": [
+        "help_articles"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/help",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/help"
+      },
+      "module": "storefront",
+      "description": "Help center articles, with search.",
+      "frontend": null
+    },
+    {
+      "key": "GET /store/v1/help/:slug",
+      "method": "GET",
+      "path": "/store/v1/help/:slug",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "content",
+      "descriptionAr": "مقالة مساعدة واحدة",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 15,
+      "tables": [
+        "help_articles"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/help/:slug",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/help/:slug"
+      },
+      "module": "storefront",
+      "description": "One help article.",
+      "frontend": null
+    },
+    {
+      "key": "GET /admin/service-listings",
+      "method": "GET",
+      "path": "/admin/service-listings",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "الخدمات المعروضة بالمتجر وسعر Retail لكل خدمة؛ منع البيع تحت الحد الأدنى",
+      "access": "staff-permission",
+      "permission": "storefront:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:*",
+      "stage": 15,
+      "tables": [
+        "service_listings",
+        "services"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/service-listings",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/service-listings"
+      },
+      "module": "storefront",
+      "description": "Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked.",
+      "frontend": {
+        "file": "src/features/storefront/api/listings.ts",
+        "line": 22,
+        "fn": "listListings"
+      }
+    },
+    {
+      "key": "GET /admin/service-listings/:id",
+      "method": "GET",
+      "path": "/admin/service-listings/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "الخدمات المعروضة بالمتجر وسعر Retail لكل خدمة؛ منع البيع تحت الحد الأدنى",
+      "access": "staff-permission",
+      "permission": "storefront:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:*",
+      "stage": 15,
+      "tables": [
+        "service_listings",
+        "services"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/service-listings",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/service-listings"
+      },
+      "module": "storefront",
+      "description": "Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked.",
+      "frontend": {
+        "file": "src/features/storefront/api/listings.ts",
+        "line": 31,
+        "fn": "getListing"
+      }
+    },
+    {
+      "key": "POST /admin/service-listings",
+      "method": "POST",
+      "path": "/admin/service-listings",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "الخدمات المعروضة بالمتجر وسعر Retail لكل خدمة؛ منع البيع تحت الحد الأدنى",
+      "access": "staff-permission",
+      "permission": "storefront:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:*",
+      "stage": 15,
+      "tables": [
+        "service_listings",
+        "services"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/service-listings",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/service-listings"
+      },
+      "module": "storefront",
+      "description": "Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked.",
+      "frontend": {
+        "file": "src/features/storefront/api/listings.ts",
+        "line": 41,
+        "fn": "createListing"
+      }
+    },
+    {
+      "key": "PATCH /admin/service-listings/:id",
+      "method": "PATCH",
+      "path": "/admin/service-listings/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "الخدمات المعروضة بالمتجر وسعر Retail لكل خدمة؛ منع البيع تحت الحد الأدنى",
+      "access": "staff-permission",
+      "permission": "storefront:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:*",
+      "stage": 15,
+      "tables": [
+        "service_listings",
+        "services"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/service-listings",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/service-listings"
+      },
+      "module": "storefront",
+      "description": "Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked.",
+      "frontend": {
+        "file": "src/features/storefront/api/listings.ts",
+        "line": 51,
+        "fn": "updateListing"
+      }
+    },
+    {
+      "key": "GET /admin/content-pages",
+      "method": "GET",
+      "path": "/admin/content-pages",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "صفحات الهبوط والمحتوى: مسودة ثم نشر",
+      "access": "staff-permission",
+      "permission": "storefront:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:*",
+      "stage": 15,
+      "tables": [
+        "content_pages"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/content-pages",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/content-pages"
+      },
+      "module": "storefront",
+      "description": "Landing and content pages: draft, then publish.",
+      "frontend": {
+        "file": "src/features/storefront/api/contentPages.ts",
+        "line": 29,
+        "fn": "listContentPages"
+      }
+    },
+    {
+      "key": "GET /admin/content-pages/:id",
+      "method": "GET",
+      "path": "/admin/content-pages/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "صفحات الهبوط والمحتوى: مسودة ثم نشر",
+      "access": "staff-permission",
+      "permission": "storefront:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:*",
+      "stage": 15,
+      "tables": [
+        "content_pages"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/content-pages",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/content-pages"
+      },
+      "module": "storefront",
+      "description": "Landing and content pages: draft, then publish.",
+      "frontend": {
+        "file": "src/features/storefront/api/contentPages.ts",
+        "line": 38,
+        "fn": "getContentPage"
+      }
+    },
+    {
+      "key": "POST /admin/content-pages",
+      "method": "POST",
+      "path": "/admin/content-pages",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "صفحات الهبوط والمحتوى: مسودة ثم نشر",
+      "access": "staff-permission",
+      "permission": "storefront:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:*",
+      "stage": 15,
+      "tables": [
+        "content_pages"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/content-pages",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/content-pages"
+      },
+      "module": "storefront",
+      "description": "Landing and content pages: draft, then publish.",
+      "frontend": {
+        "file": "src/features/storefront/api/contentPages.ts",
+        "line": 47,
+        "fn": "createContentPage"
+      }
+    },
+    {
+      "key": "PATCH /admin/content-pages/:id",
+      "method": "PATCH",
+      "path": "/admin/content-pages/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "صفحات الهبوط والمحتوى: مسودة ثم نشر",
+      "access": "staff-permission",
+      "permission": "storefront:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:*",
+      "stage": 15,
+      "tables": [
+        "content_pages"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/content-pages",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/content-pages"
+      },
+      "module": "storefront",
+      "description": "Landing and content pages: draft, then publish.",
+      "frontend": {
+        "file": "src/features/storefront/api/contentPages.ts",
+        "line": 57,
+        "fn": "updateContentPage"
+      }
+    },
+    {
+      "key": "POST /admin/content-pages/:id/publish",
+      "method": "POST",
+      "path": "/admin/content-pages/:id/publish",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "نشر صفحة أو إخفاؤها",
+      "access": "staff-permission",
+      "permission": "storefront:publish",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:publish",
+      "stage": 15,
+      "tables": [
+        "content_pages",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/content-pages/:id/publish",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/content-pages/:id/publish"
+      },
+      "module": "storefront",
+      "description": "Publish a page or hide it.",
+      "frontend": {
+        "file": "src/features/storefront/api/contentPages.ts",
+        "line": 66,
+        "fn": "publishContentPage"
+      }
+    },
+    {
+      "key": "POST /admin/content-pages/generate",
+      "method": "POST",
+      "path": "/admin/content-pages/generate",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "مولّد صفحات الهبوط (ماركة × موديل × شبكة): ينتج مسودات للمراجعة فقط",
+      "access": "staff-permission",
+      "permission": "storefront:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:*",
+      "stage": 19,
+      "tables": [
+        "content_pages",
+        "service_listings",
+        "tac_catalog"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/content-pages/generate",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/content-pages/generate"
+      },
+      "module": "storefront",
+      "description": "Landing-page generator (brand x model x network): produces drafts for review only.",
+      "frontend": {
+        "file": "src/features/storefront/api/contentPages.ts",
+        "line": 77,
+        "fn": "generateContentPages"
+      }
+    },
+    {
+      "key": "GET /admin/help-articles",
+      "method": "GET",
+      "path": "/admin/help-articles",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "مقالات مركز المساعدة",
+      "access": "staff-permission",
+      "permission": "storefront:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:*",
+      "stage": 15,
+      "tables": [
+        "help_articles"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/help-articles",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/help-articles"
+      },
+      "module": "storefront",
+      "description": "Help center articles.",
+      "frontend": {
+        "file": "src/features/storefront/api/helpArticles.ts",
+        "line": 20,
+        "fn": "listHelpArticles"
+      }
+    },
+    {
+      "key": "GET /admin/help-articles/:id",
+      "method": "GET",
+      "path": "/admin/help-articles/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "مقالات مركز المساعدة",
+      "access": "staff-permission",
+      "permission": "storefront:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:*",
+      "stage": 15,
+      "tables": [
+        "help_articles"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/help-articles",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/help-articles"
+      },
+      "module": "storefront",
+      "description": "Help center articles.",
+      "frontend": {
+        "file": "src/features/storefront/api/helpArticles.ts",
+        "line": 29,
+        "fn": "getHelpArticle"
+      }
+    },
+    {
+      "key": "POST /admin/help-articles",
+      "method": "POST",
+      "path": "/admin/help-articles",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "مقالات مركز المساعدة",
+      "access": "staff-permission",
+      "permission": "storefront:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:*",
+      "stage": 15,
+      "tables": [
+        "help_articles"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/help-articles",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/help-articles"
+      },
+      "module": "storefront",
+      "description": "Help center articles.",
+      "frontend": {
+        "file": "src/features/storefront/api/helpArticles.ts",
+        "line": 38,
+        "fn": "createHelpArticle"
+      }
+    },
+    {
+      "key": "PATCH /admin/help-articles/:id",
+      "method": "PATCH",
+      "path": "/admin/help-articles/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "مقالات مركز المساعدة",
+      "access": "staff-permission",
+      "permission": "storefront:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:*",
+      "stage": 15,
+      "tables": [
+        "help_articles"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/help-articles",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/help-articles"
+      },
+      "module": "storefront",
+      "description": "Help center articles.",
+      "frontend": {
+        "file": "src/features/storefront/api/helpArticles.ts",
+        "line": 48,
+        "fn": "updateHelpArticle"
+      }
+    },
+    {
+      "key": "GET /admin/legal-documents",
+      "method": "GET",
+      "path": "/admin/legal-documents",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "نسخ الشروط والخصوصية والاسترجاع",
+      "access": "staff-permission",
+      "permission": "legal:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "legal:*",
+      "stage": 15,
+      "tables": [
+        "legal_documents"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/legal-documents",
+        "method": "CRUD",
+        "ops": "LSC",
+        "path": "/admin/legal-documents"
+      },
+      "module": "storefront",
+      "description": "Versions of the terms, privacy policy and refund policy.",
+      "frontend": {
+        "file": "src/features/storefront/api/legalDocuments.ts",
+        "line": 20,
+        "fn": "listLegalDocuments"
+      }
+    },
+    {
+      "key": "GET /admin/legal-documents/:id",
+      "method": "GET",
+      "path": "/admin/legal-documents/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "نسخ الشروط والخصوصية والاسترجاع",
+      "access": "staff-permission",
+      "permission": "legal:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "legal:*",
+      "stage": 15,
+      "tables": [
+        "legal_documents"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/legal-documents",
+        "method": "CRUD",
+        "ops": "LSC",
+        "path": "/admin/legal-documents"
+      },
+      "module": "storefront",
+      "description": "Versions of the terms, privacy policy and refund policy.",
+      "frontend": {
+        "file": "src/features/storefront/api/legalDocuments.ts",
+        "line": 32,
+        "fn": "getLegalDocument"
+      }
+    },
+    {
+      "key": "POST /admin/legal-documents",
+      "method": "POST",
+      "path": "/admin/legal-documents",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "نسخ الشروط والخصوصية والاسترجاع",
+      "access": "staff-permission",
+      "permission": "legal:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "legal:*",
+      "stage": 15,
+      "tables": [
+        "legal_documents"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/legal-documents",
+        "method": "CRUD",
+        "ops": "LSC",
+        "path": "/admin/legal-documents"
+      },
+      "module": "storefront",
+      "description": "Versions of the terms, privacy policy and refund policy.",
+      "frontend": {
+        "file": "src/features/storefront/api/legalDocuments.ts",
+        "line": 41,
+        "fn": "createLegalDocument"
+      }
+    },
+    {
+      "key": "POST /admin/legal-documents/:id/publish",
+      "method": "POST",
+      "path": "/admin/legal-documents/:id/publish",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "اعتماد نسخة جديدة؛ تظهر بالموافقات اللاحقة",
+      "access": "staff-permission",
+      "permission": "legal:publish",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "legal:publish",
+      "stage": 15,
+      "tables": [
+        "legal_documents",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/legal-documents/:id/publish",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/legal-documents/:id/publish"
+      },
+      "module": "storefront",
+      "description": "Approve a new version; it appears in later consents.",
+      "frontend": {
+        "file": "src/features/storefront/api/legalDocuments.ts",
+        "line": 51,
+        "fn": "publishLegalDocument"
+      }
+    },
+    {
+      "key": "PATCH /admin/storefront/settings",
+      "method": "PATCH",
+      "path": "/admin/storefront/settings",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "refunds",
+      "descriptionAr": "طرق الدفع بالمتجر والسياسات (ضيف، مهلة الاسترجاع) وقوالب إيميلات الزبون",
+      "access": "staff-permission",
+      "permission": "settings:storefront",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "settings:storefront",
+      "stage": 16,
+      "tables": [
+        "settings",
+        "payment_gateways",
+        "notification_templates",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin PATCH /admin/storefront/settings",
+        "method": "PATCH",
+        "ops": null,
+        "path": "/admin/storefront/settings"
+      },
+      "module": "storefront",
+      "description": "Storefront payment methods, policies (guest checkout, refund window) and customer email templates.",
+      "frontend": {
+        "file": "src/features/settings/api/storefront.ts",
+        "line": 10,
+        "fn": "updateStorefrontSettings"
+      }
+    }
+  ],
+  "scenarios": []
+}

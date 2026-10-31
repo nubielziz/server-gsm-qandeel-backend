@@ -1,114 +1,55 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# GSM backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+The supplier server behind the GSM admin console, the merchant portal, the storefront and the Dhru Fusion / REST v1
+APIs: IMEI, Server, Remote and File services sold to B2B merchants (prepaid wallet) and B2C storefront customers
+(pay first, then dispatch), on one order engine, one supplier layer and one double-entry ledger.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Stack: NestJS 12 on Fastify, run by Bun 1.4 · Drizzle ORM + PostgreSQL 18 · BullMQ on Redis 8 (a queue instance and
+a cache instance) · S3-compatible storage (MinIO locally) · zod contracts → OpenAPI 3.1 → Scalar.
 
-## Description
+> Status: Phase 0 (setup and Bun spike) is done; see `PROGRESS.md` for what exists and what is next.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Run locally
 
-## Project setup
+Requirements: Bun ≥ 1.4.4 (`npm i -g bun`), Docker with Compose, and the frontend repo next to this one
+(`../frontend-admin`, read-only input; override with `FRONTEND_DIR`).
 
 ```bash
-$ npm install
+bun install --frozen-lockfile
+cp .env.example .env
+docker compose up -d          # Postgres, queue Redis, cache Redis, MinIO (+ bucket init)
+bun run check                 # typecheck + route manifest/slices up to date
+bun run dev                   # API on :3000 (Phase 0 placeholder)
+bun run spike                 # Bun compatibility spike: every dependency as real processes
 ```
 
-## Compile and run the project
+Local services (host ports can be changed with `GSM_PG_PORT`, `GSM_REDIS_QUEUE_PORT`, `GSM_REDIS_CACHE_PORT`,
+`GSM_S3_PORT`, `GSM_S3_CONSOLE_PORT`):
 
-```bash
-# development
-$ npm run start
+| Service | Port | Notes |
+|---|---|---|
+| Postgres 18 | 5432 | user/password/db `gsm`; tests use `gsm_test` |
+| Redis (queue) | 6379 | `noeviction`, AOF: BullMQ only |
+| Redis (cache) | 6380 | `allkeys-lru`, no persistence |
+| MinIO | 9000 (console 9001) | `gsm-minio` / `gsm-minio-secret`; buckets `gsm-files`, `gsm-files-test` |
 
-# watch mode
-$ npm run start:dev
+## Scripts
 
-# production mode
-$ npm run start:prod
-```
+| Script | What it does |
+|---|---|
+| `bun run dev` / `start` | API process (watch / plain) |
+| `bun run typecheck` | `tsc --noEmit` (TypeScript 6, decision 003) |
+| `bun run routes:build` | Rebuild `docs/route-manifest.{json,md}` and `docs/slices/*.json` from the map |
+| `bun run routes:check` | Fail when those files are stale (CI) |
+| `bun run spike` | Re-run the Bun compatibility spike (decision 001) |
+| `bun run check` | Everything CI runs today |
 
-## Run tests
+## Where things are
 
-```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
-```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Observability
-
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
-
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
-
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observe](https://observe.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- `reference/` → symlink to `../frontend-admin/reference`: the API design map (`gsm-map/data/*.mjs`) and the static
+  demo (`gsm-admin`). Never open `reference/**/dist/**`.
+- `docs/route-manifest.json`: all 274 map rows expanded to 382 endpoints with access rules, owning module and, for
+  admin routes, the frontend function that calls them. `docs/slices/<module>.json`: the brief input per module.
+- `scripts/module-map.mjs`: which module owns each table and each route.
+- `docs/decisions/`: decision records. `CLAUDE.md`: working rules for agents. `PROGRESS.md`: status.
+- `spike/bun-compat/`: the Phase 0 spike (removed once Phase 2 tests cover the same ground).

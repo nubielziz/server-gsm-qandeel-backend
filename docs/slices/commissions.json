@@ -1,0 +1,602 @@
+{
+  "module": "commissions",
+  "name": "Commissions & referrals",
+  "domain": "F",
+  "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
+  "counts": {
+    "rows": 6,
+    "endpoints": 15,
+    "bySurface": {
+      "client": 2,
+      "admin": 13
+    },
+    "frontendCalled": 13
+  },
+  "stages": [
+    11
+  ],
+  "ownedTables": [
+    {
+      "name": "commission_plans",
+      "description": "Referral and cashback plans.",
+      "descriptionAr": "خطط الإحالة والكاش باك",
+      "b2c": null,
+      "columns": [
+        "name",
+        "kind",
+        "basis",
+        "percent",
+        "tiers jsonb",
+        "period",
+        "is_active"
+      ],
+      "foreignKeys": []
+    },
+    {
+      "name": "commission_assignments",
+      "description": "Links a plan to the merchant who benefits from it.",
+      "descriptionAr": "ربط الخطة بالتاجر المستفيد",
+      "b2c": null,
+      "columns": [
+        "plan_id",
+        "beneficiary_id",
+        "scope",
+        "starts_at",
+        "ends_at"
+      ],
+      "foreignKeys": [
+        {
+          "column": "plan_id",
+          "target": "commission_plans",
+          "kind": "fk"
+        },
+        {
+          "column": "beneficiary_id",
+          "target": "clients",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "commission_accruals",
+      "description": "Commissions owed and paid out.",
+      "descriptionAr": "العمولات المستحقة والمصروفة",
+      "b2c": null,
+      "columns": [
+        "plan_id",
+        "beneficiary_id",
+        "order_id",
+        "period",
+        "basis_amount",
+        "percent",
+        "amount",
+        "status",
+        "ledger_tx_id"
+      ],
+      "foreignKeys": [
+        {
+          "column": "plan_id",
+          "target": "commission_plans",
+          "kind": "fk"
+        },
+        {
+          "column": "beneficiary_id",
+          "target": "clients",
+          "kind": "fk"
+        },
+        {
+          "column": "order_id",
+          "target": "orders",
+          "kind": "fk"
+        },
+        {
+          "column": "ledger_tx_id",
+          "target": "ledger_transactions",
+          "kind": "fk"
+        }
+      ]
+    }
+  ],
+  "foreignTables": [
+    {
+      "table": "clients",
+      "owner": "identity"
+    },
+    {
+      "table": "ledger_entries",
+      "owner": "money"
+    }
+  ],
+  "endpoints": [
+    {
+      "key": "GET /client/referrals",
+      "method": "GET",
+      "path": "/client/referrals",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "رابط الإحالة والتجار المحالين",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 11,
+      "tables": [
+        "clients",
+        "commission_assignments"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/referrals",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/referrals"
+      },
+      "module": "commissions",
+      "description": "Referral link and referred merchants.",
+      "frontend": null
+    },
+    {
+      "key": "GET /client/commissions",
+      "method": "GET",
+      "path": "/client/commissions",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "عمولاتي وحالتها",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 11,
+      "tables": [
+        "commission_accruals"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/commissions",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/commissions"
+      },
+      "module": "commissions",
+      "description": "My commissions and their status.",
+      "frontend": null
+    },
+    {
+      "key": "GET /admin/commission-plans",
+      "method": "GET",
+      "path": "/admin/commission-plans",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "خطط الإحالة والـ rebate",
+      "access": "staff-permission",
+      "permission": "commissions:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "commissions:*",
+      "stage": 11,
+      "tables": [
+        "commission_plans"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/commission-plans",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/commission-plans"
+      },
+      "module": "commissions",
+      "description": "Referral and rebate plans.",
+      "frontend": {
+        "file": "src/features/commissions/api/plans.ts",
+        "line": 21,
+        "fn": "listPlans"
+      }
+    },
+    {
+      "key": "GET /admin/commission-plans/:id",
+      "method": "GET",
+      "path": "/admin/commission-plans/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "خطط الإحالة والـ rebate",
+      "access": "staff-permission",
+      "permission": "commissions:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "commissions:*",
+      "stage": 11,
+      "tables": [
+        "commission_plans"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/commission-plans",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/commission-plans"
+      },
+      "module": "commissions",
+      "description": "Referral and rebate plans.",
+      "frontend": {
+        "file": "src/features/commissions/api/plans.ts",
+        "line": 30,
+        "fn": "getPlan"
+      }
+    },
+    {
+      "key": "POST /admin/commission-plans",
+      "method": "POST",
+      "path": "/admin/commission-plans",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "خطط الإحالة والـ rebate",
+      "access": "staff-permission",
+      "permission": "commissions:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "commissions:*",
+      "stage": 11,
+      "tables": [
+        "commission_plans"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/commission-plans",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/commission-plans"
+      },
+      "module": "commissions",
+      "description": "Referral and rebate plans.",
+      "frontend": {
+        "file": "src/features/commissions/api/plans.ts",
+        "line": 39,
+        "fn": "createPlan"
+      }
+    },
+    {
+      "key": "PATCH /admin/commission-plans/:id",
+      "method": "PATCH",
+      "path": "/admin/commission-plans/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "خطط الإحالة والـ rebate",
+      "access": "staff-permission",
+      "permission": "commissions:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "commissions:*",
+      "stage": 11,
+      "tables": [
+        "commission_plans"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/commission-plans",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/commission-plans"
+      },
+      "module": "commissions",
+      "description": "Referral and rebate plans.",
+      "frontend": {
+        "file": "src/features/commissions/api/plans.ts",
+        "line": 48,
+        "fn": "updatePlan"
+      }
+    },
+    {
+      "key": "DELETE /admin/commission-plans/:id",
+      "method": "DELETE",
+      "path": "/admin/commission-plans/:id",
+      "op": "delete",
+      "surface": "admin",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "خطط الإحالة والـ rebate",
+      "access": "staff-permission",
+      "permission": "commissions:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "commissions:*",
+      "stage": 11,
+      "tables": [
+        "commission_plans"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/commission-plans",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/commission-plans"
+      },
+      "module": "commissions",
+      "description": "Referral and rebate plans.",
+      "frontend": {
+        "file": "src/features/commissions/api/plans.ts",
+        "line": 57,
+        "fn": "deletePlan"
+      }
+    },
+    {
+      "key": "GET /admin/commission-assignments",
+      "method": "GET",
+      "path": "/admin/commission-assignments",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "ربط الخطط بالتجار",
+      "access": "staff-permission",
+      "permission": "commissions:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "commissions:*",
+      "stage": 11,
+      "tables": [
+        "commission_assignments"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/commission-assignments",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/commission-assignments"
+      },
+      "module": "commissions",
+      "description": "Assign plans to merchants.",
+      "frontend": {
+        "file": "src/features/commissions/api/assignments.ts",
+        "line": 22,
+        "fn": "listAssignments"
+      }
+    },
+    {
+      "key": "GET /admin/commission-assignments/:id",
+      "method": "GET",
+      "path": "/admin/commission-assignments/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "ربط الخطط بالتجار",
+      "access": "staff-permission",
+      "permission": "commissions:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "commissions:*",
+      "stage": 11,
+      "tables": [
+        "commission_assignments"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/commission-assignments",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/commission-assignments"
+      },
+      "module": "commissions",
+      "description": "Assign plans to merchants.",
+      "frontend": {
+        "file": "src/features/commissions/api/assignments.ts",
+        "line": 34,
+        "fn": "getAssignment"
+      }
+    },
+    {
+      "key": "POST /admin/commission-assignments",
+      "method": "POST",
+      "path": "/admin/commission-assignments",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "ربط الخطط بالتجار",
+      "access": "staff-permission",
+      "permission": "commissions:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "commissions:*",
+      "stage": 11,
+      "tables": [
+        "commission_assignments"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/commission-assignments",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/commission-assignments"
+      },
+      "module": "commissions",
+      "description": "Assign plans to merchants.",
+      "frontend": {
+        "file": "src/features/commissions/api/assignments.ts",
+        "line": 44,
+        "fn": "createAssignment"
+      }
+    },
+    {
+      "key": "PATCH /admin/commission-assignments/:id",
+      "method": "PATCH",
+      "path": "/admin/commission-assignments/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "ربط الخطط بالتجار",
+      "access": "staff-permission",
+      "permission": "commissions:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "commissions:*",
+      "stage": 11,
+      "tables": [
+        "commission_assignments"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/commission-assignments",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/commission-assignments"
+      },
+      "module": "commissions",
+      "description": "Assign plans to merchants.",
+      "frontend": {
+        "file": "src/features/commissions/api/assignments.ts",
+        "line": 53,
+        "fn": "updateAssignment"
+      }
+    },
+    {
+      "key": "DELETE /admin/commission-assignments/:id",
+      "method": "DELETE",
+      "path": "/admin/commission-assignments/:id",
+      "op": "delete",
+      "surface": "admin",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "ربط الخطط بالتجار",
+      "access": "staff-permission",
+      "permission": "commissions:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "commissions:*",
+      "stage": 11,
+      "tables": [
+        "commission_assignments"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/commission-assignments",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/commission-assignments"
+      },
+      "module": "commissions",
+      "description": "Assign plans to merchants.",
+      "frontend": {
+        "file": "src/features/commissions/api/assignments.ts",
+        "line": 66,
+        "fn": "deleteAssignment"
+      }
+    },
+    {
+      "key": "GET /admin/commission-accruals",
+      "method": "GET",
+      "path": "/admin/commission-accruals",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "العمولات المستحقة وحالتها",
+      "access": "staff-permission",
+      "permission": "commissions:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "commissions:read",
+      "stage": 11,
+      "tables": [
+        "commission_accruals"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/commission-accruals",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/commission-accruals"
+      },
+      "module": "commissions",
+      "description": "Accrued commissions and their status.",
+      "frontend": {
+        "file": "src/features/commissions/api/accruals.ts",
+        "line": 21,
+        "fn": "listAccruals"
+      }
+    },
+    {
+      "key": "GET /admin/commission-accruals/:id",
+      "method": "GET",
+      "path": "/admin/commission-accruals/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "العمولات المستحقة وحالتها",
+      "access": "staff-permission",
+      "permission": "commissions:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "commissions:read",
+      "stage": 11,
+      "tables": [
+        "commission_accruals"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/commission-accruals",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/commission-accruals"
+      },
+      "module": "commissions",
+      "description": "Accrued commissions and their status.",
+      "frontend": {
+        "file": "src/features/commissions/api/accruals.ts",
+        "line": 30,
+        "fn": "getAccrual"
+      }
+    },
+    {
+      "key": "POST /admin/commission-accruals/approve",
+      "method": "POST",
+      "path": "/admin/commission-accruals/approve",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "اعتماد وصرف بالجملة بقيد على المحفظة",
+      "access": "staff-permission",
+      "permission": "commissions:approve",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "commissions:approve",
+      "stage": 11,
+      "tables": [
+        "commission_accruals",
+        "ledger_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/commission-accruals/approve",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/commission-accruals/approve"
+      },
+      "module": "commissions",
+      "description": "Approve and pay out in bulk, with a ledger entry on the wallet.",
+      "frontend": {
+        "file": "src/features/commissions/api/accruals.ts",
+        "line": 40,
+        "fn": "approveAccruals"
+      }
+    }
+  ],
+  "scenarios": []
+}

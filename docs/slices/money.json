@@ -1,0 +1,3396 @@
+{
+  "module": "money",
+  "name": "Money (ledger, wallets, invoices, payments, refunds, disputes, tax, currencies)",
+  "domain": "E",
+  "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
+  "counts": {
+    "rows": 41,
+    "endpoints": 57,
+    "bySurface": {
+      "dhru": 1,
+      "v1": 2,
+      "client": 7,
+      "admin": 43,
+      "hooks": 2,
+      "events": 2
+    },
+    "frontendCalled": 43
+  },
+  "stages": [
+    3,
+    7,
+    8,
+    11,
+    14,
+    16
+  ],
+  "ownedTables": [
+    {
+      "name": "currencies",
+      "description": "Currencies and exchange rates, with a markup and psychological (charm) rounding for the storefront display.",
+      "descriptionAr": "العملات وأسعار الصرف، مع هامش وتقريب نفسي لعرض المتجر",
+      "b2c": "mod",
+      "columns": [
+        "code",
+        "name",
+        "rate_to_base",
+        "rate_updated_at",
+        "markup_percent",
+        "charm_rounding",
+        "is_storefront",
+        "decimals",
+        "is_active"
+      ],
+      "foreignKeys": []
+    },
+    {
+      "name": "ledger_accounts",
+      "description": "Accounts: wallet, hold, revenue, customer funds and tax payable.",
+      "descriptionAr": "الحسابات: محفظة، محجوز، إيراد، وأموال العملاء والضريبة المستحقة",
+      "b2c": "mod",
+      "columns": [
+        "kind",
+        "owner_type",
+        "owner_id",
+        "currency",
+        "balance",
+        "overdraft_limit",
+        "version"
+      ],
+      "foreignKeys": [
+        {
+          "column": "owner_id",
+          "target": "clients",
+          "kind": "poly"
+        },
+        {
+          "column": "owner_id",
+          "target": "suppliers",
+          "kind": "poly"
+        },
+        {
+          "column": "owner_id",
+          "target": "customers",
+          "kind": "poly"
+        },
+        {
+          "column": "currency",
+          "target": "currencies",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "ledger_transactions",
+      "description": "The journal entry header, with an idempotency key.",
+      "descriptionAr": "رأس القيد مع idempotency",
+      "b2c": "mod",
+      "columns": [
+        "kind",
+        "ref_type",
+        "ref_id",
+        "memo",
+        "idempotency_key",
+        "created_by_type",
+        "created_by_id"
+      ],
+      "foreignKeys": [
+        {
+          "column": "ref_id",
+          "target": "orders",
+          "kind": "poly"
+        },
+        {
+          "column": "ref_id",
+          "target": "invoices",
+          "kind": "poly"
+        },
+        {
+          "column": "ref_id",
+          "target": "refunds",
+          "kind": "poly"
+        },
+        {
+          "column": "ref_id",
+          "target": "disputes",
+          "kind": "poly"
+        },
+        {
+          "column": "created_by_id",
+          "target": "staff_users",
+          "kind": "poly"
+        }
+      ]
+    },
+    {
+      "name": "ledger_entries",
+      "description": "Journal entry lines; they always sum to zero.",
+      "descriptionAr": "أسطر القيد، ومجموعها صفر",
+      "b2c": null,
+      "columns": [
+        "transaction_id",
+        "account_id",
+        "amount",
+        "balance_after"
+      ],
+      "foreignKeys": [
+        {
+          "column": "transaction_id",
+          "target": "ledger_transactions",
+          "kind": "fk"
+        },
+        {
+          "column": "account_id",
+          "target": "ledger_accounts",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "invoices",
+      "description": "Top-up invoices and statements, and B2C tax receipts with a PDF copy.",
+      "descriptionAr": "فواتير الشحن والكشوف، وإيصالات B2C الضريبية بنسخة PDF",
+      "b2c": "mod",
+      "columns": [
+        "number",
+        "client_id nullable",
+        "customer_id",
+        "order_id",
+        "kind",
+        "amount",
+        "fee",
+        "net_amount",
+        "tax_amount",
+        "tax_rate",
+        "tax_country",
+        "customer_vat_id",
+        "total",
+        "currency",
+        "status",
+        "gateway_id",
+        "pdf_file_id",
+        "due_at",
+        "paid_at"
+      ],
+      "foreignKeys": [
+        {
+          "column": "client_id",
+          "target": "clients",
+          "kind": "fk"
+        },
+        {
+          "column": "customer_id",
+          "target": "customers",
+          "kind": "fk"
+        },
+        {
+          "column": "order_id",
+          "target": "orders",
+          "kind": "fk"
+        },
+        {
+          "column": "gateway_id",
+          "target": "payment_gateways",
+          "kind": "fk"
+        },
+        {
+          "column": "pdf_file_id",
+          "target": "files",
+          "kind": "fk"
+        },
+        {
+          "column": "currency",
+          "target": "currencies",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "payment_gateways",
+      "description": "Payment gateways with their fees and limits, split by audience (B2B or B2C).",
+      "descriptionAr": "بوابات الدفع ورسومها وحدودها، مقسّمة حسب الجمهور B2B أو B2C",
+      "b2c": "mod",
+      "columns": [
+        "code",
+        "driver",
+        "name",
+        "audience",
+        "config_enc",
+        "webhook_secret_enc",
+        "fee_percent",
+        "fee_fixed",
+        "min_amount",
+        "max_amount",
+        "allowed_group_ids",
+        "supports_refunds",
+        "supports_3ds",
+        "is_manual",
+        "instructions",
+        "hold_hours",
+        "is_active"
+      ],
+      "foreignKeys": [
+        {
+          "column": "allowed_group_ids",
+          "target": "client_groups",
+          "kind": "array"
+        }
+      ]
+    },
+    {
+      "name": "payments",
+      "description": "Payments and their confirmation: a wallet top-up or a B2C order payment.",
+      "descriptionAr": "الدفعات وتأكيدها: شحن محفظة أو دفع طلب B2C",
+      "b2c": "mod",
+      "columns": [
+        "invoice_id",
+        "customer_id",
+        "order_id",
+        "purpose",
+        "gateway_id",
+        "gateway_txn_id",
+        "amount",
+        "fee_amount",
+        "currency",
+        "status",
+        "method_type",
+        "three_ds",
+        "captured_at",
+        "receipt_file_id",
+        "raw jsonb",
+        "reviewed_by"
+      ],
+      "foreignKeys": [
+        {
+          "column": "invoice_id",
+          "target": "invoices",
+          "kind": "fk"
+        },
+        {
+          "column": "customer_id",
+          "target": "customers",
+          "kind": "fk"
+        },
+        {
+          "column": "order_id",
+          "target": "orders",
+          "kind": "fk"
+        },
+        {
+          "column": "gateway_id",
+          "target": "payment_gateways",
+          "kind": "fk"
+        },
+        {
+          "column": "receipt_file_id",
+          "target": "files",
+          "kind": "fk"
+        },
+        {
+          "column": "reviewed_by",
+          "target": "staff_users",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "withdrawal_requests",
+      "description": "Withdrawal requests, for a later phase.",
+      "descriptionAr": "طلبات السحب، لمرحلة لاحقة",
+      "b2c": null,
+      "columns": [
+        "client_id",
+        "amount",
+        "method",
+        "destination",
+        "status",
+        "decided_by",
+        "decided_at"
+      ],
+      "foreignKeys": [
+        {
+          "column": "client_id",
+          "target": "clients",
+          "kind": "fk"
+        },
+        {
+          "column": "decided_by",
+          "target": "staff_users",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "refunds",
+      "description": "Refunds: full or partial, to the card, the wallet or store credit.",
+      "descriptionAr": "المرتجعات: كاملة أو جزئية إلى البطاقة أو المحفظة أو رصيد المتجر",
+      "b2c": "new",
+      "columns": [
+        "payment_id",
+        "order_id",
+        "customer_id",
+        "client_id",
+        "amount",
+        "currency",
+        "reason",
+        "method",
+        "status",
+        "gateway_refund_id",
+        "requested_by_type",
+        "requested_by_id",
+        "approved_by",
+        "ledger_tx_id",
+        "completed_at"
+      ],
+      "foreignKeys": [
+        {
+          "column": "payment_id",
+          "target": "payments",
+          "kind": "fk"
+        },
+        {
+          "column": "order_id",
+          "target": "orders",
+          "kind": "fk"
+        },
+        {
+          "column": "customer_id",
+          "target": "customers",
+          "kind": "fk"
+        },
+        {
+          "column": "client_id",
+          "target": "clients",
+          "kind": "fk"
+        },
+        {
+          "column": "currency",
+          "target": "currencies",
+          "kind": "fk"
+        },
+        {
+          "column": "requested_by_id",
+          "target": "customers",
+          "kind": "poly"
+        },
+        {
+          "column": "requested_by_id",
+          "target": "staff_users",
+          "kind": "poly"
+        },
+        {
+          "column": "approved_by",
+          "target": "staff_users",
+          "kind": "fk"
+        },
+        {
+          "column": "ledger_tx_id",
+          "target": "ledger_transactions",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "disputes",
+      "description": "Chargeback disputes: the deadline, the evidence pack and the outcome.",
+      "descriptionAr": "نزاعات chargeback: المهلة وحزمة الأدلة والنتيجة",
+      "b2c": "new",
+      "columns": [
+        "payment_id",
+        "order_id",
+        "customer_id",
+        "gateway_dispute_id",
+        "reason_code",
+        "amount",
+        "currency",
+        "fee",
+        "status",
+        "evidence_due_at",
+        "evidence_file_ids bigint[]",
+        "submitted_at",
+        "resolved_at",
+        "ledger_tx_id"
+      ],
+      "foreignKeys": [
+        {
+          "column": "payment_id",
+          "target": "payments",
+          "kind": "fk"
+        },
+        {
+          "column": "order_id",
+          "target": "orders",
+          "kind": "fk"
+        },
+        {
+          "column": "customer_id",
+          "target": "customers",
+          "kind": "fk"
+        },
+        {
+          "column": "currency",
+          "target": "currencies",
+          "kind": "fk"
+        },
+        {
+          "column": "evidence_file_ids",
+          "target": "files",
+          "kind": "array"
+        },
+        {
+          "column": "ledger_tx_id",
+          "target": "ledger_transactions",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "tax_rates",
+      "description": "Tax rates per country for digital services, including the OSS scheme.",
+      "descriptionAr": "نسب الضريبة حسب البلد للخدمات الرقمية، ونظام OSS",
+      "b2c": "new",
+      "columns": [
+        "country",
+        "region",
+        "rate_percent",
+        "tax_type",
+        "applies_to",
+        "valid_from",
+        "valid_to",
+        "label",
+        "oss_scheme"
+      ],
+      "foreignKeys": []
+    }
+  ],
+  "foreignTables": [
+    {
+      "table": "audit_logs",
+      "owner": "platform"
+    },
+    {
+      "table": "checkout_sessions",
+      "owner": "customers"
+    },
+    {
+      "table": "client_groups",
+      "owner": "catalog"
+    },
+    {
+      "table": "clients",
+      "owner": "identity"
+    },
+    {
+      "table": "consent_records",
+      "owner": "customers"
+    },
+    {
+      "table": "files",
+      "owner": "platform"
+    },
+    {
+      "table": "notifications",
+      "owner": "platform"
+    },
+    {
+      "table": "order_events",
+      "owner": "orders"
+    },
+    {
+      "table": "orders",
+      "owner": "orders"
+    },
+    {
+      "table": "webhook_deliveries",
+      "owner": "platform"
+    }
+  ],
+  "endpoints": [
+    {
+      "key": "DHRU accountinfo",
+      "method": "POST",
+      "path": "/api/index.php",
+      "action": "accountinfo",
+      "op": "action",
+      "surface": "dhru",
+      "kind": "dhru-action",
+      "group": null,
+      "descriptionAr": "الرصيد المتاح والإيميل والعملة",
+      "access": "dhru-credentials",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "username + apiaccesskey",
+      "stage": 7,
+      "tables": [
+        "clients",
+        "ledger_accounts"
+      ],
+      "dhruResponse": "AccoutInfo",
+      "origin": {
+        "row": "dhru ACTION accountinfo",
+        "method": "ACTION",
+        "ops": null,
+        "path": "accountinfo"
+      },
+      "module": "money",
+      "description": "Account info: available balance, email and currency.",
+      "frontend": null
+    },
+    {
+      "key": "GET /v1/account",
+      "method": "GET",
+      "path": "/v1/account",
+      "op": "action",
+      "surface": "v1",
+      "kind": "http",
+      "group": null,
+      "descriptionAr": "الرصيد المتاح والمحجوز والحد الائتماني والفئة",
+      "access": "api-key",
+      "permission": "account:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "account:read",
+      "stage": 7,
+      "tables": [
+        "clients",
+        "client_groups",
+        "ledger_accounts"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "v1 GET /v1/account",
+        "method": "GET",
+        "ops": null,
+        "path": "/v1/account"
+      },
+      "module": "money",
+      "description": "Available and held balance, credit limit and client group.",
+      "frontend": null
+    },
+    {
+      "key": "GET /v1/transactions",
+      "method": "GET",
+      "path": "/v1/transactions",
+      "op": "action",
+      "surface": "v1",
+      "kind": "http",
+      "group": null,
+      "descriptionAr": "كشف الحساب: قيود المحفظة بالـ cursor",
+      "access": "api-key",
+      "permission": "account:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "account:read",
+      "stage": 7,
+      "tables": [
+        "ledger_entries",
+        "ledger_transactions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "v1 GET /v1/transactions",
+        "method": "GET",
+        "ops": null,
+        "path": "/v1/transactions"
+      },
+      "module": "money",
+      "description": "Account statement: wallet ledger entries, cursor pagination.",
+      "frontend": null
+    },
+    {
+      "key": "GET /client/wallet",
+      "method": "GET",
+      "path": "/client/wallet",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "المتاح والمحجوز والحد الائتماني",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 3,
+      "tables": [
+        "ledger_accounts"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/wallet",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/wallet"
+      },
+      "module": "money",
+      "description": "Available and held balance and credit limit.",
+      "frontend": null
+    },
+    {
+      "key": "GET /client/wallet/statement",
+      "method": "GET",
+      "path": "/client/wallet/statement",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "كشف الحساب؛ ?format=csv للتصدير",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 3,
+      "tables": [
+        "ledger_entries",
+        "ledger_transactions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/wallet/statement",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/wallet/statement"
+      },
+      "module": "money",
+      "description": "Account statement; ?format=csv exports it.",
+      "frontend": null
+    },
+    {
+      "key": "GET /client/payment-methods",
+      "method": "GET",
+      "path": "/client/payment-methods",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "بوابات الدفع المتاحة لفئتي مع الرسوم والحدود",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 8,
+      "tables": [
+        "payment_gateways"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/payment-methods",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/payment-methods"
+      },
+      "module": "money",
+      "description": "Payment gateways available to my client group, with fees and limits.",
+      "frontend": null
+    },
+    {
+      "key": "POST /client/invoices",
+      "method": "POST",
+      "path": "/client/invoices",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "فاتورة شحن، وبترجع رابط دفع أو تعليمات تحويل",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 8,
+      "tables": [
+        "invoices",
+        "payments"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/invoices",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/invoices"
+      },
+      "module": "money",
+      "description": "Top-up invoice; returns a payment link or bank transfer instructions.",
+      "frontend": null
+    },
+    {
+      "key": "GET /client/invoices",
+      "method": "GET",
+      "path": "/client/invoices",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "فواتيري",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 8,
+      "tables": [
+        "invoices"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/invoices",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/invoices"
+      },
+      "module": "money",
+      "description": "My invoices.",
+      "frontend": null
+    },
+    {
+      "key": "GET /client/invoices/:id",
+      "method": "GET",
+      "path": "/client/invoices/:id",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "الفاتورة ودفعاتها",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 8,
+      "tables": [
+        "invoices",
+        "payments"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/invoices/:id",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/invoices/:id"
+      },
+      "module": "money",
+      "description": "An invoice and its payments.",
+      "frontend": null
+    },
+    {
+      "key": "POST /client/invoices/:id/receipt",
+      "method": "POST",
+      "path": "/client/invoices/:id/receipt",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "رفع إيصال تحويل للمراجعة",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 8,
+      "tables": [
+        "payments",
+        "files"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/invoices/:id/receipt",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/invoices/:id/receipt"
+      },
+      "module": "money",
+      "description": "Upload a bank transfer receipt for review.",
+      "frontend": null
+    },
+    {
+      "key": "GET /admin/clients/:id/wallet",
+      "method": "GET",
+      "path": "/admin/clients/:id/wallet",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "محفظة التاجر: المتاح والمحجوز والحد",
+      "access": "staff-permission",
+      "permission": "wallet:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "wallet:read",
+      "stage": 3,
+      "tables": [
+        "ledger_accounts"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/clients/:id/wallet",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/clients/:id/wallet"
+      },
+      "module": "money",
+      "description": "Merchant wallet: available balance, reserved balance and limit.",
+      "frontend": {
+        "file": "src/features/merchants/api/wallet.ts",
+        "line": 28,
+        "fn": "getClientWallet"
+      }
+    },
+    {
+      "key": "GET /admin/clients/:id/statement",
+      "method": "GET",
+      "path": "/admin/clients/:id/statement",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "كشف حساب التاجر",
+      "access": "staff-permission",
+      "permission": "wallet:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "wallet:read",
+      "stage": 3,
+      "tables": [
+        "ledger_entries",
+        "ledger_transactions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/clients/:id/statement",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/clients/:id/statement"
+      },
+      "module": "money",
+      "description": "Merchant account statement.",
+      "frontend": {
+        "file": "src/features/merchants/api/wallet.ts",
+        "line": 38,
+        "fn": "listClientStatement"
+      }
+    },
+    {
+      "key": "POST /admin/clients/:id/wallet/adjust",
+      "method": "POST",
+      "path": "/admin/clients/:id/wallet/adjust",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "إضافة أو خصم يدوي مع سبب",
+      "access": "staff-permission",
+      "permission": "wallet:adjust",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "wallet:adjust",
+      "stage": 3,
+      "tables": [
+        "ledger_transactions",
+        "ledger_entries",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/clients/:id/wallet/adjust",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/clients/:id/wallet/adjust"
+      },
+      "module": "money",
+      "description": "Manually add to or deduct from the wallet, with a reason.",
+      "frontend": {
+        "file": "src/features/merchants/api/wallet.ts",
+        "line": 53,
+        "fn": "adjustClientWallet"
+      }
+    },
+    {
+      "key": "PATCH /admin/clients/:id/credit-limit",
+      "method": "PATCH",
+      "path": "/admin/clients/:id/credit-limit",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "الحد الائتماني (overdraft)",
+      "access": "staff-permission",
+      "permission": "wallet:credit_limit",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "wallet:credit_limit",
+      "stage": 3,
+      "tables": [
+        "ledger_accounts"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin PATCH /admin/clients/:id/credit-limit",
+        "method": "PATCH",
+        "ops": null,
+        "path": "/admin/clients/:id/credit-limit"
+      },
+      "module": "money",
+      "description": "Credit limit (overdraft).",
+      "frontend": {
+        "file": "src/features/merchants/api/wallet.ts",
+        "line": 66,
+        "fn": "setClientCreditLimit"
+      }
+    },
+    {
+      "key": "GET /admin/ledger/transactions",
+      "method": "GET",
+      "path": "/admin/ledger/transactions",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "القيود المحاسبية مع أسطرها",
+      "access": "staff-permission",
+      "permission": "ledger:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "ledger:read",
+      "stage": 3,
+      "tables": [
+        "ledger_transactions",
+        "ledger_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/ledger/transactions",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/ledger/transactions"
+      },
+      "module": "money",
+      "description": "Ledger entries with their lines.",
+      "frontend": {
+        "file": "src/features/finance/api/ledger.ts",
+        "line": 13,
+        "fn": "listLedgerTransactions"
+      }
+    },
+    {
+      "key": "GET /admin/ledger/transactions/:id",
+      "method": "GET",
+      "path": "/admin/ledger/transactions/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "القيود المحاسبية مع أسطرها",
+      "access": "staff-permission",
+      "permission": "ledger:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "ledger:read",
+      "stage": 3,
+      "tables": [
+        "ledger_transactions",
+        "ledger_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/ledger/transactions",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/ledger/transactions"
+      },
+      "module": "money",
+      "description": "Ledger entries with their lines.",
+      "frontend": {
+        "file": "src/features/finance/api/ledger.ts",
+        "line": 25,
+        "fn": "getLedgerTransaction"
+      }
+    },
+    {
+      "key": "GET /admin/ledger/accounts",
+      "method": "GET",
+      "path": "/admin/ledger/accounts",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "الحسابات وأرصدتها",
+      "access": "staff-permission",
+      "permission": "ledger:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "ledger:read",
+      "stage": 3,
+      "tables": [
+        "ledger_accounts"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/ledger/accounts",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/ledger/accounts"
+      },
+      "module": "money",
+      "description": "Accounts and their balances.",
+      "frontend": {
+        "file": "src/features/finance/api/accounts.ts",
+        "line": 11,
+        "fn": "getTrialBalance"
+      }
+    },
+    {
+      "key": "POST /admin/ledger/reconcile",
+      "method": "POST",
+      "path": "/admin/ledger/reconcile",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "تشغيل المطابقة الآن",
+      "access": "staff-permission",
+      "permission": "ledger:reconcile",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "ledger:reconcile",
+      "stage": 3,
+      "tables": [
+        "ledger_accounts",
+        "ledger_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/ledger/reconcile",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/ledger/reconcile"
+      },
+      "module": "money",
+      "description": "Run the reconciliation now.",
+      "frontend": {
+        "file": "src/features/finance/api/accounts.ts",
+        "line": 21,
+        "fn": "reconcileLedger"
+      }
+    },
+    {
+      "key": "GET /admin/currencies",
+      "method": "GET",
+      "path": "/admin/currencies",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "العملات وأسعار الصرف",
+      "access": "staff-permission",
+      "permission": "settings:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "settings:update",
+      "stage": 3,
+      "tables": [
+        "currencies"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/currencies",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/currencies"
+      },
+      "module": "money",
+      "description": "Currencies and exchange rates.",
+      "frontend": {
+        "file": "src/features/settings/api/currencies.ts",
+        "line": 18,
+        "fn": "listCurrencies"
+      }
+    },
+    {
+      "key": "GET /admin/currencies/:id",
+      "method": "GET",
+      "path": "/admin/currencies/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "العملات وأسعار الصرف",
+      "access": "staff-permission",
+      "permission": "settings:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "settings:update",
+      "stage": 3,
+      "tables": [
+        "currencies"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/currencies",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/currencies"
+      },
+      "module": "money",
+      "description": "Currencies and exchange rates.",
+      "frontend": {
+        "file": "src/features/settings/api/currencies.ts",
+        "line": 27,
+        "fn": "getCurrency"
+      }
+    },
+    {
+      "key": "POST /admin/currencies",
+      "method": "POST",
+      "path": "/admin/currencies",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "العملات وأسعار الصرف",
+      "access": "staff-permission",
+      "permission": "settings:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "settings:update",
+      "stage": 3,
+      "tables": [
+        "currencies"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/currencies",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/currencies"
+      },
+      "module": "money",
+      "description": "Currencies and exchange rates.",
+      "frontend": {
+        "file": "src/features/settings/api/currencies.ts",
+        "line": 35,
+        "fn": "createCurrency"
+      }
+    },
+    {
+      "key": "PATCH /admin/currencies/:id",
+      "method": "PATCH",
+      "path": "/admin/currencies/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "العملات وأسعار الصرف",
+      "access": "staff-permission",
+      "permission": "settings:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "settings:update",
+      "stage": 3,
+      "tables": [
+        "currencies"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/currencies",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/currencies"
+      },
+      "module": "money",
+      "description": "Currencies and exchange rates.",
+      "frontend": {
+        "file": "src/features/settings/api/currencies.ts",
+        "line": 44,
+        "fn": "updateCurrency"
+      }
+    },
+    {
+      "key": "GET /admin/payment-gateways",
+      "method": "GET",
+      "path": "/admin/payment-gateways",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "البوابات: الرسوم والحدود والفئات",
+      "access": "staff-permission",
+      "permission": "payments:gateways",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "payments:gateways",
+      "stage": 8,
+      "tables": [
+        "payment_gateways"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/payment-gateways",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/payment-gateways"
+      },
+      "module": "money",
+      "description": "Payment gateways: fees, limits and merchant groups.",
+      "frontend": {
+        "file": "src/features/settings/api/gateways.ts",
+        "line": 20,
+        "fn": "listGateways"
+      }
+    },
+    {
+      "key": "GET /admin/payment-gateways/:id",
+      "method": "GET",
+      "path": "/admin/payment-gateways/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "البوابات: الرسوم والحدود والفئات",
+      "access": "staff-permission",
+      "permission": "payments:gateways",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "payments:gateways",
+      "stage": 8,
+      "tables": [
+        "payment_gateways"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/payment-gateways",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/payment-gateways"
+      },
+      "module": "money",
+      "description": "Payment gateways: fees, limits and merchant groups.",
+      "frontend": {
+        "file": "src/features/settings/api/gateways.ts",
+        "line": 29,
+        "fn": "getGateway"
+      }
+    },
+    {
+      "key": "POST /admin/payment-gateways",
+      "method": "POST",
+      "path": "/admin/payment-gateways",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "البوابات: الرسوم والحدود والفئات",
+      "access": "staff-permission",
+      "permission": "payments:gateways",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "payments:gateways",
+      "stage": 8,
+      "tables": [
+        "payment_gateways"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/payment-gateways",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/payment-gateways"
+      },
+      "module": "money",
+      "description": "Payment gateways: fees, limits and merchant groups.",
+      "frontend": {
+        "file": "src/features/settings/api/gateways.ts",
+        "line": 38,
+        "fn": "createGateway"
+      }
+    },
+    {
+      "key": "PATCH /admin/payment-gateways/:id",
+      "method": "PATCH",
+      "path": "/admin/payment-gateways/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "البوابات: الرسوم والحدود والفئات",
+      "access": "staff-permission",
+      "permission": "payments:gateways",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "payments:gateways",
+      "stage": 8,
+      "tables": [
+        "payment_gateways"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/payment-gateways",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/payment-gateways"
+      },
+      "module": "money",
+      "description": "Payment gateways: fees, limits and merchant groups.",
+      "frontend": {
+        "file": "src/features/settings/api/gateways.ts",
+        "line": 47,
+        "fn": "updateGateway"
+      }
+    },
+    {
+      "key": "DELETE /admin/payment-gateways/:id",
+      "method": "DELETE",
+      "path": "/admin/payment-gateways/:id",
+      "op": "delete",
+      "surface": "admin",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "البوابات: الرسوم والحدود والفئات",
+      "access": "staff-permission",
+      "permission": "payments:gateways",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "payments:gateways",
+      "stage": 8,
+      "tables": [
+        "payment_gateways"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/payment-gateways",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/payment-gateways"
+      },
+      "module": "money",
+      "description": "Payment gateways: fees, limits and merchant groups.",
+      "frontend": {
+        "file": "src/features/settings/api/gateways.ts",
+        "line": 56,
+        "fn": "deleteGateway"
+      }
+    },
+    {
+      "key": "GET /admin/invoices",
+      "method": "GET",
+      "path": "/admin/invoices",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "الفواتير؛ الإنشاء = فاتورة يدوية لتاجر",
+      "access": "staff-permission",
+      "permission": "invoices:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "invoices:*",
+      "stage": 8,
+      "tables": [
+        "invoices"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/invoices",
+        "method": "CRUD",
+        "ops": "LSC",
+        "path": "/admin/invoices"
+      },
+      "module": "money",
+      "description": "Invoices; creating one issues a manual invoice for a merchant.",
+      "frontend": {
+        "file": "src/features/finance/api/invoices.ts",
+        "line": 19,
+        "fn": "listInvoices"
+      }
+    },
+    {
+      "key": "GET /admin/invoices/:id",
+      "method": "GET",
+      "path": "/admin/invoices/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "الفواتير؛ الإنشاء = فاتورة يدوية لتاجر",
+      "access": "staff-permission",
+      "permission": "invoices:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "invoices:*",
+      "stage": 8,
+      "tables": [
+        "invoices"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/invoices",
+        "method": "CRUD",
+        "ops": "LSC",
+        "path": "/admin/invoices"
+      },
+      "module": "money",
+      "description": "Invoices; creating one issues a manual invoice for a merchant.",
+      "frontend": {
+        "file": "src/features/finance/api/invoices.ts",
+        "line": 28,
+        "fn": "getInvoice"
+      }
+    },
+    {
+      "key": "POST /admin/invoices",
+      "method": "POST",
+      "path": "/admin/invoices",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "الفواتير؛ الإنشاء = فاتورة يدوية لتاجر",
+      "access": "staff-permission",
+      "permission": "invoices:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "invoices:*",
+      "stage": 8,
+      "tables": [
+        "invoices"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/invoices",
+        "method": "CRUD",
+        "ops": "LSC",
+        "path": "/admin/invoices"
+      },
+      "module": "money",
+      "description": "Invoices; creating one issues a manual invoice for a merchant.",
+      "frontend": {
+        "file": "src/features/finance/api/invoices.ts",
+        "line": 38,
+        "fn": "createInvoice"
+      }
+    },
+    {
+      "key": "GET /admin/payments",
+      "method": "GET",
+      "path": "/admin/payments",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "الدفعات وطابور المراجعة اليدوية",
+      "access": "staff-permission",
+      "permission": "payments:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "payments:read",
+      "stage": 8,
+      "tables": [
+        "payments"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/payments",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/payments"
+      },
+      "module": "money",
+      "description": "Payments and the manual review queue.",
+      "frontend": {
+        "file": "src/features/finance/api/payments.ts",
+        "line": 20,
+        "fn": "listPayments"
+      }
+    },
+    {
+      "key": "GET /admin/payments/:id",
+      "method": "GET",
+      "path": "/admin/payments/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "الدفعات وطابور المراجعة اليدوية",
+      "access": "staff-permission",
+      "permission": "payments:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "payments:read",
+      "stage": 8,
+      "tables": [
+        "payments"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/payments",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/payments"
+      },
+      "module": "money",
+      "description": "Payments and the manual review queue.",
+      "frontend": {
+        "file": "src/features/finance/api/payments.ts",
+        "line": 30,
+        "fn": "getPayment"
+      }
+    },
+    {
+      "key": "POST /admin/payments/:id/approve",
+      "method": "POST",
+      "path": "/admin/payments/:id/approve",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "اعتماد دفعة يدوية وشحن المحفظة",
+      "access": "staff-permission",
+      "permission": "payments:approve",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "payments:approve",
+      "stage": 8,
+      "tables": [
+        "payments",
+        "invoices",
+        "ledger_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/payments/:id/approve",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/payments/:id/approve"
+      },
+      "module": "money",
+      "description": "Approve a manual payment and top up the wallet.",
+      "frontend": {
+        "file": "src/features/finance/api/payments.ts",
+        "line": 40,
+        "fn": "approvePayment"
+      }
+    },
+    {
+      "key": "POST /admin/payments/:id/reject",
+      "method": "POST",
+      "path": "/admin/payments/:id/reject",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "رفض دفعة مع سبب",
+      "access": "staff-permission",
+      "permission": "payments:approve",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "payments:approve",
+      "stage": 8,
+      "tables": [
+        "payments"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/payments/:id/reject",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/payments/:id/reject"
+      },
+      "module": "money",
+      "description": "Reject a payment with a reason.",
+      "frontend": {
+        "file": "src/features/finance/api/payments.ts",
+        "line": 49,
+        "fn": "rejectPayment"
+      }
+    },
+    {
+      "key": "GET /admin/reports/profit",
+      "method": "GET",
+      "path": "/admin/reports/profit",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "الربح حسب اليوم أو الخدمة أو المورد أو التاجر",
+      "access": "staff-permission",
+      "permission": "reports:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "reports:read",
+      "stage": 11,
+      "tables": [
+        "orders",
+        "ledger_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/reports/profit",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/reports/profit"
+      },
+      "module": "money",
+      "description": "Profit by day, service, supplier or merchant.",
+      "frontend": {
+        "file": "src/features/finance/api/reports.ts",
+        "line": 11,
+        "fn": "getProfitReport"
+      }
+    },
+    {
+      "key": "GET /admin/reports/wallet-exposure",
+      "method": "GET",
+      "path": "/admin/reports/wallet-exposure",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "الأرصدة والـ overdraft والمحجوز",
+      "access": "staff-permission",
+      "permission": "reports:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "reports:read",
+      "stage": 11,
+      "tables": [
+        "ledger_accounts"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/reports/wallet-exposure",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/reports/wallet-exposure"
+      },
+      "module": "money",
+      "description": "Balances, overdraft and reserved amounts.",
+      "frontend": {
+        "file": "src/features/finance/api/reports.ts",
+        "line": 25,
+        "fn": "getWalletExposure"
+      }
+    },
+    {
+      "key": "GET /admin/reports/client-statement/:clientId",
+      "method": "GET",
+      "path": "/admin/reports/client-statement/:clientId",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "كشف حساب رسمي لتاجر",
+      "access": "staff-permission",
+      "permission": "reports:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "reports:read",
+      "stage": 11,
+      "tables": [
+        "ledger_entries",
+        "invoices"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/reports/client-statement/:clientId",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/reports/client-statement/:clientId"
+      },
+      "module": "money",
+      "description": "Official account statement for a merchant.",
+      "frontend": {
+        "file": "src/features/merchants/api/wallet.ts",
+        "line": 76,
+        "fn": "downloadClientStatement"
+      }
+    },
+    {
+      "key": "POST /webhooks/payments/:gateway",
+      "method": "POST",
+      "path": "/webhooks/payments/:gateway",
+      "op": "action",
+      "surface": "hooks",
+      "kind": "http",
+      "group": null,
+      "descriptionAr": "تأكيد الدفع: توقيع و idempotency ثم شحن محفظة التاجر، أو (للمتجر) إنشاء الطلب وإرساله بعد التأكيد",
+      "access": "gateway-signature",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "توقيع البوابة",
+      "stage": 8,
+      "tables": [
+        "payments",
+        "invoices",
+        "ledger_entries",
+        "checkout_sessions",
+        "orders"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "hooks POST /webhooks/payments/:gateway",
+        "method": "POST",
+        "ops": null,
+        "path": "/webhooks/payments/:gateway"
+      },
+      "module": "money",
+      "description": "Payment confirmation: check the signature and idempotency, then credit the merchant wallet or, for the storefront, create the order and dispatch it once confirmed.",
+      "frontend": null
+    },
+    {
+      "key": "EVENT wallet.low_balance",
+      "method": "POST",
+      "path": "<merchant webhook url>",
+      "event": "wallet.low_balance",
+      "op": "event",
+      "surface": "events",
+      "kind": "event",
+      "group": null,
+      "descriptionAr": "الرصيد المتاح نزل تحت حد التنبيه",
+      "access": "outbound-hmac",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "HMAC-SHA256",
+      "stage": 7,
+      "tables": [
+        "ledger_accounts",
+        "webhook_deliveries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "events EVENT wallet.low_balance",
+        "method": "EVENT",
+        "ops": null,
+        "path": "wallet.low_balance"
+      },
+      "module": "money",
+      "description": "The available balance fell below the alert threshold.",
+      "frontend": null
+    },
+    {
+      "key": "EVENT invoice.paid",
+      "method": "POST",
+      "path": "<merchant webhook url>",
+      "event": "invoice.paid",
+      "op": "event",
+      "surface": "events",
+      "kind": "event",
+      "group": null,
+      "descriptionAr": "انشحنت المحفظة من فاتورة",
+      "access": "outbound-hmac",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "HMAC-SHA256",
+      "stage": 8,
+      "tables": [
+        "invoices",
+        "webhook_deliveries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "events EVENT invoice.paid",
+        "method": "EVENT",
+        "ops": null,
+        "path": "invoice.paid"
+      },
+      "module": "money",
+      "description": "The wallet was credited from an invoice.",
+      "frontend": null
+    },
+    {
+      "key": "GET /admin/tax-rates",
+      "method": "GET",
+      "path": "/admin/tax-rates",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "refunds",
+      "descriptionAr": "نسب الضريبة بالبلد وتاريخ سريانها",
+      "access": "staff-permission",
+      "permission": "tax:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "tax:*",
+      "stage": 14,
+      "tables": [
+        "tax_rates"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/tax-rates",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/tax-rates"
+      },
+      "module": "money",
+      "description": "Tax rates by country and their effective dates.",
+      "frontend": {
+        "file": "src/features/settings/api/taxRates.ts",
+        "line": 18,
+        "fn": "listTaxRates"
+      }
+    },
+    {
+      "key": "GET /admin/tax-rates/:id",
+      "method": "GET",
+      "path": "/admin/tax-rates/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "refunds",
+      "descriptionAr": "نسب الضريبة بالبلد وتاريخ سريانها",
+      "access": "staff-permission",
+      "permission": "tax:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "tax:*",
+      "stage": 14,
+      "tables": [
+        "tax_rates"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/tax-rates",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/tax-rates"
+      },
+      "module": "money",
+      "description": "Tax rates by country and their effective dates.",
+      "frontend": {
+        "file": "src/features/settings/api/taxRates.ts",
+        "line": 27,
+        "fn": "getTaxRate"
+      }
+    },
+    {
+      "key": "POST /admin/tax-rates",
+      "method": "POST",
+      "path": "/admin/tax-rates",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "refunds",
+      "descriptionAr": "نسب الضريبة بالبلد وتاريخ سريانها",
+      "access": "staff-permission",
+      "permission": "tax:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "tax:*",
+      "stage": 14,
+      "tables": [
+        "tax_rates"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/tax-rates",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/tax-rates"
+      },
+      "module": "money",
+      "description": "Tax rates by country and their effective dates.",
+      "frontend": {
+        "file": "src/features/settings/api/taxRates.ts",
+        "line": 35,
+        "fn": "createTaxRate"
+      }
+    },
+    {
+      "key": "PATCH /admin/tax-rates/:id",
+      "method": "PATCH",
+      "path": "/admin/tax-rates/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "refunds",
+      "descriptionAr": "نسب الضريبة بالبلد وتاريخ سريانها",
+      "access": "staff-permission",
+      "permission": "tax:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "tax:*",
+      "stage": 14,
+      "tables": [
+        "tax_rates"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/tax-rates",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/tax-rates"
+      },
+      "module": "money",
+      "description": "Tax rates by country and their effective dates.",
+      "frontend": {
+        "file": "src/features/settings/api/taxRates.ts",
+        "line": 43,
+        "fn": "updateTaxRate"
+      }
+    },
+    {
+      "key": "POST /admin/currencies/refresh-fx",
+      "method": "POST",
+      "path": "/admin/currencies/refresh-fx",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "refunds",
+      "descriptionAr": "تحديث أسعار الصرف المعروضة للزبائن",
+      "access": "staff-permission",
+      "permission": "currencies:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "currencies:update",
+      "stage": 14,
+      "tables": [
+        "currencies",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/currencies/refresh-fx",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/currencies/refresh-fx"
+      },
+      "module": "money",
+      "description": "Refresh the exchange rates shown to customers.",
+      "frontend": {
+        "file": "src/features/settings/api/currencies.ts",
+        "line": 54,
+        "fn": "refreshFx"
+      }
+    },
+    {
+      "key": "GET /admin/refunds",
+      "method": "GET",
+      "path": "/admin/refunds",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "refunds",
+      "descriptionAr": "طلبات الاسترجاع وحالتها",
+      "access": "staff-permission",
+      "permission": "refunds:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "refunds:read",
+      "stage": 16,
+      "tables": [
+        "refunds"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/refunds",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/refunds"
+      },
+      "module": "money",
+      "description": "Refund requests and their status.",
+      "frontend": {
+        "file": "src/features/refunds/api/refunds.ts",
+        "line": 22,
+        "fn": "listRefunds"
+      }
+    },
+    {
+      "key": "GET /admin/refunds/:id",
+      "method": "GET",
+      "path": "/admin/refunds/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "refunds",
+      "descriptionAr": "طلبات الاسترجاع وحالتها",
+      "access": "staff-permission",
+      "permission": "refunds:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "refunds:read",
+      "stage": 16,
+      "tables": [
+        "refunds"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/refunds",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/refunds"
+      },
+      "module": "money",
+      "description": "Refund requests and their status.",
+      "frontend": {
+        "file": "src/features/refunds/api/refunds.ts",
+        "line": 32,
+        "fn": "getRefund"
+      }
+    },
+    {
+      "key": "POST /admin/refunds/:id/approve",
+      "method": "POST",
+      "path": "/admin/refunds/:id/approve",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "refunds",
+      "descriptionAr": "موافقة على استرجاع كامل أو جزئي، ويعكس القيد حسب أن الطلب سُلِّم أم لا",
+      "access": "staff-permission",
+      "permission": "refunds:approve",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "refunds:approve",
+      "stage": 16,
+      "tables": [
+        "refunds",
+        "payments",
+        "orders",
+        "ledger_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/refunds/:id/approve",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/refunds/:id/approve"
+      },
+      "module": "money",
+      "description": "Approve a full or partial refund; the ledger entry is reversed according to whether the order was delivered.",
+      "frontend": {
+        "file": "src/features/refunds/api/refunds.ts",
+        "line": 44,
+        "fn": "approveRefund"
+      }
+    },
+    {
+      "key": "POST /admin/refunds/:id/decline",
+      "method": "POST",
+      "path": "/admin/refunds/:id/decline",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "refunds",
+      "descriptionAr": "رفض الاسترجاع مع سبب يصل الزبون",
+      "access": "staff-permission",
+      "permission": "refunds:approve",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "refunds:approve",
+      "stage": 16,
+      "tables": [
+        "refunds",
+        "notifications"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/refunds/:id/decline",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/refunds/:id/decline"
+      },
+      "module": "money",
+      "description": "Decline the refund with a reason that reaches the customer.",
+      "frontend": {
+        "file": "src/features/refunds/api/refunds.ts",
+        "line": 57,
+        "fn": "declineRefund"
+      }
+    },
+    {
+      "key": "POST /admin/refunds/:id/retry",
+      "method": "POST",
+      "path": "/admin/refunds/:id/retry",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "refunds",
+      "descriptionAr": "إعادة محاولة استرجاع فشل عند البوابة",
+      "access": "staff-permission",
+      "permission": "refunds:approve",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "refunds:approve",
+      "stage": 16,
+      "tables": [
+        "refunds",
+        "payments"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/refunds/:id/retry",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/refunds/:id/retry"
+      },
+      "module": "money",
+      "description": "Retry a refund that failed at the gateway.",
+      "frontend": {
+        "file": "src/features/refunds/api/refunds.ts",
+        "line": 66,
+        "fn": "retryRefund"
+      }
+    },
+    {
+      "key": "GET /admin/disputes",
+      "method": "GET",
+      "path": "/admin/disputes",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "refunds",
+      "descriptionAr": "نزاعات البطاقات (chargebacks) وموعد الأدلة",
+      "access": "staff-permission",
+      "permission": "disputes:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "disputes:read",
+      "stage": 16,
+      "tables": [
+        "disputes"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/disputes",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/disputes"
+      },
+      "module": "money",
+      "description": "Card disputes (chargebacks) and the evidence deadline.",
+      "frontend": {
+        "file": "src/features/refunds/api/disputes.ts",
+        "line": 20,
+        "fn": "listDisputes"
+      }
+    },
+    {
+      "key": "GET /admin/disputes/:id",
+      "method": "GET",
+      "path": "/admin/disputes/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "refunds",
+      "descriptionAr": "نزاعات البطاقات (chargebacks) وموعد الأدلة",
+      "access": "staff-permission",
+      "permission": "disputes:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "disputes:read",
+      "stage": 16,
+      "tables": [
+        "disputes"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/disputes",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/disputes"
+      },
+      "module": "money",
+      "description": "Card disputes (chargebacks) and the evidence deadline.",
+      "frontend": {
+        "file": "src/features/refunds/api/disputes.ts",
+        "line": 30,
+        "fn": "getDispute"
+      }
+    },
+    {
+      "key": "POST /admin/disputes/:id/evidence",
+      "method": "POST",
+      "path": "/admin/disputes/:id/evidence",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "refunds",
+      "descriptionAr": "إرسال الأدلة قبل الموعد: الدفع والتسليم ونتيجة الطلب وموافقات الزبون",
+      "access": "staff-permission",
+      "permission": "disputes:manage",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "disputes:manage",
+      "stage": 16,
+      "tables": [
+        "disputes",
+        "orders",
+        "order_events",
+        "consent_records",
+        "files"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/disputes/:id/evidence",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/disputes/:id/evidence"
+      },
+      "module": "money",
+      "description": "Submit evidence before the deadline: payment, delivery, order result and customer consents.",
+      "frontend": {
+        "file": "src/features/refunds/api/disputes.ts",
+        "line": 40,
+        "fn": "submitDisputeEvidence"
+      }
+    },
+    {
+      "key": "POST /admin/disputes/:id/accept",
+      "method": "POST",
+      "path": "/admin/disputes/:id/accept",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "refunds",
+      "descriptionAr": "قبول الخسارة ويسجَّل المبلغ ورسم النزاع في chargeback_loss",
+      "access": "staff-permission",
+      "permission": "disputes:manage",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "disputes:manage",
+      "stage": 16,
+      "tables": [
+        "disputes",
+        "ledger_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/disputes/:id/accept",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/disputes/:id/accept"
+      },
+      "module": "money",
+      "description": "Accept the loss; the amount and the dispute fee are recorded in chargeback_loss.",
+      "frontend": {
+        "file": "src/features/refunds/api/disputes.ts",
+        "line": 55,
+        "fn": "acceptDispute"
+      }
+    },
+    {
+      "key": "GET /admin/reports/vat",
+      "method": "GET",
+      "path": "/admin/reports/vat",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "refunds",
+      "descriptionAr": "الضريبة المستحقة بالبلد والفترة من القيود لا من الفواتير",
+      "access": "staff-permission",
+      "permission": "reports:finance",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "reports:finance",
+      "stage": 16,
+      "tables": [
+        "ledger_entries",
+        "tax_rates",
+        "invoices"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/reports/vat",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/reports/vat"
+      },
+      "module": "money",
+      "description": "VAT due by country and period, computed from ledger entries rather than invoices.",
+      "frontend": {
+        "file": "src/features/finance/api/reports.ts",
+        "line": 35,
+        "fn": "getVatReport"
+      }
+    },
+    {
+      "key": "GET /admin/reports/payments",
+      "method": "GET",
+      "path": "/admin/reports/payments",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "refunds",
+      "descriptionAr": "مدفوعات المتجر حسب الطريقة: الرسوم والصافي والتسويات",
+      "access": "staff-permission",
+      "permission": "reports:finance",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "reports:finance",
+      "stage": 16,
+      "tables": [
+        "payments",
+        "ledger_entries",
+        "payment_gateways"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/reports/payments",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/reports/payments"
+      },
+      "module": "money",
+      "description": "Storefront payments by method: fees, net amount and settlements.",
+      "frontend": {
+        "file": "src/features/refunds/api/reports.ts",
+        "line": 14,
+        "fn": "getPaymentsReport"
+      }
+    },
+    {
+      "key": "POST /webhooks/disputes/:gateway",
+      "method": "POST",
+      "path": "/webhooks/disputes/:gateway",
+      "op": "action",
+      "surface": "hooks",
+      "kind": "http",
+      "group": null,
+      "descriptionAr": "نزاع جديد أو محسوم من البوابة؛ يسجل النزاع بموعد الأدلة ويقيّد الخسارة عند الخسارة",
+      "access": "gateway-signature",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "توقيع البوابة",
+      "stage": 16,
+      "tables": [
+        "disputes",
+        "payments",
+        "ledger_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "hooks POST /webhooks/disputes/:gateway",
+        "method": "POST",
+        "ops": null,
+        "path": "/webhooks/disputes/:gateway"
+      },
+      "module": "money",
+      "description": "New or resolved dispute from the gateway; records the dispute with its evidence deadline and posts the loss when the dispute is lost.",
+      "frontend": null
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "success",
+      "nameAr": "نجاح عبر المورد",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 3,
+          "from": "api",
+          "to": "db",
+          "label": "سعر وحجز وطلب",
+          "textAr": "PriceResolver يحسب سعر هذا التاجر، ثم في transaction واحدة: طلب جديد وحدث وقيد حجز ومهمة outbox.",
+          "tables": [
+            "orders",
+            "order_events",
+            "ledger_entries",
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 10,
+          "from": "worker",
+          "to": "db",
+          "label": "completed وقيود",
+          "textAr": "الحجز يتحول إيراداً بسعر البيع، وتُسجَّل التكلفة من رصيدك عند المورد.",
+          "tables": [
+            "orders",
+            "order_events",
+            "ledger_entries"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reject",
+      "nameAr": "رفض المورد",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 3,
+          "from": "api",
+          "to": "db",
+          "label": "سعر وحجز وطلب",
+          "textAr": "PriceResolver يحسب سعر هذا التاجر، ثم في transaction واحدة: طلب جديد وحدث وقيد حجز ومهمة outbox.",
+          "tables": [
+            "orders",
+            "order_events",
+            "ledger_entries",
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 10,
+          "from": "worker",
+          "to": "db",
+          "label": "rejected واسترجاع",
+          "textAr": "الحجز يعود للمحفظة كاملاً، بلا أي تكلفة.",
+          "tables": [
+            "orders",
+            "order_events",
+            "ledger_entries"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "manual",
+      "nameAr": "تنفيذ يدوي",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 3,
+          "from": "api",
+          "to": "db",
+          "label": "سعر وحجز وطلب",
+          "textAr": "PriceResolver يحسب سعر هذا التاجر، ثم في transaction واحدة: طلب جديد وحدث وقيد حجز ومهمة outbox.",
+          "tables": [
+            "orders",
+            "order_events",
+            "ledger_entries",
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 8,
+          "from": "api",
+          "to": "db",
+          "label": "completed وقيود",
+          "textAr": "الحجز يتحول إيراداً، وكل إجراء للموظف يُسجَّل في audit_logs.",
+          "tables": [
+            "orders",
+            "ledger_entries",
+            "audit_logs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "timeout",
+      "nameAr": "انقطاع المورد",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 3,
+          "from": "api",
+          "to": "db",
+          "label": "سعر وحجز وطلب",
+          "textAr": "PriceResolver يحسب سعر هذا التاجر، ثم في transaction واحدة: طلب جديد وحدث وقيد حجز ومهمة outbox.",
+          "tables": [
+            "orders",
+            "order_events",
+            "ledger_entries",
+            "outbox_events"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b2c-paid",
+      "nameAr": "طلب متجر مدفوع",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 3,
+          "from": "api",
+          "to": "api",
+          "label": "سعر وضريبة وخطر",
+          "textAr": "السعر من فئة Retail شاملاً الضريبة حسب بلد العميل، وسعر الصرف يُثبَّت على الجلسة. ثم يقيّم risk_assessments الجلسة، وقد يمنعها أو يطلب مراجعة قبل فتح الدفع.",
+          "tables": [
+            "service_group_prices",
+            "tax_rates",
+            "currencies",
+            "risk_assessments",
+            "checkout_sessions"
+          ]
+        },
+        {
+          "step": 4,
+          "from": "api",
+          "to": "gateway",
+          "label": "جلسة دفع مستضافة",
+          "textAr": "إنشاء جلسة دفع لدى البوابة بمبلغ الجلسة ومفتاح idempotency، مع 3DS للبطاقة أو عنوان للكريبتو.",
+          "tables": [
+            "checkout_sessions",
+            "payments",
+            "payment_gateways"
+          ]
+        },
+        {
+          "step": 5,
+          "from": "customer",
+          "to": "gateway",
+          "label": "يدفع الطلب",
+          "textAr": "العميل يدفع في صفحة البوابة نفسها. لم يُنشأ أي طلب بعد، ولا يُرسل شيء للمورد.",
+          "tables": [
+            "payments"
+          ]
+        },
+        {
+          "step": 6,
+          "from": "gateway",
+          "to": "api",
+          "label": "webhook payment.succeeded",
+          "textAr": "تأكيد موقّع يُتحقق من توقيعه ويُعالج مرة واحدة فقط. هذه اللحظة الوحيدة التي يُسمح فيها بالتنفيذ؛ وفي الكريبتو بعد عدد التأكيدات المطلوب.",
+          "tables": [
+            "payments",
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 7,
+          "from": "api",
+          "to": "db",
+          "label": "التقاط الدفع وإنشاء الطلب",
+          "textAr": "في transaction واحدة: الدفعة captured والجلسة paid، وطلب جديد بـ customer_id و public_token بدل client_id، وقيد القبض، ومهمة outbox للإرسال.",
+          "tables": [
+            "payments",
+            "checkout_sessions",
+            "orders",
+            "order_events",
+            "ledger_entries",
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 8,
+          "from": "db",
+          "to": "db",
+          "label": "رسوم البوابة",
+          "textAr": "رسوم المعالجة تُسجَّل مصروفاً على البوابة.",
+          "tables": [
+            "payments",
+            "ledger_entries"
+          ]
+        },
+        {
+          "step": 15,
+          "from": "worker",
+          "to": "db",
+          "label": "completed وقيود",
+          "textAr": "عند التسليم تتحول أموال العميل إلى إيراد بسعر البيع بلا الضريبة، وتُسجَّل تكلفة المورد. الضريبة تبقى في vat_payable.",
+          "tables": [
+            "orders",
+            "order_events",
+            "ledger_entries"
+          ]
+        },
+        {
+          "step": 16,
+          "from": "worker",
+          "to": "customer",
+          "label": "النتيجة والإيصال",
+          "textAr": "إيميل الاكتمال بالنتيجة، وإيصال ضريبي PDF.",
+          "tables": [
+            "notifications",
+            "invoices"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b2c-refund",
+      "nameAr": "استرداد قبل التسليم",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 3,
+          "from": "admin",
+          "to": "api",
+          "label": "قرار الاسترداد",
+          "textAr": "الموظف يتأكد أن الطلب لم يُرسل، ويقرر استرداداً كاملاً إلى البطاقة الأصلية (method = original). يحتاج صلاحية ويُسجَّل في سجل التدقيق.",
+          "tables": [
+            "refunds",
+            "orders",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 4,
+          "from": "api",
+          "to": "db",
+          "label": "إلغاء الطلب وقيد الاسترداد",
+          "textAr": "في transaction واحدة: يُلغى الطلب فيصير rejected، وتُلغى مهمة الإرسال في outbox، ويُسجَّل القيد العكسي بالمبلغ الكامل شاملاً الضريبة.",
+          "tables": [
+            "orders",
+            "order_events",
+            "refunds",
+            "ledger_entries",
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 6,
+          "from": "worker",
+          "to": "gateway",
+          "label": "طلب استرداد",
+          "textAr": "استرداد بالمبلغ الكامل مع مفتاح idempotency حتى لا يتكرر. refunds.status = processing.",
+          "tables": [
+            "refunds",
+            "payments"
+          ]
+        },
+        {
+          "step": 7,
+          "from": "gateway",
+          "to": "api",
+          "label": "webhook refund.succeeded",
+          "textAr": "تأكيد موقّع بنجاح الاسترداد: refunds.status = completed وتُخزَّن gateway_refund_id.",
+          "tables": [
+            "refunds",
+            "payments"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b2c-chargeback",
+      "nameAr": "نزاع chargeback خسرناه",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 1,
+          "from": "gateway",
+          "to": "api",
+          "label": "webhook dispute.created",
+          "textAr": "العميل اعترض عند مصدر بطاقته، فأرسلت البوابة النزاع بمهلة لتقديم الأدلة. المبلغ المتنازع عليه 14.99$ مع رسم نزاع 15$.",
+          "tables": [
+            "disputes",
+            "payments",
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 2,
+          "from": "api",
+          "to": "db",
+          "label": "سجل النزاع",
+          "textAr": "يُنشأ disputes بحالة needs_response مع evidence_due_at، وتُعلَّم الدفعة والطلب والعميل.",
+          "tables": [
+            "disputes",
+            "payments",
+            "orders",
+            "customers"
+          ]
+        },
+        {
+          "step": 3,
+          "from": "db",
+          "to": "admin",
+          "label": "تنبيه بالمهلة",
+          "textAr": "تنبيه فوري للإدارة بموعد تقديم الأدلة قبل أن تنتهي المهلة.",
+          "tables": [
+            "notifications",
+            "disputes"
+          ]
+        },
+        {
+          "step": 5,
+          "from": "api",
+          "to": "gateway",
+          "label": "رفع الأدلة",
+          "textAr": "تُرفع الحزمة عبر API البوابة: disputes.status = under_review مع submitted_at.",
+          "tables": [
+            "disputes",
+            "files"
+          ]
+        },
+        {
+          "step": 6,
+          "from": "gateway",
+          "to": "api",
+          "label": "webhook: lost",
+          "textAr": "قرار البنك لصالح العميل: النزاع خسرناه.",
+          "tables": [
+            "disputes"
+          ]
+        },
+        {
+          "step": 7,
+          "from": "api",
+          "to": "db",
+          "label": "قيد الخسارة",
+          "textAr": "المبلغ المسترَدّ من البوابة مع رسم النزاع يُسجَّلان خسارة.",
+          "tables": [
+            "disputes",
+            "ledger_entries",
+            "ledger_transactions"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "system-integrity",
+      "nameAr": "فرق في الـ ledger ووضع الصيانة",
+      "group": "ops",
+      "steps": [
+        {
+          "step": 1,
+          "from": "worker",
+          "to": "db",
+          "label": "فحص سلامة المال",
+          "textAr": "ليلاً تعمل مهمة ledger_integrity: هل مجموع أسطر كل قيد صفر؟ وهل رصيد كل حساب يساوي مجموع أسطره؟ وهل من حجوزات عالقة أكثر من 24 ساعة، أو دفعات مؤكدة بلا قيد؟ النتيجة في job_runs.result.",
+          "tables": [
+            "ledger_entries",
+            "ledger_accounts",
+            "payments",
+            "job_runs"
+          ]
+        },
+        {
+          "step": 3,
+          "from": "admin",
+          "to": "api",
+          "label": "GET /admin/system/integrity",
+          "textAr": "يفتح التفاصيل: الحساب والفرق وآخر قيد كتبه وزمن آخر فحص ناجح. الفحص يقرأ فقط ولا يصحّح شيئاً بنفسه.",
+          "tables": [
+            "ledger_accounts",
+            "ledger_entries",
+            "job_runs"
+          ]
+        },
+        {
+          "step": 6,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/clients/:id/wallet/adjust",
+          "textAr": "بعد معرفة السبب يصحّح الرصيد بقيد عكسي مع ذكر السبب، لا بتعديل القيد الأصلي. القيود لا تُعدَّل ولا تُحذف.",
+          "tables": [
+            "ledger_transactions",
+            "ledger_entries",
+            "audit_logs"
+          ]
+        }
+      ]
+    }
+  ],
+  "ledgerAccounts": [
+    {
+      "id": "fee_income",
+      "name": "إيراد الرسوم",
+      "kind": "إيراد",
+      "pos": [
+        1,
+        1
+      ]
+    },
+    {
+      "id": "vat_payable",
+      "name": "ضريبة مستحقة",
+      "kind": "التزام",
+      "pos": [
+        1,
+        2
+      ]
+    },
+    {
+      "id": "chargeback_loss",
+      "name": "خسائر النزاعات",
+      "kind": "مصروف",
+      "pos": [
+        1,
+        3
+      ]
+    },
+    {
+      "id": "bank",
+      "name": "البنك",
+      "kind": "أصل",
+      "pos": [
+        1,
+        4
+      ],
+      "init": 1000
+    },
+    {
+      "id": "gateway_fees",
+      "name": "رسوم البوابات",
+      "kind": "مصروف",
+      "pos": [
+        2,
+        1
+      ]
+    },
+    {
+      "id": "gateway_clearing",
+      "name": "مستحق من البوابات",
+      "kind": "أصل",
+      "pos": [
+        2,
+        2
+      ]
+    },
+    {
+      "id": "customer_funds",
+      "name": "أموال العملاء",
+      "kind": "التزام",
+      "pos": [
+        2,
+        3
+      ]
+    },
+    {
+      "id": "supplier_prepaid",
+      "name": "رصيدك عند المورد",
+      "kind": "أصل",
+      "pos": [
+        2,
+        4
+      ],
+      "init": 200
+    },
+    {
+      "id": "commission_expense",
+      "name": "مصروف العمولات",
+      "kind": "مصروف",
+      "pos": [
+        3,
+        1
+      ]
+    },
+    {
+      "id": "client_wallet",
+      "name": "محافظ التجار",
+      "kind": "التزام",
+      "pos": [
+        3,
+        2
+      ]
+    },
+    {
+      "id": "revenue",
+      "name": "الإيراد",
+      "kind": "إيراد",
+      "pos": [
+        3,
+        3
+      ]
+    },
+    {
+      "id": "cogs",
+      "name": "تكلفة الموردين",
+      "kind": "مصروف",
+      "pos": [
+        3,
+        4
+      ]
+    },
+    {
+      "id": "adjustments",
+      "name": "تعديلات يدوية",
+      "kind": "مصروف",
+      "pos": [
+        4,
+        2
+      ]
+    },
+    {
+      "id": "client_hold",
+      "name": "المحجوز",
+      "kind": "التزام",
+      "pos": [
+        4,
+        3
+      ]
+    }
+  ],
+  "moneyEvents": [
+    {
+      "id": "deposit",
+      "group": "b2b",
+      "name": "شحن 100$",
+      "note": "التاجر يدفع 103$ والرسوم 3$ عليه",
+      "flows": [
+        [
+          "gateway_clearing",
+          "client_wallet",
+          100
+        ],
+        [
+          "gateway_clearing",
+          "fee_income",
+          3
+        ]
+      ],
+      "delta": {
+        "gateway_clearing": 103,
+        "client_wallet": 100,
+        "fee_income": 3
+      },
+      "entry": [
+        [
+          "gateway_clearing",
+          103,
+          0
+        ],
+        [
+          "client_wallet",
+          0,
+          100
+        ],
+        [
+          "fee_income",
+          0,
+          3
+        ]
+      ]
+    },
+    {
+      "id": "order",
+      "group": "b2b",
+      "name": "طلب 5$",
+      "note": "الرصيد يُحجز ولا يُصرف بعد",
+      "need": [
+        "client_wallet",
+        5,
+        "اشحن الرصيد أولاً"
+      ],
+      "flows": [
+        [
+          "client_wallet",
+          "client_hold",
+          5
+        ]
+      ],
+      "delta": {
+        "client_wallet": -5,
+        "client_hold": 5
+      },
+      "entry": [
+        [
+          "client_wallet",
+          5,
+          0
+        ],
+        [
+          "client_hold",
+          0,
+          5
+        ]
+      ]
+    },
+    {
+      "id": "complete",
+      "group": "b2b",
+      "name": "اكتمال الطلب",
+      "note": "الإيراد 5$ والتكلفة 3$، فالربح 2$",
+      "need": [
+        "client_hold",
+        5,
+        "لا يوجد طلب محجوز"
+      ],
+      "flows": [
+        [
+          "client_hold",
+          "revenue",
+          5
+        ],
+        [
+          "supplier_prepaid",
+          "cogs",
+          3
+        ]
+      ],
+      "delta": {
+        "client_hold": -5,
+        "revenue": 5,
+        "supplier_prepaid": -3,
+        "cogs": 3
+      },
+      "entry": [
+        [
+          "client_hold",
+          5,
+          0
+        ],
+        [
+          "cogs",
+          3,
+          0
+        ],
+        [
+          "revenue",
+          0,
+          5
+        ],
+        [
+          "supplier_prepaid",
+          0,
+          3
+        ]
+      ]
+    },
+    {
+      "id": "reject",
+      "group": "b2b",
+      "name": "رفض الطلب",
+      "note": "المبلغ يعود للمحفظة كاملاً",
+      "need": [
+        "client_hold",
+        5,
+        "لا يوجد طلب محجوز"
+      ],
+      "flows": [
+        [
+          "client_hold",
+          "client_wallet",
+          5
+        ]
+      ],
+      "delta": {
+        "client_hold": -5,
+        "client_wallet": 5
+      },
+      "entry": [
+        [
+          "client_hold",
+          5,
+          0
+        ],
+        [
+          "client_wallet",
+          0,
+          5
+        ]
+      ]
+    },
+    {
+      "id": "topup",
+      "group": "b2b",
+      "name": "شحن رصيد المورد 50$",
+      "note": "تحويل من بنكك لشراء رصيد",
+      "flows": [
+        [
+          "bank",
+          "supplier_prepaid",
+          50
+        ]
+      ],
+      "delta": {
+        "bank": -50,
+        "supplier_prepaid": 50
+      },
+      "entry": [
+        [
+          "supplier_prepaid",
+          50,
+          0
+        ],
+        [
+          "bank",
+          0,
+          50
+        ]
+      ]
+    },
+    {
+      "id": "commission",
+      "group": "b2b",
+      "name": "عمولة إحالة 0.20$",
+      "note": "تُصرف لمحفظة التاجر المُحيل",
+      "need": [
+        "revenue",
+        5,
+        "العمولة تُستحق على طلب مكتمل"
+      ],
+      "flows": [
+        [
+          "commission_expense",
+          "client_wallet",
+          0.2
+        ]
+      ],
+      "delta": {
+        "commission_expense": 0.2,
+        "client_wallet": 0.2
+      },
+      "entry": [
+        [
+          "commission_expense",
+          0.2,
+          0
+        ],
+        [
+          "client_wallet",
+          0,
+          0.2
+        ]
+      ]
+    },
+    {
+      "id": "adjust",
+      "group": "b2b",
+      "name": "تعديل يدوي 10$",
+      "note": "إضافة من الإدارة مع سبب وصلاحية",
+      "flows": [
+        [
+          "adjustments",
+          "client_wallet",
+          10
+        ]
+      ],
+      "delta": {
+        "adjustments": 10,
+        "client_wallet": 10
+      },
+      "entry": [
+        [
+          "adjustments",
+          10,
+          0
+        ],
+        [
+          "client_wallet",
+          0,
+          10
+        ]
+      ]
+    },
+    {
+      "id": "b2c_pay",
+      "group": "b2c",
+      "name": "دفع طلب 14.99$",
+      "note": "صافي 12.49$ وضريبة 2.50$ (20%)",
+      "flows": [
+        [
+          "gateway_clearing",
+          "customer_funds",
+          12.49
+        ],
+        [
+          "gateway_clearing",
+          "vat_payable",
+          2.5
+        ]
+      ],
+      "delta": {
+        "gateway_clearing": 14.99,
+        "customer_funds": 12.49,
+        "vat_payable": 2.5
+      },
+      "entry": [
+        [
+          "gateway_clearing",
+          14.99,
+          0
+        ],
+        [
+          "customer_funds",
+          0,
+          12.49
+        ],
+        [
+          "vat_payable",
+          0,
+          2.5
+        ]
+      ]
+    },
+    {
+      "id": "b2c_fee",
+      "group": "b2c",
+      "name": "رسوم البوابة 0.73$",
+      "note": "مصروف على كل دفعة",
+      "need": [
+        "customer_funds",
+        12.49,
+        "ادفع طلب المتجر أولاً"
+      ],
+      "flows": [
+        [
+          "gateway_clearing",
+          "gateway_fees",
+          0.73
+        ]
+      ],
+      "delta": {
+        "gateway_clearing": -0.73,
+        "gateway_fees": 0.73
+      },
+      "entry": [
+        [
+          "gateway_fees",
+          0.73,
+          0
+        ],
+        [
+          "gateway_clearing",
+          0,
+          0.73
+        ]
+      ]
+    },
+    {
+      "id": "b2c_deliver",
+      "group": "b2c",
+      "name": "تسليم الطلب",
+      "note": "الإيراد 12.49$ والتكلفة 7.20$",
+      "need": [
+        "customer_funds",
+        12.49,
+        "ادفع طلب المتجر أولاً"
+      ],
+      "flows": [
+        [
+          "customer_funds",
+          "revenue",
+          12.49
+        ],
+        [
+          "supplier_prepaid",
+          "cogs",
+          7.2
+        ]
+      ],
+      "delta": {
+        "customer_funds": -12.49,
+        "revenue": 12.49,
+        "supplier_prepaid": -7.2,
+        "cogs": 7.2
+      },
+      "entry": [
+        [
+          "customer_funds",
+          12.49,
+          0
+        ],
+        [
+          "cogs",
+          7.2,
+          0
+        ],
+        [
+          "revenue",
+          0,
+          12.49
+        ],
+        [
+          "supplier_prepaid",
+          0,
+          7.2
+        ]
+      ]
+    },
+    {
+      "id": "b2c_refund",
+      "group": "b2c",
+      "name": "استرداد قبل التسليم",
+      "note": "كامل 14.99$ إلى البطاقة",
+      "need": [
+        "customer_funds",
+        12.49,
+        "لا يوجد طلب مدفوع غير مسلَّم"
+      ],
+      "flows": [
+        [
+          "customer_funds",
+          "gateway_clearing",
+          12.49
+        ],
+        [
+          "vat_payable",
+          "gateway_clearing",
+          2.5
+        ]
+      ],
+      "delta": {
+        "customer_funds": -12.49,
+        "vat_payable": -2.5,
+        "gateway_clearing": -14.99
+      },
+      "entry": [
+        [
+          "customer_funds",
+          12.49,
+          0
+        ],
+        [
+          "vat_payable",
+          2.5,
+          0
+        ],
+        [
+          "gateway_clearing",
+          0,
+          14.99
+        ]
+      ]
+    },
+    {
+      "id": "b2c_chargeback",
+      "group": "b2c",
+      "name": "نزاع خسرناه",
+      "note": "14.99$ ورسم نزاع 15$ يُخصمان من مستحقاتك",
+      "need": [
+        "revenue",
+        12.49,
+        "النزاع يأتي بعد تسليم طلب مدفوع"
+      ],
+      "flows": [
+        [
+          "gateway_clearing",
+          "chargeback_loss",
+          29.99
+        ]
+      ],
+      "delta": {
+        "gateway_clearing": -29.99,
+        "chargeback_loss": 29.99
+      },
+      "entry": [
+        [
+          "chargeback_loss",
+          29.99,
+          0
+        ],
+        [
+          "gateway_clearing",
+          0,
+          29.99
+        ]
+      ]
+    },
+    {
+      "id": "payout",
+      "group": "b2c",
+      "name": "تحويل البوابة للبنك 14.26$",
+      "note": "دفعة الطلب بعد خصم الرسوم",
+      "need": [
+        "gateway_clearing",
+        14.26,
+        "لا يوجد رصيد مستحق من البوابة"
+      ],
+      "flows": [
+        [
+          "gateway_clearing",
+          "bank",
+          14.26
+        ]
+      ],
+      "delta": {
+        "gateway_clearing": -14.26,
+        "bank": 14.26
+      },
+      "entry": [
+        [
+          "bank",
+          14.26,
+          0
+        ],
+        [
+          "gateway_clearing",
+          0,
+          14.26
+        ]
+      ]
+    }
+  ]
+}

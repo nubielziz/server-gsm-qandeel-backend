@@ -1,0 +1,959 @@
+{
+  "module": "suppliers",
+  "name": "Suppliers",
+  "domain": "C",
+  "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
+  "counts": {
+    "rows": 13,
+    "endpoints": 18,
+    "bySurface": {
+      "admin": 14,
+      "supplier": 4
+    },
+    "frontendCalled": 14
+  },
+  "stages": [
+    6,
+    11
+  ],
+  "ownedTables": [
+    {
+      "name": "suppliers",
+      "description": "Supplier connections and your balance with each one.",
+      "descriptionAr": "اتصالات الموردين ورصيدك عندهم",
+      "b2c": null,
+      "columns": [
+        "name",
+        "driver",
+        "base_url",
+        "username",
+        "api_key_enc",
+        "param_format",
+        "currency",
+        "credit_rate",
+        "status",
+        "balance",
+        "balance_checked_at",
+        "low_balance_alert",
+        "max_concurrency",
+        "rate_limit_per_min",
+        "timeout_ms"
+      ],
+      "foreignKeys": []
+    },
+    {
+      "name": "supplier_services",
+      "description": "A copy of a supplier's services after a sync.",
+      "descriptionAr": "نسخة من خدمات المورد بعد المزامنة",
+      "b2c": null,
+      "columns": [
+        "supplier_id",
+        "remote_id",
+        "remote_group",
+        "type",
+        "name",
+        "credit",
+        "time",
+        "requires jsonb",
+        "custom_fields jsonb",
+        "raw jsonb",
+        "is_available",
+        "last_seen_at",
+        "price_changed_at"
+      ],
+      "foreignKeys": [
+        {
+          "column": "supplier_id",
+          "target": "suppliers",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "service_supplier_links",
+      "description": "Links your service to a supplier service, in priority order.",
+      "descriptionAr": "ربط خدمتك بخدمة المورد حسب الأولوية",
+      "b2c": null,
+      "columns": [
+        "service_id",
+        "supplier_service_id",
+        "priority",
+        "field_map jsonb",
+        "is_active"
+      ],
+      "foreignKeys": [
+        {
+          "column": "service_id",
+          "target": "services",
+          "kind": "fk"
+        },
+        {
+          "column": "supplier_service_id",
+          "target": "supplier_services",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "supplier_api_logs",
+      "description": "A log of every request sent to a supplier.",
+      "descriptionAr": "سجل كل طلب ورد مع المورد",
+      "b2c": null,
+      "columns": [
+        "supplier_id",
+        "order_id",
+        "action",
+        "request",
+        "response",
+        "http_status",
+        "duration_ms",
+        "error"
+      ],
+      "foreignKeys": [
+        {
+          "column": "supplier_id",
+          "target": "suppliers",
+          "kind": "fk"
+        },
+        {
+          "column": "order_id",
+          "target": "orders",
+          "kind": "fk"
+        }
+      ]
+    }
+  ],
+  "foreignTables": [
+    {
+      "table": "orders",
+      "owner": "orders"
+    },
+    {
+      "table": "service_fields",
+      "owner": "catalog"
+    },
+    {
+      "table": "services",
+      "owner": "catalog"
+    }
+  ],
+  "endpoints": [
+    {
+      "key": "GET /admin/suppliers",
+      "method": "GET",
+      "path": "/admin/suppliers",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "suppliers",
+      "descriptionAr": "الموردين: الـ driver والرابط والمفتاح (كتابة فقط) والحدود",
+      "access": "staff-permission",
+      "permission": "suppliers:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "suppliers:*",
+      "stage": 6,
+      "tables": [
+        "suppliers"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/suppliers",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/suppliers"
+      },
+      "module": "suppliers",
+      "description": "Suppliers: driver, URL, key (write-only) and limits.",
+      "frontend": {
+        "file": "src/features/suppliers/api/suppliers.ts",
+        "line": 22,
+        "fn": "listSuppliers"
+      }
+    },
+    {
+      "key": "GET /admin/suppliers/:id",
+      "method": "GET",
+      "path": "/admin/suppliers/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "suppliers",
+      "descriptionAr": "الموردين: الـ driver والرابط والمفتاح (كتابة فقط) والحدود",
+      "access": "staff-permission",
+      "permission": "suppliers:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "suppliers:*",
+      "stage": 6,
+      "tables": [
+        "suppliers"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/suppliers",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/suppliers"
+      },
+      "module": "suppliers",
+      "description": "Suppliers: driver, URL, key (write-only) and limits.",
+      "frontend": {
+        "file": "src/features/suppliers/api/suppliers.ts",
+        "line": 32,
+        "fn": "getSupplier"
+      }
+    },
+    {
+      "key": "POST /admin/suppliers",
+      "method": "POST",
+      "path": "/admin/suppliers",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "suppliers",
+      "descriptionAr": "الموردين: الـ driver والرابط والمفتاح (كتابة فقط) والحدود",
+      "access": "staff-permission",
+      "permission": "suppliers:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "suppliers:*",
+      "stage": 6,
+      "tables": [
+        "suppliers"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/suppliers",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/suppliers"
+      },
+      "module": "suppliers",
+      "description": "Suppliers: driver, URL, key (write-only) and limits.",
+      "frontend": {
+        "file": "src/features/suppliers/api/suppliers.ts",
+        "line": 42,
+        "fn": "createSupplier"
+      }
+    },
+    {
+      "key": "PATCH /admin/suppliers/:id",
+      "method": "PATCH",
+      "path": "/admin/suppliers/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "suppliers",
+      "descriptionAr": "الموردين: الـ driver والرابط والمفتاح (كتابة فقط) والحدود",
+      "access": "staff-permission",
+      "permission": "suppliers:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "suppliers:*",
+      "stage": 6,
+      "tables": [
+        "suppliers"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/suppliers",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/suppliers"
+      },
+      "module": "suppliers",
+      "description": "Suppliers: driver, URL, key (write-only) and limits.",
+      "frontend": {
+        "file": "src/features/suppliers/api/suppliers.ts",
+        "line": 52,
+        "fn": "updateSupplier"
+      }
+    },
+    {
+      "key": "DELETE /admin/suppliers/:id",
+      "method": "DELETE",
+      "path": "/admin/suppliers/:id",
+      "op": "delete",
+      "surface": "admin",
+      "kind": "http",
+      "group": "suppliers",
+      "descriptionAr": "الموردين: الـ driver والرابط والمفتاح (كتابة فقط) والحدود",
+      "access": "staff-permission",
+      "permission": "suppliers:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "suppliers:*",
+      "stage": 6,
+      "tables": [
+        "suppliers"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/suppliers",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/suppliers"
+      },
+      "module": "suppliers",
+      "description": "Suppliers: driver, URL, key (write-only) and limits.",
+      "frontend": {
+        "file": "src/features/suppliers/api/suppliers.ts",
+        "line": 62,
+        "fn": "deleteSupplier"
+      }
+    },
+    {
+      "key": "POST /admin/suppliers/:id/test",
+      "method": "POST",
+      "path": "/admin/suppliers/:id/test",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "suppliers",
+      "descriptionAr": "اختبار الاتصال عبر accountinfo",
+      "access": "staff-permission",
+      "permission": "suppliers:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "suppliers:update",
+      "stage": 6,
+      "tables": [
+        "suppliers",
+        "supplier_api_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/suppliers/:id/test",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/suppliers/:id/test"
+      },
+      "module": "suppliers",
+      "description": "Test the connection through accountinfo.",
+      "frontend": {
+        "file": "src/features/suppliers/api/actions.ts",
+        "line": 12,
+        "fn": "testSupplier"
+      }
+    },
+    {
+      "key": "POST /admin/suppliers/:id/sync",
+      "method": "POST",
+      "path": "/admin/suppliers/:id/sync",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "suppliers",
+      "descriptionAr": "مزامنة الخدمات والرصيد الآن",
+      "access": "staff-permission",
+      "permission": "suppliers:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "suppliers:update",
+      "stage": 6,
+      "tables": [
+        "supplier_services",
+        "suppliers"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/suppliers/:id/sync",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/suppliers/:id/sync"
+      },
+      "module": "suppliers",
+      "description": "Sync services and balance now.",
+      "frontend": {
+        "file": "src/features/suppliers/api/actions.ts",
+        "line": 23,
+        "fn": "syncSupplier"
+      }
+    },
+    {
+      "key": "GET /admin/suppliers/:id/services",
+      "method": "GET",
+      "path": "/admin/suppliers/:id/services",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "suppliers",
+      "descriptionAr": "خدمات المورد بعد المزامنة",
+      "access": "staff-permission",
+      "permission": "suppliers:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "suppliers:read",
+      "stage": 6,
+      "tables": [
+        "supplier_services"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/suppliers/:id/services",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/suppliers/:id/services"
+      },
+      "module": "suppliers",
+      "description": "The supplier services after syncing.",
+      "frontend": {
+        "file": "src/features/suppliers/api/catalogue.ts",
+        "line": 12,
+        "fn": "listSupplierServices"
+      }
+    },
+    {
+      "key": "POST /admin/suppliers/:id/import/preview",
+      "method": "POST",
+      "path": "/admin/suppliers/:id/import/preview",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "suppliers",
+      "descriptionAr": "معاينة الاستيراد: جديد ومطابق ومتغيّر مع السعر المقترح",
+      "access": "staff-permission",
+      "permission": "catalog:create",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:create",
+      "stage": 6,
+      "tables": [
+        "supplier_services",
+        "services"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/suppliers/:id/import/preview",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/suppliers/:id/import/preview"
+      },
+      "module": "suppliers",
+      "description": "Preview the import: new, matching and changed services, with the suggested price.",
+      "frontend": {
+        "file": "src/features/suppliers/api/catalogue.ts",
+        "line": 26,
+        "fn": "previewImport"
+      }
+    },
+    {
+      "key": "POST /admin/suppliers/:id/import",
+      "method": "POST",
+      "path": "/admin/suppliers/:id/import",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "suppliers",
+      "descriptionAr": "استيراد المختار كخدمات وحقول وروابط",
+      "access": "staff-permission",
+      "permission": "catalog:create",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:create",
+      "stage": 6,
+      "tables": [
+        "services",
+        "service_fields",
+        "service_supplier_links"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/suppliers/:id/import",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/suppliers/:id/import"
+      },
+      "module": "suppliers",
+      "description": "Import the selected items as services, fields and links.",
+      "frontend": {
+        "file": "src/features/suppliers/api/catalogue.ts",
+        "line": 36,
+        "fn": "importServices"
+      }
+    },
+    {
+      "key": "PUT /admin/services/:id/supplier-links",
+      "method": "PUT",
+      "path": "/admin/services/:id/supplier-links",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "suppliers",
+      "descriptionAr": "ربط الخدمة بالموردين بالأولوية",
+      "access": "staff-permission",
+      "permission": "catalog:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:update",
+      "stage": 6,
+      "tables": [
+        "service_supplier_links"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin PUT /admin/services/:id/supplier-links",
+        "method": "PUT",
+        "ops": null,
+        "path": "/admin/services/:id/supplier-links"
+      },
+      "module": "suppliers",
+      "description": "Link the service to suppliers in priority order.",
+      "frontend": {
+        "file": "src/features/suppliers/api/links.ts",
+        "line": 11,
+        "fn": "replaceSupplierLinks"
+      }
+    },
+    {
+      "key": "GET /admin/supplier-api-logs",
+      "method": "GET",
+      "path": "/admin/supplier-api-logs",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "suppliers",
+      "descriptionAr": "سجل طلبات وردود الموردين",
+      "access": "staff-permission",
+      "permission": "suppliers:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "suppliers:read",
+      "stage": 6,
+      "tables": [
+        "supplier_api_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/supplier-api-logs",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/supplier-api-logs"
+      },
+      "module": "suppliers",
+      "description": "Log of supplier requests and responses.",
+      "frontend": {
+        "file": "src/features/suppliers/api/logs.ts",
+        "line": 11,
+        "fn": "listSupplierApiLogs"
+      }
+    },
+    {
+      "key": "GET /admin/supplier-api-logs/:id",
+      "method": "GET",
+      "path": "/admin/supplier-api-logs/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "suppliers",
+      "descriptionAr": "سجل طلبات وردود الموردين",
+      "access": "staff-permission",
+      "permission": "suppliers:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "suppliers:read",
+      "stage": 6,
+      "tables": [
+        "supplier_api_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/supplier-api-logs",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/supplier-api-logs"
+      },
+      "module": "suppliers",
+      "description": "Log of supplier requests and responses.",
+      "frontend": {
+        "file": "src/features/suppliers/api/logs.ts",
+        "line": 24,
+        "fn": "getSupplierApiLog"
+      }
+    },
+    {
+      "key": "GET /admin/reports/suppliers",
+      "method": "GET",
+      "path": "/admin/reports/suppliers",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "صرف الموردين ونسبة الرفض والسرعة",
+      "access": "staff-permission",
+      "permission": "reports:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "reports:read",
+      "stage": 11,
+      "tables": [
+        "orders",
+        "suppliers"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/reports/suppliers",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/reports/suppliers"
+      },
+      "module": "suppliers",
+      "description": "Supplier spend, rejection rate and speed.",
+      "frontend": {
+        "file": "src/features/suppliers/api/reports.ts",
+        "line": 10,
+        "fn": "getSupplierReport"
+      }
+    },
+    {
+      "key": "SUPPLIER accountinfo",
+      "method": "POST",
+      "path": "<supplier>/api/index.php",
+      "action": "accountinfo",
+      "op": "call",
+      "surface": "supplier",
+      "kind": "supplier-call",
+      "group": null,
+      "descriptionAr": "رصيدنا عند المورد",
+      "access": "outbound-supplier-account",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "حسابنا عند المورد",
+      "stage": 6,
+      "tables": [
+        "suppliers"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "supplier ACTION accountinfo",
+        "method": "ACTION",
+        "ops": null,
+        "path": "accountinfo"
+      },
+      "module": "suppliers",
+      "description": "Our balance at the supplier.",
+      "frontend": null
+    },
+    {
+      "key": "SUPPLIER imeiservicelist",
+      "method": "POST",
+      "path": "<supplier>/api/index.php",
+      "action": "imeiservicelist",
+      "op": "call",
+      "surface": "supplier",
+      "kind": "supplier-call",
+      "group": null,
+      "descriptionAr": "خدمات المورد وتكلفتها للمزامنة",
+      "access": "outbound-supplier-account",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "حسابنا عند المورد",
+      "stage": 6,
+      "tables": [
+        "supplier_services"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "supplier ACTION imeiservicelist",
+        "method": "ACTION",
+        "ops": null,
+        "path": "imeiservicelist"
+      },
+      "module": "suppliers",
+      "description": "The supplier's services and their cost, for sync.",
+      "frontend": null
+    },
+    {
+      "key": "SUPPLIER placeimeiorder+placeimeiorderbulk",
+      "method": "POST",
+      "path": "<supplier>/api/index.php",
+      "action": "placeimeiorder+placeimeiorderbulk",
+      "op": "call",
+      "surface": "supplier",
+      "kind": "supplier-call",
+      "group": null,
+      "descriptionAr": "إرسال الطلب وحفظ supplier_ref",
+      "access": "outbound-supplier-account",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "حسابنا عند المورد",
+      "stage": 6,
+      "tables": [
+        "orders",
+        "supplier_api_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "supplier ACTION placeimeiorder · bulk",
+        "method": "ACTION",
+        "ops": null,
+        "path": "placeimeiorder · bulk"
+      },
+      "module": "suppliers",
+      "description": "Send the order and store supplier_ref.",
+      "frontend": null
+    },
+    {
+      "key": "SUPPLIER getimeiorder+getimeiorderbulk",
+      "method": "POST",
+      "path": "<supplier>/api/index.php",
+      "action": "getimeiorder+getimeiorderbulk",
+      "op": "call",
+      "surface": "supplier",
+      "kind": "supplier-call",
+      "group": null,
+      "descriptionAr": "سحب الحالة والنتيجة (polling)",
+      "access": "outbound-supplier-account",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "حسابنا عند المورد",
+      "stage": 6,
+      "tables": [
+        "orders",
+        "supplier_api_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "supplier ACTION getimeiorder · bulk",
+        "method": "ACTION",
+        "ops": null,
+        "path": "getimeiorder · bulk"
+      },
+      "module": "suppliers",
+      "description": "Poll the status and the result.",
+      "frontend": null
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "success",
+      "nameAr": "نجاح عبر المورد",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 6,
+          "from": "worker",
+          "to": "supplier",
+          "label": "placeimeiorder",
+          "textAr": "الإرسال بحسابك عند المورد الأساسي، مع حد السرعة وتسجيل الطلب والرد.",
+          "tables": [
+            "service_supplier_links",
+            "supplier_api_logs"
+          ]
+        },
+        {
+          "step": 8,
+          "from": "worker",
+          "to": "supplier",
+          "label": "getimeiorder",
+          "textAr": "استعلام دوري: كل دقيقة في الساعة الأولى، ثم كل 5 دقائق، ثم كل 30.",
+          "tables": [
+            "supplier_api_logs"
+          ]
+        },
+        {
+          "step": 9,
+          "from": "supplier",
+          "to": "worker",
+          "label": "STATUS 4 + CODE",
+          "textAr": "النتيجة جاهزة عند المورد.",
+          "tables": [
+            "supplier_api_logs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reject",
+      "nameAr": "رفض المورد",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 6,
+          "from": "worker",
+          "to": "supplier",
+          "label": "placeimeiorder",
+          "textAr": "الإرسال بحسابك عند المورد الأساسي، مع حد السرعة وتسجيل الطلب والرد.",
+          "tables": [
+            "service_supplier_links",
+            "supplier_api_logs"
+          ]
+        },
+        {
+          "step": 8,
+          "from": "worker",
+          "to": "supplier",
+          "label": "getimeiorder",
+          "textAr": "استعلام دوري: كل دقيقة في الساعة الأولى، ثم كل 5 دقائق، ثم كل 30.",
+          "tables": [
+            "supplier_api_logs"
+          ]
+        },
+        {
+          "step": 9,
+          "from": "supplier",
+          "to": "worker",
+          "label": "STATUS 3",
+          "textAr": "المورد رفض الطلب: IMEI غير مدعوم أو الخدمة متوقفة.",
+          "tables": [
+            "supplier_api_logs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "timeout",
+      "nameAr": "انقطاع المورد",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 6,
+          "from": "worker",
+          "to": "supplier",
+          "label": "placeimeiorder",
+          "textAr": "الإرسال إلى المورد.",
+          "tables": [
+            "supplier_api_logs"
+          ]
+        },
+        {
+          "step": 7,
+          "from": "supplier",
+          "to": "worker",
+          "label": "timeout",
+          "textAr": "لم يصل رد خلال timeout_ms، وقد يكون الطلب نُفِّذ عند المورد فعلاً.",
+          "tables": [
+            "supplier_api_logs"
+          ]
+        },
+        {
+          "step": 10,
+          "from": "admin",
+          "to": "api",
+          "label": "fetch أو dispatch",
+          "textAr": "الموظف يتحقق عند المورد: fetch إن وُجد مرجع، أو dispatch يدوي بعد التأكد.",
+          "tables": [
+            "orders",
+            "supplier_api_logs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b2c-paid",
+      "nameAr": "طلب متجر مدفوع",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 11,
+          "from": "worker",
+          "to": "supplier",
+          "label": "placeimeiorder",
+          "textAr": "الإرسال بحسابك عند المورد الأساسي، مع حد السرعة وتسجيل الطلب والرد.",
+          "tables": [
+            "service_supplier_links",
+            "supplier_api_logs"
+          ]
+        },
+        {
+          "step": 13,
+          "from": "worker",
+          "to": "supplier",
+          "label": "getimeiorder",
+          "textAr": "استعلام دوري: كل دقيقة في الساعة الأولى، ثم كل 5 دقائق، ثم كل 30.",
+          "tables": [
+            "supplier_api_logs"
+          ]
+        },
+        {
+          "step": 14,
+          "from": "supplier",
+          "to": "worker",
+          "label": "STATUS 4 + CODE",
+          "textAr": "النتيجة جاهزة عند المورد.",
+          "tables": [
+            "supplier_api_logs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b2c-ticket",
+      "nameAr": "تذكرة دعم: تأخير",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 4,
+          "from": "admin",
+          "to": "api",
+          "label": "استلام ورد",
+          "textAr": "الموظف يستلمها فيصبح assignee_id، ويراجع سجل الطلب ومراسلات المورد، ثم يرد بقالب من reply_templates. هذا أول رد فيُسجَّل first_response_at.",
+          "tables": [
+            "support_tickets",
+            "ticket_messages",
+            "reply_templates",
+            "order_events",
+            "supplier_api_logs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "system-alert",
+      "nameAr": "تنبيه وحادثة: مورد يتباطأ",
+      "group": "ops",
+      "steps": [
+        {
+          "step": 1,
+          "from": "worker",
+          "to": "db",
+          "label": "فحص دوري",
+          "textAr": "كل دقيقة يفحص الـ Worker قاعدة البيانات والكاش والتخزين وبوابات الدفع وكل مورد (accountinfo)، ويكتب في service_checks الحالة وزمن الاستجابة. منها تُحسب نسبة التشغيل، ولا تُخزَّن فيها مقاييس عالية الدقة.",
+          "tables": [
+            "service_checks",
+            "suppliers"
+          ]
+        },
+        {
+          "step": 2,
+          "from": "supplier",
+          "to": "worker",
+          "label": "رد بطيء",
+          "textAr": "المورد الأساسي يرد بعد 6 ثوانٍ، ثم تتكرر مهلات timeout. كل نداء يُسجَّل في supplier_api_logs بزمنه وخطئه.",
+          "tables": [
+            "supplier_api_logs"
+          ]
+        },
+        {
+          "step": 8,
+          "from": "admin",
+          "to": "api",
+          "label": "PATCH /admin/suppliers/:id",
+          "textAr": "يوقف المورد مؤقتاً (status = paused)، فتُوجَّه الطلبات الجديدة إلى المورد التالي بالأولوية في service_supplier_links. الطلبات المعلّقة تبقى بحالتها وتُعالج يدوياً من الطلبات.",
+          "tables": [
+            "suppliers",
+            "service_supplier_links",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 11,
+          "from": "admin",
+          "to": "api",
+          "label": "PATCH /admin/incidents/:id",
+          "textAr": "يعيد المورد إلى active ويغلق الحادثة بالسبب والإجراء المتخذ (root_cause)، فيبقى سجل الحوادث مرجعاً لسبب التأخر عند أي استفسار.",
+          "tables": [
+            "incidents",
+            "suppliers",
+            "audit_logs"
+          ]
+        }
+      ]
+    }
+  ]
+}

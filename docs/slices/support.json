@@ -1,0 +1,737 @@
+{
+  "module": "support",
+  "name": "Support",
+  "domain": "J",
+  "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
+  "counts": {
+    "rows": 8,
+    "endpoints": 14,
+    "bySurface": {
+      "store": 4,
+      "admin": 10
+    },
+    "frontendCalled": 10
+  },
+  "stages": [
+    17
+  ],
+  "ownedTables": [
+    {
+      "name": "support_tickets",
+      "description": "Support tickets from storefront customers and merchants, linked to an order, with an SLA deadline.",
+      "descriptionAr": "تذاكر الدعم من عملاء المتجر والتجار، مرتبطة بطلب مع مهلة SLA",
+      "b2c": "new",
+      "columns": [
+        "number",
+        "subject",
+        "channel",
+        "requester_type",
+        "requester_id",
+        "order_id",
+        "category",
+        "priority",
+        "status",
+        "assignee_id",
+        "sla_due_at",
+        "first_response_at",
+        "resolved_at",
+        "csat_score"
+      ],
+      "foreignKeys": [
+        {
+          "column": "requester_id",
+          "target": "customers",
+          "kind": "poly"
+        },
+        {
+          "column": "requester_id",
+          "target": "clients",
+          "kind": "poly"
+        },
+        {
+          "column": "order_id",
+          "target": "orders",
+          "kind": "fk"
+        },
+        {
+          "column": "assignee_id",
+          "target": "staff_users",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "ticket_messages",
+      "description": "Ticket messages from the customer, a staff member or the system, plus internal notes.",
+      "descriptionAr": "رسائل التذكرة: من العميل أو الموظف أو النظام، وملاحظات داخلية",
+      "b2c": "new",
+      "columns": [
+        "ticket_id",
+        "author_type",
+        "author_id",
+        "body",
+        "is_internal",
+        "file_ids bigint[]"
+      ],
+      "foreignKeys": [
+        {
+          "column": "ticket_id",
+          "target": "support_tickets",
+          "kind": "fk"
+        },
+        {
+          "column": "author_id",
+          "target": "customers",
+          "kind": "poly"
+        },
+        {
+          "column": "author_id",
+          "target": "clients",
+          "kind": "poly"
+        },
+        {
+          "column": "author_id",
+          "target": "staff_users",
+          "kind": "poly"
+        },
+        {
+          "column": "file_ids",
+          "target": "files",
+          "kind": "array"
+        }
+      ]
+    },
+    {
+      "name": "reply_templates",
+      "description": "Ready-made reply templates for staff, by category and language.",
+      "descriptionAr": "قوالب ردود جاهزة للموظفين بحسب الفئة واللغة",
+      "b2c": "new",
+      "columns": [
+        "title",
+        "category",
+        "locale",
+        "body",
+        "shortcut",
+        "created_by"
+      ],
+      "foreignKeys": [
+        {
+          "column": "created_by",
+          "target": "staff_users",
+          "kind": "fk"
+        }
+      ]
+    }
+  ],
+  "foreignTables": [
+    {
+      "table": "notifications",
+      "owner": "platform"
+    },
+    {
+      "table": "orders",
+      "owner": "orders"
+    }
+  ],
+  "endpoints": [
+    {
+      "key": "POST /store/v1/tickets",
+      "method": "POST",
+      "path": "/store/v1/tickets",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "فتح تذكرة من صفحة الطلب أو اتصل بنا، وتنربط بالطلب",
+      "access": "public",
+      "permission": null,
+      "turnstile": true,
+      "idempotencyKey": false,
+      "authRaw": "عام + Turnstile",
+      "stage": 17,
+      "tables": [
+        "support_tickets",
+        "ticket_messages",
+        "orders"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/tickets",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/tickets"
+      },
+      "module": "support",
+      "description": "Open a ticket from the order page or the contact page; it is linked to the order.",
+      "frontend": null
+    },
+    {
+      "key": "GET /store/v1/tickets/:token",
+      "method": "GET",
+      "path": "/store/v1/tickets/:token",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "محادثة التذكرة (بلا الملاحظات الداخلية)",
+      "access": "ticket-token",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "رمز التذكرة",
+      "stage": 17,
+      "tables": [
+        "support_tickets",
+        "ticket_messages"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/tickets/:token",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/tickets/:token"
+      },
+      "module": "support",
+      "description": "Ticket conversation (without internal notes).",
+      "frontend": null
+    },
+    {
+      "key": "POST /store/v1/tickets/:token/messages",
+      "method": "POST",
+      "path": "/store/v1/tickets/:token/messages",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "رد الزبون على التذكرة",
+      "access": "ticket-token",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "رمز التذكرة",
+      "stage": 17,
+      "tables": [
+        "ticket_messages",
+        "support_tickets"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/tickets/:token/messages",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/tickets/:token/messages"
+      },
+      "module": "support",
+      "description": "The customer's reply on the ticket.",
+      "frontend": null
+    },
+    {
+      "key": "POST /store/v1/tickets/:token/csat",
+      "method": "POST",
+      "path": "/store/v1/tickets/:token/csat",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "تقييم الرضا بعد إغلاق التذكرة",
+      "access": "ticket-token",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "رمز التذكرة",
+      "stage": 17,
+      "tables": [
+        "support_tickets"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/tickets/:token/csat",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/tickets/:token/csat"
+      },
+      "module": "support",
+      "description": "Satisfaction rating after the ticket is closed.",
+      "frontend": null
+    },
+    {
+      "key": "GET /admin/support-tickets",
+      "method": "GET",
+      "path": "/admin/support-tickets",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "صندوق الدعم: الأولوية والإسناد والحالة ومؤقتات SLA",
+      "access": "staff-permission",
+      "permission": "support:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "support:*",
+      "stage": 17,
+      "tables": [
+        "support_tickets",
+        "orders"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/support-tickets",
+        "method": "CRUD",
+        "ops": "LSU",
+        "path": "/admin/support-tickets"
+      },
+      "module": "support",
+      "description": "Support inbox: priority, assignment, status and SLA timers.",
+      "frontend": {
+        "file": "src/features/support/api/tickets.ts",
+        "line": 29,
+        "fn": "listSupportTickets"
+      }
+    },
+    {
+      "key": "GET /admin/support-tickets/:id",
+      "method": "GET",
+      "path": "/admin/support-tickets/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "صندوق الدعم: الأولوية والإسناد والحالة ومؤقتات SLA",
+      "access": "staff-permission",
+      "permission": "support:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "support:*",
+      "stage": 17,
+      "tables": [
+        "support_tickets",
+        "orders"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/support-tickets",
+        "method": "CRUD",
+        "ops": "LSU",
+        "path": "/admin/support-tickets"
+      },
+      "module": "support",
+      "description": "Support inbox: priority, assignment, status and SLA timers.",
+      "frontend": {
+        "file": "src/features/support/api/tickets.ts",
+        "line": 42,
+        "fn": "getSupportTicket"
+      }
+    },
+    {
+      "key": "PATCH /admin/support-tickets/:id",
+      "method": "PATCH",
+      "path": "/admin/support-tickets/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "صندوق الدعم: الأولوية والإسناد والحالة ومؤقتات SLA",
+      "access": "staff-permission",
+      "permission": "support:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "support:*",
+      "stage": 17,
+      "tables": [
+        "support_tickets",
+        "orders"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/support-tickets",
+        "method": "CRUD",
+        "ops": "LSU",
+        "path": "/admin/support-tickets"
+      },
+      "module": "support",
+      "description": "Support inbox: priority, assignment, status and SLA timers.",
+      "frontend": {
+        "file": "src/features/support/api/tickets.ts",
+        "line": 52,
+        "fn": "updateSupportTicket"
+      }
+    },
+    {
+      "key": "POST /admin/support-tickets/:id/reply",
+      "method": "POST",
+      "path": "/admin/support-tickets/:id/reply",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "رد على الزبون بإيميل أو Telegram",
+      "access": "staff-permission",
+      "permission": "support:reply",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "support:reply",
+      "stage": 17,
+      "tables": [
+        "ticket_messages",
+        "support_tickets",
+        "notifications"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/support-tickets/:id/reply",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/support-tickets/:id/reply"
+      },
+      "module": "support",
+      "description": "Reply to the customer by email or Telegram.",
+      "frontend": {
+        "file": "src/features/support/api/tickets.ts",
+        "line": 62,
+        "fn": "replyToTicket"
+      }
+    },
+    {
+      "key": "POST /admin/support-tickets/:id/note",
+      "method": "POST",
+      "path": "/admin/support-tickets/:id/note",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "ملاحظة داخلية لا يراها الزبون",
+      "access": "staff-permission",
+      "permission": "support:reply",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "support:reply",
+      "stage": 17,
+      "tables": [
+        "ticket_messages"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/support-tickets/:id/note",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/support-tickets/:id/note"
+      },
+      "module": "support",
+      "description": "Internal note that the customer does not see.",
+      "frontend": {
+        "file": "src/features/support/api/tickets.ts",
+        "line": 72,
+        "fn": "addTicketNote"
+      }
+    },
+    {
+      "key": "GET /admin/reply-templates",
+      "method": "GET",
+      "path": "/admin/reply-templates",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "ردود جاهزة (macros) بمتغيرات الطلب",
+      "access": "staff-permission",
+      "permission": "support:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "support:*",
+      "stage": 17,
+      "tables": [
+        "reply_templates"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/reply-templates",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/reply-templates"
+      },
+      "module": "support",
+      "description": "Canned replies (macros) with order variables.",
+      "frontend": {
+        "file": "src/features/support/api/templates.ts",
+        "line": 22,
+        "fn": "listReplyTemplates"
+      }
+    },
+    {
+      "key": "GET /admin/reply-templates/:id",
+      "method": "GET",
+      "path": "/admin/reply-templates/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "ردود جاهزة (macros) بمتغيرات الطلب",
+      "access": "staff-permission",
+      "permission": "support:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "support:*",
+      "stage": 17,
+      "tables": [
+        "reply_templates"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/reply-templates",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/reply-templates"
+      },
+      "module": "support",
+      "description": "Canned replies (macros) with order variables.",
+      "frontend": {
+        "file": "src/features/support/api/templates.ts",
+        "line": 33,
+        "fn": "getReplyTemplate"
+      }
+    },
+    {
+      "key": "POST /admin/reply-templates",
+      "method": "POST",
+      "path": "/admin/reply-templates",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "ردود جاهزة (macros) بمتغيرات الطلب",
+      "access": "staff-permission",
+      "permission": "support:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "support:*",
+      "stage": 17,
+      "tables": [
+        "reply_templates"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/reply-templates",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/reply-templates"
+      },
+      "module": "support",
+      "description": "Canned replies (macros) with order variables.",
+      "frontend": {
+        "file": "src/features/support/api/templates.ts",
+        "line": 42,
+        "fn": "createReplyTemplate"
+      }
+    },
+    {
+      "key": "PATCH /admin/reply-templates/:id",
+      "method": "PATCH",
+      "path": "/admin/reply-templates/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "ردود جاهزة (macros) بمتغيرات الطلب",
+      "access": "staff-permission",
+      "permission": "support:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "support:*",
+      "stage": 17,
+      "tables": [
+        "reply_templates"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/reply-templates",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/reply-templates"
+      },
+      "module": "support",
+      "description": "Canned replies (macros) with order variables.",
+      "frontend": {
+        "file": "src/features/support/api/templates.ts",
+        "line": 51,
+        "fn": "updateReplyTemplate"
+      }
+    },
+    {
+      "key": "DELETE /admin/reply-templates/:id",
+      "method": "DELETE",
+      "path": "/admin/reply-templates/:id",
+      "op": "delete",
+      "surface": "admin",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "ردود جاهزة (macros) بمتغيرات الطلب",
+      "access": "staff-permission",
+      "permission": "support:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "support:*",
+      "stage": 17,
+      "tables": [
+        "reply_templates"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/reply-templates",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/reply-templates"
+      },
+      "module": "support",
+      "description": "Canned replies (macros) with order variables.",
+      "frontend": {
+        "file": "src/features/support/api/templates.ts",
+        "line": 63,
+        "fn": "deleteReplyTemplate"
+      }
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "b2c-refund",
+      "nameAr": "استرداد قبل التسليم",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 1,
+          "from": "customer",
+          "to": "api",
+          "label": "POST /store/v1/tickets",
+          "textAr": "العميل اكتشف أن الـ IMEI خطأ بعد الدفع، فيفتح تذكرة من صفحة التتبع بفئة wrong_imei أو refund. الطلب ما زال pending ولم يُرسل للمورد.",
+          "tables": [
+            "support_tickets",
+            "ticket_messages",
+            "orders"
+          ]
+        },
+        {
+          "step": 2,
+          "from": "api",
+          "to": "admin",
+          "label": "تذكرة في الطابور",
+          "textAr": "تظهر في طابور الدعم مع موعد SLA، ويصل الموظف تنبيه.",
+          "tables": [
+            "support_tickets",
+            "notifications"
+          ]
+        },
+        {
+          "step": 8,
+          "from": "api",
+          "to": "customer",
+          "label": "إيميل الاسترداد",
+          "textAr": "العميل يستلم إيميل الاسترداد، وتُغلق التذكرة بردّ جاهز من reply_templates.",
+          "tables": [
+            "notifications",
+            "support_tickets",
+            "reply_templates"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b2c-ticket",
+      "nameAr": "تذكرة دعم: تأخير",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 1,
+          "from": "customer",
+          "to": "api",
+          "label": "POST /store/v1/tickets",
+          "textAr": "الطلب تأخّر عن الوقت المتوقع. العميل يفتح تذكرة من صفحة التتبع بلا حساب بفئة delay ويكتب رسالته.",
+          "tables": [
+            "support_tickets",
+            "ticket_messages",
+            "orders"
+          ]
+        },
+        {
+          "step": 2,
+          "from": "api",
+          "to": "db",
+          "label": "تذكرة و SLA",
+          "textAr": "تُنشأ التذكرة بحالة new مع number وأولوية، ويُحسب sla_due_at حسب الفئة.",
+          "tables": [
+            "support_tickets",
+            "ticket_messages",
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 3,
+          "from": "db",
+          "to": "admin",
+          "label": "طابور الدعم",
+          "textAr": "تظهر في طابور الدعم لدى الإدارة، ويصل العميل إيميل باستلام التذكرة.",
+          "tables": [
+            "notifications",
+            "support_tickets"
+          ]
+        },
+        {
+          "step": 4,
+          "from": "admin",
+          "to": "api",
+          "label": "استلام ورد",
+          "textAr": "الموظف يستلمها فيصبح assignee_id، ويراجع سجل الطلب ومراسلات المورد، ثم يرد بقالب من reply_templates. هذا أول رد فيُسجَّل first_response_at.",
+          "tables": [
+            "support_tickets",
+            "ticket_messages",
+            "reply_templates",
+            "order_events",
+            "supplier_api_logs"
+          ]
+        },
+        {
+          "step": 5,
+          "from": "api",
+          "to": "customer",
+          "label": "الرد بالإيميل",
+          "textAr": "يصل الرد إلى العميل بالإيميل، وتنتظر التذكرة ردّه.",
+          "tables": [
+            "notifications",
+            "ticket_messages"
+          ]
+        },
+        {
+          "step": 6,
+          "from": "customer",
+          "to": "api",
+          "label": "رد العميل",
+          "textAr": "رد العميل بالإيميل يُربط بنفس التذكرة كرسالة جديدة، فتعود إلى open.",
+          "tables": [
+            "ticket_messages",
+            "support_tickets"
+          ]
+        },
+        {
+          "step": 7,
+          "from": "admin",
+          "to": "api",
+          "label": "حل التذكرة",
+          "textAr": "بعد اكتمال الطلب وتأكيد العميل يضع الموظف التذكرة resolved ويُسجَّل resolved_at.",
+          "tables": [
+            "support_tickets",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 8,
+          "from": "api",
+          "to": "customer",
+          "label": "تقييم CSAT",
+          "textAr": "يصل العميل رابط تقييم الدعم، وتُغلق التذكرة بعد التقييم: csat_score.",
+          "tables": [
+            "support_tickets",
+            "notifications"
+          ]
+        }
+      ]
+    }
+  ]
+}

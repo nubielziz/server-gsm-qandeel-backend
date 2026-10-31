@@ -1,0 +1,97 @@
+# Local infrastructure for the GSM backend: Postgres, the two Redis roles and S3-compatible storage.
+# Start with `docker compose up -d`; host ports can be overridden through the GSM_*_PORT variables.
+# Decision records: docs/decisions/004-local-s3-minio.md (MinIO image), 006-redis-topology.md (two Redis roles).
+name: gsm-backend
+
+services:
+  postgres:
+    image: postgres:18.6-trixie
+    environment:
+      POSTGRES_USER: gsm
+      POSTGRES_PASSWORD: gsm
+      POSTGRES_DB: gsm
+    ports:
+      - "${GSM_PG_PORT:-5432}:5432"
+    volumes:
+      # Postgres 18 images keep data under /var/lib/postgresql/18/docker, so the volume mounts the parent.
+      - pgdata:/var/lib/postgresql
+      # Creates the gsm_test database used by integration and scenario tests.
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gsm -d gsm"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Queue Redis: BullMQ is only correct when nothing is evicted, so noeviction + AOF (fsync every second).
+  redis-queue:
+    image: redis:8.10.3-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory-policy
+      - noeviction
+    ports:
+      - "${GSM_REDIS_QUEUE_PORT:-6379}:6379"
+    volumes:
+      - redis-queue-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Cache Redis: LRU eviction is wanted here, persistence is not (the cache is rebuilt from Postgres).
+  redis-cache:
+    image: redis:8.10.3-alpine
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+    ports:
+      - "${GSM_REDIS_CACHE_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # MinIO built from source by Chainguard (MinIO no longer publishes community images). Pinned by digest.
+  minio:
+    image: cgr.dev/chainguard/minio@sha256:3b6e40c30ecd5cea627e382ff0b82ca841f58c52294578787043ee80c8ef7c82
+    command: ["server", "/data", "--console-address", ":9001"]
+    # The image runs as uid 65532; a fresh named volume is root-owned, so local dev runs it as root.
+    user: "0:0"
+    environment:
+      MINIO_ROOT_USER: gsm-minio
+      MINIO_ROOT_PASSWORD: gsm-minio-secret
+    ports:
+      - "${GSM_S3_PORT:-9000}:9000"
+      - "${GSM_S3_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+
+  # One-shot: creates the buckets the app expects (idempotent; new buckets are private).
+  # The image has no shell, so the alias comes from MC_HOST_local and Docker retries until MinIO answers.
+  minio-init:
+    image: cgr.dev/chainguard/minio-client@sha256:5b759d9e248ad9f1ab8455f8168b86a47acb1e08207d38603b504bdc5a555d7a
+    depends_on:
+      - minio
+    environment:
+      MC_HOST_local: http://gsm-minio:gsm-minio-secret@minio:9000
+    command: ["mb", "--ignore-existing", "local/gsm-files", "local/gsm-files-test"]
+    restart: on-failure
+
+volumes:
+  pgdata:
+  redis-queue-data:
+  minio-data:

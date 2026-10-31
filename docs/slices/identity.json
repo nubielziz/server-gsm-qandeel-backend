@@ -1,0 +1,2595 @@
+{
+  "module": "identity",
+  "name": "Identity & access",
+  "domain": "A",
+  "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
+  "counts": {
+    "rows": 45,
+    "endpoints": 59,
+    "bySurface": {
+      "client": 21,
+      "admin": 38
+    },
+    "frontendCalled": 38
+  },
+  "stages": [
+    2,
+    7,
+    8
+  ],
+  "ownedTables": [
+    {
+      "name": "staff_users",
+      "description": "Admin console staff. Two-factor authentication is mandatory. Status is invited until the first sign-in, then active, or suspended (a reversible stop that ends the sessions and keeps the record). The last owner and the staff member themselves cannot be suspended. Allowed addresses live in ip_rules, not in a column.",
+      "descriptionAr": "موظفو لوحة الإدارة، و 2FA إجباري. الحالة: invited حتى أول دخول، أو active، أو suspended (إيقاف يُعكس ويُنهي الجلسات ويُبقي السجل). لا يُوقف المالك الأخير ولا الموظف نفسه. العناوين المسموحة في ip_rules لا في العمود",
+      "b2c": null,
+      "columns": [
+        "email",
+        "password_hash nullable",
+        "name",
+        "role_id",
+        "totp_secret_enc",
+        "twofa_enabled",
+        "must_change_password",
+        "password_changed_at",
+        "status",
+        "suspended_at",
+        "suspended_reason",
+        "suspended_by",
+        "created_by",
+        "last_login_at",
+        "last_login_ip"
+      ],
+      "foreignKeys": [
+        {
+          "column": "role_id",
+          "target": "roles",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "roles",
+      "description": "Roles and their permissions (RBAC).",
+      "descriptionAr": "الأدوار وصلاحياتها (RBAC)",
+      "b2c": null,
+      "columns": [
+        "name",
+        "permissions text[]"
+      ],
+      "foreignKeys": []
+    },
+    {
+      "name": "clients",
+      "description": "B2B merchants; username is the Dhru username.",
+      "descriptionAr": "التجار B2B؛ username هو اسم مستخدم Dhru",
+      "b2c": null,
+      "columns": [
+        "username",
+        "email",
+        "password_hash",
+        "name",
+        "company",
+        "phone",
+        "country",
+        "group_id",
+        "status",
+        "kyc_status",
+        "referred_by_id",
+        "referral_code",
+        "totp_secret_enc",
+        "email_verified_at",
+        "telegram_chat_id",
+        "notification_prefs jsonb"
+      ],
+      "foreignKeys": [
+        {
+          "column": "group_id",
+          "target": "client_groups",
+          "kind": "fk"
+        },
+        {
+          "column": "referred_by_id",
+          "target": "clients",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "sessions",
+      "description": "Sign-in sessions for staff, merchants and customers (magic link).",
+      "descriptionAr": "جلسات الدخول للموظفين والتجار والعملاء (magic link)",
+      "b2c": "mod",
+      "columns": [
+        "token_hash",
+        "subject_type",
+        "subject_id",
+        "ip",
+        "user_agent",
+        "last_seen_at",
+        "expires_at",
+        "revoked_at"
+      ],
+      "foreignKeys": [
+        {
+          "column": "subject_id",
+          "target": "staff_users",
+          "kind": "poly"
+        },
+        {
+          "column": "subject_id",
+          "target": "clients",
+          "kind": "poly"
+        },
+        {
+          "column": "subject_id",
+          "target": "customers",
+          "kind": "poly"
+        }
+      ]
+    },
+    {
+      "name": "auth_tokens",
+      "description": "One-time tokens for invite and password-reset links for merchants, customers and staff, and for link sign-in and email verification: hash only, valid for one hour and one use.",
+      "descriptionAr": "رموز الاستعمال الواحد لرابط الدعوة واستعادة كلمة المرور للعملاء والموظفين، والدخول بالرابط وتوثيق الإيميل: hash فقط، صالحة ساعة ولمرة واحدة",
+      "b2c": "new",
+      "columns": [
+        "purpose",
+        "subject_type",
+        "subject_id",
+        "token_hash",
+        "expires_at",
+        "used_at",
+        "ip",
+        "created_by"
+      ],
+      "foreignKeys": [
+        {
+          "column": "subject_id",
+          "target": "customers",
+          "kind": "poly"
+        },
+        {
+          "column": "subject_id",
+          "target": "staff_users",
+          "kind": "poly"
+        },
+        {
+          "column": "created_by",
+          "target": "staff_users",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "api_keys",
+      "description": "Merchant API keys, stored as a hash.",
+      "descriptionAr": "مفاتيح الـ API للتجار، مخزنة hash",
+      "b2c": null,
+      "columns": [
+        "client_id",
+        "name",
+        "prefix",
+        "key_hash",
+        "scopes text[]",
+        "allowed_ips cidr[]",
+        "rate_limit_per_min",
+        "last_used_at",
+        "last_used_ip",
+        "expires_at",
+        "revoked_at"
+      ],
+      "foreignKeys": [
+        {
+          "column": "client_id",
+          "target": "clients",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "kyc_submissions",
+      "description": "Merchant identity-verification (KYC) requests.",
+      "descriptionAr": "طلبات توثيق التجار",
+      "b2c": null,
+      "columns": [
+        "client_id",
+        "status",
+        "file_ids bigint[]",
+        "reviewed_by",
+        "reviewed_at",
+        "note"
+      ],
+      "foreignKeys": [
+        {
+          "column": "client_id",
+          "target": "clients",
+          "kind": "fk"
+        },
+        {
+          "column": "reviewed_by",
+          "target": "staff_users",
+          "kind": "fk"
+        },
+        {
+          "column": "file_ids",
+          "target": "files",
+          "kind": "array"
+        }
+      ]
+    },
+    {
+      "name": "ip_rules",
+      "description": "Network rules checked before any other logic: allow addresses for the admin console, and block an address or range for one audience (storefront, API or admin) or for all. A block beats an allow. Restricting the console to the allowlist is a switch in settings. Active rules are loaded into Redis, so no query runs per request.",
+      "descriptionAr": "قواعد الشبكة تُفحص قبل أي منطق: سماح للوحة الإدارة، وحظر لعنوان أو نطاق لجمهور واحد (المتجر أو API أو الإدارة) أو للكل. الحظر يغلب السماح، والتقييد بقائمة السماح مفتاح في settings. تُحمَّل النشطة في Redis فلا استعلام لكل طلب",
+      "b2c": null,
+      "columns": [
+        "kind",
+        "scope",
+        "cidr",
+        "label",
+        "reason",
+        "source",
+        "expires_at nullable",
+        "hit_count",
+        "last_hit_at",
+        "created_by"
+      ],
+      "foreignKeys": [
+        {
+          "column": "created_by",
+          "target": "staff_users",
+          "kind": "fk"
+        }
+      ]
+    }
+  ],
+  "foreignTables": [
+    {
+      "table": "audit_logs",
+      "owner": "platform"
+    },
+    {
+      "table": "client_groups",
+      "owner": "catalog"
+    },
+    {
+      "table": "files",
+      "owner": "platform"
+    },
+    {
+      "table": "notifications",
+      "owner": "platform"
+    },
+    {
+      "table": "settings",
+      "owner": "platform"
+    }
+  ],
+  "endpoints": [
+    {
+      "key": "POST /client/auth/register",
+      "method": "POST",
+      "path": "/client/auth/register",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "تسجيل تاجر جديد وإرسال إيميل التفعيل",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 2,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/auth/register",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/auth/register"
+      },
+      "module": "identity",
+      "description": "Register a new merchant and send the verification email.",
+      "frontend": null
+    },
+    {
+      "key": "POST /client/auth/verify-email",
+      "method": "POST",
+      "path": "/client/auth/verify-email",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "تفعيل الإيميل بالتوكن",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 2,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/auth/verify-email",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/auth/verify-email"
+      },
+      "module": "identity",
+      "description": "Verify the email with the token.",
+      "frontend": null
+    },
+    {
+      "key": "POST /client/auth/login",
+      "method": "POST",
+      "path": "/client/auth/login",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "دخول؛ يطلب كود 2FA إذا مفعّل",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 2,
+      "tables": [
+        "clients",
+        "sessions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/auth/login",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/auth/login"
+      },
+      "module": "identity",
+      "description": "Sign in; asks for a 2FA code when 2FA is enabled.",
+      "frontend": null
+    },
+    {
+      "key": "POST /client/auth/2fa",
+      "method": "POST",
+      "path": "/client/auth/2fa",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "إكمال الدخول بكود TOTP",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 2,
+      "tables": [
+        "sessions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/auth/2fa",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/auth/2fa"
+      },
+      "module": "identity",
+      "description": "Complete the sign-in with a TOTP code.",
+      "frontend": null
+    },
+    {
+      "key": "POST /client/auth/logout",
+      "method": "POST",
+      "path": "/client/auth/logout",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "خروج وإنهاء الجلسة",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 2,
+      "tables": [
+        "sessions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/auth/logout",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/auth/logout"
+      },
+      "module": "identity",
+      "description": "Sign out and end the session.",
+      "frontend": null
+    },
+    {
+      "key": "POST /client/auth/password/forgot",
+      "method": "POST",
+      "path": "/client/auth/password/forgot",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "إرسال رابط استعادة كلمة السر",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 2,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/auth/password/forgot",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/auth/password/forgot"
+      },
+      "module": "identity",
+      "description": "Send a password reset link.",
+      "frontend": null
+    },
+    {
+      "key": "POST /client/auth/password/reset",
+      "method": "POST",
+      "path": "/client/auth/password/reset",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "كلمة سر جديدة بالتوكن",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 2,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/auth/password/reset",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/auth/password/reset"
+      },
+      "module": "identity",
+      "description": "Set a new password with the reset token.",
+      "frontend": null
+    },
+    {
+      "key": "GET /client/auth/me",
+      "method": "GET",
+      "path": "/client/auth/me",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "بيانات التاجر والفئة",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 2,
+      "tables": [
+        "clients",
+        "client_groups"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/auth/me",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/auth/me"
+      },
+      "module": "identity",
+      "description": "The merchant's details and client group.",
+      "frontend": null
+    },
+    {
+      "key": "PATCH /client/profile",
+      "method": "PATCH",
+      "path": "/client/profile",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "الاسم والشركة والهاتف والدولة",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 2,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client PATCH /client/profile",
+        "method": "PATCH",
+        "ops": null,
+        "path": "/client/profile"
+      },
+      "module": "identity",
+      "description": "Update name, company, phone and country.",
+      "frontend": null
+    },
+    {
+      "key": "POST /client/security/password",
+      "method": "POST",
+      "path": "/client/security/password",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "تغيير كلمة السر",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 2,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/security/password",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/security/password"
+      },
+      "module": "identity",
+      "description": "Change the password.",
+      "frontend": null
+    },
+    {
+      "key": "POST /client/security/2fa/setup",
+      "method": "POST",
+      "path": "/client/security/2fa/setup",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "سر TOTP جديد مع QR",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 2,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/security/2fa/setup",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/security/2fa/setup"
+      },
+      "module": "identity",
+      "description": "A new TOTP secret with a QR code.",
+      "frontend": null
+    },
+    {
+      "key": "POST /client/security/2fa/enable",
+      "method": "POST",
+      "path": "/client/security/2fa/enable",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "تفعيل 2FA بعد تأكيد الكود",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 2,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/security/2fa/enable",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/security/2fa/enable"
+      },
+      "module": "identity",
+      "description": "Enable 2FA after confirming a code.",
+      "frontend": null
+    },
+    {
+      "key": "POST /client/security/2fa/disable",
+      "method": "POST",
+      "path": "/client/security/2fa/disable",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "تعطيل 2FA بكود",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 2,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/security/2fa/disable",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/security/2fa/disable"
+      },
+      "module": "identity",
+      "description": "Disable 2FA with a code.",
+      "frontend": null
+    },
+    {
+      "key": "GET /client/sessions",
+      "method": "GET",
+      "path": "/client/sessions",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "الأجهزة والجلسات الفعّالة",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 2,
+      "tables": [
+        "sessions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/sessions",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/sessions"
+      },
+      "module": "identity",
+      "description": "Active devices and sessions.",
+      "frontend": null
+    },
+    {
+      "key": "DELETE /client/sessions/:id",
+      "method": "DELETE",
+      "path": "/client/sessions/:id",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "إنهاء جلسة",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 2,
+      "tables": [
+        "sessions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client DELETE /client/sessions/:id",
+        "method": "DELETE",
+        "ops": null,
+        "path": "/client/sessions/:id"
+      },
+      "module": "identity",
+      "description": "End a session.",
+      "frontend": null
+    },
+    {
+      "key": "GET /client/kyc",
+      "method": "GET",
+      "path": "/client/kyc",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "حالة التوثيق",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 8,
+      "tables": [
+        "kyc_submissions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/kyc",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/kyc"
+      },
+      "module": "identity",
+      "description": "Verification (KYC) status.",
+      "frontend": null
+    },
+    {
+      "key": "POST /client/kyc",
+      "method": "POST",
+      "path": "/client/kyc",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "رفع مستندات التوثيق",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 8,
+      "tables": [
+        "kyc_submissions",
+        "files"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/kyc",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/kyc"
+      },
+      "module": "identity",
+      "description": "Upload verification documents.",
+      "frontend": null
+    },
+    {
+      "key": "GET /client/api-keys",
+      "method": "GET",
+      "path": "/client/api-keys",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "api",
+      "descriptionAr": "مفاتيحي (البادئة فقط)",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 7,
+      "tables": [
+        "api_keys"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/api-keys",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/api-keys"
+      },
+      "module": "identity",
+      "description": "My API keys (prefix only).",
+      "frontend": null
+    },
+    {
+      "key": "POST /client/api-keys",
+      "method": "POST",
+      "path": "/client/api-keys",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "api",
+      "descriptionAr": "مفتاح جديد يظهر مرة وحدة، مع IPs مسموحة",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 7,
+      "tables": [
+        "api_keys"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/api-keys",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/api-keys"
+      },
+      "module": "identity",
+      "description": "New API key, shown once, with allowed IPs.",
+      "frontend": null
+    },
+    {
+      "key": "PATCH /client/api-keys/:id",
+      "method": "PATCH",
+      "path": "/client/api-keys/:id",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "api",
+      "descriptionAr": "الاسم والـ IPs",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 7,
+      "tables": [
+        "api_keys"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client PATCH /client/api-keys/:id",
+        "method": "PATCH",
+        "ops": null,
+        "path": "/client/api-keys/:id"
+      },
+      "module": "identity",
+      "description": "Rename a key or change its allowed IPs.",
+      "frontend": null
+    },
+    {
+      "key": "DELETE /client/api-keys/:id",
+      "method": "DELETE",
+      "path": "/client/api-keys/:id",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "api",
+      "descriptionAr": "إلغاء مفتاح",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 7,
+      "tables": [
+        "api_keys"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client DELETE /client/api-keys/:id",
+        "method": "DELETE",
+        "ops": null,
+        "path": "/client/api-keys/:id"
+      },
+      "module": "identity",
+      "description": "Revoke a key.",
+      "frontend": null
+    },
+    {
+      "key": "POST /admin/auth/login",
+      "method": "POST",
+      "path": "/admin/auth/login",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "الإيميل وكلمة السر، وبعدها خطوة TOTP",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 2,
+      "tables": [
+        "staff_users",
+        "sessions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/auth/login",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/auth/login"
+      },
+      "module": "identity",
+      "description": "Sign in with email and password; a TOTP step follows.",
+      "frontend": {
+        "file": "src/features/auth/api/auth.ts",
+        "line": 10,
+        "fn": "login"
+      }
+    },
+    {
+      "key": "POST /admin/auth/2fa",
+      "method": "POST",
+      "path": "/admin/auth/2fa",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "إكمال الدخول بكود TOTP",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 2,
+      "tables": [
+        "sessions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/auth/2fa",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/auth/2fa"
+      },
+      "module": "identity",
+      "description": "Complete the sign-in with a TOTP code.",
+      "frontend": {
+        "file": "src/features/auth/api/auth.ts",
+        "line": 19,
+        "fn": "verifyTwoFactor"
+      }
+    },
+    {
+      "key": "POST /admin/auth/2fa/setup",
+      "method": "POST",
+      "path": "/admin/auth/2fa/setup",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "أول دخول: سر TOTP مع QR",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 2,
+      "tables": [
+        "staff_users"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/auth/2fa/setup",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/auth/2fa/setup"
+      },
+      "module": "identity",
+      "description": "First sign-in: the TOTP secret with a QR code.",
+      "frontend": {
+        "file": "src/features/auth/api/auth.ts",
+        "line": 28,
+        "fn": "setupTwoFactor"
+      }
+    },
+    {
+      "key": "POST /admin/auth/logout",
+      "method": "POST",
+      "path": "/admin/auth/logout",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "خروج",
+      "access": "staff-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 2,
+      "tables": [
+        "sessions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/auth/logout",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/auth/logout"
+      },
+      "module": "identity",
+      "description": "Sign out.",
+      "frontend": {
+        "file": "src/features/auth/api/auth.ts",
+        "line": 36,
+        "fn": "logout"
+      }
+    },
+    {
+      "key": "GET /admin/auth/me",
+      "method": "GET",
+      "path": "/admin/auth/me",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "الموظف وصلاحياته لـ Refine",
+      "access": "staff-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 2,
+      "tables": [
+        "staff_users",
+        "roles"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/auth/me",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/auth/me"
+      },
+      "module": "identity",
+      "description": "The signed-in staff member and their permissions, for Refine.",
+      "frontend": {
+        "file": "src/features/auth/api/auth.ts",
+        "line": 45,
+        "fn": "getMe"
+      }
+    },
+    {
+      "key": "GET /admin/staff",
+      "method": "GET",
+      "path": "/admin/staff",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "الموظفين: إضافة بدعوة أو كلمة مؤقتة، والدور، وتعديل البيانات",
+      "access": "staff-permission",
+      "permission": "staff:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "staff:*",
+      "stage": 2,
+      "tables": [
+        "staff_users",
+        "roles",
+        "auth_tokens",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/staff",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/staff"
+      },
+      "module": "identity",
+      "description": "Staff members: add by invitation or temporary password, set the role, and edit details.",
+      "frontend": {
+        "file": "src/features/access/api/staff.ts",
+        "line": 29,
+        "fn": "listStaff"
+      }
+    },
+    {
+      "key": "GET /admin/staff/:id",
+      "method": "GET",
+      "path": "/admin/staff/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "الموظفين: إضافة بدعوة أو كلمة مؤقتة، والدور، وتعديل البيانات",
+      "access": "staff-permission",
+      "permission": "staff:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "staff:*",
+      "stage": 2,
+      "tables": [
+        "staff_users",
+        "roles",
+        "auth_tokens",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/staff",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/staff"
+      },
+      "module": "identity",
+      "description": "Staff members: add by invitation or temporary password, set the role, and edit details.",
+      "frontend": {
+        "file": "src/features/access/api/staff.ts",
+        "line": 38,
+        "fn": "getStaff"
+      }
+    },
+    {
+      "key": "POST /admin/staff",
+      "method": "POST",
+      "path": "/admin/staff",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "الموظفين: إضافة بدعوة أو كلمة مؤقتة، والدور، وتعديل البيانات",
+      "access": "staff-permission",
+      "permission": "staff:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "staff:*",
+      "stage": 2,
+      "tables": [
+        "staff_users",
+        "roles",
+        "auth_tokens",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/staff",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/staff"
+      },
+      "module": "identity",
+      "description": "Staff members: add by invitation or temporary password, set the role, and edit details.",
+      "frontend": {
+        "file": "src/features/access/api/staff.ts",
+        "line": 49,
+        "fn": "createStaff"
+      }
+    },
+    {
+      "key": "PATCH /admin/staff/:id",
+      "method": "PATCH",
+      "path": "/admin/staff/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "الموظفين: إضافة بدعوة أو كلمة مؤقتة، والدور، وتعديل البيانات",
+      "access": "staff-permission",
+      "permission": "staff:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "staff:*",
+      "stage": 2,
+      "tables": [
+        "staff_users",
+        "roles",
+        "auth_tokens",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/staff",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/staff"
+      },
+      "module": "identity",
+      "description": "Staff members: add by invitation or temporary password, set the role, and edit details.",
+      "frontend": {
+        "file": "src/features/access/api/staff.ts",
+        "line": 59,
+        "fn": "updateStaff"
+      }
+    },
+    {
+      "key": "POST /admin/staff/:id/password",
+      "method": "POST",
+      "path": "/admin/staff/:id/password",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "رابط تعيين كلمة جديد أو كلمة مؤقتة، ولا تُقرأ الحالية ولا تدخل السجل",
+      "access": "staff-permission",
+      "permission": "staff:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "staff:update",
+      "stage": 2,
+      "tables": [
+        "staff_users",
+        "auth_tokens",
+        "sessions",
+        "notifications",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/staff/:id/password",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/staff/:id/password"
+      },
+      "module": "identity",
+      "description": "Send a link to set a new password, or set a temporary one; the current password is never readable and never enters the log.",
+      "frontend": {
+        "file": "src/features/access/api/staff.ts",
+        "line": 70,
+        "fn": "setStaffPassword"
+      }
+    },
+    {
+      "key": "POST /admin/staff/:id/sessions/revoke",
+      "method": "POST",
+      "path": "/admin/staff/:id/sessions/revoke",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "إنهاء كل جلسات موظف",
+      "access": "staff-permission",
+      "permission": "staff:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "staff:update",
+      "stage": 2,
+      "tables": [
+        "sessions",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/staff/:id/sessions/revoke",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/staff/:id/sessions/revoke"
+      },
+      "module": "identity",
+      "description": "End all sessions of a staff member.",
+      "frontend": {
+        "file": "src/features/access/api/staff.ts",
+        "line": 83,
+        "fn": "revokeStaffSessions"
+      }
+    },
+    {
+      "key": "POST /admin/staff/:id/suspend",
+      "method": "POST",
+      "path": "/admin/staff/:id/suspend",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "إيقاف موظف بسبب، فتنتهي جلساته. يُرفض إيقاف النفس أو المالك الأخير",
+      "access": "staff-permission",
+      "permission": "staff:suspend",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "staff:suspend",
+      "stage": 2,
+      "tables": [
+        "staff_users",
+        "sessions",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/staff/:id/suspend",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/staff/:id/suspend"
+      },
+      "module": "identity",
+      "description": "Suspend a staff member with a reason, which ends their sessions; suspending yourself or the last Owner is rejected.",
+      "frontend": {
+        "file": "src/features/access/api/staff.ts",
+        "line": 93,
+        "fn": "suspendStaff"
+      }
+    },
+    {
+      "key": "POST /admin/staff/:id/reactivate",
+      "method": "POST",
+      "path": "/admin/staff/:id/reactivate",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "إعادة تفعيل موظف موقوف",
+      "access": "staff-permission",
+      "permission": "staff:suspend",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "staff:suspend",
+      "stage": 2,
+      "tables": [
+        "staff_users",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/staff/:id/reactivate",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/staff/:id/reactivate"
+      },
+      "module": "identity",
+      "description": "Reactivate a suspended staff member.",
+      "frontend": {
+        "file": "src/features/access/api/staff.ts",
+        "line": 102,
+        "fn": "reactivateStaff"
+      }
+    },
+    {
+      "key": "POST /admin/staff/:id/reset-2fa",
+      "method": "POST",
+      "path": "/admin/staff/:id/reset-2fa",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "إعادة ضبط 2FA لموظف",
+      "access": "staff-permission",
+      "permission": "staff:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "staff:update",
+      "stage": 2,
+      "tables": [
+        "staff_users",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/staff/:id/reset-2fa",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/staff/:id/reset-2fa"
+      },
+      "module": "identity",
+      "description": "Reset 2FA for a staff member.",
+      "frontend": {
+        "file": "src/features/access/api/staff.ts",
+        "line": 111,
+        "fn": "resetStaffTwoFactor"
+      }
+    },
+    {
+      "key": "POST /admin/auth/password/set",
+      "method": "POST",
+      "path": "/admin/auth/password/set",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "الموظف المدعو أو المستعيد يختار كلمته برمز لمرة واحدة",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 2,
+      "tables": [
+        "auth_tokens",
+        "staff_users"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/auth/password/set",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/auth/password/set"
+      },
+      "module": "identity",
+      "description": "An invited or recovering staff member chooses their own password with a one-time token.",
+      "frontend": {
+        "file": "src/features/auth/api/auth.ts",
+        "line": 54,
+        "fn": "setPassword"
+      }
+    },
+    {
+      "key": "GET /admin/ip-rules",
+      "method": "GET",
+      "path": "/admin/ip-rules",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "عناوين السماح والحظر: النطاق، والجمهور، والسبب، والمدة",
+      "access": "staff-permission",
+      "permission": "access:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "access:*",
+      "stage": 2,
+      "tables": [
+        "ip_rules",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/ip-rules",
+        "method": "CRUD",
+        "ops": "LSCD",
+        "path": "/admin/ip-rules"
+      },
+      "module": "identity",
+      "description": "Allowed and blocked addresses: range, audience, reason and duration.",
+      "frontend": {
+        "file": "src/features/access/api/ipRules.ts",
+        "line": 29,
+        "fn": "listIpRules"
+      }
+    },
+    {
+      "key": "GET /admin/ip-rules/:id",
+      "method": "GET",
+      "path": "/admin/ip-rules/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "عناوين السماح والحظر: النطاق، والجمهور، والسبب، والمدة",
+      "access": "staff-permission",
+      "permission": "access:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "access:*",
+      "stage": 2,
+      "tables": [
+        "ip_rules",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/ip-rules",
+        "method": "CRUD",
+        "ops": "LSCD",
+        "path": "/admin/ip-rules"
+      },
+      "module": "identity",
+      "description": "Allowed and blocked addresses: range, audience, reason and duration.",
+      "frontend": {
+        "file": "src/features/access/api/ipRules.ts",
+        "line": 38,
+        "fn": "getIpRule"
+      }
+    },
+    {
+      "key": "POST /admin/ip-rules",
+      "method": "POST",
+      "path": "/admin/ip-rules",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "عناوين السماح والحظر: النطاق، والجمهور، والسبب، والمدة",
+      "access": "staff-permission",
+      "permission": "access:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "access:*",
+      "stage": 2,
+      "tables": [
+        "ip_rules",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/ip-rules",
+        "method": "CRUD",
+        "ops": "LSCD",
+        "path": "/admin/ip-rules"
+      },
+      "module": "identity",
+      "description": "Allowed and blocked addresses: range, audience, reason and duration.",
+      "frontend": {
+        "file": "src/features/access/api/ipRules.ts",
+        "line": 49,
+        "fn": "createIpRule"
+      }
+    },
+    {
+      "key": "DELETE /admin/ip-rules/:id",
+      "method": "DELETE",
+      "path": "/admin/ip-rules/:id",
+      "op": "delete",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "عناوين السماح والحظر: النطاق، والجمهور، والسبب، والمدة",
+      "access": "staff-permission",
+      "permission": "access:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "access:*",
+      "stage": 2,
+      "tables": [
+        "ip_rules",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/ip-rules",
+        "method": "CRUD",
+        "ops": "LSCD",
+        "path": "/admin/ip-rules"
+      },
+      "module": "identity",
+      "description": "Allowed and blocked addresses: range, audience, reason and duration.",
+      "frontend": {
+        "file": "src/features/access/api/ipRules.ts",
+        "line": 58,
+        "fn": "deleteIpRule"
+      }
+    },
+    {
+      "key": "POST /admin/ip-rules/check",
+      "method": "POST",
+      "path": "/admin/ip-rules/check",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "اختبار عنوان قبل التغيير: يرجع القرار والقاعدة المطابقة",
+      "access": "staff-permission",
+      "permission": "access:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "access:read",
+      "stage": 2,
+      "tables": [
+        "ip_rules"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/ip-rules/check",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/ip-rules/check"
+      },
+      "module": "identity",
+      "description": "Test an address before the change; it returns the decision and the matching rule.",
+      "frontend": {
+        "file": "src/features/access/api/ipRules.ts",
+        "line": 68,
+        "fn": "checkIp"
+      }
+    },
+    {
+      "key": "PUT /admin/access/restriction",
+      "method": "PUT",
+      "path": "/admin/access/restriction",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "تشغيل أو إيقاف تقييد لوحة الإدارة بقائمة السماح، ويُرفض التشغيل إن كان عنوان الطالب خارجها",
+      "access": "staff-permission",
+      "permission": "access:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "access:update",
+      "stage": 2,
+      "tables": [
+        "settings",
+        "ip_rules",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin PUT /admin/access/restriction",
+        "method": "PUT",
+        "ops": null,
+        "path": "/admin/access/restriction"
+      },
+      "module": "identity",
+      "description": "Turn the allow-list restriction on the admin panel on or off; turning it on is rejected if the address of the requester is outside the list.",
+      "frontend": {
+        "file": "src/features/access/api/ipRules.ts",
+        "line": 79,
+        "fn": "setAdminRestriction"
+      }
+    },
+    {
+      "key": "GET /admin/roles",
+      "method": "GET",
+      "path": "/admin/roles",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "الأدوار وصلاحياتها",
+      "access": "staff-permission",
+      "permission": "roles:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "roles:*",
+      "stage": 2,
+      "tables": [
+        "roles"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/roles",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/roles"
+      },
+      "module": "identity",
+      "description": "Roles and their permissions.",
+      "frontend": {
+        "file": "src/features/access/api/roles.ts",
+        "line": 22,
+        "fn": "listRoles"
+      }
+    },
+    {
+      "key": "GET /admin/roles/:id",
+      "method": "GET",
+      "path": "/admin/roles/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "الأدوار وصلاحياتها",
+      "access": "staff-permission",
+      "permission": "roles:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "roles:*",
+      "stage": 2,
+      "tables": [
+        "roles"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/roles",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/roles"
+      },
+      "module": "identity",
+      "description": "Roles and their permissions.",
+      "frontend": {
+        "file": "src/features/access/api/roles.ts",
+        "line": 31,
+        "fn": "getRole"
+      }
+    },
+    {
+      "key": "POST /admin/roles",
+      "method": "POST",
+      "path": "/admin/roles",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "الأدوار وصلاحياتها",
+      "access": "staff-permission",
+      "permission": "roles:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "roles:*",
+      "stage": 2,
+      "tables": [
+        "roles"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/roles",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/roles"
+      },
+      "module": "identity",
+      "description": "Roles and their permissions.",
+      "frontend": {
+        "file": "src/features/access/api/roles.ts",
+        "line": 40,
+        "fn": "createRole"
+      }
+    },
+    {
+      "key": "PATCH /admin/roles/:id",
+      "method": "PATCH",
+      "path": "/admin/roles/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "الأدوار وصلاحياتها",
+      "access": "staff-permission",
+      "permission": "roles:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "roles:*",
+      "stage": 2,
+      "tables": [
+        "roles"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/roles",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/roles"
+      },
+      "module": "identity",
+      "description": "Roles and their permissions.",
+      "frontend": {
+        "file": "src/features/access/api/roles.ts",
+        "line": 50,
+        "fn": "updateRole"
+      }
+    },
+    {
+      "key": "DELETE /admin/roles/:id",
+      "method": "DELETE",
+      "path": "/admin/roles/:id",
+      "op": "delete",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "الأدوار وصلاحياتها",
+      "access": "staff-permission",
+      "permission": "roles:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "roles:*",
+      "stage": 2,
+      "tables": [
+        "roles"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/roles",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/roles"
+      },
+      "module": "identity",
+      "description": "Roles and their permissions.",
+      "frontend": {
+        "file": "src/features/access/api/roles.ts",
+        "line": 59,
+        "fn": "deleteRole"
+      }
+    },
+    {
+      "key": "GET /admin/permissions",
+      "method": "GET",
+      "path": "/admin/permissions",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "كل الصلاحيات المتاحة",
+      "access": "staff-permission",
+      "permission": "roles:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "roles:read",
+      "stage": 2,
+      "tables": [
+        "roles"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/permissions",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/permissions"
+      },
+      "module": "identity",
+      "description": "All available permissions.",
+      "frontend": {
+        "file": "src/features/access/api/roles.ts",
+        "line": 69,
+        "fn": "listPermissions"
+      }
+    },
+    {
+      "key": "GET /admin/sessions",
+      "method": "GET",
+      "path": "/admin/sessions",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "الجلسات الفعّالة للموظفين والتجار",
+      "access": "staff-permission",
+      "permission": "sessions:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "sessions:read",
+      "stage": 2,
+      "tables": [
+        "sessions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/sessions",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/sessions"
+      },
+      "module": "identity",
+      "description": "Active sessions of staff members and merchants.",
+      "frontend": {
+        "file": "src/features/access/api/sessions.ts",
+        "line": 18,
+        "fn": "listSessions"
+      }
+    },
+    {
+      "key": "DELETE /admin/sessions/:id",
+      "method": "DELETE",
+      "path": "/admin/sessions/:id",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "إنهاء جلسة",
+      "access": "staff-permission",
+      "permission": "sessions:revoke",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "sessions:revoke",
+      "stage": 2,
+      "tables": [
+        "sessions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin DELETE /admin/sessions/:id",
+        "method": "DELETE",
+        "ops": null,
+        "path": "/admin/sessions/:id"
+      },
+      "module": "identity",
+      "description": "End a session.",
+      "frontend": {
+        "file": "src/features/access/api/sessions.ts",
+        "line": 27,
+        "fn": "revokeSession"
+      }
+    },
+    {
+      "key": "GET /admin/clients",
+      "method": "GET",
+      "path": "/admin/clients",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "التجار: الإنشاء والفئة والحالة والحظر",
+      "access": "staff-permission",
+      "permission": "clients:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "clients:*",
+      "stage": 2,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/clients",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/clients"
+      },
+      "module": "identity",
+      "description": "Merchants: creation, group, status and blocking.",
+      "frontend": {
+        "file": "src/features/merchants/api/clients.ts",
+        "line": 23,
+        "fn": "listClients"
+      }
+    },
+    {
+      "key": "GET /admin/clients/:id",
+      "method": "GET",
+      "path": "/admin/clients/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "التجار: الإنشاء والفئة والحالة والحظر",
+      "access": "staff-permission",
+      "permission": "clients:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "clients:*",
+      "stage": 2,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/clients",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/clients"
+      },
+      "module": "identity",
+      "description": "Merchants: creation, group, status and blocking.",
+      "frontend": {
+        "file": "src/features/merchants/api/clients.ts",
+        "line": 32,
+        "fn": "getClient"
+      }
+    },
+    {
+      "key": "POST /admin/clients",
+      "method": "POST",
+      "path": "/admin/clients",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "التجار: الإنشاء والفئة والحالة والحظر",
+      "access": "staff-permission",
+      "permission": "clients:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "clients:*",
+      "stage": 2,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/clients",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/clients"
+      },
+      "module": "identity",
+      "description": "Merchants: creation, group, status and blocking.",
+      "frontend": {
+        "file": "src/features/merchants/api/clients.ts",
+        "line": 42,
+        "fn": "createClient"
+      }
+    },
+    {
+      "key": "PATCH /admin/clients/:id",
+      "method": "PATCH",
+      "path": "/admin/clients/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "التجار: الإنشاء والفئة والحالة والحظر",
+      "access": "staff-permission",
+      "permission": "clients:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "clients:*",
+      "stage": 2,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/clients",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/clients"
+      },
+      "module": "identity",
+      "description": "Merchants: creation, group, status and blocking.",
+      "frontend": {
+        "file": "src/features/merchants/api/clients.ts",
+        "line": 53,
+        "fn": "updateClient"
+      }
+    },
+    {
+      "key": "GET /admin/clients/:id/api-keys",
+      "method": "GET",
+      "path": "/admin/clients/:id/api-keys",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "مفاتيح API للتاجر",
+      "access": "staff-permission",
+      "permission": "api_keys:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "api_keys:read",
+      "stage": 7,
+      "tables": [
+        "api_keys"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/clients/:id/api-keys",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/clients/:id/api-keys"
+      },
+      "module": "identity",
+      "description": "API keys of a merchant.",
+      "frontend": {
+        "file": "src/features/merchants/api/apiKeys.ts",
+        "line": 10,
+        "fn": "listClientApiKeys"
+      }
+    },
+    {
+      "key": "DELETE /admin/api-keys/:id",
+      "method": "DELETE",
+      "path": "/admin/api-keys/:id",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "إلغاء مفتاح تاجر",
+      "access": "staff-permission",
+      "permission": "api_keys:revoke",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "api_keys:revoke",
+      "stage": 7,
+      "tables": [
+        "api_keys",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin DELETE /admin/api-keys/:id",
+        "method": "DELETE",
+        "ops": null,
+        "path": "/admin/api-keys/:id"
+      },
+      "module": "identity",
+      "description": "Revoke a merchant API key.",
+      "frontend": {
+        "file": "src/features/merchants/api/apiKeys.ts",
+        "line": 20,
+        "fn": "revokeApiKey"
+      }
+    },
+    {
+      "key": "GET /admin/kyc-submissions",
+      "method": "GET",
+      "path": "/admin/kyc-submissions",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "طلبات التوثيق",
+      "access": "staff-permission",
+      "permission": "kyc:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "kyc:read",
+      "stage": 8,
+      "tables": [
+        "kyc_submissions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/kyc-submissions",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/kyc-submissions"
+      },
+      "module": "identity",
+      "description": "Verification (KYC) requests.",
+      "frontend": {
+        "file": "src/features/merchants/api/kyc.ts",
+        "line": 20,
+        "fn": "listKycSubmissions"
+      }
+    },
+    {
+      "key": "GET /admin/kyc-submissions/:id",
+      "method": "GET",
+      "path": "/admin/kyc-submissions/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "طلبات التوثيق",
+      "access": "staff-permission",
+      "permission": "kyc:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "kyc:read",
+      "stage": 8,
+      "tables": [
+        "kyc_submissions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/kyc-submissions",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/kyc-submissions"
+      },
+      "module": "identity",
+      "description": "Verification (KYC) requests.",
+      "frontend": {
+        "file": "src/features/merchants/api/kyc.ts",
+        "line": 32,
+        "fn": "getKycSubmission"
+      }
+    },
+    {
+      "key": "POST /admin/kyc-submissions/:id/decide",
+      "method": "POST",
+      "path": "/admin/kyc-submissions/:id/decide",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "قبول أو رفض التوثيق",
+      "access": "staff-permission",
+      "permission": "kyc:decide",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "kyc:decide",
+      "stage": 8,
+      "tables": [
+        "kyc_submissions",
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/kyc-submissions/:id/decide",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/kyc-submissions/:id/decide"
+      },
+      "module": "identity",
+      "description": "Approve or reject the verification.",
+      "frontend": {
+        "file": "src/features/merchants/api/kyc.ts",
+        "line": 42,
+        "fn": "decideKycSubmission"
+      }
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "success",
+      "nameAr": "نجاح عبر المورد",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 1,
+          "from": "merchant",
+          "to": "api",
+          "label": "placeimeiorder",
+          "textAr": "سيرفر Dhru لدى التاجر يرسل IMEI ورقم الخدمة مع اسم المستخدم والمفتاح.",
+          "tables": [
+            "api_keys"
+          ]
+        },
+        {
+          "step": 2,
+          "from": "api",
+          "to": "api",
+          "label": "تحقق",
+          "textAr": "المفتاح و IP المسموح وحد الطلبات، ثم الحقول المطلوبة و Luhn للـ IMEI وقاعدة التكرار.",
+          "tables": [
+            "api_keys",
+            "services",
+            "service_fields"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reject",
+      "nameAr": "رفض المورد",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 1,
+          "from": "merchant",
+          "to": "api",
+          "label": "placeimeiorder",
+          "textAr": "سيرفر Dhru لدى التاجر يرسل IMEI ورقم الخدمة مع اسم المستخدم والمفتاح.",
+          "tables": [
+            "api_keys"
+          ]
+        },
+        {
+          "step": 2,
+          "from": "api",
+          "to": "api",
+          "label": "تحقق",
+          "textAr": "المفتاح و IP المسموح وحد الطلبات، ثم الحقول المطلوبة و Luhn للـ IMEI وقاعدة التكرار.",
+          "tables": [
+            "api_keys",
+            "services",
+            "service_fields"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "manual",
+      "nameAr": "تنفيذ يدوي",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 1,
+          "from": "merchant",
+          "to": "api",
+          "label": "placeimeiorder",
+          "textAr": "سيرفر Dhru لدى التاجر يرسل IMEI ورقم الخدمة مع اسم المستخدم والمفتاح.",
+          "tables": [
+            "api_keys"
+          ]
+        },
+        {
+          "step": 2,
+          "from": "api",
+          "to": "api",
+          "label": "تحقق",
+          "textAr": "المفتاح و IP المسموح وحد الطلبات، ثم الحقول المطلوبة و Luhn للـ IMEI وقاعدة التكرار.",
+          "tables": [
+            "api_keys",
+            "services",
+            "service_fields"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "timeout",
+      "nameAr": "انقطاع المورد",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 1,
+          "from": "merchant",
+          "to": "api",
+          "label": "placeimeiorder",
+          "textAr": "سيرفر Dhru لدى التاجر يرسل IMEI ورقم الخدمة مع اسم المستخدم والمفتاح.",
+          "tables": [
+            "api_keys"
+          ]
+        },
+        {
+          "step": 2,
+          "from": "api",
+          "to": "api",
+          "label": "تحقق",
+          "textAr": "المفتاح و IP المسموح وحد الطلبات، ثم الحقول المطلوبة و Luhn للـ IMEI وقاعدة التكرار.",
+          "tables": [
+            "api_keys",
+            "services",
+            "service_fields"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b2c-account",
+      "nameAr": "إدارة حساب عميل",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 2,
+          "from": "api",
+          "to": "db",
+          "label": "حفظ الحساب والدعوة",
+          "textAr": "يُنشأ customers بـ has_account وcreated_by = الموظف وstatus = active، وسجل customer_credentials بلا كلمة مرور بعد، ورمز دعوة في auth_tokens (يُخزَّن hash فقط) صالح ساعة، وسطر في audit_logs.",
+          "tables": [
+            "customers",
+            "customer_credentials",
+            "auth_tokens",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 3,
+          "from": "api",
+          "to": "customer",
+          "label": "إيميل الدعوة",
+          "textAr": "يصل العميل إيميل فيه رابط الدعوة. إن اختار الموظف كلمة مؤقتة بدل الرابط: تُحفظ hash مع must_change_password = true ويُرسلها الموظف بقناة آمنة.",
+          "tables": [
+            "notifications",
+            "auth_tokens"
+          ]
+        },
+        {
+          "step": 4,
+          "from": "customer",
+          "to": "api",
+          "label": "POST /store/v1/auth/password/set",
+          "textAr": "العميل يفتح الرابط ويختار كلمته. الرمز يُستهلك مرة واحدة فيُملأ used_at، ويوثَّق الإيميل: email_verified_at.",
+          "tables": [
+            "auth_tokens",
+            "customer_credentials",
+            "customers"
+          ]
+        },
+        {
+          "step": 5,
+          "from": "api",
+          "to": "db",
+          "label": "جلسة جديدة",
+          "textAr": "تُفتح جلسة في sessions ويُحدَّث last_login_at، وأي جلسات قديمة تُنهى. الكلمة لا تُخزَّن إلا hash.",
+          "tables": [
+            "sessions",
+            "customers",
+            "customer_credentials"
+          ]
+        },
+        {
+          "step": 6,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/customers/:id/password",
+          "textAr": "بعد أسابيع نسي العميل كلمته. الموظف لا يرى الحالية أبداً: يرسل رابط تعيين جديداً، ويختار إنهاء كل الجلسات. لا تدخل كلمة المرور في سجل التدقيق، فقط أن تغييراً تمّ.",
+          "tables": [
+            "customer_credentials",
+            "auth_tokens",
+            "sessions",
+            "notifications",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 7,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/customers/:id/suspend",
+          "textAr": "اشتبه العميل باختراق حسابه فطلب إيقافه. الموظف يوقفه بسبب: customers.status = suspended مع suspended_at وsuspended_reason وsuspended_by، وتُنهى كل الجلسات فوراً. لا شيء يُضاف للقائمة السوداء.",
+          "tables": [
+            "customers",
+            "sessions",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 8,
+          "from": "customer",
+          "to": "api",
+          "label": "دخول أو طلب جديد",
+          "textAr": "محاولة الدخول وفتح جلسة دفع جديدة تُرفضان برمز ACCOUNT_SUSPENDED. الطلبات الجارية تكتمل ويصل العميل نتيجتها، فالإيقاف لا يقطع خدمة دُفع ثمنها.",
+          "tables": [
+            "customers",
+            "sessions",
+            "checkout_sessions"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "admin-team",
+      "nameAr": "إضافة موظف وإيقافه",
+      "group": "ops",
+      "steps": [
+        {
+          "step": 1,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/staff",
+          "textAr": "المالك يضيف موظفاً: الاسم والإيميل والدور، ويختار «رابط لاختيار كلمة المرور». يُرفض الإيميل المكرر، ولا ينجح إلا لمن عنده staff:create. الإدارة العادية ترى الصفحة ولا تضيف.",
+          "tables": [
+            "staff_users",
+            "roles"
+          ]
+        },
+        {
+          "step": 2,
+          "from": "api",
+          "to": "db",
+          "label": "حفظ الحساب والدعوة",
+          "textAr": "يُنشأ staff_users بحالة invited وcreated_by = المالك، ورمز دعوة في auth_tokens (hash فقط، ساعة، لمرة واحدة)، وسطر في audit_logs. لا تُكتب كلمة المرور في أي مكان.",
+          "tables": [
+            "staff_users",
+            "auth_tokens",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 3,
+          "from": "api",
+          "to": "staff",
+          "label": "إيميل الدعوة",
+          "textAr": "يصل الموظف رابط الدعوة. إن اختار المالك كلمة مؤقتة بدل الرابط: تُحفظ hash مع must_change_password = true ويسلّمها المالك بقناة آمنة.",
+          "tables": [
+            "notifications",
+            "auth_tokens"
+          ]
+        },
+        {
+          "step": 4,
+          "from": "staff",
+          "to": "api",
+          "label": "POST /admin/auth/password/set",
+          "textAr": "الموظف يفتح الرابط ويختار كلمته. الرمز يُستهلك مرة واحدة، ثم يضبط 2FA بمسح QR (POST /admin/auth/2fa/setup)، فيصير twofa_enabled = true.",
+          "tables": [
+            "auth_tokens",
+            "staff_users"
+          ]
+        },
+        {
+          "step": 5,
+          "from": "staff",
+          "to": "api",
+          "label": "POST /admin/auth/login",
+          "textAr": "قبل أي فحص للكلمة تُفحص قواعد IP: حظر نشط يطابق العنوان؟ ثم إن كان تقييد الإدارة مفعّلاً، هل العنوان في قائمة السماح؟ ثم الكلمة ورمز TOTP، فتُفتح جلسة ويُحدَّث last_login_at وlast_login_ip.",
+          "tables": [
+            "ip_rules",
+            "staff_users",
+            "sessions"
+          ]
+        },
+        {
+          "step": 6,
+          "from": "admin",
+          "to": "api",
+          "label": "PATCH /admin/staff/:id",
+          "textAr": "المالك يغيّر دور موظف من Support إلى Finance. لا يستطيع تغيير دوره هو، ولا يُنزَّل المالك الأخير، حتى لا تبقى اللوحة بلا مالك.",
+          "tables": [
+            "staff_users",
+            "roles",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 7,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/staff/:id/suspend",
+          "textAr": "الموظف ترك العمل. المالك يوقفه بسبب: status = suspended مع suspended_at وsuspended_reason وsuspended_by، وتُنهى كل جلساته فوراً. يُرفض إيقاف النفس أو المالك الأخير. اسمه يبقى على أفعاله القديمة في audit_logs.",
+          "tables": [
+            "staff_users",
+            "sessions",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 8,
+          "from": "staff",
+          "to": "api",
+          "label": "محاولة دخول",
+          "textAr": "يُرفض الدخول برمز ACCOUNT_SUSPENDED حتى لو كانت الكلمة صحيحة، وأي جلسة قديمة لا تعمل.",
+          "tables": [
+            "staff_users",
+            "sessions"
+          ]
+        },
+        {
+          "step": 9,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/staff/:id/reactivate",
+          "textAr": "عاد الموظف من إجازته. المالك يعيد التفعيل فيمسح السبب، ويدخل الموظف بكلمته ورمز 2FA الحاليين. إن فقد هاتفه يُستخدم POST /admin/staff/:id/reset-2fa فيضبط واحداً جديداً عند دخوله التالي.",
+          "tables": [
+            "staff_users",
+            "audit_logs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ip-rules",
+      "nameAr": "حظر IP وقائمة السماح",
+      "group": "ops",
+      "steps": [
+        {
+          "step": 1,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/ip-rules",
+          "textAr": "المالك يضيف عنوان المكتب إلى قائمة السماح (kind = allow): عنوان أو نطاق CIDR وتسمية ومدة اختيارية لمن يسافر. يُرفض النطاق الأوسع من /16 والمكرر.",
+          "tables": [
+            "ip_rules",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 2,
+          "from": "admin",
+          "to": "api",
+          "label": "PUT /admin/access/restriction",
+          "textAr": "يشغّل تقييد لوحة الإدارة بالقائمة. يُرفض التشغيل إن لم يكن عنوان الطالب نفسه فيها، فلا يقفل أحد نفسه. المفتاح يُخزَّن في settings.",
+          "tables": [
+            "settings",
+            "ip_rules",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 3,
+          "from": "staff",
+          "to": "api",
+          "label": "فتح لوحة الإدارة",
+          "textAr": "زائر من عنوان ليس في القائمة يفتح اللوحة. الترتيب: (1) حظر نشط يطابق؟ (2) للإدارة مع التقييد: في قائمة السماح؟ لا، فيرجع 403 صفحة Access denied بلا نموذج دخول، ويزيد hit_count.",
+          "tables": [
+            "ip_rules"
+          ]
+        },
+        {
+          "step": 4,
+          "from": "api",
+          "to": "db",
+          "label": "مطابقة القواعد",
+          "textAr": "القواعد النشطة تُحمَّل من ip_rules إلى Redis وتُبطَل عند أي تغيير، والمطابقة بالنطاق في الذاكرة فلا استعلام لكل طلب. القاعدة المنتهية expires_at تسقط وحدها.",
+          "tables": [
+            "ip_rules"
+          ]
+        },
+        {
+          "step": 5,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/ip-rules",
+          "textAr": "من صفحة العميل يضغط الموظف «Block IP» على آخر عنوان له، ويُقرأ من آخر جلسة (sessions.ip) أو آخر جلسة دفع (checkout_sessions.ip). يُحظر عن المتجر لسبعة أيام (kind = block, scope = store) بسبب مكتوب. يُرفض نطاق يشمل عنوان الموظف نفسه إن كان الجمهور الإدارة أو الكل.",
+          "tables": [
+            "ip_rules",
+            "sessions",
+            "checkout_sessions",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 6,
+          "from": "customer",
+          "to": "api",
+          "label": "طلب من العنوان المحظور",
+          "textAr": "أي طلب إلى /store/v1/* من هذا العنوان يُرفض بـ 403 قبل الوصول إلى منطق الدفع. الحساب نفسه لم يُمس: يدخل من شبكة أخرى بشكل عادي.",
+          "tables": [
+            "ip_rules"
+          ]
+        },
+        {
+          "step": 7,
+          "from": "api",
+          "to": "db",
+          "label": "حظر آلي",
+          "textAr": "محرك المخاطر يرى 60 محاولة بطاقة في 10 دقائق من نطاق واحد، فيضيف قاعدة source = auto لمدة 30 يوماً ويسجّل تقييماً في risk_assessments.",
+          "tables": [
+            "ip_rules",
+            "risk_assessments"
+          ]
+        },
+        {
+          "step": 8,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/ip-rules/check",
+          "textAr": "قبل التعديل يختبر الموظف عنواناً: يرجع القرار (allowed أو refused) والقاعدة المطابقة، حسب الجمهور المختار.",
+          "tables": [
+            "ip_rules"
+          ]
+        },
+        {
+          "step": 9,
+          "from": "admin",
+          "to": "api",
+          "label": "DELETE /admin/ip-rules/:id",
+          "textAr": "يفك الحظر أو يزيل عنواناً مسموحاً. تُرفض إزالة القاعدة الوحيدة التي تُدخل الموظف نفسه ما دام التقييد مفعّلاً.",
+          "tables": [
+            "ip_rules",
+            "audit_logs"
+          ]
+        }
+      ]
+    }
+  ]
+}

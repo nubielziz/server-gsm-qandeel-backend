@@ -1,0 +1,22 @@
+# Serena project for the GSM backend. Serena runs with --project-from-cwd, so a session started in this
+# folder activates it. Generated or huge paths are ignored so symbol searches stay cheap.
+project_name: "gsm-backend"
+language_servers:
+- typescript
+encoding: "utf-8"
+ignore_all_files_in_gitignore: true
+ls_workspace_folders:
+- "."
+ignored_paths:
+- "reference/**/dist/**"
+- "node_modules/**"
+- "dist/**"
+- "coverage/**"
+- "drizzle/meta/**"
+- "spike/**/drizzle/**"
+- "docs/route-manifest.json"
+- "docs/slices/**"
+- "docs/contract/openapi.json"
+read_only: false
+excluded_tools: []
+initial_prompt: ""

@@ -1,0 +1,1803 @@
+{
+  "module": "catalog",
+  "name": "Catalog & pricing",
+  "domain": "B",
+  "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
+  "counts": {
+    "rows": 21,
+    "endpoints": 43,
+    "bySurface": {
+      "dhru": 1,
+      "v1": 2,
+      "client": 3,
+      "admin": 37
+    },
+    "frontendCalled": 37
+  },
+  "stages": [
+    4,
+    5,
+    7,
+    14
+  ],
+  "ownedTables": [
+    {
+      "name": "client_groups",
+      "description": "Merchant groups with their discount percentages and promotion limits; kind = b2c_retail marks the single retail group used by the storefront.",
+      "descriptionAr": "الفئات ونسب الخصم وحدود الترقية؛ kind = b2c_retail لفئة التجزئة الوحيدة للمتجر",
+      "b2c": "mod",
+      "columns": [
+        "name",
+        "kind",
+        "discount_percent",
+        "is_default",
+        "earn_threshold",
+        "deposit_limit",
+        "overdraft_allowed",
+        "sort"
+      ],
+      "foreignKeys": []
+    },
+    {
+      "name": "service_categories",
+      "description": "Service categories; equal to GROUPNAME in Dhru.",
+      "descriptionAr": "التصنيفات، وتساوي GROUPNAME في Dhru",
+      "b2c": null,
+      "columns": [
+        "name",
+        "type",
+        "allowed_group_ids bigint[]",
+        "sort",
+        "is_active"
+      ],
+      "foreignKeys": [
+        {
+          "column": "allowed_group_ids",
+          "target": "client_groups",
+          "kind": "array"
+        }
+      ]
+    },
+    {
+      "name": "services",
+      "description": "Services; id equals SERVICEID.",
+      "descriptionAr": "الخدمات؛ id يساوي SERVICEID",
+      "b2c": null,
+      "columns": [
+        "category_id",
+        "type",
+        "name",
+        "info",
+        "delivery_time",
+        "status",
+        "fulfillment",
+        "price_mode",
+        "base_price",
+        "cost",
+        "cost_currency",
+        "min_qty",
+        "max_qty",
+        "qty_options int[]",
+        "allow_free",
+        "duplicate_rule",
+        "allow_cancel",
+        "allow_verify",
+        "verify_window_h",
+        "requires jsonb"
+      ],
+      "foreignKeys": [
+        {
+          "column": "category_id",
+          "target": "service_categories",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "service_fields",
+      "description": "Custom fields of a service; equal to Requires.Custom.",
+      "descriptionAr": "الحقول المخصصة، وتساوي Requires.Custom",
+      "b2c": null,
+      "columns": [
+        "service_id",
+        "key",
+        "label",
+        "field_type",
+        "options text[]",
+        "required",
+        "regex",
+        "sort",
+        "supplier_key"
+      ],
+      "foreignKeys": [
+        {
+          "column": "service_id",
+          "target": "services",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "service_options",
+      "description": "Lists of models, providers and MEP values for a service.",
+      "descriptionAr": "قوائم الموديل والمزود و MEP",
+      "b2c": null,
+      "columns": [
+        "service_id",
+        "list",
+        "value",
+        "label",
+        "supplier_value"
+      ],
+      "foreignKeys": [
+        {
+          "column": "service_id",
+          "target": "services",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "service_group_prices",
+      "description": "The price of a service per merchant group, including the storefront Retail price.",
+      "descriptionAr": "سعر الخدمة لكل فئة، وفيها سعر Retail للمتجر",
+      "b2c": null,
+      "columns": [
+        "service_id",
+        "group_id",
+        "price"
+      ],
+      "foreignKeys": [
+        {
+          "column": "service_id",
+          "target": "services",
+          "kind": "fk"
+        },
+        {
+          "column": "group_id",
+          "target": "client_groups",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "service_client_prices",
+      "description": "A negotiated price of a service for one specific merchant.",
+      "descriptionAr": "سعر متفاوض لتاجر بعينه",
+      "b2c": null,
+      "columns": [
+        "service_id",
+        "client_id",
+        "price",
+        "note",
+        "created_by"
+      ],
+      "foreignKeys": [
+        {
+          "column": "service_id",
+          "target": "services",
+          "kind": "fk"
+        },
+        {
+          "column": "client_id",
+          "target": "clients",
+          "kind": "fk"
+        },
+        {
+          "column": "created_by",
+          "target": "staff_users",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "pricing_rules",
+      "description": "Margin and discount rules for automatic pricing.",
+      "descriptionAr": "قواعد الهامش والخصم للتسعير الآلي",
+      "b2c": null,
+      "columns": [
+        "scope",
+        "target_id",
+        "group_id",
+        "kind",
+        "percent",
+        "fixed",
+        "rounding",
+        "min_profit",
+        "priority",
+        "is_active"
+      ],
+      "foreignKeys": [
+        {
+          "column": "target_id",
+          "target": "service_categories",
+          "kind": "poly"
+        },
+        {
+          "column": "target_id",
+          "target": "services",
+          "kind": "poly"
+        },
+        {
+          "column": "group_id",
+          "target": "client_groups",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "inventory_codes",
+      "description": "Stock of digital codes.",
+      "descriptionAr": "مخزون الأكواد الرقمية",
+      "b2c": null,
+      "columns": [
+        "service_id",
+        "code_enc",
+        "status",
+        "order_id",
+        "batch_ref",
+        "created_by"
+      ],
+      "foreignKeys": [
+        {
+          "column": "service_id",
+          "target": "services",
+          "kind": "fk"
+        },
+        {
+          "column": "order_id",
+          "target": "orders",
+          "kind": "fk"
+        },
+        {
+          "column": "created_by",
+          "target": "staff_users",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "tac_catalog",
+      "description": "The first 8 digits of an IMEI (TAC) with brand and model; used for automatic recognition, IMEI checks and SEO pages.",
+      "descriptionAr": "أول 8 أرقام من الـ IMEI (TAC) مع الماركة والموديل؛ للتعرف التلقائي وفحص IMEI وصفحات SEO",
+      "b2c": "new",
+      "columns": [
+        "tac",
+        "brand",
+        "model",
+        "marketing_name",
+        "release_year",
+        "source"
+      ],
+      "foreignKeys": []
+    }
+  ],
+  "foreignTables": [
+    {
+      "table": "audit_logs",
+      "owner": "platform"
+    }
+  ],
+  "endpoints": [
+    {
+      "key": "DHRU imeiservicelist",
+      "method": "POST",
+      "path": "/api/index.php",
+      "action": "imeiservicelist",
+      "op": "action",
+      "surface": "dhru",
+      "kind": "dhru-action",
+      "group": null,
+      "descriptionAr": "الخدمات المتاحة لفئة التاجر بأسعاره وحقولها",
+      "access": "dhru-credentials",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "username + apiaccesskey",
+      "stage": 7,
+      "tables": [
+        "service_categories",
+        "services",
+        "service_fields",
+        "service_options",
+        "service_group_prices",
+        "service_client_prices"
+      ],
+      "dhruResponse": "LIST",
+      "origin": {
+        "row": "dhru ACTION imeiservicelist",
+        "method": "ACTION",
+        "ops": null,
+        "path": "imeiservicelist"
+      },
+      "module": "catalog",
+      "description": "Services available to the merchant's client group, with the merchant's prices and order fields.",
+      "frontend": null
+    },
+    {
+      "key": "GET /v1/services",
+      "method": "GET",
+      "path": "/v1/services",
+      "op": "action",
+      "surface": "v1",
+      "kind": "http",
+      "group": null,
+      "descriptionAr": "الكتالوج بأسعار التاجر؛ فلترة بالنوع والتصنيف والبحث",
+      "access": "api-key",
+      "permission": "services:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "services:read",
+      "stage": 7,
+      "tables": [
+        "services",
+        "service_categories"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "v1 GET /v1/services",
+        "method": "GET",
+        "ops": null,
+        "path": "/v1/services"
+      },
+      "module": "catalog",
+      "description": "Catalog at the merchant's prices; filter by type, category and search.",
+      "frontend": null
+    },
+    {
+      "key": "GET /v1/services/:id",
+      "method": "GET",
+      "path": "/v1/services/:id",
+      "op": "action",
+      "surface": "v1",
+      "kind": "http",
+      "group": null,
+      "descriptionAr": "تفاصيل خدمة مع schema الحقول والكميات",
+      "access": "api-key",
+      "permission": "services:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "services:read",
+      "stage": 7,
+      "tables": [
+        "services",
+        "service_fields",
+        "service_options"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "v1 GET /v1/services/:id",
+        "method": "GET",
+        "ops": null,
+        "path": "/v1/services/:id"
+      },
+      "module": "catalog",
+      "description": "Service details with the field schema and quantities.",
+      "frontend": null
+    },
+    {
+      "key": "GET /client/services",
+      "method": "GET",
+      "path": "/client/services",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "الكتالوج بأسعاري مجمّع بالتصنيفات",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 4,
+      "tables": [
+        "services",
+        "service_categories"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/services",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/services"
+      },
+      "module": "catalog",
+      "description": "Catalog at my prices, grouped by category.",
+      "frontend": null
+    },
+    {
+      "key": "GET /client/services/:id",
+      "method": "GET",
+      "path": "/client/services/:id",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "schema الحقول للنموذج الديناميكي",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 4,
+      "tables": [
+        "services",
+        "service_fields",
+        "service_options"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/services/:id",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/services/:id"
+      },
+      "module": "catalog",
+      "description": "Field schema for the dynamic order form.",
+      "frontend": null
+    },
+    {
+      "key": "GET /client/prices/export",
+      "method": "GET",
+      "path": "/client/prices/export",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "قائمة أسعاري CSV",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 4,
+      "tables": [
+        "services"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/prices/export",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/prices/export"
+      },
+      "module": "catalog",
+      "description": "My price list as CSV.",
+      "frontend": null
+    },
+    {
+      "key": "GET /admin/client-groups",
+      "method": "GET",
+      "path": "/admin/client-groups",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "الفئات: الخصم وحد الترقية وحد الإيداع",
+      "access": "staff-permission",
+      "permission": "groups:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "groups:*",
+      "stage": 4,
+      "tables": [
+        "client_groups"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/client-groups",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/client-groups"
+      },
+      "module": "catalog",
+      "description": "Merchant groups: discount, upgrade threshold and deposit limit.",
+      "frontend": {
+        "file": "src/features/merchants/api/groups.ts",
+        "line": 22,
+        "fn": "listClientGroups"
+      }
+    },
+    {
+      "key": "GET /admin/client-groups/:id",
+      "method": "GET",
+      "path": "/admin/client-groups/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "الفئات: الخصم وحد الترقية وحد الإيداع",
+      "access": "staff-permission",
+      "permission": "groups:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "groups:*",
+      "stage": 4,
+      "tables": [
+        "client_groups"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/client-groups",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/client-groups"
+      },
+      "module": "catalog",
+      "description": "Merchant groups: discount, upgrade threshold and deposit limit.",
+      "frontend": {
+        "file": "src/features/merchants/api/groups.ts",
+        "line": 31,
+        "fn": "getClientGroup"
+      }
+    },
+    {
+      "key": "POST /admin/client-groups",
+      "method": "POST",
+      "path": "/admin/client-groups",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "الفئات: الخصم وحد الترقية وحد الإيداع",
+      "access": "staff-permission",
+      "permission": "groups:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "groups:*",
+      "stage": 4,
+      "tables": [
+        "client_groups"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/client-groups",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/client-groups"
+      },
+      "module": "catalog",
+      "description": "Merchant groups: discount, upgrade threshold and deposit limit.",
+      "frontend": {
+        "file": "src/features/merchants/api/groups.ts",
+        "line": 40,
+        "fn": "createClientGroup"
+      }
+    },
+    {
+      "key": "PATCH /admin/client-groups/:id",
+      "method": "PATCH",
+      "path": "/admin/client-groups/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "الفئات: الخصم وحد الترقية وحد الإيداع",
+      "access": "staff-permission",
+      "permission": "groups:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "groups:*",
+      "stage": 4,
+      "tables": [
+        "client_groups"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/client-groups",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/client-groups"
+      },
+      "module": "catalog",
+      "description": "Merchant groups: discount, upgrade threshold and deposit limit.",
+      "frontend": {
+        "file": "src/features/merchants/api/groups.ts",
+        "line": 50,
+        "fn": "updateClientGroup"
+      }
+    },
+    {
+      "key": "DELETE /admin/client-groups/:id",
+      "method": "DELETE",
+      "path": "/admin/client-groups/:id",
+      "op": "delete",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "الفئات: الخصم وحد الترقية وحد الإيداع",
+      "access": "staff-permission",
+      "permission": "groups:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "groups:*",
+      "stage": 4,
+      "tables": [
+        "client_groups"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/client-groups",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/client-groups"
+      },
+      "module": "catalog",
+      "description": "Merchant groups: discount, upgrade threshold and deposit limit.",
+      "frontend": {
+        "file": "src/features/merchants/api/groups.ts",
+        "line": 59,
+        "fn": "deleteClientGroup"
+      }
+    },
+    {
+      "key": "GET /admin/service-categories",
+      "method": "GET",
+      "path": "/admin/service-categories",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "التصنيفات والفئات اللي بتشوفها",
+      "access": "staff-permission",
+      "permission": "catalog:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:*",
+      "stage": 4,
+      "tables": [
+        "service_categories"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/service-categories",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/service-categories"
+      },
+      "module": "catalog",
+      "description": "Service categories and the merchant groups that can see them.",
+      "frontend": {
+        "file": "src/features/services/api/categories.ts",
+        "line": 20,
+        "fn": "listCategories"
+      }
+    },
+    {
+      "key": "GET /admin/service-categories/:id",
+      "method": "GET",
+      "path": "/admin/service-categories/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "التصنيفات والفئات اللي بتشوفها",
+      "access": "staff-permission",
+      "permission": "catalog:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:*",
+      "stage": 4,
+      "tables": [
+        "service_categories"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/service-categories",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/service-categories"
+      },
+      "module": "catalog",
+      "description": "Service categories and the merchant groups that can see them.",
+      "frontend": {
+        "file": "src/features/services/api/categories.ts",
+        "line": 29,
+        "fn": "getCategory"
+      }
+    },
+    {
+      "key": "POST /admin/service-categories",
+      "method": "POST",
+      "path": "/admin/service-categories",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "التصنيفات والفئات اللي بتشوفها",
+      "access": "staff-permission",
+      "permission": "catalog:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:*",
+      "stage": 4,
+      "tables": [
+        "service_categories"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/service-categories",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/service-categories"
+      },
+      "module": "catalog",
+      "description": "Service categories and the merchant groups that can see them.",
+      "frontend": {
+        "file": "src/features/services/api/categories.ts",
+        "line": 38,
+        "fn": "createCategory"
+      }
+    },
+    {
+      "key": "PATCH /admin/service-categories/:id",
+      "method": "PATCH",
+      "path": "/admin/service-categories/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "التصنيفات والفئات اللي بتشوفها",
+      "access": "staff-permission",
+      "permission": "catalog:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:*",
+      "stage": 4,
+      "tables": [
+        "service_categories"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/service-categories",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/service-categories"
+      },
+      "module": "catalog",
+      "description": "Service categories and the merchant groups that can see them.",
+      "frontend": {
+        "file": "src/features/services/api/categories.ts",
+        "line": 47,
+        "fn": "updateCategory"
+      }
+    },
+    {
+      "key": "DELETE /admin/service-categories/:id",
+      "method": "DELETE",
+      "path": "/admin/service-categories/:id",
+      "op": "delete",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "التصنيفات والفئات اللي بتشوفها",
+      "access": "staff-permission",
+      "permission": "catalog:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:*",
+      "stage": 4,
+      "tables": [
+        "service_categories"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/service-categories",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/service-categories"
+      },
+      "module": "catalog",
+      "description": "Service categories and the merchant groups that can see them.",
+      "frontend": {
+        "file": "src/features/services/api/categories.ts",
+        "line": 56,
+        "fn": "deleteCategory"
+      }
+    },
+    {
+      "key": "GET /admin/services",
+      "method": "GET",
+      "path": "/admin/services",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "الخدمات: النوع والتنفيذ ووضع التسعير والقواعد",
+      "access": "staff-permission",
+      "permission": "catalog:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:*",
+      "stage": 4,
+      "tables": [
+        "services"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/services",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/services"
+      },
+      "module": "catalog",
+      "description": "Services: type, execution, pricing mode and rules.",
+      "frontend": {
+        "file": "src/features/services/api/services.ts",
+        "line": 24,
+        "fn": "listServices"
+      }
+    },
+    {
+      "key": "GET /admin/services/:id",
+      "method": "GET",
+      "path": "/admin/services/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "الخدمات: النوع والتنفيذ ووضع التسعير والقواعد",
+      "access": "staff-permission",
+      "permission": "catalog:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:*",
+      "stage": 4,
+      "tables": [
+        "services"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/services",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/services"
+      },
+      "module": "catalog",
+      "description": "Services: type, execution, pricing mode and rules.",
+      "frontend": {
+        "file": "src/features/services/api/services.ts",
+        "line": 34,
+        "fn": "getService"
+      }
+    },
+    {
+      "key": "POST /admin/services",
+      "method": "POST",
+      "path": "/admin/services",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "الخدمات: النوع والتنفيذ ووضع التسعير والقواعد",
+      "access": "staff-permission",
+      "permission": "catalog:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:*",
+      "stage": 4,
+      "tables": [
+        "services"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/services",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/services"
+      },
+      "module": "catalog",
+      "description": "Services: type, execution, pricing mode and rules.",
+      "frontend": {
+        "file": "src/features/services/api/services.ts",
+        "line": 43,
+        "fn": "createService"
+      }
+    },
+    {
+      "key": "PATCH /admin/services/:id",
+      "method": "PATCH",
+      "path": "/admin/services/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "الخدمات: النوع والتنفيذ ووضع التسعير والقواعد",
+      "access": "staff-permission",
+      "permission": "catalog:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:*",
+      "stage": 4,
+      "tables": [
+        "services"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/services",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/services"
+      },
+      "module": "catalog",
+      "description": "Services: type, execution, pricing mode and rules.",
+      "frontend": {
+        "file": "src/features/services/api/services.ts",
+        "line": 54,
+        "fn": "updateService"
+      }
+    },
+    {
+      "key": "DELETE /admin/services/:id",
+      "method": "DELETE",
+      "path": "/admin/services/:id",
+      "op": "delete",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "الخدمات: النوع والتنفيذ ووضع التسعير والقواعد",
+      "access": "staff-permission",
+      "permission": "catalog:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:*",
+      "stage": 4,
+      "tables": [
+        "services"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/services",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/services"
+      },
+      "module": "catalog",
+      "description": "Services: type, execution, pricing mode and rules.",
+      "frontend": {
+        "file": "src/features/services/api/services.ts",
+        "line": 64,
+        "fn": "deleteService"
+      }
+    },
+    {
+      "key": "PUT /admin/services/:id/fields",
+      "method": "PUT",
+      "path": "/admin/services/:id/fields",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "الحقول المخصصة للخدمة",
+      "access": "staff-permission",
+      "permission": "catalog:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:update",
+      "stage": 4,
+      "tables": [
+        "service_fields"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin PUT /admin/services/:id/fields",
+        "method": "PUT",
+        "ops": null,
+        "path": "/admin/services/:id/fields"
+      },
+      "module": "catalog",
+      "description": "Custom fields of the service.",
+      "frontend": {
+        "file": "src/features/services/api/serviceParts.ts",
+        "line": 18,
+        "fn": "replaceServiceFields"
+      }
+    },
+    {
+      "key": "PUT /admin/services/:id/options",
+      "method": "PUT",
+      "path": "/admin/services/:id/options",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "قوائم الموديل والشبكة و MEP",
+      "access": "staff-permission",
+      "permission": "catalog:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:update",
+      "stage": 4,
+      "tables": [
+        "service_options"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin PUT /admin/services/:id/options",
+        "method": "PUT",
+        "ops": null,
+        "path": "/admin/services/:id/options"
+      },
+      "module": "catalog",
+      "description": "Model, network and MEP option lists.",
+      "frontend": {
+        "file": "src/features/services/api/serviceParts.ts",
+        "line": 31,
+        "fn": "replaceServiceOptions"
+      }
+    },
+    {
+      "key": "PUT /admin/services/:id/group-prices",
+      "method": "PUT",
+      "path": "/admin/services/:id/group-prices",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "سعر الخدمة لكل فئة",
+      "access": "staff-permission",
+      "permission": "pricing:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:update",
+      "stage": 4,
+      "tables": [
+        "service_group_prices"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin PUT /admin/services/:id/group-prices",
+        "method": "PUT",
+        "ops": null,
+        "path": "/admin/services/:id/group-prices"
+      },
+      "module": "catalog",
+      "description": "Service price for each merchant group.",
+      "frontend": {
+        "file": "src/features/services/api/serviceParts.ts",
+        "line": 44,
+        "fn": "replaceServiceGroupPrices"
+      }
+    },
+    {
+      "key": "GET /admin/client-prices",
+      "method": "GET",
+      "path": "/admin/client-prices",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "سعر خاص لتاجر على خدمة",
+      "access": "staff-permission",
+      "permission": "pricing:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:*",
+      "stage": 4,
+      "tables": [
+        "service_client_prices"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/client-prices",
+        "method": "CRUD",
+        "ops": "LCUD",
+        "path": "/admin/client-prices"
+      },
+      "module": "catalog",
+      "description": "A special price for a merchant on a service.",
+      "frontend": {
+        "file": "src/features/merchants/api/prices.ts",
+        "line": 21,
+        "fn": "listClientPrices"
+      }
+    },
+    {
+      "key": "POST /admin/client-prices",
+      "method": "POST",
+      "path": "/admin/client-prices",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "سعر خاص لتاجر على خدمة",
+      "access": "staff-permission",
+      "permission": "pricing:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:*",
+      "stage": 4,
+      "tables": [
+        "service_client_prices"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/client-prices",
+        "method": "CRUD",
+        "ops": "LCUD",
+        "path": "/admin/client-prices"
+      },
+      "module": "catalog",
+      "description": "A special price for a merchant on a service.",
+      "frontend": {
+        "file": "src/features/merchants/api/prices.ts",
+        "line": 31,
+        "fn": "createClientPrice"
+      }
+    },
+    {
+      "key": "PATCH /admin/client-prices/:id",
+      "method": "PATCH",
+      "path": "/admin/client-prices/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "سعر خاص لتاجر على خدمة",
+      "access": "staff-permission",
+      "permission": "pricing:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:*",
+      "stage": 4,
+      "tables": [
+        "service_client_prices"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/client-prices",
+        "method": "CRUD",
+        "ops": "LCUD",
+        "path": "/admin/client-prices"
+      },
+      "module": "catalog",
+      "description": "A special price for a merchant on a service.",
+      "frontend": {
+        "file": "src/features/merchants/api/prices.ts",
+        "line": 40,
+        "fn": "updateClientPrice"
+      }
+    },
+    {
+      "key": "DELETE /admin/client-prices/:id",
+      "method": "DELETE",
+      "path": "/admin/client-prices/:id",
+      "op": "delete",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "سعر خاص لتاجر على خدمة",
+      "access": "staff-permission",
+      "permission": "pricing:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:*",
+      "stage": 4,
+      "tables": [
+        "service_client_prices"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/client-prices",
+        "method": "CRUD",
+        "ops": "LCUD",
+        "path": "/admin/client-prices"
+      },
+      "module": "catalog",
+      "description": "A special price for a merchant on a service.",
+      "frontend": {
+        "file": "src/features/merchants/api/prices.ts",
+        "line": 49,
+        "fn": "deleteClientPrice"
+      }
+    },
+    {
+      "key": "GET /admin/pricing-rules",
+      "method": "GET",
+      "path": "/admin/pricing-rules",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "قواعد الهامش والخصم",
+      "access": "staff-permission",
+      "permission": "pricing:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:*",
+      "stage": 4,
+      "tables": [
+        "pricing_rules"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/pricing-rules",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/pricing-rules"
+      },
+      "module": "catalog",
+      "description": "Margin and discount rules.",
+      "frontend": {
+        "file": "src/features/services/api/pricingRules.ts",
+        "line": 22,
+        "fn": "listPricingRules"
+      }
+    },
+    {
+      "key": "GET /admin/pricing-rules/:id",
+      "method": "GET",
+      "path": "/admin/pricing-rules/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "قواعد الهامش والخصم",
+      "access": "staff-permission",
+      "permission": "pricing:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:*",
+      "stage": 4,
+      "tables": [
+        "pricing_rules"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/pricing-rules",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/pricing-rules"
+      },
+      "module": "catalog",
+      "description": "Margin and discount rules.",
+      "frontend": {
+        "file": "src/features/services/api/pricingRules.ts",
+        "line": 31,
+        "fn": "getPricingRule"
+      }
+    },
+    {
+      "key": "POST /admin/pricing-rules",
+      "method": "POST",
+      "path": "/admin/pricing-rules",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "قواعد الهامش والخصم",
+      "access": "staff-permission",
+      "permission": "pricing:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:*",
+      "stage": 4,
+      "tables": [
+        "pricing_rules"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/pricing-rules",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/pricing-rules"
+      },
+      "module": "catalog",
+      "description": "Margin and discount rules.",
+      "frontend": {
+        "file": "src/features/services/api/pricingRules.ts",
+        "line": 41,
+        "fn": "createPricingRule"
+      }
+    },
+    {
+      "key": "PATCH /admin/pricing-rules/:id",
+      "method": "PATCH",
+      "path": "/admin/pricing-rules/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "قواعد الهامش والخصم",
+      "access": "staff-permission",
+      "permission": "pricing:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:*",
+      "stage": 4,
+      "tables": [
+        "pricing_rules"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/pricing-rules",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/pricing-rules"
+      },
+      "module": "catalog",
+      "description": "Margin and discount rules.",
+      "frontend": {
+        "file": "src/features/services/api/pricingRules.ts",
+        "line": 50,
+        "fn": "updatePricingRule"
+      }
+    },
+    {
+      "key": "DELETE /admin/pricing-rules/:id",
+      "method": "DELETE",
+      "path": "/admin/pricing-rules/:id",
+      "op": "delete",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "قواعد الهامش والخصم",
+      "access": "staff-permission",
+      "permission": "pricing:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:*",
+      "stage": 4,
+      "tables": [
+        "pricing_rules"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/pricing-rules",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/pricing-rules"
+      },
+      "module": "catalog",
+      "description": "Margin and discount rules.",
+      "frontend": {
+        "file": "src/features/services/api/pricingRules.ts",
+        "line": 59,
+        "fn": "deletePricingRule"
+      }
+    },
+    {
+      "key": "POST /admin/services/bulk-price/preview",
+      "method": "POST",
+      "path": "/admin/services/bulk-price/preview",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "معاينة تعديل أسعار بالجملة",
+      "access": "staff-permission",
+      "permission": "pricing:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:update",
+      "stage": 4,
+      "tables": [
+        "services"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/services/bulk-price/preview",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/services/bulk-price/preview"
+      },
+      "module": "catalog",
+      "description": "Preview a bulk price change.",
+      "frontend": {
+        "file": "src/features/services/api/pricing.ts",
+        "line": 17,
+        "fn": "previewBulkPrice"
+      }
+    },
+    {
+      "key": "POST /admin/services/bulk-price/apply",
+      "method": "POST",
+      "path": "/admin/services/bulk-price/apply",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "تطبيق التعديل",
+      "access": "staff-permission",
+      "permission": "pricing:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:update",
+      "stage": 4,
+      "tables": [
+        "services",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/services/bulk-price/apply",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/services/bulk-price/apply"
+      },
+      "module": "catalog",
+      "description": "Apply the bulk price change.",
+      "frontend": {
+        "file": "src/features/services/api/pricing.ts",
+        "line": 27,
+        "fn": "applyBulkPrice"
+      }
+    },
+    {
+      "key": "GET /admin/pricing/resolve",
+      "method": "GET",
+      "path": "/admin/pricing/resolve",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "سعر تاجر لخدمة مع الـ trace",
+      "access": "staff-permission",
+      "permission": "pricing:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:read",
+      "stage": 4,
+      "tables": [
+        "pricing_rules",
+        "service_group_prices",
+        "service_client_prices"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/pricing/resolve",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/pricing/resolve"
+      },
+      "module": "catalog",
+      "description": "The price of a service for a merchant, with the resolution trace.",
+      "frontend": {
+        "file": "src/features/services/api/pricing.ts",
+        "line": 38,
+        "fn": "resolvePrice"
+      }
+    },
+    {
+      "key": "GET /admin/inventory-codes",
+      "method": "GET",
+      "path": "/admin/inventory-codes",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "مخزون الأكواد وحالتها",
+      "access": "staff-permission",
+      "permission": "inventory:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "inventory:read",
+      "stage": 5,
+      "tables": [
+        "inventory_codes"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/inventory-codes",
+        "method": "CRUD",
+        "ops": "L",
+        "path": "/admin/inventory-codes"
+      },
+      "module": "catalog",
+      "description": "Code inventory and the status of each code.",
+      "frontend": {
+        "file": "src/features/services/api/inventory.ts",
+        "line": 16,
+        "fn": "listInventoryCodes"
+      }
+    },
+    {
+      "key": "POST /admin/services/:id/inventory/import",
+      "method": "POST",
+      "path": "/admin/services/:id/inventory/import",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "استيراد أكواد مع كشف التكرار",
+      "access": "staff-permission",
+      "permission": "inventory:write",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "inventory:write",
+      "stage": 5,
+      "tables": [
+        "inventory_codes"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/services/:id/inventory/import",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/services/:id/inventory/import"
+      },
+      "module": "catalog",
+      "description": "Import codes with duplicate detection.",
+      "frontend": {
+        "file": "src/features/services/api/inventory.ts",
+        "line": 29,
+        "fn": "importInventoryCodes"
+      }
+    },
+    {
+      "key": "POST /admin/inventory-codes/void",
+      "method": "POST",
+      "path": "/admin/inventory-codes/void",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "إلغاء أكواد غير مباعة",
+      "access": "staff-permission",
+      "permission": "inventory:write",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "inventory:write",
+      "stage": 5,
+      "tables": [
+        "inventory_codes"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/inventory-codes/void",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/inventory-codes/void"
+      },
+      "module": "catalog",
+      "description": "Void unsold codes.",
+      "frontend": {
+        "file": "src/features/services/api/inventory.ts",
+        "line": 46,
+        "fn": "voidInventoryCodes"
+      }
+    },
+    {
+      "key": "GET /admin/tac-catalog",
+      "method": "GET",
+      "path": "/admin/tac-catalog",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "جدول TAC: الماركة والموديل لكل بادئة IMEI",
+      "access": "staff-permission",
+      "permission": "catalog:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:*",
+      "stage": 14,
+      "tables": [
+        "tac_catalog"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/tac-catalog",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/tac-catalog"
+      },
+      "module": "catalog",
+      "description": "TAC table: brand and model for each IMEI prefix.",
+      "frontend": {
+        "file": "src/features/storefront/api/tacCatalog.ts",
+        "line": 19,
+        "fn": "listTacEntries"
+      }
+    },
+    {
+      "key": "GET /admin/tac-catalog/:id",
+      "method": "GET",
+      "path": "/admin/tac-catalog/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "جدول TAC: الماركة والموديل لكل بادئة IMEI",
+      "access": "staff-permission",
+      "permission": "catalog:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:*",
+      "stage": 14,
+      "tables": [
+        "tac_catalog"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/tac-catalog",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/tac-catalog"
+      },
+      "module": "catalog",
+      "description": "TAC table: brand and model for each IMEI prefix.",
+      "frontend": {
+        "file": "src/features/storefront/api/tacCatalog.ts",
+        "line": 28,
+        "fn": "getTacEntry"
+      }
+    },
+    {
+      "key": "POST /admin/tac-catalog",
+      "method": "POST",
+      "path": "/admin/tac-catalog",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "جدول TAC: الماركة والموديل لكل بادئة IMEI",
+      "access": "staff-permission",
+      "permission": "catalog:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:*",
+      "stage": 14,
+      "tables": [
+        "tac_catalog"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/tac-catalog",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/tac-catalog"
+      },
+      "module": "catalog",
+      "description": "TAC table: brand and model for each IMEI prefix.",
+      "frontend": {
+        "file": "src/features/storefront/api/tacCatalog.ts",
+        "line": 37,
+        "fn": "createTacEntry"
+      }
+    },
+    {
+      "key": "PATCH /admin/tac-catalog/:id",
+      "method": "PATCH",
+      "path": "/admin/tac-catalog/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "جدول TAC: الماركة والموديل لكل بادئة IMEI",
+      "access": "staff-permission",
+      "permission": "catalog:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:*",
+      "stage": 14,
+      "tables": [
+        "tac_catalog"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/tac-catalog",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/tac-catalog"
+      },
+      "module": "catalog",
+      "description": "TAC table: brand and model for each IMEI prefix.",
+      "frontend": {
+        "file": "src/features/storefront/api/tacCatalog.ts",
+        "line": 46,
+        "fn": "updateTacEntry"
+      }
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "success",
+      "nameAr": "نجاح عبر المورد",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 2,
+          "from": "api",
+          "to": "api",
+          "label": "تحقق",
+          "textAr": "المفتاح و IP المسموح وحد الطلبات، ثم الحقول المطلوبة و Luhn للـ IMEI وقاعدة التكرار.",
+          "tables": [
+            "api_keys",
+            "services",
+            "service_fields"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reject",
+      "nameAr": "رفض المورد",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 2,
+          "from": "api",
+          "to": "api",
+          "label": "تحقق",
+          "textAr": "المفتاح و IP المسموح وحد الطلبات، ثم الحقول المطلوبة و Luhn للـ IMEI وقاعدة التكرار.",
+          "tables": [
+            "api_keys",
+            "services",
+            "service_fields"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "manual",
+      "nameAr": "تنفيذ يدوي",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 2,
+          "from": "api",
+          "to": "api",
+          "label": "تحقق",
+          "textAr": "المفتاح و IP المسموح وحد الطلبات، ثم الحقول المطلوبة و Luhn للـ IMEI وقاعدة التكرار.",
+          "tables": [
+            "api_keys",
+            "services",
+            "service_fields"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "timeout",
+      "nameAr": "انقطاع المورد",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 2,
+          "from": "api",
+          "to": "api",
+          "label": "تحقق",
+          "textAr": "المفتاح و IP المسموح وحد الطلبات، ثم الحقول المطلوبة و Luhn للـ IMEI وقاعدة التكرار.",
+          "tables": [
+            "api_keys",
+            "services",
+            "service_fields"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b2c-paid",
+      "nameAr": "طلب متجر مدفوع",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 1,
+          "from": "customer",
+          "to": "api",
+          "label": "فحص IMEI",
+          "textAr": "فحص مجاني قبل الشراء: أول 8 أرقام (TAC) من tac_catalog تحدد الموديل، والفحص يكشف القائمة السوداء أو القفل. الـ IMEI المحظور يُمنع طلبه، والمقفل يُحذَّر منه.",
+          "tables": [
+            "tac_catalog",
+            "imei_checks"
+          ]
+        },
+        {
+          "step": 3,
+          "from": "api",
+          "to": "api",
+          "label": "سعر وضريبة وخطر",
+          "textAr": "السعر من فئة Retail شاملاً الضريبة حسب بلد العميل، وسعر الصرف يُثبَّت على الجلسة. ثم يقيّم risk_assessments الجلسة، وقد يمنعها أو يطلب مراجعة قبل فتح الدفع.",
+          "tables": [
+            "service_group_prices",
+            "tax_rates",
+            "currencies",
+            "risk_assessments",
+            "checkout_sessions"
+          ]
+        }
+      ]
+    }
+  ]
+}

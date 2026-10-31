@@ -1,0 +1,2154 @@
+{
+  "module": "orders",
+  "name": "Orders (one engine for B2B and B2C)",
+  "domain": "D",
+  "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
+  "counts": {
+    "rows": 39,
+    "endpoints": 40,
+    "bySurface": {
+      "dhru": 6,
+      "v1": 6,
+      "client": 7,
+      "admin": 17,
+      "events": 1,
+      "store": 3
+    },
+    "frontendCalled": 17
+  },
+  "stages": [
+    5,
+    6,
+    7,
+    11,
+    14,
+    16
+  ],
+  "ownedTables": [
+    {
+      "name": "orders",
+      "description": "Orders; id equals REFERENCEID. client_id accepts null for storefront (B2C) orders, which fill customer_id instead; exactly one of the two is set.",
+      "descriptionAr": "الطلبات؛ id يساوي REFERENCEID. client_id يقبل null لطلبات المتجر (B2C) ويُملأ customer_id بدلاً منه، وأحدهما فقط",
+      "b2c": "mod",
+      "columns": [
+        "client_id nullable",
+        "customer_id",
+        "service_id",
+        "type",
+        "source",
+        "api_key_id",
+        "status",
+        "dispatch_state",
+        "imei",
+        "quantity",
+        "inputs jsonb",
+        "unit_price",
+        "total_price",
+        "unit_cost",
+        "total_cost",
+        "currency",
+        "pricing_snapshot jsonb",
+        "public_token",
+        "checkout_session_id",
+        "tax_amount",
+        "tax_country",
+        "supplier_id",
+        "supplier_service_id",
+        "supplier_ref",
+        "result_code",
+        "result_comment",
+        "client_note",
+        "admin_note",
+        "verification_status",
+        "idempotency_key",
+        "fingerprint",
+        "input_file_id",
+        "result_file_id",
+        "placed_at",
+        "sent_at",
+        "completed_at"
+      ],
+      "foreignKeys": [
+        {
+          "column": "client_id",
+          "target": "clients",
+          "kind": "fk"
+        },
+        {
+          "column": "customer_id",
+          "target": "customers",
+          "kind": "fk"
+        },
+        {
+          "column": "service_id",
+          "target": "services",
+          "kind": "fk"
+        },
+        {
+          "column": "api_key_id",
+          "target": "api_keys",
+          "kind": "fk"
+        },
+        {
+          "column": "checkout_session_id",
+          "target": "checkout_sessions",
+          "kind": "fk"
+        },
+        {
+          "column": "tax_country",
+          "target": "tax_rates",
+          "kind": "poly"
+        },
+        {
+          "column": "supplier_id",
+          "target": "suppliers",
+          "kind": "fk"
+        },
+        {
+          "column": "supplier_service_id",
+          "target": "supplier_services",
+          "kind": "fk"
+        },
+        {
+          "column": "input_file_id",
+          "target": "files",
+          "kind": "fk"
+        },
+        {
+          "column": "result_file_id",
+          "target": "files",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "order_events",
+      "description": "The order timeline; append only.",
+      "descriptionAr": "سجل الطلب الزمني، إضافة فقط",
+      "b2c": "mod",
+      "columns": [
+        "order_id",
+        "type",
+        "from_status",
+        "to_status",
+        "actor_type",
+        "actor_id",
+        "data jsonb",
+        "created_at"
+      ],
+      "foreignKeys": [
+        {
+          "column": "order_id",
+          "target": "orders",
+          "kind": "fk"
+        },
+        {
+          "column": "actor_id",
+          "target": "staff_users",
+          "kind": "poly"
+        },
+        {
+          "column": "actor_id",
+          "target": "clients",
+          "kind": "poly"
+        },
+        {
+          "column": "actor_id",
+          "target": "customers",
+          "kind": "poly"
+        }
+      ]
+    }
+  ],
+  "foreignTables": [
+    {
+      "table": "clients",
+      "owner": "identity"
+    },
+    {
+      "table": "files",
+      "owner": "platform"
+    },
+    {
+      "table": "invoices",
+      "owner": "money"
+    },
+    {
+      "table": "ledger_accounts",
+      "owner": "money"
+    },
+    {
+      "table": "ledger_entries",
+      "owner": "money"
+    },
+    {
+      "table": "outbox_events",
+      "owner": "platform"
+    },
+    {
+      "table": "payments",
+      "owner": "money"
+    },
+    {
+      "table": "supplier_api_logs",
+      "owner": "suppliers"
+    },
+    {
+      "table": "webhook_deliveries",
+      "owner": "platform"
+    }
+  ],
+  "endpoints": [
+    {
+      "key": "DHRU placeimeiorder",
+      "method": "POST",
+      "path": "/api/index.php",
+      "action": "placeimeiorder",
+      "op": "action",
+      "surface": "dhru",
+      "kind": "dhru-action",
+      "group": null,
+      "descriptionAr": "طلب IMEI أو Server مع حجز الرصيد",
+      "access": "dhru-credentials",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "username + apiaccesskey",
+      "stage": 7,
+      "tables": [
+        "orders",
+        "order_events",
+        "ledger_entries",
+        "outbox_events"
+      ],
+      "dhruResponse": "REFERENCEID",
+      "origin": {
+        "row": "dhru ACTION placeimeiorder",
+        "method": "ACTION",
+        "ops": null,
+        "path": "placeimeiorder"
+      },
+      "module": "orders",
+      "description": "Place an IMEI or Server order and hold the balance.",
+      "frontend": null
+    },
+    {
+      "key": "DHRU placeimeiorderbulk",
+      "method": "POST",
+      "path": "/api/index.php",
+      "action": "placeimeiorderbulk",
+      "op": "action",
+      "surface": "dhru",
+      "kind": "dhru-action",
+      "group": null,
+      "descriptionAr": "عدة طلبات بطلب واحد",
+      "access": "dhru-credentials",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "username + apiaccesskey",
+      "stage": 7,
+      "tables": [
+        "orders",
+        "ledger_entries"
+      ],
+      "dhruResponse": "REFERENCEID لكل عنصر",
+      "origin": {
+        "row": "dhru ACTION placeimeiorderbulk",
+        "method": "ACTION",
+        "ops": null,
+        "path": "placeimeiorderbulk"
+      },
+      "module": "orders",
+      "description": "Place several orders in one request.",
+      "frontend": null
+    },
+    {
+      "key": "DHRU getimeiorder",
+      "method": "POST",
+      "path": "/api/index.php",
+      "action": "getimeiorder",
+      "op": "action",
+      "surface": "dhru",
+      "kind": "dhru-action",
+      "group": null,
+      "descriptionAr": "حالة الطلب والنتيجة",
+      "access": "dhru-credentials",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "username + apiaccesskey",
+      "stage": 7,
+      "tables": [
+        "orders"
+      ],
+      "dhruResponse": "STATUS + CODE",
+      "origin": {
+        "row": "dhru ACTION getimeiorder",
+        "method": "ACTION",
+        "ops": null,
+        "path": "getimeiorder"
+      },
+      "module": "orders",
+      "description": "Order status and result.",
+      "frontend": null
+    },
+    {
+      "key": "DHRU getimeiorderbulk",
+      "method": "POST",
+      "path": "/api/index.php",
+      "action": "getimeiorderbulk",
+      "op": "action",
+      "surface": "dhru",
+      "kind": "dhru-action",
+      "group": null,
+      "descriptionAr": "حالة عدة طلبات",
+      "access": "dhru-credentials",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "username + apiaccesskey",
+      "stage": 7,
+      "tables": [
+        "orders"
+      ],
+      "dhruResponse": "STATUS + CODE لكل عنصر",
+      "origin": {
+        "row": "dhru ACTION getimeiorderbulk",
+        "method": "ACTION",
+        "ops": null,
+        "path": "getimeiorderbulk"
+      },
+      "module": "orders",
+      "description": "Status of several orders.",
+      "frontend": null
+    },
+    {
+      "key": "DHRU placefileorder",
+      "method": "POST",
+      "path": "/api/index.php",
+      "action": "placefileorder",
+      "op": "action",
+      "surface": "dhru",
+      "kind": "dhru-action",
+      "group": null,
+      "descriptionAr": "طلب خدمة ملف — اختياري للـ clients القديمة",
+      "access": "dhru-credentials",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "username + apiaccesskey",
+      "stage": 7,
+      "tables": [
+        "orders",
+        "files"
+      ],
+      "dhruResponse": "REFERENCEID",
+      "origin": {
+        "row": "dhru ACTION placefileorder",
+        "method": "ACTION",
+        "ops": null,
+        "path": "placefileorder"
+      },
+      "module": "orders",
+      "description": "Place a File service order (optional, for older clients).",
+      "frontend": null
+    },
+    {
+      "key": "DHRU getfileorder",
+      "method": "POST",
+      "path": "/api/index.php",
+      "action": "getfileorder",
+      "op": "action",
+      "surface": "dhru",
+      "kind": "dhru-action",
+      "group": null,
+      "descriptionAr": "نتيجة طلب الملف — اختياري",
+      "access": "dhru-credentials",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "username + apiaccesskey",
+      "stage": 7,
+      "tables": [
+        "orders",
+        "files"
+      ],
+      "dhruResponse": "STATUS + CODE",
+      "origin": {
+        "row": "dhru ACTION getfileorder",
+        "method": "ACTION",
+        "ops": null,
+        "path": "getfileorder"
+      },
+      "module": "orders",
+      "description": "Result of a File order (optional).",
+      "frontend": null
+    },
+    {
+      "key": "POST /v1/orders",
+      "method": "POST",
+      "path": "/v1/orders",
+      "op": "action",
+      "surface": "v1",
+      "kind": "http",
+      "group": null,
+      "descriptionAr": "طلب جديد؛ يدعم Idempotency-Key",
+      "access": "api-key",
+      "permission": "orders:write",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:write",
+      "stage": 7,
+      "tables": [
+        "orders",
+        "order_events",
+        "ledger_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "v1 POST /v1/orders",
+        "method": "POST",
+        "ops": null,
+        "path": "/v1/orders"
+      },
+      "module": "orders",
+      "description": "Place an order; supports Idempotency-Key.",
+      "frontend": null
+    },
+    {
+      "key": "POST /v1/orders/bulk",
+      "method": "POST",
+      "path": "/v1/orders/bulk",
+      "op": "action",
+      "surface": "v1",
+      "kind": "http",
+      "group": null,
+      "descriptionAr": "حتى 100 طلب بنتيجة لكل عنصر",
+      "access": "api-key",
+      "permission": "orders:write",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:write",
+      "stage": 7,
+      "tables": [
+        "orders",
+        "ledger_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "v1 POST /v1/orders/bulk",
+        "method": "POST",
+        "ops": null,
+        "path": "/v1/orders/bulk"
+      },
+      "module": "orders",
+      "description": "Up to 100 orders, with a result per item.",
+      "frontend": null
+    },
+    {
+      "key": "GET /v1/orders",
+      "method": "GET",
+      "path": "/v1/orders",
+      "op": "action",
+      "surface": "v1",
+      "kind": "http",
+      "group": null,
+      "descriptionAr": "قائمة الطلبات: status و ids و imei و updatedSince و cursor",
+      "access": "api-key",
+      "permission": "orders:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:read",
+      "stage": 7,
+      "tables": [
+        "orders"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "v1 GET /v1/orders",
+        "method": "GET",
+        "ops": null,
+        "path": "/v1/orders"
+      },
+      "module": "orders",
+      "description": "Order list: filter by status, ids, imei and updatedSince, with cursor pagination.",
+      "frontend": null
+    },
+    {
+      "key": "GET /v1/orders/:id",
+      "method": "GET",
+      "path": "/v1/orders/:id",
+      "op": "action",
+      "surface": "v1",
+      "kind": "http",
+      "group": null,
+      "descriptionAr": "حالة طلب ونتيجته",
+      "access": "api-key",
+      "permission": "orders:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:read",
+      "stage": 7,
+      "tables": [
+        "orders"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "v1 GET /v1/orders/:id",
+        "method": "GET",
+        "ops": null,
+        "path": "/v1/orders/:id"
+      },
+      "module": "orders",
+      "description": "Order status and result.",
+      "frontend": null
+    },
+    {
+      "key": "POST /v1/orders/:id/cancel",
+      "method": "POST",
+      "path": "/v1/orders/:id/cancel",
+      "op": "action",
+      "surface": "v1",
+      "kind": "http",
+      "group": null,
+      "descriptionAr": "إلغاء طلب ما زال pending إذا الخدمة بتسمح",
+      "access": "api-key",
+      "permission": "orders:write",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:write",
+      "stage": 7,
+      "tables": [
+        "orders",
+        "ledger_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "v1 POST /v1/orders/:id/cancel",
+        "method": "POST",
+        "ops": null,
+        "path": "/v1/orders/:id/cancel"
+      },
+      "module": "orders",
+      "description": "Cancel an order that is still pending, if the service allows it.",
+      "frontend": null
+    },
+    {
+      "key": "POST /v1/orders/:id/verify",
+      "method": "POST",
+      "path": "/v1/orders/:id/verify",
+      "op": "action",
+      "surface": "v1",
+      "kind": "http",
+      "group": null,
+      "descriptionAr": "طلب تحقق على النتيجة ضمن المدة المسموحة",
+      "access": "api-key",
+      "permission": "orders:write",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:write",
+      "stage": 7,
+      "tables": [
+        "orders",
+        "order_events"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "v1 POST /v1/orders/:id/verify",
+        "method": "POST",
+        "ops": null,
+        "path": "/v1/orders/:id/verify"
+      },
+      "module": "orders",
+      "description": "Request verification of the result within the allowed window.",
+      "frontend": null
+    },
+    {
+      "key": "GET /client/dashboard",
+      "method": "GET",
+      "path": "/client/dashboard",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "ملخص: الرصيد وآخر الطلبات",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 5,
+      "tables": [
+        "orders",
+        "ledger_accounts"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/dashboard",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/dashboard"
+      },
+      "module": "orders",
+      "description": "Summary: balance and latest orders.",
+      "frontend": null
+    },
+    {
+      "key": "POST /client/orders",
+      "method": "POST",
+      "path": "/client/orders",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "طلب جديد؛ يقبل قائمة IMEI للطلب بالجملة",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 5,
+      "tables": [
+        "orders",
+        "order_events",
+        "ledger_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/orders",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/orders"
+      },
+      "module": "orders",
+      "description": "Place an order; accepts a list of IMEIs for a bulk order.",
+      "frontend": null
+    },
+    {
+      "key": "GET /client/orders",
+      "method": "GET",
+      "path": "/client/orders",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "طلباتي مع فلاتر وبحث IMEI",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 5,
+      "tables": [
+        "orders"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/orders",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/orders"
+      },
+      "module": "orders",
+      "description": "My orders, with filters and IMEI search.",
+      "frontend": null
+    },
+    {
+      "key": "GET /client/orders/:id",
+      "method": "GET",
+      "path": "/client/orders/:id",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "تفاصيل الطلب مع الـ timeline",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 5,
+      "tables": [
+        "orders",
+        "order_events"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/orders/:id",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/orders/:id"
+      },
+      "module": "orders",
+      "description": "Order details with the timeline.",
+      "frontend": null
+    },
+    {
+      "key": "POST /client/orders/:id/cancel",
+      "method": "POST",
+      "path": "/client/orders/:id/cancel",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "إلغاء طلب",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 5,
+      "tables": [
+        "orders",
+        "ledger_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/orders/:id/cancel",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/orders/:id/cancel"
+      },
+      "module": "orders",
+      "description": "Cancel an order.",
+      "frontend": null
+    },
+    {
+      "key": "POST /client/orders/:id/verify",
+      "method": "POST",
+      "path": "/client/orders/:id/verify",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "طلب تحقق",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 5,
+      "tables": [
+        "orders",
+        "order_events"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/orders/:id/verify",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/orders/:id/verify"
+      },
+      "module": "orders",
+      "description": "Request verification of the result.",
+      "frontend": null
+    },
+    {
+      "key": "GET /client/orders/export",
+      "method": "GET",
+      "path": "/client/orders/export",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "تصدير الطلبات CSV",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 5,
+      "tables": [
+        "orders"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/orders/export",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/orders/export"
+      },
+      "module": "orders",
+      "description": "Export orders as CSV.",
+      "frontend": null
+    },
+    {
+      "key": "GET /admin/orders",
+      "method": "GET",
+      "path": "/admin/orders",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "الطلبات وطوابيرها: pending و manual و needs_attention و verification و review؛ فلتر channel=b2b|b2c",
+      "access": "staff-permission",
+      "permission": "orders:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:read",
+      "stage": 5,
+      "tables": [
+        "orders"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/orders",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/orders"
+      },
+      "module": "orders",
+      "description": "Orders and their queues (pending, manual, needs_attention, verification, review); filter by channel=b2b|b2c.",
+      "frontend": {
+        "file": "src/features/orders/api/orders.ts",
+        "line": 22,
+        "fn": "listOrders"
+      }
+    },
+    {
+      "key": "GET /admin/orders/:id",
+      "method": "GET",
+      "path": "/admin/orders/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "الطلبات وطوابيرها: pending و manual و needs_attention و verification و review؛ فلتر channel=b2b|b2c",
+      "access": "staff-permission",
+      "permission": "orders:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:read",
+      "stage": 5,
+      "tables": [
+        "orders"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/orders",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/orders"
+      },
+      "module": "orders",
+      "description": "Orders and their queues (pending, manual, needs_attention, verification, review); filter by channel=b2b|b2c.",
+      "frontend": {
+        "file": "src/features/orders/api/orders.ts",
+        "line": 32,
+        "fn": "getOrder"
+      }
+    },
+    {
+      "key": "GET /admin/orders/:id/events",
+      "method": "GET",
+      "path": "/admin/orders/:id/events",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "الـ timeline الكامل",
+      "access": "staff-permission",
+      "permission": "orders:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:read",
+      "stage": 5,
+      "tables": [
+        "order_events"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/orders/:id/events",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/orders/:id/events"
+      },
+      "module": "orders",
+      "description": "The full order timeline.",
+      "frontend": {
+        "file": "src/features/orders/api/orders.ts",
+        "line": 42,
+        "fn": "listOrderEvents"
+      }
+    },
+    {
+      "key": "POST /admin/orders/:id/accept",
+      "method": "POST",
+      "path": "/admin/orders/:id/accept",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "قبول طلب يدوي وتحويله لـ processing",
+      "access": "staff-permission",
+      "permission": "orders:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:update",
+      "stage": 5,
+      "tables": [
+        "orders",
+        "order_events"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/orders/:id/accept",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/orders/:id/accept"
+      },
+      "module": "orders",
+      "description": "Accept a manual order and move it to processing.",
+      "frontend": {
+        "file": "src/features/orders/api/actions.ts",
+        "line": 20,
+        "fn": "acceptOrder"
+      }
+    },
+    {
+      "key": "POST /admin/orders/:id/reply",
+      "method": "POST",
+      "path": "/admin/orders/:id/reply",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "إكمال الطلب بالنتيجة",
+      "access": "staff-permission",
+      "permission": "orders:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:update",
+      "stage": 5,
+      "tables": [
+        "orders",
+        "order_events",
+        "ledger_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/orders/:id/reply",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/orders/:id/reply"
+      },
+      "module": "orders",
+      "description": "Complete the order with its result.",
+      "frontend": {
+        "file": "src/features/orders/api/actions.ts",
+        "line": 31,
+        "fn": "replyOrder"
+      }
+    },
+    {
+      "key": "POST /admin/orders/:id/reject",
+      "method": "POST",
+      "path": "/admin/orders/:id/reject",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "رفض مع سبب واسترجاع",
+      "access": "staff-permission",
+      "permission": "orders:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:update",
+      "stage": 5,
+      "tables": [
+        "orders",
+        "order_events",
+        "ledger_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/orders/:id/reject",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/orders/:id/reject"
+      },
+      "module": "orders",
+      "description": "Reject the order with a reason and refund it.",
+      "frontend": {
+        "file": "src/features/orders/api/actions.ts",
+        "line": 41,
+        "fn": "rejectOrder"
+      }
+    },
+    {
+      "key": "POST /admin/orders/:id/reopen",
+      "method": "POST",
+      "path": "/admin/orders/:id/reopen",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "إعادة فتح طلب مكتمل لـ processing",
+      "access": "staff-permission",
+      "permission": "orders:reopen",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:reopen",
+      "stage": 5,
+      "tables": [
+        "orders",
+        "ledger_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/orders/:id/reopen",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/orders/:id/reopen"
+      },
+      "module": "orders",
+      "description": "Reopen a completed order back to processing.",
+      "frontend": {
+        "file": "src/features/orders/api/actions.ts",
+        "line": 51,
+        "fn": "reopenOrder"
+      }
+    },
+    {
+      "key": "POST /admin/orders/:id/refund",
+      "method": "POST",
+      "path": "/admin/orders/:id/refund",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "استرجاع طلب مكتمل: reopen ثم reject (طلبات التجار)؛ طلبات المتجر تُسترجع من /admin/refunds",
+      "access": "staff-permission",
+      "permission": "orders:reopen",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:reopen",
+      "stage": 5,
+      "tables": [
+        "orders",
+        "ledger_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/orders/:id/refund",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/orders/:id/refund"
+      },
+      "module": "orders",
+      "description": "Refund a completed merchant order: reopen, then reject; storefront orders are refunded from /admin/refunds.",
+      "frontend": {
+        "file": "src/features/orders/api/actions.ts",
+        "line": 61,
+        "fn": "refundOrder"
+      }
+    },
+    {
+      "key": "POST /admin/orders/:id/verification",
+      "method": "POST",
+      "path": "/admin/orders/:id/verification",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "قرار التحقق: قبول أو استرجاع",
+      "access": "staff-permission",
+      "permission": "orders:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:update",
+      "stage": 5,
+      "tables": [
+        "orders",
+        "ledger_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/orders/:id/verification",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/orders/:id/verification"
+      },
+      "module": "orders",
+      "description": "Verification decision: accept or refund.",
+      "frontend": {
+        "file": "src/features/orders/api/actions.ts",
+        "line": 70,
+        "fn": "decideVerification"
+      }
+    },
+    {
+      "key": "POST /admin/orders/:id/notes",
+      "method": "POST",
+      "path": "/admin/orders/:id/notes",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "ملاحظة داخلية",
+      "access": "staff-permission",
+      "permission": "orders:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:update",
+      "stage": 5,
+      "tables": [
+        "orders"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/orders/:id/notes",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/orders/:id/notes"
+      },
+      "module": "orders",
+      "description": "Add an internal note.",
+      "frontend": {
+        "file": "src/features/orders/api/actions.ts",
+        "line": 79,
+        "fn": "addOrderNote"
+      }
+    },
+    {
+      "key": "POST /admin/orders/bulk-reply/preview",
+      "method": "POST",
+      "path": "/admin/orders/bulk-reply/preview",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "مطابقة أسطر IMEI و CODE مع الطلبات",
+      "access": "staff-permission",
+      "permission": "orders:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:update",
+      "stage": 5,
+      "tables": [
+        "orders"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/orders/bulk-reply/preview",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/orders/bulk-reply/preview"
+      },
+      "module": "orders",
+      "description": "Match IMEI and CODE lines to orders.",
+      "frontend": {
+        "file": "src/features/orders/api/bulkReply.ts",
+        "line": 11,
+        "fn": "previewBulkReply"
+      }
+    },
+    {
+      "key": "POST /admin/orders/bulk-reply/apply",
+      "method": "POST",
+      "path": "/admin/orders/bulk-reply/apply",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "تطبيق الردود المطابقة",
+      "access": "staff-permission",
+      "permission": "orders:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:update",
+      "stage": 5,
+      "tables": [
+        "orders",
+        "ledger_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/orders/bulk-reply/apply",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/orders/bulk-reply/apply"
+      },
+      "module": "orders",
+      "description": "Apply the matched replies.",
+      "frontend": {
+        "file": "src/features/orders/api/bulkReply.ts",
+        "line": 21,
+        "fn": "applyBulkReply"
+      }
+    },
+    {
+      "key": "GET /admin/orders/export",
+      "method": "GET",
+      "path": "/admin/orders/export",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "تصدير CSV حسب الفلاتر",
+      "access": "staff-permission",
+      "permission": "orders:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:read",
+      "stage": 5,
+      "tables": [
+        "orders"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/orders/export",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/orders/export"
+      },
+      "module": "orders",
+      "description": "Export a CSV file according to the filters.",
+      "frontend": {
+        "file": "src/features/orders/api/orders.ts",
+        "line": 52,
+        "fn": "exportOrders"
+      }
+    },
+    {
+      "key": "POST /admin/orders/:id/dispatch",
+      "method": "POST",
+      "path": "/admin/orders/:id/dispatch",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "suppliers",
+      "descriptionAr": "إرسال يدوي للمورد (force send)",
+      "access": "staff-permission",
+      "permission": "orders:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:update",
+      "stage": 6,
+      "tables": [
+        "orders",
+        "supplier_api_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/orders/:id/dispatch",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/orders/:id/dispatch"
+      },
+      "module": "orders",
+      "description": "Manually send the order to the supplier (force send).",
+      "frontend": {
+        "file": "src/features/orders/api/actions.ts",
+        "line": 89,
+        "fn": "dispatchOrder"
+      }
+    },
+    {
+      "key": "POST /admin/orders/:id/fetch",
+      "method": "POST",
+      "path": "/admin/orders/:id/fetch",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "suppliers",
+      "descriptionAr": "سحب النتيجة الآن (force get)",
+      "access": "staff-permission",
+      "permission": "orders:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:update",
+      "stage": 6,
+      "tables": [
+        "orders",
+        "supplier_api_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/orders/:id/fetch",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/orders/:id/fetch"
+      },
+      "module": "orders",
+      "description": "Fetch the result now (force get).",
+      "frontend": {
+        "file": "src/features/orders/api/actions.ts",
+        "line": 99,
+        "fn": "fetchOrderResult"
+      }
+    },
+    {
+      "key": "POST /admin/orders/:id/change-supplier",
+      "method": "POST",
+      "path": "/admin/orders/:id/change-supplier",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "suppliers",
+      "descriptionAr": "تغيير المورد أو تصفير الـ reference",
+      "access": "staff-permission",
+      "permission": "orders:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:update",
+      "stage": 6,
+      "tables": [
+        "orders",
+        "order_events"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/orders/:id/change-supplier",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/orders/:id/change-supplier"
+      },
+      "module": "orders",
+      "description": "Change the supplier or reset the reference.",
+      "frontend": {
+        "file": "src/features/orders/api/actions.ts",
+        "line": 109,
+        "fn": "changeOrderSupplier"
+      }
+    },
+    {
+      "key": "GET /admin/reports/top-clients",
+      "method": "GET",
+      "path": "/admin/reports/top-clients",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "أكبر التجار حجماً وربحاً",
+      "access": "staff-permission",
+      "permission": "reports:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "reports:read",
+      "stage": 11,
+      "tables": [
+        "orders",
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/reports/top-clients",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/reports/top-clients"
+      },
+      "module": "orders",
+      "description": "Top merchants by volume and by profit.",
+      "frontend": {
+        "file": "src/features/dashboard/api/dashboard.ts",
+        "line": 22,
+        "fn": "getTopClients"
+      }
+    },
+    {
+      "key": "EVENT order.status_changed",
+      "method": "POST",
+      "path": "<merchant webhook url>",
+      "event": "order.status_changed",
+      "op": "event",
+      "surface": "events",
+      "kind": "event",
+      "group": null,
+      "descriptionAr": "تغيّرت حالة طلب؛ الطلب كامل بالـ payload",
+      "access": "outbound-hmac",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "HMAC-SHA256",
+      "stage": 7,
+      "tables": [
+        "orders",
+        "webhook_deliveries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "events EVENT order.status_changed",
+        "method": "EVENT",
+        "ops": null,
+        "path": "order.status_changed"
+      },
+      "module": "orders",
+      "description": "An order changed status; the payload carries the whole order.",
+      "frontend": null
+    },
+    {
+      "key": "GET /store/v1/orders/:token",
+      "method": "GET",
+      "path": "/store/v1/orders/:token",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "checkout",
+      "descriptionAr": "صفحة التتبع بالرمز: الحالة والنتيجة والـ timeline",
+      "access": "tracking-token",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "رمز التتبع (لا يُخمَّن)",
+      "stage": 14,
+      "tables": [
+        "orders",
+        "order_events"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/orders/:token",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/orders/:token"
+      },
+      "module": "orders",
+      "description": "Tracking page by token: status, result and timeline.",
+      "frontend": null
+    },
+    {
+      "key": "GET /store/v1/orders/:token/receipt",
+      "method": "GET",
+      "path": "/store/v1/orders/:token/receipt",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "checkout",
+      "descriptionAr": "إيصال PDF فيه الصافي والضريبة ونسبتها وبلد الزبون",
+      "access": "tracking-token",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "رمز التتبع",
+      "stage": 16,
+      "tables": [
+        "orders",
+        "invoices",
+        "payments"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/orders/:token/receipt",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/orders/:token/receipt"
+      },
+      "module": "orders",
+      "description": "PDF receipt with the net amount, the tax and its rate, and the customer's country.",
+      "frontend": null
+    },
+    {
+      "key": "GET /store/v1/me/orders",
+      "method": "GET",
+      "path": "/store/v1/me/orders",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "طلباتي وحالاتها",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 14,
+      "tables": [
+        "orders"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/me/orders",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/me/orders"
+      },
+      "module": "orders",
+      "description": "My orders and their status.",
+      "frontend": null
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "success",
+      "nameAr": "نجاح عبر المورد",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 3,
+          "from": "api",
+          "to": "db",
+          "label": "سعر وحجز وطلب",
+          "textAr": "PriceResolver يحسب سعر هذا التاجر، ثم في transaction واحدة: طلب جديد وحدث وقيد حجز ومهمة outbox.",
+          "tables": [
+            "orders",
+            "order_events",
+            "ledger_entries",
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 4,
+          "from": "api",
+          "to": "merchant",
+          "label": "REFERENCEID",
+          "textAr": "الرد فوراً برقم الطلب، والحالة pending أي STATUS 0.",
+          "tables": [
+            "orders"
+          ]
+        },
+        {
+          "step": 7,
+          "from": "supplier",
+          "to": "worker",
+          "label": "REFERENCEID",
+          "textAr": "رقم الطلب عند المورد يُحفظ في supplier_ref، والحالة processing أي STATUS 1.",
+          "tables": [
+            "orders"
+          ]
+        },
+        {
+          "step": 10,
+          "from": "worker",
+          "to": "db",
+          "label": "completed وقيود",
+          "textAr": "الحجز يتحول إيراداً بسعر البيع، وتُسجَّل التكلفة من رصيدك عند المورد.",
+          "tables": [
+            "orders",
+            "order_events",
+            "ledger_entries"
+          ]
+        },
+        {
+          "step": 12,
+          "from": "merchant",
+          "to": "api",
+          "label": "getimeiorder",
+          "textAr": "سيرفر التاجر يسحب النتيجة STATUS 4 و CODE ويسلمها لزبونه.",
+          "tables": [
+            "orders"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reject",
+      "nameAr": "رفض المورد",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 3,
+          "from": "api",
+          "to": "db",
+          "label": "سعر وحجز وطلب",
+          "textAr": "PriceResolver يحسب سعر هذا التاجر، ثم في transaction واحدة: طلب جديد وحدث وقيد حجز ومهمة outbox.",
+          "tables": [
+            "orders",
+            "order_events",
+            "ledger_entries",
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 4,
+          "from": "api",
+          "to": "merchant",
+          "label": "REFERENCEID",
+          "textAr": "الرد فوراً برقم الطلب، والحالة pending أي STATUS 0.",
+          "tables": [
+            "orders"
+          ]
+        },
+        {
+          "step": 7,
+          "from": "supplier",
+          "to": "worker",
+          "label": "REFERENCEID",
+          "textAr": "رقم الطلب عند المورد يُحفظ في supplier_ref، والحالة processing أي STATUS 1.",
+          "tables": [
+            "orders"
+          ]
+        },
+        {
+          "step": 10,
+          "from": "worker",
+          "to": "db",
+          "label": "rejected واسترجاع",
+          "textAr": "الحجز يعود للمحفظة كاملاً، بلا أي تكلفة.",
+          "tables": [
+            "orders",
+            "order_events",
+            "ledger_entries"
+          ]
+        },
+        {
+          "step": 12,
+          "from": "merchant",
+          "to": "api",
+          "label": "getimeiorder",
+          "textAr": "سيرفر التاجر يقرأ STATUS 3 ويعيد المبلغ لزبونه.",
+          "tables": [
+            "orders"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "manual",
+      "nameAr": "تنفيذ يدوي",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 3,
+          "from": "api",
+          "to": "db",
+          "label": "سعر وحجز وطلب",
+          "textAr": "PriceResolver يحسب سعر هذا التاجر، ثم في transaction واحدة: طلب جديد وحدث وقيد حجز ومهمة outbox.",
+          "tables": [
+            "orders",
+            "order_events",
+            "ledger_entries",
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 4,
+          "from": "api",
+          "to": "merchant",
+          "label": "REFERENCEID",
+          "textAr": "الرد فوراً برقم الطلب، والحالة pending أي STATUS 0.",
+          "tables": [
+            "orders"
+          ]
+        },
+        {
+          "step": 5,
+          "from": "db",
+          "to": "admin",
+          "label": "طابور يدوي",
+          "textAr": "الخدمة تُنفَّذ يدوياً، فيظهر الطلب في طابور الموظفين بحالة dispatch_state = manual.",
+          "tables": [
+            "orders"
+          ]
+        },
+        {
+          "step": 6,
+          "from": "admin",
+          "to": "api",
+          "label": "accept",
+          "textAr": "POST /admin/orders/:id/accept ينقل الطلب إلى processing.",
+          "tables": [
+            "orders",
+            "order_events"
+          ]
+        },
+        {
+          "step": 7,
+          "from": "admin",
+          "to": "api",
+          "label": "reply + CODE",
+          "textAr": "POST /admin/orders/:id/reply بالنتيجة بعد تنفيذها.",
+          "tables": [
+            "orders"
+          ]
+        },
+        {
+          "step": 8,
+          "from": "api",
+          "to": "db",
+          "label": "completed وقيود",
+          "textAr": "الحجز يتحول إيراداً، وكل إجراء للموظف يُسجَّل في audit_logs.",
+          "tables": [
+            "orders",
+            "ledger_entries",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 10,
+          "from": "merchant",
+          "to": "api",
+          "label": "getimeiorder",
+          "textAr": "STATUS 4 و CODE.",
+          "tables": [
+            "orders"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "timeout",
+      "nameAr": "انقطاع المورد",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 3,
+          "from": "api",
+          "to": "db",
+          "label": "سعر وحجز وطلب",
+          "textAr": "PriceResolver يحسب سعر هذا التاجر، ثم في transaction واحدة: طلب جديد وحدث وقيد حجز ومهمة outbox.",
+          "tables": [
+            "orders",
+            "order_events",
+            "ledger_entries",
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 4,
+          "from": "api",
+          "to": "merchant",
+          "label": "REFERENCEID",
+          "textAr": "الرد فوراً برقم الطلب، والحالة pending أي STATUS 0.",
+          "tables": [
+            "orders"
+          ]
+        },
+        {
+          "step": 8,
+          "from": "worker",
+          "to": "db",
+          "label": "needs_attention",
+          "textAr": "لا إعادة إرسال تلقائية: الطلب يتوقف في طابور needs_attention والرصيد يبقى محجوزاً.",
+          "tables": [
+            "orders",
+            "order_events"
+          ]
+        },
+        {
+          "step": 10,
+          "from": "admin",
+          "to": "api",
+          "label": "fetch أو dispatch",
+          "textAr": "الموظف يتحقق عند المورد: fetch إن وُجد مرجع، أو dispatch يدوي بعد التأكد.",
+          "tables": [
+            "orders",
+            "supplier_api_logs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b2c-paid",
+      "nameAr": "طلب متجر مدفوع",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 7,
+          "from": "api",
+          "to": "db",
+          "label": "التقاط الدفع وإنشاء الطلب",
+          "textAr": "في transaction واحدة: الدفعة captured والجلسة paid، وطلب جديد بـ customer_id و public_token بدل client_id، وقيد القبض، ومهمة outbox للإرسال.",
+          "tables": [
+            "payments",
+            "checkout_sessions",
+            "orders",
+            "order_events",
+            "ledger_entries",
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 9,
+          "from": "api",
+          "to": "customer",
+          "label": "رابط التتبع",
+          "textAr": "إيميل الاستلام برابط تتبع فيه public_token، وصفحة التتبع تعمل بلا حساب. الحالة pending.",
+          "tables": [
+            "orders",
+            "notifications"
+          ]
+        },
+        {
+          "step": 12,
+          "from": "supplier",
+          "to": "worker",
+          "label": "REFERENCEID",
+          "textAr": "رقم الطلب عند المورد يُحفظ في supplier_ref، والحالة processing أي STATUS 1.",
+          "tables": [
+            "orders"
+          ]
+        },
+        {
+          "step": 15,
+          "from": "worker",
+          "to": "db",
+          "label": "completed وقيود",
+          "textAr": "عند التسليم تتحول أموال العميل إلى إيراد بسعر البيع بلا الضريبة، وتُسجَّل تكلفة المورد. الضريبة تبقى في vat_payable.",
+          "tables": [
+            "orders",
+            "order_events",
+            "ledger_entries"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b2c-refund",
+      "nameAr": "استرداد قبل التسليم",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 1,
+          "from": "customer",
+          "to": "api",
+          "label": "POST /store/v1/tickets",
+          "textAr": "العميل اكتشف أن الـ IMEI خطأ بعد الدفع، فيفتح تذكرة من صفحة التتبع بفئة wrong_imei أو refund. الطلب ما زال pending ولم يُرسل للمورد.",
+          "tables": [
+            "support_tickets",
+            "ticket_messages",
+            "orders"
+          ]
+        },
+        {
+          "step": 3,
+          "from": "admin",
+          "to": "api",
+          "label": "قرار الاسترداد",
+          "textAr": "الموظف يتأكد أن الطلب لم يُرسل، ويقرر استرداداً كاملاً إلى البطاقة الأصلية (method = original). يحتاج صلاحية ويُسجَّل في سجل التدقيق.",
+          "tables": [
+            "refunds",
+            "orders",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 4,
+          "from": "api",
+          "to": "db",
+          "label": "إلغاء الطلب وقيد الاسترداد",
+          "textAr": "في transaction واحدة: يُلغى الطلب فيصير rejected، وتُلغى مهمة الإرسال في outbox، ويُسجَّل القيد العكسي بالمبلغ الكامل شاملاً الضريبة.",
+          "tables": [
+            "orders",
+            "order_events",
+            "refunds",
+            "ledger_entries",
+            "outbox_events"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b2c-chargeback",
+      "nameAr": "نزاع chargeback خسرناه",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 2,
+          "from": "api",
+          "to": "db",
+          "label": "سجل النزاع",
+          "textAr": "يُنشأ disputes بحالة needs_response مع evidence_due_at، وتُعلَّم الدفعة والطلب والعميل.",
+          "tables": [
+            "disputes",
+            "payments",
+            "orders",
+            "customers"
+          ]
+        },
+        {
+          "step": 4,
+          "from": "admin",
+          "to": "api",
+          "label": "تجميع حزمة الأدلة",
+          "textAr": "من النظام نفسه: سجل الطلب الزمني، ونتيجة فحص IMEI، وإثبات التسليم (النتيجة والوقت)، وموافقات الشروط وتنازل الانسحاب مع IP والوقت، وإيميلات الحالة المرسلة.",
+          "tables": [
+            "order_events",
+            "imei_checks",
+            "consent_records",
+            "notifications",
+            "risk_assessments",
+            "files"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b2c-ticket",
+      "nameAr": "تذكرة دعم: تأخير",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 1,
+          "from": "customer",
+          "to": "api",
+          "label": "POST /store/v1/tickets",
+          "textAr": "الطلب تأخّر عن الوقت المتوقع. العميل يفتح تذكرة من صفحة التتبع بلا حساب بفئة delay ويكتب رسالته.",
+          "tables": [
+            "support_tickets",
+            "ticket_messages",
+            "orders"
+          ]
+        },
+        {
+          "step": 4,
+          "from": "admin",
+          "to": "api",
+          "label": "استلام ورد",
+          "textAr": "الموظف يستلمها فيصبح assignee_id، ويراجع سجل الطلب ومراسلات المورد، ثم يرد بقالب من reply_templates. هذا أول رد فيُسجَّل first_response_at.",
+          "tables": [
+            "support_tickets",
+            "ticket_messages",
+            "reply_templates",
+            "order_events",
+            "supplier_api_logs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "system-alert",
+      "nameAr": "تنبيه وحادثة: مورد يتباطأ",
+      "group": "ops",
+      "steps": [
+        {
+          "step": 9,
+          "from": "admin",
+          "to": "api",
+          "label": "GET /admin/system/orders-health",
+          "textAr": "يتأكد من أثر العطل: كم طلباً عالقاً أكثر من SLA وكم منها بحالة needs_attention، وكم تأخر زمن الإرسال p95.",
+          "tables": [
+            "orders",
+            "order_events",
+            "risk_assessments"
+          ]
+        }
+      ]
+    }
+  ],
+  "statuses": [
+    {
+      "id": "pending",
+      "code": 0
+    },
+    {
+      "id": "processing",
+      "code": 1
+    },
+    {
+      "id": "completed",
+      "code": 4
+    },
+    {
+      "id": "rejected",
+      "code": 3
+    }
+  ],
+  "scenarioTracks": [
+    {
+      "id": "success",
+      "tracks": [
+        {
+          "key": "status",
+          "title": "حالة الطلب الآن",
+          "chain": [
+            "pending",
+            "processing",
+            "completed"
+          ],
+          "empty": "لم يُنشأ الطلب بعد"
+        }
+      ]
+    },
+    {
+      "id": "reject",
+      "tracks": [
+        {
+          "key": "status",
+          "title": "حالة الطلب الآن",
+          "chain": [
+            "pending",
+            "processing",
+            "rejected"
+          ],
+          "empty": "لم يُنشأ الطلب بعد"
+        }
+      ]
+    },
+    {
+      "id": "manual",
+      "tracks": [
+        {
+          "key": "status",
+          "title": "حالة الطلب الآن",
+          "chain": [
+            "pending",
+            "processing",
+            "completed"
+          ],
+          "empty": "لم يُنشأ الطلب بعد"
+        }
+      ]
+    },
+    {
+      "id": "timeout",
+      "tracks": [
+        {
+          "key": "status",
+          "title": "حالة الطلب الآن",
+          "chain": [
+            "pending",
+            "processing",
+            "completed"
+          ],
+          "empty": "لم يُنشأ الطلب بعد"
+        }
+      ]
+    },
+    {
+      "id": "b2c-paid",
+      "tracks": [
+        {
+          "key": "session",
+          "title": "جلسة الدفع",
+          "chain": [
+            "open",
+            "paid"
+          ],
+          "empty": "لم تُفتح جلسة دفع بعد"
+        },
+        {
+          "key": "status",
+          "title": "حالة الطلب الآن",
+          "chain": [
+            "pending",
+            "processing",
+            "completed"
+          ],
+          "empty": "لم يُنشأ الطلب بعد: لا يُنشأ إلا بعد تأكيد الدفع"
+        }
+      ]
+    },
+    {
+      "id": "b2c-refund",
+      "tracks": [
+        {
+          "key": "refund",
+          "title": "حالة الاسترداد",
+          "chain": [
+            "requested",
+            "approved",
+            "processing",
+            "completed"
+          ],
+          "empty": "لم يُطلب استرداد بعد"
+        },
+        {
+          "key": "status",
+          "title": "حالة الطلب الآن",
+          "chain": [
+            "pending",
+            "rejected"
+          ],
+          "empty": "لم يُنشأ الطلب بعد"
+        }
+      ]
+    },
+    {
+      "id": "b2c-chargeback",
+      "tracks": [
+        {
+          "key": "dispute",
+          "title": "حالة النزاع الآن",
+          "chain": [
+            "needs_response",
+            "under_review",
+            "lost"
+          ],
+          "empty": "لا يوجد نزاع بعد"
+        }
+      ]
+    },
+    {
+      "id": "b2c-ticket",
+      "tracks": [
+        {
+          "key": "ticket",
+          "title": "حالة التذكرة الآن",
+          "chain": [
+            "new",
+            "open",
+            "pending_customer",
+            "resolved",
+            "closed"
+          ],
+          "empty": "لم تُفتح تذكرة بعد"
+        }
+      ]
+    },
+    {
+      "id": "b2c-account",
+      "tracks": [
+        {
+          "key": "account",
+          "title": "حالة الحساب الآن",
+          "chain": [
+            "invited",
+            "active",
+            "suspended"
+          ],
+          "empty": "لا حساب بعد"
+        }
+      ]
+    },
+    {
+      "id": "admin-team",
+      "tracks": [
+        {
+          "key": "staff",
+          "title": "حالة حساب الموظف",
+          "chain": [
+            "invited",
+            "active",
+            "suspended"
+          ],
+          "empty": "لا حساب بعد"
+        }
+      ]
+    },
+    {
+      "id": "ip-rules",
+      "tracks": [
+        {
+          "key": "restriction",
+          "title": "تقييد لوحة الإدارة الآن",
+          "chain": [
+            "open",
+            "restricted"
+          ],
+          "empty": "مفتوحة لأي عنوان"
+        }
+      ]
+    },
+    {
+      "id": "system-alert",
+      "tracks": [
+        {
+          "key": "alert",
+          "title": "حالة التنبيه الآن",
+          "chain": [
+            "firing",
+            "acknowledged",
+            "resolved"
+          ],
+          "empty": "لا تنبيه مفتوح"
+        }
+      ]
+    },
+    {
+      "id": "system-integrity",
+      "tracks": [
+        {
+          "key": "maintenance",
+          "title": "وضع الصيانة الآن",
+          "chain": [
+            "off",
+            "on"
+          ],
+          "empty": "لا صيانة"
+        }
+      ]
+    }
+  ]
+}

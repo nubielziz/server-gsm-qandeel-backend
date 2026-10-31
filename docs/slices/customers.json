@@ -1,0 +1,1444 @@
+{
+  "module": "customers",
+  "name": "Storefront customers & checkout (B2C)",
+  "domain": "I",
+  "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
+  "counts": {
+    "rows": 25,
+    "endpoints": 28,
+    "bySurface": {
+      "store": 13,
+      "admin": 15
+    },
+    "frontendCalled": 15
+  },
+  "stages": [
+    14,
+    16,
+    18,
+    19
+  ],
+  "ownedTables": [
+    {
+      "name": "customers",
+      "description": "Storefront customers: a guest with an email, or an account with a password or a sign-in link. Status is active, suspended (a reversible pause), blocked (fraud) or anonymized.",
+      "descriptionAr": "عملاء المتجر: ضيف بالإيميل، أو حساب بكلمة مرور أو رابط دخول. الحالة: active أو suspended (إيقاف مؤقت يُعكس) أو blocked (احتيال) أو anonymized",
+      "b2c": "new",
+      "columns": [
+        "email",
+        "email_verified_at",
+        "name",
+        "phone",
+        "country",
+        "locale",
+        "currency",
+        "has_account",
+        "created_by nullable",
+        "marketing_opt_in",
+        "risk_level",
+        "status",
+        "suspended_at",
+        "suspended_reason",
+        "suspended_by",
+        "internal_notes",
+        "last_login_at",
+        "first_order_at",
+        "total_spent",
+        "anonymized_at"
+      ],
+      "foreignKeys": [
+        {
+          "column": "currency",
+          "target": "currencies",
+          "kind": "fk"
+        },
+        {
+          "column": "created_by",
+          "target": "staff_users",
+          "kind": "fk"
+        },
+        {
+          "column": "suspended_by",
+          "target": "staff_users",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "customer_credentials",
+      "description": "Account sign-in data, kept apart from the profile: hash only. A temporary password set by a staff member forces a change at first sign-in, and nobody can read the current password.",
+      "descriptionAr": "بيانات دخول الحساب منفصلة عن الملف الشخصي: hash فقط. كلمة مرور مؤقتة يضعها موظف تفرض التغيير عند أول دخول، ولا أحد يقرأ الكلمة الحالية",
+      "b2c": "new",
+      "columns": [
+        "customer_id unique",
+        "password_hash nullable",
+        "must_change_password",
+        "password_changed_at",
+        "failed_attempts",
+        "locked_until",
+        "updated_by"
+      ],
+      "foreignKeys": [
+        {
+          "column": "customer_id",
+          "target": "customers",
+          "kind": "fk"
+        },
+        {
+          "column": "updated_by",
+          "target": "staff_users",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "checkout_sessions",
+      "description": "The payment session before any order exists: the price, tax and exchange rate are locked in, and the order is created after payment.",
+      "descriptionAr": "جلسة الدفع قبل أي طلب: السعر والضريبة وسعر الصرف المثبّتة، وبعد الدفع يُنشأ الطلب",
+      "b2c": "new",
+      "columns": [
+        "token",
+        "customer_id",
+        "email",
+        "service_id",
+        "imei_enc",
+        "inputs jsonb",
+        "quantity",
+        "currency",
+        "fx_rate",
+        "net_amount",
+        "tax_rate",
+        "tax_amount",
+        "gross_amount",
+        "tax_country",
+        "utm jsonb",
+        "ip",
+        "user_agent",
+        "status",
+        "expires_at",
+        "order_id",
+        "recovery_emailed_at"
+      ],
+      "foreignKeys": [
+        {
+          "column": "customer_id",
+          "target": "customers",
+          "kind": "fk"
+        },
+        {
+          "column": "service_id",
+          "target": "services",
+          "kind": "fk"
+        },
+        {
+          "column": "currency",
+          "target": "currencies",
+          "kind": "fk"
+        },
+        {
+          "column": "tax_country",
+          "target": "tax_rates",
+          "kind": "poly"
+        },
+        {
+          "column": "order_id",
+          "target": "orders",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "consent_records",
+      "description": "Proof of consent: terms, privacy, marketing and the withdrawal-right waiver, with the IP address and the time.",
+      "descriptionAr": "دليل الموافقات: الشروط والخصوصية والتسويق وتنازل الانسحاب، مع الـ IP والوقت",
+      "b2c": "new",
+      "columns": [
+        "subject_type",
+        "subject_id",
+        "legal_document_id",
+        "purpose",
+        "granted",
+        "checkout_session_id",
+        "order_id",
+        "ip",
+        "user_agent"
+      ],
+      "foreignKeys": [
+        {
+          "column": "subject_id",
+          "target": "customers",
+          "kind": "poly"
+        },
+        {
+          "column": "subject_id",
+          "target": "clients",
+          "kind": "poly"
+        },
+        {
+          "column": "legal_document_id",
+          "target": "legal_documents",
+          "kind": "fk"
+        },
+        {
+          "column": "checkout_session_id",
+          "target": "checkout_sessions",
+          "kind": "fk"
+        },
+        {
+          "column": "order_id",
+          "target": "orders",
+          "kind": "fk"
+        }
+      ]
+    }
+  ],
+  "foreignTables": [
+    {
+      "table": "audit_logs",
+      "owner": "platform"
+    },
+    {
+      "table": "auth_tokens",
+      "owner": "identity"
+    },
+    {
+      "table": "blocklist_entries",
+      "owner": "risk"
+    },
+    {
+      "table": "currencies",
+      "owner": "money"
+    },
+    {
+      "table": "data_requests",
+      "owner": "risk"
+    },
+    {
+      "table": "imei_checks",
+      "owner": "risk"
+    },
+    {
+      "table": "legal_documents",
+      "owner": "storefront"
+    },
+    {
+      "table": "notifications",
+      "owner": "platform"
+    },
+    {
+      "table": "orders",
+      "owner": "orders"
+    },
+    {
+      "table": "payment_gateways",
+      "owner": "money"
+    },
+    {
+      "table": "payments",
+      "owner": "money"
+    },
+    {
+      "table": "risk_assessments",
+      "owner": "risk"
+    },
+    {
+      "table": "sessions",
+      "owner": "identity"
+    },
+    {
+      "table": "tax_rates",
+      "owner": "money"
+    }
+  ],
+  "endpoints": [
+    {
+      "key": "POST /store/v1/checkout-sessions",
+      "method": "POST",
+      "path": "/store/v1/checkout-sessions",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "checkout",
+      "descriptionAr": "فتح جلسة دفع كضيف أو من الحساب: الخدمة و IMEI والإيميل والبلد؛ يثبّت السعر ونسبة الضريبة وسعر الصرف، ويرفض حساباً موقوفاً أو محظوراً",
+      "access": "public",
+      "permission": null,
+      "turnstile": true,
+      "idempotencyKey": false,
+      "authRaw": "عام + Turnstile",
+      "stage": 14,
+      "tables": [
+        "checkout_sessions",
+        "customers",
+        "tax_rates",
+        "currencies"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/checkout-sessions",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/checkout-sessions"
+      },
+      "module": "customers",
+      "description": "Open a checkout as a guest or from the account (service, IMEI, email, country); locks the price, tax rate and exchange rate, and refuses a suspended or blocked account.",
+      "frontend": null
+    },
+    {
+      "key": "GET /store/v1/checkout-sessions/:token",
+      "method": "GET",
+      "path": "/store/v1/checkout-sessions/:token",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "checkout",
+      "descriptionAr": "حالة الجلسة والسعر المثبَّت وطرق الدفع المتاحة",
+      "access": "checkout-token",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "رمز الجلسة",
+      "stage": 14,
+      "tables": [
+        "checkout_sessions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/checkout-sessions/:token",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/checkout-sessions/:token"
+      },
+      "module": "customers",
+      "description": "Session status, the locked price and the available payment methods.",
+      "frontend": null
+    },
+    {
+      "key": "POST /store/v1/checkout-sessions/:token/consents",
+      "method": "POST",
+      "path": "/store/v1/checkout-sessions/:token/consents",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "checkout",
+      "descriptionAr": "تسجيل موافقة الشروط والخصوصية والتنازل عن حق الانسحاب مع نسخة النص والوقت والـ IP",
+      "access": "checkout-token",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "رمز الجلسة",
+      "stage": 14,
+      "tables": [
+        "consent_records",
+        "legal_documents",
+        "checkout_sessions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/checkout-sessions/:token/consents",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/checkout-sessions/:token/consents"
+      },
+      "module": "customers",
+      "description": "Record consent to the terms, the privacy policy and the waiver of the withdrawal right, with the text version, time and IP.",
+      "frontend": null
+    },
+    {
+      "key": "POST /store/v1/checkout-sessions/:token/pay",
+      "method": "POST",
+      "path": "/store/v1/checkout-sessions/:token/pay",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "checkout",
+      "descriptionAr": "بدء الدفع: بطاقة 3DS أو محفظة أو كريبتو؛ الطلب لا يُنشأ قبل تأكيد الـ webhook",
+      "access": "checkout-token",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": true,
+      "authRaw": "رمز الجلسة + Idempotency-Key",
+      "stage": 16,
+      "tables": [
+        "checkout_sessions",
+        "payments",
+        "payment_gateways",
+        "risk_assessments"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/checkout-sessions/:token/pay",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/checkout-sessions/:token/pay"
+      },
+      "module": "customers",
+      "description": "Start payment (3DS card, wallet or crypto); the order is not created before the webhook confirms the payment.",
+      "frontend": null
+    },
+    {
+      "key": "POST /store/v1/auth/magic-link",
+      "method": "POST",
+      "path": "/store/v1/auth/magic-link",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "إرسال رابط دخول بالإيميل بدل كلمة المرور (خيار ثانٍ للدخول)",
+      "access": "public",
+      "permission": null,
+      "turnstile": true,
+      "idempotencyKey": false,
+      "authRaw": "عام + Turnstile",
+      "stage": 14,
+      "tables": [
+        "customers",
+        "auth_tokens",
+        "notifications"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/auth/magic-link",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/auth/magic-link"
+      },
+      "module": "customers",
+      "description": "Email a sign-in link instead of a password (second sign-in option).",
+      "frontend": null
+    },
+    {
+      "key": "POST /store/v1/auth/verify",
+      "method": "POST",
+      "path": "/store/v1/auth/verify",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "تبديل رمز رابط الدخول بجلسة، ويوثّق الإيميل عند أول استعمال",
+      "access": "link-token",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "رمز الرابط",
+      "stage": 14,
+      "tables": [
+        "customers",
+        "auth_tokens",
+        "sessions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/auth/verify",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/auth/verify"
+      },
+      "module": "customers",
+      "description": "Exchange a sign-in link token for a session; verifies the email on first use.",
+      "frontend": null
+    },
+    {
+      "key": "POST /store/v1/auth/login",
+      "method": "POST",
+      "path": "/store/v1/auth/login",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "الدخول بالإيميل وكلمة المرور؛ يرفض الحساب الموقوف، ويقفل مؤقتاً بعد محاولات فاشلة متتالية",
+      "access": "public",
+      "permission": null,
+      "turnstile": true,
+      "idempotencyKey": false,
+      "authRaw": "عام + Turnstile",
+      "stage": 14,
+      "tables": [
+        "customers",
+        "customer_credentials",
+        "sessions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/auth/login",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/auth/login"
+      },
+      "module": "customers",
+      "description": "Sign in with email and password; refuses a suspended account and locks temporarily after repeated failures.",
+      "frontend": null
+    },
+    {
+      "key": "POST /store/v1/auth/password/forgot",
+      "method": "POST",
+      "path": "/store/v1/auth/password/forgot",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "طلب رابط استعادة كلمة المرور؛ الردّ نفسه دائماً حتى لا يُكشف أي إيميل مسجَّل",
+      "access": "public",
+      "permission": null,
+      "turnstile": true,
+      "idempotencyKey": false,
+      "authRaw": "عام + Turnstile",
+      "stage": 14,
+      "tables": [
+        "customers",
+        "auth_tokens",
+        "notifications"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/auth/password/forgot",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/auth/password/forgot"
+      },
+      "module": "customers",
+      "description": "Request a password reset link; the answer is always the same, so no registered email is revealed.",
+      "frontend": null
+    },
+    {
+      "key": "POST /store/v1/auth/password/set",
+      "method": "POST",
+      "path": "/store/v1/auth/password/set",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "تعيين كلمة المرور برمز الدعوة أو الاستعادة: صالح ساعة ولمرة واحدة، ويُنهي الجلسات القديمة",
+      "access": "link-token",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "رمز الرابط",
+      "stage": 14,
+      "tables": [
+        "auth_tokens",
+        "customer_credentials",
+        "customers",
+        "sessions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/auth/password/set",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/auth/password/set"
+      },
+      "module": "customers",
+      "description": "Set the password with an invitation or reset token (valid one hour, single use); ends older sessions.",
+      "frontend": null
+    },
+    {
+      "key": "POST /store/v1/me/password",
+      "method": "POST",
+      "path": "/store/v1/me/password",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "تغيير كلمة المرور من الحساب بإدخال الحالية، ويُنهي بقية الأجهزة؛ هذا ما يُستعمل بعد كلمة مؤقتة",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 14,
+      "tables": [
+        "customer_credentials",
+        "sessions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/me/password",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/me/password"
+      },
+      "module": "customers",
+      "description": "Change the password from the account by entering the current one; signs out the other devices. Used after a temporary password.",
+      "frontend": null
+    },
+    {
+      "key": "POST /store/v1/auth/logout",
+      "method": "POST",
+      "path": "/store/v1/auth/logout",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "إنهاء الجلسة",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 14,
+      "tables": [
+        "sessions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/auth/logout",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/auth/logout"
+      },
+      "module": "customers",
+      "description": "End the session.",
+      "frontend": null
+    },
+    {
+      "key": "GET /store/v1/me",
+      "method": "GET",
+      "path": "/store/v1/me",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "حسابي: البيانات والعملة واللغة وموافقة التسويق",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 14,
+      "tables": [
+        "customers",
+        "consent_records"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/me",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/me"
+      },
+      "module": "customers",
+      "description": "My account: details, currency, language and marketing consent.",
+      "frontend": null
+    },
+    {
+      "key": "PATCH /store/v1/me",
+      "method": "PATCH",
+      "path": "/store/v1/me",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "تعديل اللغة والعملة وموافقة التسويق",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 14,
+      "tables": [
+        "customers",
+        "consent_records"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store PATCH /store/v1/me",
+        "method": "PATCH",
+        "ops": null,
+        "path": "/store/v1/me"
+      },
+      "module": "customers",
+      "description": "Change language, currency and marketing consent.",
+      "frontend": null
+    },
+    {
+      "key": "GET /admin/customers",
+      "method": "GET",
+      "path": "/admin/customers",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "customers",
+      "descriptionAr": "عملاء المتجر: بحث وعرض الطلبات والمدفوعات؛ إنشاء عميل بحساب (دعوة برابط أو كلمة مؤقتة) وتعديل الاسم والإيميل والبلد والهاتف والملاحظات. تغيير الإيميل يُلغي التوثيق",
+      "access": "staff-permission",
+      "permission": "customers:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customers:*",
+      "stage": 14,
+      "tables": [
+        "customers",
+        "customer_credentials",
+        "auth_tokens",
+        "orders",
+        "notifications",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/customers",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/customers"
+      },
+      "module": "customers",
+      "description": "Storefront customers: search and view orders and payments; create a customer with an account (invitation link or temporary password); edit name, email, country, phone and notes; changing the email cancels the verification.",
+      "frontend": {
+        "file": "src/features/customers/api/customers.ts",
+        "line": 28,
+        "fn": "listCustomers"
+      }
+    },
+    {
+      "key": "GET /admin/customers/:id",
+      "method": "GET",
+      "path": "/admin/customers/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "customers",
+      "descriptionAr": "عملاء المتجر: بحث وعرض الطلبات والمدفوعات؛ إنشاء عميل بحساب (دعوة برابط أو كلمة مؤقتة) وتعديل الاسم والإيميل والبلد والهاتف والملاحظات. تغيير الإيميل يُلغي التوثيق",
+      "access": "staff-permission",
+      "permission": "customers:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customers:*",
+      "stage": 14,
+      "tables": [
+        "customers",
+        "customer_credentials",
+        "auth_tokens",
+        "orders",
+        "notifications",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/customers",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/customers"
+      },
+      "module": "customers",
+      "description": "Storefront customers: search and view orders and payments; create a customer with an account (invitation link or temporary password); edit name, email, country, phone and notes; changing the email cancels the verification.",
+      "frontend": {
+        "file": "src/features/customers/api/customers.ts",
+        "line": 38,
+        "fn": "getCustomer"
+      }
+    },
+    {
+      "key": "POST /admin/customers",
+      "method": "POST",
+      "path": "/admin/customers",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "customers",
+      "descriptionAr": "عملاء المتجر: بحث وعرض الطلبات والمدفوعات؛ إنشاء عميل بحساب (دعوة برابط أو كلمة مؤقتة) وتعديل الاسم والإيميل والبلد والهاتف والملاحظات. تغيير الإيميل يُلغي التوثيق",
+      "access": "staff-permission",
+      "permission": "customers:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customers:*",
+      "stage": 14,
+      "tables": [
+        "customers",
+        "customer_credentials",
+        "auth_tokens",
+        "orders",
+        "notifications",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/customers",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/customers"
+      },
+      "module": "customers",
+      "description": "Storefront customers: search and view orders and payments; create a customer with an account (invitation link or temporary password); edit name, email, country, phone and notes; changing the email cancels the verification.",
+      "frontend": {
+        "file": "src/features/customers/api/customers.ts",
+        "line": 49,
+        "fn": "createCustomer"
+      }
+    },
+    {
+      "key": "PATCH /admin/customers/:id",
+      "method": "PATCH",
+      "path": "/admin/customers/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "customers",
+      "descriptionAr": "عملاء المتجر: بحث وعرض الطلبات والمدفوعات؛ إنشاء عميل بحساب (دعوة برابط أو كلمة مؤقتة) وتعديل الاسم والإيميل والبلد والهاتف والملاحظات. تغيير الإيميل يُلغي التوثيق",
+      "access": "staff-permission",
+      "permission": "customers:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customers:*",
+      "stage": 14,
+      "tables": [
+        "customers",
+        "customer_credentials",
+        "auth_tokens",
+        "orders",
+        "notifications",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/customers",
+        "method": "CRUD",
+        "ops": "LSCU",
+        "path": "/admin/customers"
+      },
+      "module": "customers",
+      "description": "Storefront customers: search and view orders and payments; create a customer with an account (invitation link or temporary password); edit name, email, country, phone and notes; changing the email cancels the verification.",
+      "frontend": {
+        "file": "src/features/customers/api/customers.ts",
+        "line": 59,
+        "fn": "updateCustomer"
+      }
+    },
+    {
+      "key": "POST /admin/customers/:id/account",
+      "method": "POST",
+      "path": "/admin/customers/:id/account",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "customers",
+      "descriptionAr": "إنشاء حساب لعميل اشترى كضيف: تُربط طلباته السابقة بالحساب ويصله رابط لاختيار كلمة المرور",
+      "access": "staff-permission",
+      "permission": "customers:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customers:update",
+      "stage": 14,
+      "tables": [
+        "customers",
+        "customer_credentials",
+        "auth_tokens",
+        "notifications",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/customers/:id/account",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/customers/:id/account"
+      },
+      "module": "customers",
+      "description": "Create an account for a customer who bought as a guest: earlier orders are linked to the account and the customer receives a link to choose a password.",
+      "frontend": {
+        "file": "src/features/customers/api/accounts.ts",
+        "line": 17,
+        "fn": "createCustomerAccount"
+      }
+    },
+    {
+      "key": "POST /admin/customers/:id/password",
+      "method": "POST",
+      "path": "/admin/customers/:id/password",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "customers",
+      "descriptionAr": "إرسال رابط تعيين كلمة المرور، أو تعيين كلمة مؤقتة تُفرض تغييرها بأول دخول؛ الكلمة الحالية لا تُعرض ولا تدخل سجل التدقيق، ويُنهي الجلسات اختيارياً",
+      "access": "staff-permission",
+      "permission": "customers:password",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customers:password",
+      "stage": 14,
+      "tables": [
+        "customer_credentials",
+        "auth_tokens",
+        "sessions",
+        "notifications",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/customers/:id/password",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/customers/:id/password"
+      },
+      "module": "customers",
+      "description": "Send a password-setting link, or set a temporary password that must be changed at first sign-in; the current password is never shown and never enters the audit log, and the sessions can optionally be ended.",
+      "frontend": {
+        "file": "src/features/customers/api/accounts.ts",
+        "line": 32,
+        "fn": "setCustomerPassword"
+      }
+    },
+    {
+      "key": "POST /admin/customers/:id/sessions/revoke",
+      "method": "POST",
+      "path": "/admin/customers/:id/sessions/revoke",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "customers",
+      "descriptionAr": "تسجيل خروج العميل من كل الأجهزة: revoked_at على كل جلساته النشطة",
+      "access": "staff-permission",
+      "permission": "customers:password",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customers:password",
+      "stage": 14,
+      "tables": [
+        "sessions",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/customers/:id/sessions/revoke",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/customers/:id/sessions/revoke"
+      },
+      "module": "customers",
+      "description": "Sign the customer out of all devices: sets revoked_at on every active session.",
+      "frontend": {
+        "file": "src/features/customers/api/accounts.ts",
+        "line": 45,
+        "fn": "revokeCustomerSessions"
+      }
+    },
+    {
+      "key": "POST /admin/customers/:id/suspend",
+      "method": "POST",
+      "path": "/admin/customers/:id/suspend",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "customers",
+      "descriptionAr": "إيقاف الحساب مع السبب: لا دخول ولا طلبات جديدة، والطلبات الجارية تكتمل، وتُنهى الجلسات. إيقاف مؤقت لا يضيف شيئاً للقائمة السوداء",
+      "access": "staff-permission",
+      "permission": "customers:suspend",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customers:suspend",
+      "stage": 14,
+      "tables": [
+        "customers",
+        "sessions",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/customers/:id/suspend",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/customers/:id/suspend"
+      },
+      "module": "customers",
+      "description": "Suspend the account with a reason: no sign-in and no new orders, orders in progress still complete, and sessions are ended; a temporary suspension adds nothing to the blocklist.",
+      "frontend": {
+        "file": "src/features/customers/api/accounts.ts",
+        "line": 55,
+        "fn": "suspendCustomer"
+      }
+    },
+    {
+      "key": "POST /admin/customers/:id/reactivate",
+      "method": "POST",
+      "path": "/admin/customers/:id/reactivate",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "customers",
+      "descriptionAr": "إعادة تفعيل حساب موقوف؛ يسجّل العميل دخوله من جديد",
+      "access": "staff-permission",
+      "permission": "customers:suspend",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customers:suspend",
+      "stage": 14,
+      "tables": [
+        "customers",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/customers/:id/reactivate",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/customers/:id/reactivate"
+      },
+      "module": "customers",
+      "description": "Reactivate a suspended account; the customer signs in again.",
+      "frontend": {
+        "file": "src/features/customers/api/accounts.ts",
+        "line": 64,
+        "fn": "reactivateCustomer"
+      }
+    },
+    {
+      "key": "POST /admin/customers/:id/block",
+      "method": "POST",
+      "path": "/admin/customers/:id/block",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "customers",
+      "descriptionAr": "حظر عميل لاحتيال أو فك الحظر مع السبب، ويضيف بصمته للقائمة السوداء (للإيقاف المؤقت استعمل suspend)",
+      "access": "staff-permission",
+      "permission": "customers:block",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customers:block",
+      "stage": 18,
+      "tables": [
+        "customers",
+        "blocklist_entries",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/customers/:id/block",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/customers/:id/block"
+      },
+      "module": "customers",
+      "description": "Block a customer for fraud, or lift the block, with a reason; blocking adds the customer fingerprint to the blocklist (use suspend for a temporary stop).",
+      "frontend": {
+        "file": "src/features/customers/api/accounts.ts",
+        "line": 74,
+        "fn": "blockCustomer"
+      }
+    },
+    {
+      "key": "GET /admin/customers/:id/export",
+      "method": "GET",
+      "path": "/admin/customers/:id/export",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "customers",
+      "descriptionAr": "تصدير بيانات العميل بطلب حماية البيانات",
+      "access": "staff-permission",
+      "permission": "customers:privacy",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customers:privacy",
+      "stage": 18,
+      "tables": [
+        "customers",
+        "orders",
+        "consent_records",
+        "data_requests"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/customers/:id/export",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/customers/:id/export"
+      },
+      "module": "customers",
+      "description": "Export the customer data for a data-protection request.",
+      "frontend": {
+        "file": "src/features/customers/api/privacy.ts",
+        "line": 9,
+        "fn": "exportCustomerData"
+      }
+    },
+    {
+      "key": "POST /admin/customers/:id/anonymize",
+      "method": "POST",
+      "path": "/admin/customers/:id/anonymize",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "customers",
+      "descriptionAr": "إخفاء الاسم والإيميل والـ IMEI مع إبقاء سجلات الدفع للمحاسبة",
+      "access": "staff-permission",
+      "permission": "customers:privacy",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customers:privacy",
+      "stage": 18,
+      "tables": [
+        "customers",
+        "data_requests",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/customers/:id/anonymize",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/customers/:id/anonymize"
+      },
+      "module": "customers",
+      "description": "Anonymize the name, email and IMEI while keeping payment records for accounting.",
+      "frontend": {
+        "file": "src/features/customers/api/privacy.ts",
+        "line": 19,
+        "fn": "anonymizeCustomer"
+      }
+    },
+    {
+      "key": "GET /admin/checkouts/abandoned",
+      "method": "GET",
+      "path": "/admin/checkouts/abandoned",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "promo",
+      "descriptionAr": "السلات المتروكة ومن عنده موافقة تسويق",
+      "access": "staff-permission",
+      "permission": "growth:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "growth:read",
+      "stage": 19,
+      "tables": [
+        "checkout_sessions",
+        "consent_records"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/checkouts/abandoned",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/checkouts/abandoned"
+      },
+      "module": "customers",
+      "description": "Abandoned carts, including who has marketing consent.",
+      "frontend": {
+        "file": "src/features/checkouts/api/checkouts.ts",
+        "line": 12,
+        "fn": "listAbandonedCheckouts"
+      }
+    },
+    {
+      "key": "POST /admin/checkouts/recover",
+      "method": "POST",
+      "path": "/admin/checkouts/recover",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "promo",
+      "descriptionAr": "إرسال إيميل استرجاع مرة واحدة لمن وافق على التسويق",
+      "access": "staff-permission",
+      "permission": "growth:send",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "growth:send",
+      "stage": 19,
+      "tables": [
+        "checkout_sessions",
+        "notifications"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/checkouts/recover",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/checkouts/recover"
+      },
+      "module": "customers",
+      "description": "Send a recovery email once, only to customers with marketing consent.",
+      "frontend": {
+        "file": "src/features/checkouts/api/checkouts.ts",
+        "line": 26,
+        "fn": "recoverCheckouts"
+      }
+    },
+    {
+      "key": "GET /admin/reports/funnel",
+      "method": "GET",
+      "path": "/admin/reports/funnel",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "promo",
+      "descriptionAr": "قمع المبيعات: فحص ثم بدء دفع ثم مدفوع ثم مسلَّم",
+      "access": "staff-permission",
+      "permission": "reports:growth",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "reports:growth",
+      "stage": 19,
+      "tables": [
+        "imei_checks",
+        "checkout_sessions",
+        "orders"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/reports/funnel",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/reports/funnel"
+      },
+      "module": "customers",
+      "description": "Sales funnel: check, then payment started, then paid, then delivered.",
+      "frontend": {
+        "file": "src/features/checkouts/api/funnel.ts",
+        "line": 10,
+        "fn": "getFunnel"
+      }
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "b2c-paid",
+      "nameAr": "طلب متجر مدفوع",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 2,
+          "from": "customer",
+          "to": "api",
+          "label": "POST /store/v1/checkout-sessions",
+          "textAr": "العميل يدخل الإيميل والـ IMEI، ويوافق على الشروط والخصوصية وتنازل الانسحاب لبدء الخدمة فوراً. لا حساب مطلوب: يُنشأ customers كضيف بالإيميل.",
+          "tables": [
+            "customers",
+            "checkout_sessions",
+            "consent_records"
+          ]
+        },
+        {
+          "step": 3,
+          "from": "api",
+          "to": "api",
+          "label": "سعر وضريبة وخطر",
+          "textAr": "السعر من فئة Retail شاملاً الضريبة حسب بلد العميل، وسعر الصرف يُثبَّت على الجلسة. ثم يقيّم risk_assessments الجلسة، وقد يمنعها أو يطلب مراجعة قبل فتح الدفع.",
+          "tables": [
+            "service_group_prices",
+            "tax_rates",
+            "currencies",
+            "risk_assessments",
+            "checkout_sessions"
+          ]
+        },
+        {
+          "step": 4,
+          "from": "api",
+          "to": "gateway",
+          "label": "جلسة دفع مستضافة",
+          "textAr": "إنشاء جلسة دفع لدى البوابة بمبلغ الجلسة ومفتاح idempotency، مع 3DS للبطاقة أو عنوان للكريبتو.",
+          "tables": [
+            "checkout_sessions",
+            "payments",
+            "payment_gateways"
+          ]
+        },
+        {
+          "step": 7,
+          "from": "api",
+          "to": "db",
+          "label": "التقاط الدفع وإنشاء الطلب",
+          "textAr": "في transaction واحدة: الدفعة captured والجلسة paid، وطلب جديد بـ customer_id و public_token بدل client_id، وقيد القبض، ومهمة outbox للإرسال.",
+          "tables": [
+            "payments",
+            "checkout_sessions",
+            "orders",
+            "order_events",
+            "ledger_entries",
+            "outbox_events"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b2c-chargeback",
+      "nameAr": "نزاع chargeback خسرناه",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 2,
+          "from": "api",
+          "to": "db",
+          "label": "سجل النزاع",
+          "textAr": "يُنشأ disputes بحالة needs_response مع evidence_due_at، وتُعلَّم الدفعة والطلب والعميل.",
+          "tables": [
+            "disputes",
+            "payments",
+            "orders",
+            "customers"
+          ]
+        },
+        {
+          "step": 4,
+          "from": "admin",
+          "to": "api",
+          "label": "تجميع حزمة الأدلة",
+          "textAr": "من النظام نفسه: سجل الطلب الزمني، ونتيجة فحص IMEI، وإثبات التسليم (النتيجة والوقت)، وموافقات الشروط وتنازل الانسحاب مع IP والوقت، وإيميلات الحالة المرسلة.",
+          "tables": [
+            "order_events",
+            "imei_checks",
+            "consent_records",
+            "notifications",
+            "risk_assessments",
+            "files"
+          ]
+        },
+        {
+          "step": 8,
+          "from": "admin",
+          "to": "db",
+          "label": "حظر وتعلّم",
+          "textAr": "يُضاف إيميل العميل وبصمة بطاقته والجهاز إلى blocklist_entries بمصدر chargeback، وترتفع مخاطر العميل فتُحجب طلباته القادمة.",
+          "tables": [
+            "blocklist_entries",
+            "customers",
+            "risk_assessments",
+            "audit_logs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b2c-account",
+      "nameAr": "إدارة حساب عميل",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 1,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/customers",
+          "textAr": "عميل طلب بالهاتف أن يُنشأ له حساب. الموظف يدخل الاسم والإيميل والبلد، ويختار «رابط لاختيار كلمة المرور». يُرفض الإيميل إن كان لعميل آخر أو في القائمة السوداء.",
+          "tables": [
+            "customers",
+            "blocklist_entries"
+          ]
+        },
+        {
+          "step": 2,
+          "from": "api",
+          "to": "db",
+          "label": "حفظ الحساب والدعوة",
+          "textAr": "يُنشأ customers بـ has_account وcreated_by = الموظف وstatus = active، وسجل customer_credentials بلا كلمة مرور بعد، ورمز دعوة في auth_tokens (يُخزَّن hash فقط) صالح ساعة، وسطر في audit_logs.",
+          "tables": [
+            "customers",
+            "customer_credentials",
+            "auth_tokens",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 4,
+          "from": "customer",
+          "to": "api",
+          "label": "POST /store/v1/auth/password/set",
+          "textAr": "العميل يفتح الرابط ويختار كلمته. الرمز يُستهلك مرة واحدة فيُملأ used_at، ويوثَّق الإيميل: email_verified_at.",
+          "tables": [
+            "auth_tokens",
+            "customer_credentials",
+            "customers"
+          ]
+        },
+        {
+          "step": 5,
+          "from": "api",
+          "to": "db",
+          "label": "جلسة جديدة",
+          "textAr": "تُفتح جلسة في sessions ويُحدَّث last_login_at، وأي جلسات قديمة تُنهى. الكلمة لا تُخزَّن إلا hash.",
+          "tables": [
+            "sessions",
+            "customers",
+            "customer_credentials"
+          ]
+        },
+        {
+          "step": 6,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/customers/:id/password",
+          "textAr": "بعد أسابيع نسي العميل كلمته. الموظف لا يرى الحالية أبداً: يرسل رابط تعيين جديداً، ويختار إنهاء كل الجلسات. لا تدخل كلمة المرور في سجل التدقيق، فقط أن تغييراً تمّ.",
+          "tables": [
+            "customer_credentials",
+            "auth_tokens",
+            "sessions",
+            "notifications",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 7,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/customers/:id/suspend",
+          "textAr": "اشتبه العميل باختراق حسابه فطلب إيقافه. الموظف يوقفه بسبب: customers.status = suspended مع suspended_at وsuspended_reason وsuspended_by، وتُنهى كل الجلسات فوراً. لا شيء يُضاف للقائمة السوداء.",
+          "tables": [
+            "customers",
+            "sessions",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 8,
+          "from": "customer",
+          "to": "api",
+          "label": "دخول أو طلب جديد",
+          "textAr": "محاولة الدخول وفتح جلسة دفع جديدة تُرفضان برمز ACCOUNT_SUSPENDED. الطلبات الجارية تكتمل ويصل العميل نتيجتها، فالإيقاف لا يقطع خدمة دُفع ثمنها.",
+          "tables": [
+            "customers",
+            "sessions",
+            "checkout_sessions"
+          ]
+        },
+        {
+          "step": 9,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/customers/:id/reactivate",
+          "textAr": "بعد التأكد من العميل يعيد الموظف التفعيل: status = active ويُمسح السبب، ويسجّل العميل دخوله من جديد. الفرق عن الحظر: الحظر للاحتيال ويضيف بصمته للقائمة السوداء.",
+          "tables": [
+            "customers",
+            "audit_logs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ip-rules",
+      "nameAr": "حظر IP وقائمة السماح",
+      "group": "ops",
+      "steps": [
+        {
+          "step": 5,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/ip-rules",
+          "textAr": "من صفحة العميل يضغط الموظف «Block IP» على آخر عنوان له، ويُقرأ من آخر جلسة (sessions.ip) أو آخر جلسة دفع (checkout_sessions.ip). يُحظر عن المتجر لسبعة أيام (kind = block, scope = store) بسبب مكتوب. يُرفض نطاق يشمل عنوان الموظف نفسه إن كان الجمهور الإدارة أو الكل.",
+          "tables": [
+            "ip_rules",
+            "sessions",
+            "checkout_sessions",
+            "audit_logs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "system-integrity",
+      "nameAr": "فرق في الـ ledger ووضع الصيانة",
+      "group": "ops",
+      "steps": [
+        {
+          "step": 5,
+          "from": "customer",
+          "to": "api",
+          "label": "بدء الدفع",
+          "textAr": "عميل المتجر يحاول بدء الدفع فيرجع 503 برمز MAINTENANCE والرسالة والوقت المتوقع. لا تُنشأ جلسة دفع ولا يُحجز شيء.",
+          "tables": [
+            "settings",
+            "checkout_sessions"
+          ]
+        }
+      ]
+    }
+  ]
+}

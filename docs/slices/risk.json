@@ -1,0 +1,884 @@
+{
+  "module": "risk",
+  "name": "Risk & compliance",
+  "domain": "K",
+  "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
+  "counts": {
+    "rows": 11,
+    "endpoints": 17,
+    "bySurface": {
+      "store": 3,
+      "admin": 14
+    },
+    "frontendCalled": 14
+  },
+  "stages": [
+    14,
+    18
+  ],
+  "ownedTables": [
+    {
+      "name": "imei_checks",
+      "description": "IMEI checks: blacklist, lock and iCloud, free or before an order, with a cache.",
+      "descriptionAr": "فحوص IMEI: قائمة سوداء وقفل وiCloud، مجانية أو قبل الطلب، مع كاش",
+      "b2c": "new",
+      "columns": [
+        "imei_hash",
+        "imei_enc",
+        "tac",
+        "brand",
+        "model",
+        "check_type",
+        "status",
+        "result jsonb",
+        "supplier_id",
+        "service_id",
+        "customer_id",
+        "checkout_session_id",
+        "source",
+        "cost",
+        "price",
+        "ip",
+        "cached_until"
+      ],
+      "foreignKeys": [
+        {
+          "column": "tac",
+          "target": "tac_catalog",
+          "kind": "fk"
+        },
+        {
+          "column": "supplier_id",
+          "target": "suppliers",
+          "kind": "fk"
+        },
+        {
+          "column": "service_id",
+          "target": "services",
+          "kind": "fk"
+        },
+        {
+          "column": "customer_id",
+          "target": "customers",
+          "kind": "fk"
+        },
+        {
+          "column": "checkout_session_id",
+          "target": "checkout_sessions",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "risk_assessments",
+      "description": "Risk assessment of a session or an order: a score, signals and a decision (allow, review or block).",
+      "descriptionAr": "تقييم مخاطر الجلسة أو الطلب: score وإشارات وقرار allow أو review أو block",
+      "b2c": "new",
+      "columns": [
+        "checkout_session_id",
+        "order_id",
+        "customer_id",
+        "score",
+        "decision",
+        "signals jsonb",
+        "provider",
+        "reviewed_by",
+        "reviewed_at",
+        "outcome"
+      ],
+      "foreignKeys": [
+        {
+          "column": "checkout_session_id",
+          "target": "checkout_sessions",
+          "kind": "fk"
+        },
+        {
+          "column": "order_id",
+          "target": "orders",
+          "kind": "fk"
+        },
+        {
+          "column": "customer_id",
+          "target": "customers",
+          "kind": "fk"
+        },
+        {
+          "column": "reviewed_by",
+          "target": "staff_users",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "blocklist_entries",
+      "description": "The blocklist: email, domain, IMEI, card fingerprint, device and country. IP addresses live in ip_rules.",
+      "descriptionAr": "قائمة الحظر: إيميل ودومين وIMEI وبصمة بطاقة وجهاز وبلد. عناوين IP في ip_rules",
+      "b2c": "new",
+      "columns": [
+        "kind",
+        "value_hash",
+        "display",
+        "reason",
+        "expires_at",
+        "source",
+        "created_by"
+      ],
+      "foreignKeys": [
+        {
+          "column": "created_by",
+          "target": "staff_users",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "data_requests",
+      "description": "Data-subject requests: export or deletion, with a legal deadline.",
+      "descriptionAr": "طلبات أصحاب البيانات: تصدير أو حذف، بموعد قانوني للإنجاز",
+      "b2c": "new",
+      "columns": [
+        "customer_id",
+        "kind",
+        "status",
+        "requested_at",
+        "due_at",
+        "completed_at",
+        "handled_by",
+        "file_id"
+      ],
+      "foreignKeys": [
+        {
+          "column": "customer_id",
+          "target": "customers",
+          "kind": "fk"
+        },
+        {
+          "column": "handled_by",
+          "target": "staff_users",
+          "kind": "fk"
+        },
+        {
+          "column": "file_id",
+          "target": "files",
+          "kind": "fk"
+        }
+      ]
+    }
+  ],
+  "foreignTables": [
+    {
+      "table": "audit_logs",
+      "owner": "platform"
+    },
+    {
+      "table": "customers",
+      "owner": "customers"
+    },
+    {
+      "table": "order_events",
+      "owner": "orders"
+    },
+    {
+      "table": "orders",
+      "owner": "orders"
+    },
+    {
+      "table": "refunds",
+      "owner": "money"
+    },
+    {
+      "table": "settings",
+      "owner": "platform"
+    },
+    {
+      "table": "tac_catalog",
+      "owner": "catalog"
+    }
+  ],
+  "endpoints": [
+    {
+      "key": "POST /store/v1/imei/check",
+      "method": "POST",
+      "path": "/store/v1/imei/check",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "فحص IMEI قبل الدفع: checksum و TAC (Stage 14)، ثم الحظر والقفل عبر المورد (Stage 18)",
+      "access": "public",
+      "permission": null,
+      "turnstile": true,
+      "idempotencyKey": false,
+      "authRaw": "عام + Turnstile",
+      "stage": 14,
+      "tables": [
+        "tac_catalog",
+        "imei_checks",
+        "blocklist_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/imei/check",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/imei/check"
+      },
+      "module": "risk",
+      "description": "IMEI check before payment: checksum and TAC (stage 14), then blacklist and lock status through the supplier (stage 18).",
+      "frontend": null
+    },
+    {
+      "key": "POST /store/v1/me/data-export",
+      "method": "POST",
+      "path": "/store/v1/me/data-export",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "طلب تصدير كل بياناتي",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 18,
+      "tables": [
+        "data_requests",
+        "customers"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/me/data-export",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/me/data-export"
+      },
+      "module": "risk",
+      "description": "Request an export of all my data.",
+      "frontend": null
+    },
+    {
+      "key": "POST /store/v1/me/data-delete",
+      "method": "POST",
+      "path": "/store/v1/me/data-delete",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "طلب إخفاء هويتي؛ سجلات الدفع تبقى للمحاسبة",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 18,
+      "tables": [
+        "data_requests",
+        "customers"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/me/data-delete",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/me/data-delete"
+      },
+      "module": "risk",
+      "description": "Request anonymization; payment records stay for accounting.",
+      "frontend": null
+    },
+    {
+      "key": "GET /admin/data-requests",
+      "method": "GET",
+      "path": "/admin/data-requests",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "customers",
+      "descriptionAr": "طلبات التصدير والحذف ومهلة تنفيذها",
+      "access": "staff-permission",
+      "permission": "customers:privacy",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customers:privacy",
+      "stage": 18,
+      "tables": [
+        "data_requests"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/data-requests",
+        "method": "CRUD",
+        "ops": "LSU",
+        "path": "/admin/data-requests"
+      },
+      "module": "risk",
+      "description": "Data export and deletion requests and the deadline to fulfil them.",
+      "frontend": {
+        "file": "src/features/customers/api/dataRequests.ts",
+        "line": 19,
+        "fn": "listDataRequests"
+      }
+    },
+    {
+      "key": "GET /admin/data-requests/:id",
+      "method": "GET",
+      "path": "/admin/data-requests/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "customers",
+      "descriptionAr": "طلبات التصدير والحذف ومهلة تنفيذها",
+      "access": "staff-permission",
+      "permission": "customers:privacy",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customers:privacy",
+      "stage": 18,
+      "tables": [
+        "data_requests"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/data-requests",
+        "method": "CRUD",
+        "ops": "LSU",
+        "path": "/admin/data-requests"
+      },
+      "module": "risk",
+      "description": "Data export and deletion requests and the deadline to fulfil them.",
+      "frontend": {
+        "file": "src/features/customers/api/dataRequests.ts",
+        "line": 28,
+        "fn": "getDataRequest"
+      }
+    },
+    {
+      "key": "PATCH /admin/data-requests/:id",
+      "method": "PATCH",
+      "path": "/admin/data-requests/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "customers",
+      "descriptionAr": "طلبات التصدير والحذف ومهلة تنفيذها",
+      "access": "staff-permission",
+      "permission": "customers:privacy",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customers:privacy",
+      "stage": 18,
+      "tables": [
+        "data_requests"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/data-requests",
+        "method": "CRUD",
+        "ops": "LSU",
+        "path": "/admin/data-requests"
+      },
+      "module": "risk",
+      "description": "Data export and deletion requests and the deadline to fulfil them.",
+      "frontend": {
+        "file": "src/features/customers/api/dataRequests.ts",
+        "line": 37,
+        "fn": "updateDataRequest"
+      }
+    },
+    {
+      "key": "GET /admin/risk/queue",
+      "method": "GET",
+      "path": "/admin/risk/queue",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "risk",
+      "descriptionAr": "طلبات مدفوعة أوقفتها القواعد بانتظار قرار موظف",
+      "access": "staff-permission",
+      "permission": "risk:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "risk:read",
+      "stage": 18,
+      "tables": [
+        "orders",
+        "risk_assessments"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/risk/queue",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/risk/queue"
+      },
+      "module": "risk",
+      "description": "Paid orders held by the rules, waiting for a staff decision.",
+      "frontend": {
+        "file": "src/features/risk/api/queue.ts",
+        "line": 11,
+        "fn": "getRiskQueue"
+      }
+    },
+    {
+      "key": "POST /admin/risk/orders/:id/approve",
+      "method": "POST",
+      "path": "/admin/risk/orders/:id/approve",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "risk",
+      "descriptionAr": "الموافقة؛ يُرسل الطلب للمورد بعدها",
+      "access": "staff-permission",
+      "permission": "risk:decide",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "risk:decide",
+      "stage": 18,
+      "tables": [
+        "orders",
+        "risk_assessments",
+        "order_events"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/risk/orders/:id/approve",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/risk/orders/:id/approve"
+      },
+      "module": "risk",
+      "description": "Approve; the order is sent to the supplier afterwards.",
+      "frontend": {
+        "file": "src/features/risk/api/queue.ts",
+        "line": 20,
+        "fn": "approveHeldOrder"
+      }
+    },
+    {
+      "key": "POST /admin/risk/orders/:id/refund",
+      "method": "POST",
+      "path": "/admin/risk/orders/:id/refund",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "risk",
+      "descriptionAr": "استرجاع الطلب الموقوف، مع إضافة العميل أو الجهاز للقائمة السوداء اختيارياً",
+      "access": "staff-permission",
+      "permission": "risk:decide",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "risk:decide",
+      "stage": 18,
+      "tables": [
+        "orders",
+        "refunds",
+        "risk_assessments",
+        "blocklist_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/risk/orders/:id/refund",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/risk/orders/:id/refund"
+      },
+      "module": "risk",
+      "description": "Refund the held order, optionally adding the customer or device to the blocklist.",
+      "frontend": {
+        "file": "src/features/risk/api/queue.ts",
+        "line": 30,
+        "fn": "refundHeldOrder"
+      }
+    },
+    {
+      "key": "GET /admin/imei-checks",
+      "method": "GET",
+      "path": "/admin/imei-checks",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "risk",
+      "descriptionAr": "سجل فحوص IMEI ونتائجها (يُمسح أو يُهشَّر بعد فترة الاحتفاظ)",
+      "access": "staff-permission",
+      "permission": "risk:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "risk:read",
+      "stage": 18,
+      "tables": [
+        "imei_checks"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/imei-checks",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/imei-checks"
+      },
+      "module": "risk",
+      "description": "Log of IMEI checks and their results (erased or hashed after the retention period).",
+      "frontend": {
+        "file": "src/features/risk/api/imeiChecks.ts",
+        "line": 11,
+        "fn": "listImeiChecks"
+      }
+    },
+    {
+      "key": "GET /admin/imei-checks/:id",
+      "method": "GET",
+      "path": "/admin/imei-checks/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "risk",
+      "descriptionAr": "سجل فحوص IMEI ونتائجها (يُمسح أو يُهشَّر بعد فترة الاحتفاظ)",
+      "access": "staff-permission",
+      "permission": "risk:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "risk:read",
+      "stage": 18,
+      "tables": [
+        "imei_checks"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/imei-checks",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/imei-checks"
+      },
+      "module": "risk",
+      "description": "Log of IMEI checks and their results (erased or hashed after the retention period).",
+      "frontend": {
+        "file": "src/features/risk/api/imeiChecks.ts",
+        "line": 20,
+        "fn": "getImeiCheck"
+      }
+    },
+    {
+      "key": "GET /admin/blocklist",
+      "method": "GET",
+      "path": "/admin/blocklist",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "risk",
+      "descriptionAr": "القائمة السوداء: إيميل أو دومين أو IMEI أو بطاقة",
+      "access": "staff-permission",
+      "permission": "risk:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "risk:*",
+      "stage": 18,
+      "tables": [
+        "blocklist_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/blocklist",
+        "method": "CRUD",
+        "ops": "LSCD",
+        "path": "/admin/blocklist"
+      },
+      "module": "risk",
+      "description": "Blocklist: email, domain, IMEI or card.",
+      "frontend": {
+        "file": "src/features/risk/api/blocklist.ts",
+        "line": 19,
+        "fn": "listBlocklist"
+      }
+    },
+    {
+      "key": "GET /admin/blocklist/:id",
+      "method": "GET",
+      "path": "/admin/blocklist/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "risk",
+      "descriptionAr": "القائمة السوداء: إيميل أو دومين أو IMEI أو بطاقة",
+      "access": "staff-permission",
+      "permission": "risk:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "risk:*",
+      "stage": 18,
+      "tables": [
+        "blocklist_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/blocklist",
+        "method": "CRUD",
+        "ops": "LSCD",
+        "path": "/admin/blocklist"
+      },
+      "module": "risk",
+      "description": "Blocklist: email, domain, IMEI or card.",
+      "frontend": {
+        "file": "src/features/risk/api/blocklist.ts",
+        "line": 28,
+        "fn": "getBlocklistEntry"
+      }
+    },
+    {
+      "key": "POST /admin/blocklist",
+      "method": "POST",
+      "path": "/admin/blocklist",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "risk",
+      "descriptionAr": "القائمة السوداء: إيميل أو دومين أو IMEI أو بطاقة",
+      "access": "staff-permission",
+      "permission": "risk:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "risk:*",
+      "stage": 18,
+      "tables": [
+        "blocklist_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/blocklist",
+        "method": "CRUD",
+        "ops": "LSCD",
+        "path": "/admin/blocklist"
+      },
+      "module": "risk",
+      "description": "Blocklist: email, domain, IMEI or card.",
+      "frontend": {
+        "file": "src/features/risk/api/blocklist.ts",
+        "line": 38,
+        "fn": "createBlocklistEntry"
+      }
+    },
+    {
+      "key": "DELETE /admin/blocklist/:id",
+      "method": "DELETE",
+      "path": "/admin/blocklist/:id",
+      "op": "delete",
+      "surface": "admin",
+      "kind": "http",
+      "group": "risk",
+      "descriptionAr": "القائمة السوداء: إيميل أو دومين أو IMEI أو بطاقة",
+      "access": "staff-permission",
+      "permission": "risk:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "risk:*",
+      "stage": 18,
+      "tables": [
+        "blocklist_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/blocklist",
+        "method": "CRUD",
+        "ops": "LSCD",
+        "path": "/admin/blocklist"
+      },
+      "module": "risk",
+      "description": "Blocklist: email, domain, IMEI or card.",
+      "frontend": {
+        "file": "src/features/risk/api/blocklist.ts",
+        "line": 47,
+        "fn": "deleteBlocklistEntry"
+      }
+    },
+    {
+      "key": "GET /admin/risk/rules",
+      "method": "GET",
+      "path": "/admin/risk/rules",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "risk",
+      "descriptionAr": "قواعد الخطر وعتباتها: متى نوقف للمراجعة ومتى نمنع",
+      "access": "staff-permission",
+      "permission": "risk:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "risk:read",
+      "stage": 18,
+      "tables": [
+        "settings"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/risk/rules",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/risk/rules"
+      },
+      "module": "risk",
+      "description": "Risk rules and their thresholds: when to hold for review and when to block.",
+      "frontend": {
+        "file": "src/features/risk/api/rules.ts",
+        "line": 9,
+        "fn": "getRiskRules"
+      }
+    },
+    {
+      "key": "PUT /admin/risk/rules",
+      "method": "PUT",
+      "path": "/admin/risk/rules",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "risk",
+      "descriptionAr": "تعديل القواعد؛ عتبة المراجعة أقل من عتبة المنع",
+      "access": "staff-permission",
+      "permission": "risk:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "risk:*",
+      "stage": 18,
+      "tables": [
+        "settings",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin PUT /admin/risk/rules",
+        "method": "PUT",
+        "ops": null,
+        "path": "/admin/risk/rules"
+      },
+      "module": "risk",
+      "description": "Update the rules; the review threshold must be lower than the block threshold.",
+      "frontend": {
+        "file": "src/features/risk/api/rules.ts",
+        "line": 19,
+        "fn": "saveRiskRules"
+      }
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "b2c-paid",
+      "nameAr": "طلب متجر مدفوع",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 1,
+          "from": "customer",
+          "to": "api",
+          "label": "فحص IMEI",
+          "textAr": "فحص مجاني قبل الشراء: أول 8 أرقام (TAC) من tac_catalog تحدد الموديل، والفحص يكشف القائمة السوداء أو القفل. الـ IMEI المحظور يُمنع طلبه، والمقفل يُحذَّر منه.",
+          "tables": [
+            "tac_catalog",
+            "imei_checks"
+          ]
+        },
+        {
+          "step": 3,
+          "from": "api",
+          "to": "api",
+          "label": "سعر وضريبة وخطر",
+          "textAr": "السعر من فئة Retail شاملاً الضريبة حسب بلد العميل، وسعر الصرف يُثبَّت على الجلسة. ثم يقيّم risk_assessments الجلسة، وقد يمنعها أو يطلب مراجعة قبل فتح الدفع.",
+          "tables": [
+            "service_group_prices",
+            "tax_rates",
+            "currencies",
+            "risk_assessments",
+            "checkout_sessions"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b2c-chargeback",
+      "nameAr": "نزاع chargeback خسرناه",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 4,
+          "from": "admin",
+          "to": "api",
+          "label": "تجميع حزمة الأدلة",
+          "textAr": "من النظام نفسه: سجل الطلب الزمني، ونتيجة فحص IMEI، وإثبات التسليم (النتيجة والوقت)، وموافقات الشروط وتنازل الانسحاب مع IP والوقت، وإيميلات الحالة المرسلة.",
+          "tables": [
+            "order_events",
+            "imei_checks",
+            "consent_records",
+            "notifications",
+            "risk_assessments",
+            "files"
+          ]
+        },
+        {
+          "step": 8,
+          "from": "admin",
+          "to": "db",
+          "label": "حظر وتعلّم",
+          "textAr": "يُضاف إيميل العميل وبصمة بطاقته والجهاز إلى blocklist_entries بمصدر chargeback، وترتفع مخاطر العميل فتُحجب طلباته القادمة.",
+          "tables": [
+            "blocklist_entries",
+            "customers",
+            "risk_assessments",
+            "audit_logs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b2c-account",
+      "nameAr": "إدارة حساب عميل",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 1,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/customers",
+          "textAr": "عميل طلب بالهاتف أن يُنشأ له حساب. الموظف يدخل الاسم والإيميل والبلد، ويختار «رابط لاختيار كلمة المرور». يُرفض الإيميل إن كان لعميل آخر أو في القائمة السوداء.",
+          "tables": [
+            "customers",
+            "blocklist_entries"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ip-rules",
+      "nameAr": "حظر IP وقائمة السماح",
+      "group": "ops",
+      "steps": [
+        {
+          "step": 7,
+          "from": "api",
+          "to": "db",
+          "label": "حظر آلي",
+          "textAr": "محرك المخاطر يرى 60 محاولة بطاقة في 10 دقائق من نطاق واحد، فيضيف قاعدة source = auto لمدة 30 يوماً ويسجّل تقييماً في risk_assessments.",
+          "tables": [
+            "ip_rules",
+            "risk_assessments"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "system-alert",
+      "nameAr": "تنبيه وحادثة: مورد يتباطأ",
+      "group": "ops",
+      "steps": [
+        {
+          "step": 9,
+          "from": "admin",
+          "to": "api",
+          "label": "GET /admin/system/orders-health",
+          "textAr": "يتأكد من أثر العطل: كم طلباً عالقاً أكثر من SLA وكم منها بحالة needs_attention، وكم تأخر زمن الإرسال p95.",
+          "tables": [
+            "orders",
+            "order_events",
+            "risk_assessments"
+          ]
+        }
+      ]
+    }
+  ]
+}

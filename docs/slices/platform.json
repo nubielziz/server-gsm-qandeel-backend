@@ -1,0 +1,2046 @@
+{
+  "module": "platform",
+  "name": "Platform (settings, audit, files, notifications, webhooks, outbox)",
+  "domain": "G",
+  "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
+  "counts": {
+    "rows": 26,
+    "endpoints": 33,
+    "bySurface": {
+      "v1": 2,
+      "client": 11,
+      "admin": 17,
+      "hooks": 1,
+      "system": 2
+    },
+    "frontendCalled": 17
+  },
+  "stages": [
+    2,
+    5,
+    7,
+    9,
+    12
+  ],
+  "ownedTables": [
+    {
+      "name": "settings",
+      "description": "System settings as key and value pairs.",
+      "descriptionAr": "إعدادات النظام بصيغة key و value",
+      "b2c": null,
+      "columns": [
+        "key",
+        "value jsonb"
+      ],
+      "foreignKeys": []
+    },
+    {
+      "name": "notification_templates",
+      "description": "Email and Telegram templates for staff, merchants and customers.",
+      "descriptionAr": "قوالب البريد و Telegram للموظفين والتجار والعملاء",
+      "b2c": "mod",
+      "columns": [
+        "event",
+        "channel",
+        "audience",
+        "locale",
+        "subject",
+        "body",
+        "is_active"
+      ],
+      "foreignKeys": []
+    },
+    {
+      "name": "notifications",
+      "description": "A log of the notifications that were sent.",
+      "descriptionAr": "سجل الإشعارات المرسلة",
+      "b2c": "mod",
+      "columns": [
+        "recipient_type",
+        "recipient_id",
+        "channel",
+        "event",
+        "payload",
+        "status",
+        "sent_at"
+      ],
+      "foreignKeys": [
+        {
+          "column": "recipient_id",
+          "target": "clients",
+          "kind": "poly"
+        },
+        {
+          "column": "recipient_id",
+          "target": "staff_users",
+          "kind": "poly"
+        },
+        {
+          "column": "recipient_id",
+          "target": "customers",
+          "kind": "poly"
+        },
+        {
+          "column": "event",
+          "target": "notification_templates",
+          "kind": "poly"
+        }
+      ]
+    },
+    {
+      "name": "webhook_endpoints",
+      "description": "Webhook URLs registered by merchants.",
+      "descriptionAr": "عناوين webhooks لدى التجار",
+      "b2c": null,
+      "columns": [
+        "client_id",
+        "url",
+        "secret_enc",
+        "events text[]",
+        "is_active",
+        "failure_count"
+      ],
+      "foreignKeys": [
+        {
+          "column": "client_id",
+          "target": "clients",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "webhook_deliveries",
+      "description": "Attempts to deliver webhooks.",
+      "descriptionAr": "محاولات إرسال الـ webhooks",
+      "b2c": null,
+      "columns": [
+        "endpoint_id",
+        "event",
+        "payload",
+        "attempt",
+        "status",
+        "response_code",
+        "next_retry_at"
+      ],
+      "foreignKeys": [
+        {
+          "column": "endpoint_id",
+          "target": "webhook_endpoints",
+          "kind": "fk"
+        }
+      ]
+    },
+    {
+      "name": "outbox_events",
+      "description": "Events waiting to be processed by the worker.",
+      "descriptionAr": "أحداث تنتظر المعالجة بالـ Worker",
+      "b2c": "mod",
+      "columns": [
+        "type",
+        "aggregate_type",
+        "aggregate_id",
+        "payload",
+        "processed_at",
+        "attempts"
+      ],
+      "foreignKeys": [
+        {
+          "column": "aggregate_id",
+          "target": "orders",
+          "kind": "poly"
+        },
+        {
+          "column": "aggregate_id",
+          "target": "invoices",
+          "kind": "poly"
+        },
+        {
+          "column": "aggregate_id",
+          "target": "checkout_sessions",
+          "kind": "poly"
+        }
+      ]
+    },
+    {
+      "name": "audit_logs",
+      "description": "The audit log of admin actions.",
+      "descriptionAr": "سجل التدقيق لعمليات الإدارة",
+      "b2c": null,
+      "columns": [
+        "actor_type",
+        "actor_id",
+        "action",
+        "entity_type",
+        "entity_id",
+        "before",
+        "after",
+        "ip"
+      ],
+      "foreignKeys": [
+        {
+          "column": "actor_id",
+          "target": "staff_users",
+          "kind": "poly"
+        }
+      ]
+    },
+    {
+      "name": "files",
+      "description": "S3 files and their metadata.",
+      "descriptionAr": "ملفات S3 وبياناتها",
+      "b2c": "mod",
+      "columns": [
+        "bucket",
+        "key",
+        "filename",
+        "mime",
+        "size",
+        "sha256",
+        "owner_type",
+        "owner_id"
+      ],
+      "foreignKeys": [
+        {
+          "column": "owner_id",
+          "target": "clients",
+          "kind": "poly"
+        },
+        {
+          "column": "owner_id",
+          "target": "staff_users",
+          "kind": "poly"
+        },
+        {
+          "column": "owner_id",
+          "target": "customers",
+          "kind": "poly"
+        }
+      ]
+    }
+  ],
+  "foreignTables": [
+    {
+      "table": "clients",
+      "owner": "identity"
+    },
+    {
+      "table": "orders",
+      "owner": "orders"
+    },
+    {
+      "table": "payments",
+      "owner": "money"
+    },
+    {
+      "table": "suppliers",
+      "owner": "suppliers"
+    }
+  ],
+  "endpoints": [
+    {
+      "key": "POST /v1/files",
+      "method": "POST",
+      "path": "/v1/files",
+      "op": "action",
+      "surface": "v1",
+      "kind": "http",
+      "group": null,
+      "descriptionAr": "رفع ملف لخدمات File ويرجع fileId",
+      "access": "api-key",
+      "permission": "orders:write",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:write",
+      "stage": 7,
+      "tables": [
+        "files"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "v1 POST /v1/files",
+        "method": "POST",
+        "ops": null,
+        "path": "/v1/files"
+      },
+      "module": "platform",
+      "description": "Upload a file for File services; returns a fileId.",
+      "frontend": null
+    },
+    {
+      "key": "GET /v1/files/:id",
+      "method": "GET",
+      "path": "/v1/files/:id",
+      "op": "action",
+      "surface": "v1",
+      "kind": "http",
+      "group": null,
+      "descriptionAr": "تحميل ملف النتيجة برابط موقّع",
+      "access": "api-key",
+      "permission": "orders:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "orders:read",
+      "stage": 7,
+      "tables": [
+        "files"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "v1 GET /v1/files/:id",
+        "method": "GET",
+        "ops": null,
+        "path": "/v1/files/:id"
+      },
+      "module": "platform",
+      "description": "Download the result file through a signed URL.",
+      "frontend": null
+    },
+    {
+      "key": "POST /client/files",
+      "method": "POST",
+      "path": "/client/files",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "رفع ملف لطلب خدمة File",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 5,
+      "tables": [
+        "files"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/files",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/files"
+      },
+      "module": "platform",
+      "description": "Upload a file for a File service order.",
+      "frontend": null
+    },
+    {
+      "key": "GET /client/files/:id",
+      "method": "GET",
+      "path": "/client/files/:id",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "تحميل ملف برابط موقّع",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 5,
+      "tables": [
+        "files"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/files/:id",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/files/:id"
+      },
+      "module": "platform",
+      "description": "Download a file through a signed URL.",
+      "frontend": null
+    },
+    {
+      "key": "GET /client/webhooks",
+      "method": "GET",
+      "path": "/client/webhooks",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "api",
+      "descriptionAr": "عناوين الـ webhooks",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 7,
+      "tables": [
+        "webhook_endpoints"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/webhooks",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/webhooks"
+      },
+      "module": "platform",
+      "description": "Webhook endpoints.",
+      "frontend": null
+    },
+    {
+      "key": "POST /client/webhooks",
+      "method": "POST",
+      "path": "/client/webhooks",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "api",
+      "descriptionAr": "عنوان جديد مع الأحداث، ويرجع secret",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 7,
+      "tables": [
+        "webhook_endpoints"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/webhooks",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/webhooks"
+      },
+      "module": "platform",
+      "description": "New webhook endpoint with its events; returns the signing secret.",
+      "frontend": null
+    },
+    {
+      "key": "PATCH /client/webhooks/:id",
+      "method": "PATCH",
+      "path": "/client/webhooks/:id",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "api",
+      "descriptionAr": "تعديل أو إيقاف",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 7,
+      "tables": [
+        "webhook_endpoints"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client PATCH /client/webhooks/:id",
+        "method": "PATCH",
+        "ops": null,
+        "path": "/client/webhooks/:id"
+      },
+      "module": "platform",
+      "description": "Edit or pause an endpoint.",
+      "frontend": null
+    },
+    {
+      "key": "DELETE /client/webhooks/:id",
+      "method": "DELETE",
+      "path": "/client/webhooks/:id",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "api",
+      "descriptionAr": "حذف عنوان",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 7,
+      "tables": [
+        "webhook_endpoints"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client DELETE /client/webhooks/:id",
+        "method": "DELETE",
+        "ops": null,
+        "path": "/client/webhooks/:id"
+      },
+      "module": "platform",
+      "description": "Delete an endpoint.",
+      "frontend": null
+    },
+    {
+      "key": "POST /client/webhooks/:id/test",
+      "method": "POST",
+      "path": "/client/webhooks/:id/test",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "api",
+      "descriptionAr": "إرسال حدث تجريبي",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 7,
+      "tables": [
+        "webhook_deliveries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/webhooks/:id/test",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/webhooks/:id/test"
+      },
+      "module": "platform",
+      "description": "Send a test event.",
+      "frontend": null
+    },
+    {
+      "key": "GET /client/webhooks/:id/deliveries",
+      "method": "GET",
+      "path": "/client/webhooks/:id/deliveries",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "api",
+      "descriptionAr": "سجل الإرسال والمحاولات",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 7,
+      "tables": [
+        "webhook_deliveries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/webhooks/:id/deliveries",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/webhooks/:id/deliveries"
+      },
+      "module": "platform",
+      "description": "Delivery log and attempts.",
+      "frontend": null
+    },
+    {
+      "key": "GET /client/notification-preferences",
+      "method": "GET",
+      "path": "/client/notification-preferences",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "تفضيلات الإشعارات",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 12,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/notification-preferences",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/notification-preferences"
+      },
+      "module": "platform",
+      "description": "Notification preferences.",
+      "frontend": null
+    },
+    {
+      "key": "PUT /client/notification-preferences",
+      "method": "PUT",
+      "path": "/client/notification-preferences",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "حفظ التفضيلات لكل حدث وقناة",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 12,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client PUT /client/notification-preferences",
+        "method": "PUT",
+        "ops": null,
+        "path": "/client/notification-preferences"
+      },
+      "module": "platform",
+      "description": "Save the preferences per event and channel.",
+      "frontend": null
+    },
+    {
+      "key": "POST /client/telegram/link",
+      "method": "POST",
+      "path": "/client/telegram/link",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "رابط ربط Telegram لمرة وحدة",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 12,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/telegram/link",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/telegram/link"
+      },
+      "module": "platform",
+      "description": "One-time link to connect Telegram.",
+      "frontend": null
+    },
+    {
+      "key": "GET /admin/audit-logs",
+      "method": "GET",
+      "path": "/admin/audit-logs",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "سجل التدقيق",
+      "access": "staff-permission",
+      "permission": "audit:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "audit:read",
+      "stage": 2,
+      "tables": [
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/audit-logs",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/audit-logs"
+      },
+      "module": "platform",
+      "description": "Audit log.",
+      "frontend": {
+        "file": "src/features/audit/api/auditLogs.ts",
+        "line": 13,
+        "fn": "listAuditLogs"
+      }
+    },
+    {
+      "key": "GET /admin/audit-logs/:id",
+      "method": "GET",
+      "path": "/admin/audit-logs/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "سجل التدقيق",
+      "access": "staff-permission",
+      "permission": "audit:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "audit:read",
+      "stage": 2,
+      "tables": [
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/audit-logs",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/audit-logs"
+      },
+      "module": "platform",
+      "description": "Audit log.",
+      "frontend": {
+        "file": "src/features/audit/api/auditLogs.ts",
+        "line": 22,
+        "fn": "getAuditLog"
+      }
+    },
+    {
+      "key": "GET /admin/settings",
+      "method": "GET",
+      "path": "/admin/settings",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "إعدادات النظام",
+      "access": "staff-permission",
+      "permission": "settings:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "settings:read",
+      "stage": 2,
+      "tables": [
+        "settings"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/settings",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/settings"
+      },
+      "module": "platform",
+      "description": "System settings.",
+      "frontend": {
+        "file": "src/features/settings/api/settings.ts",
+        "line": 11,
+        "fn": "getSettings"
+      }
+    },
+    {
+      "key": "PATCH /admin/settings",
+      "method": "PATCH",
+      "path": "/admin/settings",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "تعديل الإعدادات",
+      "access": "staff-permission",
+      "permission": "settings:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "settings:update",
+      "stage": 2,
+      "tables": [
+        "settings",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin PATCH /admin/settings",
+        "method": "PATCH",
+        "ops": null,
+        "path": "/admin/settings"
+      },
+      "module": "platform",
+      "description": "Edit the settings.",
+      "frontend": {
+        "file": "src/features/settings/api/settings.ts",
+        "line": 20,
+        "fn": "updateSettings"
+      }
+    },
+    {
+      "key": "GET /admin/files/:id",
+      "method": "GET",
+      "path": "/admin/files/:id",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "orders",
+      "descriptionAr": "تحميل ملف برابط موقّع",
+      "access": "staff-permission",
+      "permission": "files:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "files:read",
+      "stage": 5,
+      "tables": [
+        "files"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/files/:id",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/files/:id"
+      },
+      "module": "platform",
+      "description": "Download a file through a signed link.",
+      "frontend": {
+        "file": "src/features/orders/api/orders.ts",
+        "line": 61,
+        "fn": "orderFileUrl"
+      }
+    },
+    {
+      "key": "GET /admin/dashboard",
+      "method": "GET",
+      "path": "/admin/dashboard",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "مؤشرات اليوم: المبيعات والربح والطوابير وأرصدة الموردين؛ scope=all|b2b|b2c لفصل التجار عن المتجر",
+      "access": "staff-permission",
+      "permission": "dashboard:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "dashboard:read",
+      "stage": 9,
+      "tables": [
+        "orders",
+        "suppliers",
+        "payments"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/dashboard",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/dashboard"
+      },
+      "module": "platform",
+      "description": "KPIs for today: sales, profit, queues and supplier balances; scope=all|b2b|b2c separates merchants from the storefront.",
+      "frontend": {
+        "file": "src/features/dashboard/api/dashboard.ts",
+        "line": 12,
+        "fn": "getDashboard"
+      }
+    },
+    {
+      "key": "GET /admin/webhook-deliveries",
+      "method": "GET",
+      "path": "/admin/webhook-deliveries",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "سجل webhooks التجار",
+      "access": "staff-permission",
+      "permission": "webhooks:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "webhooks:read",
+      "stage": 7,
+      "tables": [
+        "webhook_deliveries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/webhook-deliveries",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/webhook-deliveries"
+      },
+      "module": "platform",
+      "description": "Log of merchant webhooks.",
+      "frontend": {
+        "file": "src/features/settings/api/webhooks.ts",
+        "line": 19,
+        "fn": "listWebhookDeliveries"
+      }
+    },
+    {
+      "key": "GET /admin/webhook-deliveries/:id",
+      "method": "GET",
+      "path": "/admin/webhook-deliveries/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "سجل webhooks التجار",
+      "access": "staff-permission",
+      "permission": "webhooks:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "webhooks:read",
+      "stage": 7,
+      "tables": [
+        "webhook_deliveries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/webhook-deliveries",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/webhook-deliveries"
+      },
+      "module": "platform",
+      "description": "Log of merchant webhooks.",
+      "frontend": {
+        "file": "src/features/settings/api/webhooks.ts",
+        "line": 31,
+        "fn": "getWebhookDelivery"
+      }
+    },
+    {
+      "key": "POST /admin/webhook-deliveries/:id/retry",
+      "method": "POST",
+      "path": "/admin/webhook-deliveries/:id/retry",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "إعادة إرسال",
+      "access": "staff-permission",
+      "permission": "webhooks:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "webhooks:update",
+      "stage": 7,
+      "tables": [
+        "webhook_deliveries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/webhook-deliveries/:id/retry",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/webhook-deliveries/:id/retry"
+      },
+      "module": "platform",
+      "description": "Resend the delivery.",
+      "frontend": {
+        "file": "src/features/settings/api/webhooks.ts",
+        "line": 41,
+        "fn": "retryWebhookDelivery"
+      }
+    },
+    {
+      "key": "GET /admin/notification-templates",
+      "method": "GET",
+      "path": "/admin/notification-templates",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "قوالب الإيميل و Telegram لكل حدث",
+      "access": "staff-permission",
+      "permission": "notifications:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "notifications:*",
+      "stage": 12,
+      "tables": [
+        "notification_templates"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/notification-templates",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/notification-templates"
+      },
+      "module": "platform",
+      "description": "Email and Telegram templates for each event.",
+      "frontend": {
+        "file": "src/features/settings/api/templates.ts",
+        "line": 25,
+        "fn": "listTemplates"
+      }
+    },
+    {
+      "key": "GET /admin/notification-templates/:id",
+      "method": "GET",
+      "path": "/admin/notification-templates/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "قوالب الإيميل و Telegram لكل حدث",
+      "access": "staff-permission",
+      "permission": "notifications:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "notifications:*",
+      "stage": 12,
+      "tables": [
+        "notification_templates"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/notification-templates",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/notification-templates"
+      },
+      "module": "platform",
+      "description": "Email and Telegram templates for each event.",
+      "frontend": {
+        "file": "src/features/settings/api/templates.ts",
+        "line": 37,
+        "fn": "getTemplate"
+      }
+    },
+    {
+      "key": "POST /admin/notification-templates",
+      "method": "POST",
+      "path": "/admin/notification-templates",
+      "op": "create",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "قوالب الإيميل و Telegram لكل حدث",
+      "access": "staff-permission",
+      "permission": "notifications:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "notifications:*",
+      "stage": 12,
+      "tables": [
+        "notification_templates"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/notification-templates",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/notification-templates"
+      },
+      "module": "platform",
+      "description": "Email and Telegram templates for each event.",
+      "frontend": {
+        "file": "src/features/settings/api/templates.ts",
+        "line": 45,
+        "fn": "createTemplate"
+      }
+    },
+    {
+      "key": "PATCH /admin/notification-templates/:id",
+      "method": "PATCH",
+      "path": "/admin/notification-templates/:id",
+      "op": "update",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "قوالب الإيميل و Telegram لكل حدث",
+      "access": "staff-permission",
+      "permission": "notifications:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "notifications:*",
+      "stage": 12,
+      "tables": [
+        "notification_templates"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/notification-templates",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/notification-templates"
+      },
+      "module": "platform",
+      "description": "Email and Telegram templates for each event.",
+      "frontend": {
+        "file": "src/features/settings/api/templates.ts",
+        "line": 54,
+        "fn": "updateTemplate"
+      }
+    },
+    {
+      "key": "DELETE /admin/notification-templates/:id",
+      "method": "DELETE",
+      "path": "/admin/notification-templates/:id",
+      "op": "delete",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "قوالب الإيميل و Telegram لكل حدث",
+      "access": "staff-permission",
+      "permission": "notifications:*",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "notifications:*",
+      "stage": 12,
+      "tables": [
+        "notification_templates"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/notification-templates",
+        "method": "CRUD",
+        "ops": "LSCUD",
+        "path": "/admin/notification-templates"
+      },
+      "module": "platform",
+      "description": "Email and Telegram templates for each event.",
+      "frontend": {
+        "file": "src/features/settings/api/templates.ts",
+        "line": 66,
+        "fn": "deleteTemplate"
+      }
+    },
+    {
+      "key": "POST /admin/notification-templates/:id/preview",
+      "method": "POST",
+      "path": "/admin/notification-templates/:id/preview",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "معاينة القالب ببيانات تجريبية",
+      "access": "staff-permission",
+      "permission": "notifications:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "notifications:read",
+      "stage": 12,
+      "tables": [
+        "notification_templates"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/notification-templates/:id/preview",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/notification-templates/:id/preview"
+      },
+      "module": "platform",
+      "description": "Preview the template with sample data.",
+      "frontend": {
+        "file": "src/features/settings/api/templates.ts",
+        "line": 76,
+        "fn": "previewTemplate"
+      }
+    },
+    {
+      "key": "GET /admin/notifications",
+      "method": "GET",
+      "path": "/admin/notifications",
+      "op": "list",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "سجل الإشعارات المرسلة",
+      "access": "staff-permission",
+      "permission": "notifications:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "notifications:read",
+      "stage": 12,
+      "tables": [
+        "notifications"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/notifications",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/notifications"
+      },
+      "module": "platform",
+      "description": "Log of sent notifications.",
+      "frontend": {
+        "file": "src/features/settings/api/notifications.ts",
+        "line": 9,
+        "fn": "listNotifications"
+      }
+    },
+    {
+      "key": "GET /admin/notifications/:id",
+      "method": "GET",
+      "path": "/admin/notifications/:id",
+      "op": "show",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "سجل الإشعارات المرسلة",
+      "access": "staff-permission",
+      "permission": "notifications:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "notifications:read",
+      "stage": 12,
+      "tables": [
+        "notifications"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin CRUD /admin/notifications",
+        "method": "CRUD",
+        "ops": "LS",
+        "path": "/admin/notifications"
+      },
+      "module": "platform",
+      "description": "Log of sent notifications.",
+      "frontend": {
+        "file": "src/features/settings/api/notifications.ts",
+        "line": 21,
+        "fn": "getNotification"
+      }
+    },
+    {
+      "key": "POST /webhooks/telegram/:secret",
+      "method": "POST",
+      "path": "/webhooks/telegram/:secret",
+      "op": "action",
+      "surface": "hooks",
+      "kind": "http",
+      "group": null,
+      "descriptionAr": "تحديثات بوتات Telegram: ربط الحساب والأوامر",
+      "access": "url-secret",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "secret بالرابط",
+      "stage": 12,
+      "tables": [
+        "clients",
+        "notifications"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "hooks POST /webhooks/telegram/:secret",
+        "method": "POST",
+        "ops": null,
+        "path": "/webhooks/telegram/:secret"
+      },
+      "module": "platform",
+      "description": "Telegram bot updates: account linking and commands.",
+      "frontend": null
+    },
+    {
+      "key": "GET /openapi.json",
+      "method": "GET",
+      "path": "/openapi.json",
+      "op": "action",
+      "surface": "system",
+      "kind": "http",
+      "group": null,
+      "descriptionAr": "مواصفات REST v1",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 7,
+      "tables": [],
+      "dhruResponse": null,
+      "origin": {
+        "row": "system GET /openapi.json",
+        "method": "GET",
+        "ops": null,
+        "path": "/openapi.json"
+      },
+      "module": "platform",
+      "description": "REST v1 specification (OpenAPI).",
+      "frontend": null
+    },
+    {
+      "key": "GET /docs",
+      "method": "GET",
+      "path": "/docs",
+      "op": "action",
+      "surface": "system",
+      "kind": "http",
+      "group": null,
+      "descriptionAr": "صفحة توثيق REST v1",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 7,
+      "tables": [],
+      "dhruResponse": null,
+      "origin": {
+        "row": "system GET /docs",
+        "method": "GET",
+        "ops": null,
+        "path": "/docs"
+      },
+      "module": "platform",
+      "description": "REST v1 documentation page.",
+      "frontend": null
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "success",
+      "nameAr": "نجاح عبر المورد",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 3,
+          "from": "api",
+          "to": "db",
+          "label": "سعر وحجز وطلب",
+          "textAr": "PriceResolver يحسب سعر هذا التاجر، ثم في transaction واحدة: طلب جديد وحدث وقيد حجز ومهمة outbox.",
+          "tables": [
+            "orders",
+            "order_events",
+            "ledger_entries",
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 5,
+          "from": "db",
+          "to": "worker",
+          "label": "orders.dispatch",
+          "textAr": "outbox.relay ينقل الحدث إلى queue الإرسال.",
+          "tables": [
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 11,
+          "from": "worker",
+          "to": "merchant",
+          "label": "webhook",
+          "textAr": "order.status_changed موقّع بـ HMAC، وإشعار Telegram أو بريد حسب التفضيلات.",
+          "tables": [
+            "webhook_deliveries",
+            "notifications"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reject",
+      "nameAr": "رفض المورد",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 3,
+          "from": "api",
+          "to": "db",
+          "label": "سعر وحجز وطلب",
+          "textAr": "PriceResolver يحسب سعر هذا التاجر، ثم في transaction واحدة: طلب جديد وحدث وقيد حجز ومهمة outbox.",
+          "tables": [
+            "orders",
+            "order_events",
+            "ledger_entries",
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 5,
+          "from": "db",
+          "to": "worker",
+          "label": "orders.dispatch",
+          "textAr": "outbox.relay ينقل الحدث إلى queue الإرسال.",
+          "tables": [
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 11,
+          "from": "worker",
+          "to": "merchant",
+          "label": "webhook",
+          "textAr": "order.status_changed مع سبب الرفض.",
+          "tables": [
+            "webhook_deliveries"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "manual",
+      "nameAr": "تنفيذ يدوي",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 3,
+          "from": "api",
+          "to": "db",
+          "label": "سعر وحجز وطلب",
+          "textAr": "PriceResolver يحسب سعر هذا التاجر، ثم في transaction واحدة: طلب جديد وحدث وقيد حجز ومهمة outbox.",
+          "tables": [
+            "orders",
+            "order_events",
+            "ledger_entries",
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 8,
+          "from": "api",
+          "to": "db",
+          "label": "completed وقيود",
+          "textAr": "الحجز يتحول إيراداً، وكل إجراء للموظف يُسجَّل في audit_logs.",
+          "tables": [
+            "orders",
+            "ledger_entries",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 9,
+          "from": "worker",
+          "to": "merchant",
+          "label": "webhook",
+          "textAr": "الـ Worker يلتقط حدث outbox ويرسل order.status_changed.",
+          "tables": [
+            "webhook_deliveries"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "timeout",
+      "nameAr": "انقطاع المورد",
+      "group": "b2b",
+      "steps": [
+        {
+          "step": 3,
+          "from": "api",
+          "to": "db",
+          "label": "سعر وحجز وطلب",
+          "textAr": "PriceResolver يحسب سعر هذا التاجر، ثم في transaction واحدة: طلب جديد وحدث وقيد حجز ومهمة outbox.",
+          "tables": [
+            "orders",
+            "order_events",
+            "ledger_entries",
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 5,
+          "from": "db",
+          "to": "worker",
+          "label": "orders.dispatch",
+          "textAr": "outbox.relay ينقل الحدث إلى queue الإرسال.",
+          "tables": [
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 9,
+          "from": "worker",
+          "to": "admin",
+          "label": "تنبيه Telegram",
+          "textAr": "تنبيه فوري للإدارة بالطلب العالق.",
+          "tables": [
+            "notifications"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b2c-paid",
+      "nameAr": "طلب متجر مدفوع",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 6,
+          "from": "gateway",
+          "to": "api",
+          "label": "webhook payment.succeeded",
+          "textAr": "تأكيد موقّع يُتحقق من توقيعه ويُعالج مرة واحدة فقط. هذه اللحظة الوحيدة التي يُسمح فيها بالتنفيذ؛ وفي الكريبتو بعد عدد التأكيدات المطلوب.",
+          "tables": [
+            "payments",
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 7,
+          "from": "api",
+          "to": "db",
+          "label": "التقاط الدفع وإنشاء الطلب",
+          "textAr": "في transaction واحدة: الدفعة captured والجلسة paid، وطلب جديد بـ customer_id و public_token بدل client_id، وقيد القبض، ومهمة outbox للإرسال.",
+          "tables": [
+            "payments",
+            "checkout_sessions",
+            "orders",
+            "order_events",
+            "ledger_entries",
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 9,
+          "from": "api",
+          "to": "customer",
+          "label": "رابط التتبع",
+          "textAr": "إيميل الاستلام برابط تتبع فيه public_token، وصفحة التتبع تعمل بلا حساب. الحالة pending.",
+          "tables": [
+            "orders",
+            "notifications"
+          ]
+        },
+        {
+          "step": 10,
+          "from": "db",
+          "to": "worker",
+          "label": "orders.dispatch",
+          "textAr": "outbox.relay ينقل الحدث إلى queue الإرسال.",
+          "tables": [
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 16,
+          "from": "worker",
+          "to": "customer",
+          "label": "النتيجة والإيصال",
+          "textAr": "إيميل الاكتمال بالنتيجة، وإيصال ضريبي PDF.",
+          "tables": [
+            "notifications",
+            "invoices"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b2c-refund",
+      "nameAr": "استرداد قبل التسليم",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 2,
+          "from": "api",
+          "to": "admin",
+          "label": "تذكرة في الطابور",
+          "textAr": "تظهر في طابور الدعم مع موعد SLA، ويصل الموظف تنبيه.",
+          "tables": [
+            "support_tickets",
+            "notifications"
+          ]
+        },
+        {
+          "step": 3,
+          "from": "admin",
+          "to": "api",
+          "label": "قرار الاسترداد",
+          "textAr": "الموظف يتأكد أن الطلب لم يُرسل، ويقرر استرداداً كاملاً إلى البطاقة الأصلية (method = original). يحتاج صلاحية ويُسجَّل في سجل التدقيق.",
+          "tables": [
+            "refunds",
+            "orders",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 4,
+          "from": "api",
+          "to": "db",
+          "label": "إلغاء الطلب وقيد الاسترداد",
+          "textAr": "في transaction واحدة: يُلغى الطلب فيصير rejected، وتُلغى مهمة الإرسال في outbox، ويُسجَّل القيد العكسي بالمبلغ الكامل شاملاً الضريبة.",
+          "tables": [
+            "orders",
+            "order_events",
+            "refunds",
+            "ledger_entries",
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 5,
+          "from": "db",
+          "to": "worker",
+          "label": "refunds.process",
+          "textAr": "outbox ينقل المهمة إلى queue الاسترداد.",
+          "tables": [
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 8,
+          "from": "api",
+          "to": "customer",
+          "label": "إيميل الاسترداد",
+          "textAr": "العميل يستلم إيميل الاسترداد، وتُغلق التذكرة بردّ جاهز من reply_templates.",
+          "tables": [
+            "notifications",
+            "support_tickets",
+            "reply_templates"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b2c-chargeback",
+      "nameAr": "نزاع chargeback خسرناه",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 1,
+          "from": "gateway",
+          "to": "api",
+          "label": "webhook dispute.created",
+          "textAr": "العميل اعترض عند مصدر بطاقته، فأرسلت البوابة النزاع بمهلة لتقديم الأدلة. المبلغ المتنازع عليه 14.99$ مع رسم نزاع 15$.",
+          "tables": [
+            "disputes",
+            "payments",
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 3,
+          "from": "db",
+          "to": "admin",
+          "label": "تنبيه بالمهلة",
+          "textAr": "تنبيه فوري للإدارة بموعد تقديم الأدلة قبل أن تنتهي المهلة.",
+          "tables": [
+            "notifications",
+            "disputes"
+          ]
+        },
+        {
+          "step": 4,
+          "from": "admin",
+          "to": "api",
+          "label": "تجميع حزمة الأدلة",
+          "textAr": "من النظام نفسه: سجل الطلب الزمني، ونتيجة فحص IMEI، وإثبات التسليم (النتيجة والوقت)، وموافقات الشروط وتنازل الانسحاب مع IP والوقت، وإيميلات الحالة المرسلة.",
+          "tables": [
+            "order_events",
+            "imei_checks",
+            "consent_records",
+            "notifications",
+            "risk_assessments",
+            "files"
+          ]
+        },
+        {
+          "step": 5,
+          "from": "api",
+          "to": "gateway",
+          "label": "رفع الأدلة",
+          "textAr": "تُرفع الحزمة عبر API البوابة: disputes.status = under_review مع submitted_at.",
+          "tables": [
+            "disputes",
+            "files"
+          ]
+        },
+        {
+          "step": 8,
+          "from": "admin",
+          "to": "db",
+          "label": "حظر وتعلّم",
+          "textAr": "يُضاف إيميل العميل وبصمة بطاقته والجهاز إلى blocklist_entries بمصدر chargeback، وترتفع مخاطر العميل فتُحجب طلباته القادمة.",
+          "tables": [
+            "blocklist_entries",
+            "customers",
+            "risk_assessments",
+            "audit_logs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b2c-ticket",
+      "nameAr": "تذكرة دعم: تأخير",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 2,
+          "from": "api",
+          "to": "db",
+          "label": "تذكرة و SLA",
+          "textAr": "تُنشأ التذكرة بحالة new مع number وأولوية، ويُحسب sla_due_at حسب الفئة.",
+          "tables": [
+            "support_tickets",
+            "ticket_messages",
+            "outbox_events"
+          ]
+        },
+        {
+          "step": 3,
+          "from": "db",
+          "to": "admin",
+          "label": "طابور الدعم",
+          "textAr": "تظهر في طابور الدعم لدى الإدارة، ويصل العميل إيميل باستلام التذكرة.",
+          "tables": [
+            "notifications",
+            "support_tickets"
+          ]
+        },
+        {
+          "step": 5,
+          "from": "api",
+          "to": "customer",
+          "label": "الرد بالإيميل",
+          "textAr": "يصل الرد إلى العميل بالإيميل، وتنتظر التذكرة ردّه.",
+          "tables": [
+            "notifications",
+            "ticket_messages"
+          ]
+        },
+        {
+          "step": 7,
+          "from": "admin",
+          "to": "api",
+          "label": "حل التذكرة",
+          "textAr": "بعد اكتمال الطلب وتأكيد العميل يضع الموظف التذكرة resolved ويُسجَّل resolved_at.",
+          "tables": [
+            "support_tickets",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 8,
+          "from": "api",
+          "to": "customer",
+          "label": "تقييم CSAT",
+          "textAr": "يصل العميل رابط تقييم الدعم، وتُغلق التذكرة بعد التقييم: csat_score.",
+          "tables": [
+            "support_tickets",
+            "notifications"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b2c-account",
+      "nameAr": "إدارة حساب عميل",
+      "group": "b2c",
+      "steps": [
+        {
+          "step": 2,
+          "from": "api",
+          "to": "db",
+          "label": "حفظ الحساب والدعوة",
+          "textAr": "يُنشأ customers بـ has_account وcreated_by = الموظف وstatus = active، وسجل customer_credentials بلا كلمة مرور بعد، ورمز دعوة في auth_tokens (يُخزَّن hash فقط) صالح ساعة، وسطر في audit_logs.",
+          "tables": [
+            "customers",
+            "customer_credentials",
+            "auth_tokens",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 3,
+          "from": "api",
+          "to": "customer",
+          "label": "إيميل الدعوة",
+          "textAr": "يصل العميل إيميل فيه رابط الدعوة. إن اختار الموظف كلمة مؤقتة بدل الرابط: تُحفظ hash مع must_change_password = true ويُرسلها الموظف بقناة آمنة.",
+          "tables": [
+            "notifications",
+            "auth_tokens"
+          ]
+        },
+        {
+          "step": 6,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/customers/:id/password",
+          "textAr": "بعد أسابيع نسي العميل كلمته. الموظف لا يرى الحالية أبداً: يرسل رابط تعيين جديداً، ويختار إنهاء كل الجلسات. لا تدخل كلمة المرور في سجل التدقيق، فقط أن تغييراً تمّ.",
+          "tables": [
+            "customer_credentials",
+            "auth_tokens",
+            "sessions",
+            "notifications",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 7,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/customers/:id/suspend",
+          "textAr": "اشتبه العميل باختراق حسابه فطلب إيقافه. الموظف يوقفه بسبب: customers.status = suspended مع suspended_at وsuspended_reason وsuspended_by، وتُنهى كل الجلسات فوراً. لا شيء يُضاف للقائمة السوداء.",
+          "tables": [
+            "customers",
+            "sessions",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 9,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/customers/:id/reactivate",
+          "textAr": "بعد التأكد من العميل يعيد الموظف التفعيل: status = active ويُمسح السبب، ويسجّل العميل دخوله من جديد. الفرق عن الحظر: الحظر للاحتيال ويضيف بصمته للقائمة السوداء.",
+          "tables": [
+            "customers",
+            "audit_logs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "admin-team",
+      "nameAr": "إضافة موظف وإيقافه",
+      "group": "ops",
+      "steps": [
+        {
+          "step": 2,
+          "from": "api",
+          "to": "db",
+          "label": "حفظ الحساب والدعوة",
+          "textAr": "يُنشأ staff_users بحالة invited وcreated_by = المالك، ورمز دعوة في auth_tokens (hash فقط، ساعة، لمرة واحدة)، وسطر في audit_logs. لا تُكتب كلمة المرور في أي مكان.",
+          "tables": [
+            "staff_users",
+            "auth_tokens",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 3,
+          "from": "api",
+          "to": "staff",
+          "label": "إيميل الدعوة",
+          "textAr": "يصل الموظف رابط الدعوة. إن اختار المالك كلمة مؤقتة بدل الرابط: تُحفظ hash مع must_change_password = true ويسلّمها المالك بقناة آمنة.",
+          "tables": [
+            "notifications",
+            "auth_tokens"
+          ]
+        },
+        {
+          "step": 6,
+          "from": "admin",
+          "to": "api",
+          "label": "PATCH /admin/staff/:id",
+          "textAr": "المالك يغيّر دور موظف من Support إلى Finance. لا يستطيع تغيير دوره هو، ولا يُنزَّل المالك الأخير، حتى لا تبقى اللوحة بلا مالك.",
+          "tables": [
+            "staff_users",
+            "roles",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 7,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/staff/:id/suspend",
+          "textAr": "الموظف ترك العمل. المالك يوقفه بسبب: status = suspended مع suspended_at وsuspended_reason وsuspended_by، وتُنهى كل جلساته فوراً. يُرفض إيقاف النفس أو المالك الأخير. اسمه يبقى على أفعاله القديمة في audit_logs.",
+          "tables": [
+            "staff_users",
+            "sessions",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 9,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/staff/:id/reactivate",
+          "textAr": "عاد الموظف من إجازته. المالك يعيد التفعيل فيمسح السبب، ويدخل الموظف بكلمته ورمز 2FA الحاليين. إن فقد هاتفه يُستخدم POST /admin/staff/:id/reset-2fa فيضبط واحداً جديداً عند دخوله التالي.",
+          "tables": [
+            "staff_users",
+            "audit_logs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ip-rules",
+      "nameAr": "حظر IP وقائمة السماح",
+      "group": "ops",
+      "steps": [
+        {
+          "step": 1,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/ip-rules",
+          "textAr": "المالك يضيف عنوان المكتب إلى قائمة السماح (kind = allow): عنوان أو نطاق CIDR وتسمية ومدة اختيارية لمن يسافر. يُرفض النطاق الأوسع من /16 والمكرر.",
+          "tables": [
+            "ip_rules",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 2,
+          "from": "admin",
+          "to": "api",
+          "label": "PUT /admin/access/restriction",
+          "textAr": "يشغّل تقييد لوحة الإدارة بالقائمة. يُرفض التشغيل إن لم يكن عنوان الطالب نفسه فيها، فلا يقفل أحد نفسه. المفتاح يُخزَّن في settings.",
+          "tables": [
+            "settings",
+            "ip_rules",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 5,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/ip-rules",
+          "textAr": "من صفحة العميل يضغط الموظف «Block IP» على آخر عنوان له، ويُقرأ من آخر جلسة (sessions.ip) أو آخر جلسة دفع (checkout_sessions.ip). يُحظر عن المتجر لسبعة أيام (kind = block, scope = store) بسبب مكتوب. يُرفض نطاق يشمل عنوان الموظف نفسه إن كان الجمهور الإدارة أو الكل.",
+          "tables": [
+            "ip_rules",
+            "sessions",
+            "checkout_sessions",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 9,
+          "from": "admin",
+          "to": "api",
+          "label": "DELETE /admin/ip-rules/:id",
+          "textAr": "يفك الحظر أو يزيل عنواناً مسموحاً. تُرفض إزالة القاعدة الوحيدة التي تُدخل الموظف نفسه ما دام التقييد مفعّلاً.",
+          "tables": [
+            "ip_rules",
+            "audit_logs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "system-alert",
+      "nameAr": "تنبيه وحادثة: مورد يتباطأ",
+      "group": "ops",
+      "steps": [
+        {
+          "step": 4,
+          "from": "worker",
+          "to": "admin",
+          "label": "تنبيه Telegram وإيميل",
+          "textAr": "حسب قنوات القاعدة، مرة واحدة. لا تتكرر الرسالة حتى يؤكد الموظف الاستلام أو تمر مدة التذكير.",
+          "tables": [
+            "notifications",
+            "alert_events"
+          ]
+        },
+        {
+          "step": 5,
+          "from": "admin",
+          "to": "api",
+          "label": "GET /admin/system/health",
+          "textAr": "الموظف يفتح صفحة صحة النظام: الحالة Degraded، المورد باللون الأحمر، وتنبيه مفتوح. لا يُعرض الأخضر إن كان مصدر المقاييس نفسه متوقفاً: يظهر «Monitoring unavailable».",
+          "tables": [
+            "service_checks",
+            "alert_events",
+            "incidents",
+            "settings"
+          ]
+        },
+        {
+          "step": 6,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/alerts/:id/ack",
+          "textAr": "يؤكد استلام التنبيه فتتوقف التذكيرات، ويُسجَّل اسمه ووقته في acknowledged_by وaudit_logs.",
+          "tables": [
+            "alert_events",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 7,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/incidents",
+          "textAr": "التأثير يصل الطلبات، فيعلن حادثة بخطورة major: المكوّن المتأثر وملخص قصير. تُربط بالتنبيه، ويبدأ خطها الزمني بسطر «investigating».",
+          "tables": [
+            "incidents",
+            "alert_events",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 8,
+          "from": "admin",
+          "to": "api",
+          "label": "PATCH /admin/suppliers/:id",
+          "textAr": "يوقف المورد مؤقتاً (status = paused)، فتُوجَّه الطلبات الجديدة إلى المورد التالي بالأولوية في service_supplier_links. الطلبات المعلّقة تبقى بحالتها وتُعالج يدوياً من الطلبات.",
+          "tables": [
+            "suppliers",
+            "service_supplier_links",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 10,
+          "from": "worker",
+          "to": "db",
+          "label": "تعافٍ",
+          "textAr": "الفحوص ترجع ok لثلاث دقائق متتالية، فيُغلق التنبيه آلياً (resolved_at) وتصل رسالة resolved. التنبيه المؤكَّد لا يُغلق قبل ذلك حتى لو نسيه الموظف.",
+          "tables": [
+            "alert_events",
+            "service_checks",
+            "notifications"
+          ]
+        },
+        {
+          "step": 11,
+          "from": "admin",
+          "to": "api",
+          "label": "PATCH /admin/incidents/:id",
+          "textAr": "يعيد المورد إلى active ويغلق الحادثة بالسبب والإجراء المتخذ (root_cause)، فيبقى سجل الحوادث مرجعاً لسبب التأخر عند أي استفسار.",
+          "tables": [
+            "incidents",
+            "suppliers",
+            "audit_logs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "system-integrity",
+      "nameAr": "فرق في الـ ledger ووضع الصيانة",
+      "group": "ops",
+      "steps": [
+        {
+          "step": 2,
+          "from": "worker",
+          "to": "admin",
+          "label": "فرق مكتشف",
+          "textAr": "رصيد محفظة تاجر لا يطابق مجموع أسطره: تنطلق قاعدة ledger_mismatch بخطورة critical، وتصل الإدارة رسالة بالحساب والفرق.",
+          "tables": [
+            "alert_events",
+            "alert_rules",
+            "notifications"
+          ]
+        },
+        {
+          "step": 4,
+          "from": "admin",
+          "to": "api",
+          "label": "PUT /admin/system/maintenance",
+          "textAr": "حتى لا تتراكم فروقات أثناء التحقيق يفعّل صيانة بنطاق checkout فقط مع رسالة ووقت متوقع. تبقى الإدارة وطلبات التجار الجارية شغالة، ولا يُقفل الموظف خارج اللوحة.",
+          "tables": [
+            "settings",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 5,
+          "from": "customer",
+          "to": "api",
+          "label": "بدء الدفع",
+          "textAr": "عميل المتجر يحاول بدء الدفع فيرجع 503 برمز MAINTENANCE والرسالة والوقت المتوقع. لا تُنشأ جلسة دفع ولا يُحجز شيء.",
+          "tables": [
+            "settings",
+            "checkout_sessions"
+          ]
+        },
+        {
+          "step": 6,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/clients/:id/wallet/adjust",
+          "textAr": "بعد معرفة السبب يصحّح الرصيد بقيد عكسي مع ذكر السبب، لا بتعديل القيد الأصلي. القيود لا تُعدَّل ولا تُحذف.",
+          "tables": [
+            "ledger_transactions",
+            "ledger_entries",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 7,
+          "from": "admin",
+          "to": "api",
+          "label": "POST /admin/system/integrity/run",
+          "textAr": "يعيد تشغيل الفحص الآن كمهمة خلفية، فتظهر النتيجة بلا فروق ويُغلق التنبيه.",
+          "tables": [
+            "job_runs",
+            "audit_logs"
+          ]
+        },
+        {
+          "step": 8,
+          "from": "admin",
+          "to": "api",
+          "label": "PUT /admin/system/maintenance",
+          "textAr": "يطفئ الصيانة، فيعود الدفع للعملاء. التشغيل والإيقاف مسجّلان في audit_logs باسم الموظف.",
+          "tables": [
+            "settings",
+            "audit_logs"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,323 @@
+{
+  "generatedBy": "scripts/build-route-slices.mjs",
+  "modules": [
+    {
+      "module": "identity",
+      "name": "Identity & access",
+      "domain": "A",
+      "rows": 45,
+      "endpoints": 59,
+      "bySurface": {
+        "client": 21,
+        "admin": 38
+      },
+      "frontendCalled": 38,
+      "stages": [
+        2,
+        7,
+        8
+      ],
+      "tables": 8,
+      "scenarios": [
+        "success",
+        "reject",
+        "manual",
+        "timeout",
+        "b2c-account",
+        "admin-team",
+        "ip-rules"
+      ]
+    },
+    {
+      "module": "platform",
+      "name": "Platform (settings, audit, files, notifications, webhooks, outbox)",
+      "domain": "G",
+      "rows": 26,
+      "endpoints": 33,
+      "bySurface": {
+        "v1": 2,
+        "client": 11,
+        "admin": 17,
+        "hooks": 1,
+        "system": 2
+      },
+      "frontendCalled": 17,
+      "stages": [
+        2,
+        5,
+        7,
+        9,
+        12
+      ],
+      "tables": 8,
+      "scenarios": [
+        "success",
+        "reject",
+        "manual",
+        "timeout",
+        "b2c-paid",
+        "b2c-refund",
+        "b2c-chargeback",
+        "b2c-ticket",
+        "b2c-account",
+        "admin-team",
+        "ip-rules",
+        "system-alert",
+        "system-integrity"
+      ]
+    },
+    {
+      "module": "money",
+      "name": "Money (ledger, wallets, invoices, payments, refunds, disputes, tax, currencies)",
+      "domain": "E",
+      "rows": 41,
+      "endpoints": 57,
+      "bySurface": {
+        "dhru": 1,
+        "v1": 2,
+        "client": 7,
+        "admin": 43,
+        "hooks": 2,
+        "events": 2
+      },
+      "frontendCalled": 43,
+      "stages": [
+        3,
+        7,
+        8,
+        11,
+        14,
+        16
+      ],
+      "tables": 11,
+      "scenarios": [
+        "success",
+        "reject",
+        "manual",
+        "timeout",
+        "b2c-paid",
+        "b2c-refund",
+        "b2c-chargeback",
+        "system-integrity"
+      ]
+    },
+    {
+      "module": "catalog",
+      "name": "Catalog & pricing",
+      "domain": "B",
+      "rows": 21,
+      "endpoints": 43,
+      "bySurface": {
+        "dhru": 1,
+        "v1": 2,
+        "client": 3,
+        "admin": 37
+      },
+      "frontendCalled": 37,
+      "stages": [
+        4,
+        5,
+        7,
+        14
+      ],
+      "tables": 10,
+      "scenarios": [
+        "success",
+        "reject",
+        "manual",
+        "timeout",
+        "b2c-paid"
+      ]
+    },
+    {
+      "module": "orders",
+      "name": "Orders (one engine for B2B and B2C)",
+      "domain": "D",
+      "rows": 39,
+      "endpoints": 40,
+      "bySurface": {
+        "dhru": 6,
+        "v1": 6,
+        "client": 7,
+        "admin": 17,
+        "events": 1,
+        "store": 3
+      },
+      "frontendCalled": 17,
+      "stages": [
+        5,
+        6,
+        7,
+        11,
+        14,
+        16
+      ],
+      "tables": 2,
+      "scenarios": [
+        "success",
+        "reject",
+        "manual",
+        "timeout",
+        "b2c-paid",
+        "b2c-refund",
+        "b2c-chargeback",
+        "b2c-ticket",
+        "system-alert"
+      ]
+    },
+    {
+      "module": "suppliers",
+      "name": "Suppliers",
+      "domain": "C",
+      "rows": 13,
+      "endpoints": 18,
+      "bySurface": {
+        "admin": 14,
+        "supplier": 4
+      },
+      "frontendCalled": 14,
+      "stages": [
+        6,
+        11
+      ],
+      "tables": 4,
+      "scenarios": [
+        "success",
+        "reject",
+        "timeout",
+        "b2c-paid",
+        "b2c-ticket",
+        "system-alert"
+      ]
+    },
+    {
+      "module": "health",
+      "name": "System health (checks, alerts, incidents, jobs, queues)",
+      "domain": "G",
+      "rows": 25,
+      "endpoints": 33,
+      "bySurface": {
+        "admin": 31,
+        "system": 2
+      },
+      "frontendCalled": 32,
+      "stages": [
+        0,
+        9,
+        12
+      ],
+      "tables": 5,
+      "scenarios": [
+        "system-alert",
+        "system-integrity"
+      ]
+    },
+    {
+      "module": "commissions",
+      "name": "Commissions & referrals",
+      "domain": "F",
+      "rows": 6,
+      "endpoints": 15,
+      "bySurface": {
+        "client": 2,
+        "admin": 13
+      },
+      "frontendCalled": 13,
+      "stages": [
+        11
+      ],
+      "tables": 3,
+      "scenarios": []
+    },
+    {
+      "module": "customers",
+      "name": "Storefront customers & checkout (B2C)",
+      "domain": "I",
+      "rows": 25,
+      "endpoints": 28,
+      "bySurface": {
+        "store": 13,
+        "admin": 15
+      },
+      "frontendCalled": 15,
+      "stages": [
+        14,
+        16,
+        18,
+        19
+      ],
+      "tables": 4,
+      "scenarios": [
+        "b2c-paid",
+        "b2c-chargeback",
+        "b2c-account",
+        "ip-rules",
+        "system-integrity"
+      ]
+    },
+    {
+      "module": "storefront",
+      "name": "Storefront & content",
+      "domain": "H",
+      "rows": 14,
+      "endpoints": 25,
+      "bySurface": {
+        "store": 6,
+        "admin": 19
+      },
+      "frontendCalled": 19,
+      "stages": [
+        14,
+        15,
+        16,
+        19
+      ],
+      "tables": 4,
+      "scenarios": []
+    },
+    {
+      "module": "support",
+      "name": "Support",
+      "domain": "J",
+      "rows": 8,
+      "endpoints": 14,
+      "bySurface": {
+        "store": 4,
+        "admin": 10
+      },
+      "frontendCalled": 10,
+      "stages": [
+        17
+      ],
+      "tables": 3,
+      "scenarios": [
+        "b2c-refund",
+        "b2c-ticket"
+      ]
+    },
+    {
+      "module": "risk",
+      "name": "Risk & compliance",
+      "domain": "K",
+      "rows": 11,
+      "endpoints": 17,
+      "bySurface": {
+        "store": 3,
+        "admin": 14
+      },
+      "frontendCalled": 14,
+      "stages": [
+        14,
+        18
+      ],
+      "tables": 4,
+      "scenarios": [
+        "b2c-paid",
+        "b2c-chargeback",
+        "b2c-account",
+        "ip-rules",
+        "system-alert"
+      ]
+    }
+  ]
+}
