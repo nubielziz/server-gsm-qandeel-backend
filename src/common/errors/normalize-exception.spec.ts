@@ -23,6 +23,7 @@ describe('normalizeException', () => {
   it('logs an AppError with a 5xx status', () => {
     expect(normalizeException(new AppError('DATABASE_UNAVAILABLE'), prod).logAsError).toBe(true);
     expect(normalizeException(new AppError('NOT_FOUND'), prod).logAsError).toBe(false);
+    expect(normalizeException(new AppError('MAINTENANCE'), prod).logAsError).toBe(false);
   });
 
   it('maps an unknown route (Nest NotFoundException) to NOT_FOUND with a fixed sentence', () => {

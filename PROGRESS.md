@@ -4,25 +4,10 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
-**Stopped 2026-11-01 (user went to sleep) right after merging P2.5b.** The last commit is a WIP squash of P2.5b
-(pipeline hooks) on top of P2.5a; its `bun run check` ends with 12 failing tests (1371 pass): fix them first. Tomorrow, in order:
-1. `bun run check`; fix whatever fails (the merge unified the settings module: `SettingsReader` cached + `SettingsService`
-   uncached; module and test-app conflicts were resolved as unions; READMEs need a tidy-up).
-2. P2.5b review follow-ups: MAINTENANCE 503 must not log as a server error; hash raw IPs in rate-limit keys; per-IP limit
-   also on `/admin/auth/*` and `/client/auth/*` by path; lead decision on `/webhooks/*` vs scope `all` block rules (log as
-   a MISMATCHES extra with the `/client` → `other` audience mapping); `IpRuleCache.invalidate()` clears memory after the
-   Redis delete; decision 028/ALIGNMENT § 5 mention extra problem members (`expectedEndAt`); decision 026 note: the Dhru
-   module refuses multipart placements during maintenance itself; **seed a loopback allow rule for local development**
-   (the seeded allowlist blocks 127.0.0.1, needed before P2.6 sign-in works locally).
-3. Mark P2.5b done (agent budget: P2.5a 4 calls, P2.5b 2 calls), remove worktrees `../backend-p2-guards` and
-   `../backend-p2-hooks` (their branches hold the implementer output).
-4. Next features: **P2.5c machine-auth ∥ P2.6 staff sign-in** (the last of Phase 2), then Phase 3.
-
-
 **Phase 2, foundation, in progress** (Sonnet implements, Opus reviews). **P2.1 runtime-core, P2.2 docs-tooling and
 P2.3 data are done.** P2.4a infra-core, P2.4b queues-outbox and P2.7 contract-tests are done
-too. Next: **P2.5a sessions-guards ∥ P2.5b pipeline-hooks**, then **P2.5c machine-auth ∥ P2.6 staff sign-in** (the
-last Phase 2 features). Parallel worktrees also get their own Redis test databases (`REDIS_QUEUE_URL_TEST`,
+too, and so are P2.5a sessions-guards and P2.5b pipeline-hooks. Next: **P2.5c machine-auth ∥ P2.6 staff sign-in** (the
+last Phase 2 features), then Phase 3. Parallel worktrees also get their own Redis test databases (`REDIS_QUEUE_URL_TEST`,
 `REDIS_CACHE_URL_TEST` in `.env.test`) besides their own Postgres test database. Briefs: `docs/briefs/` (`_common.md` first; `_feature.md` is the
 Phase 3 recipe). Parallel implementers work in sibling worktrees of this repo (`git worktree add
 ../backend-p2-<name> -b feat/backend-p2-<name>`, then `bun install` there; a sibling path keeps the relative
@@ -58,7 +43,7 @@ and `docs/slices/<module>.json`, `docs/contract/RULES.md` for its frontend featu
 |---|---|---|---|
 | 0 Setup + Bun spike | done | `25282af` | 0 |
 | 1 Architecture + contract | done | see `git log` (`docs: phase 1 ...`) | 6 (Opus analysts, one workflow, 3 at once) |
-| 2 Foundation | in progress (P2.1-P2.4b, P2.7 done; P2.5, P2.6 left) | per feature, see below | 16 so far |
+| 2 Foundation | in progress (P2.1-P2.5b, P2.7 done; P2.5c, P2.6 left) | per feature, see below | 22 so far |
 | 3 Feature loop (by stage) | | | |
 | 4 Frontend integration | | | |
 
@@ -91,8 +76,8 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 | P2.3 | data | Drizzle schema for all 66 tables (per module) + schema additions (MISMATCHES), constraints, indexes, ledger triggers, first migration, migrator, resetDb, Postgres health indicator, seed from the frontend demo state | | done (`feat(data)` commit) |
 | P2.4a | infra-core | two Redis clients + health indicators, CacheService + CacheKeys, RateLimitService + semaphore, crypto (AES-GCM keyring, token hashing, argon2, webhook signatures), S3 storage, outbound http + SSRF guard (brief P2.4 items 1-5) | | done (`feat(infra-core)` commit) |
 | P2.4b | queues-outbox | BullMQ base (queues, worker registry, schedulers), job runs (health module), outbox + relay (platform module), Prometheus in compose; retire `spike/` (brief P2.4 items 6-10) | | done (`feat(queues-outbox)` commit) |
-| P2.5a | sessions-guards | contract fields, session service + cookies + CSRF token, guard dispatcher, staff/merchant/customer session guards, CSRF guard, permission guard + catalog + Owner helpers, audit service + enforcement, `/reference` staff gate (brief P2.5 split) | admin-team (part) | in progress (worktree `../backend-p2-guards`) |
-| P2.5b | pipeline-hooks | IP rules hook + hit-counter flush, maintenance hook, per-IP rate-limit hook, ordered hook registry (brief P2.5 split; parallel with P2.5a) | ip-rules (part) | in progress (worktree `../backend-p2-hooks`) |
+| P2.5a | sessions-guards | contract fields, session service + cookies + CSRF token, guard dispatcher, staff/merchant/customer session guards, CSRF guard, permission guard + catalog + Owner helpers, audit service + enforcement, `/reference` staff gate (brief P2.5 split) | admin-team (part) | done (`feat(sessions-guards)` commit) |
+| P2.5b | pipeline-hooks | IP rules hook + hit-counter flush, maintenance hook, per-IP rate-limit hook, ordered hook registry (brief P2.5 split; parallel with P2.5a) | ip-rules (part) | done (`pipeline-hooks` commits) |
 | P2.5c | machine-auth | capability-token guard registry, API key guard, Dhru credentials guard, webhook signature registry (brief P2.5 split; after P2.5a, parallel with P2.6) | | |
 | P2.6 | staff-sign-in | `POST /admin/auth/login`, `/2fa`, `/2fa/setup`, `/logout`, `/password/set`, `GET /admin/auth/me` (6) | | |
 | P2.7 | contract-tests | route/shape/error parity tests, fixture harvest from the frontend mocks, allowlist, `pending.ts` | | done (`test(contract)` commit) |
@@ -133,7 +118,9 @@ re-review), max 2 review rounds.
 | P2.4a infra-core | 2 (implementer, review: pass, no blocking) |
 | P2.7 contract-tests | 4 (implementer, review: 1 blocking, fix, re-review: pass) |
 | P2.4b queues-outbox | 2 (implementer, review: pass, no blocking) |
-| **Total** | **22** |
+| P2.5a sessions-guards | 4 (implementer, review: 1 blocking, fix, re-review: pass) |
+| P2.5b pipeline-hooks | 2 (implementer, review: pass, no blocking) |
+| **Total** | **28** |
 
 ## Decisions
 
@@ -204,6 +191,10 @@ None.
   about 60 s (cache-aside, decisions 018/022): sensitive actions in P2.6 and 2a re-check the database; P2.6's password
   set on a `pending_password` session must call `CsrfService.assert` itself (the CSRF guard ran before the optional
   session was read).
+- Pipeline hooks (P2.5b) notes: the seed adds loopback allow rules (ids 8, 9) so a local console can sign in; signed
+  `/webhooks/*` are never judged by IP rules (B118); sign-in steps (`/admin|client/auth/login|2fa|password`) count per IP
+  whatever their access; MAINTENANCE logs at warn; still open: rate-limit keys hold the raw IP (hash them, P2.6), the IP
+  rule snapshot stops caching above 100 KB (~1000 rules), an unparseable client IP is not reported (add a metric).
 - Merge procedure (lead): commit the implementer's output on the feature branch, `git merge --squash` it into
   `feat/backend`, apply the review fixes, then stage only paths that still exist: a deleted directory in the `git add`
   list makes the whole command fail and leaves the later edits out of the commit (happened once: P2.4b, fixed by

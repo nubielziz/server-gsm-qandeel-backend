@@ -42,6 +42,7 @@ describe.skipIf(!frontendPresent)('runSeed', () => {
       'roles:6',
       'staff_users:6',
       'ip_rules:7',
+      'ip_rules:2',
       'settings:1',
       'currencies:7',
       'ledger_accounts:12',
@@ -71,6 +72,9 @@ describe.skipIf(!frontendPresent)('runSeed', () => {
       ['block', 'admin', '198.51.100.200/32', 'auto', null],
       ['block', 'api', '203.0.113.160/28', 'manual', 1],
       ['block', 'all', '198.51.100.231/32', 'manual', 1],
+      // Local development: the console can sign in against a local API.
+      ['allow', 'admin', '127.0.0.1/32', 'manual', null],
+      ['allow', 'admin', '::1/128', 'manual', null],
     ]);
 
     expect(await db.select({ key: s.settings.key, value: s.settings.value }).from(s.settings)).toEqual([
@@ -133,7 +137,7 @@ describe.skipIf(!frontendPresent)('runSeed', () => {
       .insert(s.ipRules)
       .values({ kind: 'allow', scope: 'admin', cidr: '10.0.0.1' })
       .returning({ id: s.ipRules.id });
-    expect(rule!.id).toBe(8);
+    expect(rule!.id).toBe(10);
   });
 
   it('grants each role the permissions the frontend mock grants', async () => {

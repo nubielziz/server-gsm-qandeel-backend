@@ -34,8 +34,10 @@ export function ipAudienceOf(path: string): IpAudience | undefined {
     case 'dhru':
       return 'api';
     case 'client':
-    case 'hooks':
     case 'system':
       return 'other';
+    // Incoming gateway webhooks are signed: a broad block rule must never cost a payment (lead decision, B118).
+    case 'hooks':
+      return undefined;
   }
 }

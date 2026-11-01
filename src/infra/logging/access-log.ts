@@ -20,8 +20,10 @@ export function registerAccessLog(fastify: FastifyInstance, logger: Logger): voi
   fastify.addHook('onResponse', (request, reply, done) => {
     const route = request.routeOptions?.url ?? 'unmatched';
     const status = reply.statusCode;
-    const level = QUIET_ROUTES.has(route) ? 'debug' : status >= 500 ? 'error' : status >= 400 ? 'warn' : 'log';
     const code = recalledProblemCode(request.raw);
+    // A planned maintenance 503 is an expected answer, not a server fault: it logs like a refusal (warn).
+    const fault = status >= 500 && code !== 'MAINTENANCE';
+    const level = QUIET_ROUTES.has(route) ? 'debug' : fault ? 'error' : status >= 400 ? 'warn' : 'log';
     logger[level](
       {
         msg: 'request completed',

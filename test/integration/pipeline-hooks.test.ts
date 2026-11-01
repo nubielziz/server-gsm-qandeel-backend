@@ -150,9 +150,11 @@ describe('pipeline order: IP rules, then maintenance, then the per-IP limit, all
       ['GET', '/store/v1/t/ping'],
       ['GET', '/v1/t/ping'],
       ['GET', '/client/t/ping'],
-      ['POST', '/webhooks/t/ping'],
       ['GET', '/store/v1/nope'],
     ];
+    // Signed incoming webhooks are never judged by IP rules (B118): they reach their own checks.
+    const hook = await t.app.inject({ method: 'POST', url: '/webhooks/t/ping', remoteAddress: blocked, payload: {} });
+    expect(hook.statusCode).not.toBe(403);
     for (const [method, url] of requests) {
       const res = await t.app.inject({
         method: method as 'GET',

@@ -11,13 +11,16 @@ describe('ipAudienceOf', () => {
     expect(ipAudienceOf('/api/index.php')).toBe('api');
   });
 
-  it('leaves the merchant portal, incoming webhooks and the documentation to the "all" rules', () => {
+  it('leaves the merchant portal and the documentation to the "all" rules', () => {
     expect(ipAudienceOf('/client/orders')).toBe('other');
-    expect(ipAudienceOf('/webhooks/payments/:gateway')).toBe('other');
     expect(ipAudienceOf('/docs')).toBe('other');
     expect(ipAudienceOf('/openapi.json')).toBe('other');
     expect(ipAudienceOf('/reference/openapi.json')).toBe('other');
     expect(ipAudienceOf('/nope')).toBe('other');
+  });
+
+  it('never judges signed incoming webhooks (B118)', () => {
+    expect(ipAudienceOf('/webhooks/payments/:gateway')).toBeUndefined();
   });
 
   it('does not mistake a longer name for a surface', () => {

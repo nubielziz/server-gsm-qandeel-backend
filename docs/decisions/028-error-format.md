@@ -25,5 +25,8 @@ Status: accepted, 2026-10-31.
 - 429 always carries `Retry-After`; 401 on a staff route clears no cookie by itself (the frontend signs out);
   `IP_NOT_ALLOWED` is decided before authentication.
 
+- A problem may carry extra members next to the standard ones when a code needs them (RFC 9457 extensions), for example
+  `expectedEndAt` on `503 MAINTENANCE`; clients ignore members they do not know.
+
 **Consequences.** One error type everywhere; the frontend's forms map `errors[]` onto fields without changes; the
 error catalog is reviewed like an API.

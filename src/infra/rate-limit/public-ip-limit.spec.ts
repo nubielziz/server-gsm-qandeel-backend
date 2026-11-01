@@ -21,6 +21,10 @@ describe('publicLimiterFor', () => {
     expect(publicLimiterFor('/client/auth/register', 'public')).toBe('ip');
     expect(publicLimiterFor('/admin/staff', 'staff-permission')).toBeUndefined();
     expect(publicLimiterFor('/admin/auth/me', 'staff-session')).toBeUndefined();
+    // The 2FA steps run on a pending session but are still counted per address (guessing codes).
+    expect(publicLimiterFor('/admin/auth/2fa', 'staff-session')).toBe('ip');
+    expect(publicLimiterFor('/admin/auth/2fa/setup', 'staff-session')).toBe('ip');
+    expect(publicLimiterFor('/client/auth/password/set', 'public')).toBe('ip');
     expect(publicLimiterFor('/client/orders', 'merchant-session')).toBeUndefined();
     expect(publicLimiterFor('/admin/nope', undefined)).toBeUndefined();
   });

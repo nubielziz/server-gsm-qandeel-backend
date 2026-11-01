@@ -1,7 +1,6 @@
 // Sample routes and a stand-in "authentication" guard for the request pipeline tests (IP rules, maintenance, per-IP limit).
 // The routes sit on the public surfaces under /t/ paths so their keys never meet a real route; the guard answers 401 to
 // every sample route unless the request carries `x-test-auth`, which lets a test prove a hook ran before authentication.
-import { randomInt } from 'node:crypto';
 import {
   type CanActivate,
   Controller,
@@ -214,7 +213,10 @@ class TestAccessInstaller implements OnModuleInit {
 @Module({ providers: [TestAccessInstaller] })
 export class TestAccessModule {}
 
-const RUN = randomInt(0, 256);
+// One /24 per run, from the clock: per-address counters live 60 s, so a run started within a minute of the last one must
+// not meet its addresses again (a random byte did, 1 time in 256). 198.18.0.0/15 holds 512 such blocks.
+const RUN_BLOCK = Math.floor(Date.now() / 1000) % 512;
+const RUN = `198.${18 + Math.floor(RUN_BLOCK / 256)}.${RUN_BLOCK % 256}`;
 let counter = 0;
 
 /**
@@ -227,7 +229,7 @@ let counter = 0;
  */
 export function freshClientIp(): string {
   counter = (counter % 250) + 1;
-  return `198.18.${RUN}.${counter}`;
+  return `${RUN}.${counter}`;
 }
 
 /**
@@ -237,5 +239,5 @@ export function freshClientIp(): string {
  */
 export function freshClientPrefix(): string {
   counter = (counter % 250) + 1;
-  return `2001:db8:${RUN.toString(16)}:${counter}`;
+  return `2001:db8:${RUN_BLOCK.toString(16)}:${counter}`;
 }

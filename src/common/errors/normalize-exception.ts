@@ -114,7 +114,10 @@ function fromStatus(
  * @returns the error to send and whether it is a server fault
  */
 export function normalizeException(exception: unknown, options: { exposeInternals: boolean }): NormalizedException {
-  if (exception instanceof AppError) return { error: exception, logAsError: exception.status >= 500 };
+  // MAINTENANCE is a planned 503, not a fault: no error line with a stack for every refused request.
+  if (exception instanceof AppError) {
+    return { error: exception, logAsError: exception.status >= 500 && exception.code !== 'MAINTENANCE' };
+  }
   if (exception instanceof HttpException) {
     return fromStatus(exception.getStatus(), httpMessage(exception), exception, options.exposeInternals);
   }

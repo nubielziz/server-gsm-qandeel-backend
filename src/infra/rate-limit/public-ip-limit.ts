@@ -11,6 +11,9 @@ const TOKEN_ACCESS: ReadonlySet<AccessKind> = new Set([
   'link-token',
 ]);
 
+/** The sign-in steps of the admin console and the merchant portal (login, 2FA, password); `me` and logout are not. */
+const AUTH_PATH = /^\/(admin|client)\/auth\/(login|2fa|password)(\/|$)/;
+
 /**
  * Picks the limiter for a request on a public surface.
  *
@@ -31,7 +34,8 @@ export function publicLimiterFor(path: string, access: AccessKind | undefined): 
       return access !== undefined && TOKEN_ACCESS.has(access) ? 'token' : 'ip';
     case 'admin':
     case 'client':
-      return access === 'public' ? 'ip' : undefined;
+      // The sign-in routes count per IP whatever their access: the 2FA steps run on a pending session (P2.6).
+      return access === 'public' || AUTH_PATH.test(path) ? 'ip' : undefined;
     case 'v1':
     case 'dhru':
     case 'hooks':

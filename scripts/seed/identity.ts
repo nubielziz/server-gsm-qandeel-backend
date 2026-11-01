@@ -160,7 +160,27 @@ export async function seedIdentity(db: DbExecutor, demo: DemoSeed): Promise<Seed
       createdBy: rule.source === 'auto' ? null : (staffIds.get(rule.by) ?? null),
     })),
   );
+  // The demo turns the admin allowlist on with documentation-range offices only: without these two rules a console
+  // running against a local API (127.0.0.1 / ::1) could not sign in. Development seed only; ids 8 and 9 (after the demo's 7) keep it
+  // idempotent.
+  const loopback = await insertRows(
+    db,
+    s.ipRules,
+    [
+      { id: 8, cidr: '127.0.0.1/32' },
+      { id: 9, cidr: '::1/128' },
+    ].map(({ id, cidr }) => ({
+      id,
+      kind: 'allow' as const,
+      scope: 'admin' as const,
+      cidr,
+      label: 'Local development (loopback)',
+      reason: 'Seeded so the console can sign in against a local API',
+      source: 'manual' as const,
+      createdAt: new Date(),
+    })),
+  );
 
   for (const table of [s.roles, s.staffUsers, s.ipRules]) await syncIdentity(db, table);
-  return [roles, staff, ipRules];
+  return [roles, staff, ipRules, loopback];
 }

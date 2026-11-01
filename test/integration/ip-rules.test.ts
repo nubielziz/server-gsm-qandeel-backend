@@ -118,7 +118,8 @@ describe('block rules by scope', () => {
     'REST v1': { audience: 'api', send: (ip) => get('/v1/t/ping', ip, AUTH) },
     Dhru: { audience: 'api', send: (ip) => call(t, 'POST', '/api/index.php', ip) },
     'merchant portal': { audience: 'other', send: (ip) => get('/client/t/ping', ip, AUTH) },
-    'incoming webhook': { audience: 'other', send: (ip) => call(t, 'POST', '/webhooks/t/ping', ip, AUTH) },
+    // Never judged: signed gateway webhooks must not be lost to a broad block (B118).
+    'incoming webhook': { audience: 'none', send: (ip) => call(t, 'POST', '/webhooks/t/ping', ip, AUTH) },
     'documentation page': { audience: 'other', send: (ip) => get('/docs', ip) },
   };
 
@@ -128,7 +129,7 @@ describe('block rules by scope', () => {
       await addRule({ kind: 'block', scope, cidr: blocked });
       for (const [name, request] of Object.entries(REQUESTS)) {
         const res = await request.send(blocked);
-        const expected = scope === 'all' || request.audience === scope;
+        const expected = request.audience !== 'none' && (scope === 'all' || request.audience === scope);
         expect(isIpRefusal(res), `${name}: status ${res.statusCode}`).toBe(expected);
         // Another address is untouched.
         expect(isIpRefusal(await request.send(freshIp())), `${name} from another address`).toBe(false);

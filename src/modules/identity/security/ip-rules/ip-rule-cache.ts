@@ -91,7 +91,12 @@ export class IpRuleCache {
    */
   async invalidate(): Promise<void> {
     this.memo.clear();
-    await this.cache.del(this.keys.ipRules());
+    try {
+      await this.cache.del(this.keys.ipRules());
+    } finally {
+      // Cleared again: a request between the two steps may have re-read the old Redis copy into memory.
+      this.memo.clear();
+    }
   }
 
   private async load(): Promise<IpRuleSnapshot> {
