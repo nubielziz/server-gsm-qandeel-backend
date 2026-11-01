@@ -1,0 +1,1523 @@
+[
+  {
+    "group": "identity-platform",
+    "resolutions": [
+      {
+        "finding": "identity-platform-1",
+        "endpoint": "POST /admin/clients",
+        "decision": "User decision applied. POST /admin/clients opens the merchant's ledger accounts in the same DB transaction as the clients insert. Feature 3 owns a public money service `MerchantAccounts.open(tx, { clientId, currency: 'USD', creditLimit, overdraftAllowed })`, exported from src/modules/money/index.ts. It inserts two ledger_accounts rows: kind client_wallet (owner_type 'client', owner_id clientId, overdraft_limit = creditLimit ?? '0.0000') and kind client_hold (overdraft_limit 0). These are raw inserts with ON CONFLICT (ledger_accounts_identity_uq) DO NOTHING. There is no postTransaction and no money event. The same service applies user rule 2 (see identity-platform-3) and returns the wallet view {balance:'0.0000', reserved:'0.0000', creditLimit, available: creditLimit}, which the 201 Client carries. POST /client/auth/register (2b) calls the same service with creditLimit 0, so no merchant ever exists without accounts. Feature 3's 'created on first use' resolution stays only as a safety fallback. Order: the lead writes the interface signature before wave 1, feature 3 implements it and merges first, and 2a calls it (2a's integration test then asserts both rows exist and overdraft_limit = creditLimit). Feature 3's seed creates the accounts for the demo merchants that 2a seeds.",
+        "basis": "User decision (#1 in the relayed request); identity.md POST /admin/clients already says the route creates client_wallet (overdraft_limit = creditLimit) and client_hold (B27 accepted); decision 024 account identity; the frontend fixture echoes wallet zeros and creditLimit in the 201.",
+        "features": [
+          "2a",
+          "3",
+          "2b"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/extraction/money-merchants.json (renders identity.md POST /admin/clients): say the accounts are opened through money's public MerchantAccounts.open in the same transaction. docs/briefs/2a-identity-staff-access.md: 'Out of scope: wallets (3)' gains the note that 2a calls MerchantAccounts.open from feature 3. docs/briefs/3-money-wallets-ledger.md: add MerchantAccounts.open to scope (public, used by 2a and 2b, includes the rule-2 check) and keep the demo-merchant wallet seed. docs/briefs/2b-identity-merchant-auth.md: register calls MerchantAccounts.open(creditLimit 0). Add a lead-decisions.json extra entry, then run `bun scripts/build-contract-docs.mjs`.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "identity-platform-2",
+        "endpoint": "POST /admin/clients",
+        "decision": "The invite token has auth_tokens.purpose 'invite', subject_type 'client', a hash only, and expires after 1 hour like every one-time token (decisions 010/019). A merchant who misses the window uses POST /client/auth/password/forgot, which also works for a pending merchant with no password yet. 2a writes the token and an outbox event `merchant.invited` with ids only, never the token. The link is `<PORTAL_BASE_URL>/set-password?token=<token>`, built from a new config key PORTAL_BASE_URL, the counterpart of the console base URL. The consuming route is POST /client/auth/password/reset {token, password}, which accepts purposes 'reset' and 'invite'. With an invite token it sets password_hash (argon2id), password_changed_at=now and email_verified_at=now (the link proves the email), sets used_at, voids the merchant's other unused tokens and answers 204. It does not sign in. Status stays 'pending' until staff approve with PATCH /admin/clients/:id. 12a later adds the template; until then 2b's MailSender dev implementation logs a redacted line.",
+        "basis": "identity.md POST /admin/clients (one-time sign-up token, emailed link); the staff invite pattern (POST /admin/staff, /admin/auth/password/set); 2b brief (outbox per email, MailSender); decisions 010/019 (1-hour single-use tokens).",
+        "features": [
+          "2a",
+          "2b",
+          "12a"
+        ],
+        "schemaChange": "auth_tokens.purpose: add CHECK auth_tokens_purpose_check purpose IN ('invite','reset','verify_email','magic_link'), with an exported AUTH_TOKEN_PURPOSES const in src/modules/identity/db/schema.ts and STAFF_TOKEN_PURPOSES derived from it. Existing rows are only 'invite'/'reset' (staff, P2.6), so no conversion is needed. Ship it in the lead's single pre-wave-1 audit migration (0003) to avoid 2a/2b migration clashes, and update the db README open-vocabulary list.",
+        "docFixes": "docs/contract/extraction/money-merchants.json (identity.md POST /admin/clients): name purpose 'invite', the link format, the 1-hour expiry, the outbox event merchant.invited and the consuming route. docs/contract/extraction/auth-access.json or a lead-decisions extra entry: spec for POST /client/auth/password/reset with invite handling. docs/briefs/2b-identity-merchant-auth.md: add invite consumption and the outbox event list (merchant.invited, merchant.email_verification, merchant.password_reset). docs/briefs/2a-identity-staff-access.md: invite token + outbox. Config docs: PORTAL_BASE_URL. src/infra/db/README.md: remove auth_tokens.purpose from the open vocabularies.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "identity-platform-3",
+        "endpoint": "POST /admin/clients",
+        "decision": "When creditLimit > 0 and the chosen group (groupId, or the is_default group when groupId is omitted) has overdraft_allowed=false, POST /admin/clients answers 422 VALIDATION_FAILED errors[{field:'creditLimit', message:'This group does not allow credit.'}]. The check lives in one place: MerchantAccounts.open and the credit-limit setter in money (feature 3) take overdraftAllowed and throw this error, so PATCH /admin/clients/:id/credit-limit (3) and POST /admin/clients (2a) give the same answer. 2a reads the group (exists, kind != 'b2c_retail', overdraft_allowed) through a small read-only ClientGroupDirectory in the catalog module's public index, which 4a extends later. The invariant also covers group moves: PATCH /admin/clients/:id {groupId} to a group without overdraft while the wallet's overdraft_limit > 0 is 422 on groupId. In 4a, switching a group's overdraft_allowed off is refused while any of its merchants has a limit > 0. These are lead derivations of rule 2. A negative creditLimit stays 422 on creditLimit.",
+        "basis": "User rule 2 (PROGRESS; lead-decisions 'merchants Q13'); client_groups.overdraft_allowed exists (src/modules/catalog/db/schema.ts).",
+        "features": [
+          "2a",
+          "3",
+          "4a"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/extraction/money-merchants.json: the POST /admin/clients and PATCH /admin/clients/:id error lists gain the 422 creditLimit/groupId rule-2 cases. docs/briefs/2a-identity-staff-access.md: cite user rule 2 for POST/PATCH /admin/clients. docs/briefs/3-money-wallets-ledger.md: the rule-2 check lives in the shared money service. Rebuild the contract docs.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "identity-platform-4",
+        "endpoint": "PATCH /admin/roles/:id",
+        "decision": "Follow ANSWERS access Q2 (status 'changed by the lead', the later and more specific ruling over Q3's list). There is no ROLE_PROTECTED code. The Owner role may be renamed. PATCH /admin/roles/:id answers 409 LAST_OWNER errors[{field:'permissions'}] when removing '*' from the role would leave no active staff member whose role holds '*'. The same general guard covers staff role changes and suspensions (already LAST_OWNER). It uses the Owner helpers from P2.5a.",
+        "basis": "lead-decisions.json answers 'access Q2' and extra 'Owner guards'; catalog.ts has LAST_OWNER and no ROLE_PROTECTED; build-contract-docs.mjs already drops ROLE_PROTECTED from error-codes.",
+        "features": [
+          "2a"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/extraction/auth-access.json: in the PATCH /admin/roles/:id errors, replace '409 ROLE_PROTECTED (proposed…)' with '409 LAST_OWNER (removing * would leave no active Owner; errors[{field:\"permissions\"}])', and remove ROLE_PROTECTED from the access Q3 answer (or add lead-decisions answers 'access Q3' status changed without ROLE_PROTECTED). error-codes.md LAST_OWNER routes gain PATCH /admin/roles/:id (via extraction). Rebuild with `bun scripts/build-contract-docs.mjs`.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "identity-platform-5",
+        "endpoint": "GET /admin/clients/:id/api-keys",
+        "decision": "allowedIps uses the same formatter as ip_rules.cidr: a host prefix (/32 for IPv4, /128 for IPv6) is dropped on read, so '203.0.113.55/32' becomes '203.0.113.55' and ranges keep their prefix. The write side (merchant /client/api-keys, 7b) accepts a bare IP and stores it as /32 or /128. lastUsedIp: the console type is a non-null string, so a never-used key (last_used_ip null) is sent as '' (the console renders it only when truthy). The same rule applies wherever ApiKey is serialized.",
+        "basis": "Frontend wins the wire (lastUsedIp: string, allowedIps string[] without prefix per the fixture); db README notes cidr reads back with /32; the 2a brief already drops /32,/128 for ip_rules.",
+        "features": [
+          "7b"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/extraction/money-merchants.json (identity.md GET /admin/clients/:id/api-keys): 'allowedIps[] without /32 or /128 for single hosts; lastUsedIp \"\" when never used'. The 7b brief (when written) cites this and reuses the ip_rules formatter (move it to a shared identity helper).",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "identity-platform-6",
+        "endpoint": "GET /admin/sessions",
+        "decision": "One 'live session' predicate, defined in the identity sessions repository: revoked_at IS NULL AND expires_at > now() AND (stage <> 'active' OR last_seen_at > now() - idle limit of the subject type). The idle limit comes from SessionPolicy (settings sessions.staff_idle_minutes 30, sessions.client_idle_minutes 10080; the same values livenessOf uses). GET /admin/sessions uses it, still limited to fully signed-in staff and client sessions (B9). So do StaffMember.activeSessions (which enables 'Sign out all devices'), the DELETE /admin/sessions/:id 404 (an idle-dead session reads as already ended) and the merchant /client/sessions list (2b). revokeAllOf keeps revoking every non-revoked row, idle-dead ones included. last_seen_at is written at most once a minute, which is well inside the limits.",
+        "basis": "Decision 018 and session.types.ts livenessOf (absolute + idle expiry); identity.md GET /admin/sessions ('only live sessions').",
+        "features": [
+          "2a",
+          "2b"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/extraction/auth-access.json: GET /admin/sessions, StaffMember activeSessions and DELETE /admin/sessions/:id define live as 'not revoked, not past expires_at, and for full sessions last_seen_at within the subject's idle limit (decision 018)'. 2a and 2b briefs: reuse the one predicate.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "identity-platform-7",
+        "endpoint": "GET /admin/audit-logs",
+        "decision": "Snapshot the actor's name at write time, the same way as entity_label (B116), so renamed or deleted accounts still read correctly and q can search it in SQL. RequestActor (src/common/request-context.ts) gains `name: string`. The session guards fill it from the subject: SubjectSnapshot gains `name`, and a staff/merchant rename calls SessionService.invalidateSubject. The API-key and Dhru guards set {type:'client', id, name}. AuditService.record writes actor_name = actor.name, or '' for system. Wire: actorType is one of staff|client|customer|system, actorName = actor_name, or null when '' (the console then shows 'System' for system). The q filter is a case-insensitive contains over actor_name, action and entity_label. The actorType filter accepts the four words.",
+        "basis": "B10 (actorName joined or snapshotted); console actorText() (src/features/audit/lib/actor.ts); request-context actor types staff|client|customer plus system from AuditService; db README lists audit_logs.actor_type as an open vocabulary.",
+        "features": [
+          "2a",
+          "7a",
+          "7b"
+        ],
+        "schemaChange": "audit_logs.actor_name text NOT NULL DEFAULT '' (new). audit_logs: add CHECK audit_logs_actor_type_check actor_type IN ('staff','client','customer','system'), from an exported AUDIT_ACTOR_TYPES const in src/modules/platform/db/schema.ts. Migration (lead's pre-wave-1 0003): ALTER TABLE audit_logs DISABLE TRIGGER audit_logs_append_only; UPDATE audit_logs a SET actor_name = s.name FROM staff_users s WHERE a.actor_type='staff' AND a.actor_id=s.id; the same from clients for 'client'; ENABLE TRIGGER. Existing rows only hold staff|client|customer|system (AuditService's only values), so the CHECK validates without conversion.",
+        "docFixes": "docs/contract/extraction/auth-access.json (platform.md GET /admin/audit-logs and B10 text): 'actorName = actor_name snapshot written by AuditService from the request actor; actorType staff|client|customer|system'. src/infra/db/README.md: remove audit_logs.actor_type from the open vocabularies. The platform module README notes the snapshot.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "identity-platform-8",
+        "endpoint": "GET /admin/dashboard",
+        "decision": "Every dashboard money field is in USD (base currency), as a 4-dp string. orders.unit/total price, cost and tax_amount are already stored in USD (orders.currency is only the buyer's display currency, per orders.md), so order sums need no conversion. payments, refunds and disputes amounts are in their own currency. A row tied to a checkout session (B2C) converts at the rate locked there: amount ÷ checkout_sessions.fx_rate (units per 1 USD), as the ledger does (B111). A row with no locked rate (for example a pending B2B deposit in EUR) converts at the current currencies.rate_to_base. A USD row is taken as is. Convert per row in SQL numeric and round the sum once, half-up to 4 dp (decision 011). suppliers[].balance is sent in USD = balance × suppliers.credit_rate. lowBalance stays judged in the supplier's own units (balance < low_balance_alert; RULES dashboard 5), and runwayDays compares USD against USD.",
+        "basis": "ALIGNMENT §1 (money USD unless the field says otherwise); console Dashboard money fields carry no currency; B111 and decision 011 (ledger in base, locked checkout rate); suppliers.credit_rate = base value of one credit.",
+        "features": [
+          "9"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/extraction/ops-risk-refunds.json (platform.md GET /admin/dashboard): add 'all money in USD; conversion rule as above; suppliers[].balance converted with credit_rate'. RULES.md dashboard: the same line (via extraction). Rebuild the docs.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "identity-platform-9",
+        "endpoint": "GET /admin/dashboard",
+        "decision": "suppliers[].health is mapped from the supplier's latest service_checks row (component 'supplier', supplier_id): ok→'up', degraded→'degraded', down→'down', and unknown or no check yet→'degraded'. 'unknown' is never shown as healthy and is never sent as an unknown word. The attention items supplier_down and supplier_degraded fire only from a real down/degraded check result, never from unknown or no check, so a new supplier does not raise a false high alert. Feature 9 adds a contract test for the four mappings.",
+        "basis": "Frontend wins the wire (health 'up'|'degraded'|'down'); health CHECK_STATUSES ok|degraded|down|unknown; the instruction to map rather than send an unknown word.",
+        "features": [
+          "9"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/extraction/ops-risk-refunds.json (platform.md GET /admin/dashboard): add the health mapping and the attention rule.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "identity-platform-10",
+        "endpoint": "GET /admin/dashboard",
+        "decision": "B92 (accepted, later) and decision 025 win over platform.md, RULES dashboard 2 and RULES orders 4. pastSla means status IN ('pending','processing') AND now() − created_at > services.sla_minutes, with review orders included. A service with null or 0 SLA is never past SLA. The same predicate is used by GET /admin/orders?pastSla=true, dashboard queues[].pastSla, attention orders_past_sla, navCounts.orders.pastSla and GET /admin/system/orders-health. queues[].review counts orders whose derived queue (decision 025) is manual (status pending + dispatch_state manual), needs_attention (dispatch_state needs_attention), review (dispatch_state held) or verification (status completed + verification_status 'requested'). dispatch_state 'operator' (accepted by staff) has queue null and is not review: it counts in open and can be past SLA.",
+        "basis": "MISMATCHES B92 (one age-only predicate, review included); decision 025 queue derivation and pastSla line; map scenario system-alert step 9.",
+        "features": [
+          "5",
+          "9"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/extraction/ops-risk-refunds.json: platform.md dashboard queues 'pastSla (open, not in review, …)' becomes 'open and older than the service SLA (B92)', and the dashboard rule 2 line (~line 837) gets the same. docs/contract/extraction/orders-catalog-suppliers.json: RULES orders 4 and orders.md GET /admin/orders pastSla drop 'not in a review queue'. Add the review→dispatch_state mapping. Rebuild the docs.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "identity-platform-11",
+        "endpoint": "GET /admin/notification-templates",
+        "decision": "notifications.recipient_type is fixed to staff|client|customer. Template audience 'merchant' corresponds to recipient_type 'client', and staff and customer map one to one. sentLast30Days for a template row = count of notifications with the same event, the same channel, recipient_type = the audience mapping, status 'sent' and sent_at >= now() − 30 days. The count spans all locales, so every locale row of the same (event, channel, audience) shows the same number. GET /admin/notifications sends recipientType as stored (the console type is a free string).",
+        "basis": "B71 (read aggregate accepted); NOTIFICATION_AUDIENCES staff|customer|merchant; fixture values 'customer'/'client'; templates unique per locale (notification_templates_event_uq).",
+        "features": [
+          "12a"
+        ],
+        "schemaChange": "notifications.recipient_type: add CHECK notifications_recipient_type_check recipient_type IN ('staff','client','customer'), from an exported NOTIFICATION_RECIPIENT_TYPES const in src/modules/platform/db/schema.ts. Data migration before the constraint: UPDATE notifications SET recipient_type='client' WHERE recipient_type='merchant' (expected none). Lead's pre-wave-1 0003 migration or 12a's own.",
+        "docFixes": "docs/contract/extraction/ops-risk-refunds.json (platform.md GET /admin/notification-templates): the audience→recipient_type mapping, the status 'sent' + sent_at window, the count across locales. src/infra/db/README.md: remove notifications.recipient_type from the open vocabularies.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "identity-platform-12",
+        "endpoint": "GET /admin/webhook-deliveries",
+        "decision": "response_code null is sent as responseCode 0 (no answer) in GET /admin/webhook-deliveries, GET /:id and the retry response. Keep ON DELETE CASCADE, which the schema chose on purpose: deleting an endpoint deletes its delivery log. So endpoint {id,url} and client {id,name} are never null on the wire (clients are never hard-deleted). The console's null tolerance stays harmless.",
+        "basis": "Frontend responseCode: number; webhook_deliveries.endpoint_id FK cascade (src/modules/platform/db/schema.ts comment) and the db README FK convention.",
+        "features": [
+          "7b"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/extraction/ops-risk-refunds.json (platform.md GET /admin/webhook-deliveries and /:id): 'responseCode = response_code, null → 0'. Replace 'each null if removed' with 'endpoint and client are never null: deliveries are deleted with their endpoint'.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "identity-platform-13",
+        "endpoint": "PATCH /admin/settings",
+        "decision": "Allow-list. PATCH /admin/settings accepts only keys in a settings registry in the platform module, each with its validator. Today that is only imeiRetentionDays, a JSON integer 0–3650, with the validator shared with PATCH /admin/storefront/settings. Any other key, including the B67 keys (adminAllowlistOnly, maintenance, risk rules, storefront policy keys) and unknown keys, is 422 VALIDATION_FAILED errors[{field:<key>}]. Valid keys are upserted, merged and audited before/after. Then SettingsReader.invalidate() runs and the response is the full GET object. A later feature that needs a key editable here adds it to the registry with its validator.",
+        "basis": "2a brief ('writes only known keys') and B67's goal (settings:update cannot bypass stricter routes): the allow-list is stricter and satisfies both; the console sends only imeiRetentionDays.",
+        "features": [
+          "2a"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/extraction/ops-risk-refunds.json (platform.md PATCH /admin/settings): replace the deny-list text with 'allow-list: known keys = imeiRetentionDays (integer 0-3650); any other key is 422 with errors[].field = the key'. B67 text stays valid (those keys are refused).",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "identity-platform-14",
+        "endpoint": "POST /admin/staff/:id/password",
+        "decision": "Always 200 with Cache-Control: no-store. reset_link returns {} and temporary_password returns {temporaryPassword} (shown once, never stored in clear). There is no 204.",
+        "basis": "ALIGNMENT §1 (one success status per endpoint); frontend-endpoints.json success 200, StaffPasswordResult {temporaryPassword?}.",
+        "features": [
+          "2a"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/extraction/auth-access.json (identity.md POST /admin/staff/:id/password): '`{}` or 204 for reset_link' becomes '200 `{}` for reset_link; Cache-Control: no-store on both'.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "identity-platform-15",
+        "endpoint": "GET /admin/audit-logs",
+        "decision": "Export AUDIT_ENTITY_TYPES from the platform audit module, built from the console's 19 words (order, merchant, service, supplier, payment, withdrawal, plan, session, customer, staff, ip_rule, checkout, refund, dispute, ticket, listing, blocklist, legal, setting) plus backend additions: role, client_group, category, currency, payment_gateway, invoice, api_key, webhook_endpoint, kyc_submission, notification_template, alert_rule, alert, incident, tax_rate, help_article, content_page, ledger_transaction. AuditService.record throws RangeError (a programming error, rolls back) on any other value. Table → word rules: clients→merchant, staff_users→staff, checkout_sessions→checkout, legal_documents→legal, blocklist entries→blocklist, settings→setting, commission_plans→plan, withdrawal_requests→withdrawal, support_tickets→ticket. A feature that needs a new type adds it to the list in its own commit. The list is enforced in code with no DB CHECK, so the append-only table never needs a migration for it.",
+        "basis": "Console entity list (src/features/audit entities.ts) for filters and links; AuditService currently accepts any snake_case value.",
+        "features": [
+          "2a"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/extraction/auth-access.json (platform.md GET /admin/audit-logs): entityType values come from AUDIT_ENTITY_TYPES, with the mapping. docs/briefs/_feature.md: 'audit entity types must come from AUDIT_ENTITY_TYPES'.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "identity-platform-16",
+        "endpoint": "POST /client/* , /v1/files, /webhooks/telegram/:secret (35 pending identity/platform routes)",
+        "decision": "Before each feature's brief, the lead writes per-route specs (request, response with status, errors, list query) as lead-decisions.json extra entries or extraction entries, so build-contract-docs renders them into identity.md/platform.md. They follow ALIGNMENT §7 (cookie session + CSRF, simple-rest lists, problem+json, one success status). Timing by wave: the 15 /client auth/security/sessions routes before wave 1 (2b), including register (no enumeration, same answer for a new or existing email; creates a pending merchant + MerchantAccounts.open), verify-email (purpose verify_email), password/forgot (also for a pending merchant without a password) and password/reset (purposes reset|invite, see identity-platform-2). /client/kyc and /client/files before 5/8. /client/api-keys, /client/webhooks and /v1/files before 7a/7b. /client/notification-preferences and /webhooks/telegram/:secret before 12a.",
+        "basis": "Map rows define these routes; ALIGNMENT §7 conventions; PHASE3-PLAN 'the lead resolves them first (docs, decisions, briefs)'.",
+        "features": [
+          "2b",
+          "5",
+          "7a",
+          "7b",
+          "8",
+          "12a"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/lead-decisions.json (extra) or the extraction files: add the per-route specs. docs/briefs/2b-identity-merchant-auth.md: cite them. Rebuild with `bun scripts/build-contract-docs.mjs`.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      }
+    ]
+  },
+  {
+    "group": "money",
+    "resolutions": [
+      {
+        "finding": "money-1",
+        "endpoint": "GET /admin/ledger/transactions, GET /admin/ledger/transactions/:id",
+        "decision": "Keep ref_type 'client' in the database for manual adjustments (B34, ref_id = client id). On the wire, map it: a stored 'client' is sent as refType 'system' with refId = the client id. The console's referenceLink gives no link for 'system', and the merchant still shows through the line's ownerName. A wire filter refType=system matches stored ref_type IN ('system','client'). Every other value goes out unchanged. Drop 'ledger_transaction': no writer uses it. ANSWERS finance Q4 says corrections are adjustments, and decision 024's reversing entries (reopen, B2B refund, b2c_refund) carry the ref of the record they reverse (order, refund or dispute), so an order's money trail shows them. The reversed transaction id goes into the memo ('Reversal of JRN-<id>') and the idempotency key ('reverse:<txId>'), not into ref_type. Add a mapper toWireRefType() in the money module's ledger read service. Extend the contract enum test (TESTS.md) to LedgerTransaction.refType so the wire set stays a subset of the console's 8 words.",
+        "basis": "Precedence: the console's LedgerRefType has 8 words and the frontend decides wire format. B34 (lead) keeps 'client' as the stored business ref. finance/lib/refs.ts gives no link for unknown types or refId <= 0, so 'system' is safe. Decision 024 lists 'ledger_transaction', but ANSWERS finance Q4 (corrections go through wallet/adjust) is more specific and leaves it with no writer. A mapping on the wire is preferred over a console change.",
+        "features": [
+          "3",
+          "5",
+          "16"
+        ],
+        "schemaChange": "Migration drizzle/0003: ALTER TABLE ledger_transactions DROP CONSTRAINT ledger_transactions_ref_type_check; ADD CONSTRAINT ledger_transactions_ref_type_check CHECK (ref_type IN ('order','payment','invoice','refund','dispute','accrual','supplier','client','system')). In money/db/schema.ts, remove 'ledger_transaction' from LEDGER_REF_TYPES. No data conversion: no ledger_transactions rows exist yet (the seed creates accounts only).",
+        "docFixes": "docs/decisions/024-ledger.md: drop 'ledger_transaction' from the ref_type list; replace 'Corrections are reversing transactions (ref_type = ledger_transaction)' with 'reversals carry the reversed record's ref; corrections are adjustments'; add the wire mapping client→system. MISMATCHES.md: new B-entry (ledger refType wire mapping, changed by the lead) that amends B34 and B116 ('ledger ref_type set'). money/db/schema.ts: comment on LEDGER_REF_TYPES. lead-decisions.json / extraction, so the regenerated money.md ledger Response says 'refType: stored client is sent as system'. TESTS.md: add refType to the enum-subset checks.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "money-2",
+        "endpoint": "GET /admin/payments, GET /admin/payments/:id, POST /admin/payments/:id/approve|reject",
+        "decision": "Pin the vocabularies per purpose. Top-up payments: status pending|approved|rejected, method_type bank|card|usdt|wise. Order payments: status pending|captured|failed|refunded|partial_refund|disputed|chargeback, method_type card|wallet|crypto. /admin/payments, /:id, /:id/approve and /:id/reject serve top-ups only. The list always adds purpose='topup': a purpose=order filter returns [] with x-total-count 0. GET /:id, approve and reject on an order payment answer 404 NOT_FOUND. Storefront payments are read only through /admin/reports/payments and /admin/refunds. B2C money events (b2c_pay, b2c_fee, b2c_deliver, b2c_refund, b2c_chargeback) post ref_type 'order', never 'payment'. So a ledger refType=payment link always opens a deposit that /admin/payments/:id can serve.",
+        "basis": "The console's Payment.status and methodType words (finance/types/payments.ts) and the refunds PaymentStatus and PaymentMethod words (refunds/types). The Deposits tab always sends purpose=topup (paymentView.ts:41). ANSWERS finance Q5 and B37 fix the top-up words. Decision 024 keeps B2C traceability per order, and money.md's b2c_refund posts with ref order. Filtering to top-ups needs no mapping and no console change.",
+        "features": [
+          "8",
+          "16"
+        ],
+        "schemaChange": "Migration drizzle/0003: ALTER TABLE payments ADD CONSTRAINT payments_status_check CHECK ((purpose = 'topup' AND status IN ('pending','approved','rejected')) OR (purpose = 'order' AND status IN ('pending','captured','failed','refunded','partial_refund','disputed','chargeback'))); ADD CONSTRAINT payments_method_type_check CHECK ((purpose = 'topup' AND method_type IN ('bank','card','usdt','wise')) OR (purpose = 'order' AND method_type IN ('card','wallet','crypto'))). Add TOPUP_PAYMENT_STATUSES, ORDER_PAYMENT_STATUSES, TOPUP_METHODS and ORDER_METHODS consts and $type in money/db/schema.ts. No data conversion (payments is empty).",
+        "docFixes": "src/infra/db/README.md 'Open vocabularies': remove payments.status and payments.method_type. money/db/schema.ts: the comments on status and methodType. lead-decisions.json / extraction for money.md GET /admin/payments ('top-ups only; purpose=order → empty list'), GET /admin/payments/:id, approve and reject ('404 for an order payment'). MISMATCHES.md: new B-entry that extends B37 with the order vocabulary.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "money-3",
+        "endpoint": "GET /admin/payments, POST /admin/payments/:id/approve",
+        "decision": "Automatic-gateway top-ups. The confirmation webhook creates or updates the payment as status 'pending' with captured_at = the confirmation time and auto_credit_at = captured_at + max(setting payments.auto_credit_delay_minutes (10), hold_hours h). While waiting, note = 'Credited automatically after the gateway check at <time>'. The auto-credit job locks the row (SELECT … FOR UPDATE), re-checks the gateway API and risk, then posts the deposit (status approved, reviewed_by NULL, reviewed_at = now). On the wire that shows as reviewedBy {id: null, name: 'System'}. If the gateway no longer says confirmed, or risk flags the payment, the job sets review_required = true, note = the reason, and leaves it pending for staff. approve and reject are allowed only when the gateway is_manual or review_required = true. Otherwise they answer 409 PAYMENT_AUTO_CREDIT_PENDING (new code, detail 'PAY-<id> is credited automatically after the gateway check.'). The job and approve both lock the payment row, re-check status = 'pending', and post with the same ledger idempotency key 'deposit:payment:<id>'. A loser of the race gets 409 PAYMENT_ALREADY_REVIEWED, and its replay posts nothing.",
+        "basis": "User rule 6 (PROGRESS, settings Q9): automatic gateways credit by themselves after the delay, flagged payments go to staff review, and manual gateways keep staff review. The console's PaymentReviewer allows id null with a name. ANSWERS finance Q5 (pending-only guard plus ledger idempotency). The column, error code and lock order are technical choices.",
+        "features": [
+          "8",
+          "18"
+        ],
+        "schemaChange": "Migration drizzle/0003: ALTER TABLE payments ADD COLUMN review_required boolean NOT NULL DEFAULT false; ADD COLUMN auto_credit_at timestamptz NULL; CREATE INDEX payments_auto_credit_idx ON payments (auto_credit_at) WHERE status = 'pending' AND auto_credit_at IS NOT NULL. Existing rows: none. A B116-style schema addition.",
+        "docFixes": "error-codes.md and src/common/errors/catalog.ts: add PAYMENT_AUTO_CREDIT_PENDING (409, through lead-decisions.json). lead-decisions.json / extraction for money.md approve and reject (guard, shared idempotency key, the reviewedBy System rule) and GET /admin/payments (note while waiting). MISMATCHES.md: new B-entry citing user rule 6.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "money-4",
+        "endpoint": "GET /admin/reports/payments, GET /admin/refunds, GET /admin/refunds/:id",
+        "decision": "Add payments.brand, filled by the gateway driver at capture: card → '<Brand> •••• <last4>' ('Visa •••• 4242'), crypto → '<COIN> <network>' ('USDT TRC-20'), wallet → the wallet name ('Apple Pay'), top-ups → ''. It is sent as is and is never null. A driver that cannot tell sends ''. Refund payment.taxAmount = the VAT of the whole payment in base currency (USD): the sum of the vat_payable credit lines of the order's b2c_pay ledger transaction (ref_type order, ref_id = payments.order_id). That is the same source as the refund's own netAmount and taxAmount and as the VAT report. It is not orders.tax_amount, which is in the order currency.",
+        "basis": "The console requires brand: string and payment.taxAmount: Money (refunds/types). Decision 011 and B111: the ledger is in USD while the payment row keeps the original currency. The VAT report already reads vat_payable lines (money.md GET /admin/reports/vat). Card brand and last 4 digits may be stored (not PAN data).",
+        "features": [
+          "16"
+        ],
+        "schemaChange": "Migration drizzle/0003: ALTER TABLE payments ADD COLUMN brand text NOT NULL DEFAULT ''. Existing rows: none (default '').",
+        "docFixes": "lead-decisions.json / extraction for money.md GET /admin/refunds (payment.brand from payments.brand; payment.taxAmount from the b2c_pay vat_payable lines) and GET /admin/reports/payments (brand). MISMATCHES.md: add payments.brand to the B116 schema additions (new B-entry).",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "money-5",
+        "endpoint": "GET /admin/reports/payments, GET /admin/payment-gateways (volume30d)",
+        "decision": "The payments report lists purpose='order' payments with status IN (captured, refunded, partial_refund, disputed, chargeback). pending and failed are never listed or counted, which also applies to the methods[] figures. Status changes: refund completion sets partial_refund or refunded (completed refunds summed against amount). POST /webhooks/disputes/:gateway dispute.created sets 'disputed'. Dispute won sets it back to captured, or to partial_refund/refunded when completed refunds exist. Dispute lost (webhook or POST /admin/disputes/:id/accept) sets 'chargeback'. volume30d = Σ payments.amount through the gateway, any purpose, with captured_at >= now() - 30 days and status NOT IN ('pending','failed','rejected'), in base currency. Order payments are converted with the checkout session's locked fx_rate (B111). Top-ups are issued in the base currency.",
+        "basis": "The console's PaymentStatus words (refunds/types). Map scenario b2c-chargeback step 2 ('the payment, order and customer are marked'). ANSWERS settings Q3 ('captured payments, 30 days'). B111 for currency. Defining it by captured_at avoids the approved vs captured word clash between top-ups and order payments.",
+        "features": [
+          "16",
+          "8"
+        ],
+        "schemaChange": "",
+        "docFixes": "lead-decisions.json / extraction for money.md GET /admin/reports/payments (included statuses), POST /webhooks/disputes/:gateway (sets disputed and the outcome statuses), GET /admin/payment-gateways (volume30d definition by captured_at).",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "money-6",
+        "endpoint": "GET /admin/ledger/transactions, GET /admin/ledger/transactions/:id",
+        "decision": "ledger_transactions.ref_id becomes NOT NULL DEFAULT 0. A system posting (ref_type 'system': opening balances, gateway settlement) stores 0. refId is then always a number on the wire, and the console's referenceLink already treats refId <= 0 as no link. postTransaction rejects ref_id 0 for every ref_type other than 'system' (LEDGER_REF_REQUIRED, a 500-class programming error that is not exposed).",
+        "basis": "The console type refId: Id (non-null), and the fixture sends 0. This matches the existing convention audit_logs.entity_id = 0 (PROGRESS P2.3 notes). The frontend decides wire types.",
+        "features": [
+          "3"
+        ],
+        "schemaChange": "Migration drizzle/0003: ALTER TABLE ledger_transactions ALTER COLUMN ref_id SET DEFAULT 0, ALTER COLUMN ref_id SET NOT NULL; ADD CONSTRAINT ledger_transactions_ref_id_check CHECK (ref_id > 0 OR ref_type = 'system'). Existing rows: none. The append-only trigger blocks UPDATE, so no backfill is possible or needed. The migration asserts that the table is empty or has no null ref_id.",
+        "docFixes": "money/db/schema.ts: refId comment ('0 for system postings'). docs/decisions/024-ledger.md: one line on ref_id 0. src/infra/db/README.md: the 0-for-none convention now also covers ledger_transactions.ref_id.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "money-7",
+        "endpoint": "GET /admin/invoices, GET /admin/invoices/:id, POST /admin/invoices",
+        "decision": "Make the tax columns NOT NULL so the wire always carries the console's non-null values. net_amount is set by the service (top-up and manual = amount - fee, receipt = price without VAT). tax_amount defaults to 0 and tax_rate to 0 (B2B VAT rate setting, default 0, user rule 3). tax_country = clients.country for B2B (POST /admin/invoices refuses an empty country with 422 field clientId 'no billing country') or the checkout session's tax country for receipts. customer_vat_id defaults to ''. description keeps its NOT NULL DEFAULT '' column, and the wire sends '' as null.",
+        "basis": "The console's Invoice type (netAmount, taxAmount, taxRate, taxCountry, customerVatId non-null; description string|null). User rule 3 (no B2B VAT for now; the rate stays a setting). money.md already lists the 'no billing country' 422. NOT NULL guarantees the wire shape at the source.",
+        "features": [
+          "8",
+          "16"
+        ],
+        "schemaChange": "Migration drizzle/0003: ALTER TABLE invoices ALTER COLUMN net_amount SET NOT NULL (no default; the service sets it); ALTER COLUMN tax_amount SET DEFAULT 0, SET NOT NULL; ALTER COLUMN tax_rate SET DEFAULT 0, SET NOT NULL; ALTER COLUMN tax_country SET DEFAULT '', SET NOT NULL; ALTER COLUMN customer_vat_id SET DEFAULT '', SET NOT NULL. Data first, defensively (the table is empty): UPDATE invoices SET net_amount = coalesce(net_amount, amount - fee), tax_amount = coalesce(tax_amount, 0), tax_rate = coalesce(tax_rate, 0), tax_country = coalesce(tax_country, ''), customer_vat_id = coalesce(customer_vat_id, ''). Update money/db/schema.ts to match.",
+        "docFixes": "lead-decisions.json / extraction for money.md GET /admin/invoices (description '' → null; non-null tax fields and their sources) and POST /admin/invoices (taxCountry = merchant country, net = amount, tax 0).",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "money-8",
+        "endpoint": "GET /admin/payments, GET /admin/payments/:id",
+        "decision": "Keep payments.gateway_txn_id nullable, because the partial unique index (gateway_id, gateway_txn_id) WHERE NOT NULL depends on it. Manual bank or Wise transfers without a reference store NULL, and the wire sends gatewayTxnId '' for NULL. When a merchant types a bank reference on the receipt upload, it is stored there.",
+        "basis": "The console type gatewayTxnId: string (non-null). The frontend decides wire types. A NOT NULL '' value would break the uniqueness index.",
+        "features": [
+          "8"
+        ],
+        "schemaChange": "",
+        "docFixes": "lead-decisions.json / extraction for money.md GET /admin/payments Response ('gatewayTxnId: \"\" when the gateway gave none').",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "money-9",
+        "endpoint": "POST /admin/currencies/refresh-fx",
+        "decision": "Use the existing catalogue code FX_PROVIDER_DOWN (502), already in error-codes.md and catalog.ts, instead of FX_PROVIDER_UNAVAILABLE. It is sent only when no rate could be fetched at all (or the provider is not configured); a partial failure is 200 with failed[]. New decision 'FX provider': driver interface FxProvider with the default driver openexchangerates (USD base, wide currency list including JOD/SAR/AED, latest.json). Env: FX_PROVIDER (openexchangerates|manual, default manual in development), FX_API_KEY (secret, optional), FX_TIMEOUT_MS (default 5000). Calls go through OutboundHttp (decision 023: explicit timeout, no automatic retry). source in the answer = the driver name. With manual or a missing key: 502 FX_PROVIDER_DOWN with detail 'No exchange-rate provider is configured.'. A currency missing from the provider's answer goes to failed[] ('Not offered by the provider').",
+        "basis": "error-codes.md already has FX_PROVIDER_DOWN (the catalog must equal the list, decision 009). Inventing a second code would break the contract test. The console shows any error verbatim, so the code name does not matter to it. The provider choice is a technical decision for the lead.",
+        "features": [
+          "14b"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/extraction/ops-risk-refunds.json line ~105 (and lead-decisions.json if overridden): FX_PROVIDER_UNAVAILABLE → FX_PROVIDER_DOWN, then regenerate money.md. New docs/decisions/029-fx-provider.md (number per sequence). src/config/env.ts and .env.example: FX_PROVIDER, FX_API_KEY, FX_TIMEOUT_MS. PROGRESS decisions list.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "money-10",
+        "endpoint": "GET /admin/reports/client-statement/:clientId",
+        "decision": "Format final: PDF. Content-Type application/pdf; Content-Disposition attachment; filename=\"statement-<clientId>-<from>-<to>.pdf\" with filename*=UTF-8''… (ALIGNMENT §6), exposed through CORS Access-Control-Expose-Headers. Optional query from/to (YYYY-MM-DD, inclusive, in the business time-zone setting of finance Q7). The default is the whole history. 422 VALIDATION_FAILED on a bad date or from > to. Content: merchant header (name, company, country), period, opening balance, client_wallet lines (date, JRN-<id>, kind, memo, debit, credit, balance after), closing balance, the credit limit, then the invoices issued in the period (number, kind, status, total, paid at). It is rendered synchronously and streamed, not stored, with an audit entry. New decision 'PDF rendering': pdf-lib (pure TypeScript, no native or headless-browser dependency, runs on Bun) behind one PdfRenderer service in the platform module, shared by the statement (feature 11) and invoice PDFs (feature 8). An invoice PDF is rendered when the invoice is issued or paid and stored in files (S3, pdf_file_id). Content is in English (Latin fonts embedded; Arabic shaping is out of scope).",
+        "basis": "The console expects a file download (application/pdf fixture, statement-<id>.pdf fallback). money.md left 'PDF proposed', and no decision picks a renderer. Choosing the library is a lead technical decision; Bun compatibility is required by decision 001.",
+        "features": [
+          "11",
+          "8"
+        ],
+        "schemaChange": "",
+        "docFixes": "lead-decisions.json / extraction for money.md GET /admin/reports/client-statement/:clientId (final PDF, query, content, 422). New docs/decisions/030-pdf-rendering.md (number per sequence). ALIGNMENT.md §6: check that Content-Disposition is in the exposed headers. PROGRESS decisions list.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "money-11",
+        "endpoint": "GET /admin/refunds, POST /admin/refunds/:id/approve|retry",
+        "decision": "Apply B82 as resolved (user rule 7): refunds go out as status 'processing' from approval until the gateway answers, then completed or failed. A manual payout goes straight to completed. GET /admin/refunds accepts the filter status=requested|processing|completed|failed|rejected. retry sets processing again while the gateway call is in flight.",
+        "basis": "User rule 7 and B82 (resolved by console M258): the console's RefundStatus has processing. This is a later and more specific decision than the stale schema comment and ALIGNMENT §1 text.",
+        "features": [
+          "16"
+        ],
+        "schemaChange": "",
+        "docFixes": "money/db/schema.ts REFUND_STATUSES comment: replace 'processing is internal and reaches the console as completed' with 'processing is sent as is (B82 resolved, console M258)'. ALIGNMENT.md §1 line ~39: remove 'refund completed until the console adds processing'. lead-decisions.json / extraction ops-risk-refunds.json for money.md GET /admin/refunds Query: add processing to the status whitelist; retry Response: 'processing until the gateway answers'.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "money-12",
+        "endpoint": "GET /admin/refunds, GET /admin/refunds/:id",
+        "decision": "note: the wire sends '' as null (the column stays NOT NULL DEFAULT ''). refunds.method stores the wire words original|manual (B81 mapping applied at write: card/wallet → original, a crypto or hand payout → manual; store credit is not offered) with a CHECK. Only storefront refunds (customer_id set) are listed (ANSWERS refunds Q1). A CHECK guarantees that such rows have payment_id and order_id, so payment and order are always non-null objects on the wire.",
+        "basis": "The console's Refund type (note string|null, method original|manual, payment and order non-null). B81 (lead) maps the map's words to original|manual. ANSWERS refunds Q1 (storefront refunds only).",
+        "features": [
+          "16"
+        ],
+        "schemaChange": "Migration drizzle/0003: ALTER TABLE refunds ADD CONSTRAINT refunds_method_check CHECK (method IN ('original','manual')); ADD CONSTRAINT refunds_storefront_refs_check CHECK (customer_id IS NULL OR (payment_id IS NOT NULL AND order_id IS NOT NULL)). Add REFUND_METHODS const and $type in money/db/schema.ts. Existing rows: none.",
+        "docFixes": "money/db/schema.ts: the refunds.method comment. src/infra/db/README.md 'Open vocabularies': remove refunds.method. lead-decisions.json / extraction for money.md GET /admin/refunds (note '' → null; method stored as wire words).",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "money-13",
+        "endpoint": "GET /admin/currencies, POST /admin/currencies, PATCH /admin/currencies/:id",
+        "decision": "Narrow the decimals CHECK to 0-4 to match the validation (422 outside 0-4). rate_updated_at stays NOT NULL DEFAULT now() and is never null on the wire (the console's null branch is simply unused). isStale = non-base currency AND rate_updated_at older than 24 h.",
+        "basis": "money.md validation (0-4) and the console form. The DB should not allow values the API refuses. The console type IsoDateTime|null accepts a non-null value.",
+        "features": [
+          "3"
+        ],
+        "schemaChange": "Migration drizzle/0003: ALTER TABLE currencies DROP CONSTRAINT currencies_decimals_check; ADD CONSTRAINT currencies_decimals_check CHECK (decimals BETWEEN 0 AND 4). Existing rows: the seeded currencies all have decimals 2, so no conversion is needed. The migration fails loudly if any row is > 4.",
+        "docFixes": "money/db/schema.ts: decimals comment '(0 to 4)'. lead-decisions.json / extraction for money.md GET /admin/currencies: drop '(null = never)'; isStale by age only.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "money-14",
+        "endpoint": "POST /admin/payment-gateways, PATCH /admin/payment-gateways/:id",
+        "decision": "The console's write-only 'secret' is the driver's API credential. It is encrypted into config_enc (decision 019) as {\"secret\": \"…\"}, and secretHint = '••••' + its last 4 characters. The webhook signing secret goes to webhook_secret_enc through an optional write-only body field 'webhookSecret' on POST and PATCH. That is a backend addition the console does not send yet (extra request fields are additive), and it can also be set by the seed or ops. Each driver declares where its webhook signature key comes from. A driver whose provider signs with the API secret uses config_enc. Otherwise, a missing webhook_secret_enc makes /webhooks/payments/:code answer 400 WEBHOOK_SIGNATURE_INVALID, and GET /admin/payment-gateways stays unchanged.",
+        "basis": "The console has one secret field plus secretHint (settings/types/gateways.ts). The map's table has two columns. Making the console's single field the credential needs no console change. Which column the field fills is a lead technical decision.",
+        "features": [
+          "8"
+        ],
+        "schemaChange": "",
+        "docFixes": "lead-decisions.json / extraction for money.md POST and PATCH /admin/payment-gateways ('secret → config_enc; optional webhookSecret → webhook_secret_enc; secretHint reads config_enc'). MISMATCHES.md: a short B-entry for the webhookSecret backend addition.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "money-15",
+        "endpoint": "GET /admin/ledger/transactions",
+        "decision": "Search with a numeric q (after the console strips JRN-/# and leading zeros) matches id = q OR ref_id = q (any ref_type). Search with a text q matches memo, kind and the owner names of the lines, case-insensitively.",
+        "basis": "ANSWERS finance Q3 (a lead decision recorded in lead-decisions.json) is the specific answer. money.md is generated and fell behind it.",
+        "features": [
+          "3"
+        ],
+        "schemaChange": "",
+        "docFixes": "Fix the source (lead-decisions.json or the extraction entry for GET /admin/ledger/transactions) so that the regenerated money.md Query says 'numeric q matches the transaction id and ref_id', then rerun scripts/build-contract-docs.mjs.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      }
+    ]
+  },
+  {
+    "group": "catalog",
+    "resolutions": [
+      {
+        "finding": "catalog-1",
+        "endpoint": "GET /admin/services, GET/POST/PATCH /admin/services/:id, GET /admin/client-prices, GET /admin/pricing/resolve, PATCH basePrice / client-price / group-price floor checks",
+        "decision": "One effective-cost value used everywhere (B117 wins over RULES services 1 / ANSWERS Q7, being the later user decision). effective_cost = greatest(services.cost, supplier_services.credit x suppliers.credit_rate of the service's first active link (service_supplier_links.is_active = true, order by priority asc, id asc), 0 when no link). Stored in a new column services.effective_cost, recomputed by one catalog public function recomputeEffectiveCost(serviceIds, tx) called by: supplier import/cost writes (4a/6), supplier sync, link changes and supplier credit_rate changes (6). Floor = effective_cost + minProfit(service, group) (minProfit selection defined in catalog-4; default policy max(round(6% x effective_cost, 2), 0.02)). Wire: `cost` = effective cost (so cost + minProfit = floorPrice holds on screen), floorPrice, marginPct = (basePrice - cost)/basePrice x 100, belowFloor = basePrice < floorPrice, all computed in SQL (belowFloor filter and `_sort=cost` use effective_cost; rule minProfit via a LATERAL subquery). Merchant-less contexts (admin rows, belowFloor filter, PATCH basePrice 422, bulk preview/apply count, dashboard services_below_floor) use rules with group_id null only; client prices use the client's group; group prices use the row's group; resolve uses the merchant's group and returns cost = effective cost. costChangedFrom stays cost_was, and cost_was now means 'previous effective cost': any write that raises effective cost (import, sync) sets cost_was = coalesce(cost_was, old effective_cost); a base_price save clears it (catalog-14).",
+        "basis": "MISMATCHES B117 + PROGRESS user rule 9 (later, more specific) override RULES services 1 and ANSWERS services Q7; frontend Service/PriceResolution/ClientPrice types unchanged (cost, floorPrice, belowFloor already on the wire); M92 belowFloor filterable in SQL.",
+        "features": [
+          "4a",
+          "4b",
+          "6",
+          "9"
+        ],
+        "schemaChange": "services.effective_cost money() (numeric 4dp) NOT NULL DEFAULT '0', CHECK services_effective_cost_check (effective_cost >= cost). Index services_effective_cost_idx on (effective_cost). Data migration: UPDATE services s SET effective_cost = greatest(s.cost, coalesce((SELECT ss.credit * sp.credit_rate FROM service_supplier_links l JOIN supplier_services ss ON ss.id = l.supplier_service_id JOIN suppliers sp ON sp.id = ss.supplier_id WHERE l.service_id = s.id AND l.is_active ORDER BY l.priority, l.id LIMIT 1), 0)); then add the CHECK.",
+        "docFixes": "lead-decisions.json (source of catalog.md): GET /admin/services response 'floorPrice = cost + minProfit' -> 'cost = effective cost (B117), floorPrice = cost + minProfit'; same note on GET /admin/client-prices floorPrice, PATCH /admin/services/:id 422, POST/PATCH /admin/client-prices 422, GET /admin/pricing/resolve cost. RULES.md services 1: 'Floor = cost + minProfit' -> 'Floor = effective cost (B117) + minProfit'. ANSWERS.md services Q7: 'cost = services.cost in USD' -> 'cost = effective cost (MISMATCHES B117)'. ANSWERS services Q2: cost_was = previous effective cost. src/infra/db/README.md: list effective_cost as a catalog-maintained derived column.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "catalog-2",
+        "endpoint": "POST /admin/services",
+        "decision": "Close both vocabularies. price_mode: only 'fixed' (the resolver always starts from base_price, user rule 8; a margin mode is not specified anywhere and is not added). duplicate_rule: 'block_open' (refuse 409 DUPLICATE_ORDER when the same client has an open order for the same service and IMEI; matches nothing for services without an IMEI) | 'allow'. Create defaults (POST /admin/services and supplier import B24): price_mode 'fixed', duplicate_rule 'block_open', plus the existing status active, fulfillment auto, min_profit null, cost 0, effective_cost 0. Neither field is on the console wire; feature 5 enforces duplicate_rule at placement.",
+        "basis": "error-codes.md DUPLICATE_ORDER ('the map duplicate rule'); infra/db README open vocabularies left to Phase 3; frontend CreateServiceBody has no such fields, so server defaults.",
+        "features": [
+          "4a",
+          "5",
+          "6"
+        ],
+        "schemaChange": "services.price_mode text NOT NULL DEFAULT 'fixed', CHECK services_price_mode_check (price_mode IN ('fixed')); services.duplicate_rule text NOT NULL DEFAULT 'block_open', CHECK services_duplicate_rule_check (duplicate_rule IN ('allow','block_open')). Export SERVICE_PRICE_MODES / SERVICE_DUPLICATE_RULES consts. Data migration before the CHECKs: UPDATE services SET price_mode = 'fixed' WHERE price_mode <> 'fixed'; UPDATE services SET duplicate_rule = 'block_open' WHERE duplicate_rule NOT IN ('allow','block_open'). Seed writes the new values.",
+        "docFixes": "lead-decisions.json POST /admin/services Request defaults: add 'price_mode fixed, duplicate_rule block_open'. MISMATCHES B24 (supplier import): same defaults. src/infra/db/README.md 'Open vocabularies': remove services.price_mode and duplicate_rule. error-codes.md DUPLICATE_ORDER: 'when services.duplicate_rule = block_open'.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "catalog-3",
+        "endpoint": "DELETE /admin/services/:id",
+        "decision": "User decision applied. In one transaction: if the service has any orders, service_supplier_links or service_listings, or any other RESTRICT reference (inventory_codes, checkout_sessions, help_articles, imei_checks), ARCHIVE it: archived_at = now(), status = 'disabled', its scope='service' pricing_rules set is_active = false; fields/options/group prices/client prices/links/codes are kept (history; open orders continue and can still dispatch). Otherwise HARD DELETE: delete scope='service' pricing_rules with target_id = id, then the service (fields, options, group prices, client prices, supplier links cascade). Both answer 204 (no 409 SERVICE_IN_USE any more), audit-logged with action service.archived or service.deleted. An archived service is gone for every reader: GET /admin/services list and :id (404 NOT_FOUND), PATCH/PUT parts (404), GET /admin/client-prices, merchant catalogs (Dhru *servicelist, /v1/services, /client/services, price export), storefront listings (public and admin lists), bulk price, resolve (404); placement treats it as an unknown service; pricing rule rows still resolve its target {id,name}. Its code is freed for reuse (partial unique index). No restore route.",
+        "basis": "User decision (this run) on deleting a service with orders; RESTRICT FKs in orders, storefront, customers, risk and catalog schemas make a hard delete impossible for the other references, so they archive too (technical choice). Console handles 204 and its dialog copy ('removed from the catalog') stays true.",
+        "features": [
+          "4a",
+          "4b",
+          "5",
+          "7a",
+          "14a",
+          "15"
+        ],
+        "schemaChange": "services.archived_at timestamptz NULL (no default); CHECK services_archived_check (archived_at IS NULL OR status = 'disabled'); replace unique index services_code_uq on lower(code) with services_code_uq on lower(code) WHERE archived_at IS NULL; partial index services_live_type_status_idx on (type, status) WHERE archived_at IS NULL. Existing rows: archived_at stays null (nothing archived).",
+        "docFixes": "lead-decisions.json DELETE /admin/services/:id: replace 'Proposal: cascade ... refuse when orders or inventory codes reference it' and the 409 SERVICE_IN_USE error with the archive/hard-delete rule (accepted, user decision). RULES.md services 6: 'service with orders 409 SERVICE_IN_USE' -> 'service with orders, links, listings or other references is archived; otherwise deleted'. error-codes.md SERVICE_IN_USE: mark retired (no route answers it). Add a MISMATCHES B-entry recording the user decision and the console-mock difference (mock still answers 409).",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "catalog-4",
+        "endpoint": "GET /admin/pricing/resolve (and order pricing_snapshot)",
+        "decision": "One resolver (catalog public PriceResolver, used by resolve, orders, price lists, client/group price checks): (1) step 'client' (service_client_prices) wins; (2) step 'group' (service_group_prices for the group) wins if no client price; (3) step 'base' = services.base_price, apply unless fixed; (4) step id 'category' (kept for the console's fraction display), label 'Service rule' | 'Category rule' | 'Global rule' by the winning rule's scope: pick ONE rule with is_active, (starts_at null or <= now), (ends_at null or > now), group_id null or = the merchant's group, target matching (service: target_id = service id; category: target_id = category id; global); order by scope (service, category, global), then priority asc, then group-specific before group-null, then id asc. If not fixed: p = p x (1 + s x percent/100) + s x fixed, s = +1 for margin, -1 for discount/promo; value = signed fraction (after/before - 1, 4 dp), note names the rule and any fixed amount; (5) step 'discount' = client_groups.discount_percent/100, apply if not fixed; then round half-up to 2 dp; (6) step id 'rounding', label 'Rounding', emitted only when not fixed and the winning rule's rounding <> 'none': nearest_0.05 / nearest_0.10 = half-up to that step, ends_99 = floor(p) + 0.99; value and after = the rounded price; rawPrice = price after step 6; (7) floor clamp: floor = effective_cost + minProfit; price = max(rawPrice, floor), clamped. minProfit = services.min_profit if not null, else min_profit of the first rule in the step-4 order (same filters) with min_profit > 0, else max(round(6% x effective_cost, 2), 0.02). Without a merchant (admin rows, belowFloor, PATCH basePrice, bulk) only group_id-null rules match. otherGroups = every b2b group, no client override. Fixed (client/group) prices skip steps 4-6, as in the demo.",
+        "basis": "User rule 8 / OPEN-QUESTIONS 8 / ANSWERS services Q6 combined: the demo's order (Q6, user-decided) with rounding after the group discount (OQ8, user-accepted) and 'most specific scope wins, lowest priority within a scope' (Q6). Console PriceStep.id is a string; trace.ts formats unknown ids (rounding) as money and keeps fractions for 'category'/'discount', so no console change.",
+        "features": [
+          "4b",
+          "5"
+        ],
+        "schemaChange": "",
+        "docFixes": "RULES.md services 3: replace with the algorithm above (scopes service>category>global, window, group match, rounding step, minProfit selection). RULES services 1: minProfit selection 'a matching pricing rule' -> 'the first matching rule in resolver order with min_profit > 0; group-null rules only when there is no merchant'. ANSWERS services Q6 and OPEN-QUESTIONS 8: point to RULES services 3. lead-decisions.json GET /admin/pricing/resolve: step list adds optional 'rounding' and the dynamic label of 'category'. Remove 'mock pricing.ts:39-52 (category rule only)' as the authority.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "catalog-5",
+        "endpoint": "DELETE /admin/client-groups/:id",
+        "decision": "Extend B32: when the group can be deleted (no merchants, not default, not b2c_retail), in the same transaction delete its service_group_prices, the pricing_rules with group_id = id, and drop the id from payment_gateways.allowed_group_ids and service_categories.allowed_group_ids; then delete the group; 204; one audit entry listing the removed rule ids. Orders keep their pricing_snapshot, so deleting the rules loses no history.",
+        "basis": "B32 (accepted) already deletes the group's prices; pricing_rules.group_id FK RESTRICT would otherwise answer 500. Console expects 204 / 409 GROUP_IN_USE only.",
+        "features": [
+          "4a"
+        ],
+        "schemaChange": "",
+        "docFixes": "lead-decisions.json B32 / DELETE /admin/client-groups/:id: add 'and its pricing rules (pricing_rules.group_id)'.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "catalog-6",
+        "endpoint": "DELETE /admin/service-categories/:id",
+        "decision": "Delete only when no service row (live or archived) references the category: in the same transaction delete pricing_rules where scope = 'category' and target_id = id, then the category; 204; audit entry. With live services: 409 CATEGORY_IN_USE as today ('<name> still has N services. Move them to another category first.'). With only archived services (FK RESTRICT): 409 CATEGORY_IN_USE, detail '<name> still has N archived services kept for order history, so it cannot be deleted. Turn it off instead.' serviceCount counts live services only. Service-side rules on service delete/archive are covered by catalog-3.",
+        "basis": "pricing_rules.target_id is polymorphic with no FK; a dangling target would render as global in the console. Console handles 409 CATEGORY_IN_USE and shows the server detail.",
+        "features": [
+          "4a"
+        ],
+        "schemaChange": "",
+        "docFixes": "lead-decisions.json DELETE /admin/service-categories/:id: add the rule cleanup and the archived-services detail; RULES.md services 6 same.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "catalog-7",
+        "endpoint": "PATCH /admin/tac-catalog/:id",
+        "decision": "tac stays editable only while no imei_checks row references the old TAC. If any does, refuse with 422 VALIDATION_FAILED errors[{field:'tac', message:'N IMEI checks already use TAC <old>; add a new entry for the new TAC instead.'}]. No ON UPDATE CASCADE: imei_checks.tac records the TAC of the IMEI actually checked, a historical fact that must not change with a catalog edit. A new TAC already taken stays 409 TAC_TAKEN.",
+        "basis": "FK imei_checks.tac -> tac_catalog.tac ON UPDATE NO ACTION would answer 500; the console already handles 422 on field tac, so no new error code (no console change).",
+        "features": [
+          "14b"
+        ],
+        "schemaChange": "",
+        "docFixes": "lead-decisions.json PATCH /admin/tac-catalog/:id: 'tac stays editable' -> 'editable while no IMEI check uses it; otherwise 422 on tac'. ANSWERS storefront Q7 same qualifier. error-codes.md unchanged.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "catalog-8",
+        "endpoint": "GET /admin/tac-catalog, GET/POST/PATCH /admin/tac-catalog/:id",
+        "decision": "DB keeps release_year nullable (unknown years exist for import/imei_check entries). The wire follows the console type (releaseYear: number): an unknown year is sent as 0, which the console already shows as '-'. Input: releaseYear optional, a 4-digit integer 1990..(current year + 1); 0 or null in a body are refused with 422 (the console never sends them). Sorting by releaseYear puts unknown (null) first in asc order, matching 0.",
+        "basis": "User precedence: the frontend decides wire types; ALIGNMENT 'nullability follows the frontend type'; same pattern as regex/supplierKey sent as '' when none. This later rule overrides ANSWERS storefront Q7 ('send null').",
+        "features": [
+          "14b"
+        ],
+        "schemaChange": "",
+        "docFixes": "ANSWERS.md storefront Q7: 'send null when unknown' -> 'stored null, sent as 0 (console shows -)'. lead-decisions.json GET /admin/tac-catalog response: 'releaseYear (number; null when unknown...)' -> 'releaseYear (number; 0 when unknown)'. Add a MISMATCHES B-entry for the null -> 0 wire mapping.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "catalog-9",
+        "endpoint": "GET /admin/services, GET /admin/services/:id, POST/PATCH /admin/services",
+        "decision": "Make services.base_price NOT NULL and > 0. Every create path sets it: POST /admin/services requires basePrice > 0; supplier import (B24) uses the suggested price (effective cost + default minProfit, at least 0.02 above cost); PATCH basePrice must be > 0 (422 on basePrice). marginPct is then always defined; ClientPrice.service.basePrice is never null on the wire (still valid for the console's Money | null type).",
+        "basis": "Frontend Service.basePrice is non-null Money (wire wins); price_mode is only 'fixed' (catalog-2), so 'price from rules only' no longer exists.",
+        "features": [
+          "4a",
+          "6"
+        ],
+        "schemaChange": "services.base_price money() NOT NULL; replace CHECK services_prices_check with (cost >= 0 AND base_price > 0). Data migration first: UPDATE services SET base_price = round(cost + greatest(round(cost * 0.06, 2), 0.02), 2) WHERE base_price IS NULL OR base_price <= 0; then ALTER COLUMN base_price SET NOT NULL.",
+        "docFixes": "schema.ts comment on basePrice ('null when the price comes from rules only') removed. lead-decisions.json POST/PATCH /admin/services: basePrice > 0 on PATCH too. MISMATCHES B24: import sets base_price to the suggested price.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "catalog-10",
+        "endpoint": "POST /admin/service-categories, PATCH /admin/service-categories/:id",
+        "decision": "Duplicate name within the same type (case-insensitive, trimmed) answers 422 VALIDATION_FAILED errors[{field:'name', message:'A <type> category with this name already exists.'}]. Checked before the write and also mapped from a unique violation on service_categories_name_uq (race), never 500. A PATCH that changes only type is checked against the new type too.",
+        "basis": "Unique index service_categories_name_uq (type, lower(name)); same pattern as client groups; console handles 422 on name.",
+        "features": [
+          "4a"
+        ],
+        "schemaChange": "",
+        "docFixes": "lead-decisions.json POST and PATCH /admin/service-categories Errors: add 'name duplicate within the type (case-insensitive)'.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "catalog-11",
+        "endpoint": "PUT /admin/services/:id/options, PUT /admin/services/:id/group-prices",
+        "decision": "Both PUTs: 404 NOT_FOUND for an unknown or archived service. Options: value trimmed; a value repeated within the same list (exact match after trim) answers 422 errors[{field:'options.N.value', message:'Duplicate in the <list> list'}] with N = the later occurrence. Group prices: a groupId repeated answers 422 errors[{field:'prices.N.groupId', message:'Listed twice'}] (later occurrence). Unique violations on service_options_value_uq / service_group_prices_uq are mapped to the same 422, never 500.",
+        "basis": "Unique constraints in catalog schema; console shows dotted-path 422 errors.",
+        "features": [
+          "4a",
+          "4b"
+        ],
+        "schemaChange": "",
+        "docFixes": "lead-decisions.json PUT /admin/services/:id/options and /group-prices Errors: add the duplicate 422s and 404 NOT_FOUND.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "catalog-12",
+        "endpoint": "PUT /admin/services/:id/group-prices",
+        "decision": "Accept the proposal. Each b2b row: price must be >= the service floor for that group (effective cost + minProfit with the row's group, catalog-4), else 422 errors[{field:'prices.N.price', message:'Below the floor of $X (cost $Y plus $Z minimum profit).'}]. The b2c_retail row: price must be >= the storefront retail floor max(round(base_price x 1.10, 2), floor) (the same function PATCH /admin/service-listings uses), else 422 prices.N.price 'Below the storefront floor of $X.'. Rows kept unchanged from before are checked too (the whole set is validated). Bulk price apply keeps its accepted exception (saves under-floor base prices and counts them).",
+        "basis": "ANSWERS storefront Q10 (retail floor), ANSWERS services Q10 / M182 (one row, two writers must apply one rule), map 'selling below the minimum price is blocked'; console handles 422 prices.N.*.",
+        "features": [
+          "4b",
+          "15"
+        ],
+        "schemaChange": "",
+        "docFixes": "lead-decisions.json PUT /admin/services/:id/group-prices: replace 'Proposal: refuse a price under the floor' with the accepted rule incl. the b2c_retail floor; RULES.md services: add the rule (a new item next to 1).",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "catalog-13",
+        "endpoint": "PATCH /admin/services/:id",
+        "decision": "Invariant: services.type = its category's type, enforced in the DB by a composite FK. POST/PATCH: when the resulting categoryId and type differ, answer 422 errors[{field: 'categoryId' if categoryId was sent, else 'type', message:'<category> holds <type> services.'}]. PATCH /admin/service-categories type change: refused with 422 errors[{field:'type', message:'N services in this category are <type>. Move them first.'}] while live services are in it; archived services follow the change through ON UPDATE CASCADE.",
+        "basis": "services.type and service_categories.type both exist and category name is unique per type; Dhru lists group services by type and GROUPNAME. Console handles 422 on these fields.",
+        "features": [
+          "4a"
+        ],
+        "schemaChange": "service_categories: add unique constraint service_categories_id_type_uq on (id, type). services: add FK services_category_type_fk (category_id, type) REFERENCES service_categories (id, type) ON UPDATE CASCADE ON DELETE RESTRICT (keep or drop the single-column category_id FK; the composite one covers it). Data migration before the FK: UPDATE services s SET type = c.type FROM service_categories c WHERE c.id = s.category_id AND s.type <> c.type.",
+        "docFixes": "RULES.md services 5: add 'a service's type equals its category's type; a category with services cannot change type'. lead-decisions.json POST/PATCH /admin/services and PATCH /admin/service-categories Errors: add the 422s.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "catalog-14",
+        "endpoint": "PATCH /admin/services/:id",
+        "decision": "Any write of base_price (PATCH basePrice, bulk price apply) sets cost_was = null, so costChangedFrom becomes null; a minProfit-only PATCH does not clear it. The wire accepts minProfit: null (reset to the default policy) for API completeness; the console never sends it, and today the default can only be approximated by entering a value. No console change.",
+        "basis": "ANSWERS services Q2 ('cleared when a price is saved'); frontend UpdateServiceBody sends minProfit as Money only (no break if the server also accepts null).",
+        "features": [
+          "4a",
+          "4b"
+        ],
+        "schemaChange": "",
+        "docFixes": "lead-decisions.json PATCH /admin/services/:id: add 'saving basePrice clears costChangedFrom (cost_was); minProfit null resets to the default policy'. POST /admin/services/bulk-price/apply: 'clears cost_was of every repriced service'.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "catalog-15",
+        "endpoint": "GET /admin/inventory-codes, POST /admin/services/:id/inventory/import",
+        "decision": "batch_ref NOT NULL. Import: batchRef optional; when sent, trimmed, 1-40 chars of [A-Za-z0-9._-] (else 422 on batchRef); when absent, generated as 'B-' || lpad(nextval('inventory_batch_ref_seq')::text, 4, '0') ('B-0031'). maskedCode = 8 bullets + code_last4 ('••••••••1234'), fixed length so no decrypt per row. Server reject rule (counted in `rejected`, not 422): after trimming, length < 6 or > 128, or any whitespace or control character inside. Duplicates (counted): code_hash matches a non-void code of any service, or repeated in the same batch. 422 on codes only when the list is empty or longer than 10000 entries.",
+        "basis": "Frontend InventoryCode.batchRef is non-null string (wire wins); B18 stores only last4; mock behaviour promoted to the server rule.",
+        "features": [
+          "4a"
+        ],
+        "schemaChange": "CREATE SEQUENCE inventory_batch_ref_seq; inventory_codes.batch_ref text NOT NULL, CHECK inventory_codes_batch_ref_check (batch_ref <> ''). Data migration: UPDATE inventory_codes SET batch_ref = 'B-0000' WHERE batch_ref IS NULL OR batch_ref = ''; setval('inventory_batch_ref_seq', greatest(1, coalesce((SELECT max(substring(batch_ref from '^B-([0-9]+)$')::int) FROM inventory_codes), 0))); then SET NOT NULL.",
+        "docFixes": "lead-decisions.json GET /admin/inventory-codes: maskedCode = 8 bullets + last 4; POST import: batchRef format and generation, reject rule (server rule, not only mock).",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "catalog-16",
+        "endpoint": "GET /admin/client-prices",
+        "decision": "groupPrice = the resolver result for the merchant's group without the client override, after the 2-dp rounding, the rule rounding step and the floor clamp (equal to that group's otherGroups price), sent as a 4-dp string ('0.1200'). null only when the service cannot be priced (never in practice since base_price is NOT NULL).",
+        "basis": "RULES services 11 (half-up 2 dp at named points); one resolver (catalog-4).",
+        "features": [
+          "4b"
+        ],
+        "schemaChange": "",
+        "docFixes": "lead-decisions.json GET /admin/client-prices: 'groupPrice ... after rounding and the floor clamp'. Log the fixture difference ('0.1196' unrounded) in MISMATCHES; the frontend mock (merchants mocks/dto.ts toPrice) may be aligned later, optional, no wire change.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "catalog-17",
+        "endpoint": "POST /admin/client-groups, PATCH /admin/client-groups/:id",
+        "decision": "depositLimit = the most a merchant of the group may add in one deposit; 0 = no per-deposit limit (gateway min/max still apply); a deposit above a non-zero limit is refused at deposit creation with 422 on amount (feature 8). earnThreshold: a group with earnThreshold 0 (the default group, and any group left at 0) is never a promotion target; the nightly job (user rule 1) promotes to the b2b group with the highest earnThreshold > 0 that is <= the merchant's spend and above the current group's threshold; b2c_retail is never a target. Both must be >= 0.",
+        "basis": "New groups default to 0 in the schema and in the console dialog; reading 0 as 'no deposits' would block every new group, so 0 = no limit (technical choice). User rule 1 for promotion.",
+        "features": [
+          "4a",
+          "8"
+        ],
+        "schemaChange": "client_groups: add CHECK client_groups_amounts_check (earn_threshold >= 0 AND deposit_limit >= 0 AND discount_percent >= 0 AND discount_percent <= 100). Existing rows already satisfy it (defaults 0).",
+        "docFixes": "lead-decisions.json GET/POST /admin/client-groups: 'depositLimit (USD, most a merchant may add at once; 0 = no limit)'; RULES.md merchants: add the promotion-target rule (threshold 0 never a target) and the deposit limit meaning; endpoints doc for deposits (finance) cites the 422.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      }
+    ]
+  },
+  {
+    "group": "orders-suppliers",
+    "resolutions": [
+      {
+        "finding": "orders-suppliers-1",
+        "endpoint": "GET /admin/orders (pastSla filter) + GET /admin/system/orders-health",
+        "decision": "B92 wins (accepted later than ANSWERS orders Q5 and restated by decision 025): pastSla is one age-only predicate shared by both routes, with no queue exclusion: orders.status IN ('pending','processing') AND orders.placed_at < now() - make_interval(mins => services.sla_minutes). The clock is placed_at (it is what the partial index orders_open_idx (dispatch_state, placed_at) WHERE status open covers, and health.md already uses it). Placement never sets placed_at or created_at explicitly, so both take the same transaction now() and the wire createdAt (= created_at), which the console's SlaCell uses, is the same instant. Add a contract test that placed_at = created_at on every placement path. Queue/status filters combine with AND, so System health's link 'queue=needs_attention&pastSla=true' (M230) now lists rows. Implement the predicate once, in the orders read model (exported query fragment), and use it from feature 9.",
+        "basis": "MISMATCHES B92 (accepted) and decision 025 ('one predicate for orders and System health') beat RULES orders 4 / ANSWERS orders Q5 (earlier, extraction-time). Map scenario system-alert step 9 counts needs_attention among stuck orders. Wire: Order.createdAt is the only date the console has.",
+        "features": [
+          "5",
+          "9"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/RULES.md orders rule 4: replace with 'open (pending|processing) and now - placed_at > services.sla_minutes; no queue exclusion (B92)'; also update the M230 bullet (link now works). docs/contract/ANSWERS.md orders Q5: mark superseded by B92, drop the advice to remove pastSla from the System health link. docs/contract/endpoints/orders.md GET /admin/orders Query: add the pastSla definition. docs/decisions/025-order-state-machine.md: state the clock (placed_at, equal to created_at). docs/contract/endpoints/health.md orders-health: keep placed_at, cite the shared predicate.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "orders-suppliers-2",
+        "endpoint": "GET /admin/orders, GET /admin/orders/:id",
+        "decision": "The wire follows the console: imei is always a string. orders.imei holds the order's main input, written at placement by one shared orders helper used by every placement path (Dhru, REST v1, portal, admin, store): type imei → the IMEI; server/remote → the value of the service's first required service_field by sort (e.g. username, serial, account); file → the first field value if the service has fields, else the uploaded file's original name. The column stays nullable (anonymisation erases it to NULL, and a service with no input leaves it NULL); the read model sends COALESCE(imei, ''). Bulk-reply preview matches only non-empty imei values (whitespace removed), so '' never matches.",
+        "basis": "ALIGNMENT §1 (nullability follows the frontend type); frontend Order.imei: string and its comment 'main input for every service type'; fixtures send strings for file orders; ANSWERS orders Q13 (bulk reply matches orders.imei).",
+        "features": [
+          "5",
+          "7a",
+          "14a"
+        ],
+        "schemaChange": "No column change (orders.imei stays nullable text). Update the column comment in src/modules/orders/db/schema.ts from 'null for server and file orders' to 'main input of the order (IMEI, first required field, or file name); null only when erased or absent; sent as empty string'.",
+        "docFixes": "docs/contract/endpoints/orders.md: GET /admin/orders and /:id Response say what imei holds per type and that it is '' when empty; bulk-reply preview says blank imei never matches. RULES orders: add a rule for the main input. Log in MISMATCHES (frontend wins wire, column kept nullable).",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "orders-suppliers-3",
+        "endpoint": "GET /admin/supplier-api-logs, GET /admin/supplier-api-logs/:id",
+        "decision": "Make the columns non-null so the wire never carries null: a call with no HTTP answer (timeout, connection refused) stores http_status 0, duration_ms = the time waited (always measured by the outbound client), error = the reason ('Timed out after 15000 ms', 'Connection refused'); a successful call stores error ''. A supplier-level failure with an HTTP answer stores the real status and the supplier's error text. The console then renders 0 red and '' as OK.",
+        "basis": "Frontend wire httpStatus: number, durationMs: number, error: string (ALIGNMENT: never send a value the type does not list); ANSWERS suppliers Q8.",
+        "features": [
+          "6"
+        ],
+        "schemaChange": "supplier_api_logs.http_status integer NOT NULL DEFAULT 0; supplier_api_logs.duration_ms integer NOT NULL DEFAULT 0; supplier_api_logs.error text NOT NULL DEFAULT ''. Migration: UPDATE supplier_api_logs SET http_status = COALESCE(http_status,0), duration_ms = COALESCE(duration_ms,0), error = COALESCE(error,'') (table is empty after Phase 2; the update is for safety), then SET NOT NULL and the defaults. Add CHECK supplier_api_logs_numbers_check (http_status >= 0 AND duration_ms >= 0).",
+        "docFixes": "docs/contract/endpoints/suppliers.md GET /admin/supplier-api-logs Response: replace 'httpStatus null/0' with 'httpStatus 0 when no HTTP answer' and \"error '' or null\" with \"error '' when it worked\". src/infra/db/README.md if it lists these as nullable.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "orders-suppliers-4",
+        "endpoint": "GET /admin/suppliers, GET /admin/suppliers/:id (and create/patch responses)",
+        "decision": "Add a stored hint: suppliers.api_key_hint = the first 5 characters of the API key, written in the same UPDATE/INSERT that writes api_key_enc (POST, and PATCH when apiKey is sent); an omitted key on PATCH keeps both. Never decrypt on read. Null when no key is stored. Wire apiKeyHint = the column.",
+        "basis": "RULES suppliers 4 and M68 ('store a hint at write'); frontend apiKeyHint: string|null; decrypting every list read (polled every 30 s) is costly and widens key exposure (decision 019).",
+        "features": [
+          "6"
+        ],
+        "schemaChange": "suppliers.api_key_hint text NULL (no default). Existing rows: none (table empty); a backfill is not possible without decrypting, so leave NULL. Record it in MISMATCHES B116's schema-additions list.",
+        "docFixes": "docs/contract/MISMATCHES.md B116: add suppliers.api_key_hint. docs/contract/endpoints/suppliers.md: GET list says apiKeyHint from api_key_hint; POST/PATCH write it.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "orders-suppliers-5",
+        "endpoint": "GET /admin/suppliers, GET /admin/suppliers/:id",
+        "decision": "One shared health computation returns CHECK_STATUSES words (ok|degraded|down|unknown) and GET /admin/system/suppliers keeps them. The /admin/suppliers read model maps on the wire: ok→up, degraded→degraded, down→down, unknown (no checks yet)→up. Contract test: the /admin/suppliers health field only ever contains up|degraded|down.",
+        "basis": "Frontend enum for /admin/suppliers is up|degraded|down (wire format follows the console); B22 (share one implementation); POST response already says 'health up until checks say otherwise'.",
+        "features": [
+          "6",
+          "9"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/endpoints/suppliers.md GET /admin/suppliers Response: add the mapping; POST Response: drop '(proposal)' after 'health up until checks say otherwise'. Log in MISMATCHES.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "orders-suppliers-6",
+        "endpoint": "POST /admin/suppliers/:id/sync",
+        "decision": "B25 (lead change, later and more specific) stands and is reconciled with ANSWERS Q6 by cause: the API waits for the supplier-sync job up to timeout_ms + 5 s. Job finished OK → 200 SyncResult. Job finished with a supplier failure (unreachable, refused, or the supplier call itself timed out inside the job) → 409 SUPPLIER_UNAVAILABLE with a readable detail. The wait ran out while the job still runs → 504 SUPPLIER_TIMEOUT, detail 'The sync is taking longer than expected and continues in the background; refresh in a minute.' Disabled supplier → 409 SUPPLIER_DISABLED (paused suppliers may sync: paused only stops new orders). Unknown id → 404 NOT_FOUND; no suppliers:update → 403.",
+        "basis": "MISMATCHES B25 / lead-decisions.json #25 (changed by the lead) is later than ANSWERS suppliers Q6; console shows any refusal verbatim, so 504 needs no console change.",
+        "features": [
+          "6"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/endpoints/suppliers.md sync Errors: add 504 SUPPLIER_TIMEOUT and 404 NOT_FOUND; narrow 409 SUPPLIER_UNAVAILABLE to 'the sync job failed to reach the supplier'. docs/contract/error-codes.md: add POST /admin/suppliers/:id/sync to SUPPLIER_TIMEOUT routes. docs/contract/ANSWERS.md suppliers Q6: narrow 'timed out' to a failed supplier call inside the job, note B25 for the API wait.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "orders-suppliers-7",
+        "endpoint": "GET /admin/suppliers (runwayDays, lowBalance)",
+        "decision": "runwayDays = (suppliers.balance × suppliers.credit_rate) / (SUM(orders.total_cost) of the supplier's orders with status completed and completed_at >= now() - 7 days / 7), rounded to 1 decimal; null when that 7-day spend is 0. lowBalance = balance < low_balance_alert (both in the supplier's own currency/credits) OR (runwayDays IS NOT NULL AND runwayDays < 2).",
+        "basis": "RULES suppliers 3 and 10, ANSWERS suppliers Q3 (balance in supplier credits, credit_rate converts to base USD; order costs are USD).",
+        "features": [
+          "6"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/endpoints/suppliers.md GET /admin/suppliers Response and RULES suppliers 3: write both formulas and that low_balance_alert is in the supplier's currency.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "orders-suppliers-8",
+        "endpoint": "DELETE /admin/suppliers/:id",
+        "decision": "In one transaction: refuse 409 SUPPLIER_IN_USE (ANSWERS suppliers Q11 wording) when any orders row references the supplier (open → 'It has N open orders…', closed only → 'has order history'), any service_supplier_links row points at one of its supplier_services, any supplier_api_logs row of it has order_id NOT NULL (order call history, e.g. an order later rerouted away), or any imei_checks row references it. Otherwise delete its supplier_api_logs rows (all have order_id NULL: test/sync only), then the supplier (supplier_services and service_checks go by their CASCADE FKs), write audit_logs, answer 204. So a supplier that was only tested/synced can be deleted.",
+        "basis": "RULES suppliers 6 and ANSWERS suppliers Q11 (refuse when orders or links use it); FKs orders.supplier_id, supplier_api_logs.supplier_id, imei_checks.supplier_id, service_supplier_links.supplier_service_id are RESTRICT; test/sync logs are not business history. Avoids the 500 on FK violation.",
+        "features": [
+          "6"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/endpoints/suppliers.md DELETE: Errors drop '(proposal)' and list all four blockers; Response says test/sync logs are deleted with it. RULES suppliers 6 likewise. Add a test 'tested but never used supplier deletes with 204'.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "orders-suppliers-9",
+        "endpoint": "POST /admin/suppliers",
+        "decision": "Server defaults when omitted: lowBalanceAlert '150.0000', maxConcurrency 5, rateLimitPerMin 60, timeoutMs 15000, also as DB defaults. driver ∈ dhru|rest, else 422 VALIDATION_FAILED errors[{field: driver}]. param_format is not on the wire: the server derives it from driver (dhru → 'dhru_xml', rest → 'json') on create and when PATCH changes driver. Validation: maxConcurrency 1..100, rateLimitPerMin 1..10000, timeoutMs 1000..120000 (422 on the field), currency ^[A-Z]{3}$.",
+        "basis": "Frontend POST body (no paramFormat; optionals) and fixture defaults; RULES suppliers M67 ('accept those fields with defaults'); endpoint doc drivers dhru|rest (connection.ts:8-11).",
+        "features": [
+          "6"
+        ],
+        "schemaChange": "suppliers.driver: add CHECK suppliers_driver_check (driver IN ('dhru','rest')). suppliers.param_format: add CHECK suppliers_param_format_check (param_format IN ('dhru_xml','json')), keep NOT NULL, no default (writer derives it). suppliers.low_balance_alert: DEFAULT '150' (was '0'). suppliers.max_concurrency DEFAULT 5, rate_limit_per_min DEFAULT 60, timeout_ms DEFAULT 15000; add CHECK suppliers_limits_check (max_concurrency > 0 AND rate_limit_per_min > 0 AND timeout_ms > 0). Existing rows: none (table empty).",
+        "docFixes": "docs/contract/endpoints/suppliers.md POST: defaults are server defaults (not 'mock'); paramFormat derived from driver; add 422 on driver and limits. src/infra/db/README.md: remove suppliers.driver and param_format from the open vocabularies.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "orders-suppliers-10",
+        "endpoint": "POST /admin/suppliers/:id/import",
+        "decision": "For each new item create a service with: type = lower(supplier_services.type) when it is imei|server|remote|file, else the item is refused with 422 errors[{field: supplierServiceIds}] naming it (nothing imported); category = find-or-create service_categories by (type, lower(name)) with name = remote_group, or 'Imported' when remote_group is ''; fulfillment 'auto'; code 'IMP-<supplierServiceId>', and on a lower(code) collision append '-2', '-3', … until free; sla_minutes parsed from supplier_services.time (case-insensitive: 'instant' → 5; 'N min(utes)' → N; 'N[-M] hour(s)' → upper bound × 60; 'N[-M] day(s)' → upper bound × 1440), falling back to the setting catalog.importDefaultSlaMinutes (default 1440) when it cannot be parsed or gives 0; delivery_time = the supplier's time text; price_mode, duplicate_rule and other NOT NULL catalog columns take the same server defaults as POST /admin/services (catalog findings). Changed items whose linked service is archived count as unchanged (no update).",
+        "basis": "MISMATCHES B24 (server chooses a category); services NOT NULL columns and CHECK sla_minutes > 0 (catalog schema); service_categories unique (type, lower(name)); user decision on archived services; a long fallback avoids flooding pastSla with false breaches.",
+        "features": [
+          "6",
+          "4a"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/endpoints/suppliers.md POST import Response: replace 'code e.g. IMP-<id>' and 'SLA from time' with the exact rules above; add the setting catalog.importDefaultSlaMinutes to the settings list. Log the choices in MISMATCHES.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "orders-suppliers-11",
+        "endpoint": "POST /admin/orders/:id/accept, reply, reject, reopen, refund, verification, dispatch, fetch, change-supplier",
+        "decision": "dispatch_state transition table (decision 025 addendum): placement → held (B2C risk hold) | done (inventory code delivered at once) | manual (fulfillment manual or no active supplier link) | pending (else; dispatch job enqueued). Dispatch job: REFERENCEID → sent (status processing, sent_at); explicit refusal, timeout, or no eligible link (disabled/paused/costlier than the charged price, B117(6)) → needs_attention (status unchanged, review event with reason). Poll/fetch: STATUS 4 → done + completed; STATUS 3 → done + rejected; still running from needs_attention → sent. accept: manual → operator (status processing, queue null). reply: any open, not held → done + completed. reject: any open, not held → done + rejected. refund (B2B completed): stays done, status rejected. reopen: completed → operator (status processing, queue null). verification accept: stays done (verification_status accepted); verification refund: done + rejected (refunded). Risk approve: held → pending (or manual per the placement rule); risk refund: held → done + rejected. Merchant cancel: pending|manual|held → done + rejected. Staff dispatch: from needs_attention|manual|operator → pending + job; pending → 204 no-op (already queued); held → 409 ORDER_HELD; sent → 409 ALREADY_SENT ('The supplier already has this order: fetch it, or change supplier with a reset reference first'). change-supplier: keeps dispatch_state, except sent + resetReference → needs_attention (reason 'Supplier changed: dispatch needed'); with dispatch: true → pending + job. Queue derivation unchanged: operator, sent, done → null. Each action gets a test of its resulting queue.",
+        "basis": "Decision 025 defines the seven states but no per-action writes; RULES orders 2 queue derivation; accept must give {status: processing, queue: null}; M26 (order stays dispatchable after change-supplier); map timeout step 10 (never auto re-send).",
+        "features": [
+          "5",
+          "6",
+          "18"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/decisions/025-order-state-machine.md: add the transition table. docs/contract/endpoints/orders.md: each action section states the dispatch_state it writes; dispatch Errors add 409 ALREADY_SENT. docs/contract/error-codes.md: add ALREADY_SENT (409, POST /admin/orders/:id/dispatch). RULES orders 2: pin operator/sent/done → null and cite the table.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "orders-suppliers-12",
+        "endpoint": "POST /admin/orders/:id/change-supplier, POST /admin/orders/:id/dispatch",
+        "decision": "B117(6) scope: it applies only to automatic failover by the dispatch job (never fail over to a link whose cost is above the order's charged price; the order goes to needs_attention). A staff change-supplier is an explicit human choice and is allowed even when the new link costs more: the server refreshes unit_cost = credit × credit_rate (4 dp USD) and total_cost = unit_cost × quantity from the chosen link (price unchanged), and writes order_events supplier_changed data {fromSupplierId, toSupplierId, resetReference, costAbovePrice: true|false} so the loss shows in reports. The following staff dispatch sends to the order's chosen supplier service as is (no B117(6) check on a staff dispatch).",
+        "basis": "B117(6) is a lead default (not the user's rule) and is listed as such in PROGRESS user rule 9; narrowing its scope is the lead's call. The console offers every enabled, not-down supplier for reroute (RetryMenu.tsx) and shows no cost warning, so refusing would block staff with no alternative.",
+        "features": [
+          "6"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/MISMATCHES.md B117 (6): add 'automatic failover only; staff change-supplier and dispatch may use a costlier link (recorded as costAbovePrice)'. docs/contract/endpoints/orders.md change-supplier: drop '(proposal)' on the cost refresh, add the scope; dispatch: same. RULES orders: add the rule. PROGRESS user rule 9 row: add 'automatic only'.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "orders-suppliers-13",
+        "endpoint": "GET /admin/suppliers/:id (links[].cost)",
+        "decision": "Decided: links[].cost = supplier_services.credit × suppliers.credit_rate, rounded to 4 dp, USD Money string. The mock's service cost is a mock difference.",
+        "basis": "Frontend SupplierLink.cost comment 'What the supplier charges for it'; ANSWERS suppliers Q3 (cost USD = credit × credit_rate); same formula as B117(1) effective cost.",
+        "features": [
+          "6"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/endpoints/suppliers.md GET /:id Response: remove 'Proposal:' and the mock note becomes a MISMATCHES line. docs/contract/MISMATCHES.md: add 'mock sends services.cost for links[].cost; backend sends credit × credit_rate'.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "orders-suppliers-14",
+        "endpoint": "GET /admin/orders, GET /admin/orders/:id",
+        "decision": "NULL means 'none' (matches the console's string|null and the mock). Values: requested (buyer asked), accepted, refunded (staff decision). Wire sends the column as is.",
+        "basis": "Frontend verificationStatus: string|null with null fixtures; ANSWERS orders Q11 values; src/infra/db/README.md says the owning feature adds the CHECK.",
+        "features": [
+          "5"
+        ],
+        "schemaChange": "orders.verification_status: add CHECK orders_verification_status_check (verification_status IS NULL OR verification_status IN ('requested','accepted','refunded')). Data: UPDATE orders SET verification_status = NULL WHERE verification_status = 'none' before adding the CHECK (no rows exist today). Add const ORDER_VERIFICATION_STATUSES in src/modules/orders/db/schema.ts.",
+        "docFixes": "docs/contract/ANSWERS.md orders Q11: 'none' is stored as NULL. src/infra/db/README.md: remove orders.verification_status from open vocabularies. src/modules/orders/db/schema.ts column comment.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "orders-suppliers-15",
+        "endpoint": "GET /admin/orders/:id/events",
+        "decision": "order_events.type uses the console's words: created (placement, not 'placed'), hold, dispatch (sent to supplier), ack (REFERENCEID received), accepted, completed, settle, rejected, release, refund, retry (staff dispatch), review (a queue opened, data.reason), reopened, supplier_changed, verification, note, paid, risk, notify, dispute, plus fetch. A fetch that finds the order still running writes type 'fetch' with data.message 'Supplier has not finished yet'.",
+        "basis": "Frontend event wording list (unknown types are humanized unless data.message is set); orders.md fetch section; README open vocabulary to be closed by the owning feature.",
+        "features": [
+          "5",
+          "6"
+        ],
+        "schemaChange": "order_events.type: add CHECK order_events_type_check (type IN ('created','hold','dispatch','ack','accepted','completed','settle','rejected','release','refund','retry','review','reopened','supplier_changed','verification','note','paid','risk','notify','dispute','fetch')); add const ORDER_EVENT_TYPES in src/modules/orders/db/schema.ts. No rows exist (append-only trigger does not block ALTER ADD CONSTRAINT). New types later need a migration.",
+        "docFixes": "src/modules/orders/db/schema.ts order_events.type comment ('placed, accepted, sent…' → the list). src/infra/db/README.md: remove order_events.type from open vocabularies. docs/contract/endpoints/orders.md events and fetch sections: list the types and the fetch message.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "orders-suppliers-16",
+        "endpoint": "GET /admin/suppliers, GET /admin/suppliers/:id",
+        "decision": "Send creditRate as stored: numeric(18,8) as an 8-dp decimal string (e.g. '1.00000000'); no trimming, no rounding. Contract test: matches ^\\d+\\.\\d{8}$.",
+        "basis": "Frontend creditRate is a Decimal string (any decimal accepted); the column is fxRate numeric(18,8); trimming would lose precision for real FX rates.",
+        "features": [
+          "6"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/endpoints/suppliers.md GET list Response: 'creditRate an 8-dp decimal string as stored'. MISMATCHES: mock sends 4 dp.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "orders-suppliers-17",
+        "endpoint": "POST /admin/orders/:id/change-supplier",
+        "decision": "Body {supplierId?, resetReference?, dispatch?}. supplierId omitted → keep the current supplier/supplier service and apply only resetReference (supplier_ref = NULL). Neither supplierId nor resetReference: true → 422 VALIDATION_FAILED errors[{field: supplierId}] 'Choose a supplier or reset the reference'. supplierId with no active link of the order's service to that supplier → 422 errors[{field: supplierId}] (decided, ANSWERS orders Q9). Same supplier and no reset → 204 with no event.",
+        "basis": "Frontend body type has supplierId optional; ANSWERS orders Q9 accepted the 422.",
+        "features": [
+          "6"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/endpoints/orders.md change-supplier: add the omitted/empty-body rules; drop '(proposal)' from the 'no link to that supplier' 422 and from 409 SUPPLIER_DISABLED.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "orders-suppliers-18",
+        "endpoint": "POST /admin/orders/:id/reject",
+        "decision": "reject Errors gain 409 USE_REFUNDS (B2C order delivered before, then reopened). reopen, verification, reply and reject all list 404 NOT_FOUND (unknown id) and 403 FORBIDDEN (reopen: orders:reopen; others: orders:update).",
+        "basis": "MISMATCHES B16 and ANSWERS orders Q8 (decided); RULES orders 8 permissions.",
+        "features": [
+          "5"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/endpoints/orders.md: reject Errors add 409 USE_REFUNDS, 404, 403; reopen add 404; verification add 404, 403; reply add 404, 403. docs/contract/error-codes.md USE_REFUNDS routes: add POST /admin/orders/:id/reject.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "orders-suppliers-19",
+        "endpoint": "POST /admin/orders/:id/dispatch, POST /admin/orders/bulk-reply/apply, GET /admin/orders/export",
+        "decision": "Decided, no longer proposals: 409 NO_SUPPLIER (dispatch on an order whose service has no active supplier link and the order has no supplier service), 409 SUPPLIER_DISABLED (dispatch/change-supplier target supplier disabled or paused), 409 ORDER_HELD (dispatch, reply, reject on a held B2C order). bulk-reply/apply: at most 500 items, else 422 VALIDATION_FAILED errors[{field: items}] 'At most 500 orders per apply'. export: count first; more than 100000 matching rows → 422 VALIDATION_FAILED with detail 'Too many rows (N); narrow the filters (max 100000)'; every export writes audit_logs.",
+        "basis": "ANSWERS orders Q12 (hard cap, audit-logged); RULES orders 9 / M28 (held orders only via risk); decision 025; M23 (per-item results; ~200 sequential calls means 500 is enough).",
+        "features": [
+          "5",
+          "6"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/endpoints/orders.md: drop 'proposal' from NO_SUPPLIER, SUPPLIER_DISABLED, ORDER_HELD, the bulk cap and the export cap; write the numbers. docs/contract/error-codes.md: drop 'proposal:' from NO_SUPPLIER and ORDER_HELD and mark them decided.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "orders-suppliers-20",
+        "endpoint": "GET /admin/suppliers (reviewOrders)",
+        "decision": "reviewOrders = count of the supplier's open orders (status pending|processing, orders.supplier_id = the supplier) whose dispatch_state is needs_attention (derived queue needs_attention). openOrders = all open orders of the supplier, including those.",
+        "basis": "ANSWERS suppliers Q1; queue derivation (decision 025): manual and review orders have no supplier call yet and verification orders are closed, so needs_attention is the only supplier-related review queue.",
+        "features": [
+          "6"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/endpoints/suppliers.md GET /admin/suppliers Response: define openOrders and reviewOrders.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      }
+    ]
+  },
+  {
+    "group": "health-commissions",
+    "resolutions": [
+      {
+        "finding": "health-commissions-1",
+        "endpoint": "GET /admin/commission-plans (+ /:id, POST, PATCH)",
+        "decision": "tiers is a JSON object on the wire and in the DB. Store as sent (any JSON object, {} when none); POST/PATCH answer 422 VALIDATION_FAILED errors[{field:'tiers'}] when tiers is not a plain object (array, string, null). Read back {} for a plan with no tiers, never [].",
+        "basis": "ANSWERS commissions Q5 (free JSON object) + endpoints/commissions.md + console CommissionPlan.tiers JsonObject (frontend decides wire shape); the jsonList() column was a schema guess (README 'type guesses'), so the accepted answer wins.",
+        "features": [
+          "11"
+        ],
+        "schemaChange": "commission_plans.tiers: jsonList() -> jsonObject() (jsonb NOT NULL DEFAULT '{}'::jsonb). Migration: ALTER COLUMN tiers SET DEFAULT '{}'::jsonb; UPDATE commission_plans SET tiers = CASE WHEN tiers = '[]'::jsonb THEN '{}'::jsonb ELSE jsonb_build_object('brackets', tiers) END WHERE jsonb_typeof(tiers) = 'array'; ADD CONSTRAINT commission_plans_tiers_check CHECK (jsonb_typeof(tiers) = 'object'). (Table is empty before Phase 3; the UPDATE only guards stray rows.)",
+        "docFixes": "src/infra/db/README.md 'Open vocabularies and type guesses': remove commission_plans.tiers from the jsonb-list line (it is an object, default {}). src/modules/commissions/db/schema.ts comment 'list of volume tiers' -> 'free JSON object of plan conditions (minPayout, minReferrals, brackets...), read by the settlement job'.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "health-commissions-2",
+        "endpoint": "POST /admin/commission-assignments",
+        "decision": "One current plan per merchant: replace the partial unique index with one on beneficiary_id where ends_at is null. Service pre-checks and also maps a 23505 on commission_assignments_current_uq (race) to 409 ALREADY_ASSIGNED, detail '<merchant name> is already on the <plan name> plan'. Changing plan = end the current assignment (ends_at = now) then insert, in one transaction.",
+        "basis": "ANSWERS commissions Q6 + RULES commissions 8 (map/decision) and console 409 ALREADY_ASSIGNED; the built index (plan_id, beneficiary_id) contradicts both.",
+        "features": [
+          "11"
+        ],
+        "schemaChange": "DROP INDEX commission_assignments_active_uq; CREATE UNIQUE INDEX commission_assignments_current_uq ON commission_assignments (beneficiary_id) WHERE ends_at IS NULL. Data: before creating, end duplicates keeping the newest: UPDATE commission_assignments a SET ends_at = now() WHERE ends_at IS NULL AND EXISTS (SELECT 1 FROM commission_assignments b WHERE b.beneficiary_id = a.beneficiary_id AND b.ends_at IS NULL AND b.id > a.id) (no rows exist before Phase 3). Keep commission_assignments_beneficiary_id_idx and plan_id_idx.",
+        "docFixes": "src/infra/db/README.md 'Extra constraints': 'one active assignment per plan and merchant' -> 'one current assignment per merchant (ends_at null)'. endpoints/commissions.md POST assignments errors: name the index and the 409 detail format.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "health-commissions-3",
+        "endpoint": "GET /admin/commission-accruals (+ /:id)",
+        "decision": "Accruals always come from one completed order: commission_accruals.order_id becomes NOT NULL; wire orderId is always an Id and merchant = the order's client (never null). Add an idempotency guard so a completed order accrues once per beneficiary (a reversed accrual does not block a later re-completion).",
+        "basis": "RULES commissions 1 (accrual created when an order of a referred merchant completes) + console CommissionAccrual.orderId non-null Id; no source creates order-less accruals.",
+        "features": [
+          "11"
+        ],
+        "schemaChange": "commission_accruals.order_id: SET NOT NULL (no rows before Phase 3; migration fails loudly if any null exists). Add CREATE UNIQUE INDEX commission_accruals_order_beneficiary_uq ON commission_accruals (order_id, beneficiary_id) WHERE status <> 'reversed' (replaces nothing; keep commission_accruals_order_id_idx or drop it since the new index leads with order_id - drop it).",
+        "docFixes": "endpoints/commissions.md accrual response: orderId always set, merchant {id,name} always set.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "health-commissions-4",
+        "endpoint": "POST /admin/commission-accruals/approve, GET /admin/commission-accruals",
+        "decision": "Do ANSWERS Q4 now: add approved_at, set to now() in the approve transaction for each approved accrual; send approvedAt (ISO, null until approved) as an extra field on list and detail; whitelist approvedAt_gte and approvedAt_lte filters and approvedAt sort. An accrual reversed after approval keeps status approved and approved_at (rule 5 posts a reversing entry only).",
+        "basis": "ANSWERS commissions Q4 accepted; extra backend fields are allowed by TESTS.md, so no console break; user rule 5 (reversal after approval = reversing entry).",
+        "features": [
+          "11"
+        ],
+        "schemaChange": "ALTER TABLE commission_accruals ADD COLUMN approved_at timestamptz NULL; data: UPDATE commission_accruals SET approved_at = updated_at WHERE status = 'approved'; ADD CONSTRAINT commission_accruals_approved_at_check CHECK ((status = 'approved') = (approved_at IS NOT NULL)). Optional index commission_accruals_approved_idx ON (approved_at DESC) WHERE approved_at IS NOT NULL.",
+        "docFixes": "endpoints/commissions.md: replace '(approved_at proposed)' with approvedAt in the response, filters approvedAt_gte/_lte and sort approvedAt.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "health-commissions-5",
+        "endpoint": "GET /admin/alerts (+ /:id, POST /:id/ack)",
+        "decision": "Keep ANSWERS Q31: snapshot the rule on alert_events at fire time. Wire rule = {id: rule_id, key: alert_rules.key (join, soft-deleted included), name: rule_name, metric, comparator, threshold (JSON number), windowSeconds, unit} with every field except id/key read from the snapshot columns. Metric is snapshotted too so unit and metric never disagree after a rule edit.",
+        "basis": "ANSWERS system-health Q31 (accepted, later and more specific than the join described in health.md); console AlertRuleRef shape unchanged.",
+        "features": [
+          "12b"
+        ],
+        "schemaChange": "ALTER TABLE alert_events ADD COLUMN rule_name text, ADD COLUMN metric text, ADD COLUMN comparator text, ADD COLUMN threshold numeric(18,4), ADD COLUMN window_seconds integer, ADD COLUMN unit text NULL; backfill UPDATE alert_events e SET rule_name = r.name, metric = r.metric, comparator = r.comparator, threshold = r.threshold, window_seconds = r.window_seconds, unit = CASE r.metric WHEN 'api.p95' THEN 'ms' WHEN 'queue.oldest_age' THEN 's' WHEN 'orders.past_sla' THEN 'count' WHEN 'ledger.mismatch_count' THEN 'count' WHEN 'supplier.balance' THEN NULL ELSE 'percent' END FROM alert_rules r WHERE r.id = e.rule_id; then SET NOT NULL on rule_name, metric, comparator, threshold, window_seconds; CHECK alert_events_comparator_check (comparator IN ('gt','gte','lt','lte')); CHECK alert_events_window_check (window_seconds > 0); CHECK alert_events_unit_check (unit IS NULL OR unit IN ('percent','ms','s','per_min','count','bytes')).",
+        "docFixes": "endpoints/health.md GET /admin/alerts: build rule from the alert_events snapshot (id/key from alert_rules incl. soft-deleted), not from a live join of name/threshold.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "health-commissions-6",
+        "endpoint": "GET /admin/system/health, GET /admin/system/checks",
+        "decision": "service_checks.detail becomes a nullable text column holding the failure text; the checker writes null when status is ok and a short English text when degraded/down. Wire components[].detail = that text of the latest row while status is degraded/down, else null; for a disabled supplier the server sends 'checks are off' (synthesized, no row).",
+        "basis": "Console components[].detail string|null (frontend wire); health.md 'failure text only while failing'; a jsonb with no defined key adds nothing.",
+        "features": [
+          "9"
+        ],
+        "schemaChange": "service_checks.detail: jsonb NOT NULL DEFAULT '{}' -> text NULL. Migration: ALTER COLUMN detail DROP DEFAULT, ALTER COLUMN detail DROP NOT NULL, ALTER COLUMN detail TYPE text USING NULLIF(detail->>'message', '').",
+        "docFixes": "endpoints/health.md health and checks sections: detail = service_checks.detail text (null when ok). src/modules/health/db/schema.ts column comment.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "health-commissions-7",
+        "endpoint": "GET /admin/system/health, GET /admin/system/checks, GET /admin/system/suppliers",
+        "decision": "Store the full key: component = 'supplier:<suppliers.id>' / 'gateway:<payment_gateways.id>' (core keys api, postgres, redis, redis_queue, storage, workers, mail as is); supplier_id/gateway_id are still set for the cascade and the supplier index. ?component= matches the stored key exactly; aggregation by (component, checked_at) stays per supplier.",
+        "basis": "ANSWERS system-health Q19 (stable keys) and health.md aggregation; console sends ?component=supplier:3. The schema comment was a guess.",
+        "features": [
+          "9"
+        ],
+        "schemaChange": "Add CHECKs on service_checks: service_checks_supplier_key_check CHECK ((supplier_id IS NULL) OR component = 'supplier:' || supplier_id::text); service_checks_gateway_key_check CHECK ((gateway_id IS NULL) OR component = 'gateway:' || gateway_id::text). No data conversion (no rows before Phase 3).",
+        "docFixes": "src/modules/health/db/schema.ts comment on component: 'core key (api, postgres, redis, redis_queue, storage, workers, mail) or supplier:<id> / gateway:<id> (ANSWERS Q19)'. endpoints/health.md: state the stored key rule once.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "health-commissions-8",
+        "endpoint": "GET /admin/system/suppliers",
+        "decision": "Add an explicit outcome to every supplier call log: ok | error | timeout, written by the supplier client (feature 6). timeout = the outbound call hit timeoutMs or the network timed out (no HTTP answer); error = any other failure (network error, HTTP >= 400, unparsable answer, Dhru ERROR result even on HTTP 200); ok otherwise. Over the last 15 min per supplier: errorRate = error/total x 100, timeoutRate = timeout/total x 100 (separate, a timeout is not also an error); no calls -> {value null, state unknown}. lastSuccessAt = max(created_at where outcome = 'ok', latest ok service check). lastSyncAt = GREATEST(suppliers.balance_checked_at, suppliers.prices_synced_at) (null when both null); the price sync sets prices_synced_at at the end of a successful run.",
+        "basis": "ANSWERS system-health Q24 (Postgres-sourced rates over 15 min); queues.md supplier-sync (price sync + balance check); predicates on free error text are fragile, so a column is the technical choice.",
+        "features": [
+          "6",
+          "9"
+        ],
+        "schemaChange": "ALTER TABLE supplier_api_logs ADD COLUMN outcome text NOT NULL DEFAULT 'ok', ADD CONSTRAINT supplier_api_logs_outcome_check CHECK (outcome IN ('ok','error','timeout')); backfill UPDATE supplier_api_logs SET outcome = CASE WHEN http_status IS NULL AND error ILIKE '%timeout%' THEN 'timeout' WHEN error IS NOT NULL OR http_status >= 400 THEN 'error' ELSE 'ok' END. ALTER TABLE suppliers ADD COLUMN prices_synced_at timestamptz NULL. Existing index supplier_api_logs_supplier_created_idx covers the 15-min window.",
+        "docFixes": "endpoints/health.md GET /admin/system/suppliers: write the outcome predicates, rate formulas, lastSuccessAt and lastSyncAt formulas. docs/queues.md supplier-sync: the price sync sets suppliers.prices_synced_at.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "health-commissions-9",
+        "endpoint": "GET /admin/system/integrity",
+        "decision": "Findings per kind (every label non-null): entry: id = ledger_transactions.id, ref = '#<id>' (the ledger has no separate journal number; the console opens journals by id), label = '<kind> · <ref_type> #<ref_id>' (or '<kind> · system'), difference = sum of its lines. account: id = ledger_accounts.id, ref = '<kind>:<owner_id>' (bare kind when owner-less), label = 'Wallet · <merchant>' (client_wallet), 'Hold · <merchant>' (client_hold), 'Supplier prepaid · <supplier>' (supplier_prepaid), else the account kind in words (e.g. 'Bank'), difference = balance - sum(lines), lastEntryAt. hold (stuck_holds): a B2B order whose order_hold transaction (ref_type order) is older than 24 h with no release/settle transaction for that order and the order still open: id = orders.id, ref = '#<order id>', label = 'Order #<id> · <merchant name>', ageSeconds = now - hold created_at, difference null. payment: id = payments.id, ref = gateway_txn_id, label = 'Payment · <gateway name>', difference = payment amount. Unused fields are null.",
+        "basis": "health.md + ANSWERS system-health Q36 (ref formats, first 20 findings) + console IntegrityFinding (label: string non-null); holds live on client_hold via order_hold transactions (no holds table), so the order is the natural id.",
+        "features": [
+          "12b"
+        ],
+        "schemaChange": "",
+        "docFixes": "endpoints/health.md GET /admin/system/integrity: replace the findings sentence with the per-kind id/ref/label/difference/ageSeconds/lastEntryAt rules above; ANSWERS system-health Q36 'ref = journal number' -> '#<ledger_transactions.id>'.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "health-commissions-10",
+        "endpoint": "GET /admin/system/orders-health",
+        "decision": "B92 wins: one age-only pastSla predicate shared by GET /admin/orders?pastSla=true and orders-health: open order (pending or processing status, any queue incl. needs_attention/review) whose now - placed_at exceeds the service SLA minutes. Tabs/queue filters combine with it separately, so the console link 'Review tab + pastSla=true' lists the needs_attention past-SLA orders. ANSWERS orders Q5 is superseded.",
+        "basis": "Map scenario system-alert step 9 counts needs_attention orders among those past SLA (map decides rules) and the console link (M230) stays unchanged (frontend decides wire); B92 is the more specific, map-backed decision.",
+        "features": [
+          "5",
+          "9"
+        ],
+        "schemaChange": "",
+        "docFixes": "docs/contract/ANSWERS.md orders Q5: status -> 'superseded by MISMATCHES B92' with the age-only rule. endpoints/orders.md GET /admin/orders filter pastSla: 'open and older than the service SLA, any queue (B92)'.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "health-commissions-11",
+        "endpoint": "GET /admin/commission-accruals",
+        "decision": "Status vocabulary accrued | approved | reversed. reversed = order refunded/reopened before approval (approve skips it with reason); after approval the accrual stays approved and a reversing commission entry is posted (user rule 5). The console types status as a free string and prints unknown words raw, so 'reversed' needs no console change; status filter accepts the three words.",
+        "basis": "ANSWERS commissions Q2/Q8 + PROGRESS user rule 5; console status is string (no break).",
+        "features": [
+          "11"
+        ],
+        "schemaChange": "ADD CONSTRAINT commission_accruals_status_check CHECK (status IN ('accrued','approved','reversed')) (no rows before Phase 3). Add a const COMMISSION_ACCRUAL_STATUSES in commissions schema.ts.",
+        "docFixes": "endpoints/commissions.md accrual response and filters: status accrued|approved|reversed. schema.ts status comment.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "health-commissions-12",
+        "endpoint": "DELETE /admin/commission-assignments/:id",
+        "decision": "Follow ANSWERS Q6: DELETE sets ends_at = now() and answers 204 even with ready accruals (they stay approvable); the server never sends 409 HAS_PENDING. The console handler stays harmless.",
+        "basis": "ANSWERS commissions Q6 (accepted answer) over the 'optional policy' note in the endpoint doc.",
+        "features": [
+          "11"
+        ],
+        "schemaChange": "",
+        "docFixes": "endpoints/commissions.md DELETE assignment errors: remove 409 HAS_PENDING. docs/contract/error-codes.md: remove the HAS_PENDING row (or mark 'not sent, ANSWERS commissions Q6').",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "health-commissions-13",
+        "endpoint": "GET /admin/alert-rules (+ /:id, POST, PATCH), GET /admin/alerts",
+        "decision": "Metric registry with wire units limited to the console words: supplier.timeout_rate percent, supplier.error_rate percent, supplier.balance null, api.p95 ms, api.rate5xx percent, queue.oldest_age s, orders.past_sla count, ledger.mismatch_count count, db.connection_usage percent, redis.memory_usage percent, webhooks.success_rate percent. '%' is always sent as 'percent', 'no unit' as null. OpenAPI: metric enum of the 11 keys, unit enum percent|ms|s|per_min|count|bytes nullable.",
+        "basis": "ANSWERS system-health Q30 (11 metrics) + B101 (server registry) + console MeasureUnit (frontend wire words).",
+        "features": [
+          "12b"
+        ],
+        "schemaChange": "",
+        "docFixes": "endpoints/health.md alert-rules section: add the registry table (metric -> unit). OpenAPI generation: enums for metric and unit.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "health-commissions-14",
+        "endpoint": "GET /admin/alerts (+ /:id)",
+        "decision": "subject_type is never null: 'system' for system-wide alerts. Registry fixes subject per metric: supplier.* -> supplier (subject_id = supplier id), queue.oldest_age -> queue (subject_id null -> 0 on the wire per B103), everything else -> system. Allowed words system|supplier|queue|gateway|ledger_account|client.",
+        "basis": "Console subjectType non-null string ('system'); B103 covers subjectId; a column default is safer than a wire coalesce.",
+        "features": [
+          "12b"
+        ],
+        "schemaChange": "UPDATE alert_events SET subject_type = 'system' WHERE subject_type IS NULL; ALTER COLUMN subject_type SET DEFAULT 'system', SET NOT NULL; ADD CONSTRAINT alert_events_subject_type_check CHECK (subject_type IN ('system','supplier','queue','gateway','ledger_account','client')).",
+        "docFixes": "endpoints/health.md GET /admin/alerts: subjectType always set ('system' default) and the metric -> subject mapping. schema.ts comment.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "health-commissions-15",
+        "endpoint": "POST /admin/incidents",
+        "decision": "One incident per alert: partial unique index on incidents.alert_event_id; the service pre-checks and maps a 23505 on incidents_alert_event_uq to 422 VALIDATION_FAILED errors[{field:'alertEventId', message:'This alert already has an incident.'}]. A resolved alert may still start one.",
+        "basis": "ANSWERS system-health Q31 + console 422 on alertEventId and AlertEvent.incidentId single id.",
+        "features": [
+          "12b"
+        ],
+        "schemaChange": "DROP INDEX incidents_alert_event_id_idx; CREATE UNIQUE INDEX incidents_alert_event_uq ON incidents (alert_event_id) WHERE alert_event_id IS NOT NULL (no rows before Phase 3).",
+        "docFixes": "endpoints/health.md POST /admin/incidents errors: name the constraint and the 422 field.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "health-commissions-16",
+        "endpoint": "GET /admin/system/jobs, POST /admin/system/jobs/:name/run, GET /admin/system/integrity, POST /admin/system/integrity/run",
+        "decision": "duration_ms and processed are NOT NULL DEFAULT 0: 0 while running; on finish duration_ms = finished_at - started_at in ms and processed = the job's count. The job-run service (built in P2.4b, health module) must set both on finish; add a contract test for a running run (both 0, finishedAt null).",
+        "basis": "Console JobRun durationMs/processed non-null numbers; health.md 'send 0 while running'; a DB default removes the mapper special case.",
+        "features": [
+          "9",
+          "12b"
+        ],
+        "schemaChange": "UPDATE job_runs SET duration_ms = COALESCE(duration_ms, CASE WHEN finished_at IS NOT NULL THEN (extract(epoch FROM finished_at - started_at) * 1000)::int ELSE 0 END), processed = COALESCE(processed, 0); ALTER COLUMN duration_ms SET DEFAULT 0, SET NOT NULL; ALTER COLUMN processed SET DEFAULT 0, SET NOT NULL; ADD CONSTRAINT job_runs_counts_check CHECK (duration_ms >= 0 AND processed >= 0).",
+        "docFixes": "src/modules/health/db/schema.ts column comments; docs/queues.md job runs section: finish writes duration_ms and processed.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "health-commissions-17",
+        "endpoint": "GET /admin/alerts, GET /admin/incidents, GET /admin/alert-rules, GET /admin/system/webhooks",
+        "decision": "These reads need live Postgres rows, so during an outage they answer 503 DATABASE_UNAVAILABLE (problem+json) via the shared database-error mapping; the console shows it as a server error, which is acceptable.",
+        "basis": "ANSWERS system-health Q13 (lists, webhooks, orders-health, integrity answer 503 DATABASE_UNAVAILABLE).",
+        "features": [
+          "9",
+          "12b"
+        ],
+        "schemaChange": "",
+        "docFixes": "endpoints/health.md: add 503 DATABASE_UNAVAILABLE to the error lists of GET /admin/alerts (+ /:id), GET /admin/incidents (+ /:id), GET /admin/alert-rules (+ /:id) and GET /admin/system/webhooks. docs/contract/error-codes.md DATABASE_UNAVAILABLE row: add these routes so contract tests cover them.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      }
+    ]
+  },
+  {
+    "group": "b2c",
+    "resolutions": [
+      {
+        "finding": "b2c-1",
+        "endpoint": "GET /admin/customers, GET /admin/customers/:id, POST /admin/customers, PATCH /admin/customers/:id",
+        "decision": "Option (a). Keep customers.currency as the ISO code FK to currencies.code (as checkout_sessions and payments do). Every customer row builder (list, detail, create result, patch result) LEFT JOINs currencies ON currencies.code = customers.currency and sends currency = currencies.id (JSON number, null when customers.currency is null) and currencyCode = currencies.code (null when none). Request bodies carry no currency: create and a country change keep deriving the code from the country and write the code. No console change.",
+        "basis": "Frontend decides the wire: Customer.currency is Id, the fixture sends currency:2 + currencyCode:'GBP'; ALIGNMENT §1 'Ids are JSON numbers'; customers.md already says 'currency (currency id)' and optional currencyCode (B44/M87 already accepted the currencies join). The map/schema convention references currencies by code everywhere, so the column stays.",
+        "features": [
+          "14b"
+        ],
+        "schemaChange": "",
+        "docFixes": "customers.md (GET list/detail, POST, PATCH responses): say 'currency = currencies.id via a join on customers.currency = currencies.code; currencyCode = currencies.code; both null when the customer has no currency'; add currencies to the route tables of all four routes. MISMATCHES: new B-entry (number by lead) recording 'stored as code, sent as id via join; console wins on wire'.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "b2c-2",
+        "endpoint": "POST /admin/support-tickets/:id/reply, GET /admin/support-tickets (status filter), PATCH /admin/support-tickets/:id",
+        "decision": "Keep the map's stored word pending_customer and map it in one codec in the support repository: toWire(pending_customer) = 'pending', other stored words pass through; fromWire('pending') = 'pending_customer' for the status filter (status=pending → status IN ('pending_customer')) and for any PATCH write; PATCH accepts only new|open|pending|resolved (anything else 422 VALIDATION_FAILED field status). The reply moves a new/open ticket to pending_customer. 'closed' is removed from the stored vocabulary so it can never reach the console (B112: closed is not used).",
+        "basis": "B112 (accepted, more specific and later than the map scenario's closed step): wire follows the console, pending_customer → pending, closed not used. Map keeps pending_customer as the entity word. Console TicketStatus = new|open|pending|resolved and its badge crashes on other words.",
+        "features": [
+          "17"
+        ],
+        "schemaChange": "support_tickets.status: TICKET_STATUSES = ['new','open','pending_customer','resolved'] (drop 'closed'); replace CHECK support_tickets_status_check with status IN ('new','open','pending_customer','resolved'), default 'new' unchanged; rebuild the partial index whose predicate is status NOT IN ('resolved','closed') to status <> 'resolved'. Data migration before the CHECK: UPDATE support_tickets SET status = 'resolved' WHERE status = 'closed' (no rows exist today; the seed writes none).",
+        "docFixes": "support.md: reply effects say 'becomes pending_customer (sent as pending)'; list filter section adds 'status=pending is translated to pending_customer'; PATCH says the body word pending is stored as pending_customer; add a 'Status codec' note citing B112. src/modules/support/db/schema.ts comment on TICKET_STATUSES cites B112.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "b2c-3",
+        "endpoint": "GET /admin/imei-checks, GET /admin/imei-checks/:id",
+        "decision": "Add a stored imei_checks.country (ISO-2 upper case, nullable) written when the check runs, first non-null of: the linked checkout_sessions.tax_country (checkout_session_id set), the known customer's customers.country, the country header of a trusted proxy when configured (optional config GEOIP_COUNTRY_HEADER, e.g. cf-ipcountry; unset = skipped), else null. The list/detail send the column as is.",
+        "basis": "Console ImeiCheck.country is string|null and the fixture sends 'US' on a storefront_free check (which has no checkout), so a derivation through checkout_sessions alone would be null for free checks; a stored value is simplest and survives anonymize.",
+        "features": [
+          "14a",
+          "18"
+        ],
+        "schemaChange": "imei_checks.country text NULL, CHECK imei_checks_country_check (country IS NULL OR country ~ '^[A-Z]{2}$'); no default; existing rows stay NULL (none exist).",
+        "docFixes": "risk.md GET /admin/imei-checks: replace 'country and ip nullable' with the source order above. storefront.md IMEI check route: writes country. MISMATCHES: new schema-addition B-entry.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "b2c-4",
+        "endpoint": "GET /admin/imei-checks, POST /admin/customers/:id/anonymize",
+        "decision": "Erasure = imei_enc NULL and imei_hash NULL together (and cached_until NULL). The retention job (imeiRetentionDays) and anonymize (B50) both do that; no extra marker column. Wire imei: decrypt(imei_enc) while it is set; otherwise tac + '•' repeated (15 - length(tac)), or 15 bullets when tac is null.",
+        "basis": "risk.md wire rule '15 digits while imei_enc exists, else a TAC + bullets mask'; customers.md anonymize 'cuts stored IMEIs to the TAC plus a mask'; NOT NULL made the rule impossible. Clearing the hash too stops the erased row from matching cache lookups.",
+        "features": [
+          "18"
+        ],
+        "schemaChange": "imei_checks.imei_enc DROP NOT NULL; imei_checks.imei_hash DROP NOT NULL; add CHECK imei_checks_imei_erased_check ((imei_enc IS NULL) = (imei_hash IS NULL)). Existing rows unchanged (all have both values).",
+        "docFixes": "risk.md GET /admin/imei-checks: define the mask exactly and that erasure nulls imei_enc+imei_hash; customers.md anonymize: same for imei_checks; health/retention job doc (feature 18 job) states the rule. MISMATCHES: new B-entry.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "b2c-5",
+        "endpoint": "POST /admin/customers/:id/block",
+        "decision": "Block adds, with source manual, reason and created_by = caller, and customer_id = the customer: kind email (normalised email hash), kind card for each distinct non-null payments.card_fingerprint of the customer's payments, kind imei for each distinct IMEI on the customer's orders/checkout sessions still stored (device = IMEI per M106/B77; kind 'device' stays non-addable). Inserts use ON CONFLICT (kind, value_hash) DO NOTHING: an existing entry (from risk refund, chargeback, manual add or another customer's block) is kept unchanged and not linked. Unblock deletes only entries WHERE customer_id = :id AND source = 'manual', then sets status active. Only this route sets blocklist_entries.customer_id; the risk refund route and manual adds leave it null. Card fingerprint = the gateway's card fingerprint (e.g. Stripe payment_method.card.fingerprint), written by the B2C payment webhook into a new payments column.",
+        "basis": "B48 (store email hash plus payment fingerprints and devices, accepted); M106/B77 (device = IMEI); console round trip 'unblock lifts only what this block added'. The link column is the simplest way to make that exact.",
+        "features": [
+          "14b",
+          "16",
+          "18"
+        ],
+        "schemaChange": "blocklist_entries.customer_id bigint NULL REFERENCES customers(id) ON DELETE SET NULL, index blocklist_entries_customer_id_idx; payments.card_fingerprint text NULL (gateway card fingerprint, never card data), index payments_card_fingerprint_idx WHERE card_fingerprint IS NOT NULL. Existing rows: NULL (none exist).",
+        "docFixes": "customers.md block/unblock: replace 'known card fingerprints and devices' with the exact sources, the ON CONFLICT rule and the unblock predicate; risk.md refund route: says it never sets customer_id; money.md / B2C payment webhook (storefront/customers docs): writes card_fingerprint. MISMATCHES: new B-entry refining B48.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "b2c-6",
+        "endpoint": "GET /admin/risk/queue",
+        "decision": "Close payments.method_type to bank|card|usdt|wise|wallet|crypto. B2B top-ups keep bank|card|usdt|wise (money.md wire). B2C gateway drivers store only card|wallet|crypto: card brands → card; Apple Pay, Google Pay, PayPal and similar → wallet; any coin/USDT → crypto. One wire helper b2cPaymentMethod(m): card|wallet|crypto as is, usdt → crypto, anything else → card; used by the risk queue paymentMethod and the refunds payment.method.",
+        "basis": "Console held[].paymentMethod and refund payment.method are card|wallet|crypto; GET /admin/payments methodType is bank|card|usdt|wise; schema comment already lists these six words; infra/db/README open vocabulary to settle.",
+        "features": [
+          "8",
+          "16",
+          "18"
+        ],
+        "schemaChange": "payments.method_type: add CHECK payments_method_type_check (method_type IN ('bank','card','usdt','wise','wallet','crypto')) in feature 8's migration (first payments writer); no default. Existing rows: none (seed writes no payments).",
+        "docFixes": "src/infra/db/README.md: remove payments.method_type from open vocabularies. money.md payments section and risk.md queue: state the vocabulary, the B2C driver mapping and the wire helper. MISMATCHES: new B-entry.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "b2c-7",
+        "endpoint": "GET /admin/service-listings, PATCH /admin/service-listings/:id",
+        "decision": "floorPrice = the B117 effective floor for the b2c_retail group: effective cost (max(services.cost, latest synced cost of the first active supplier link, credit x credit_rate in USD)) + minimum profit from pricing_rules, computed by the same resolver function checkout uses (exported by feature 4b's catalog pricing service). service.cost on the listing row = that effective cost (4-dp USD), so cost, marginPct and floorPrice agree. PATCH refuses retailPrice < floorPrice with 422 (existing errors).",
+        "basis": "B117 (user decision, later than B53) changed the floor for every price path; one resolver avoids listing/checkout disagreement.",
+        "features": [
+          "4b",
+          "15",
+          "14a"
+        ],
+        "schemaChange": "",
+        "docFixes": "storefront.md GET/PATCH /admin/service-listings: floorPrice and service.cost use the B117 effective cost via the shared resolver; B53 note gets 'superseded on cost by B117'. MISMATCHES B53: add the cross-reference.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "b2c-8",
+        "endpoint": "GET /admin/customers/:id/export",
+        "decision": "Keep no CSRF token on this GET (apiDownload sends none). Add a contract field originCheck: true (defineRoute, allowed only on GET routes with a session access) and declare it on this route. CsrfGuard: for a SAFE method whose contract has originCheck, require Sec-Fetch-Site in (same-origin, same-site) or, when absent, an Origin header exactly in the configured CORS origins; otherwise 403 CSRF_FAILED. Fix the guard's comment ('GETs do not change state except routes marked originCheck'). Content-Disposition is already in CORS_EXPOSED_HEADERS (no change).",
+        "basis": "ALIGNMENT §1 and decision 018 already state the exception (same-site Sec-Fetch-Site or matching Origin); the built guard skips every GET, so the rule needs a route flag. Console client.ts sends no token on downloads.",
+        "features": [
+          "18"
+        ],
+        "schemaChange": "",
+        "docFixes": "customers.md export route: 'contract flag originCheck; guard checks Sec-Fetch-Site/Origin'; ALIGNMENT §1 bullet names the flag; decision 018: one line on originCheck GETs; src/common/contract/define-route.ts field JSDoc. MISMATCHES B49: note resolved by the flag.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "b2c-9",
+        "endpoint": "GET/POST/PATCH /admin/reply-templates",
+        "decision": "Repository normalises: shortcut trimmed; '' (or whitespace only) is stored as NULL; NULL is read back as ''. The unique index on lower(shortcut) WHERE shortcut IS NOT NULL stays, so many templates without a shortcut are allowed and SHORTCUT_TAKEN fires only for a real duplicate.",
+        "basis": "Console ReplyTemplate.shortcut is a non-null string, '' when none; schema keeps NULL for 'none' (decision 027 nullable optional value).",
+        "features": [
+          "17"
+        ],
+        "schemaChange": "",
+        "docFixes": "support.md reply-templates routes: 'shortcut: trimmed; empty stored as NULL, sent as \"\"; SHORTCUT_TAKEN compares lower case among non-empty shortcuts'.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "b2c-10",
+        "endpoint": "GET /admin/reports/funnel",
+        "decision": "Window [now - days*24h, now]. imeiChecks = count(imei_checks) with source IN ('storefront_free','pre_order') and created_at in window. paymentStarted = count(checkout_sessions) created_at in window (any status). paid = those sessions with order_id IS NOT NULL (status paid). delivered = those sessions whose order (orders.id = order_id) has status 'completed'. One read-only function storefrontFunnel(days) in the customers module public index; the dashboard storefront block (feature 9, fixed 30 days) calls the same function. Feature 9 (earlier wave) builds it; feature 19 reuses it.",
+        "basis": "ANSWERS (funnel Q6 and dashboard Q5, accepted): records, storefront only, paymentStarted = sessions opened, paid = those paid (order created), delivered = their orders completed; same counting code as the dashboard (M39).",
+        "features": [
+          "9",
+          "19"
+        ],
+        "schemaChange": "",
+        "docFixes": "customers.md GET /admin/reports/funnel: add the four SQL predicates above and 'shared with the dashboard storefront block'; platform.md dashboard storefront block: cite the same function.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "b2c-11",
+        "endpoint": "GET /admin/customers/:id, GET /admin/risk/queue",
+        "decision": "risk_assessments.signals is a jsonb array of plain strings (sentences). Queue held[].signals = the latest assessment's signals as is. Detail risk.signals = assessments of the customer with order_id NOT NULL, newest created_at first, flattened in stored order to {text, orderId: assessment.order_id}, capped at 20 items. highestScore unchanged.",
+        "basis": "Console: queue signals string[], detail RiskSignal {text, orderId: Id} (orderId non-null, so checkout-only assessments are skipped).",
+        "features": [
+          "14b",
+          "18"
+        ],
+        "schemaChange": "",
+        "docFixes": "risk.md queue and customers.md detail: item shape, source, order, cap 20; src/modules/risk/db/schema.ts comment on signals: 'array of strings'.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "b2c-12",
+        "endpoint": "GET /admin/customers/:id",
+        "decision": "consent_records.ip becomes NOT NULL: every consent row is written inside a request (checkout, account change, registration) and stores the request IP (decision 018 trusted proxy). No staff action writes consent rows.",
+        "basis": "Console ConsentRecord.ip is a non-null string used as 'last seen from'; consents are proof records that need the IP (scenario b2c-paid).",
+        "features": [
+          "14a",
+          "14b"
+        ],
+        "schemaChange": "consent_records.ip text NOT NULL (no default). Data migration first: UPDATE consent_records SET ip = '' WHERE ip IS NULL (no rows exist today).",
+        "docFixes": "customers.md detail: records[].ip always a string; customers schema comment.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "b2c-13",
+        "endpoint": "PATCH /admin/data-requests/:id",
+        "decision": "Store the note in data_requests.note (exists, text NOT NULL default '') and also in audit_logs.after.note. note required (non-blank) when status = rejected, else optional.",
+        "basis": "The built schema already has data_requests.note; B52 offered 'or add a column', so the column wins over the stale audit-only note.",
+        "features": [
+          "18"
+        ],
+        "schemaChange": "",
+        "docFixes": "MISMATCHES B52 and risk.md PATCH /admin/data-requests/:id: replace 'no note column, keep it in audit_logs' with 'stored in data_requests.note and audit_logs.after.note'.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "b2c-14",
+        "endpoint": "GET /admin/checkouts/abandoned, GET /admin/customers/:id, GET /admin/legal-documents",
+        "decision": "Close the vocabularies: checkout_sessions.status open|paid|expired; consent_records.purpose terms|privacy|refund_policy|withdrawal_waiver|marketing; consent_records.subject_type customer|client; legal_documents.type terms|privacy|refund|cookies. Purpose → legal type: terms→terms, privacy→privacy, refund_policy→refund, withdrawal_waiver and marketing → no document (legal_document_id NULL). latestConsents.records[].document = TYPE_LABEL[type] + ' v' + version (labels: terms 'Terms of service', privacy 'Privacy policy', refund 'Refund policy', cookies 'Cookie policy'), null when legal_document_id is null. Wire sends the stored words.",
+        "basis": "Fixture/doc words (console types are plain strings, so any stored word is safe); infra/db/README open vocabularies to settle in these features.",
+        "features": [
+          "14a",
+          "14b",
+          "15"
+        ],
+        "schemaChange": "checkout_sessions.status: CHECK checkout_sessions_status_check (status IN ('open','paid','expired')), DEFAULT 'open'. consent_records: CHECK consent_records_purpose_check (purpose IN ('terms','privacy','refund_policy','withdrawal_waiver','marketing')), CHECK consent_records_subject_type_check (subject_type IN ('customer','client')). legal_documents.type: CHECK legal_documents_type_check (type IN ('terms','privacy','refund','cookies')). Existing rows: none in these tables (seed writes none).",
+        "docFixes": "src/infra/db/README.md: remove these four from open vocabularies. customers.md abandoned list + detail latestConsents: vocabularies, purpose↔type map and label rule; storefront.md legal documents: type list and labels. Schema comments 'no source fixes the strings' replaced.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "b2c-15",
+        "endpoint": "POST /admin/content-pages/generate",
+        "decision": "Cap = 50 new drafts per run (code constant STOREFRONT_GENERATE_MAX_PER_RUN, no setting, no console field). The server computes the combinations brands x models x networks, removes the ones that already have a page (counted in skipped), and if more than 50 remain it refuses the whole run (no truncation): 422 VALIDATION_FAILED, detail 'This run would create N pages; the limit is 50 per run. Narrow the lists.', errors [] (no field). Otherwise 200 {created, skipped}.",
+        "basis": "storefront.md already proposes 422 VALIDATION_FAILED; refusing is clearer than the mock's silent stop; the console shows the server's detail.",
+        "features": [
+          "19"
+        ],
+        "schemaChange": "",
+        "docFixes": "storefront.md POST /admin/content-pages/generate: replace 'proposal' with the cap value, the refuse-not-truncate rule and the detail text.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "b2c-16",
+        "endpoint": "POST /admin/customers, PATCH /admin/customers/:id",
+        "decision": "Blocklisted email (create or PATCH new email): 422 VALIDATION_FAILED with errors [{field:'email', message:'This email is blocked.'}], no code. Email change rule (definite): PATCH with a new email sets email_verified_at = NULL; when has_account is true it also issues a new email-verification token (auth_tokens) and sends the verification email through the outbox; guests get no email.",
+        "basis": "Console reads errors[].message only; EMAIL_BLOCKED is not registered in error-codes.md. Map: 'changing the email cancels the verification'; a new link for account holders is the technical follow-through.",
+        "features": [
+          "14b"
+        ],
+        "schemaChange": "",
+        "docFixes": "customers.md POST/PATCH errors: drop the 'proposal ... code EMAIL_BLOCKED' and write the exact errors[] entry; PATCH effects: the definite email-change rule.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      },
+      {
+        "finding": "b2c-17",
+        "endpoint": "GET /admin/risk/queue",
+        "decision": "device = from tac_catalog matched on the first 8 digits of orders.imei: marketing_name non-empty → marketing_name + ' (' + model + ')'; else brand + ' ' + model; null when the order has no IMEI or the TAC is not in tac_catalog.",
+        "basis": "Fixture 'Redmi Note 12 (23021RAAEG)' = marketing name + model code; tac_catalog has brand, model, marketing_name; a masked IMEI still keeps the TAC.",
+        "features": [
+          "18"
+        ],
+        "schemaChange": "",
+        "docFixes": "risk.md GET /admin/risk/queue: device source (orders.imei TAC → tac_catalog) and exact format; add tac_catalog to the route tables.",
+        "consoleChange": "",
+        "needsUser": false,
+        "question": ""
+      }
+    ]
+  }
+]

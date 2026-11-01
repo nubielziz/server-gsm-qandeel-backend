@@ -7,7 +7,9 @@ they are done. Read `_common.md` first.
 1. The brief: routes (manifest keys), out-of-scope list, decisions that matter, user-answered rules
    (`docs/contract/OPEN-QUESTIONS.md` and the PROGRESS table "Business rules answered by the user": they override any
    default or proposal).
-2. `docs/contract/endpoints/<module>.md`: per route the map rule, the frontend function and types, query/request/
+2. `docs/contract/RESOLUTIONS.md`: the lead's decisions for the pre-Phase-3 audit findings of your routes; they win over
+   any older text below.
+3. `docs/contract/endpoints/<module>.md`: per route the map rule, the frontend function and types, query/request/
    response semantics, errors, B-ids and the mock that answers it today.
 3. `docs/contract/frontend-endpoints.json`: the exact request/response shapes (query with node, never read whole).
 4. `docs/contract/RULES.md` for the brief's frontend features; `docs/contract/ANSWERS.md` for their questions.
