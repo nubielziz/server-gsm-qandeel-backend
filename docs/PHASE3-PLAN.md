@@ -4,6 +4,11 @@ Phase 2 (foundation) is done: 10 of 382 map endpoints are built (health, metrics
 372 are pending (`test/contract/pending.ts`). Phase 3 builds them feature by feature, by map stage, following
 `docs/briefs/_feature.md` (recipe and definition of done). Nothing starts until the user says so.
 
+## Before wave 1: resolve the audit
+`docs/contract/AUDIT-PHASE3.md` lists 102 differences between the console and the backend plan (9 high, 56 medium,
+37 low) over the 262 console endpoints still to build. The lead resolves them first (docs, decisions, schema
+migration, briefs); each feature brief then cites the findings of its routes.
+
 ## How each feature runs
 1. The lead writes its brief (`docs/briefs/<id>-<name>.md`): routes, rules, scenarios, user rules, out of scope.
 2. One Sonnet implementer per feature in its own worktree (own Postgres and Redis test databases in `.env.test`).
