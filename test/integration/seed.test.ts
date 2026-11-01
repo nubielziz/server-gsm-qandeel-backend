@@ -3,10 +3,14 @@
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
+import { parseEnv } from '../../src/config';
+import { EncryptionService, PasswordHasher } from '../../src/infra/crypto';
+import { STAFF_TOTP_AAD } from '../../src/modules/identity';
 import { schema as s } from '../../src/infra/db';
 import { demoStatePath, loadDemoState } from '../../scripts/seed/demo-state';
 import { ROLES, permissionsOf } from '../../scripts/seed/identity';
+import { DEV_PASSWORD, DEV_TOTP_SECRETS, seedDevCredentials } from '../../scripts/seed/dev-credentials';
 import { runSeed } from '../../scripts/seed/run';
 import { TEST_DATABASE_URL, closeTestDb, resetDb, testDb } from '../support/db';
 
@@ -57,7 +61,8 @@ describe.skipIf(!frontendPresent)('runSeed', () => {
       [5, 'Nadia H.', 5, 'invited'],
       [6, 'Yusuf A.', 6, 'suspended'],
     ]);
-    // Credentials are left for P2.6; "Setup" created the owner, Rami created the rest; the demo names no suspender.
+    // `runSeed` leaves the credentials empty (the development step is `seedDevCredentials`); "Setup" created the owner, Rami
+    // created the rest; the demo names no suspender.
     expect(staff.every((row) => row.passwordHash === null && row.totpSecretEnc === null)).toBe(true);
     expect(staff.map((row) => row.createdBy)).toEqual([null, 1, 1, 1, 1, 1]);
     expect(staff[5]).toMatchObject({ suspendedBy: 1, suspendedReason: 'Left the team' });
@@ -165,6 +170,45 @@ describe.skipIf(!frontendPresent)('runSeed', () => {
     };
     expect(roles.ROLES).toEqual(ROLES.map(({ key, id, name }) => ({ key, id, name })));
     for (const role of ROLES) expect(permissionsOf(role.key), role.key).toEqual(roles.permissionsOf(role.key));
+  });
+});
+
+describe.skipIf(!frontendPresent)('seedDevCredentials', () => {
+  const config = parseEnv({ NODE_ENV: 'test' });
+
+  it('gives the demo staff the development password and the members with 2FA their documented secret', async () => {
+    const { db } = await testDb();
+    await runSeed(db, await loadDemoState());
+    const report = await db.transaction((tx) => seedDevCredentials(tx, config));
+    expect(report).toMatchObject({ inserted: 6, existing: 0 });
+
+    const staff = await db.select().from(s.staffUsers).orderBy(s.staffUsers.id);
+    const hasher = new PasswordHasher(config);
+    for (const row of staff) expect(await hasher.verify(row.passwordHash!, DEV_PASSWORD), row.email).toBe(true);
+    const encryption = new EncryptionService(config);
+    for (const row of staff) {
+      const documented = DEV_TOTP_SECRETS[row.id];
+      if (documented === undefined) expect(row.totpSecretEnc, row.email).toBeNull();
+      else expect(encryption.decrypt(row.totpSecretEnc!, STAFF_TOTP_AAD), row.email).toBe(documented);
+    }
+    // Nadia is invited and has no 2FA yet: her secret comes from the setup step.
+    expect(staff.find((row) => row.id === 5)).toMatchObject({ twofaEnabled: false, totpSecretEnc: null });
+  });
+
+  it('only fills what is empty: a changed password survives, and staff made later get nothing', async () => {
+    const { db } = await testDb();
+    await runSeed(db, await loadDemoState());
+    await db.transaction((tx) => seedDevCredentials(tx, config));
+    await db.update(s.staffUsers).set({ passwordHash: '$argon2id$changed' }).where(eq(s.staffUsers.id, 2));
+    const [later] = await db
+      .insert(s.staffUsers)
+      .values({ email: 'later@example.com', name: 'Later', roleId: 1, status: 'invited' })
+      .returning({ id: s.staffUsers.id });
+    const again = await db.transaction((tx) => seedDevCredentials(tx, config));
+    expect(again).toMatchObject({ inserted: 0, existing: 6 });
+    const rows = await db.select().from(s.staffUsers).orderBy(s.staffUsers.id);
+    expect(rows.find((row) => row.id === 2)!.passwordHash).toBe('$argon2id$changed');
+    expect(rows.find((row) => row.id === later!.id)!.passwordHash).toBeNull();
   });
 });
 

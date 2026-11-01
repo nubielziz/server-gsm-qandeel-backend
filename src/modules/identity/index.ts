@@ -1,9 +1,16 @@
-// Public API of the identity module: the module, the security building blocks other modules and features use
-// (sessions, cookies, CSRF, the principal and permission helpers, the access guards and the permissions catalog), the
-// registries of the machine guards (capability token resolvers, URL secrets, gateway webhook adapters, the API key cache)
-// and the IP rules building blocks (the worker's hit flush job; the IP rule routes of feature 2a invalidate the cache).
+// Public API of the identity module: the module, the staff sign-in tokens (invite and reset links for feature 2a), the
+// security building blocks other modules and features use (sessions, cookies, CSRF, the principal and permission helpers,
+// the access guards and the permissions catalog), the registries of the machine guards (capability token resolvers, URL
+// secrets, gateway webhook adapters, the API key cache) and the IP rules building blocks (the worker's hit flush job).
 export { IdentityModule } from './identity.module';
 export { SecurityModule } from './security/security.module';
+export { StaffAuthModule } from './staff-auth.module';
+export { STAFF_TOKEN_TTL_MS, StaffAuthTokens } from './application/staff-auth-tokens';
+export type { IssueStaffTokenInput, IssuedStaffToken } from './application/staff-auth-tokens';
+export { STAFF_TOKEN_PURPOSES } from './infra/auth-token.repository';
+export type { StaffTokenPurpose } from './infra/auth-token.repository';
+export { checkPasswordPolicy, MIN_PASSWORD_LENGTH } from './domain/password-policy';
+export { STAFF_TOTP_AAD, TOTP_ISSUER } from './application/totp.service';
 export { AccessGuard } from './security/access.guard';
 export { AccessHandlers, PLACEHOLDER_ACCESS_KINDS } from './security/access-handlers';
 export type { AccessHandler } from './security/access-handlers';

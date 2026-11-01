@@ -1,5 +1,6 @@
 // Seeder of the identity module: the 6 roles, the 6 staff members and the IP rules of the frontend demo.
-// Mirrors the frontend mocks (src/mocks/roles.ts, staff.ts, ipRules.ts); sign-in credentials are P2.6's job.
+// Mirrors the frontend mocks (src/mocks/roles.ts, staff.ts, ipRules.ts); the development sign-in credentials are
+// dev-credentials.ts (P2.6).
 import { schema as s, type DbExecutor } from '../../src/infra/db';
 import { type DemoSeed, demoNumericId, demoRows, toDate } from './demo-state';
 import { type SeedReport, insertRows, syncIdentity } from './helpers';
@@ -99,7 +100,7 @@ interface DemoIpRule {
  * Seeds roles, staff and IP rules.
  *
  * Why: the console needs six roles to pick from, the six demo staff members to show in the admin-team pages, and the
- * demo IP rules (scenario ip-rules). Passwords and TOTP secrets stay empty: P2.6 sets the development credentials.
+ * demo IP rules (scenario ip-rules). Passwords and TOTP secrets stay empty here: `seedDevCredentials` sets them in development.
  *
  * @param db the transaction to write with
  * @param demo the loaded frontend demo state

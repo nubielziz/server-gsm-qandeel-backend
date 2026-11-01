@@ -4,6 +4,7 @@ import { loadConfigOrExit } from '../../src/config';
 import { createDrizzle, createPool } from '../../src/infra/db';
 import { databaseUrlFor } from '../../src/infra/db/url';
 import { frontendDir, loadDemoState } from './demo-state';
+import { seedDevCredentials } from './dev-credentials';
 import { runSeed } from './run';
 
 // The first check reads the raw variable on purpose: a production environment must be refused before its (possibly
@@ -24,7 +25,12 @@ console.log(`Seeding ${target.hostname}:${target.port || '5432'}${target.pathnam
 
 const pool = createPool(url, 2);
 try {
-  const reports = await runSeed(createDrizzle(pool), await loadDemoState());
+  const db = createDrizzle(pool);
+  const reports = await runSeed(db, await loadDemoState());
+  // Development only (the seed refuses production): `demo-password` and a fixed TOTP secret per seeded member (README "Local sign-in").
+  if (config.env === 'development') {
+    reports.push({ module: 'identity', ...(await db.transaction((tx) => seedDevCredentials(tx, config))) });
+  }
   for (const report of reports) {
     console.log(
       `  ${report.module.padEnd(9)} ${report.table.padEnd(16)} ${report.inserted} new, ${report.existing} already there`,

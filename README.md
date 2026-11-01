@@ -39,6 +39,42 @@ Prometheus (decision 015) is configured in `docker/prometheus/prometheus.yml`. L
 addresses without a token, so the container scrapes it as it is. In production `METRICS_TOKEN` is required, so Prometheus
 must send `Authorization: Bearer <token>`: the comment at the top of that file shows the `credentials_file` setting.
 
+## Local sign-in
+
+`bun run db:migrate && bun run db:seed` (development only) loads the frontend's demo staff and gives them credentials, so the
+console can sign in against the real API (`VITE_API_BASE_URL=http://localhost:3000`, CORS origin `http://localhost:5173`
+from `CORS_ORIGINS`). The seed also allows `127.0.0.1` and `::1` on the admin allowlist (IP rules 8 and 9), so a console on
+the same machine is not locked out. Nothing here exists in production, and no code path skips the TOTP step.
+
+Password of every seeded member: `demo-password`. TOTP secrets (base32, 30 s, 6 digits; public on purpose, development
+databases only):
+
+| Member | Email | Role | State | TOTP secret |
+|---|---|---|---|---|
+| Rami K. | `rami@gsm-supply.example` | Owner | active, 2FA on | `4DP3DBKM62TVFPNM5QE6OO4P6STUYM3J` |
+| Lina S. | `lina@gsm-supply.example` | Support | active, 2FA on | `KMG4IZYMUXD3VSCZ6VRP5TRPN3VCYBEW` |
+| Omar T. | `omar@gsm-supply.example` | Finance | active, 2FA on | `ZYVGUXLFHQY5BDL562CL5QODEESABP4I` |
+| Dana M. | `dana@gsm-supply.example` | Admin | active, 2FA on | `TRGSIXPEFSEMGX6X6SMFLZYYSD5JRBQR` |
+| Nadia H. | `nadia@gsm-supply.example` | Risk reviewer | invited, no 2FA | none: the first sign-in answers `totp_setup` and shows her secret |
+| Yusuf A. | `yusuf@gsm-supply.example` | Read only | suspended | `4KMDJNV4B3PLNO2OQETFBT3OBZ7LXEUR` (sign-in answers `403 ACCOUNT_SUSPENDED`) |
+
+Add a secret to any authenticator app, or print the current code:
+
+```bash
+bun -e 'import { generate } from "otplib"; console.log(await generate({ secret: "4DP3DBKM62TVFPNM5QE6OO4P6STUYM3J" }))'
+```
+
+The flow with curl (`login` sets the pending session; `2fa` needs its `X-CSRF-Token`; a code can be used once, so wait for the
+next 30-second step before signing in again with the same member):
+
+```bash
+B=http://localhost:3000 O='Origin: http://localhost:5173'
+curl -s -c jar -H "$O" -H 'Content-Type: application/json' -d '{"email":"rami@gsm-supply.example","password":"demo-password"}' $B/admin/auth/login
+CSRF=$(awk '$6=="csrf_token"{print $7}' jar)
+curl -s -b jar -c jar -H "$O" -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF" -d '{"code":"<6 digits>"}' $B/admin/auth/2fa
+curl -s -b jar $B/admin/auth/me
+```
+
 ## Scripts
 
 | Script | What it does |

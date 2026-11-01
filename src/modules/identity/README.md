@@ -8,7 +8,7 @@ Decisions that shape this module: 007 password hashing, 010 ids and tokens, 018 
 
 ## Status
 
-Built (P2.5a and P2.5c, code in `security/`): the session service, cookies and CSRF token, the guard dispatcher with the staff, merchant and customer session guards, the CSRF guard, the permission guard with the permissions catalog and the Owner helpers, the staff gate of the internal API reference, and the machine guards (`security/machine/`): capability tokens, URL secrets, merchant API keys (REST v1 Bearer and Dhru credentials) and gateway webhook signatures. The sign-in routes (P2.6), the staff, role and IP-rule routes (feature 2a) and the IP rules, maintenance and rate-limit hooks (P2.5b) come with their own features.
+Built (P2.5a, P2.5c and the P2.6 sign-in routes, code in `security/`): the session service, cookies and CSRF token, the guard dispatcher with the staff, merchant and customer session guards, the CSRF guard, the permission guard with the permissions catalog and the Owner helpers, the staff gate of the internal API reference, and the machine guards (`security/machine/`): capability tokens, URL secrets, merchant API keys (REST v1 Bearer and Dhru credentials) and gateway webhook signatures. The sign-in routes (P2.6), the staff, role and IP-rule routes (feature 2a) and the IP rules, maintenance and rate-limit hooks (P2.5b) come with their own features.
 
 ## Public API (`index.ts`)
 
@@ -32,6 +32,9 @@ Exports `IdentityModule` and the security stack (`SecurityModule`, global). Othe
 | `WebhookVerifiers` | `register({ gateway, verify })`: one signature adapter per payment gateway (billing) |
 | `ApiKeyPrincipal`, `CapabilityPrincipal`, `WebhookPrincipal` | the caller of a machine route: merchant id, key id and scopes / the id a token opens / gateway, event id and `duplicate` |
 | `SessionPolicy`, `SESSION_SETTING_KEYS` | the lifetimes and their settings keys |
+| `StaffAuthTokens` | `issue(work, { staffId, purpose: 'invite' \| 'reset', createdBy?, ip? })`: the one-hour, single-use link token of `POST /admin/auth/password/set` (feature 2a calls it when it adds a member by invitation or sends a reset; it voids the account's older links) |
+| `checkPasswordPolicy`, `MIN_PASSWORD_LENGTH` | the staff password policy (also for a temporary password the server generates) |
+| `STAFF_TOTP_AAD`, `TOTP_ISSUER` | the encryption context of `staff_users.totp_secret_enc` and the name authenticator apps show |
 
 ## The security stack (decision 018)
 
@@ -79,7 +82,7 @@ await this.db.runInTransaction(async (work) => {
 });
 ```
 
-**Sign-in steps** (P2.6): `create` a pending session at login (10 minutes), `rotate(principal.session, { stage: 'active' })` when the
+**Sign-in steps** (P2.6, built): `create` a pending session at login (10 minutes), `rotate(principal.session, { stage: 'active' })` when the
 last step completes (new token, old one revoked), then `cookies.set(reply, 'staff', issued.token, issued.session.expiresAt)`.
 
 **Customers.** Storefront customers belong to the customers module. Until it registers a resolver
@@ -145,6 +148,9 @@ truth: the first delivery may still be running (and may yet fail), so the handle
 unique on the gateway event id) shows the event done, and otherwise processes it idempotently. The mark is released when the reply ends
 with a `5xx`, so the gateway's retry is processed; with the cache Redis down the delivery is treated as new (logged). The principal is `{ kind: 'webhook', gateway, eventId, timestamp, duplicate, ip }`.
 
+Built: the **IP rules stage of the request pipeline** (P2.5b, `security/ip-rules/`) and the **staff sign-in routes** (P2.6, below). The
+other routes arrive with their features.
+
 ### IP rules exports (P2.5b)
 
 Exports `IdentityModule` and, for the IP rules: `IpRuleCache` (`get()`, `invalidate()`), `ADMIN_ALLOWLIST_KEY`, the pure
@@ -152,6 +158,43 @@ Exports `IdentityModule` and, for the IP rules: `IpRuleCache` (`get()`, `invalid
 `CompiledIpRules`, `ActiveIpRule`, `IpRuleSnapshot`), `IpRuleHits` (`record`, `idle`: the API counts), `IpRuleHitsFlush` (`flush`: the worker writes) and
 `IpRuleHitsFlushModule` with `IP_RULE_HITS_FLUSH_JOB` and `IP_RULE_HITS_FLUSH_SCHEDULER` for the worker. Add the services other modules may call here, and
 nothing else: other modules import only `src/modules/identity/index.ts` (lint rule `gsm/module-boundaries`).
+
+## Staff sign-in (P2.6): `/admin/auth/*`
+
+Six routes (`contracts/auth.contracts.ts`, `controllers/staff-auth.controller.ts`; use cases in `application/`, queries in `infra/`,
+pure rules in `domain/`), wired by `StaffAuthModule`. Contract: `docs/contract/ALIGNMENT.md` § 3 and `endpoints/identity.md`.
+
+| Route | Access | What it does |
+|---|---|---|
+| `POST /admin/auth/login` | public (Origin check) | email + password → `{ next }` and a pending session (10 min). Order: IP rules and the per-IP limit (pipeline) → sign-in limit (email + address) → credentials → suspended → session |
+| `POST /admin/auth/2fa` | session, `pending_totp` / `pending_totp_setup` | six digits → `204`; rotates the session to `active`, stamps `last_login_at` / `last_login_ip`, turns `invited` into `active`, turns 2FA on when the code confirmed a pending secret |
+| `POST /admin/auth/2fa/setup` | session, `pending_totp_setup` | a fresh pending secret (encrypted) → `{ secret, otpauthUrl, qrSvg }`; `409 TWOFA_ALREADY_ENABLED` once 2FA is on |
+| `POST /admin/auth/password/set` | public (Origin check) | `{ token, password }` (link) or `{ password }` on a `pending_password` session (then `X-CSRF-Token` is checked in the handler) → `204`; signs nobody in; ends every session of the account |
+| `POST /admin/auth/logout` | session, every stage | revokes the session, clears both cookies, `204` |
+| `GET /admin/auth/me` | session, `active` | the member, their role and the role's permissions; `Cache-Control: no-store`; repeats `X-CSRF-Token` |
+
+**Rules worth knowing**
+
+- **One answer for every bad credential.** An unknown email, a wrong password and an account with no password yet are the same `401`
+  (same body), and each verifies one argon2 hash (a dummy one when there is no account to check), so timing does not tell them apart.
+  `403 ACCOUNT_SUSPENDED` only follows a correct password.
+- **Rate limits** (`SignInLimiter`, limiter `sign-in`, 5 per 15 minutes then locked for 15; a success clears the count): login per email +
+  address; **codes per account** (not per session, or every new login would give a thief five more guesses); setups per account. The keys are
+  `HMAC(TOKEN_PEPPER, ...)` hashes, so Redis keys hold no email address. Trying links from one address uses the `token` limiter (30 a minute).
+- **TOTP.** otplib, SHA-1, 6 digits, 30 s, ±1 step. `staff_users.totp_last_step` (schema addition of P2.6, migration `0002`) holds the last accepted
+  time step; one guarded `UPDATE` (`completeSignIn`) accepts a step only if it is newer, the account is not suspended and the secret is
+  still the one that was checked, so a code works once even with parallel requests. A new setup clears the step.
+- **The database decides.** The code, setup, password-set and logout steps and `me` read the account from `staff_users`, not from the 60-second
+  cached session view: a suspension applies at once (`403`, every session of the account revoked).
+- **Passwords.** At least 10 characters, at most 128, not trivially weak, not the email name or the person's name, not the current password
+  (`422 WEAK_PASSWORD` on `password`). argon2id; a correct login re-hashes a hash made with a lower cost (decision 007).
+- **Links** (`auth_tokens`, purposes `invite` and `reset`): 256 random bits, only the keyed hash stored, one hour, one use. A newer link voids
+  the older ones; using one voids the rest. Unknown, used, expired, superseded or suspended-account links are `410 TOKEN_INVALID`. A weak
+  password does not use the link up.
+- **Audit** (`audit_logs`): `logged in` (entity `session`, written by the code step), `turned on two-factor sign-in` (entity `staff`, the first
+  time), `logged out` (full sessions only), `set a new password` (entity `staff`; in link mode the account owner is the actor). Failed attempts are
+  logged without the email and rate-limited, never audited. No password, token or secret reaches a log or an audit row.
+- **Development credentials** (`bun run db:seed`, development only): see the root `README.md`, "Local sign-in".
 
 ## Owned tables
 
@@ -312,7 +355,7 @@ Add the next job here and in `docs/queues.md` (see `CONTRIBUTING.md` → "Add a 
 - `gsm:{env}:identity:session:{tokenHash}` (`CacheKeys.session`): the cached view of a session and the state of its account, 60 s (an unknown token 10 s). `SessionService` deletes it after the commit of a revoke or rotation; `invalidateSubject` does after a suspension, password change or role change.
 - `gsm:{env}:identity:role:{roleId}` (`CacheKeys.rolePermissions`): the permissions of a role, 300 s. `RolePermissions.invalidate(roleId)` after the commit of a role change.
 
-Both are listed in `docs/cache-keys.md`. Register every other key family there too (see `CONTRIBUTING.md` → "Add a cache key").
+Both are listed in `docs/cache-keys.md`. The sign-in rate limits use the existing `gsm:{env}:ratelimit:sign-in:{hash}` and `...:token:{address}` families. Register every other key family there too (see `CONTRIBUTING.md` → "Add a cache key").
 
 | Key | What | TTL | Invalidation |
 |---|---|---|---|

@@ -134,8 +134,13 @@ export const staffUsers = pgTable(
     passwordHash: text(),
     name: text().notNull(),
     roleId: fk((): AnyPgColumn => roles.id).notNull(),
-    /** AES-GCM text of decision 019; null until 2FA setup */
+    /** AES-GCM text of decision 019; null until 2FA setup; while `twofa_enabled` is false it is the pending secret */
     totpSecretEnc: text(),
+    /**
+     * the last TOTP time step accepted for this account (RFC 6238 replay rule: a step is never accepted twice); null until
+     * the first accepted code and after a new secret. Schema addition for P2.6 (MISMATCHES B116 style).
+     */
+    totpLastStep: bigId(),
     twofaEnabled: boolean().notNull().default(false),
     mustChangePassword: boolean().notNull().default(false),
     passwordChangedAt: timestampTz(),

@@ -122,9 +122,10 @@ describe('staff session guard', () => {
 
   it('judges a cached view again on every request: an ended session is refused before its cache entry expires', async () => {
     const { staffId } = await signInStaff(t, []);
-    const short = await openSession(t, { type: 'staff', id: staffId }, { ttlSeconds: 2 });
+    // 4 s: under a loaded full-suite run the first request can take well over a second (2 s was flaky).
+    const short = await openSession(t, { type: 'staff', id: staffId }, { ttlSeconds: 4 });
     expect((await get('/admin/t/sec/session', short.headers)).statusCode).toBe(200);
-    await Bun.sleep(2_100);
+    await Bun.sleep(4_200);
     // The view is still in the cache (60 seconds), but its absolute end has passed.
     expect((await get('/admin/t/sec/session', short.headers)).statusCode).toBe(401);
   });

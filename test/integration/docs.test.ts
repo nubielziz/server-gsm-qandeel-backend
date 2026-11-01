@@ -221,7 +221,8 @@ describe('GET /reference/openapi.json (internal document)', () => {
     expect(doc.paths['/admin/t/orders'].get.tags).toEqual(['admin: orders']);
     const groups = Object.fromEntries(doc['x-tagGroups'].map((group: Json) => [group.name, group.tags]));
     expect(groups['REST API v1']).toEqual(['v1: orders']);
-    expect(groups['Admin console']).toEqual(['admin: orders', 'admin: test']);
+    // The real sign-in routes (map group `auth`) are in the group too; only the tags of this test's routes are checked.
+    expect(groups['Admin console']).toEqual(expect.arrayContaining(['admin: orders', 'admin: test']));
     expect(groups['Merchant portal']).toEqual(['wallet']);
   });
 

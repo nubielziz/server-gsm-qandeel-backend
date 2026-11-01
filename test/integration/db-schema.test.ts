@@ -93,7 +93,9 @@ describe('concurrent migrators', () => {
       const scratch = new Pool({ connectionString: url.toString(), max: 1 });
       try {
         const applied = await scratch.query('select count(*)::int as n from drizzle.__drizzle_migrations');
-        expect(applied.rows[0].n).toBe(2);
+        // Every committed migration, whatever their number grows to.
+        const files = (await readdir(MIGRATIONS_FOLDER)).filter((file) => file.endsWith('.sql'));
+        expect(applied.rows[0].n).toBe(files.length);
       } finally {
         await scratch.end();
       }

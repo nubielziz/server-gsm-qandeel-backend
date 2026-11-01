@@ -4,11 +4,10 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
-**Phase 2, foundation, in progress** (Sonnet implements, Opus reviews). **P2.1 runtime-core, P2.2 docs-tooling and
-P2.3 data are done.** P2.4a infra-core, P2.4b queues-outbox and P2.7 contract-tests are done
-too, and so are P2.5a sessions-guards and P2.5b pipeline-hooks. Next: **P2.5c machine-auth ∥ P2.6 staff sign-in** (the
-last Phase 2 features), then Phase 3. Parallel worktrees also get their own Redis test databases (`REDIS_QUEUE_URL_TEST`,
-`REDIS_CACHE_URL_TEST` in `.env.test`) besides their own Postgres test database. Briefs: `docs/briefs/` (`_common.md` first; `_feature.md` is the
+**Phase 2 (foundation) is done** (P2.1-P2.7). Next: **Phase 3, the feature loop by map stage**, starting with **2a
+identity-staff-access**, **2b identity-merchant-auth** and **3 money-wallets-ledger** (independent: run up to 3 at once in
+worktrees). Each feature needs a brief in `docs/briefs/` written from `_feature.md` (routes from `docs/slices/<module>.json`,
+user rules from the table below). Briefs: `docs/briefs/` (`_common.md` first; `_feature.md` is the
 Phase 3 recipe). Parallel implementers work in sibling worktrees of this repo (`git worktree add
 ../backend-p2-<name> -b feat/backend-p2-<name>`, then `bun install` there; a sibling path keeps the relative
 `reference` symlink working; the workflow tool's worktree isolation targets the frontend repo, not this one). Each
@@ -43,7 +42,7 @@ and `docs/slices/<module>.json`, `docs/contract/RULES.md` for its frontend featu
 |---|---|---|---|
 | 0 Setup + Bun spike | done | `25282af` | 0 |
 | 1 Architecture + contract | done | see `git log` (`docs: phase 1 ...`) | 6 (Opus analysts, one workflow, 3 at once) |
-| 2 Foundation | in progress (P2.1-P2.5b, P2.7 done; P2.5c, P2.6 left) | per feature, see below | 22 so far |
+| 2 Foundation | done | per feature, see below | 28 |
 | 3 Feature loop (by stage) | | | |
 | 4 Frontend integration | | | |
 
@@ -79,7 +78,7 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 | P2.5a | sessions-guards | contract fields, session service + cookies + CSRF token, guard dispatcher, staff/merchant/customer session guards, CSRF guard, permission guard + catalog + Owner helpers, audit service + enforcement, `/reference` staff gate (brief P2.5 split) | admin-team (part) | done (`feat(sessions-guards)` commit) |
 | P2.5b | pipeline-hooks | IP rules hook + hit-counter flush, maintenance hook, per-IP rate-limit hook, ordered hook registry (brief P2.5 split; parallel with P2.5a) | ip-rules (part) | done (`pipeline-hooks` commits) |
 | P2.5c | machine-auth | capability-token guard registry, API key guard, Dhru credentials guard, webhook signature registry (brief P2.5 split; after P2.5a, parallel with P2.6) | | done (`feat(machine-auth)` commit) |
-| P2.6 | staff-sign-in | `POST /admin/auth/login`, `/2fa`, `/2fa/setup`, `/logout`, `/password/set`, `GET /admin/auth/me` (6) | | in progress (worktree `../backend-p2-signin`) |
+| P2.6 | staff-sign-in | `POST /admin/auth/login`, `/2fa`, `/2fa/setup`, `/logout`, `/password/set`, `GET /admin/auth/me` (6) | | done (`feat(staff-sign-in)` commit) |
 | P2.7 | contract-tests | route/shape/error parity tests, fixture harvest from the frontend mocks, allowlist, `pending.ts` | | done (`test(contract)` commit) |
 | 2a | identity-staff-access | staff, roles, permissions, sessions, IP rules, access restriction, audit logs, settings (st2 admin, 31) | admin-team, ip-rules | |
 | 2b | identity-merchant-auth | merchant portal sign-in, security, sessions (st2 client, 15) | | |
@@ -121,7 +120,8 @@ re-review), max 2 review rounds.
 | P2.5a sessions-guards | 4 (implementer, review: 1 blocking, fix, re-review: pass) |
 | P2.5b pipeline-hooks | 2 (implementer, review: pass, no blocking) |
 | P2.5c machine-auth | 4 (implementer, review: 1 blocking, fix, re-review: pass) |
-| **Total** | **32** |
+| P2.6 staff-sign-in | 2 (implementer, review: pass, no blocking) |
+| **Total** | **34** |
 
 ## Decisions
 
@@ -200,8 +200,10 @@ None.
   `dhru` scope; key revocation (7b) and merchant status changes must call `ApiKeyDirectory.invalidate` /
   `invalidateClient` (else up to 60 s); `RateLimit-*` headers on v1 and multipart Dhru credentials are left to 7a;
   consider checking `allowed_ips` before the merchant status (a stolen key used elsewhere learns the status).
-- Flaky under full-suite load: "staff session guard > judges a cached view again on every request" (timing; passes
-  alone). Watch it; widen its time margin if it recurs.
+- Staff sign-in (P2.6) notes: local sign-in uses the seeded staff with password `demo-password` and the TOTP secrets
+  listed in README "Local sign-in"; the 2FA and setup attempt limits count per account (stricter than per session:
+  someone with the password can lock the owner out of the code step for 15 minutes); migration 0002 adds
+  `staff_users.totp_last_step` (B116); `StaffAuthTokens` creates invite/reset links for feature 2a.
 - Merge procedure (lead): commit the implementer's output on the feature branch, `git merge --squash` it into
   `feat/backend`, apply the review fixes, then stage only paths that still exist: a deleted directory in the `git add`
   list makes the whole command fail and leaves the later edits out of the commit (happened once: P2.4b, fixed by

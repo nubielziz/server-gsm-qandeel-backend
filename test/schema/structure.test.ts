@@ -65,7 +65,7 @@ const IMMUTABLE = new Set([
   'ticket_messages',
 ]);
 
-/** Columns MISMATCHES B116 adds to the map's tables. */
+/** Columns MISMATCHES B116 adds to the map's tables, and later features' additions (staff_users.totp_last_step: P2.6). */
 const ADDITIONS: Record<string, string[]> = {
   sessions: ['stage'],
   audit_logs: ['entity_label'],
@@ -73,6 +73,7 @@ const ADDITIONS: Record<string, string[]> = {
   pricing_rules: ['starts_at', 'ends_at'],
   inventory_codes: ['code_hash', 'code_last4'],
   clients: ['suspended_at', 'suspended_reason', 'suspended_by'],
+  staff_users: ['totp_last_step'],
   payments: ['reviewed_at', 'review_note'],
   invoices: ['description'],
   refunds: ['note'],
