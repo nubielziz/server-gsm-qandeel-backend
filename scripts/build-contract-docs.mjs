@@ -44,6 +44,7 @@ const BACKEND_CODES = [
   ['ERASURE_NOT_DONE', 409, 'An erasure request cannot be completed before the customer is anonymized.'],
   ['PAYMENT_AUTO_CREDIT_PENDING', 409, 'Approve or reject refused: an automatic-gateway top-up is credited by the auto-credit job after the gateway check (staff may decide only when the gateway is manual or review_required is set).'],
   ['ALREADY_SENT', 409, 'POST /admin/orders/:id/dispatch refused: the order was already sent to a supplier (dispatch_state sent).'],
+  ['ACCOUNT_PENDING_APPROVAL', 403, 'A merchant waiting for approval called a route that needs an approved account (orders, top-ups, API keys, price lists); it does not sign out (B153).'],
   ['PRICE_CHANGED', 409, 'The charged price is more than the tolerance above the price the merchant was last listed (B117); the Dhru surface answers "Price changed. Please refresh the service list and order again.".'],
 ];
 

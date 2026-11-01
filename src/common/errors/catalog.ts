@@ -26,6 +26,7 @@ export const ERROR_CATALOG = {
   UNAUTHORIZED: { status: 401, title: 'Authentication failed.' },
   INSUFFICIENT_FUNDS: { status: 402, title: 'The wallet balance is too low for this order.' },
   PAYMENT_DECLINED: { status: 402, title: 'The payment was declined.' },
+  ACCOUNT_PENDING_APPROVAL: { status: 403, title: 'This account is waiting for approval.' },
   ACCOUNT_SUSPENDED: { status: 403, title: 'This account is suspended.' },
   CSRF_FAILED: { status: 403, title: 'The security check for this request failed.' },
   FORBIDDEN: { status: 403, title: 'You do not have permission to do this.' },

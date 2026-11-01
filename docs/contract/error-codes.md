@@ -8,7 +8,7 @@ codes internally. Client-only codes of the console (NETWORK_ERROR, INVALID_RESPO
 emitted. **Session-ending codes** (401 UNAUTHORIZED, 403 ACCOUNT_SUSPENDED, 403 IP_NOT_ALLOWED) are only ever about
 the caller. Titles are fixed English sentences written with the catalog in Phase 2.
 
-122 codes. "Frontend" = referenced by the console's code or mocks; other codes are backend additions the
+123 codes. "Frontend" = referenced by the console's code or mocks; other codes are backend additions the
 console shows through their title and detail.
 
 | Code | Status | Meaning | Routes | Frontend |
@@ -18,6 +18,7 @@ console shows through their title and detail.
 | UNAUTHORIZED | 401 | No, expired, revoked or pre-2FA session (any route); on POST /admin/auth/login: wrong email or password. | `POST /admin/auth/login`, `POST /admin/auth/2fa`, `POST /admin/auth/2fa/setup` +39 | yes |
 | INSUFFICIENT_FUNDS | 402 | Data value: merchant order refused for wallet balance (v1/Dhru surfaces). | any | yes |
 | PAYMENT_DECLINED | 402 | Data value: storefront payment declined. | any | yes |
+| ACCOUNT_PENDING_APPROVAL | 403 | A merchant waiting for approval called a route that needs an approved account (orders, top-ups, API keys, price lists); it does not sign out (B153). | any |  |
 | ACCOUNT_SUSPENDED | 403 | The CALLER's staff account is suspended (login with the right password, or any request on a session of a suspended account). Never use it for an action on another (suspended) account. | `POST /admin/auth/login`, `GET /admin/auth/me` | yes |
 | CSRF_FAILED | 403 | A mutation with a session but a missing or mismatched X-CSRF-Token. | `POST /admin/auth/2fa`, `POST /admin/auth/2fa/setup`, `POST /admin/auth/logout` | yes |
 | FORBIDDEN | 403 | Signed in but the role lacks the permission; detail should name it ("You need the x:y permission"). | `GET /admin/staff`, `GET /admin/staff/:id`, `POST /admin/staff` +234 | yes |

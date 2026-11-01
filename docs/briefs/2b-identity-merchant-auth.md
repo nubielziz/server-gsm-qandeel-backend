@@ -48,6 +48,14 @@ token, TOTP and password-policy pieces instead of copying them.
 - **ip-16 specs.** B121 to B136 define the 15 routes. Their columns (`clients.twofa_enabled`, `totp_last_step`,
   `password_changed_at`) come with your migration (unless the lead's `0003` already has them) and a B116 note.
 
+## Pending merchants (user decision, MISMATCHES B153)
+A merchant with status `pending` may sign in, see its approval status (`GET /client/auth/me`), manage its own account
+(profile, password, 2FA, sessions, logout) and later upload KYC documents. Every other merchant route answers `403
+ACCOUNT_PENDING_APPROVAL` (never signs out). Build it in the guard layer: a contract field `pendingMerchant: 'allow'`
+(default deny, documented like `sessionStages`) read by the merchant-session handler; switch the API-key and Dhru
+refusal of a pending merchant from `FORBIDDEN` to `ACCOUNT_PENDING_APPROVAL` (Dhru: in its envelope). Test every
+built route of this feature both ways.
+
 ## Out of scope
 Admin merchant management (2a), wallets (3; you call the public `MerchantAccounts.open`), API keys (7b), notification
 templates (12a).
