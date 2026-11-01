@@ -25,7 +25,8 @@ export class PermissionGuard implements CanActivate {
    */
   canActivate(context: ExecutionContext): boolean {
     const contract = getContract(context.getHandler());
-    if (!contract || contract.permission === null) return true;
+    // An api-key route also carries a `permission` (the scope), but the API key guard has already checked it.
+    if (!contract || contract.access !== 'staff-permission' || contract.permission === null) return true;
     const { principal } = accessStateOf(context.switchToHttp().getRequest<FastifyRequest>());
     if (principal?.kind !== 'staff') throw new AppError('UNAUTHORIZED');
     if (!grants(principal.permissions, contract.permission)) {

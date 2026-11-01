@@ -118,6 +118,14 @@ describe('defineRoute', () => {
       expect(define({ key: 'PUT /admin/spec/p5', ...admin, permission: 'risk:*' }).permission).toBe('risk:*');
     });
 
+    it('is required for api-key as the scope the key must list, one action and no area wildcard', () => {
+      const v1 = { surface: 'v1', access: 'api-key' };
+      expect(() => define({ key: 'GET /v1/spec/p7', ...v1 })).toThrow(/api-key routes need the scope/);
+      expect(() => define({ key: 'GET /v1/spec/p8', ...v1, permission: 'Orders:Read' })).toThrow(/scope/);
+      expect(() => define({ key: 'GET /v1/spec/p9', ...v1, permission: 'orders:*' })).toThrow(/scope/);
+      expect(define({ key: 'GET /v1/spec/p10', ...v1, permission: 'orders:read' }).permission).toBe('orders:read');
+    });
+
     it('is refused on any other access kind', () => {
       expect(() => define({ permission: 'staff:read' })).toThrow(/only staff-permission/);
       expect(() =>
@@ -240,6 +248,7 @@ describe('defineRoute', () => {
           key: 'POST /v1/spec/cs3',
           surface: 'v1',
           access: 'api-key',
+          permission: 'orders:write',
           body: z.object({}),
           success: { status: 204 },
           csrf: false,

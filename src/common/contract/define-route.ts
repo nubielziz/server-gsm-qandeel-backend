@@ -139,7 +139,11 @@ export interface RouteSpec<
   readonly tags: readonly string[];
   readonly surface: Surface;
   readonly access: AccessKind;
-  /** `resource:action` the caller needs; required for `staff-permission`, forbidden otherwise. */
+  /**
+   * `resource:action` the caller needs; required for `staff-permission` (the staff role must grant it) and for `api-key`
+   * (the API key's scopes must cover it by the permission grammar: the permission itself, its `area:*` or `*`; a required
+   * `area:*` is refused for an `api-key` route), forbidden otherwise.
+   */
   readonly permission?: string | null;
   /** Path parameters; an object schema with exactly the `:names` of the path. */
   readonly params?: P;
@@ -194,6 +198,7 @@ export interface RouteContract<
   readonly tags: readonly string[];
   readonly surface: Surface;
   readonly access: AccessKind;
+  /** The permission a `staff-permission` route needs, or the scope an `api-key` route needs; `null` for every other kind. */
   readonly permission: string | null;
   readonly params: P;
   readonly query: Q;
@@ -413,13 +418,17 @@ export function defineRoute<
   if (surfaceOfPath(path) !== spec.surface)
     problem(`surface "${spec.surface}" does not match the path (expected "${surfaceOfPath(path)}")`);
 
-  // Access and permission.
+  // Access and permission. A staff-permission route names the permission the role needs; an api-key route names the scope
+  // the key needs (the manifest writes both in its `permission` column).
   const permission = spec.permission ?? null;
   if (spec.access === 'staff-permission') {
     if (!permission || !PERMISSION_PATTERN.test(permission))
       problem('staff-permission routes need a permission like "staff:read"');
+  } else if (spec.access === 'api-key') {
+    if (!permission || !PERMISSION_PATTERN.test(permission) || permission.endsWith(':*'))
+      problem('api-key routes need the scope the key must list, like "orders:write" (one action, no "area:*")');
   } else if (permission !== null) {
-    problem(`only staff-permission routes carry a permission (access is "${spec.access}")`);
+    problem(`only staff-permission and api-key routes carry a permission (access is "${spec.access}")`);
   }
 
   // Session stages, audit duty and CSRF declaration (decision 018).

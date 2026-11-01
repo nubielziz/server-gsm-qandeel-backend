@@ -3,7 +3,7 @@
   "info": {
     "title": "GSM Supplier API: internal reference",
     "version": "1.0.0",
-    "description": "Every route of the API: admin console, merchant portal, storefront, REST API v1, Dhru Fusion, incoming webhooks and system routes. Generated from the route contracts; the public subset is `/openapi.json`.\n\nEach operation shows its access kind (`x-gsm-access`), the permission a staff route needs (`x-gsm-permission`) and the manifest key (`x-gsm-key`).\n\n**Conventions.** JSON bodies use camelCase names. Money is a string with exactly four decimals (`\"12.4900\"`), timestamps are ISO 8601 UTC with milliseconds (`\"2026-03-01T09:30:00.000Z\"`) and ids are numbers. Errors are `application/problem+json` with a stable `code`; quote the `requestId` when you contact support."
+    "description": "Every route of the API: admin console, merchant portal, storefront, REST API v1, Dhru Fusion, incoming webhooks and system routes. Generated from the route contracts; the public subset is `/openapi.json`.\n\nEach operation shows its access kind (`x-gsm-access`), the permission a staff route, or the scope an API key, needs (`x-gsm-permission`) and the manifest key (`x-gsm-key`).\n\n**Conventions.** JSON bodies use camelCase names. Money is a string with exactly four decimals (`\"12.4900\"`), timestamps are ISO 8601 UTC with milliseconds (`\"2026-03-01T09:30:00.000Z\"`) and ids are numbers. Errors are `application/problem+json` with a stable `code`; quote the `requestId` when you contact support."
   },
   "servers": [
     {

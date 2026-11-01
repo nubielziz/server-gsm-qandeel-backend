@@ -283,7 +283,7 @@ export const storePublicWrite = defineRoute({
   errors: [],
 });
 
-/** A GET route with one of the access kinds that P2.5c builds, to test the fail-closed placeholders. */
+/** A GET route with one of the machine access kinds (P2.5c), to test that none is left open without credentials. */
 function placeholderRoute<K extends AccessKind>(kind: K) {
   return defineRoute({
     key: `GET /store/v1/t/sec/kind/${kind}`,
@@ -291,6 +291,8 @@ function placeholderRoute<K extends AccessKind>(kind: K) {
     tags: ['security-test'],
     surface: 'store',
     access: kind,
+    // An API key route names the scope the key needs.
+    ...(kind === 'api-key' ? { permission: 'orders:read' } : {}),
     success: { status: 200, schema: Okay },
     errors: ['UNAUTHORIZED'],
   });

@@ -77,7 +77,7 @@ const INTERNAL_INFO = {
   version: API_VERSION,
   description: [
     'Every route of the API: admin console, merchant portal, storefront, REST API v1, Dhru Fusion, incoming webhooks and system routes. Generated from the route contracts; the public subset is `/openapi.json`.',
-    'Each operation shows its access kind (`x-gsm-access`), the permission a staff route needs (`x-gsm-permission`) and the manifest key (`x-gsm-key`).',
+    'Each operation shows its access kind (`x-gsm-access`), the permission a staff route, or the scope an API key, needs (`x-gsm-permission`) and the manifest key (`x-gsm-key`).',
     `**Conventions.** ${CONVENTIONS}`,
   ].join('\n\n'),
 };

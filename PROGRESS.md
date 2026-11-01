@@ -78,7 +78,7 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 | P2.4b | queues-outbox | BullMQ base (queues, worker registry, schedulers), job runs (health module), outbox + relay (platform module), Prometheus in compose; retire `spike/` (brief P2.4 items 6-10) | | done (`feat(queues-outbox)` commit) |
 | P2.5a | sessions-guards | contract fields, session service + cookies + CSRF token, guard dispatcher, staff/merchant/customer session guards, CSRF guard, permission guard + catalog + Owner helpers, audit service + enforcement, `/reference` staff gate (brief P2.5 split) | admin-team (part) | done (`feat(sessions-guards)` commit) |
 | P2.5b | pipeline-hooks | IP rules hook + hit-counter flush, maintenance hook, per-IP rate-limit hook, ordered hook registry (brief P2.5 split; parallel with P2.5a) | ip-rules (part) | done (`pipeline-hooks` commits) |
-| P2.5c | machine-auth | capability-token guard registry, API key guard, Dhru credentials guard, webhook signature registry (brief P2.5 split; after P2.5a, parallel with P2.6) | | in progress (worktree `../backend-p2-machine`) |
+| P2.5c | machine-auth | capability-token guard registry, API key guard, Dhru credentials guard, webhook signature registry (brief P2.5 split; after P2.5a, parallel with P2.6) | | done (`feat(machine-auth)` commit) |
 | P2.6 | staff-sign-in | `POST /admin/auth/login`, `/2fa`, `/2fa/setup`, `/logout`, `/password/set`, `GET /admin/auth/me` (6) | | in progress (worktree `../backend-p2-signin`) |
 | P2.7 | contract-tests | route/shape/error parity tests, fixture harvest from the frontend mocks, allowlist, `pending.ts` | | done (`test(contract)` commit) |
 | 2a | identity-staff-access | staff, roles, permissions, sessions, IP rules, access restriction, audit logs, settings (st2 admin, 31) | admin-team, ip-rules | |
@@ -120,7 +120,8 @@ re-review), max 2 review rounds.
 | P2.4b queues-outbox | 2 (implementer, review: pass, no blocking) |
 | P2.5a sessions-guards | 4 (implementer, review: 1 blocking, fix, re-review: pass) |
 | P2.5b pipeline-hooks | 2 (implementer, review: pass, no blocking) |
-| **Total** | **28** |
+| P2.5c machine-auth | 4 (implementer, review: 1 blocking, fix, re-review: pass) |
+| **Total** | **32** |
 
 ## Decisions
 
@@ -195,6 +196,12 @@ None.
   `/webhooks/*` are never judged by IP rules (B118); sign-in steps (`/admin|client/auth/login|2fa|password`) count per IP
   whatever their access; MAINTENANCE logs at warn; still open: rate-limit keys hold the raw IP (hash them, P2.6), the IP
   rule snapshot stops caching above 100 KB (~1000 rules), an unparseable client IP is not reported (add a metric).
+- Machine auth (P2.5c) notes: API-key scopes follow the permission grammar (`area:*`, `*`), but Dhru needs the exact
+  `dhru` scope; key revocation (7b) and merchant status changes must call `ApiKeyDirectory.invalidate` /
+  `invalidateClient` (else up to 60 s); `RateLimit-*` headers on v1 and multipart Dhru credentials are left to 7a;
+  consider checking `allowed_ips` before the merchant status (a stolen key used elsewhere learns the status).
+- Flaky under full-suite load: "staff session guard > judges a cached view again on every request" (timing; passes
+  alone). Watch it; widen its time margin if it recurs.
 - Merge procedure (lead): commit the implementer's output on the feature branch, `git merge --squash` it into
   `feat/backend`, apply the review fixes, then stage only paths that still exist: a deleted directory in the `git add`
   list makes the whole command fail and leaves the later edits out of the commit (happened once: P2.4b, fixed by

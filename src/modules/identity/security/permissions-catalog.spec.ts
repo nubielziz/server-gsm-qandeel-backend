@@ -38,6 +38,20 @@ describe('PermissionsCatalog', () => {
     expect(list.some((permission) => permission.includes('*'))).toBe(false);
   });
 
+  it('leaves out the scope of an api-key route: a role cannot hold it', () => {
+    defineRoute({
+      key: 'GET /v1/spec/catalog/scope',
+      summary: 'A REST v1 route',
+      tags: ['spec'],
+      surface: 'v1',
+      access: 'api-key',
+      permission: 'zzscope:read',
+      success: { status: 200, schema: z.object({}) },
+      errors: [],
+    });
+    expect(new PermissionsCatalog().list()).not.toContain('zzscope:read');
+  });
+
   it('follows the registry, so it never drifts from the routes', () => {
     const before = new PermissionsCatalog().list();
     route('GET /admin/spec/catalog/late', 'zzlate:read');

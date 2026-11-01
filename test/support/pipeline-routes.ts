@@ -88,6 +88,7 @@ export const v1Ping = defineRoute({
   tags: ['test'],
   surface: 'v1',
   access: 'api-key',
+  permission: 'orders:read',
   success: { status: 200, schema: ok },
   errors: ['UNAUTHORIZED'],
 });

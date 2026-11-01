@@ -8,7 +8,7 @@ Decisions that shape this module: 007 password hashing, 010 ids and tokens, 018 
 
 ## Status
 
-Built (P2.5a, code in `security/`): the session service, cookies and CSRF token, the guard dispatcher with the staff, merchant and customer session guards, the CSRF guard, the permission guard with the permissions catalog and the Owner helpers, and the staff gate of the internal API reference. The kinds that P2.5c builds (API keys, Dhru credentials, gateway signatures, URL secrets, capability tokens) are fail-closed placeholders. The sign-in routes (P2.6), the staff, role and IP-rule routes (feature 2a) and the IP rules, maintenance and rate-limit hooks (P2.5b) come with their own features.
+Built (P2.5a and P2.5c, code in `security/`): the session service, cookies and CSRF token, the guard dispatcher with the staff, merchant and customer session guards, the CSRF guard, the permission guard with the permissions catalog and the Owner helpers, the staff gate of the internal API reference, and the machine guards (`security/machine/`): capability tokens, URL secrets, merchant API keys (REST v1 Bearer and Dhru credentials) and gateway webhook signatures. The sign-in routes (P2.6), the staff, role and IP-rule routes (feature 2a) and the IP rules, maintenance and rate-limit hooks (P2.5b) come with their own features.
 
 ## Public API (`index.ts`)
 
@@ -25,7 +25,12 @@ Exports `IdentityModule` and the security stack (`SecurityModule`, global). Othe
 | `RolePermissions` | the permissions of a role, cached per role; `invalidate(roleId, work)` after a role change |
 | `PermissionsCatalog` | `list()`: every concrete permission the registered contracts require, without `area:*` wildcards such as the literal `risk:*` (for `GET /admin/permissions`) |
 | `SessionSubjects` | register the session resolver of a subject type (the customers module does, feature 14b) |
-| `AccessHandlers` | `replace(kind, handler)`: P2.5c gives the machine kinds their real guards |
+| `AccessHandlers` | `replace(kind, handler)`: P2.5c gave the machine kinds their real guards; a test installs a stand-in with it |
+| `ApiKeyDirectory` | `invalidate(keyHashes, work)` after a key is revoked or edited, `invalidateClient(clientId, work)` after a merchant's status changes; `findByKey` |
+| `CapabilityTokenResolvers` | `register({ kind, resolve })`: the owning module's lookup of a checkout, tracking, ticket or sign-in link token |
+| `UrlSecretVerifiers` | `register({ routeKey, load })`: where a URL-secret webhook (Telegram) finds its stored secret |
+| `WebhookVerifiers` | `register({ gateway, verify })`: one signature adapter per payment gateway (billing) |
+| `ApiKeyPrincipal`, `CapabilityPrincipal`, `WebhookPrincipal` | the caller of a machine route: merchant id, key id and scopes / the id a token opens / gateway, event id and `duplicate` |
 | `SessionPolicy`, `SESSION_SETTING_KEYS` | the lifetimes and their settings keys |
 
 ## The security stack (decision 018)
@@ -40,7 +45,11 @@ interceptors. A route without a contract is refused (`500`), except `DOCUMENTATI
 | `staff-session`, `staff-permission` | the staff session cookie; `staff-permission` adds the contract's `permission` (`403 FORBIDDEN`, the detail names it) |
 | `merchant-session`, `customer-session` | the same mechanics with their own cookie, table and statuses |
 | `internal-or-token` | the network-or-token rule of `/metrics` (`MetricsAccessGuard`) |
-| `api-key`, `dhru-credentials`, `gateway-signature`, `url-secret`, `checkout-token`, `tracking-token`, `link-token`, `ticket-token` | placeholders until P2.5c: every request is refused with `401 UNAUTHORIZED` (the Dhru envelope `Authentication Failed` on `/api/index.php`) |
+| `api-key` | `Authorization: Bearer <key>` (REST v1): see "Machine guards" below |
+| `dhru-credentials` | `username` + `apiaccesskey` in the JSON or form body of `POST /api/index.php`; every refusal is the Dhru envelope with HTTP 200 |
+| `gateway-signature` | the adapter of the `:gateway` in the URL, the 5 minute window, the replay filter |
+| `url-secret` | a secret in the URL path, compared in constant time with the stored hash or decrypted value |
+| `checkout-token`, `tracking-token`, `ticket-token`, `link-token` | the token in the path (`:token`) or the body (`token`), looked up by the resolver the owning module registered |
 
 **Session checks**, in this order: cookie present, the session is known and belongs to the subject (`401`); absolute expiry and idle
 expiry (`401`); the account is not suspended (`403 ACCOUNT_SUSPENDED`, and every session of the account is revoked); the stage is one
@@ -77,8 +86,64 @@ last step completes (new token, old one revoked), then `cookies.set(reply, 'staf
 (`SessionSubjects.register({ subjectType: 'customer', resolve })`, mapping `customers.status` to `ok`, `suspended` or `gone`), every
 customer session is refused with `401`.
 
-Built: the **IP rules stage of the request pipeline** (P2.5b, `security/ip-rules/`). The rest (sessions, guards, CSRF, permissions,
-the routes) arrives with its features; the module has no controllers yet.
+Built: the **IP rules stage of the request pipeline** (P2.5b, `security/ip-rules/`). The module has no controllers yet; the
+routes arrive with their features.
+
+### Machine guards (P2.5c, `security/machine/`)
+
+`MachineAccessInstaller` replaces the fail-closed placeholders of the machine kinds with their guards through `AccessHandlers.replace`.
+It does so in its constructor, before any `onModuleInit`, so a test module that installs its own stand-in handler in
+`onModuleInit` (`test/support/pipeline-routes.ts`) wins and is never overwritten.
+
+**API keys** (`api-keys/`). `Authorization: Bearer <key>` (REST v1) or `username` + `apiaccesskey` (Dhru, scope `dhru`, the username
+is `clients.username` compared case-insensitively) resolve an `api_keys` row by `HMAC-SHA256(TOKEN_PEPPER, key)` (decision 019: only
+the hash and the 8 character display `prefix` are stored; the key is shown once when the merchant creates it). The checks, in this
+order, with the answer of each:
+
+| Check | REST v1 (problem+json) | Dhru (HTTP 200, envelope) |
+|---|---|---|
+| no key, unknown key, malformed, wrong Dhru username | `401 UNAUTHORIZED` | `Authentication Failed` |
+| revoked or expired (`revoked_at`, `expires_at <= now`) | `401 UNAUTHORIZED` ("revoked or has expired") | `Authentication Failed` |
+| merchant `suspended` | `403 ACCOUNT_SUSPENDED` | the message |
+| merchant `pending` (not approved) | `403 FORBIDDEN` | the message |
+| `allowed_ips` non-empty and the client address (`request.ip`, `TRUST_PROXY`) is outside every CIDR, IPv4 or IPv6 (empty = any) | `403 IP_NOT_ALLOWED` | the message |
+| the key's `scopes` do not cover the contract's `permission` by the permission grammar (decision 018): the permission itself, its `area:*`, or `*`; Dhru needs `dhru` listed exactly (`*` does not open it) | `403 FORBIDDEN` naming it | the message |
+| more than `rate_limit_per_min` accepted calls in a minute (limiter `api-key`, key = key id) | `429 RATE_LIMITED` + `Retry-After` | the message |
+
+Only accepted calls count against the key's limit. Unknown keys and wrong usernames are counted per client address (the `ip` limiter,
+300 a minute, under the key `api-key-failures:<ip>`; IPv6 by /64): REST v1 and Dhru have no per-IP stage in the pipeline and an unknown
+key has no limit of its own. A request without any key is refused without a lookup and without counting. A stored `rate_limit_per_min`
+below 1 is a data error: the limiter's default (60) applies. `last_used_at` / `last_used_ip` are written at most once a minute (best
+effort). The principal is `{ kind: 'api-key', clientId, keyId, scopes, ip }`; the request context actor is the merchant (`client`).
+
+The lookup is cached 60 s (a key that matches nothing 10 s). **The features that revoke a key, change its scopes or allowed IPs, or
+change a merchant's status call, after their commit:** `afterCommit(() => directory.invalidate([keyHash]))` /
+`directory.invalidateClient(clientId, work)`; until then the old view is served for up to a minute.
+
+**Capability tokens** (`capability-tokens.ts`). The guard takes the `token` path parameter or, for the sign-in link routes, the `token`
+field of the body; a token that is not 16 to 128 base64url characters never reaches a resolver. The owning module registers a
+`CapabilityTokenResolver` per kind in `onModuleInit` (orders: `tracking-token`; customers: `checkout-token`, `link-token`; support:
+`ticket-token`): `resolve(token)` returns `{ id }` or `null` (unknown, expired, used) and **must not consume** the token; a single-use link is
+marked used by the use case, in its own transaction. A kind without a resolver refuses every request. The answer to a token that opens
+nothing is always the same: `404 NOT_FOUND`, or `410 TOKEN_INVALID` for a sign-in link; never `401`, which would sign out a customer who
+follows an old link. Brute force is limited per client address by the pipeline's `token` limiter before the guard runs. The principal is
+`{ kind: 'capability', access, resourceId, ip }`.
+
+**URL secrets** (`url-secrets.ts`). `UrlSecretVerifiers.register({ routeKey: 'POST /webhooks/telegram/:secret', load })`; `load` returns
+`{ form: 'hash', value: TokenService.hash(secret) }` or `{ form: 'secret', value }` (decrypted by the owning module for the comparison only).
+The comparison is constant time and always runs, so a missing configuration takes as long to refuse as a wrong secret. A route without a
+source, or without a stored secret, refuses every request with `401`.
+
+**Gateway signatures** (`webhooks/`). The `:gateway` of the URL (lower case; `^[a-z0-9][a-z0-9_-]{0,39}$`) picks the `WebhookVerifier` billing
+registers (feature 8): `verify({ gateway, headers, rawBody, nowSeconds })` checks the gateway's own scheme over the **exact bytes** of the
+body (kept by the raw-body tap of the `/webhooks` surface, `src/common/raw-body.ts`) and returns the `eventId` and the `timestamp` it read
+from the signed material. The guard then applies what every gateway shares, in this order: the adapter's signature (a bad one is `400
+WEBHOOK_SIGNATURE_INVALID`), the window (signed time within 300 s of now, either way, same code), and the replay filter. The filter is a
+`SET NX PX` mark per `(gateway, SHA-256 of the event id)` in the cache Redis for 15 minutes. **A repeat is not refused:** gateways retry, and
+refusing would make them retry for hours. The principal says `duplicate: true` and the handler answers `200`. `duplicate` is a hint, not
+truth: the first delivery may still be running (and may yet fail), so the handler skips the work only when its own record (the payment row,
+unique on the gateway event id) shows the event done, and otherwise processes it idempotently. The mark is released when the reply ends
+with a `5xx`, so the gateway's retry is processed; with the cache Redis down the delivery is treated as new (logged). The principal is `{ kind: 'webhook', gateway, eventId, timestamp, duplicate, ip }`.
 
 ### IP rules exports (P2.5b)
 
@@ -253,5 +318,7 @@ Both are listed in `docs/cache-keys.md`. Register every other key family there t
 |---|---|---|---|
 | `gsm:{env}:identity:ip-rules:active` | live IP rules + `adminAllowlistOnly` | 60 s, then stale for 5 min while one refresh runs | `IpRuleCache.invalidate()` after the commit of any rule or restriction change |
 | `gsm:{env}:identity:ip-rule-hits:pending` | hash of hit counters (`<rule id>`, `<rule id>:at`) | 24 h, renewed by every hit | emptied by the flush job every minute |
+| `gsm:{env}:identity:api-key:{keyHash}` | cached view of an API key and its merchant's status | 60 s (a key that matches nothing: 10 s) | `ApiKeyDirectory.invalidate(keyHashes)` / `invalidateClient(clientId)` after the commit of a revoke, an edit or a merchant status change |
+| `gsm:{env}:identity:webhook-event:{gateway}:{eventHash}` | mark that a gateway event was accepted (replay filter) | 15 min | released after a `5xx` reply; otherwise expires |
 
-Both are registered in `docs/cache-keys.md`.
+All four are registered in `docs/cache-keys.md`.

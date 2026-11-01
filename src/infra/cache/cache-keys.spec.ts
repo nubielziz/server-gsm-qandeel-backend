@@ -29,6 +29,17 @@ describe('CacheKeys builders', () => {
     expect(() => keys.session('has:colon')).toThrow(/must match/);
   });
 
+  it('build the keys of the machine guards (API keys and the webhook replay filter)', () => {
+    const hash = 'b'.repeat(64);
+    expect<string>(keys.apiKey(hash)).toBe(`gsm:test:identity:api-key:${hash}`);
+    expect<string>(keys.webhookEvent('stripe', hash)).toBe(`gsm:test:identity:webhook-event:stripe:${hash}`);
+    expect(familyOf(keys.apiKey(hash))).toBe('identity:api-key');
+    expect(familyOf(keys.webhookEvent('stripe', hash))).toBe('identity:webhook-event');
+    expect(() => keys.apiKey('has:colon')).toThrow(/must match/);
+    expect(() => keys.webhookEvent('Not:A:Slug', hash)).toThrow(/must match/);
+    expect(() => keys.webhookEvent('stripe', 'evt:1')).toThrow(/must match/);
+  });
+
   it('put the environment in every key', () => {
     const production = new CacheKeys(parseEnv({ NODE_ENV: 'development' }));
     expect(production.keyspace).toBe('gsm:development:');

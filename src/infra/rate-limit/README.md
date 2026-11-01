@@ -58,6 +58,10 @@ its IPv4 address) on these routes (`publicLimiterFor`, decision 021):
 | routes with `access` `checkout-token`, `tracking-token`, `ticket-token` or `link-token` | `token` (30 a minute) |
 | routes with `access: 'public'` under `/admin` and `/client` (sign-in, password and registration routes) | `ip` |
 
+Unknown API keys are counted per client address by the API key guard itself (identity module), with the `ip` limiter under the key
+`api-key-failures:<address key>`, because REST v1 and Dhru have no per-IP stage here and an unknown key has no per-key limit; a known
+key is limited by its own `rate_limit_per_min` after every other check (`api-key` limiter, key = key id).
+
 Not counted here: session-authenticated admin and portal routes (per-principal limits come after authentication), REST v1 and Dhru
 (a limit per API key), webhooks (signed), `/health`, `/metrics`, the documentation. The numbers live in `limiters.ts` only. A
 refusal is `429 RATE_LIMITED` with `Retry-After` and the CORS headers; with the cache Redis down the limiter counts in memory.

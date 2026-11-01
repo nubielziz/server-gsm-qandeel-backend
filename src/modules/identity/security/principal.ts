@@ -1,7 +1,7 @@
-// Who is calling: the principals the session guards produce, plus the Owner helpers of decision 018.
-// Machine access kinds (API keys, Dhru credentials) add their principals here when P2.5c builds them.
+// Who is calling: the principals the session and machine guards produce, plus the Owner helpers of decision 018.
 import { AppError } from '../../../common/errors';
 import type { SessionStage } from '../db/schema';
+import type { CapabilityAccessKind } from './machine/capability-tokens';
 import { grantsEverything } from './permission-grammar';
 import type { SessionView } from './session.types';
 
@@ -63,11 +63,68 @@ export interface CustomerPrincipal {
 export type SessionPrincipal = StaffPrincipal | MerchantPrincipal | CustomerPrincipal;
 
 /**
+ * A merchant's API key (REST v1 with a Bearer key, Dhru with username and `apiaccesskey`).
+ *
+ * Why: decision 018: both resolve an `api_keys` row, and the orders, wallet and catalog handlers act for `clientId`; the key id
+ * goes into the order's `api_key_id` and the scopes say what the key may call. The key itself is never kept.
+ */
+export interface ApiKeyPrincipal {
+  readonly kind: 'api-key';
+  readonly clientId: number;
+  readonly keyId: number;
+  readonly scopes: readonly string[];
+  readonly ip: string;
+}
+
+/**
+ * The holder of a capability token (a checkout, tracking, ticket or sign-in link token).
+ *
+ * Why: the token is the only credential of these storefront routes (decision 010); the owning module's resolver turned it into
+ * the id of the record it opens, so the handler does not look the token up a second time.
+ */
+export interface CapabilityPrincipal {
+  readonly kind: 'capability';
+  /** Which kind of token opened the route. */
+  readonly access: CapabilityAccessKind;
+  /** The id the resolver returned (the checkout session, order, ticket or one-time token the token stands for). */
+  readonly resourceId: number;
+  readonly ip: string;
+}
+
+/**
+ * A verified incoming gateway webhook.
+ *
+ * Why: the handler needs the gateway, the gateway's event id and the signed time, and a hint whether this event arrived before (a
+ * gateway retries), so that it can acknowledge a repeat cheaply. `duplicate` is only a hint: the first delivery may still be
+ * running or may fail, so the handler skips the work only when its own record (the payment row, unique on the gateway event id)
+ * shows the event done, and the processing stays idempotent in Postgres.
+ */
+export interface WebhookPrincipal {
+  readonly kind: 'webhook';
+  /** The gateway slug from the URL (`stripe`, `wise`). */
+  readonly gateway: string;
+  /** The gateway's id of the event, as the adapter read it from the signed delivery. */
+  readonly eventId: string;
+  /** The time the gateway signed, in unix seconds. */
+  readonly timestamp: number;
+  /** True when this event id was accepted before in the replay window. */
+  readonly duplicate: boolean;
+  readonly ip: string;
+}
+
+/**
+ * The callers authenticated by a credential other than a session cookie.
+ *
+ * Why: P2.5c: API keys, capability tokens and gateway signatures each produce their own principal.
+ */
+export type MachinePrincipal = ApiKeyPrincipal | CapabilityPrincipal | WebhookPrincipal;
+
+/**
  * Every kind of caller a guard can produce.
  *
- * Why: handlers and the audit read it; P2.5c adds the API-key principal (client id, key id, scopes).
+ * Why: handlers and the audit read it (`@CurrentPrincipal()`); a handler narrows it with `principal.kind`.
  */
-export type Principal = SessionPrincipal;
+export type Principal = SessionPrincipal | MachinePrincipal;
 
 /**
  * Tells whether a staff member is an Owner.

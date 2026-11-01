@@ -85,3 +85,17 @@ real worker) run the real application on Fastify `inject`.
   `MaintenanceService.invalidate()` afterwards: every test app shares the database and the cache Redis, and a snapshot with a
   restricted admin console would refuse the next file's `/admin` requests.
 
+## Machine guard tests (capability tokens, URL secrets, API keys, Dhru, gateway signatures)
+
+`test/integration/machine-auth.test.ts` runs the guards of `src/modules/identity/security/machine/` through real HTTP; their unit tests
+sit next to the code (`*.spec.ts`, fakes for the directory, the limiter and the replay filter) and `src/common/raw-body.spec.ts`.
+
+- `test/support/machine-auth.ts` has one sample route per machine access kind (keys under `/t/mach`), `MachineTestController` (it also
+  serves the Dhru sample route `dhruLike` of `routes.ts`: do not add `TestController` to the same app), `staticResolver` for the
+  capability tokens, `testWebhookVerifier` (gateway `testpay`, our own `t=...,v1=...` scheme over the raw body, the event id read from
+  the signed JSON) with `signedDelivery`, and `insertApiKey`, which stores a key the way decision 019 says (hash and prefix only).
+- Key ids restart at 1 after `resetDb()`, so the test clears the cached key views and the `api-key` counters before each test.
+  Per-address counters need a fresh address per request (`freshClientIp()`); the unknown-key budget is keyed by address too.
+- Registries (`CapabilityTokenResolvers`, `UrlSecretVerifiers`, `WebhookVerifiers`) refuse a second registration, so register once per
+  app (`beforeAll`) and build a second app to test a registry that is empty.
+

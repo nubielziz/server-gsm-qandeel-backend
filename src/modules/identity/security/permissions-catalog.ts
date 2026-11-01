@@ -25,6 +25,8 @@ export class PermissionsCatalog {
   list(): readonly string[] {
     const permissions = new Set<string>();
     for (const contract of contractRegistry.all()) {
+      // The scope of an api-key route is not a staff permission: a role cannot hold it.
+      if (contract.access !== 'staff-permission') continue;
       // `defineRoute` only accepts `area:action` and `area:*`, so a `:*` ending is the one wildcard shape to skip.
       if (contract.permission !== null && !contract.permission.endsWith(':*')) permissions.add(contract.permission);
     }

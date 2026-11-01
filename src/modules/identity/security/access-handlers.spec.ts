@@ -146,7 +146,7 @@ describe('AccessHandlers', () => {
         tags: ['spec'],
         surface: 'store',
         access: kind,
-        ...(kind === 'staff-permission' ? { permission: 'staff:read' } : {}),
+        ...(kind === 'staff-permission' || kind === 'api-key' ? { permission: 'staff:read' } : {}),
         success: { status: 200, schema: z.object({}) },
         errors: [],
       };

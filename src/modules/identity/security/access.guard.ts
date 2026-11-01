@@ -39,7 +39,9 @@ export class AccessGuard implements CanActivate {
    *
    * @param context the request being handled
    * @returns true when the request may proceed to validation and the handler
-   * @throws {AppError} the refusal: `UNAUTHORIZED` (401), `ACCOUNT_SUSPENDED` (403), `CSRF_FAILED` (403), `FORBIDDEN` (403);
+   * @throws {AppError} the refusal: `UNAUTHORIZED` (401), `ACCOUNT_SUSPENDED` (403), `IP_NOT_ALLOWED` (403, an API key's own
+   *   address list), `CSRF_FAILED` (403), `FORBIDDEN` (403); `RATE_LIMITED` (429, an API key's limit); `NOT_FOUND` (404) and
+   *   `TOKEN_INVALID` (410) for a capability token that opens nothing; `WEBHOOK_SIGNATURE_INVALID` (400);
    *   `INTERNAL_ERROR` (500) for a route that has no contract
    */
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -57,7 +59,8 @@ export class AccessGuard implements CanActivate {
 
     const state = await this.handlers.handlerFor(contract.access).authenticate(request, contract, context);
     setAccessState(request, state);
-    if (state.principal) setRequestActor(actorOf(state.principal), request.ip);
+    const actor = state.principal ? actorOf(state.principal) : undefined;
+    if (actor) setRequestActor(actor, request.ip);
 
     this.csrf.canActivate(context);
     this.permissions.canActivate(context);

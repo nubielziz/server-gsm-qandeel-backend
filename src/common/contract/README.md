@@ -68,7 +68,8 @@ export class StaffController {
 
 Rules the layer enforces at boot (`defineRoute` throws): the key is `METHOD /path` with `:name` parameters; `params`
 declares exactly the path parameters; header names are lower case; a GET has no body; `permission` exists for
-`staff-permission` routes and only for them; `surface` matches the path prefix; the success shape is a `schema` or a
+`staff-permission` routes (the permission the role needs) and `api-key` routes (the scope the key must list, one action, no `area:*`) and for
+no other; `surface` matches the path prefix; the success shape is a `schema` or a
 `contentType` (never both, neither for 204); every `errors` entry is a catalog code (`docs/contract/error-codes.md`);
 `examples` satisfy their schemas.
 

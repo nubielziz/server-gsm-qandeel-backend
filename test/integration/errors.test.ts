@@ -250,7 +250,7 @@ describe('metrics of failures', () => {
 
 describe('surface formatters (decisions 026, 028)', () => {
   it('answers every error of the Dhru surface in the Dhru envelope, with HTTP 200', async () => {
-    // The route is not authenticated yet (the Dhru credentials guard is P2.5c), so the guard dispatcher refuses it.
+    // The request carries no Dhru credentials, so the Dhru credentials guard refuses it.
     const refused = await dev.app.inject({ method: 'POST', url: '/api/index.php', payload: { action: 'accountinfo' } });
     expect(refused.statusCode).toBe(200);
     expect(refused.headers['content-type']).toBe('application/json; charset=utf-8');

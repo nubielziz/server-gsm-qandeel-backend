@@ -4,7 +4,7 @@ import { createParamDecorator, type ExecutionContext } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { AppError } from '../../../common/errors';
 import type { RequestActor } from '../../../common/request-context';
-import type { Principal, StaffPrincipal } from './principal';
+import type { Principal, SessionPrincipal, StaffPrincipal } from './principal';
 import type { SessionView } from './session.types';
 
 /**
@@ -56,16 +56,23 @@ export function principalOf(request: FastifyRequest): Principal | undefined {
  * Describes a principal for the request context (the audit log reads it).
  *
  * @param principal the authenticated caller
- * @returns the actor type (`staff`, `client` for a merchant, `customer`) and id
+ * @returns the actor type (`staff`, `client` for a merchant or one of their API keys, `customer`) and id; `undefined` for the
+ *   holder of a capability token or a gateway webhook, who are not accounts
  */
-export function actorOf(principal: Principal): RequestActor {
+export function actorOf(principal: SessionPrincipal): RequestActor;
+export function actorOf(principal: Principal): RequestActor | undefined;
+export function actorOf(principal: Principal): RequestActor | undefined {
   switch (principal.kind) {
     case 'staff':
       return { type: 'staff', id: principal.staffId };
     case 'merchant':
+    case 'api-key':
       return { type: 'client', id: principal.clientId };
     case 'customer':
       return { type: 'customer', id: principal.customerId };
+    case 'capability':
+    case 'webhook':
+      return undefined;
   }
 }
 

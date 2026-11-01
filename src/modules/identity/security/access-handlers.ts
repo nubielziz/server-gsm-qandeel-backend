@@ -1,6 +1,7 @@
 // The access kinds and who authenticates each (decision 018): a table from a contract's `access` to a handler. The session
-// kinds and `public` are built here; the kinds of P2.5c (API keys, Dhru credentials, gateway signatures, URL secrets and
-// capability tokens) are fail-closed placeholders until it replaces them. The guard dispatcher reads this table.
+// kinds and `public` are built here; the machine kinds (API keys, Dhru credentials, gateway signatures, URL secrets and
+// capability tokens) start as fail-closed placeholders and `MachineAccessInstaller` (security/machine) replaces them with
+// their guards when the security module is built. The guard dispatcher reads this table.
 import { Injectable } from '@nestjs/common';
 import type { ExecutionContext } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
@@ -35,10 +36,12 @@ export interface AccessHandler {
 }
 
 /**
- * The access kinds that P2.5c (machine-auth) builds; until then every request on them is refused.
+ * The machine access kinds: capability tokens (checkout, tracking, ticket, link), API keys, Dhru credentials, gateway
+ * signatures and URL secrets.
  *
- * Why: the lead's split (docs/briefs/P2.5-security.md): capability tokens (checkout, tracking, ticket, link), API keys,
- * Dhru credentials, gateway signatures and URL secrets. A route that declares one must not be open in the meantime.
+ * Why: the table starts with a fail-closed placeholder for each (every request refused), so a kind that has no guard
+ * can never be open; `MachineAccessInstaller` replaces them at boot (P2.5c), and {@link AccessHandlers.isPlaceholder} tells
+ * which are still unreplaced (an app built without the security module's machine part).
  */
 export const PLACEHOLDER_ACCESS_KINDS = [
   'api-key',
@@ -81,7 +84,7 @@ class SessionAccessHandler implements AccessHandler {
  * The table of access handlers.
  *
  * Why: "every AccessKind has an entry" (a test checks it), so a new kind cannot be added to the contract layer without
- * deciding how it authenticates. P2.5c replaces the placeholders with {@link AccessHandlers.replace}.
+ * deciding how it authenticates. The machine kinds start as placeholders and are replaced with {@link AccessHandlers.replace}.
  */
 @Injectable()
 export class AccessHandlers {
@@ -151,7 +154,7 @@ export class AccessHandlers {
   }
 
   /**
-   * Gives an access kind its real handler (P2.5c: capability tokens, API keys, Dhru credentials, webhook signatures).
+   * Gives an access kind its real handler (`MachineAccessInstaller` does it for the machine kinds; tests use it for stand-ins).
    *
    * @param kind the access kind
    * @param handler the handler that authenticates it

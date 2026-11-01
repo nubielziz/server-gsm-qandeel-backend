@@ -61,7 +61,7 @@ document. The contract layer is explained in `src/common/contract/README.md`; th
    every error code the route can answer, taken from `docs/contract/error-codes.md` (a new code is added to that file and
    to `src/common/errors/catalog.ts` first); an `examples` pair for the docs (validated against the schemas). The guards
    read the contract: `access` picks who authenticates, `permission` is checked against the role (`x:*` grants every action of
-   `x`, `*` everything, a required `x:*` needs `x:*` or `*`), and a session route may name the sign-in stages it accepts
+   `x`, `*` everything, a required `x:*` needs `x:*` or `*`; an `api-key` route names the scope the key must list, exactly), and a session route may name the sign-in stages it accepts
    (`sessionStages`, default `['active']`). A staff mutation must write an audit row; `audit: false` (with the reason in the
    `description`) opts out, and `csrf: false` marks a route that has no session to bind a CSRF token to (see
    `src/common/contract/README.md`).

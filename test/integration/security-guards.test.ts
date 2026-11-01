@@ -1,6 +1,6 @@
 // Integration tests of the session guards and the dispatcher (decision 018) through real HTTP: staff, merchant and customer
 // sessions (accept and refuse cases, expiry, pending stages, suspension), permissions, CSRF and the Origin check, and the
-// fail-closed placeholders. Real Postgres and Redis; sessions are made by the real SessionService.
+// machine kinds that no longer fall back to a placeholder. Real Postgres and Redis; sessions are made by the real SessionService.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
@@ -617,14 +617,25 @@ describe('the guard dispatcher', () => {
     expect(res.json().detail).toContain('no route contract');
   });
 
-  it('fails closed on the kinds P2.5c builds: 401 UNAUTHORIZED for every request', async () => {
+  it('gives every machine kind its guard: a request without credentials is refused, never let through', async () => {
     const handlers = t.app.get(AccessHandlers);
+    // What each guard answers to a request that brings nothing it can use (the machine-auth tests cover the accepted cases).
+    const expected: Record<string, [number, string]> = {
+      'api-key': [401, 'UNAUTHORIZED'],
+      'url-secret': [401, 'UNAUTHORIZED'],
+      'gateway-signature': [400, 'WEBHOOK_SIGNATURE_INVALID'],
+      'checkout-token': [404, 'NOT_FOUND'],
+      'tracking-token': [404, 'NOT_FOUND'],
+      'ticket-token': [404, 'NOT_FOUND'],
+      'link-token': [410, 'TOKEN_INVALID'],
+    };
     for (const [kind, url] of Object.entries(PLACEHOLDER_URLS)) {
-      expect(handlers.isPlaceholder(kind as never), kind).toBe(true);
+      expect(handlers.isPlaceholder(kind as never), kind).toBe(false);
       const res = await get(url, { authorization: 'Bearer anything', 'x-api-key': 'anything' });
-      expect(res.statusCode, kind).toBe(401);
-      expect(res.json().code).toBe('UNAUTHORIZED');
-      expect(res.headers['content-type']).toContain('application/problem+json');
+      const [status, code] = expected[kind]!;
+      expect(res.statusCode, kind).toBe(status);
+      expect(res.json().code, kind).toBe(code);
+      expect(res.headers['content-type'], kind).toContain('application/problem+json');
     }
   });
 
@@ -638,14 +649,14 @@ describe('the guard dispatcher', () => {
     expect(res.json()).toEqual({ ERROR: [{ MESSAGE: 'Authentication Failed' }], apiversion: '6.1' });
   });
 
-  it('lets a later feature replace a placeholder with its real handler', async () => {
+  it('lets a feature or a test replace the handler of a kind', async () => {
     const own = await createTestApp({ controllers: [SecurityTestController] });
     try {
       const handlers = own.app.get(AccessHandlers);
+      expect((await own.app.inject({ method: 'GET', url: PLACEHOLDER_URLS['api-key']! })).statusCode).toBe(401);
       handlers.replace('api-key', { authenticate: () => ({}) });
-      expect(handlers.isPlaceholder('api-key')).toBe(false);
       expect((await own.app.inject({ method: 'GET', url: PLACEHOLDER_URLS['api-key']! })).statusCode).toBe(200);
-      expect((await own.app.inject({ method: 'GET', url: PLACEHOLDER_URLS['link-token']! })).statusCode).toBe(401);
+      expect((await own.app.inject({ method: 'GET', url: PLACEHOLDER_URLS['link-token']! })).statusCode).toBe(410);
     } finally {
       await own.close();
     }

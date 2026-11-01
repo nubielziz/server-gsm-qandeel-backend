@@ -116,6 +116,27 @@ export class CacheKeys {
   }
 
   /**
+   * The cached view of one API key and the status of its merchant (REST v1 and Dhru authentication, decision 018).
+   *
+   * @param keyHash the keyed hash of the API key (never the key itself)
+   * @returns `gsm:{env}:identity:api-key:{keyHash}`
+   */
+  apiKey(keyHash: string): CacheKey {
+    return `${this.keyspace}identity:api-key:${segment('api key hash', keyHash)}` as CacheKey;
+  }
+
+  /**
+   * The mark that an incoming gateway webhook event was accepted (replay protection, decisions 018 and 019).
+   *
+   * @param gateway the gateway slug of the URL, lower case
+   * @param eventHash the SHA-256 hex of the gateway's event id (an id can hold characters a key must not)
+   * @returns `gsm:{env}:identity:webhook-event:{gateway}:{eventHash}`
+   */
+  webhookEvent(gateway: string, eventHash: string): CacheKey {
+    return `${this.keyspace}identity:webhook-event:${segment('gateway', gateway)}:${segment('event hash', eventHash)}` as CacheKey;
+  }
+
+  /**
    * The permission list of one role, read on every staff request (decision 018: "cached per role").
    *
    * @param roleId the id of the role
@@ -217,6 +238,22 @@ export const CACHE_KEY_FAMILIES: readonly CacheKeyFamily[] = [
     ttl: '60 s (a token that matches no live session: 10 s)',
     invalidation:
       'SessionService deletes it after the commit of a revoke or a rotation, and invalidateSubject(subjectType, subjectId) after a suspension, password change or role change',
+  },
+  {
+    builder: 'apiKey',
+    pattern: 'gsm:{env}:identity:api-key:{keyHash}',
+    owner: 'identity',
+    ttl: '60 s (a key that matches nothing: 10 s)',
+    invalidation:
+      'ApiKeyDirectory.invalidate(keyHashes) after the commit of a revoke or an edit of the key, invalidateClient(clientId) after a merchant status change',
+  },
+  {
+    builder: 'webhookEvent',
+    pattern: 'gsm:{env}:identity:webhook-event:{gateway}:{eventHash}',
+    owner: 'identity',
+    ttl: '15 min (the 5 minute window on both sides of the signed time); a replay filter, not truth: the payment row is the idempotency',
+    invalidation:
+      'released when the request ended with a 5xx so the gateway retry is processed; otherwise it expires by itself',
   },
   {
     builder: 'rolePermissions',

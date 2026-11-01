@@ -7,6 +7,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { Logger } from 'nestjs-pino';
 import { ProblemExceptionFilter } from './common/errors';
 import { RequestPipeline } from './common/pipeline';
+import { registerRawBodyCapture } from './common/raw-body';
 import { REQUEST_ID_HEADER, resolveRequestId, runWithRequestId } from './common/request-id';
 import type { AppConfig, TrustProxy } from './config';
 import { registerAccessLog } from './infra/logging';
@@ -114,7 +115,8 @@ export function registerRequestIdHooks(fastify: FastifyInstance): void {
 
 /**
  * Applies the HTTP pipeline pieces shared by the API and the tests: logger, request id, CORS, cookies, security
- * headers, access log and request metrics. Shutdown hooks and listening stay in `main.ts`.
+ * headers, access log, request metrics and the raw-body tap of the webhook surface. Shutdown hooks and listening stay in
+ * `main.ts`.
  *
  * Why: ALIGNMENT § 6 and decision 018 fix the order: CORS preflight is answered first (so a refused request still
  * carries readable CORS headers), then the request id; then the request pipeline (IP rules, maintenance, per-IP rate
@@ -161,6 +163,8 @@ export async function configureApp(app: NestFastifyApplication, config: AppConfi
   });
   registerHttpMetrics(fastify, app.get(MetricsService));
   registerAccessLog(fastify, logger);
+  // Gateway signatures cover the exact bytes of the body, so the webhook surface keeps them (the guard reads them).
+  registerRawBodyCapture(fastify);
   // After CORS, the request id, cookies and helmet (they are onRequest hooks too, and Fastify runs hooks in the order they were
   // added): a refusal then carries the CORS and security headers. The modules register their stage in onModuleInit.
   app.get(RequestPipeline).install(fastify);

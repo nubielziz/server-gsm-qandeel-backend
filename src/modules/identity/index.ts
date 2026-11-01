@@ -1,6 +1,7 @@
 // Public API of the identity module: the module, the security building blocks other modules and features use
-// (sessions, cookies, CSRF, the principal and permission helpers, the access guards and the permissions catalog) and
-// the IP rules building blocks (the worker's hit flush job; the IP rule routes of feature 2a invalidate the cache).
+// (sessions, cookies, CSRF, the principal and permission helpers, the access guards and the permissions catalog), the
+// registries of the machine guards (capability token resolvers, URL secrets, gateway webhook adapters, the API key cache)
+// and the IP rules building blocks (the worker's hit flush job; the IP rule routes of feature 2a invalidate the cache).
 export { IdentityModule } from './identity.module';
 export { SecurityModule } from './security/security.module';
 export { AccessGuard } from './security/access.guard';
@@ -15,13 +16,36 @@ export { PermissionGuard } from './security/permission.guard';
 export { PermissionsCatalog } from './security/permissions-catalog';
 export { assertOwnerTargetAllowed, isOwner } from './security/principal';
 export type {
+  ApiKeyPrincipal,
+  CapabilityPrincipal,
   CustomerPrincipal,
+  MachinePrincipal,
   MerchantPrincipal,
   PermissionHolder,
   Principal,
   SessionPrincipal,
   StaffPrincipal,
+  WebhookPrincipal,
 } from './security/principal';
+export {
+  API_KEY_CACHE_TTL_SECONDS,
+  API_KEY_TOUCH_INTERVAL_MS,
+  ApiKeyDirectory,
+  UNKNOWN_API_KEY_TTL_SECONDS,
+} from './security/machine/api-keys/api-key.directory';
+export { DHRU_SCOPE, checkApiKey, ipAllowedForKey } from './security/machine/api-keys/api-key.rules';
+export type { ApiKeyRefusalReason, ApiKeyView } from './security/machine/api-keys/api-key.rules';
+export { CAPABILITY_ACCESS_KINDS, CapabilityTokenResolvers } from './security/machine/capability-tokens';
+export type {
+  CapabilityAccessKind,
+  CapabilityGrant,
+  CapabilityTokenResolver,
+} from './security/machine/capability-tokens';
+export { UrlSecretVerifiers } from './security/machine/url-secrets';
+export type { StoredUrlSecret, UrlSecretSource } from './security/machine/url-secrets';
+export { WEBHOOK_EVENT_TTL_MS, WebhookEventLedger } from './security/machine/webhooks/webhook-event-ledger';
+export { GATEWAY_SLUG, WebhookVerifiers } from './security/machine/webhooks/webhook-verifiers';
+export type { VerifiedDelivery, WebhookDelivery, WebhookVerifier } from './security/machine/webhooks/webhook-verifiers';
 export { REFERENCE_DOCS_PERMISSION, StaffSystemReadGuard } from './security/reference-docs.guard';
 export { RolePermissions } from './security/role-permissions';
 export { SessionAuthenticator } from './security/session-authenticator';
