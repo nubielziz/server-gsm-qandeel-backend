@@ -38,6 +38,9 @@ DO NOTHING`, no ledger transaction; refuses `creditLimit > 0` when `overdraftAll
 VALIDATION_FAILED` on `creditLimit` (user rule 2; the same check as the credit-limit route). Feature 3 merges before 2a
 and 2b use it.
 
+**Already built by the lead** (`src/modules/money/application/merchant-accounts.ts`, exported, tested): keep its
+signature; extend it only if your ledger core needs to (e.g. reuse the account-resolution helpers).
+
 ## Routes (14; remove them from `test/contract/pending.ts`)
 `GET /admin/clients/:id/wallet`, `GET /admin/clients/:id/statement`, `POST /admin/clients/:id/wallet/adjust`,
 `PATCH /admin/clients/:id/credit-limit`, `GET /admin/ledger/transactions`, `GET /admin/ledger/transactions/:id`,
