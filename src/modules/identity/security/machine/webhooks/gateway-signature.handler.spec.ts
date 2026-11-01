@@ -9,10 +9,13 @@ import { AppError } from '../../../../../common/errors';
 import { GatewaySignatureAccessHandler } from './gateway-signature.handler';
 import type { EventClaim, WebhookEventLedger } from './webhook-event-ledger';
 import { type VerifiedDelivery, type WebhookDelivery, WebhookVerifiers } from './webhook-verifiers';
+import { TestClock } from '../../../../../../test/support/clock';
 import { rejectionOf } from '../../../../../../test/support/rejection';
 
 const contract = {} as AnyRouteContract;
-const now = () => Math.floor(Date.now() / 1000);
+/** The handler's clock: fixed, so the 5 minute edges are exact. */
+const clock = new TestClock('2026-11-01T10:00:00.000Z');
+const now = () => Math.floor(clock.nowMs() / 1000);
 
 interface Reply {
   readonly raw: EventEmitter;
@@ -43,7 +46,14 @@ function setup(options: { verify?: (delivery: WebhookDelivery) => VerifiedDelive
   } as unknown as WebhookEventLedger;
   const reply: Reply = { raw: new EventEmitter(), statusCode: 200 };
   const context = { switchToHttp: () => ({ getResponse: () => reply }) } as unknown as ExecutionContext;
-  return { handler: new GatewaySignatureAccessHandler(verifiers, ledger), seen, claimed, released, reply, context };
+  return {
+    handler: new GatewaySignatureAccessHandler(verifiers, ledger, clock),
+    seen,
+    claimed,
+    released,
+    reply,
+    context,
+  };
 }
 
 const post = (gateway: unknown, body: unknown = undefined) =>
@@ -52,12 +62,11 @@ const post = (gateway: unknown, body: unknown = undefined) =>
 describe('GatewaySignatureAccessHandler', () => {
   it('hands the adapter the gateway, the headers, the bytes of the body and the clock', async () => {
     const s = setup();
-    const before = now();
     await s.handler.authenticate(post('pay'), contract, s.context);
     expect(s.seen).toHaveLength(1);
     expect(s.seen[0]).toMatchObject({ gateway: 'pay', headers: { 'x-sig': 'abc' } });
     expect(s.seen[0]!.rawBody.length).toBe(0);
-    expect(s.seen[0]!.nowSeconds).toBeGreaterThanOrEqual(before);
+    expect(s.seen[0]!.nowSeconds).toBe(now());
   });
 
   it('answers a webhook principal for a delivery that is verified, recent and new', async () => {

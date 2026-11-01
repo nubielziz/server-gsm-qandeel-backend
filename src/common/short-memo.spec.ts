@@ -23,6 +23,17 @@ describe('ShortMemo', () => {
     expect(loads).toBe(2);
   });
 
+  it('loads again when the clock was stepped back, instead of trusting the value for the whole step', async () => {
+    const c = clock();
+    const memo = new ShortMemo<number>({ ttlMs: 1000, now: c.now });
+    let loads = 0;
+    const load = () => Promise.resolve(++loads);
+    c.advance(10_000);
+    expect(await memo.get(load)).toBe(1);
+    c.advance(-5_000);
+    expect(await memo.get(load)).toBe(2);
+  });
+
   it('shares one load between concurrent callers', async () => {
     const memo = new ShortMemo<string>({ ttlMs: 1000 });
     let loads = 0;

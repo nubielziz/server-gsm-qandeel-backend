@@ -196,13 +196,13 @@ export function maintenanceRetryAfter(expectedEndAt: string | null, nowMs: numbe
  *
  * @param state the current maintenance state
  * @param request the request
- * @param nowMs the current time in milliseconds
+ * @param nowMs the current time in milliseconds, from the injected clock (decision 031)
  * @returns the error to throw, or `undefined` when the request may go on
  */
 export function maintenanceRefusal(
   state: MaintenanceState,
   request: MaintenanceRequest,
-  nowMs: number = Date.now(),
+  nowMs: number,
 ): AppError | undefined {
   if (!state.enabled || state.scope === null) return undefined;
   if (!scopesCovering(request).includes(state.scope)) return undefined;

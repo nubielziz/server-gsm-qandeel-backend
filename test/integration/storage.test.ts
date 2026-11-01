@@ -1,7 +1,7 @@
 // Integration tests of StorageService (decision 004) against the local MinIO test bucket gsm-files-test: put / get / head /
 // delete, buffers and streams, the size limit, SHA-256 verification, presigned links, and the behaviour when the store is
 // unreachable. Every object lives under tests/<uuid>/ and is deleted afterwards.
-import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { AppError } from '../../src/common/errors';
@@ -12,17 +12,22 @@ import {
   HARD_MAX_OBJECT_BYTES,
   StorageService,
 } from '../../src/infra/storage';
-import { type InfraHarness, createInfra, deadRedisUrl, eventually, freePort, pause } from '../support/infra';
+import { HOUR, TestClock } from '../support/clock';
+import { type InfraHarness, createInfra, deadRedisUrl, eventually, freePort } from '../support/infra';
 import { expectRejection } from '../support/rejection';
 
+/** The clock of the service: it dates the presigned links (decision 031). */
+const clock = new TestClock();
 let harness: InfraHarness;
 let storage: StorageService;
 const created: string[] = [];
 
 beforeAll(async () => {
-  harness = await createInfra();
+  harness = await createInfra({ clock });
   storage = harness.get(StorageService);
 });
+// The store checks a link against its own (real) clock, which is the external time here: start every test with the test clock on it.
+beforeEach(() => clock.reset());
 afterAll(async () => {
   await Promise.all(created.map((key) => storage.delete(key).catch(() => undefined)));
   await harness.close();
@@ -75,8 +80,9 @@ describe('put, get, head, delete', () => {
     expect(stored.size).toBe(Buffer.byteLength('id,name\n1,Rami\n2,ليلى\n'));
     const info = await storage.head(key);
     expect(info).toMatchObject({ size: stored.size, contentType: 'text/csv; charset=utf-8', etag: stored.etag });
+    // The store stamps the time itself, with its own clock: only its form is ours to check.
     expect(info?.lastModified).toBeInstanceOf(Date);
-    expect(Math.abs(Date.now() - info!.lastModified!.getTime())).toBeLessThan(2 * 60 * 1000);
+    expect(Number.isNaN(info!.lastModified!.getTime())).toBe(false);
   });
 
   it('stores an empty file', async () => {
@@ -208,8 +214,7 @@ describe('size limit', () => {
       .catch((e: unknown) => e);
     expect((error as AppError).code).toBe('PAYLOAD_TOO_LARGE');
     expect(produced, 'the rest of a huge upload is never read').toBeLessThan(50);
-    await pause(20);
-    expect(source.destroyed).toBe(true);
+    await eventually(() => (source.destroyed ? true : undefined));
     expect(await storage.head(key)).toBeNull();
   });
 
@@ -274,19 +279,25 @@ describe('presigned links', () => {
     expect(DEFAULT_PRESIGN_SECONDS).toBe(300);
     const key = newKey();
     await storage.put(key, 'short lived', { contentType: 'text/plain' });
-    expect(new URL(await storage.presignGet(key)).searchParams.get('X-Amz-Expires')).toBe('300');
-    const url = await storage.presignGet(key, { expiresInSeconds: 1 });
-    const fresh = await fetch(url);
+    // The store's own clock is the external time: put the test clock back on it right before signing, and use the default
+    // lifetime so the drift between the host and the store's VM clock cannot expire the "fresh" link.
+    clock.reset();
+    const fresh = await fetch(await storage.presignGet(key));
     expect(fresh.status).toBe(200);
     await fresh.arrayBuffer();
-    // Poll instead of sleeping: the store checks the expiry against the machine clock, which may be stepped.
-    const expired = await eventually(async () => {
-      const response = await fetch(url);
-      if (response.status === 403) return response;
-      await response.arrayBuffer();
-      return undefined;
-    }, 15_000);
-    expect(await expired.text()).toContain('Request has expired');
+    expect(new URL(await storage.presignGet(key)).searchParams.get('X-Amz-Expires')).toBe('300');
+    expect(new URL(await storage.presignGet(key, { expiresInSeconds: 1 })).searchParams.get('X-Amz-Expires')).toBe('1');
+    // The store counts the lifetime from the signing date in the link, and the service takes that date from its clock: a link
+    // signed an hour ago with a lifetime of one second is expired, with no wait in between.
+    try {
+      clock.advance(-HOUR);
+      const old = await storage.presignGet(key, { expiresInSeconds: 1 });
+      const expired = await fetch(old);
+      expect(expired.status).toBe(403);
+      expect(await expired.text()).toContain('Request has expired');
+    } finally {
+      clock.reset();
+    }
   });
 
   it('make the browser save the file under the given name, safely quoted', async () => {

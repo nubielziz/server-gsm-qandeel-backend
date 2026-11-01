@@ -80,7 +80,7 @@ export class OutboxRelayMetrics {
    * Counts events handed over after their transaction committed.
    *
    * @param queue the queue they went to
-   * @param lagSeconds the wait of each event, by the database clock
+   * @param lagSeconds the wait of each event, by the injected clock
    */
   recordRelayed(queue: QueueName, lagSeconds: readonly number[]): void {
     this.relayed.inc({ queue }, lagSeconds.length);

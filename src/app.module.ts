@@ -1,8 +1,9 @@
-// Root module of the API process (decision 016): config, logging, metrics, the infrastructure (database, Redis, cache, rate
+// Root module of the API process (decision 016): config, the clock (decision 031), logging, metrics, the infrastructure (database, Redis, cache, rate
 // limits, crypto, storage, outbound HTTP, queue producers), the error filter, the request pipeline registry and the 12 domain
 // modules. The API only produces work (queue producers, outbox writes). Fastify hooks (IP rules, maintenance, per-IP limit)
 // register with the pipeline; sessions, guards and CSRF are added by their own feature.
 import { Module } from '@nestjs/common';
+import { ClockModule } from './common/clock.module';
 import { ErrorsModule } from './common/errors';
 import { PipelineModule } from './common/pipeline';
 import { ConfigModule } from './config';
@@ -38,6 +39,7 @@ import { SupportModule } from './modules/support';
 @Module({
   imports: [
     ConfigModule,
+    ClockModule,
     LoggingModule.forRoot({ service: 'api' }),
     MetricsModule,
     DbModule,

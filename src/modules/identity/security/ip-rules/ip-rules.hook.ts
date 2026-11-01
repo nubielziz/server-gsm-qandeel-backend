@@ -1,7 +1,8 @@
 // The IP rules stage of the request pipeline (decision 018, scenario ip-rules): blocks first, then the admin allowlist; a
 // refused request answers 403 IP_NOT_ALLOWED before authentication, with the CORS headers.
-import { Injectable, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
+import { CLOCK, type Clock } from '../../../../common/clock';
 import { type IpAddress, formatIpAddress, parseIpAddress } from '../../../../common/ip-address';
 import { AppError } from '../../../../common/errors';
 import { RequestPipeline, requestPath } from '../../../../common/pipeline';
@@ -54,6 +55,7 @@ export class IpRulesHook implements OnModuleInit {
     private readonly pipeline: RequestPipeline,
     private readonly rules: IpRuleCache,
     private readonly hits: IpRuleHits,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   /** Registers the stage. */
@@ -77,8 +79,9 @@ export class IpRulesHook implements OnModuleInit {
       });
     });
     const address = clientAddressOf(request);
-    const verdict = decideIpAccess(rules, address, audience, Date.now());
-    if (verdict.rule) this.hits.record(verdict.rule.id);
+    const nowMs = this.clock.nowMs();
+    const verdict = decideIpAccess(rules, address, audience, nowMs);
+    if (verdict.rule) this.hits.record(verdict.rule.id, nowMs);
     if (verdict.decision === 'refused') {
       throw new AppError('IP_NOT_ALLOWED', { detail: refusalDetail(verdict.reason, address) });
     }

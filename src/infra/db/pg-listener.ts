@@ -2,6 +2,7 @@
 // It holds one connection outside the pool, so a LISTEN never takes a pooled connection for ever.
 import { Logger } from '@nestjs/common';
 import { Client, type ClientConfig } from 'pg';
+import { type Timers, systemTimers } from '../../common/clock';
 import { LogThrottle } from '../../common/log-throttle';
 import { withTimeout } from '../../common/timeout';
 
@@ -35,6 +36,8 @@ export interface PgListenerOptions {
   readonly createClient?: (config: ClientConfig) => ListenClient;
   /** Wait before the first reconnect attempt and the longest wait (milliseconds); defaults 500 and 10 000. */
   readonly reconnectMs?: { readonly first: number; readonly max: number };
+  /** Timers for the reconnect waits; defaults to the real ones. Tests pass fake ones and advance them by hand. */
+  readonly timers?: Timers;
 }
 
 const CHANNEL = /^[a-z_][a-z0-9_]*$/;
@@ -60,7 +63,8 @@ export class PgListener {
   private readonly reconnectMs: { first: number; max: number };
   private client: ListenClient | undefined;
   private connecting: Promise<void> | undefined;
-  private timer: ReturnType<typeof setTimeout> | undefined;
+  private readonly timers: Timers;
+  private timer: unknown;
   private attempt = 0;
   private stopped = true;
   private everConnected = false;
@@ -75,6 +79,7 @@ export class PgListener {
     }
     this.createClient = options.createClient ?? ((config) => new Client(config));
     this.reconnectMs = { ...(options.reconnectMs ?? { first: 500, max: 10_000 }) };
+    this.timers = options.timers ?? systemTimers;
   }
 
   /** Whether a connection is open and listening right now. */
@@ -100,7 +105,7 @@ export class PgListener {
    */
   async stop(): Promise<void> {
     this.stopped = true;
-    if (this.timer) clearTimeout(this.timer);
+    if (this.timer !== undefined) this.timers.clearTimeout(this.timer);
     this.timer = undefined;
     // A connection attempt that is already under way ends here too, as soon as it finishes.
     await this.connecting?.catch(() => undefined);
@@ -175,12 +180,12 @@ export class PgListener {
   }
 
   private scheduleReconnect(): void {
-    if (this.stopped || this.timer) return;
+    if (this.stopped || this.timer !== undefined) return;
     const base = Math.min(this.reconnectMs.first * 2 ** this.attempt, this.reconnectMs.max);
     this.attempt++;
     // Jitter so that several workers do not reconnect at the same instant after a restart of Postgres.
     const delay = Math.round(base * (0.8 + Math.random() * 0.4));
-    this.timer = setTimeout(() => {
+    this.timer = this.timers.setTimeout(() => {
       this.timer = undefined;
       void this.connect();
     }, delay);

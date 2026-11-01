@@ -4,11 +4,13 @@ import type { DbExecutor } from '../../../infra/db';
 import { type JobRun, type JobStatus, type JobTrigger, jobRuns } from '../db/schema';
 
 /**
- * `(now() - started_at)` in whole milliseconds, computed by the database clock that also stamped `started_at`.
+ * `(now - started_at)` in whole milliseconds, where `now` is the injected clock's time that also stamped `started_at`
+ * (decision 031).
  * Never below zero: `job_runs_counts_check` refuses a negative duration, and a wall clock that stepped back (NTP, a VM
  * resume) must not stop a run from being closed.
  */
-const elapsedMs = sql<number>`greatest(0, (extract(epoch from (now() - ${jobRuns.startedAt})) * 1000)::int)`;
+const elapsedMs = (now: Date) =>
+  sql<number>`greatest(0, (extract(epoch from (${now}::timestamptz - ${jobRuns.startedAt})) * 1000)::int)`;
 
 /** How a run ended. */
 export interface JobRunOutcome {
@@ -65,15 +67,23 @@ export async function findRunningJobRun(db: DbExecutor, job: string): Promise<Jo
  *
  * @param db the database or a transaction
  * @param values job, trigger and the staff member for a manual run
+ * @param now the start time, from the injected clock (decision 031)
  * @returns the new `running` run
  */
 export async function insertRunningJobRun(
   db: DbExecutor,
   values: { job: string; trigger: JobTrigger; triggeredBy: number | undefined },
+  now: Date,
 ): Promise<JobRun> {
   const [row] = await db
     .insert(jobRuns)
-    .values({ job: values.job, trigger: values.trigger, status: 'running', triggeredBy: values.triggeredBy ?? null })
+    .values({
+      job: values.job,
+      trigger: values.trigger,
+      status: 'running',
+      triggeredBy: values.triggeredBy ?? null,
+      startedAt: now,
+    })
     .returning();
   if (!row) throw new Error('Inserting a job run returned no row.');
   return row;
@@ -85,12 +95,14 @@ export async function insertRunningJobRun(
  * @param db the database or a transaction
  * @param values job, trigger and the staff member for a manual run
  * @param runningId the id of the run that was in the way
+ * @param now the start and end time, from the injected clock (decision 031)
  * @returns the new `skipped` run, already finished
  */
 export async function insertSkippedJobRun(
   db: DbExecutor,
   values: { job: string; trigger: JobTrigger; triggeredBy: number | undefined },
   runningId: number,
+  now: Date,
 ): Promise<JobRun> {
   const [row] = await db
     .insert(jobRuns)
@@ -99,7 +111,8 @@ export async function insertSkippedJobRun(
       trigger: values.trigger,
       status: 'skipped',
       triggeredBy: values.triggeredBy ?? null,
-      finishedAt: sql`now()`,
+      startedAt: now,
+      finishedAt: now,
       durationMs: 0,
       processed: 0,
       result: { reason: 'another run of this job was still going on', runningRunId: runningId },
@@ -118,15 +131,21 @@ export async function insertSkippedJobRun(
  * @param db the database or a transaction
  * @param id the run id
  * @param outcome how it ended
+ * @param now the end time, from the injected clock (decision 031)
  * @returns the closed run, or `undefined` when it was not running
  */
-export async function finishJobRun(db: DbExecutor, id: number, outcome: JobRunOutcome): Promise<JobRun | undefined> {
+export async function finishJobRun(
+  db: DbExecutor,
+  id: number,
+  outcome: JobRunOutcome,
+  now: Date,
+): Promise<JobRun | undefined> {
   const [row] = await db
     .update(jobRuns)
     .set({
       status: outcome.status,
-      finishedAt: sql`now()`,
-      durationMs: elapsedMs,
+      finishedAt: now,
+      durationMs: elapsedMs(now),
       processed: outcome.processed ?? 0,
       result: outcome.result ?? {},
       error: outcome.error ?? null,
@@ -141,20 +160,19 @@ export async function finishJobRun(db: DbExecutor, id: number, outcome: JobRunOu
  *
  * @param db the database or a transaction
  * @param maxAgeMs how old a running run must be to count as stuck
+ * @param now the current time, from the injected clock (decision 031)
  * @returns the ids of the runs that were closed
  */
-export async function failStuckJobRuns(db: DbExecutor, maxAgeMs: number): Promise<number[]> {
+export async function failStuckJobRuns(db: DbExecutor, maxAgeMs: number, now: Date): Promise<number[]> {
   const rows = await db
     .update(jobRuns)
     .set({
       status: 'failed',
-      finishedAt: sql`now()`,
-      durationMs: elapsedMs,
+      finishedAt: now,
+      durationMs: elapsedMs(now),
       error: 'The worker stopped before this run finished.',
     })
-    .where(
-      and(eq(jobRuns.status, 'running'), lt(jobRuns.startedAt, sql`now() - make_interval(secs => ${maxAgeMs / 1000})`)),
-    )
+    .where(and(eq(jobRuns.status, 'running'), lt(jobRuns.startedAt, new Date(now.getTime() - maxAgeMs))))
     .returning({ id: jobRuns.id });
   return rows.map((row) => row.id);
 }

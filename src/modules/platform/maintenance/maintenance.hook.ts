@@ -1,7 +1,8 @@
 // The maintenance stage of the request pipeline (decision 018, scenario system-integrity): the chosen scope answers 503
 // MAINTENANCE before authentication; the admin console, health and metrics are never affected.
-import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
+import { CLOCK, type Clock } from '../../../common/clock';
 import { LogThrottle } from '../../../common/log-throttle';
 import { RequestPipeline, requestPath } from '../../../common/pipeline';
 import { MaintenanceService } from './maintenance.service';
@@ -37,6 +38,7 @@ export class MaintenanceHook implements OnModuleInit {
   constructor(
     private readonly pipeline: RequestPipeline,
     private readonly maintenance: MaintenanceService,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   /** Registers the two phases of the stage. */
@@ -61,7 +63,7 @@ export class MaintenanceHook implements OnModuleInit {
 
   private async refuseIfCovered(request: FastifyRequest, path: string, dhruAction: string | undefined): Promise<void> {
     const state = await this.stateOrOff();
-    const refusal = maintenanceRefusal(state, { method: request.method, path, dhruAction });
+    const refusal = maintenanceRefusal(state, { method: request.method, path, dhruAction }, this.clock.nowMs());
     if (refusal) throw refusal;
   }
 

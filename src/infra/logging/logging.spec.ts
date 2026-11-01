@@ -110,7 +110,8 @@ describe('pino options', () => {
     logger.info('before');
     await runWithRequestId('req-42', async () => {
       logger.info('inside');
-      await new Promise((resolve) => setTimeout(resolve, 1));
+      // A turn of the event loop, so the context must survive a real asynchronous hop (no timer, no wait).
+      await new Promise((resolve) => setImmediate(resolve));
       logger.warn({ extra: 1 }, 'after await');
     });
     logger.info('after');

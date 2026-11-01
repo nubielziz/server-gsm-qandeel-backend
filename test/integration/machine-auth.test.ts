@@ -22,7 +22,9 @@ import {
 import { MaintenanceService } from '../../src/modules/platform';
 import { type TestApp, createTestApp } from '../support/app';
 import { insertMerchant } from '../support/auth';
+import { HOUR, MINUTE, SECOND, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
+import { eventually } from '../support/infra';
 import {
   MachineTestController,
   TEST_GATEWAY,
@@ -40,6 +42,8 @@ const DHRU_FAILED = { ERROR: [{ MESSAGE: 'Authentication Failed' }], apiversion:
 
 let t: TestApp;
 let db: Database;
+/** The clock of the app: key expiry, "last used" and webhook windows move when the test says so (decision 031). */
+const clock = new TestClock();
 let stored: StoredUrlSecret | null = null;
 const tokens: Record<'checkout' | 'tracking' | 'ticket' | 'link', string> = {
   checkout: '',
@@ -51,7 +55,7 @@ const tokens: Record<'checkout' | 'tracking' | 'ticket' | 'link', string> = {
 beforeAll(async () => {
   ({ db } = await testDb());
   await resetDb();
-  t = await createTestApp({ controllers: [MachineTestController] });
+  t = await createTestApp({ controllers: [MachineTestController], clock });
   tokens.checkout = randomCapabilityToken(t);
   tokens.tracking = randomCapabilityToken(t);
   tokens.ticket = randomCapabilityToken(t);
@@ -67,7 +71,7 @@ beforeAll(async () => {
   verifiers.register(testWebhookVerifier);
   verifiers.register({
     gateway: 'nameless',
-    verify: () => ({ eventId: '', timestamp: Math.floor(Date.now() / 1000) }),
+    verify: () => ({ eventId: '', timestamp: Math.floor(clock.nowMs() / 1000) }),
   });
   verifiers.register({
     gateway: 'broken',
@@ -86,6 +90,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await resetDb();
   stored = null;
+  clock.reset();
   const cache = t.app.get(CacheService);
   const keys = t.app.get(CacheKeys);
   // Key ids restart at 1 after resetDb: forget what the caches and limiters know about the previous test's keys.
@@ -299,15 +304,18 @@ describe('API keys on REST v1', () => {
 
   it('refuses a revoked key and an expired key as 401, in the same words', async () => {
     const clientId = await insertMerchant(db);
-    const revoked = await insertApiKey(t, db, clientId, { revokedAt: new Date(Date.now() - 1_000) });
-    const expired = await insertApiKey(t, db, clientId, { expiresAt: new Date(Date.now() - 1_000) });
-    const future = await insertApiKey(t, db, clientId, { expiresAt: new Date(Date.now() + 3_600_000) });
+    const revoked = await insertApiKey(t, db, clientId, { revokedAt: new Date(clock.nowMs() - SECOND) });
+    const expired = await insertApiKey(t, db, clientId, { expiresAt: new Date(clock.nowMs() - SECOND) });
+    const future = await insertApiKey(t, db, clientId, { expiresAt: new Date(clock.nowMs() + HOUR) });
     const a = await get(revoked.key);
     const b = await get(expired.key);
     refusedAs(a, 401, 'UNAUTHORIZED');
     refusedAs(b, 401, 'UNAUTHORIZED');
     expect(a.json().detail).toBe(b.json().detail);
     expect((await get(future.key)).statusCode).toBe(200);
+    // Time moves: the key that was fine an hour ago is expired now (the cached view is judged again on every request).
+    clock.advance(HOUR + SECOND);
+    refusedAs(await get(future.key), 401, 'UNAUTHORIZED');
   });
 
   it('applies a revoke at once once the cached view is dropped, and not before (it lives a minute)', async () => {
@@ -316,7 +324,7 @@ describe('API keys on REST v1', () => {
     // The first call writes "last used", which drops the view; the second loads and caches it again.
     expect((await get(key)).statusCode).toBe(200);
     expect((await get(key)).statusCode).toBe(200);
-    await db.update(s.apiKeys).set({ revokedAt: new Date() }).where(eq(s.apiKeys.id, id));
+    await db.update(s.apiKeys).set({ revokedAt: clock.now() }).where(eq(s.apiKeys.id, id));
     expect((await get(key)).statusCode).toBe(200);
     await t.app.get(ApiKeyDirectory).invalidate([keyHash]);
     refusedAs(await get(key), 401, 'UNAUTHORIZED');
@@ -452,7 +460,7 @@ describe('API keys on REST v1', () => {
 
   it('records when and from where a key was last used, at most once a minute', async () => {
     const clientId = await insertMerchant(db);
-    const { id, key, keyHash } = await insertApiKey(t, db, clientId);
+    const { id, key } = await insertApiKey(t, db, clientId);
     const row = async () => (await db.select().from(s.apiKeys).where(eq(s.apiKeys.id, id)))[0]!;
     expect((await row()).lastUsedAt).toBeNull();
     expect((await get(key, '203.0.113.50')).statusCode).toBe(200);
@@ -462,13 +470,14 @@ describe('API keys on REST v1', () => {
     expect((await get(key, '203.0.113.51')).statusCode).toBe(200);
     expect((await row()).lastUsedAt).toEqual(first.lastUsedAt);
     expect((await row()).lastUsedIp).toBe('203.0.113.50');
-    await db
-      .update(s.apiKeys)
-      .set({ lastUsedAt: new Date(Date.now() - 120_000) })
-      .where(eq(s.apiKeys.id, id));
-    await t.app.get(ApiKeyDirectory).invalidate([keyHash]);
+    // A minute later the next call writes it again.
+    clock.advance(MINUTE - SECOND);
     expect((await get(key, '203.0.113.52')).statusCode).toBe(200);
-    expect((await row()).lastUsedIp).toBe('203.0.113.52');
+    expect((await row()).lastUsedIp, 'a second short of a minute: not written').toBe('203.0.113.50');
+    clock.advance(SECOND);
+    expect((await get(key, '203.0.113.53')).statusCode).toBe(200);
+    expect((await row()).lastUsedIp).toBe('203.0.113.53');
+    expect((await row()).lastUsedAt).toEqual(clock.now());
   });
 
   it('keeps the keys of two merchants apart', async () => {
@@ -518,8 +527,8 @@ describe('Dhru credentials', () => {
     const clientId = await insertMerchant(db, { username: 'acme' });
     const other = await insertMerchant(db, { username: 'other' });
     const good = await insertApiKey(t, db, clientId);
-    const revoked = await insertApiKey(t, db, clientId, { revokedAt: new Date(Date.now() - 1_000) });
-    const expired = await insertApiKey(t, db, clientId, { expiresAt: new Date(Date.now() - 1_000) });
+    const revoked = await insertApiKey(t, db, clientId, { revokedAt: new Date(clock.nowMs() - SECOND) });
+    const expired = await insertApiKey(t, db, clientId, { expiresAt: new Date(clock.nowMs() - SECOND) });
     const unknown = `gsm_${t.app.get(TokenService).random(32)}`;
     const attempts: Record<string, Record<string, unknown>> = {
       'no credentials': { action: 'accountinfo' },
@@ -613,20 +622,23 @@ describe('gateway webhook signatures', () => {
       headers: delivery.headers,
       payload: delivery.payload,
     });
-  const now = () => Math.floor(Date.now() / 1000);
+  const now = () => Math.floor(clock.nowMs() / 1000);
+  /** A delivery signed `offset` seconds from now (default now). */
+  const signed = (body: Record<string, unknown>, offset = 0, secret?: string) =>
+    signedDelivery(body, now() + offset, secret);
 
   it('accepts a delivery signed by its gateway and hands the handler the event', async () => {
-    const res = await hook(signedDelivery({ id: 'evt_1', amount: '10.0000' }));
+    const res = await hook(signed({ id: 'evt_1', amount: '10.0000' }));
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ kind: 'webhook', gateway: TEST_GATEWAY, eventId: 'evt_1', duplicate: false });
   });
 
   it('verifies the exact bytes of the body, not a re-serialised object', async () => {
     const payload = '{ "id" : "evt_spaced",\n  "amount": 10.50, "tags": [ "a" ,"b" ] }';
-    const { headers } = signedDelivery({ id: 'unused' });
+    const { headers } = signed({ id: 'unused' });
     // Sign the odd text itself.
-    const signed = signedDelivery({ id: 'evt_spaced' });
-    expect(signed.payload).not.toBe(payload);
+    const reference = signed({ id: 'evt_spaced' });
+    expect(reference.payload).not.toBe(payload);
     const { signWebhook } = await import('../../src/infra/crypto');
     const odd = {
       payload,
@@ -638,72 +650,71 @@ describe('gateway webhook signatures', () => {
   });
 
   it('refuses a missing, malformed, wrong or tampered signature with 400 WEBHOOK_SIGNATURE_INVALID', async () => {
-    const good = signedDelivery({ id: 'evt_2' });
+    const good = signed({ id: 'evt_2' });
     const noHeader = { payload: good.payload, headers: { 'content-type': 'application/json' } };
     refusedAs(await hook(noHeader), 400, 'WEBHOOK_SIGNATURE_INVALID');
     const garbage = { payload: good.payload, headers: { ...good.headers, 'x-test-signature': 'nonsense' } };
     refusedAs(await hook(garbage), 400, 'WEBHOOK_SIGNATURE_INVALID');
-    refusedAs(await hook(signedDelivery({ id: 'evt_2' }, now(), 'another-secret')), 400, 'WEBHOOK_SIGNATURE_INVALID');
+    refusedAs(await hook(signed({ id: 'evt_2' }, 0, 'another-secret')), 400, 'WEBHOOK_SIGNATURE_INVALID');
     const tampered = { payload: good.payload.replace('evt_2', 'evt_3'), headers: good.headers };
     refusedAs(await hook(tampered), 400, 'WEBHOOK_SIGNATURE_INVALID');
   });
 
   it('refuses a delivery whose signed time is more than 5 minutes from now, in either direction', async () => {
     for (const offset of [-301, -3_600, 301, 3_600]) {
-      const res = await hook(signedDelivery({ id: `evt_late_${offset}` }, now() + offset));
+      const res = await hook(signed({ id: `evt_late_${offset}` }, offset));
       refusedAs(res, 400, 'WEBHOOK_SIGNATURE_INVALID');
       expect(res.json().detail, String(offset)).toContain('too far');
     }
     for (const offset of [-290, 0, 290]) {
-      expect((await hook(signedDelivery({ id: `evt_in_${offset}` }, now() + offset))).statusCode, String(offset)).toBe(
-        200,
-      );
+      expect((await hook(signed({ id: `evt_in_${offset}` }, offset))).statusCode, String(offset)).toBe(200);
     }
   });
 
   it('checks the signature before the time, so a forged request learns nothing about the window', async () => {
-    const stale = await hook(signedDelivery({ id: 'evt_forged' }, now() - 3_600, 'another-secret'));
+    const stale = await hook(signed({ id: 'evt_forged' }, -3_600, 'another-secret'));
     refusedAs(stale, 400, 'WEBHOOK_SIGNATURE_INVALID');
     expect(stale.json().detail).not.toContain('too far');
   });
 
   it('recognises an event it already accepted: the repeat is let through, marked duplicate', async () => {
-    const delivery = signedDelivery({ id: 'evt_repeat' });
+    const delivery = signed({ id: 'evt_repeat' });
     expect((await hook(delivery)).json().duplicate).toBe(false);
     const again = await hook(delivery);
     expect(again.statusCode).toBe(200);
     expect(again.json()).toMatchObject({ eventId: 'evt_repeat', duplicate: true });
     // A different event is new, and so is the same id on another gateway slug (a separate key space).
-    expect((await hook(signedDelivery({ id: 'evt_other' }))).json().duplicate).toBe(false);
+    expect((await hook(signed({ id: 'evt_other' }))).json().duplicate).toBe(false);
   });
 
   it('marks a replay of a captured request inside the window as a duplicate', async () => {
-    const captured = signedDelivery({ id: 'evt_captured' }, now() - 120);
+    const captured = signed({ id: 'evt_captured' }, -120);
     expect((await hook(captured)).json().duplicate).toBe(false);
     expect((await hook(captured)).json().duplicate).toBe(true);
     expect((await hook(captured)).json().duplicate).toBe(true);
   });
 
   it('forgets an event whose delivery ended in a server error, so the gateway retry is processed', async () => {
-    const failing = signedDelivery({ id: 'evt_fail', fail: true });
+    const failing = signed({ id: 'evt_fail', fail: true });
     expect((await hook(failing)).statusCode).toBe(500);
     const key = t.app.get(CacheKeys).webhookEvent(TEST_GATEWAY, createHash('sha256').update('evt_fail').digest('hex'));
     const redis = t.app.get(RedisService);
-    for (let waited = 0; waited < 1_000 && (await redis.cache.exists(key)) === 1; waited += 20) await Bun.sleep(20);
-    const retry = await hook(signedDelivery({ id: 'evt_fail', fail: false }));
+    // The release runs after the reply is sent; wait for the mark to be gone.
+    await eventually(async () => ((await redis.cache.exists(key)) === 0 ? true : undefined));
+    const retry = await hook(signed({ id: 'evt_fail', fail: false }));
     expect(retry.statusCode).toBe(200);
     expect(retry.json().duplicate).toBe(false);
   });
 
   it('refuses a gateway nobody registered an adapter for, ignoring the case of the slug', async () => {
-    refusedAs(await hook(signedDelivery({ id: 'evt_x' }), 'nopay'), 400, 'WEBHOOK_SIGNATURE_INVALID');
-    refusedAs(await hook(signedDelivery({ id: 'evt_x' }), 'bad slug!'), 400, 'WEBHOOK_SIGNATURE_INVALID');
-    expect((await hook(signedDelivery({ id: 'evt_upper' }), 'TESTPAY')).statusCode).toBe(200);
+    refusedAs(await hook(signed({ id: 'evt_x' }), 'nopay'), 400, 'WEBHOOK_SIGNATURE_INVALID');
+    refusedAs(await hook(signed({ id: 'evt_x' }), 'bad slug!'), 400, 'WEBHOOK_SIGNATURE_INVALID');
+    expect((await hook(signed({ id: 'evt_upper' }), 'TESTPAY')).statusCode).toBe(200);
   });
 
   it('answers 5xx, never a pass, when an adapter fails or returns nothing usable', async () => {
-    expect((await hook(signedDelivery({ id: 'evt_a' }), 'broken')).statusCode).toBe(500);
-    const res = await hook(signedDelivery({ id: 'evt_b' }), 'nameless');
+    expect((await hook(signed({ id: 'evt_a' }), 'broken')).statusCode).toBe(500);
+    const res = await hook(signed({ id: 'evt_b' }), 'nameless');
     expect(res.statusCode).toBe(500);
     expect(res.json().code).toBe('INTERNAL_ERROR');
   });

@@ -55,8 +55,9 @@ export class RedisMetrics {
 
   /** Reads both instances once per scrape: the gauge that collects first fetches, the other one shares the result. */
   private read(): Promise<ReadonlyMap<RedisRole, RedisMemory>> {
-    if (!this.snapshot || Date.now() - this.snapshotAt > SHARE_READING_MS) {
-      this.snapshotAt = Date.now();
+    // Elapsed time between two gauges of one scrape: monotonic, not a decision on the wall clock (decision 031).
+    if (!this.snapshot || performance.now() - this.snapshotAt > SHARE_READING_MS) {
+      this.snapshotAt = performance.now();
       this.snapshot = this.fetch();
     }
     return this.snapshot;

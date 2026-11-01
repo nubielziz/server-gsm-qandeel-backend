@@ -14,7 +14,7 @@ import {
 import { httpRequest } from '../../src/infra/http/http-request';
 import { MetricsModule, MetricsService } from '../../src/infra/metrics';
 import { PRODUCTION_ENV } from '../support/app';
-import { type InfraHarness, createInfra, freePort, pause } from '../support/infra';
+import { type InfraHarness, createInfra, eventually, freePort } from '../support/infra';
 import { metricValue } from '../support/metrics';
 import { expectRejection, rejectionOf } from '../support/rejection';
 
@@ -25,6 +25,9 @@ interface Seen {
   body: string;
 }
 const seen: Seen[] = [];
+/** Handlers of `/slow` and `/slow-body` wait here until the file ends (no timer): the clients under test give up first. */
+let releaseSlow: () => void = () => undefined;
+const release = new Promise<void>((resolve) => (releaseSlow = resolve));
 let server: ReturnType<typeof Bun.serve>;
 let base: string;
 
@@ -46,14 +49,14 @@ beforeAll(() => {
             body: seen.at(-1)?.body,
           });
         case '/slow':
-          await pause(2_000);
+          await release;
           return new Response('late');
         case '/slow-body':
           return new Response(
             new ReadableStream({
               async start(controller) {
                 controller.enqueue(new TextEncoder().encode('first part'));
-                await pause(2_000);
+                await release;
                 controller.enqueue(new TextEncoder().encode('second part'));
                 controller.close();
               },
@@ -89,7 +92,10 @@ beforeAll(() => {
   });
   base = `http://127.0.0.1:${server.port}`;
 });
-afterAll(() => server.stop(true));
+afterAll(() => {
+  releaseSlow();
+  return server.stop(true);
+});
 
 const local = (extra: Partial<HttpRequestOptions> & { path?: string } = {}): HttpRequestOptions => ({
   url: `${base}${extra.path ?? '/ok'}`,
@@ -150,6 +156,8 @@ describe('httpRequest', () => {
       }
     });
 
+    // Real waits of 100-200 ms below (decision 031): the deadline of a request is a real timer, and that is the behaviour
+    // under test; the elapsed time is measured on the monotonic clock.
     it('aborts a slow answer after timeoutMs with kind "timeout"', async () => {
       const started = performance.now();
       const error = await httpRequest(local({ path: '/slow', timeoutMs: 150 })).catch((e: unknown) => e);
@@ -196,8 +204,15 @@ describe('httpRequest', () => {
           body: 'x',
         }).catch((e: unknown) => e);
         expect((error as HttpRequestError).kind).toBe('network');
-        await pause(200);
-        expect(connections, 'no automatic retry of a possibly delivered request').toBe(1);
+        // A retry would come before a connection that is opened now: wait for this one to arrive, then count.
+        const barrier = net.connect(port, '127.0.0.1');
+        barrier.on('error', () => undefined);
+        await eventually(() => (connections >= 2 ? true : undefined));
+        barrier.destroy();
+        expect(
+          connections,
+          'the request and the barrier only: no automatic retry of a possibly delivered request',
+        ).toBe(2);
       } finally {
         await new Promise((resolve) => cutter.close(resolve));
       }
@@ -322,10 +337,13 @@ describe('httpRequest', () => {
 
   it('can be cancelled by the caller (shutdown)', async () => {
     const controller = new AbortController();
-    setTimeout(() => controller.abort(), 100);
-    const error = await httpRequest(local({ path: '/slow', timeoutMs: 5_000, signal: controller.signal })).catch(
+    const request = httpRequest(local({ path: '/slow', timeoutMs: 5_000, signal: controller.signal })).catch(
       (e: unknown) => e,
     );
+    // Abort once the server has the request, not after a guessed delay.
+    await eventually(() => (requestsTo('/slow').length > 0 ? true : undefined));
+    controller.abort();
+    const error = await request;
     expect((error as HttpRequestError).kind).toBe('aborted');
   });
 });

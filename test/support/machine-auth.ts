@@ -211,6 +211,7 @@ export const testWebhookVerifier: WebhookVerifier = {
     const header = delivery.headers[TEST_SIGNATURE_HEADER];
     if (typeof header !== 'string') throw new AppError('WEBHOOK_SIGNATURE_INVALID', { detail: 'No signature header.' });
     const result = verifyWebhookSignature(TEST_GATEWAY_SECRET, header, delivery.rawBody, {
+      nowSeconds: delivery.nowSeconds,
       toleranceSeconds: Number.POSITIVE_INFINITY,
     });
     if (!result.valid) throw new AppError('WEBHOOK_SIGNATURE_INVALID', { detail: result.reason });
@@ -225,13 +226,13 @@ export const testWebhookVerifier: WebhookVerifier = {
  * Builds a signed test delivery.
  *
  * @param body the JSON body (its `id` is the event id)
- * @param timestamp the signed time in unix seconds (default now)
+ * @param timestamp the signed time in unix seconds (from the test clock: the guard judges it against the app's clock)
  * @param secret the secret to sign with (default the gateway's)
  * @returns the exact body text and the headers a gateway would send
  */
 export function signedDelivery(
   body: Record<string, unknown>,
-  timestamp = Math.floor(Date.now() / 1000),
+  timestamp: number,
   secret = TEST_GATEWAY_SECRET,
 ): { payload: string; headers: Record<string, string> } {
   const payload = JSON.stringify(body);

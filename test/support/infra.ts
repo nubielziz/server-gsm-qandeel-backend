@@ -3,6 +3,8 @@
 import { type DynamicModule, Global, type LoggerService, Module, type ModuleMetadata, type Type } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import net from 'node:net';
+import { CLOCK, type Clock, SystemClock, TIMERS, type Timers } from '../../src/common/clock';
+import { ClockModule } from '../../src/common/clock.module';
 import { APP_CONFIG, type AppConfig, parseEnv } from '../../src/config';
 import { CacheModule } from '../../src/infra/cache';
 import { CryptoModule } from '../../src/infra/crypto';
@@ -55,6 +57,8 @@ export class CapturingLogger implements LoggerService {
 export interface InfraHarness {
   readonly moduleRef: TestingModule;
   readonly config: AppConfig;
+  /** The clock the modules run on: the one passed in the options, or the system clock. */
+  readonly clock: Clock;
   readonly logger: CapturingLogger;
   get<T>(token: Type<T> | symbol | string): T;
   close(): Promise<void>;
@@ -64,6 +68,10 @@ export interface InfraHarness {
 export interface InfraOptions {
   /** Environment on top of `NODE_ENV=test` (for example an unreachable `REDIS_CACHE_URL_TEST`). */
   readonly env?: Record<string, string>;
+  /** The clock the modules read (decision 031): pass a `TestClock` to control time; default the system clock. */
+  readonly clock?: Clock;
+  /** The timers retries and deadlines are scheduled with (decision 031); pass `ManualTimers` to fire them by hand. */
+  readonly timers?: Timers;
   /** Infra modules to load; default all of them. */
   readonly modules?: Array<Type<unknown>>;
   /** Run `onModuleInit` (connect the clients); default true. `false` leaves the modules just constructed. */
@@ -94,15 +102,19 @@ export async function createInfra(options: InfraOptions = {}): Promise<InfraHarn
   const config = parseEnv({ NODE_ENV: 'test', ...testInstanceEnv(), ...options.env });
   const logger = new CapturingLogger();
   const builder = Test.createTestingModule({
-    imports: [TestConfigModule.with(config), ...(options.modules ?? ALL_MODULES)],
+    imports: [TestConfigModule.with(config), ClockModule, ...(options.modules ?? ALL_MODULES)],
     providers: options.providers ?? [],
   }).setLogger(logger);
+  const clock = options.clock ?? new SystemClock();
+  builder.overrideProvider(CLOCK).useValue(clock);
+  if (options.timers) builder.overrideProvider(TIMERS).useValue(options.timers);
   for (const [token, value] of options.overrides ?? []) builder.overrideProvider(token).useValue(value);
   const moduleRef = await builder.compile();
   if (options.init ?? true) await moduleRef.init();
   return {
     moduleRef,
     config,
+    clock,
     logger,
     get: <T>(token: Type<T> | symbol | string) => moduleRef.get<T>(token, { strict: false }),
     close: () => moduleRef.close(),
@@ -170,33 +182,28 @@ export async function deadRedisUrl(database = 1): Promise<string> {
   return `redis://127.0.0.1:${await freePort()}/${database}`;
 }
 
-/** Polls until `probe` returns something other than `undefined`, or fails after the timeout. */
+/**
+ * Polls until `probe` returns something other than `undefined`, or fails after the timeout.
+ *
+ * Why: the one place where tests wait for something outside the process (a queue job, a socket, a background write, a
+ * Redis connection coming back). It waits for a condition, never for a time: the loop ends when the condition holds, and the
+ * deadline only turns a hang into a failure. The deadline runs on the monotonic clock, so a stepped system clock (WSL) cannot
+ * shorten or stretch it. A test that needs time to pass moves a `TestClock` instead (decision 031).
+ *
+ * @param probe returns the awaited value, or `undefined` while the condition does not hold yet
+ * @param timeoutMs how long to keep trying before failing
+ * @returns the first value `probe` returned
+ * @throws {Error} when the condition does not hold within the timeout
+ */
 export async function eventually<T>(
   probe: () => Promise<T | undefined> | T | undefined,
   timeoutMs = 5_000,
 ): Promise<T> {
-  const deadline = Date.now() + timeoutMs;
+  const deadline = performance.now() + timeoutMs;
   for (;;) {
     const value = await probe();
     if (value !== undefined) return value;
-    if (Date.now() > deadline) throw new Error(`Condition not met within ${timeoutMs} ms`);
-    await Bun.sleep(20);
+    if (performance.now() > deadline) throw new Error(`Condition not met within ${timeoutMs} ms`);
+    await Bun.sleep(20); // real wait: poll interval of a condition owned by something outside the process
   }
-}
-
-/** Resolves after the given number of milliseconds. */
-export const pause = (ms: number): Promise<void> => Bun.sleep(ms);
-
-/**
- * Waits until the wall clock (`Date.now()`) has moved `ms` forward.
- *
- * Why: cache freshness is stored as wall-clock time (it is shared between processes), and a machine whose clock is stepped
- * back by a time sync (WSL does this) would make a plain `pause(700)` return while an entry still counts as fresh. This
- * keeps waiting until the clock really passed the point.
- *
- * @param ms how far the wall clock must advance from now
- */
-export async function wallPause(ms: number): Promise<void> {
-  const target = Date.now() + ms;
-  while (Date.now() < target) await Bun.sleep(Math.min(50, Math.max(1, target - Date.now())));
 }

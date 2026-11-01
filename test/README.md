@@ -6,10 +6,30 @@
 | Folder              | What                                                                                       | Needs Docker (`docker compose up -d`) |
 | ------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------- |
 | `src/**/*.spec.ts`  | unit tests of pure logic (no I/O)                                                          | no                                    |
+| `test/unit/`        | unit tests that need the real clock, which `src/` specs may not read (the Clock, `TestClock`, `ManualTimers`) | no                                    |
 | `test/schema/`      | structure of the Drizzle schema (ownership, columns, indexes, enum CHECKs)                 | no                                    |
 | `test/integration/` | real Postgres (`gsm_test`), Redis (database 1), MinIO (`gsm-files-test`), the Nest app on Fastify `inject`, child processes | yes (Postgres, Redis, MinIO)          |
 | `test/contract/`    | the backend against the map and the console: route, shape and error parity (decision 009)  | yes (a child process boots the app)   |
-| `test/support/`     | shared helpers: `app.ts` (test app), `db.ts` (test database), `infra.ts` (Redis, cache, storage, HTTP modules on the test instances), `rejection.ts` (typed `expectRejection`), `fixtures.ts` (minimal rows), `auth.ts` (roles, staff, merchants and signed-in sessions), `security-routes.ts` (one sample route per access kind) |                                       |
+| `test/support/`     | shared helpers: `app.ts` (test app), `db.ts` (test database), `infra.ts` (Redis, cache, storage, HTTP modules on the test instances), `rejection.ts` (typed `expectRejection`), `fixtures.ts` (minimal rows), `auth.ts` (roles, staff, merchants and signed-in sessions), `clock.ts` (`TestClock`, `ManualTimers`), `security-routes.ts` (one sample route per access kind) |                                       |
+
+## Controlled time (decision 031)
+
+No test depends on the wall clock, on sleeping, or on a margin that a loaded or stepped machine (WSL) can break.
+
+- `TestClock` (`test/support/clock.ts`) stands still until moved: `clock.advance(ms)`, `clock.set(date)`, `clock.reset()` (back to
+  the real time, for files that move it far because caches and rows outlive a test). Pass it to the app or the infra modules:
+  `createTestApp({ clock })`, `createInfra({ clock })`; `app.clock` / `harness.clock` is the clock they run on (the system clock
+  when none was given). Create rows through the services and move the clock, instead of writing a past time into a row.
+- Edges are tested exactly: one millisecond before and at the moment (`ttlSeconds: 60` then `advance(60_000 - 1)` and `advance(1)`).
+- `ManualTimers` replaces `setTimeout`/`clearTimeout` (`createInfra({ timers })`, `PgListener({ timers })`): a reconnect or retry
+  fires when the test calls `timers.advance(ms)`; `timers.delays` shows what is waiting.
+- `eventually(probe)` (`test/support/infra.ts`) is the one polling primitive, for work done outside the process (a queue job, a
+  socket, a background write). It waits for a condition, on the monotonic clock.
+- Systems that keep their own time (Redis TTLs and `TIME`, rate-limiter windows, BullMQ delays, the object store) are never
+  waited for: assert the TTL or option the code set, or move the stored expiry into the past. The real waits that remain, each
+  with a one-line reason in the test: the cross-process cache lock (`cache.test.ts`), the NOTIFY wake-up and the one-second BullMQ
+  tick (`outbox.test.ts`), the request deadline and the worker drain deadline, which are real timers (`http.test.ts`, `queues.test.ts`),
+  `withTimeout`/`sleep` themselves (`timeout.spec.ts`), and the child-process and Docker restart tests.
 
 ## Database tests
 

@@ -34,7 +34,7 @@ bun run dev:worker            # worker process: queue workers, schedulers, outbo
 | Script | Fails when |
 |---|---|
 | `typecheck` | TypeScript (strict) reports an error |
-| `lint` | ESLint reports an error: type-aware rules, TSDoc on exports, module boundaries, `process.env` and `console` rules |
+| `lint` | ESLint reports an error: type-aware rules, TSDoc on exports, module boundaries, `process.env`, `console` and wall-clock (`Date.now()`, `new Date()`) rules |
 | `routes:check` | `docs/route-manifest.json` or `docs/slices/*` are stale against the map |
 | `contract:check` | the extracted frontend contract or the contract docs are stale |
 | `docs:openapi:check` | `docs/contract/openapi.json` or `openapi.public.json` differ from what the contracts generate |
@@ -185,6 +185,27 @@ Each has a README next to its code with the rules and an example:
   roles and the bucket `gsm-files-test` (`DATABASE_URL_TEST`, `REDIS_QUEUE_URL_TEST`, `REDIS_CACHE_URL_TEST`,
   `S3_BUCKET_TEST`; under `NODE_ENV=test` the normal variables are ignored). `createTestApp({ withoutInfrastructure: true })`
   leaves Redis, the cache and storage out for tests that only need the HTTP pipeline.
+
+## Time and clocks (decision 031)
+
+No code under `src/` reads the wall clock except `src/common/clock.ts`; ESLint fails `Date.now()` and `new Date()` without
+arguments anywhere else.
+
+1. **Inject the clock.** `@Inject(CLOCK) private readonly clock: Clock` (`CLOCK` and `Clock` from `src/common/clock`; the global
+   `ClockModule` provides it), then `this.clock.now()` or `this.clock.nowMs()`. Read it once per request or use case and pass
+   the value down, so every comparison in one step uses one instant. Pure domain functions take `nowMs` as a parameter and
+   have no default for it.
+2. **SQL that decides takes the time as a parameter.** `where expires_at > ${now}` with `now = clock.now()`, never `now()`.
+   Write the time a later rule reads (`started_at`, `created_at` of an outbox row) from the clock too. Column defaults
+   (`created_at default now()`) may stay for bookkeeping that no rule reads.
+3. **Timers.** A retry or deadline that a test would sit through is scheduled with the injected `Timers`
+   (`@Inject(TIMERS)`), not a bare `setTimeout`. Elapsed-time measurements use `performance.now()`.
+4. **External clocks.** Redis TTLs, rate-limiter windows, BullMQ delays and the object store keep their own time: set the TTL or
+   option in code and assert it in the test (`PTTL`, job options, `X-Amz-Expires`), never wait for it.
+5. **Tests.** `const clock = new TestClock()` (`test/support/clock.ts`), `createTestApp({ clock })` or `createInfra({ clock })`,
+   then `clock.advance(MINUTE)` where a test needs time to pass. `ManualTimers` fires timers by hand (`createInfra({ timers })`).
+   `clock.reset()` in `beforeEach`. A test never calls `Bun.sleep`; `eventually` (`test/support/infra.ts`) is the only polling
+   primitive, for work that happens outside the process.
 
 ## Add a money event **(P2.3 and the money feature)**
 

@@ -19,6 +19,7 @@ const mark = (text: string): void => {
 class SlowProcessor implements JobProcessor<{ ms: number }, string> {
   async process(job: Job<{ ms: number }, string, string>): Promise<string> {
     mark(`job start ${job.id}`);
+    // Real wait (decision 031): this runs in a child process, and the test sends SIGTERM while the job is in the middle of it.
     await Bun.sleep(job.data.ms);
     mark(`job done ${job.id}`);
     return 'done';

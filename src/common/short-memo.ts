@@ -9,7 +9,7 @@
 export interface ShortMemoOptions {
   /** How long a loaded value counts as fresh, in milliseconds. */
   readonly ttlMs: number;
-  /** Clock in milliseconds; monotonic by default, replaceable in tests. */
+  /** Clock in milliseconds; monotonic by default; the pipeline stages pass the injected clock (decision 031). */
   readonly now?: () => number;
   /** Called when a failed reload was answered with the last good value. */
   readonly onStale?: (error: unknown) => void;
@@ -50,7 +50,10 @@ export class ShortMemo<T> {
    */
   async get(load: () => Promise<T>): Promise<T> {
     const held = this.current;
-    if (held && this.now() - held.at < this.ttlMs) return held.value;
+    // An age below zero means the clock was stepped back (the callers pass the wall clock, decision 031): the value is not
+    // trusted for the whole step, it is loaded again.
+    const age = held ? this.now() - held.at : undefined;
+    if (held && age !== undefined && age >= 0 && age < this.ttlMs) return held.value;
     const flight = (this.loading ??= this.start(load, this.generation));
     try {
       return await flight;

@@ -1,7 +1,8 @@
 // Runs the health indicators and folds their results into one status (decision 015).
 // Never throws and never reveals versions, hostnames or error texts: details go to the log only.
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
+import { TIMERS, type Timers } from '../../../common/clock';
 import { type HealthIndicator, type HealthStatus, HealthRegistry } from '../../../infra/health';
 
 /**
@@ -47,6 +48,7 @@ export class HealthService {
   constructor(
     private readonly registry: HealthRegistry,
     private readonly logger: PinoLogger,
+    @Inject(TIMERS) private readonly timers: Timers,
   ) {
     this.logger.setContext(HealthService.name);
   }
@@ -68,10 +70,10 @@ export class HealthService {
   }
 
   private async probe(indicator: HealthIndicator): Promise<boolean> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timer: unknown;
     try {
       const timeout = new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(
+        timer = this.timers.setTimeout(
           () => reject(new Error(`timed out after ${HEALTH_CHECK_TIMEOUT_MS} ms`)),
           HEALTH_CHECK_TIMEOUT_MS,
         );
@@ -85,7 +87,7 @@ export class HealthService {
       );
       return false;
     } finally {
-      clearTimeout(timer);
+      if (timer !== undefined) this.timers.clearTimeout(timer);
     }
   }
 }

@@ -83,10 +83,10 @@ export class ApiKeyDirectory {
    *
    * @param view the key as the guard saw it
    * @param ip the client address, printed
-   * @param nowMs the current time in milliseconds
+   * @param nowMs the current time in milliseconds (the injected clock's, decision 031)
    * @returns true when this call wrote the row
    */
-  async touch(view: ApiKeyView, ip: string, nowMs: number = Date.now()): Promise<boolean> {
+  async touch(view: ApiKeyView, ip: string, nowMs: number): Promise<boolean> {
     if (view.lastUsedAtMs !== null && nowMs - view.lastUsedAtMs < API_KEY_TOUCH_INTERVAL_MS) return false;
     const written = await touchApiKey(this.db.db, view.id, new Date(nowMs), ip, API_KEY_TOUCH_INTERVAL_MS);
     await this.cache.del(this.keys.apiKey(view.keyHash));

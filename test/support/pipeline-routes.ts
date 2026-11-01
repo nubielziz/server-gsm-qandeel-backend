@@ -214,8 +214,9 @@ class TestAccessInstaller implements OnModuleInit {
 @Module({ providers: [TestAccessInstaller] })
 export class TestAccessModule {}
 
-// One /24 per run, from the clock: per-address counters live 60 s, so a run started within a minute of the last one must
-// not meet its addresses again (a random byte did, 1 time in 256). 198.18.0.0/15 holds 512 such blocks.
+// One /24 per run, seeded from the wall clock: per-address counters live 60 s in Redis, so a run started within a minute of
+// the last one must not meet its addresses again (a random byte did, 1 time in 256). 198.18.0.0/15 holds 512 such blocks. It
+// is a uniqueness seed, not a decision on time (decision 031).
 const RUN_BLOCK = Math.floor(Date.now() / 1000) % 512;
 const RUN = `198.${18 + Math.floor(RUN_BLOCK / 256)}.${RUN_BLOCK % 256}`;
 let counter = 0;

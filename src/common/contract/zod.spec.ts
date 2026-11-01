@@ -46,7 +46,7 @@ describe('zIsoDateTime', () => {
       '2027-02-29T00:00:00.000Z',
       '2026-13-01T00:00:00.000Z',
       '',
-      new Date(),
+      new Date('2026-03-01T09:30:00.000Z'),
       0,
     ]) {
       expect(accepts(zIsoDateTime, bad)).toBe(false);
@@ -92,7 +92,7 @@ describe('zJsonObject', () => {
       1,
       null,
       undefined,
-      { d: new Date() },
+      { d: new Date('2026-03-01T09:30:00.000Z') },
       { n: Number.NaN },
       { i: Number.POSITIVE_INFINITY },
       { u: undefined },

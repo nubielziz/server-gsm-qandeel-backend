@@ -1,6 +1,7 @@
 // StaffAuthTokens: issues the one-time invite and reset links of staff members (route group staff sign-in, decision 019).
 // Feature 2a (staff management) calls `issue` when it adds a member by invitation or sends a reset; the tests use it too.
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { CLOCK, type Clock } from '../../../common/clock';
 import { TokenService } from '../../../infra/crypto';
 import type { TransactionContext } from '../../../infra/db';
 import { insertAuthToken, voidOpenStaffTokens, type StaffTokenPurpose } from '../infra/auth-token.repository';
@@ -42,7 +43,10 @@ export interface IssuedStaffToken {
  */
 @Injectable()
 export class StaffAuthTokens {
-  constructor(private readonly tokens: TokenService) {}
+  constructor(
+    private readonly tokens: TokenService,
+    @Inject(CLOCK) private readonly clock: Clock,
+  ) {}
 
   /**
    * Issues a token and voids the account's older unused ones.
@@ -54,7 +58,7 @@ export class StaffAuthTokens {
    * @returns the token for the link and its expiry
    */
   async issue(work: Pick<TransactionContext, 'tx'>, input: IssueStaffTokenInput): Promise<IssuedStaffToken> {
-    const now = new Date();
+    const now = this.clock.now();
     const token = this.tokens.random(32);
     // Void first: the unique hash index cannot clash, and "newest wins" holds even if two links are issued at once.
     await voidOpenStaffTokens(work.tx, input.staffId, now);

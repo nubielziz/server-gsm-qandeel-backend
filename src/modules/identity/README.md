@@ -70,8 +70,8 @@ rotated. A same-origin deployment must list its own origin in `CORS_ORIGINS` too
 (the default applies, with a warning in the log).
 
 **One "live session" predicate** (lead resolution identity-platform-6, built by feature 2a in the sessions repository):
-`revoked_at IS NULL AND expires_at > now() AND (stage <> 'active' OR last_seen_at > now() - the idle limit of the subject
-type)`. `GET /admin/sessions` (still limited to fully signed-in staff and merchant sessions, B9), `StaffMember.activeSessions`
+`revoked_at IS NULL AND expires_at > $now AND (stage <> 'active' OR last_seen_at > $now - the idle limit of the subject
+type)`, where `$now` is the injected clock's time passed in (decision 031), never the database's `now()`. `GET /admin/sessions` (still limited to fully signed-in staff and merchant sessions, B9), `StaffMember.activeSessions`
 (which enables "Sign out all devices"), the `DELETE /admin/sessions/:id` 404 (an idle-dead session reads as already ended) and
 the merchant `GET /client/sessions` all use it; `SessionService.revokeAllOf` keeps revoking every non-revoked row, idle-dead ones
 included.

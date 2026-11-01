@@ -40,8 +40,8 @@ export type WebhookVerification =
 export interface WebhookVerifyOptions {
   /** Window in seconds; default {@link WEBHOOK_TOLERANCE_SECONDS}. */
   readonly toleranceSeconds?: number;
-  /** The current time in unix seconds; default the system clock. Replaceable in tests. */
-  readonly nowSeconds?: number;
+  /** The current time in unix seconds, from the injected clock (decision 031): the verifier never reads the wall clock itself. */
+  readonly nowSeconds: number;
 }
 
 function digest(secret: string, timestamp: number, body: string | Uint8Array): Buffer {
@@ -111,7 +111,7 @@ export function verifyWebhookSignature(
   secret: string,
   header: string,
   body: string | Uint8Array,
-  options: WebhookVerifyOptions = {},
+  options: WebhookVerifyOptions,
 ): WebhookVerification {
   const parsed = parseHeader(header);
   if (!parsed) return { valid: false, reason: 'malformed' };
@@ -119,7 +119,7 @@ export function verifyWebhookSignature(
   if (!parsed.signatures.some((signature) => timingSafeEqual(signature, expected))) {
     return { valid: false, reason: 'mismatch' };
   }
-  const now = options.nowSeconds ?? Math.floor(Date.now() / 1000);
+  const now = options.nowSeconds;
   if (Math.abs(now - parsed.timestamp) > (options.toleranceSeconds ?? WEBHOOK_TOLERANCE_SECONDS)) {
     return { valid: false, reason: 'outside_window' };
   }
@@ -148,7 +148,7 @@ export function assertWebhookSignature(
   secret: string,
   header: string,
   body: string | Uint8Array,
-  options: WebhookVerifyOptions = {},
+  options: WebhookVerifyOptions,
 ): number {
   const result = verifyWebhookSignature(secret, header, body, options);
   if (!result.valid) throw new AppError('WEBHOOK_SIGNATURE_INVALID', { detail: REFUSAL_DETAIL[result.reason] });

@@ -2,6 +2,7 @@
 // Secure from COOKIE_SECURE, SameSite=Lax, Path=/, `__Host-` prefix when secure; plus the readable CSRF cookie and header.
 import { Inject, Injectable } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { CLOCK, type Clock } from '../../../common/clock';
 import { APP_CONFIG, type AppConfig } from '../../../config';
 import type { SubjectType } from '../db/schema';
 import { CSRF_HEADER, CsrfService } from './csrf';
@@ -49,6 +50,7 @@ export class SessionCookies {
     @Inject(APP_CONFIG) config: AppConfig,
     private readonly csrf: CsrfService,
     private readonly tokens: TokenService,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {
     this.secure = config.security.cookieSecure;
     this.csrfDomain = config.security.csrfCookieDomain;
@@ -100,7 +102,7 @@ export class SessionCookies {
    * @returns the CSRF token that was set
    */
   set(reply: FastifyReply, subject: SubjectType, token: string, expiresAt: Date): string {
-    const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
+    const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - this.clock.nowMs()) / 1000));
     const csrfToken = this.csrf.tokenFor(this.tokens.hash(token));
     void reply
       .setCookie(this.sessionCookieName(subject), token, {

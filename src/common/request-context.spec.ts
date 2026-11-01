@@ -19,7 +19,7 @@ describe('request context', () => {
   it('keeps what a guard recorded for everything the request starts afterwards', async () => {
     await runInRequestContext('r2', async () => {
       setRequestActor({ type: 'client', id: 12 }, '203.0.113.5');
-      await new Promise((resolve) => setTimeout(resolve, 1));
+      await new Promise((resolve) => setImmediate(resolve));
       countAuditRecord();
       countAuditRecord();
       expect(getRequestContext()).toMatchObject({
@@ -32,15 +32,19 @@ describe('request context', () => {
   });
 
   it('keeps parallel requests apart', async () => {
+    // Each request hops through the event loop a different number of times, so they finish in the opposite order.
+    const finished: number[] = [];
     const seen = await Promise.all(
       [1, 2, 3].map((id) =>
         runInRequestContext(`r${id}`, async () => {
           setRequestActor({ type: 'staff', id }, `10.0.0.${id}`);
-          await new Promise((resolve) => setTimeout(resolve, Math.random() * 5));
+          for (let hop = 0; hop < 4 - id; hop++) await new Promise((resolve) => setImmediate(resolve));
+          finished.push(id);
           return getRequestContext()?.actor?.id;
         }),
       ),
     );
+    expect(finished).toEqual([3, 2, 1]);
     expect(seen).toEqual([1, 2, 3]);
   });
 

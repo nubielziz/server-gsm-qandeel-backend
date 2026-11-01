@@ -12,13 +12,19 @@ import { MetricsService } from '../../src/infra/metrics';
 import { RATE_LIMITERS, RateLimitService, rateLimitedError } from '../../src/infra/rate-limit';
 import { RedisService } from '../../src/infra/redis';
 import { type TestApp, createTestApp } from '../support/app';
-import { type InfraHarness, createInfra, deadRedisUrl, eventually } from '../support/infra';
+import { type InfraHarness, createInfra, deadRedisUrl } from '../support/infra';
 import { metricValue } from '../support/metrics';
 import { expectRejection } from '../support/rejection';
 
 let harness: InfraHarness;
 let limiter: RateLimitService;
 let redis: RedisService;
+
+/** Redis's own time in milliseconds (the clock that leases and counters are judged on), read with TIME. */
+async function redisNowMs(): Promise<number> {
+  const [seconds, micros] = await redis.cache.time();
+  return Number(seconds) * 1000 + Math.floor(Number(micros) / 1000);
+}
 let keys: CacheKeys;
 
 beforeAll(async () => {
@@ -102,13 +108,10 @@ describe('consume', () => {
     const key = caller();
     for (let i = 0; i < RATE_LIMITERS.token.points; i++) await limiter.consume('token', key);
     expect((await limiter.consume('token', key)).allowed).toBe(false);
-    // Let the window end now instead of waiting a minute.
-    await redis.cache.pexpire(`${keys.rateLimit('token')}:${key}`, 150);
-    // Poll instead of sleeping: Redis expires keys by the machine clock, which may be stepped by a time sync.
-    const again = await eventually(async () => {
-      const result = await limiter.consume('token', key);
-      return result.allowed ? result : undefined;
-    }, 10_000);
+    // The counter lives under a key that Redis drops when its TTL (at most the window, asserted above) ends. Dropping it now
+    // is the state at the end of the window; the test does not wait for Redis's own clock.
+    await redis.cache.del(`${keys.rateLimit('token')}:${key}`);
+    const again = await limiter.consume('token', key);
     expect(again).toMatchObject({ allowed: true, remaining: RATE_LIMITERS.token.points - 1 });
   });
 
@@ -338,20 +341,32 @@ describe('semaphore (per-supplier concurrency)', () => {
 
   it('frees a place by itself when the lease expires (the holder crashed)', async () => {
     const semaphore = name();
+    const before = await redisNowMs();
     const crashed = await limiter.acquire(semaphore, 1, 250);
+    const after = await redisNowMs();
     expect(crashed).not.toBeNull();
     expect(await limiter.acquire(semaphore, 1, 250)).toBeNull();
-    const next = await eventually(async () => (await limiter.acquire(semaphore, 1, 10_000)) ?? undefined, 10_000);
-    await limiter.release(next);
+    // A lease is scored with its expiry on Redis's clock (TIME + ttl), which is what frees the place...
+    const expiry = Number(await redis.cache.zscore(keys.semaphore(semaphore), crashed!.token));
+    expect(expiry).toBeGreaterThanOrEqual(before + 250);
+    expect(expiry).toBeLessThanOrEqual(after + 250);
+    // ...so a lease whose expiry has passed (moved into the past, instead of waiting for Redis's clock) frees it.
+    await redis.cache.zadd(keys.semaphore(semaphore), 'XX', before - 1, crashed!.token);
+    const next = await limiter.acquire(semaphore, 1, 10_000);
+    expect(next).not.toBeNull();
+    await limiter.release(next!);
   });
 
   it("does not let a late release of an expired lease free someone else's place", async () => {
     const semaphore = name();
     const slow = await limiter.acquire(semaphore, 1, 200);
-    const current = await eventually(async () => (await limiter.acquire(semaphore, 1, 10_000)) ?? undefined, 10_000);
+    // The slow holder's lease expires (moved into the past) and another caller takes the place.
+    await redis.cache.zadd(keys.semaphore(semaphore), 'XX', (await redisNowMs()) - 1, slow!.token);
+    const current = await limiter.acquire(semaphore, 1, 10_000);
+    expect(current).not.toBeNull();
     await limiter.release(slow!); // the slow holder finally finishes
     expect(await limiter.acquire(semaphore, 1, 10_000), 'the current holder still owns the only place').toBeNull();
-    await limiter.release(current);
+    await limiter.release(current!);
   });
 
   it('is safe under concurrency: 40 simultaneous callers for 5 places get exactly 5', async () => {

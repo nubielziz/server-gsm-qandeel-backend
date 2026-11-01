@@ -1,7 +1,8 @@
 // ApiKeyAuthenticator: turns a presented merchant API key into a principal (decision 018). REST v1 and the Dhru surface share
 // it; they differ only in where the credentials are read and which scope the key needs.
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
+import { CLOCK, type Clock } from '../../../../../common/clock';
 import { constantTimeEqual } from '../../../../../infra/crypto';
 import { type IpAddress, formatIpAddress, ipRateLimitKey, parseIpAddress } from '../../../../../common/ip-address';
 import type { Surface } from '../../../../../common/surface';
@@ -43,6 +44,7 @@ export class ApiKeyAuthenticator {
   constructor(
     private readonly directory: ApiKeyDirectory,
     private readonly limits: RateLimitService,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   /**
@@ -68,7 +70,8 @@ export class ApiKeyAuthenticator {
       throw refuse('unauthenticated');
     }
 
-    const reason = checkApiKey(view, { nowMs: Date.now(), address, scope });
+    const nowMs = this.clock.nowMs();
+    const reason = checkApiKey(view, { nowMs, address, scope });
     if (reason) throw refuse(reason);
 
     // A stored limit below 1 is a data error (the limiter would throw): the limiter's default applies instead.
@@ -76,7 +79,7 @@ export class ApiKeyAuthenticator {
       Number.isInteger(view.rateLimitPerMin) && view.rateLimitPerMin >= 1 ? { limit: view.rateLimitPerMin } : {};
     await this.limits.enforce('api-key', String(view.id), 1, options);
 
-    await this.touchQuietly(view, address ? formatIpAddress(address) : request.ip);
+    await this.touchQuietly(view, address ? formatIpAddress(address) : request.ip, nowMs);
     return { kind: 'api-key', clientId: view.clientId, keyId: view.id, scopes: view.scopes, ip: request.ip };
   }
 
@@ -86,9 +89,9 @@ export class ApiKeyAuthenticator {
     if (!result.allowed) throw rateLimitedError(result.retryAfterSeconds);
   }
 
-  private async touchQuietly(view: ApiKeyView, ip: string): Promise<void> {
+  private async touchQuietly(view: ApiKeyView, ip: string, nowMs: number): Promise<void> {
     try {
-      await this.directory.touch(view, ip);
+      await this.directory.touch(view, ip, nowMs);
     } catch (error) {
       // "Last used" is best effort: a failed write must not fail the request.
       this.logger.warn(

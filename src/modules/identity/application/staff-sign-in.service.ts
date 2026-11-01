@@ -1,6 +1,7 @@
 // StaffSignInService: the use cases of the staff sign-in routes login, 2fa, 2fa/setup, logout and me (map domain A, stage 2).
 // Sensitive steps read the account from the database, not from the session's cached copy (decision 018).
-import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
+import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { PasswordHasher, TokenService } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
@@ -83,6 +84,7 @@ export class StaffSignInService implements OnModuleInit {
     private readonly limiter: SignInLimiter,
     private readonly totp: TotpService,
     private readonly audit: AuditService,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   /** Makes the dummy hash at boot, so the first unknown-email login takes as long as every other one. */
@@ -183,7 +185,7 @@ export class StaffSignInService implements OnModuleInit {
       throw invalidCode('Set up the authenticator first, then enter its code.');
     }
 
-    const timeStep = await this.totp.check(this.totp.open(secretEnc), code, staff.totpLastStep);
+    const timeStep = await this.totp.check(this.totp.open(secretEnc), code, staff.totpLastStep, this.clock.nowMs());
     if (timeStep === undefined) throw invalidCode('That code is not correct or has expired. Enter the current code.');
 
     const issued = await this.db.runInTransaction(async (work) => {
@@ -192,7 +194,7 @@ export class StaffSignInService implements OnModuleInit {
         step: timeStep,
         secretEnc,
         ip: meta.ip,
-        now: new Date(),
+        now: this.clock.now(),
       });
       // No row: a parallel request used this code first, the account was suspended, or the secret was replaced.
       if (!done) throw invalidCode('That code was already used. Wait for the next code and try again.');

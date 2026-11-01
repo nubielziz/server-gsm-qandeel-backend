@@ -1,6 +1,7 @@
 // The outbox relay (platform module, decision 020): moves pending outbox_events rows to BullMQ, exactly once per row.
 // Runs only in the worker process: a one-second scheduler tick and a Postgres NOTIFY wake-up both call run().
-import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
+import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { LogThrottle } from '../../../common/log-throttle';
 import { DbService } from '../../../infra/db';
@@ -74,6 +75,7 @@ export class OutboxRelay implements OnModuleDestroy {
     private readonly queues: QueuesService,
     private readonly routes: OutboxRouteRegistry,
     private readonly metrics: OutboxRelayMetrics,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   /**
@@ -135,7 +137,8 @@ export class OutboxRelay implements OnModuleDestroy {
     let pass: Pass;
     try {
       pass = await this.db.runInTransaction(async ({ tx }) => {
-        const rows = await lockPendingOutboxEvents(tx, RELAY_BATCH_SIZE);
+        const now = this.clock.now();
+        const rows = await lockPendingOutboxEvents(tx, RELAY_BATCH_SIZE, now);
         const relayed: Array<{ id: number; queue: QueueName; lagSeconds: number }> = [];
         const failed: number[] = [];
         let queueUnavailable = false;
@@ -151,8 +154,9 @@ export class OutboxRelay implements OnModuleDestroy {
         await markOutboxRelayed(
           tx,
           relayed.map((entry) => entry.id),
+          now,
         );
-        await markOutboxFailed(tx, failed);
+        await markOutboxFailed(tx, failed, now);
         return { selected: rows.length, relayed, failed: failed.length, queueUnavailable };
       });
     } catch (error) {

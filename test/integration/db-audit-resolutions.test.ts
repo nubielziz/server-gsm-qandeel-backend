@@ -604,7 +604,7 @@ describe('commissions', () => {
         [planA, parents.clientId, orderId, status, approvedAt],
       );
     await accrue(orderA, 'accrued', null);
-    await accrue(orderB, 'approved', new Date().toISOString());
+    await accrue(orderB, 'approved', '2026-11-01T10:00:00.000Z');
     // a completed order accrues once per beneficiary, but a reversed accrual does not block a later one
     await refuses(
       `insert into commission_accruals (plan_id, beneficiary_id, order_id, period, basis_amount, percent, amount, status)

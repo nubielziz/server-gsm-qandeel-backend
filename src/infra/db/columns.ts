@@ -84,7 +84,9 @@ export const createdAt = () => timestampTz().notNull().defaultNow();
 /**
  * `updated_at timestamptz not null default now()`, refreshed by Drizzle on every `update()`.
  *
- * Why: decision 027: mutable tables carry it (append-only tables do not).
+ * Why: decision 027: mutable tables carry it (append-only tables do not). It is bookkeeping, like the `default now()` of
+ * `created_at`: no rule reads it to decide something (the one table that does, `outbox_events`, sets it from the injected
+ * clock itself), so it is the documented exception to the clock rule of decision 031.
  *
  * @returns the column builder
  */
@@ -92,6 +94,7 @@ export const updatedAt = () =>
   timestampTz()
     .notNull()
     .defaultNow()
+    // eslint-disable-next-line no-restricted-syntax -- table definitions have no injection; updated_at is bookkeeping, not a decision (decision 031)
     .$onUpdate(() => new Date());
 
 /**

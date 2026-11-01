@@ -1,4 +1,5 @@
 // Unit tests of the promise helpers used by startup and shutdown code: a deadline that cleans up after itself.
+// Real waits (decision 031): these tests are about the real timers behind `withTimeout` and `sleep`; each wait is 60 ms at most.
 import { describe, expect, it } from 'bun:test';
 import { expectRejection } from '../../test/support/rejection';
 import { TimeoutError, sleep, withTimeout } from './timeout';

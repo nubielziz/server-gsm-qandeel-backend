@@ -1,7 +1,8 @@
 // Creates the repeating jobs of the JobSchedulerRegistry in Redis on every worker boot (decision 020): upsert is idempotent.
 // Only the worker process runs it; if the queue Redis is down at boot it keeps trying in the background.
-import { Injectable, Logger, type OnApplicationBootstrap, type OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnApplicationBootstrap, type OnModuleDestroy } from '@nestjs/common';
 import type { RepeatOptions } from 'bullmq';
+import { TIMERS, type Timers } from '../../common/clock';
 import { withoutCredentials } from '../redis';
 import { type JobSchedulerSpec, JobSchedulerRegistry } from './job-schedulers';
 import { QueuesService } from './queues.service';
@@ -33,13 +34,14 @@ export function repeatOptionsOf(spec: JobSchedulerSpec): Omit<RepeatOptions, 'ke
 @Injectable()
 export class JobSchedulerRunner implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(JobSchedulerRunner.name);
-  private retryTimer: ReturnType<typeof setTimeout> | undefined;
+  private retryTimer: unknown;
   private retryDelayMs = RETRY_FIRST_MS;
   private stopped = false;
 
   constructor(
     private readonly registry: JobSchedulerRegistry,
     private readonly queues: QueuesService,
+    @Inject(TIMERS) private readonly timers: Timers,
   ) {}
 
   /** Runs the first sync; a failure starts the background retries instead of stopping the worker. */
@@ -87,15 +89,15 @@ export class JobSchedulerRunner implements OnApplicationBootstrap, OnModuleDestr
   /** Stops the retries; the schedulers stay in Redis for the next worker. */
   onModuleDestroy(): void {
     this.stopped = true;
-    if (this.retryTimer) clearTimeout(this.retryTimer);
+    if (this.retryTimer !== undefined) this.timers.clearTimeout(this.retryTimer);
     this.retryTimer = undefined;
   }
 
   private scheduleRetry(): void {
-    if (this.stopped || this.retryTimer) return;
+    if (this.stopped || this.retryTimer !== undefined) return;
     const delay = this.retryDelayMs;
     this.retryDelayMs = Math.min(delay * 2, RETRY_MAX_MS);
-    this.retryTimer = setTimeout(() => {
+    this.retryTimer = this.timers.setTimeout(() => {
       this.retryTimer = undefined;
       void this.sync();
     }, delay);

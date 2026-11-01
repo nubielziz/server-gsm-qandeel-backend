@@ -1,5 +1,6 @@
 // Installs the real guards of the machine access kinds (P2.5c) in place of the fail-closed placeholders of P2.5a.
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { CLOCK, type Clock } from '../../../../common/clock';
 import { TokenService } from '../../../../infra/crypto';
 import { AccessHandlers } from '../access-handlers';
 import { ApiKeyAuthenticator } from './api-keys/api-key.authenticator';
@@ -28,6 +29,7 @@ export class MachineAccessInstaller {
     tokens: TokenService,
     webhookVerifiers: WebhookVerifiers,
     webhookEvents: WebhookEventLedger,
+    @Inject(CLOCK) clock: Clock,
   ) {
     handlers.replace('api-key', new ApiKeyAccessHandler(apiKeys));
     handlers.replace('dhru-credentials', new DhruCredentialsAccessHandler(apiKeys));
@@ -35,6 +37,6 @@ export class MachineAccessInstaller {
       handlers.replace(kind, new CapabilityAccessHandler(kind, capabilityResolvers));
     }
     handlers.replace('url-secret', new UrlSecretAccessHandler(urlSecrets, tokens));
-    handlers.replace('gateway-signature', new GatewaySignatureAccessHandler(webhookVerifiers, webhookEvents));
+    handlers.replace('gateway-signature', new GatewaySignatureAccessHandler(webhookVerifiers, webhookEvents, clock));
   }
 }

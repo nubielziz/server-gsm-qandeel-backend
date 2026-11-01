@@ -158,7 +158,7 @@ already started must still be confirmed), `/health`, `/metrics`, `/docs`, `/open
   the `{ERROR: [{MESSAGE}], apiversion}` envelope; until it exists the Dhru route answers problem+json.
 - **Dhru:** all actions share one path, so a Dhru order placement is decided in the pipeline's `preValidation` phase, once the
   body is parsed and the `action` field is known (`dhruActionOf`). A body the pipeline cannot read (multipart) is not refused
-  there; the Dhru handlers can call `maintenanceRefusal(await maintenance.state(), { method, path, dhruAction })` themselves.
+  there; the Dhru handlers can call `maintenanceRefusal(await maintenance.state(), { method, path, dhruAction }, clock.nowMs())` themselves.
 - **Failure policy:** if the state cannot be read at all, requests go through (maintenance is a courtesy to customers, not a
   security rule).
 

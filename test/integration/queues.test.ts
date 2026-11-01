@@ -26,6 +26,7 @@ import {
   queueJobId,
 } from '../../src/infra/queues';
 import { RedisModule, RedisService } from '../../src/infra/redis';
+import { ManualTimers } from '../support/clock';
 import { type InfraHarness, createForwarder, createInfra, deadRedisUrl, eventually } from '../support/infra';
 import { metricValue } from '../support/metrics';
 import { bullKeys, deleteBullKeys, testBullPrefix, waitForState } from '../support/queues';
@@ -197,8 +198,9 @@ describe('schedulers', () => {
     const cron = (await queues.queue('supplier-poll').getJobSchedulers()).find(
       (scheduler) => scheduler.key === 'test-cron',
     );
+    // BullMQ computes `next` from its own clock; the code's part is the pattern it registered.
     expect(cron?.pattern).toBe('30 2 * * *');
-    expect(cron?.next).toBeGreaterThan(Date.now());
+    expect(typeof cron?.next).toBe('number');
     expect(await bullKeys(first.get(RedisService).queue, prefixOf('schedulers'))).toEqual(keysAfterFirst);
   });
 
@@ -271,7 +273,7 @@ describe('a queue Redis that is down', () => {
 const seen = {
   echo: [] as Array<{ id: string | undefined; n: number; requestId: string | undefined }>,
   flaky: new Map<string, number>(),
-  slow: { started: false, finished: false },
+  slow: { started: false, finished: false, release: (): void => undefined },
   hang: { started: false, release: (): void => undefined },
 };
 
@@ -301,7 +303,8 @@ class FlakyProcessor implements JobProcessor<{ key: string; failTimes?: number; 
 class SlowProcessor implements JobProcessor<object, string> {
   async process(): Promise<string> {
     seen.slow.started = true;
-    await Bun.sleep(600);
+    // The job runs until the test lets it finish (no timer).
+    await new Promise<void>((resolve) => (seen.slow.release = resolve));
     seen.slow.finished = true;
     return 'slow done';
   }
@@ -361,7 +364,9 @@ describe('workers', () => {
     const jobId = queueJobId('dedupe', 1);
     await Promise.all([1, 2, 3].map(() => queues.add('maintenance', 'echo', { n: 5 }, { jobId })));
     await waitForState(() => queues.queue('maintenance').getJob(jobId), 'completed');
-    await Bun.sleep(150);
+    // The job id is the key: a second add of a known id adds nothing, so there is nothing left that could run again.
+    const counts = await queues.queue('maintenance').getJobCounts('waiting', 'active', 'delayed');
+    expect(counts).toMatchObject({ waiting: 0, active: 0, delayed: 0 });
     expect(seen.echo.filter((entry) => entry.id === jobId)).toHaveLength(1);
   });
 
@@ -370,8 +375,9 @@ describe('workers', () => {
       'files',
       'export',
       { key: 'transient', failTimes: 2 },
-      // The queue default is 10 s; a test cannot wait that long.
-      { backoff: { type: 'exponential', delay: 20, jitter: 0 } },
+      // The queue default (5 s, spread by jitter) is asserted in queue-definitions; a delay of 0 retries at once, so the test
+      // does not wait for a timer that BullMQ keeps in Redis.
+      { backoff: { type: 'exponential', delay: 0, jitter: 0 } },
     );
     const done = await waitForState(() => queues.queue('files').getJob(job.id as string), 'completed');
     expect(seen.flaky.get('transient')).toBe(3);
@@ -385,9 +391,10 @@ describe('workers', () => {
 
   it('does not retry a permanent failure (UnrecoverableError), although attempts are left', async () => {
     const job = await queues.add('files', 'export', { key: 'fatal', fatal: true });
+    // `failed` is final: a job that would be retried is waiting or delayed instead.
     const failed = await waitForState(() => queues.queue('files').getJob(job.id as string), 'failed');
-    await Bun.sleep(100);
     expect(seen.flaky.get('fatal')).toBe(1);
+    expect(failed.attemptsMade).toBe(1);
     expect(failed.failedReason).toBe('this can never work');
     expect(failed.opts.attempts).toBe(3);
   });
@@ -406,7 +413,15 @@ describe('workers', () => {
 
     // Close the app while the job runs; a second, separate connection reads what happened.
     const observer = await infra('workers', { modules: [MetricsModule, RedisModule, QueuesModule] });
-    await harness.close();
+    let closed = false;
+    const closing = harness.close().then(() => {
+      closed = true;
+    });
+    // Some round trips to Redis give a close that does not wait every chance to finish early.
+    for (let round = 0; round < 5; round++) await observer.get(RedisService).queue.ping();
+    expect(closed, 'the app closed while a job was still running').toBe(false);
+    seen.slow.release();
+    await closing;
     expect(seen.slow.finished, 'the app closed before the running job finished').toBe(true);
     const stored = await observer
       .get(QueuesService)
@@ -443,10 +458,13 @@ describe('workers and schedulers when the queue Redis was down at startup', () =
     const forwarder = await createForwarder({ host: real.hostname, port: Number(real.port) });
     const url = `redis://127.0.0.1:${forwarder.port}/1`;
     // The forwarder is not started: Redis is away while the worker process boots.
+    // The scheduler runner plans its retry with these timers: the test fires them, it does not wait for them.
+    const timers = new ManualTimers();
     const harness = await infra('down-start', {
       modules: workerModules,
       providers: [EchoProcessor],
       env: { REDIS_QUEUE_URL_TEST: url },
+      timers,
     });
     const queues = harness.get(QueuesService);
     harness.get(JobSchedulerRegistry).register({
@@ -458,10 +476,16 @@ describe('workers and schedulers when the queue Redis was down at startup', () =
     });
     // The sync that runs while Redis is away fails, and a retry is planned instead of an exception.
     expect(await harness.get(JobSchedulerRunner).sync()).toBe(1);
+    expect(timers.pending, 'one retry is planned').toBe(1);
+    // The first wait is one second (RETRY_FIRST_MS), the next is doubled.
+    expect(timers.delays).toEqual([1_000]);
 
     await forwarder.start();
     try {
+      // The connection to Redis comes back by itself, in real time; a retry that meets it still down plans the next one.
+      // Each poll moves the virtual time past the planned wait, so the retries run without being waited for.
       await eventually(async () => {
+        timers.advance(30_000);
         const schedulers = await queues
           .queue('supplier-sync')
           .getJobSchedulers()
@@ -499,7 +523,8 @@ describe('workers and a queue Redis that goes away', () => {
       await waitForState(() => queues.queue('maintenance').getJob(before.id as string), 'completed');
 
       await forwarder.stop();
-      await Bun.sleep(1_200);
+      // Wait until the client has noticed the loss, then bring Redis back.
+      await eventually(() => (harness.get(RedisService).queue.status === 'ready' ? undefined : true), 5_000);
       await forwarder.start();
 
       const after = await eventually(

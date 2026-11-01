@@ -1,7 +1,8 @@
-// Root module of the worker process (decision 016): config, logging, metrics, the infrastructure (database, Redis, cache,
+// Root module of the worker process (decision 016): config, the clock (decision 031), logging, metrics, the infrastructure (database, Redis, cache,
 // rate limits, crypto, storage, outbound HTTP), the queue workers and schedulers, the outbox relay, job runs, the IP rule
 // hit flush, and the metrics listener. Domain modules add their processors and schedules here as their features are built.
 import { Module } from '@nestjs/common';
+import { ClockModule } from './common/clock.module';
 import { ConfigModule } from './config';
 import { CacheModule } from './infra/cache';
 import { CryptoModule } from './infra/crypto';
@@ -28,6 +29,7 @@ import { OutboxRelayModule } from './modules/platform';
 @Module({
   imports: [
     ConfigModule,
+    ClockModule,
     LoggingModule.forRoot({ service: 'worker' }),
     MetricsModule,
     DbModule,

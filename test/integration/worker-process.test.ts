@@ -62,7 +62,10 @@ function spawn(script: string, env: Record<string, string>) {
   return { child, lines };
 }
 
-/** Sends a signal and waits for the exit, up to a limit; returns the exit code and how long it took. */
+/**
+ * Sends a signal and waits for the exit, up to a limit; returns the exit code and how long it took.
+ * Real time on purpose (decision 031): the child process is the thing under test, and the sleep is only its failure deadline.
+ */
 async function stop(child: Child, signal: 'SIGTERM' | 'SIGINT' = 'SIGTERM') {
   const started = performance.now();
   child.kill(signal);

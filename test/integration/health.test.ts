@@ -2,13 +2,20 @@
 // with the same body; critical vs non-critical indicators; bounded time; nothing internal in the body.
 import { afterAll, describe, expect, it } from 'bun:test';
 import { HealthRegistry, type HealthIndicator } from '../../src/infra/health';
+import { HEALTH_CHECK_TIMEOUT_MS } from '../../src/modules/health/application/health.service';
 import { type TestApp, createTestApp } from '../support/app';
+import { ManualTimers } from '../support/clock';
+import { eventually } from '../support/infra';
 import { logSink } from '../support/log-sink';
 
 const apps: TestApp[] = [];
 /** A fresh app whose health registry has exactly the given indicators (no database, Redis or storage modules). */
 async function appWith(...indicators: HealthIndicator[]): Promise<TestApp> {
-  const t = await createTestApp({ withoutDatabase: true, withoutInfrastructure: true });
+  return appOn({}, ...indicators);
+}
+/** The same, with the timers the deadlines are scheduled with (decision 031). */
+async function appOn(options: { timers?: ManualTimers }, ...indicators: HealthIndicator[]): Promise<TestApp> {
+  const t = await createTestApp({ withoutDatabase: true, withoutInfrastructure: true, ...options });
   apps.push(t);
   const registry = t.app.get(HealthRegistry);
   for (const indicator of indicators) registry.register(indicator);
@@ -72,29 +79,45 @@ describe('GET /health', () => {
     expect(JSON.stringify(warning)).toContain('refused the connection');
   });
 
-  it('counts a false result and a hung indicator as down, and still answers in about two seconds', async () => {
-    const t = await appWith(
+  it('counts a false result and a hung indicator as down, the hung one after its two second deadline', async () => {
+    const timers = new ManualTimers();
+    const t = await appOn(
+      { timers },
       { name: 'flag', critical: false, check: () => Promise.resolve(false) },
       { name: 'hung', critical: true, check: () => new Promise<void>(() => undefined) },
     );
-    const started = performance.now();
-    const res = await t.app.inject({ method: 'GET', url: '/health' });
-    const elapsed = performance.now() - started;
+    const answer = t.app.inject({ method: 'GET', url: '/health' });
+    // The one that answered cleared its deadline; the hung one is still waiting for its own.
+    await eventually(() => (timers.pending === 1 ? true : undefined));
+    expect(timers.delays).toEqual([HEALTH_CHECK_TIMEOUT_MS]);
+    expect(HEALTH_CHECK_TIMEOUT_MS).toBe(2000);
+    timers.advance(HEALTH_CHECK_TIMEOUT_MS - 1);
+    // A millisecond short of the deadline the request is still waiting.
+    const early = await Promise.race([answer.then(() => 'answered'), new Promise((resolve) => setImmediate(resolve))]);
+    expect(early, 'a millisecond before the deadline').not.toBe('answered');
+    timers.advance(1);
+    const res = await answer;
     expect(res.json()).toEqual({ status: 'down', checks: { flag: 'down', hung: 'down' } });
-    expect(elapsed).toBeGreaterThanOrEqual(1900);
-    expect(elapsed).toBeLessThan(4000);
+    expect(timers.pending).toBe(0);
   });
 
   it('runs the indicators in parallel', async () => {
-    const slow = (name: string): HealthIndicator => ({
+    // Each indicator answers only after all three have started: run one after the other, the first would never answer
+    // and would be counted down at its deadline.
+    let started = 0;
+    let allStarted: () => void = () => undefined;
+    const everyone = new Promise<void>((resolve) => (allStarted = resolve));
+    const meeting = (name: string): HealthIndicator => ({
       name,
       critical: false,
-      check: () => new Promise<void>((resolve) => setTimeout(resolve, 300)),
+      check: async () => {
+        if (++started === 3) allStarted();
+        await everyone;
+      },
     });
-    const t = await appWith(slow('a'), slow('b'), slow('c'));
-    const started = performance.now();
-    await t.app.inject({ method: 'GET', url: '/health' });
-    expect(performance.now() - started).toBeLessThan(800);
+    const t = await appWith(meeting('a'), meeting('b'), meeting('c'));
+    const res = await t.app.inject({ method: 'GET', url: '/health' });
+    expect(res.json()).toEqual({ status: 'ok', checks: { a: 'ok', b: 'ok', c: 'ok' } });
   });
 });
 

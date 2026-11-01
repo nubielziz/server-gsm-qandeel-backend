@@ -99,7 +99,7 @@ None of this module's own jobs exist yet (the checks, alerts and integrity featu
 
 - **`JobRunsService.run({ job, trigger, runId?, triggeredBy?, overlap? }, work)`** is the wrapper processors use around their
   scheduled or manual work. It inserts a `running` row, runs `work(run)`, and closes the row as `succeeded` (or `skipped`
-  when the report says `skipped: true`) with the duration (database clock), `processed` and the `result` counters (no secrets,
+  when the report says `skipped: true`) with the duration (the injected clock, decision 031), `processed` and the `result` counters (no secrets,
   no personal data); when `work` throws it closes the row as `failed` with the message (cut at 1 000 characters) and
   rethrows, so BullMQ retries as the queue says (each attempt is its own row). A failure while recording the end is logged
   and never hides the job's own outcome.

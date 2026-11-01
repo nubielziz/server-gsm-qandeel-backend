@@ -1,7 +1,8 @@
 // The cached set of active IP rules (identity module, scenario ip-rules step 4): loaded from Postgres into the cache Redis,
 // kept in memory for a moment, invalidated by whatever changes a rule or the access restriction.
 import { randomUUID } from 'node:crypto';
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { CLOCK, type Clock } from '../../../../common/clock';
 import { LogThrottle } from '../../../../common/log-throttle';
 import { ShortMemo } from '../../../../common/short-memo';
 import { CacheKeys, CacheService } from '../../../../infra/cache';
@@ -48,6 +49,7 @@ export class IpRuleCache {
   private readonly throttle = new LogThrottle(WARN_INTERVAL_MS);
   private readonly memo = new ShortMemo<CompiledIpRules>({
     ttlMs: LOCAL_TTL_MS,
+    now: () => this.clock.nowMs(),
     onStale: (error) => {
       if (this.throttle.attempt('stale')) {
         this.logger.warn(`IP rules could not be reloaded, using the last known set: ${String(error)}`);
@@ -61,6 +63,7 @@ export class IpRuleCache {
     private readonly settings: SettingsService,
     private readonly cache: CacheService,
     private readonly keys: CacheKeys,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   /**
@@ -101,7 +104,7 @@ export class IpRuleCache {
 
   private async load(): Promise<IpRuleSnapshot> {
     const [rules, restricted] = await Promise.all([
-      loadLiveIpRules(this.db.db),
+      loadLiveIpRules(this.db.db, this.clock.now()),
       this.settings.get(ADMIN_ALLOWLIST_KEY),
     ]);
     return { version: randomUUID(), restricted: restricted === true, rules };

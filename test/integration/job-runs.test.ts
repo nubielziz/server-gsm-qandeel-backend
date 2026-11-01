@@ -7,23 +7,33 @@ import { AppError } from '../../src/common/errors';
 import { DbModule, schema as s } from '../../src/infra/db';
 import { JobRunsModule, JobRunsService } from '../../src/modules/health';
 import { UnrecoverableError } from '../../src/infra/queues';
-import { type InfraHarness, createInfra } from '../support/infra';
+import { HOUR, TestClock } from '../support/clock';
+import { type InfraHarness, createInfra, eventually } from '../support/infra';
 import { TEST_DATABASE_URL, closeTestDb, resetDb, testDb } from '../support/db';
 import { expectRejection } from '../support/rejection';
 
+/** The clock of the service: start and end times and durations come from it, not from the database (decision 031). */
+const clock = new TestClock();
 let harness: InfraHarness;
 let jobRuns: JobRunsService;
 
 beforeAll(async () => {
   await testDb();
-  harness = await createInfra({ modules: [DbModule, JobRunsModule], env: { DATABASE_URL_TEST: TEST_DATABASE_URL } });
+  harness = await createInfra({
+    modules: [DbModule, JobRunsModule],
+    env: { DATABASE_URL_TEST: TEST_DATABASE_URL },
+    clock,
+  });
   jobRuns = harness.get(JobRunsService);
 });
 afterAll(async () => {
   await harness.close();
   await closeTestDb();
 });
-beforeEach(resetDb);
+beforeEach(async () => {
+  clock.reset();
+  await resetDb();
+});
 
 const rowsOf = async (job?: string) => {
   const { db } = await testDb();
@@ -55,14 +65,14 @@ describe('start and finish', () => {
       triggeredBy: null,
       result: {},
     });
-    expect(run.startedAt).toBeInstanceOf(Date);
+    expect(run.startedAt).toEqual(clock.now());
     expect((await jobRuns.findRunning('ledger_integrity'))?.id).toBe(run.id);
     expect(await jobRuns.findRunning('other_job')).toBeUndefined();
   });
 
   it('closes it with the status, the duration, the items handled, the result and the error', async () => {
     const run = await jobRuns.start({ job: 'price_sync', trigger: 'schedule' });
-    await Bun.sleep(120);
+    clock.advance(120);
     const done = await jobRuns.finish(run.id, {
       status: 'succeeded',
       processed: 1480,
@@ -76,8 +86,8 @@ describe('start and finish', () => {
       error: null,
     });
     expect(done?.finishedAt).toBeInstanceOf(Date);
-    expect(done?.durationMs).toBeGreaterThanOrEqual(100);
-    expect(done?.durationMs).toBeLessThan(5_000);
+    expect(done?.durationMs).toBe(120);
+    expect(done?.finishedAt).toEqual(clock.now());
     expect(await jobRuns.findRunning('price_sync')).toBeUndefined();
   });
 
@@ -222,8 +232,8 @@ describe('overlapping runs of one job', () => {
       await hold.promise;
       return { processed: 1 };
     });
-    while (!(await jobRuns.findRunning('ledger_integrity'))) await Bun.sleep(5);
-    const running = (await jobRuns.findRunning('ledger_integrity'))!;
+    // The first run inserts its row before the work starts; wait for it.
+    const running = await eventually(() => jobRuns.findRunning('ledger_integrity'));
 
     const second = await jobRuns.run({ job: 'ledger_integrity', trigger: 'schedule' }, () => {
       calls++;
@@ -243,14 +253,17 @@ describe('overlapping runs of one job', () => {
 
   it('lets exactly one of two runs that start at the same moment do the work', async () => {
     let calls = 0;
+    const hold = gate();
     const work = async () => {
       calls++;
-      await Bun.sleep(150);
+      await hold.promise;
       return { processed: 1 };
     };
-    const results = await Promise.all(
-      Array.from({ length: 4 }, () => jobRuns.run({ job: 'price_sync', trigger: 'schedule' }, work)),
-    );
+    const started = Array.from({ length: 4 }, () => jobRuns.run({ job: 'price_sync', trigger: 'schedule' }, work));
+    // One row is running and three skipped rows are recorded: all four starters have decided. Only then the work ends.
+    await eventually(async () => ((await rowsOf('price_sync')).length === 4 ? true : undefined));
+    hold.open();
+    const results = await Promise.all(started);
     expect(calls).toBe(1);
     expect(results.map((run) => run.status).sort()).toEqual(['skipped', 'skipped', 'skipped', 'succeeded']);
     expect((await rowsOf('price_sync')).filter((row) => row.status === 'running')).toHaveLength(0);
@@ -277,26 +290,22 @@ describe('overlapping runs of one job', () => {
 
 describe('failStuck', () => {
   it('fails runs that have been running for too long, and leaves young and finished runs alone', async () => {
-    const { db } = await testDb();
     const stuck = await jobRuns.start({ job: 'ledger_integrity', trigger: 'schedule' });
+    clock.advance(3 * HOUR);
     const young = await jobRuns.start({ job: 'price_sync', trigger: 'schedule' });
     const finished = await jobRuns.start({ job: 'fx_refresh', trigger: 'schedule' });
     await jobRuns.finish(finished.id, { status: 'succeeded' });
-    await db
-      .update(s.jobRuns)
-      .set({ startedAt: new Date(Date.now() - 3 * 3_600_000) })
-      .where(eq(s.jobRuns.id, stuck.id));
 
-    expect(await jobRuns.failStuck(2 * 3_600_000)).toBe(1);
+    expect(await jobRuns.failStuck(2 * HOUR)).toBe(1);
     const rows = Object.fromEntries((await rowsOf()).map((row) => [row.id, row]));
     expect(rows[stuck.id]).toMatchObject({ status: 'failed', error: 'The worker stopped before this run finished.' });
-    expect(rows[stuck.id]?.durationMs).toBeGreaterThanOrEqual(3 * 3_600_000 - 60_000);
+    expect(rows[stuck.id]?.durationMs).toBe(3 * HOUR);
     expect(rows[young.id]?.status).toBe('running');
     expect(rows[finished.id]?.status).toBe('succeeded');
     // The guard no longer sees a run of the stuck job, so a new one can start.
     expect((await jobRuns.start({ job: 'ledger_integrity', trigger: 'manual', overlap: 'refuse' })).status).toBe(
       'running',
     );
-    expect(await jobRuns.failStuck(2 * 3_600_000)).toBe(0);
+    expect(await jobRuns.failStuck(2 * HOUR)).toBe(0);
   });
 });

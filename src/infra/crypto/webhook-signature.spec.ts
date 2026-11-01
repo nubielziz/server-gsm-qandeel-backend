@@ -46,13 +46,6 @@ describe('verifyWebhookSignature', () => {
     expect(at(86_400)).toEqual({ valid: false, reason: 'outside_window' });
   });
 
-  it('uses the system clock when no time is given', () => {
-    const fresh = signWebhook(SECRET, Math.floor(Date.now() / 1000), BODY);
-    expect(verifyWebhookSignature(SECRET, fresh, BODY).valid).toBe(true);
-    const old = signWebhook(SECRET, Math.floor(Date.now() / 1000) - 3600, BODY);
-    expect(verifyWebhookSignature(SECRET, old, BODY)).toEqual({ valid: false, reason: 'outside_window' });
-  });
-
   it('honours a custom window', () => {
     expect(verifyWebhookSignature(SECRET, signed, BODY, { nowSeconds: NOW + 61, toleranceSeconds: 60 }).valid).toBe(
       false,

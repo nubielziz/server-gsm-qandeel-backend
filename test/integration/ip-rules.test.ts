@@ -29,6 +29,7 @@ import {
 import { demoStatePath, loadDemoState } from '../../scripts/seed/demo-state';
 import { runSeed } from '../../scripts/seed/run';
 import { type TestApp, createTestApp } from '../support/app';
+import { HOUR, SECOND, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 import { createInfra, deadRedisUrl, eventually } from '../support/infra';
 import { metricValue } from '../support/metrics';
@@ -43,7 +44,8 @@ import { expectRejection } from '../support/rejection';
 import { TestController } from '../support/routes';
 
 const AUTH = { 'x-test-auth': '1' };
-const HOUR = 3_600_000;
+/** The clock of every app in this file: rule expiry, the in-memory copy and the hit times follow it (decision 031). */
+const clock = new TestClock();
 
 let t: TestApp;
 const extraApps: TestApp[] = [];
@@ -51,6 +53,7 @@ const extraApps: TestApp[] = [];
 const appOptions = {
   controllers: [TestController, PipelineTestController],
   imports: [TestAccessModule],
+  clock,
 };
 // The API process does not load the flush; the hit-counter tests add it to reach IpRuleHitsFlush (and run it by hand).
 const withFlush = { ...appOptions, imports: [...appOptions.imports, IpRuleHitsFlushModule] };
@@ -74,7 +77,10 @@ afterAll(async () => {
   await Promise.all(extraApps.map((other) => other.close()));
   await closeTestDb();
 });
-beforeEach(clean);
+beforeEach(async () => {
+  clock.reset();
+  await clean();
+});
 
 type RuleValues = { kind: 'allow' | 'block'; scope: 'store' | 'api' | 'admin' | 'all'; cidr: string } & Partial<
   typeof s.ipRules.$inferInsert
@@ -198,7 +204,7 @@ describe('the admin allowlist (setting adminAllowlistOnly)', () => {
   it('allows a whole range, and ignores an allow rule that has expired', async () => {
     const range = freshIp().split('.').slice(0, 3).join('.');
     await addRule({ kind: 'allow', scope: 'admin', cidr: `${range}.0/24` });
-    await addRule({ kind: 'allow', scope: 'admin', cidr: '203.0.113.200', expiresAt: new Date(Date.now() - HOUR) });
+    await addRule({ kind: 'allow', scope: 'admin', cidr: '203.0.113.200', expiresAt: new Date(clock.nowMs() - HOUR) });
     await restrictAdmin(true);
     expect((await get('/admin/t/session', `${range}.77`, AUTH)).statusCode).toBe(200);
     expect(isIpRefusal(await get('/admin/t/session', '203.0.113.200', AUTH))).toBe(true);
@@ -213,16 +219,17 @@ describe('the admin allowlist (setting adminAllowlistOnly)', () => {
 describe('expiry', () => {
   it('drops a rule by itself when its expiry passes, without a reload', async () => {
     const blocked = freshIp();
-    // 4 s of life and a 1 s margin: a loaded run (and WSL clock steps) made the 1.5 s window flaky.
-    await addRule({ kind: 'block', scope: 'all', cidr: blocked, expiresAt: new Date(Date.now() + 4_000) });
+    await addRule({ kind: 'block', scope: 'all', cidr: blocked, expiresAt: new Date(clock.nowMs() + 4 * SECOND) });
     expect(isIpRefusal(await get('/store/v1/t/ping', blocked, AUTH))).toBe(true);
-    await Bun.sleep(5_000);
-    expect((await get('/store/v1/t/ping', blocked, AUTH)).statusCode).toBe(200);
-  }, 15_000);
+    clock.advance(4 * SECOND - 1);
+    expect(isIpRefusal(await get('/store/v1/t/ping', blocked, AUTH)), 'a millisecond before the expiry').toBe(true);
+    clock.advance(1);
+    expect((await get('/store/v1/t/ping', blocked, AUTH)).statusCode, 'at the expiry').toBe(200);
+  });
 
   it('does not load a rule that expired before the load', async () => {
     const blocked = freshIp();
-    await addRule({ kind: 'block', scope: 'all', cidr: blocked, expiresAt: new Date(Date.now() - 1_000) });
+    await addRule({ kind: 'block', scope: 'all', cidr: blocked, expiresAt: new Date(clock.nowMs() - SECOND) });
     expect((await get('/store/v1/t/ping', blocked, AUTH)).statusCode).toBe(200);
   });
 });
@@ -275,7 +282,12 @@ describe('the cache', () => {
     const redis = t.app.get(RedisService).cache;
     const key = t.app.get(CacheKeys).ipRules();
     const blocked = freshIp();
-    const id = await addRule({ kind: 'block', scope: 'store', cidr: blocked, expiresAt: new Date(Date.now() + HOUR) });
+    const id = await addRule({
+      kind: 'block',
+      scope: 'store',
+      cidr: blocked,
+      expiresAt: new Date(clock.nowMs() + HOUR),
+    });
     await restrictAdmin(true);
     await get('/store/v1/t/ping', blocked, AUTH);
     const entry = decodeEntry((await redis.get(key)) ?? '');
@@ -329,10 +341,11 @@ describe('the cache', () => {
     const blocked = freshIp();
     expect((await call(other, 'GET', '/store/v1/t/ping', blocked, AUTH)).statusCode).toBe(200);
     await addRule({ kind: 'block', scope: 'store', cidr: blocked });
-    await eventually(async () => {
-      const res = await call(other, 'GET', '/store/v1/t/ping', blocked, AUTH);
-      return isIpRefusal(res) ? true : undefined;
-    }, 3_000);
+    // The other instance keeps its in-memory copy for a second, then reads the cache and the database again.
+    clock.advance(SECOND - 1);
+    expect((await call(other, 'GET', '/store/v1/t/ping', blocked, AUTH)).statusCode).toBe(200);
+    clock.advance(1);
+    expect(isIpRefusal(await call(other, 'GET', '/store/v1/t/ping', blocked, AUTH))).toBe(true);
   });
 });
 
@@ -394,7 +407,7 @@ describe('hit counters and their flush', () => {
     const blockId = await addRule({ kind: 'block', scope: 'store', cidr: blocked });
     const allowId = await addRule({ kind: 'allow', scope: 'admin', cidr: office });
     await restrictAdmin(true);
-    const before = Date.now();
+    const before = clock.nowMs();
     for (let i = 0; i < 3; i++) await get('/store/v1/t/ping', blocked, AUTH);
     for (let i = 0; i < 2; i++) await get('/admin/t/session', office, AUTH);
     await get('/admin/t/session', freshIp(), AUTH); // not listed: no rule decided
@@ -404,7 +417,7 @@ describe('hit counters and their flush', () => {
     const pending = await redisHash();
     expect(pending[String(blockId)]).toBe('3');
     expect(pending[String(allowId)]).toBe('2');
-    expect(Number(pending[`${blockId}:at`])).toBeGreaterThanOrEqual(before);
+    expect(Number(pending[`${blockId}:at`])).toBe(before);
     expect(Object.keys(pending)).toHaveLength(4);
     expect(await t.app.get(RedisService).cache.pttl(t.app.get(CacheKeys).ipRuleHits())).toBeGreaterThan(23 * HOUR);
 
@@ -412,7 +425,7 @@ describe('hit counters and their flush', () => {
     expect(await redisHash()).toEqual({});
     const block = await row(blockId);
     expect(block.hitCount).toBe(3);
-    expect(block.lastHitAt!.getTime()).toBeGreaterThanOrEqual(before - 1);
+    expect(block.lastHitAt!.getTime()).toBe(before);
     expect((await row(allowId)).hitCount).toBe(2);
 
     // Nothing is counted twice, and counting goes on.
@@ -424,9 +437,7 @@ describe('hit counters and their flush', () => {
 
     const text = await t.app.get(MetricsService).render();
     expect(metricValue(text, 'ip_rule_hits_flushed_total', {})).toBeGreaterThanOrEqual(6);
-    expect(metricValue(text, 'ip_rule_hits_flush_last_success_timestamp_seconds', {})).toBeGreaterThan(
-      before / 1000 - 1,
-    );
+    expect(metricValue(text, 'ip_rule_hits_flush_last_success_timestamp_seconds', {})).toBe(before / 1000);
   });
 
   it('counts a hit once however many flushes run at the same time', async () => {
@@ -456,7 +467,7 @@ describe('hit counters and their flush', () => {
 
   it('never moves last_hit_at backwards', async () => {
     const id = await addRule({ kind: 'block', scope: 'all', cidr: freshIp() });
-    const future = new Date(Date.now() + 24 * HOUR);
+    const future = new Date(clock.nowMs() + 24 * HOUR);
     const { db } = await testDb();
     await db
       .update(s.ipRules)
@@ -484,7 +495,7 @@ describe('hit counters and their flush', () => {
         },
       },
     } as unknown as DbService;
-    const failing = new IpRuleHitsFlush(redis, keys, failingDb, new MetricsService());
+    const failing = new IpRuleHitsFlush(redis, keys, failingDb, new MetricsService(), clock);
     for (let i = 0; i < 2; i++) real.record(id);
     await real.idle();
     await expectRejection(failing.flush(), 'database went away');

@@ -1,7 +1,8 @@
 // Hit counters of the IP rules, flushing side (identity module, worker process): takes the counters the API recorded in
 // Redis and adds them to ip_rules.hit_count and last_hit_at.
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Counter, Gauge } from 'prom-client';
+import { CLOCK, type Clock } from '../../../../common/clock';
 import { CacheKeys } from '../../../../infra/cache';
 import { DbService } from '../../../../infra/db';
 import { MetricsService } from '../../../../infra/metrics';
@@ -67,6 +68,7 @@ export class IpRuleHitsFlush {
     private readonly keys: CacheKeys,
     private readonly db: DbService,
     metrics: MetricsService,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {
     const registers = [metrics.registry];
     this.flushed = new Counter({
@@ -95,7 +97,7 @@ export class IpRuleHitsFlush {
   async flush(): Promise<FlushResult> {
     try {
       const result = await this.run();
-      this.lastSuccess.setToCurrentTime();
+      this.lastSuccess.set(this.clock.nowMs() / 1000);
       return result;
     } catch (error) {
       this.failures.inc();
@@ -135,7 +137,7 @@ export class IpRuleHitsFlush {
     }
     return [...counts]
       .filter(([, entry]) => entry.count > 0)
-      .map(([ruleId, entry]) => ({ ruleId, count: entry.count, lastHitAtMs: entry.lastHitAtMs || Date.now() }));
+      .map(([ruleId, entry]) => ({ ruleId, count: entry.count, lastHitAtMs: entry.lastHitAtMs || this.clock.nowMs() }));
   }
 
   private async giveBack(entries: readonly RuleHits[]): Promise<void> {

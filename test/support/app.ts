@@ -5,6 +5,7 @@ import { Module, type ModuleMetadata, type Type } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from '../../src/app.module';
+import { CLOCK, type Clock, SystemClock, TIMERS, type Timers } from '../../src/common/clock';
 import { configureApp, createAppAdapter } from '../../src/app.bootstrap';
 import { APP_CONFIG, type AppConfig, parseEnv } from '../../src/config';
 import { TEST_DATABASE_URL } from './db';
@@ -73,6 +74,13 @@ const NEEDS_INFRASTRUCTURE = [PublicIpLimitModule];
 export interface TestAppOptions {
   /** Environment variables on top of `NODE_ENV=test`. */
   readonly env?: Record<string, string>;
+  /**
+   * The clock every service reads (decision 031). Pass a `TestClock` (`test/support/clock.ts`) to set and advance time
+   * instead of waiting; the default is the real system clock.
+   */
+  readonly clock?: Clock;
+  /** The timers retries and deadlines are scheduled with (decision 031); pass `ManualTimers` to fire them by hand. */
+  readonly timers?: Timers;
   /** Controllers added to the root module (use the sample ones in routes.ts or your own). */
   readonly controllers?: Type<unknown>[];
   readonly providers?: ModuleMetadata['providers'];
@@ -98,6 +106,8 @@ export interface TestAppOptions {
 export interface TestApp {
   readonly app: NestFastifyApplication;
   readonly config: AppConfig;
+  /** The clock the app runs on: the one passed in the options, or the system clock. */
+  readonly clock: Clock;
   close(): Promise<void>;
 }
 
@@ -115,6 +125,7 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     ...testInstanceEnv(),
     ...options.env,
   });
+  const clock = options.clock ?? new SystemClock();
   const builder = Test.createTestingModule({
     imports: [AppModule, ...(options.imports ?? [])],
     controllers: options.controllers ?? [],
@@ -123,7 +134,10 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     .overrideProvider(APP_CONFIG)
     .useValue(config)
     .overrideProvider(LOG_DESTINATION)
-    .useValue(logSink);
+    .useValue(logSink)
+    .overrideProvider(CLOCK)
+    .useValue(clock);
+  if (options.timers) builder.overrideProvider(TIMERS).useValue(options.timers);
   if (options.withoutDatabase) builder.overrideModule(DbModule).useModule(NoDatabaseModule);
   // The security stack and the IP rules and maintenance stages read the database and the cache: without either, they go.
   if (options.withoutDatabase || options.withoutInfrastructure) {
@@ -142,5 +156,5 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   await configureApp(app, config);
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
-  return { app, config, close: () => app.close() };
+  return { app, config, clock, close: () => app.close() };
 }

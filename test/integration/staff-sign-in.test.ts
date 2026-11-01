@@ -23,15 +23,21 @@ import {
 } from '../../src/modules/identity';
 import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches, openSession } from '../support/auth';
+import { SECOND, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 import { freshClientIp } from '../support/pipeline-routes';
-import { CONSOLE_ORIGIN, PASSWORD, StaffConsole, codeFor, makeStaff, stepsFromNow } from '../support/staff-console';
+import { CONSOLE_ORIGIN, PASSWORD, StaffConsole, codeFor, makeStaff } from '../support/staff-console';
 
+/** The app's clock: authenticator codes, link and pending-session lifetimes follow it (decision 031). */
+const clock = new TestClock();
 let t: TestApp;
 
 beforeAll(async () => {
-  t = await createTestApp({ env: { CORS_ORIGINS: CONSOLE_ORIGIN } });
+  t = await createTestApp({ env: { CORS_ORIGINS: CONSOLE_ORIGIN }, clock });
 });
+
+/** The code an authenticator app shows `steps` time steps (30 s) from the app's now. */
+const codeNow = (secret: string, steps = 0): Promise<string> => codeFor(secret, clock.nowMs() + steps * 30 * SECOND);
 afterAll(async () => {
   await resetDb();
   await t.close();
@@ -49,6 +55,7 @@ async function clearRateLimits(): Promise<void> {
 }
 
 beforeEach(async () => {
+  clock.reset();
   await resetDb();
   await clearIdentityCaches(t);
   await clearRateLimits();
@@ -81,7 +88,7 @@ const problem = (res: { json: () => unknown }) => res.json() as { code: string; 
 async function signedIn(staff: { email: string; secret: string }, ip?: string): Promise<StaffConsole> {
   const c = consoleOf(ip);
   expect((await c.login(staff.email)).statusCode).toBe(200);
-  expect((await c.code(await codeFor(staff.secret))).statusCode).toBe(204);
+  expect((await c.code(await codeNow(staff.secret))).statusCode).toBe(204);
   return c;
 }
 
@@ -111,7 +118,7 @@ describe('the whole flow of a member with 2FA on', () => {
     expect(early.statusCode).toBe(401);
     expect(problem(early).code).toBe('UNAUTHORIZED');
 
-    const done = await c.code(await codeFor(staff.secret));
+    const done = await c.code(await codeNow(staff.secret));
     expect(done.statusCode).toBe(204);
     expect(done.body).toBe('');
     expect(c.sessionToken).not.toBe(pendingToken);
@@ -165,7 +172,7 @@ describe('the whole flow of a member with 2FA on', () => {
     const c = consoleOf();
     await c.login(staff.email);
     expect(await auditRows()).toHaveLength(0);
-    await c.code(await codeFor(staff.secret));
+    await c.code(await codeNow(staff.secret));
     await c.logout();
     const rows = await auditRows();
     const active = (await sessionsOf(staff.id)).find((row) => row.stage === 'active')!;
@@ -239,7 +246,7 @@ describe('first sign-in: authenticator setup', () => {
     expect(pending.totpSecretEnc).toStartWith('v1:');
     expect(pending.totpSecretEnc).not.toContain(body.secret);
 
-    expect((await c.code(await codeFor(body.secret))).statusCode).toBe(204);
+    expect((await c.code(await codeNow(body.secret))).statusCode).toBe(204);
     expect(await staffRow(staff.id)).toMatchObject({ twofaEnabled: true, status: 'active' });
     expect((await c.me()).statusCode).toBe(200);
     expect((await auditRows()).map((row) => row.action)).toEqual(['turned on two-factor sign-in', 'logged in']);
@@ -256,9 +263,9 @@ describe('first sign-in: authenticator setup', () => {
     const first = (await c.setup()).json<{ secret: string }>().secret;
     const second = (await c.setup()).json<{ secret: string }>().secret;
     expect(second).not.toBe(first);
-    const old = await c.code(await codeFor(first));
+    const old = await c.code(await codeNow(first));
     expect(old.statusCode).toBe(422);
-    expect((await c.code(await codeFor(second))).statusCode).toBe(204);
+    expect((await c.code(await codeNow(second))).statusCode).toBe(204);
   });
 
   it('a code before any setup is a 422 on `code`, not a crash', async () => {
@@ -278,7 +285,7 @@ describe('first sign-in: authenticator setup', () => {
     await tabA.login(staff.email);
     await tabB.login(staff.email);
     const secret = (await tabA.setup()).json<{ secret: string }>().secret;
-    expect((await tabA.code(await codeFor(secret))).statusCode).toBe(204);
+    expect((await tabA.code(await codeNow(secret))).statusCode).toBe(204);
     const late = await tabB.setup();
     expect(late.statusCode).toBe(409);
     expect(problem(late).code).toBe('TWOFA_ALREADY_ENABLED');
@@ -366,7 +373,7 @@ describe('login refusals', () => {
   });
 
   it('403 ACCOUNT_SUSPENDED for a correct password only; a wrong one stays 401', async () => {
-    const suspended = await makeStaff(t, { status: 'suspended', suspendedAt: new Date(), suspendedReason: 'test' });
+    const suspended = await makeStaff(t, { status: 'suspended', suspendedAt: clock.now(), suspendedReason: 'test' });
     const ok = await consoleOf().login(suspended.email);
     expect(ok.statusCode).toBe(403);
     expect(problem(ok).code).toBe('ACCOUNT_SUSPENDED');
@@ -466,23 +473,23 @@ describe('the code step', () => {
       expect(problem(res).errors![0]!.field).toBe('code');
     }
     expect(c.sessionToken).toBe(token);
-    expect((await c.code(await codeFor(staff.secret))).statusCode).toBe(204);
+    expect((await c.code(await codeNow(staff.secret))).statusCode).toBe(204);
   });
 
   it('accepts a code one step ahead and refuses one three steps away', async () => {
     const staff = await makeStaff(t);
     const c = consoleOf();
     await c.login(staff.email);
-    expect((await c.code(await codeFor(staff.secret, stepsFromNow(-3)))).statusCode).toBe(422);
-    expect((await c.code(await codeFor(staff.secret, stepsFromNow(3)))).statusCode).toBe(422);
-    expect((await c.code(await codeFor(staff.secret, stepsFromNow(1)))).statusCode).toBe(204);
-    const stepOfCode = Math.floor(stepsFromNow(1) / 30_000);
+    expect((await c.code(await codeNow(staff.secret, -3))).statusCode).toBe(422);
+    expect((await c.code(await codeNow(staff.secret, 3))).statusCode).toBe(422);
+    expect((await c.code(await codeNow(staff.secret, 1))).statusCode).toBe(204);
+    const stepOfCode = Math.floor((clock.nowMs() + 30 * SECOND) / (30 * SECOND));
     expect(Math.abs((await staffRow(staff.id)).totpLastStep! - stepOfCode)).toBeLessThanOrEqual(1);
   });
 
   it('never accepts a used time step twice, not even from another session', async () => {
     const staff = await makeStaff(t);
-    const code = await codeFor(staff.secret);
+    const code = await codeNow(staff.secret);
     const first = consoleOf();
     const second = consoleOf();
     await first.login(staff.email);
@@ -492,13 +499,13 @@ describe('the code step', () => {
     expect(replay.statusCode).toBe(422);
     expect(problem(replay).errors![0]!.field).toBe('code');
     // An older step is refused too (the account moved past it); a newer one is accepted.
-    expect((await second.code(await codeFor(staff.secret, stepsFromNow(-1)))).statusCode).toBe(422);
-    expect((await second.code(await codeFor(staff.secret, stepsFromNow(1)))).statusCode).toBe(204);
+    expect((await second.code(await codeNow(staff.secret, -1))).statusCode).toBe(422);
+    expect((await second.code(await codeNow(staff.secret, 1))).statusCode).toBe(204);
   });
 
   it('lets exactly one of two simultaneous requests with the same code win', async () => {
     const staff = await makeStaff(t);
-    const code = await codeFor(staff.secret);
+    const code = await codeNow(staff.secret);
     const tabs = [consoleOf(), consoleOf(), consoleOf()];
     for (const tab of tabs) await tab.login(staff.email);
     const results = await Promise.all(tabs.map((tab) => tab.code(code)));
@@ -512,7 +519,7 @@ describe('the code step', () => {
     const c = consoleOf();
     await c.login(staff.email);
     for (let i = 0; i < 4; i++) expect((await c.code('000000')).statusCode).toBe(422);
-    expect((await c.code(await codeFor(staff.secret))).statusCode).toBe(204);
+    expect((await c.code(await codeNow(staff.secret))).statusCode).toBe(204);
     // The count restarted; a thief with the password gets no fresh guesses by logging in again.
     const thief = consoleOf();
     for (let i = 0; i < 5; i++) {
@@ -525,7 +532,7 @@ describe('the code step', () => {
     expect(problem(blocked).code).toBe('RATE_LIMITED');
     expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);
     // Even the right code waits while the account is locked.
-    const right = await thief.code(await codeFor(staff.secret, stepsFromNow(1)));
+    const right = await thief.code(await codeNow(staff.secret, 1));
     expect(right.statusCode).toBe(429);
   });
 
@@ -533,7 +540,7 @@ describe('the code step', () => {
     const staff = await makeStaff(t);
     const c = consoleOf();
     await c.login(staff.email);
-    const code = await codeFor(staff.secret);
+    const code = await codeNow(staff.secret);
     for (const csrf of [false, 'f'.repeat(64)] as const) {
       const res = await c.code(code, { csrf });
       expect(res.statusCode).toBe(403);
@@ -551,7 +558,7 @@ describe('the code step', () => {
     expect((await c.code('123456')).statusCode).toBe(401);
 
     const short = await openSession(t, { type: 'staff', id: staff.id }, { stage: 'pending_totp', ttlSeconds: 1 });
-    await Bun.sleep(1100);
+    clock.advance(SECOND);
     const expired = await t.app.inject({
       method: 'POST',
       url: '/admin/auth/2fa',
@@ -568,7 +575,7 @@ describe('the code step', () => {
     await c.me(); // warms the cached session view, which still says "ok" after the update below
     const { db } = await testDb();
     await db.update(s.staffUsers).set({ status: 'suspended' }).where(eq(s.staffUsers.id, staff.id));
-    const res = await c.code(await codeFor(staff.secret));
+    const res = await c.code(await codeNow(staff.secret));
     expect(res.statusCode).toBe(403);
     expect(problem(res).code).toBe('ACCOUNT_SUSPENDED');
     expect((await sessionsOf(staff.id)).filter((row) => row.revokedAt === null)).toHaveLength(0);
@@ -580,7 +587,7 @@ describe('the code step', () => {
     await c.login(staff.email);
     const { db } = await testDb();
     await db.update(s.staffUsers).set({ mustChangePassword: true }).where(eq(s.staffUsers.id, staff.id));
-    expect((await c.code(await codeFor(staff.secret))).statusCode).toBe(401);
+    expect((await c.code(await codeNow(staff.secret))).statusCode).toBe(401);
   });
 });
 
@@ -677,7 +684,7 @@ describe('password set after a temporary password (session mode)', () => {
     expect((await consoleOf().login(staff.email, 'temporary-pass-9')).statusCode).toBe(401);
     const again = consoleOf();
     expect((await again.login(staff.email, NEW_PASSWORD)).json()).toEqual({ next: 'totp' });
-    expect((await again.code(await codeFor(staff.secret))).statusCode).toBe(204);
+    expect((await again.code(await codeNow(staff.secret))).statusCode).toBe(204);
     const audit = (await auditRows()).map((entry) => [entry.action, entry.entityType, entry.actorType, entry.actorId]);
     expect(audit[0]).toEqual(['set a new password', 'staff', 'staff', staff.id]);
   });
@@ -766,7 +773,7 @@ describe('password set by an emailed link (token mode)', () => {
     const staff = await makeStaff(t, { status: 'invited', noPassword: true, twofaEnabled: false, noSecret: true });
     expect((await consoleOf().login(staff.email, 'whatever-123456')).statusCode).toBe(401);
     const { token, expiresAt } = await issue(staff.id);
-    expect(Math.abs(expiresAt.getTime() - Date.now() - STAFF_TOKEN_TTL_MS)).toBeLessThan(5000);
+    expect(expiresAt.getTime()).toBe(clock.nowMs() + STAFF_TOKEN_TTL_MS);
 
     const c = consoleOf();
     const res = await c.setPassword({ token, password: NEW_PASSWORD }, { csrf: false });
@@ -789,7 +796,7 @@ describe('password set by an emailed link (token mode)', () => {
     const login = consoleOf();
     expect((await login.login(staff.email, NEW_PASSWORD)).json()).toEqual({ next: 'totp_setup' });
     const secret = (await login.setup()).json<{ secret: string }>().secret;
-    expect((await login.code(await codeFor(secret))).statusCode).toBe(204);
+    expect((await login.code(await codeNow(secret))).statusCode).toBe(204);
     expect(await staffRow(staff.id)).toMatchObject({ status: 'active', twofaEnabled: true });
   });
 
@@ -816,16 +823,20 @@ describe('password set by an emailed link (token mode)', () => {
     expect((await bad(old.token)).statusCode).toBe(410);
 
     const { db } = await testDb();
-    await db
-      .update(s.authTokens)
-      .set({ expiresAt: new Date(Date.now() - 1000) })
-      .where(eq(s.authTokens.id, newest.id));
-    expect((await bad(newest.token)).statusCode).toBe(410);
+    clock.advance(STAFF_TOKEN_TTL_MS);
+    expect((await bad(newest.token)).statusCode, 'an hour after it was issued').toBe(410);
 
     const live = await issue(staff.id);
     await db.update(s.staffUsers).set({ status: 'suspended' }).where(eq(s.staffUsers.id, staff.id));
     expect((await bad(live.token)).statusCode).toBe(410);
     expect((await staffRow(staff.id)).passwordHash).toBe(staff.row.passwordHash);
+  });
+
+  it('accepts a link until the last millisecond of its hour', async () => {
+    const staff = await makeStaff(t);
+    const { token } = await issue(staff.id, 'reset');
+    clock.advance(STAFF_TOKEN_TTL_MS - 1);
+    expect((await consoleOf().setPassword({ token, password: NEW_PASSWORD })).statusCode).toBe(204);
   });
 
   it('a link of another purpose or subject type is not a staff link', async () => {
@@ -838,7 +849,7 @@ describe('password set by an emailed link (token mode)', () => {
       subjectType: 'staff',
       subjectId: staff.id,
       tokenHash: tokens.hash(odd),
-      expiresAt: new Date(Date.now() + 60_000),
+      expiresAt: new Date(clock.nowMs() + 60 * SECOND),
     });
     const merchant = tokens.random(32);
     await db.insert(s.authTokens).values({
@@ -846,7 +857,7 @@ describe('password set by an emailed link (token mode)', () => {
       subjectType: 'client',
       subjectId: staff.id,
       tokenHash: tokens.hash(merchant),
-      expiresAt: new Date(Date.now() + 60_000),
+      expiresAt: new Date(clock.nowMs() + 60 * SECOND),
     });
     const c = consoleOf();
     expect((await c.setPassword({ token: odd, password: NEW_PASSWORD })).statusCode).toBe(410);
@@ -950,7 +961,7 @@ describe.skipIf(!existsSync(demoStatePath()))('the development seed', () => {
     ] as const) {
       const c = consoleOf();
       expect((await c.login(email, DEV_PASSWORD)).json(), email).toEqual({ next: 'totp' });
-      expect((await c.code(await codeFor(DEV_TOTP_SECRETS[id]!))).statusCode, email).toBe(204);
+      expect((await c.code(await codeNow(DEV_TOTP_SECRETS[id]!))).statusCode, email).toBe(204);
       expect((await c.me()).json<{ email: string }>().email).toBe(email);
     }
   });
@@ -967,7 +978,7 @@ describe.skipIf(!existsSync(demoStatePath()))('the development seed', () => {
     const nadia = consoleOf();
     expect((await nadia.login('nadia@gsm-supply.example', DEV_PASSWORD)).json()).toEqual({ next: 'totp_setup' });
     const secret = (await nadia.setup()).json<{ secret: string }>().secret;
-    expect((await nadia.code(await codeFor(secret))).statusCode).toBe(204);
+    expect((await nadia.code(await codeNow(secret))).statusCode).toBe(204);
     const yusuf = await consoleOf().login('yusuf@gsm-supply.example', DEV_PASSWORD);
     expect(yusuf.statusCode).toBe(403);
     expect(problem(yusuf).code).toBe('ACCOUNT_SUSPENDED');

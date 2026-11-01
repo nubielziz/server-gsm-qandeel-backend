@@ -111,8 +111,9 @@ describe.skipIf(!frontendPresent)('runSeed', () => {
 
   it('rebases timestamps to now', async () => {
     const { db } = await testDb();
-    const before = Date.now();
-    await runSeed(db, await loadDemoState());
+    // A fixed "now" (decision 031): the seed shifts every captured time by the distance to it, so the result is exact.
+    const before = Date.parse('2026-11-01T10:00:00.000Z');
+    await runSeed(db, await loadDemoState({ now: before }));
     const [rami] = await db
       .select()
       .from(s.staffUsers)
@@ -128,7 +129,7 @@ describe.skipIf(!frontendPresent)('runSeed', () => {
     await runSeed(db, demo);
     const first = await snapshot();
     // A later clock must not matter: existing rows are skipped, not rewritten.
-    const second = await runSeed(db, await loadDemoState({ now: Date.now() + 3_600_000 }));
+    const second = await runSeed(db, await loadDemoState({ now: Date.parse('2026-11-01T11:00:00.000Z') }));
     expect(second.every((report) => report.inserted === 0)).toBe(true);
     expect(await snapshot()).toBe(first);
   });

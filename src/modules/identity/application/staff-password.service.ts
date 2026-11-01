@@ -1,7 +1,8 @@
 // StaffPasswordService: the use case of POST /admin/auth/password/set (map domain A, stage 2): a new staff password from an
 // emailed invite or reset link, or after a temporary password (B3). It never signs anybody in.
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
+import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { setRequestActor } from '../../../common/request-context';
 import { PasswordHasher, TokenService } from '../../../infra/crypto';
@@ -53,6 +54,7 @@ export class StaffPasswordService {
     private readonly csrf: CsrfService,
     private readonly limiter: SignInLimiter,
     private readonly audit: AuditService,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   /**
@@ -73,7 +75,7 @@ export class StaffPasswordService {
 
   private async byLink(token: string, password: string, meta: RequestMeta): Promise<void> {
     await this.limiter.enforceLink(meta.limitKey);
-    const now = new Date();
+    const now = this.clock.now();
     const link = await findStaffTokenByHash(this.db.db, this.tokens.hash(token));
     const usable =
       link !== undefined &&
@@ -110,7 +112,7 @@ export class StaffPasswordService {
     if (!staff.mustChangePassword) throw new AppError('UNAUTHORIZED');
 
     const hashed = await this.acceptablePasswordHash(password, staff);
-    const now = new Date();
+    const now = this.clock.now();
     await this.db.runInTransaction((work) => this.store(work, staff, hashed, now, meta, 'UNAUTHORIZED'));
   }
 

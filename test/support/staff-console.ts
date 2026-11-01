@@ -160,10 +160,14 @@ export async function makeStaff(t: TestApp, overrides: StaffOverrides = {}): Pro
   return { id: row!.id, email: row!.email, secret, row: row! };
 }
 
-/** The six-digit code of a secret at a moment (default now), as an authenticator app shows it. */
-export function codeFor(secret: string, atMs: number = Date.now()): Promise<string> {
+/**
+ * The six-digit code of a secret at a moment, as an authenticator app shows it.
+ *
+ * @param secret the base32 secret
+ * @param atMs the moment in epoch milliseconds: the app's test clock (`clock.nowMs()`), plus whole 30 s steps for codes of
+ *   another step (decision 031)
+ * @returns the code
+ */
+export function codeFor(secret: string, atMs: number): Promise<string> {
   return generate({ secret, epoch: atMs / 1000 });
 }
-
-/** A moment `steps` TOTP time steps (30 s) before or after now. */
-export const stepsFromNow = (steps: number): number => Date.now() + steps * 30_000;

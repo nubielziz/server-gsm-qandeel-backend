@@ -4,6 +4,7 @@ import { describe, expect, it } from 'bun:test';
 import type { FastifyRequest } from 'fastify';
 import { AppError } from '../../../common/errors';
 import type { PipelineHandler, PipelinePhase, PipelineStage, RequestPipeline } from '../../../common/pipeline';
+import { TestClock } from '../../../../test/support/clock';
 import { expectRejection } from '../../../../test/support/rejection';
 import { MaintenanceHook } from './maintenance.hook';
 import type { MaintenanceService } from './maintenance.service';
@@ -18,7 +19,11 @@ function hookWith(state: MaintenanceState | Error) {
       void registered.set(`${phase}:${stage}`, handler),
   } as unknown as RequestPipeline;
   const service = { state: () => (state instanceof Error ? Promise.reject(state) : Promise.resolve(state)) };
-  const hook = new MaintenanceHook(pipeline, service as unknown as MaintenanceService);
+  const hook = new MaintenanceHook(
+    pipeline,
+    service as unknown as MaintenanceService,
+    new TestClock('2026-11-01T10:00:00.000Z'),
+  );
   hook.onModuleInit();
   const run = (phase: PipelinePhase, request: Partial<FastifyRequest>) =>
     Promise.resolve(registered.get(`${phase}:maintenance`)?.(request as FastifyRequest, {} as never));

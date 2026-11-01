@@ -1,8 +1,9 @@
 // Cache-aside on the cache Redis (decision 022): getOrLoad with TTL jitter, in-process coalescing, a cross-instance lock,
 // stale-while-revalidate and negative caching; deletion by key or prefix; version keys for bulk invalidation.
 import { randomUUID } from 'node:crypto';
-import { Injectable, Logger, type OnApplicationShutdown } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnApplicationShutdown } from '@nestjs/common';
 import { Counter } from 'prom-client';
+import { CLOCK, type Clock } from '../../common/clock';
 import { LogThrottle } from '../../common/log-throttle';
 import { sleep, withTimeout } from '../../common/timeout';
 import { MetricsService } from '../metrics';
@@ -118,6 +119,7 @@ export class CacheService implements OnApplicationShutdown {
     private readonly redis: RedisService,
     private readonly keys: CacheKeys,
     metrics: MetricsService,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {
     const registers = [metrics.registry];
     this.hits = new Counter({
@@ -258,7 +260,7 @@ export class CacheService implements OnApplicationShutdown {
   async bumpVersion(name: string): Promise<number> {
     const versionKey = this.keys.version(name);
     try {
-      return Number(await this.redis.cache.eval(BUMP_VERSION, 1, versionKey, String(Date.now())));
+      return Number(await this.redis.cache.eval(BUMP_VERSION, 1, versionKey, String(this.clock.nowMs())));
     } catch (error) {
       this.failed(familyOf(versionKey), 'bump_version', error);
       throw error;
@@ -281,7 +283,7 @@ export class CacheService implements OnApplicationShutdown {
     try {
       const stored =
         (await this.redis.cache.get(versionKey)) ??
-        String(await this.redis.cache.eval(INIT_VERSION, 1, versionKey, String(Date.now())));
+        String(await this.redis.cache.eval(INIT_VERSION, 1, versionKey, String(this.clock.nowMs())));
       if (!/^\d+$/.test(stored)) throw new Error('version counter is not a number');
       return `${key}:v${stored}` as CacheKey;
     } catch (error) {
@@ -352,7 +354,7 @@ export class CacheService implements OnApplicationShutdown {
     const family = familyOf(key);
     const entry = await this.lookup(key);
     if (entry) {
-      if (Date.now() <= entry.freshUntil) {
+      if (this.clock.nowMs() <= entry.freshUntil) {
         this.hits.inc({ family });
         return entry.value as T;
       }
@@ -389,7 +391,7 @@ export class CacheService implements OnApplicationShutdown {
       if (acquired) {
         // Another process may have stored the value between our miss and our lock.
         const again = await this.lookup(key);
-        if (again && Date.now() <= again.freshUntil) return again.value as T;
+        if (again && this.clock.nowMs() <= again.freshUntil) return again.value as T;
       }
       return await this.loadAndStore(key, ttlSeconds, loader, options, flight);
     } finally {
@@ -416,7 +418,7 @@ export class CacheService implements OnApplicationShutdown {
     const freshMs = jitterTtlMs(negative ? (options.negativeTtlSeconds ?? ttlSeconds) : ttlSeconds);
     const staleMs = negative ? 0 : Math.round((options.staleWhileRevalidate ?? 0) * 1000);
     try {
-      const text = encodeEntry(value, Date.now() + freshMs);
+      const text = encodeEntry(value, this.clock.nowMs() + freshMs);
       await this.redis.cache.set(key, text, 'PX', freshMs + staleMs);
     } catch (error) {
       const tooLarge = error instanceof CacheValueTooLargeError;
@@ -445,12 +447,12 @@ export class CacheService implements OnApplicationShutdown {
 
   /** Polls until the lock holder has stored the value, the lock is gone, or lockMs has passed. */
   private async waitForEntry(key: CacheKey, lockKey: CacheKey, lockMs: number): Promise<CacheEntry | undefined> {
-    // A monotonic clock: the system clock may be stepped (time sync) while we wait.
+    // Elapsed time of this wait, not a decision on the wall clock (decision 031): monotonic, so a time sync cannot cut it short.
     const deadline = performance.now() + lockMs;
     while (performance.now() < deadline) {
       await sleep(Math.min(LOCK_POLL_MS, Math.max(1, deadline - performance.now())));
       const entry = await this.lookup(key);
-      if (entry && Date.now() <= entry.freshUntil) return entry;
+      if (entry && this.clock.nowMs() <= entry.freshUntil) return entry;
       try {
         // The holder finished without storing anything (it failed, or the value is not cacheable): stop waiting.
         if ((await this.redis.cache.exists(lockKey)) === 0) return undefined;

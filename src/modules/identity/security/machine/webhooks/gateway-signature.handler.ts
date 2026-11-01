@@ -2,6 +2,7 @@
 // and the event-id replay filter. Builds on the raw body kept for the `/webhooks` surface (src/common/raw-body.ts).
 import { Logger, type ExecutionContext } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import type { Clock } from '../../../../../common/clock';
 import type { AnyRouteContract } from '../../../../../common/contract';
 import { AppError } from '../../../../../common/errors';
 import { rawBodyOf } from '../../../../../common/raw-body';
@@ -51,6 +52,7 @@ export class GatewaySignatureAccessHandler implements AccessHandler {
   constructor(
     private readonly verifiers: WebhookVerifiers,
     private readonly ledger: WebhookEventLedger,
+    private readonly clock: Clock,
   ) {}
 
   /**
@@ -74,7 +76,7 @@ export class GatewaySignatureAccessHandler implements AccessHandler {
       throw new AppError('WEBHOOK_SIGNATURE_INVALID', { detail: 'No webhook is set up for this gateway.' });
     }
 
-    const nowSeconds = Math.floor(Date.now() / 1000);
+    const nowSeconds = Math.floor(this.clock.nowMs() / 1000);
     const verified = await verifier.verify({
       gateway,
       headers: request.headers,

@@ -10,9 +10,10 @@ import type { ActiveIpRule } from './ip-rule-matcher';
  * one that expires while cached is skipped by the matcher.
  *
  * @param db the database or a transaction
+ * @param now the current time, from the injected clock (decision 031): a rule counts as expired from this moment on
  * @returns the live rules, oldest first
  */
-export async function loadLiveIpRules(db: DbExecutor): Promise<ActiveIpRule[]> {
+export async function loadLiveIpRules(db: DbExecutor, now: Date): Promise<ActiveIpRule[]> {
   const rows = await db
     .select({
       id: s.ipRules.id,
@@ -22,7 +23,7 @@ export async function loadLiveIpRules(db: DbExecutor): Promise<ActiveIpRule[]> {
       expiresAt: s.ipRules.expiresAt,
     })
     .from(s.ipRules)
-    .where(or(isNull(s.ipRules.expiresAt), gt(s.ipRules.expiresAt, sql`now()`)))
+    .where(or(isNull(s.ipRules.expiresAt), gt(s.ipRules.expiresAt, now)))
     .orderBy(asc(s.ipRules.id));
   return rows.map((row) => ({ ...row, expiresAt: row.expiresAt === null ? null : row.expiresAt.toISOString() }));
 }

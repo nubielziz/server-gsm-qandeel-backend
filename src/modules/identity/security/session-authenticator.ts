@@ -1,7 +1,8 @@
 // SessionAuthenticator: turns a session cookie into a principal (decision 018). The same mechanics serve staff, merchants and
 // customers: cookie, lookup, expiry, account state, stage, permissions of the role, and the once-a-minute last-seen write.
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
+import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import type { SessionStage, SubjectType } from '../db/schema';
 import type { SessionPrincipal } from './principal';
@@ -41,6 +42,7 @@ export class SessionAuthenticator {
     private readonly cookies: SessionCookies,
     private readonly sessions: SessionService,
     private readonly roles: RolePermissions,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   /**
@@ -62,7 +64,7 @@ export class SessionAuthenticator {
     if (token === undefined) throw new AppError('UNAUTHORIZED');
     const view = await this.sessions.lookup(token);
     if (!view || view.subjectType !== subject) throw new AppError('UNAUTHORIZED');
-    const now = Date.now();
+    const now = this.clock.nowMs();
     if (livenessOf(view, now) !== 'live') throw new AppError('UNAUTHORIZED');
 
     if (view.subject.state === 'suspended') {

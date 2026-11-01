@@ -7,6 +7,7 @@ import type { RateLimitService } from '../../../../../infra/rate-limit';
 import type { ApiKeyDirectory } from './api-key.directory';
 import { ApiKeyAuthenticator } from './api-key.authenticator';
 import type { ApiKeyView } from './api-key.rules';
+import { TestClock } from '../../../../../../test/support/clock';
 import { rejectionOf } from '../../../../../../test/support/rejection';
 
 const view = (over: Partial<ApiKeyView> = {}): ApiKeyView => ({
@@ -62,7 +63,13 @@ function setup(found: ApiKeyView | undefined, options: { failureAllowed?: boolea
       return Promise.resolve({ allowed: true, remaining: 1, limit: 25, retryAfterSeconds: 0 });
     },
   } as unknown as RateLimitService;
-  return { authenticator: new ApiKeyAuthenticator(directory, limits), lookups, consumed, enforced, touches };
+  return {
+    authenticator: new ApiKeyAuthenticator(directory, limits, new TestClock('2026-11-01T10:00:00.000Z')),
+    lookups,
+    consumed,
+    enforced,
+    touches,
+  };
 }
 
 const asking = { scope: 'orders:read', surface: 'v1' } as const;

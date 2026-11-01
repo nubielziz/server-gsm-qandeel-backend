@@ -1,15 +1,21 @@
 // Integration tests of CacheService (decision 022) on the test cache Redis (database 1): cache-aside, TTL jitter, stampede
 // protection inside one process and across two (the lock), stale-while-revalidate, negative caching, deletion by key and by
 // prefix, version keys, values over 100 KB, hit/miss metrics, and the fallback to the loader while Redis is down.
+// Freshness is counted on the injected clock (decision 031), so TTLs and stale windows pass by moving a TestClock; what Redis
+// itself does with a TTL is asserted by reading it back (PTTL), never by waiting for it. The only real waits are the lock
+// tests, which are about the polling and the deadline of the cross-process lock.
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { type CacheKey, CacheKeys, CacheService, MAX_CACHED_VALUE_BYTES } from '../../src/infra/cache';
 import { MetricsService } from '../../src/infra/metrics';
 import { RedisService } from '../../src/infra/redis';
-import { type InfraHarness, createInfra, deadRedisUrl, eventually, pause, wallPause } from '../support/infra';
+import { TestClock } from '../support/clock';
+import { type InfraHarness, createInfra, deadRedisUrl, eventually } from '../support/infra';
 import { metricValue } from '../support/metrics';
 import { expectRejection } from '../support/rejection';
 
+/** The clock of every service in this file: freshness and stale windows move when the test moves it. */
+const clock = new TestClock();
 let harness: InfraHarness;
 let cache: CacheService;
 let keys: CacheKeys;
@@ -17,7 +23,7 @@ let redis: RedisService;
 const FAMILY = 'infra:test';
 
 beforeAll(async () => {
-  harness = await createInfra();
+  harness = await createInfra({ clock });
   cache = harness.get(CacheService);
   keys = harness.get(CacheKeys);
   redis = harness.get(RedisService);
@@ -31,14 +37,23 @@ afterAll(async () => {
 /** A key of the `infra:test` family that no other test uses. */
 const newKey = (id: string = randomUUID()): CacheKey => `${keys.keyspace}infra:test:${id}` as CacheKey;
 
-/** A loader that counts its calls and takes `delayMs` to answer. */
-function counted<T>(value: T, delayMs = 0) {
+/** A promise that the test settles by hand, to hold a loader in the middle of its work. */
+function gate() {
+  let open = (): void => undefined;
+  const promise = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { promise, open };
+}
+
+/** A loader that counts its calls and, when given a gate, does not answer until the test opens it. */
+function counted<T>(value: T, hold?: { promise: Promise<void> }) {
   const state = { calls: 0 };
   return {
     state,
     loader: async (): Promise<T> => {
       state.calls++;
-      if (delayMs > 0) await pause(delayMs);
+      if (hold) await hold.promise;
       return value;
     },
   };
@@ -86,8 +101,12 @@ describe('getOrLoad', () => {
 
   it('serves the value to every caller of one load: 50 concurrent calls, one load (stampede in one process)', async () => {
     const key = newKey();
-    const source = counted({ expensive: true }, 80);
-    const results = await Promise.all(Array.from({ length: 50 }, () => cache.getOrLoad(key, 60, source.loader)));
+    const hold = gate();
+    const source = counted({ expensive: true }, hold);
+    const pending = Array.from({ length: 50 }, () => cache.getOrLoad(key, 60, source.loader));
+    await eventually(() => (source.state.calls > 0 ? true : undefined));
+    hold.open();
+    const results = await Promise.all(pending);
     expect(source.state.calls).toBe(1);
     expect(results).toHaveLength(50);
     for (const result of results) expect(result).toEqual({ expensive: true });
@@ -96,12 +115,16 @@ describe('getOrLoad', () => {
   it('shares the failure of a load with every waiting caller and caches nothing', async () => {
     const key = newKey();
     let calls = 0;
+    const hold = gate();
     const failing = async (): Promise<string> => {
       calls++;
-      await pause(30);
+      await hold.promise;
       throw new Error('database is down');
     };
-    const outcomes = await Promise.allSettled(Array.from({ length: 10 }, () => cache.getOrLoad(key, 60, failing)));
+    const pending = Array.from({ length: 10 }, () => cache.getOrLoad(key, 60, failing));
+    await eventually(() => (calls > 0 ? true : undefined));
+    hold.open();
+    const outcomes = await Promise.allSettled(pending);
     expect(calls).toBe(1);
     for (const outcome of outcomes) {
       expect(outcome.status).toBe('rejected');
@@ -182,15 +205,19 @@ describe('values over 100 KB', () => {
 
 describe('stampede protection across processes (lockMs)', () => {
   it('loads once for 50 callers spread over two processes that share one Redis', async () => {
-    const other = await createInfra();
+    const other = await createInfra({ clock });
     try {
       const second = other.get(CacheService);
       const key = newKey();
-      const source = counted({ price: 12.5 }, 150);
+      const hold = gate();
+      const source = counted({ price: 12.5 }, hold);
       const calls = [
         ...Array.from({ length: 25 }, () => cache.getOrLoad(key, 60, source.loader, { lockMs: 3_000 })),
         ...Array.from({ length: 25 }, () => second.getOrLoad(key, 60, source.loader, { lockMs: 3_000 })),
       ];
+      // Real wait: the process without the lock polls Redis for the value (25 ms polls) until the holder has stored it.
+      await eventually(async () => ((await redis.cache.exists(keys.lock(key))) === 1 ? true : undefined));
+      hold.open();
       const results = await Promise.all(calls);
       expect(source.state.calls).toBe(1);
       for (const result of results) expect(result).toEqual({ price: 12.5 });
@@ -206,11 +233,12 @@ describe('stampede protection across processes (lockMs)', () => {
     // Someone else holds the lock for a long time and will never store anything.
     await redis.cache.set(keys.lock(key), 'a-process-that-died', 'PX', 5_000);
     const source = counted('mine');
+    // Real wait of about 120 ms: the lock deadline of the waiting process is the behaviour under test (monotonic time).
     const started = performance.now();
-    expect(await cache.getOrLoad(key, 60, source.loader, { lockMs: 300 })).toBe('mine');
+    expect(await cache.getOrLoad(key, 60, source.loader, { lockMs: 120 })).toBe('mine');
     const waited = performance.now() - started;
     expect(source.state.calls).toBe(1);
-    expect(waited).toBeGreaterThanOrEqual(250);
+    expect(waited).toBeGreaterThanOrEqual(100);
     expect(waited).toBeLessThan(1_500);
     // The foreign lock is left alone: it was not ours to release.
     expect(await redis.cache.exists(keys.lock(key))).toBe(1);
@@ -218,17 +246,22 @@ describe('stampede protection across processes (lockMs)', () => {
   });
 
   it('stops waiting as soon as the holder releases the lock without a value (a null result is not cached)', async () => {
-    const other = await createInfra();
+    const other = await createInfra({ clock });
     try {
       const key = newKey();
       const holder = other.get(CacheService);
-      const nothing = counted(null, 200);
+      const hold = gate();
+      const nothing = counted(null, hold);
       const mine = counted('second try');
       const first = holder.getOrLoad(key, 60, nothing.loader, { lockMs: 5_000 });
       // Wait until the holder really has the lock and is loading.
       await eventually(async () => ((await redis.cache.exists(keys.lock(key))) === 1 ? true : undefined));
       const started = performance.now();
-      const result = await cache.getOrLoad(key, 60, mine.loader, { lockMs: 5_000 });
+      const waiting = cache.getOrLoad(key, 60, mine.loader, { lockMs: 5_000 });
+      // The holder finishes with nothing to cache while the other process waits for it (a few event loop turns later).
+      for (let turn = 0; turn < 5; turn++) await new Promise((resolve) => setImmediate(resolve));
+      hold.open();
+      const result = await waiting;
       expect(await first).toBeNull();
       expect(result).toBe('second try');
       expect(performance.now() - started).toBeLessThan(1_500);
@@ -261,7 +294,11 @@ describe('negative caching', () => {
       return Promise.resolve(answer);
     };
     expect(await cache.getOrLoad(key, 600, loader, { negativeTtlSeconds: 0.2 })).toBeNull();
-    await wallPause(800);
+    const negativeTtl = await redis.cache.pttl(key);
+    expect(negativeTtl, 'the "nothing" entry got the negative TTL, not the normal one').toBeGreaterThan(0);
+    expect(negativeTtl).toBeLessThanOrEqual(230);
+    // Past the negative TTL by the injected clock (its jitter is at most +15 %).
+    clock.advance(300);
     answer = 'now it exists';
     expect(await cache.getOrLoad(key, 600, loader, { negativeTtlSeconds: 0.2 })).toBe('now it exists');
     expect(calls).toBe(2);
@@ -284,7 +321,7 @@ describe('stale-while-revalidate', () => {
     };
     const options = { staleWhileRevalidate: 30 };
     expect(await cache.getOrLoad(key, 0.3, loader, options)).toBe(1);
-    await wallPause(700); // past the 0.3 s TTL (+-15 %), inside the stale window
+    clock.advance(700); // past the 0.3 s TTL (+-15 %), inside the stale window (the key itself lives 30 s longer)
 
     // The refresh is still waiting at the gate, so only a stale value can answer, and it answers at once.
     expect(await cache.getOrLoad(key, 0.3, loader, options), 'the old value is served while the refresh runs').toBe(1);
@@ -318,9 +355,10 @@ describe('stale-while-revalidate', () => {
     };
     const options = { staleWhileRevalidate: 30 };
     expect(await cache.getOrLoad(key, 0.2, loader, options)).toBe('old');
-    await wallPause(600);
+    clock.advance(600);
     expect(await cache.getOrLoad(key, 0.2, loader, options)).toBe('old');
-    await pause(100);
+    // The refresh runs in the background and fails.
+    await eventually(() => (calls >= 2 ? true : undefined));
     expect(await cache.getOrLoad(key, 0.2, loader, options)).toBe('old');
     expect(calls).toBeGreaterThanOrEqual(2);
   });
@@ -329,7 +367,7 @@ describe('stale-while-revalidate', () => {
     const key = newKey();
     const source = counted('v');
     await cache.getOrLoad(key, 0.2, source.loader);
-    await wallPause(800);
+    clock.advance(800);
     await cache.getOrLoad(key, 0.2, source.loader);
     expect(source.state.calls).toBe(2);
   });
@@ -359,7 +397,7 @@ describe('deleting', () => {
       return 'read before the change';
     };
     const pending = cache.getOrLoad(key, 60, slow);
-    await pause(20);
+    await eventually(() => (calls > 0 ? true : undefined)); // the load is running
     await cache.del(key); // the writer committed and invalidated
     release();
     expect(await pending).toBe('read before the change'); // the caller who started before the change still gets its answer
@@ -374,11 +412,13 @@ describe('deleting', () => {
     const key = newKey();
     let release: () => void = () => undefined;
     const gate = new Promise<void>((resolve) => (release = resolve));
+    let started = false;
     const older = cache.getOrLoad(key, 60, async () => {
+      started = true;
       await gate;
       return 'read before the change';
     });
-    await pause(20);
+    await eventually(() => (started ? true : undefined)); // the older load is running
     await cache.del(key); // the writer committed and invalidated
     const newer = cache.getOrLoad(key, 60, () => Promise.resolve('read after the change'));
     expect(await newer).toBe('read after the change');

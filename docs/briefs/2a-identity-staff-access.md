@@ -63,8 +63,8 @@ Module: identity (plus two platform routes). Scenarios to complete: **admin-team
 - **ip-4 roles.** No `ROLE_PROTECTED`. `PATCH /admin/roles/:id` answers `409 LAST_OWNER` `errors[{field:'permissions'}]` when
   removing `*` would leave no active staff member whose role holds `*` (the Owner role may be renamed); the same guard covers
   staff role changes and suspensions; use the Owner helpers of P2.5a.
-- **ip-6 live sessions.** One predicate in the sessions repository: `revoked_at IS NULL AND expires_at > now() AND (stage <>
-  'active' OR last_seen_at > now() - idle limit)` (limits from `SessionPolicy`). `GET /admin/sessions` (staff and merchant
+- **ip-6 live sessions.** One predicate in the sessions repository: `revoked_at IS NULL AND expires_at > $now AND (stage <>
+  'active' OR last_seen_at > $now - idle limit)` (limits from `SessionPolicy`; `$now` is `clock.now()` passed in, decision 031). `GET /admin/sessions` (staff and merchant
   sessions only, B9), `StaffMember.activeSessions` and the `DELETE /admin/sessions/:id` 404 all use it; 2b reuses it.
 - **ip-7 audit actor.** `audit_logs.actor_name` is a snapshot: `RequestActor` gains `name`, the session guards fill it from the
   subject (`SubjectSnapshot` gains `name`; a staff or merchant rename calls `SessionService.invalidateSubject`), the API-key and

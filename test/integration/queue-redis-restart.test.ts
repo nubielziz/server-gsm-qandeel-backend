@@ -81,6 +81,7 @@ describe.skipIf(!enabled)('the queue Redis container restarts (GSM_TEST_DOCKER=1
       } catch (error) {
         failures.push({ ms: performance.now() - started, error });
       }
+      // Real wait (decision 031): this test is about a real restart of the Redis container; the sleep only spaces the attempts.
       await Bun.sleep(25);
     }
     await restarting;

@@ -1,6 +1,7 @@
 // The cached maintenance state (platform module): read from settings key `maintenance` with a documented default, kept in the
 // cache Redis and in memory for a moment, invalidated by the route that changes it.
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { CLOCK, type Clock } from '../../../common/clock';
 import { LogThrottle } from '../../../common/log-throttle';
 import { ShortMemo } from '../../../common/short-memo';
 import { CacheKeys, CacheService } from '../../../infra/cache';
@@ -34,6 +35,7 @@ export class MaintenanceService {
   private readonly throttle = new LogThrottle(WARN_INTERVAL_MS);
   private readonly memo = new ShortMemo<MaintenanceState>({
     ttlMs: LOCAL_TTL_MS,
+    now: () => this.clock.nowMs(),
     onStale: (error) =>
       this.warn('stale', `Maintenance state could not be reloaded, using the last known one: ${String(error)}`),
   });
@@ -42,6 +44,7 @@ export class MaintenanceService {
     private readonly settings: SettingsService,
     private readonly cache: CacheService,
     private readonly keys: CacheKeys,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   /**

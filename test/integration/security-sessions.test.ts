@@ -16,11 +16,14 @@ import {
 } from '../../src/modules/identity';
 import { SettingsReader } from '../../src/modules/platform';
 import { type TestApp, createTestApp } from '../support/app';
+import { SECOND, TestClock } from '../support/clock';
 import { clearIdentityCaches, insertMerchant, insertRole, insertStaff } from '../support/auth';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 import { expectRejection, rejectionOf } from '../support/rejection';
 import { SecurityTestController } from '../support/security-routes';
 
+/** The app's clock: sessions end and the touch interval passes when the test moves it (decision 031). */
+const clock = new TestClock();
 let t: TestApp;
 let sessions: SessionService;
 let staffId: number;
@@ -29,6 +32,7 @@ beforeAll(async () => {
   t = await createTestApp({
     controllers: [SecurityTestController],
     env: { CORS_ORIGINS: 'https://console.example.com' },
+    clock,
   });
   sessions = t.app.get(SessionService);
 });
@@ -37,6 +41,7 @@ afterAll(async () => {
   await closeTestDb();
 });
 beforeEach(async () => {
+  clock.reset();
   await resetDb();
   await clearIdentityCaches(t);
   const { db } = await testDb();
@@ -164,17 +169,17 @@ describe('lookup', () => {
   });
 
   it('does not find a revoked or an ended session, and a pending session has no idle limit', async () => {
-    const { db } = await testDb();
     const revoked = await sessions.create(input());
     await sessions.revoke(revoked.session.id);
     expect(await sessions.lookup(revoked.token)).toBeUndefined();
 
-    const ended = await sessions.create(input());
-    await db
-      .update(s.sessions)
-      .set({ expiresAt: new Date(Date.now() - 1000) })
-      .where(eq(s.sessions.id, ended.session.id));
-    expect(await sessions.lookup(ended.token)).toBeUndefined();
+    const ended = await sessions.create(input({ ttlSeconds: 60 }));
+    clock.advance(60 * SECOND - 1);
+    expect(await sessions.lookup(ended.token), 'a millisecond before its end').toBeDefined();
+    // The view above is cached; the database is asked again after the cache is cleared.
+    await t.app.get(CacheService).del(cacheKey(ended.token));
+    clock.advance(1);
+    expect(await sessions.lookup(ended.token), 'at its end').toBeUndefined();
 
     const pending = await sessions.create(input({ stage: 'pending_totp' }));
     expect((await sessions.lookup(pending.token))?.idleMs).toBe(0);
@@ -244,11 +249,8 @@ describe('rotate', () => {
     expect(error).toBeInstanceOf(AppError);
     expect((error as AppError).code).toBe('UNAUTHORIZED');
 
-    const ended = await sessions.create(input());
-    await db
-      .update(s.sessions)
-      .set({ expiresAt: new Date(Date.now() - 1000) })
-      .where(eq(s.sessions.id, ended.session.id));
+    const ended = await sessions.create(input({ ttlSeconds: 1 }));
+    clock.advance(SECOND);
     await expectRejection(sessions.rotate({ id: ended.session.id }, { stage: 'active' }), AppError);
     await expectRejection(sessions.rotate({ id: 99_999_999 }, { stage: 'active' }), AppError);
 
@@ -306,10 +308,13 @@ describe('touch', () => {
     const { token, session } = await sessions.create(input());
     const view = (await sessions.lookup(token))!;
     expect(await sessions.touch(view)).toBe(false);
-    expect(await sessions.touch(view, view.lastSeenAtMs + TOUCH_INTERVAL_MS - 1)).toBe(false);
+    clock.advance(TOUCH_INTERVAL_MS - 1);
+    expect(await sessions.touch(view)).toBe(false);
 
-    const later = view.lastSeenAtMs + TOUCH_INTERVAL_MS + 5;
-    expect(await sessions.touch(view, later)).toBe(true);
+    clock.advance(6);
+    const later = clock.nowMs();
+    expect(later).toBe(view.lastSeenAtMs + TOUCH_INTERVAL_MS + 5);
+    expect(await sessions.touch(view)).toBe(true);
     const [row] = await db.select().from(s.sessions).where(eq(s.sessions.id, session.id));
     expect(row!.lastSeenAt.getTime()).toBe(later);
     expect(await cached(token)).toBe(false);
@@ -318,7 +323,8 @@ describe('touch', () => {
     // stale cached view all the same, so the next lookup carries the time that was written.
     await sessions.lookup(token);
     expect(await cached(token)).toBe(true);
-    expect(await sessions.touch(view, later + 10)).toBe(false);
+    clock.advance(10);
+    expect(await sessions.touch(view)).toBe(false);
     expect(await cached(token)).toBe(false);
   });
 
@@ -326,7 +332,8 @@ describe('touch', () => {
     const { token, session } = await sessions.create(input());
     const view = (await sessions.lookup(token))!;
     await sessions.revoke(session.id);
-    expect(await sessions.touch(view, view.lastSeenAtMs + 10 * TOUCH_INTERVAL_MS)).toBe(false);
+    clock.advance(10 * TOUCH_INTERVAL_MS);
+    expect(await sessions.touch(view)).toBe(false);
   });
 });
 

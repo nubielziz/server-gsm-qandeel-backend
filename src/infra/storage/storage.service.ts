@@ -12,6 +12,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Inject, Injectable, type OnApplicationShutdown } from '@nestjs/common';
+import { CLOCK, type Clock } from '../../common/clock';
 import { AppError } from '../../common/errors';
 import { APP_CONFIG, type AppConfig } from '../../config';
 import { constantTimeEqual } from '../crypto';
@@ -148,7 +149,10 @@ export class StorageService implements OnApplicationShutdown {
   readonly bucket: string;
   private readonly s3: S3Client;
 
-  constructor(@Inject(APP_CONFIG) config: AppConfig) {
+  constructor(
+    @Inject(APP_CONFIG) config: AppConfig,
+    @Inject(CLOCK) private readonly clock: Clock,
+  ) {
     this.bucket = config.s3.bucket;
     this.s3 = new S3Client({
       endpoint: config.s3.endpoint,
@@ -316,7 +320,9 @@ export class StorageService implements OnApplicationShutdown {
           options.filename === undefined ? undefined : attachmentDisposition(options.filename),
         ResponseContentType: options.contentType,
       }),
-      { expiresIn },
+      // The signing date comes from the injected clock (decision 031), so the lifetime of a link is counted on the clock the
+      // rest of the code uses; the store checks the expiry against its own time.
+      { expiresIn, signingDate: this.clock.now() },
     );
   }
 

@@ -1,6 +1,8 @@
 // Process-level tests: the real entry points run as child processes (decision 013 boot failure, decision 001 clean
 // shutdown, decision 015 worker metrics). Bun reads tsconfig.json from the working directory, so they run from the repo
 // root, and --no-env-file keeps a local .env file out of the child's environment.
+// Child-process tests keep real time (decision 031): the processes under test have their own clocks, and the `Bun.sleep`
+// races below are only the deadline that turns a hung child into a failure.
 import { afterAll, describe, expect, it } from 'bun:test';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
@@ -66,8 +68,12 @@ async function freePort(): Promise<number> {
   });
 }
 
+/**
+ * Waits for a child process to come up (decision 031: real waits, because the processes keep their own time).
+ * The deadline is on the monotonic clock, so a stepped system clock cannot change it.
+ */
 async function eventually<T>(probe: () => Promise<T | undefined>, timeoutMs = 15_000): Promise<T> {
-  const deadline = Date.now() + timeoutMs;
+  const deadline = performance.now() + timeoutMs;
   for (;;) {
     try {
       const value = await probe();
@@ -75,7 +81,7 @@ async function eventually<T>(probe: () => Promise<T | undefined>, timeoutMs = 15
     } catch {
       // not up yet
     }
-    if (Date.now() > deadline) throw new Error('timed out waiting for the process');
+    if (performance.now() > deadline) throw new Error('timed out waiting for the process');
     await Bun.sleep(100);
   }
 }

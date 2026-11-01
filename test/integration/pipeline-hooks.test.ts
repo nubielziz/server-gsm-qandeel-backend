@@ -14,6 +14,7 @@ import { RedisService } from '../../src/infra/redis';
 import { IpRuleCache } from '../../src/modules/identity';
 import { MaintenanceService } from '../../src/modules/platform';
 import { type TestApp, createTestApp } from '../support/app';
+import { SECOND, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 import { deadRedisUrl } from '../support/infra';
 import { logSink } from '../support/log-sink';
@@ -27,6 +28,8 @@ import { TestController } from '../support/routes';
 
 const CONSOLE = 'https://console.example.com';
 const AUTH = { 'x-test-auth': '1' };
+/** The app's clock: the `Retry-After` of a maintenance answer is counted from it (decision 031). */
+const clock = new TestClock();
 
 let t: TestApp;
 const extraApps: TestApp[] = [];
@@ -47,6 +50,7 @@ beforeAll(async () => {
     controllers: [TestController, PipelineTestController],
     imports: [TestAccessModule],
     env: { CORS_ORIGINS: CONSOLE },
+    clock,
   });
   t.app.get(ErrorFormatterRegistry).register(DHRU);
 });
@@ -64,7 +68,10 @@ afterAll(async () => {
   await Promise.all(extraApps.map((other) => other.close()));
   await closeTestDb();
 });
-beforeEach(clean);
+beforeEach(async () => {
+  clock.reset();
+  await clean();
+});
 
 async function blockEverywhere(ip: string): Promise<void> {
   const { db } = await testDb();
@@ -261,7 +268,7 @@ describe('maintenance (scenario system-integrity)', () => {
   }
 
   it('sends the message as detail, expectedEndAt next to it, and a Retry-After', async () => {
-    const end = new Date(Date.now() + 120_000).toISOString();
+    const end = new Date(clock.nowMs() + 120 * SECOND).toISOString();
     await setMaintenance(maintenanceOn('checkout', { expectedEndAt: end }));
     const res = await CHECKOUT(freshIp());
     refusedAs(res, 503, 'MAINTENANCE');
@@ -270,9 +277,10 @@ describe('maintenance (scenario system-integrity)', () => {
       detail: 'Checkout is paused while we check the ledger.',
       expectedEndAt: end,
     });
-    const wait = Number(res.headers['retry-after']);
-    expect(wait).toBeGreaterThanOrEqual(30);
-    expect(wait).toBeLessThanOrEqual(300);
+    expect(Number(res.headers['retry-after'])).toBe(120);
+    // The wait follows the clock: a minute later, 60 seconds are left.
+    clock.advance(60 * SECOND);
+    expect(Number((await CHECKOUT(freshIp())).headers['retry-after'])).toBe(60);
   });
 
   it('is off when the setting was never set, is off, or is not a well-formed state', async () => {

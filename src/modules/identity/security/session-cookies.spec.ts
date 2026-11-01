@@ -3,6 +3,7 @@ import { describe, expect, it } from 'bun:test';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { parseEnv } from '../../../config';
 import { TokenService } from '../../../infra/crypto';
+import { SECOND, TestClock } from '../../../../test/support/clock';
 import { CsrfService } from './csrf';
 import { CSRF_COOKIE_NAMES, SESSION_COOKIE_NAMES, SessionCookies } from './session-cookies';
 
@@ -34,9 +35,13 @@ function fakeReply() {
   return { reply: reply as unknown as FastifyReply, calls, headers };
 }
 
+/** The moment every test starts at: cookie lifetimes are counted from it, so they are exact. */
+const clock = new TestClock('2026-11-01T10:00:00.000Z');
+const after = (ms: number): Date => new Date(clock.nowMs() + ms);
+
 function cookiesFor(env: Record<string, string>) {
   const config = parseEnv({ NODE_ENV: 'test', ...env });
-  return new SessionCookies(config, new CsrfService(config), new TokenService(config));
+  return new SessionCookies(config, new CsrfService(config), new TokenService(config), clock);
 }
 
 describe('names', () => {
@@ -66,12 +71,11 @@ describe('set', () => {
   it('sets the httpOnly session cookie, the readable CSRF cookie and the response header', () => {
     const cookies = cookiesFor({});
     const { reply, calls, headers } = fakeReply();
-    const csrf = cookies.set(reply, 'staff', 'the-session-token', new Date(Date.now() + 600_000));
+    const csrf = cookies.set(reply, 'staff', 'the-session-token', after(600 * SECOND));
     const [session, csrfCookie] = calls;
     expect(session).toMatchObject({ kind: 'set', name: 'gsm_admin_session', value: 'the-session-token' });
     expect(session!.options).toMatchObject({ httpOnly: true, secure: false, sameSite: 'lax', path: '/' });
-    expect(session!.options.maxAge).toBeGreaterThanOrEqual(599);
-    expect(session!.options.maxAge).toBeLessThanOrEqual(600);
+    expect(session!.options.maxAge).toBe(600);
     expect('domain' in session!.options).toBe(false);
     expect(csrfCookie).toMatchObject({ kind: 'set', name: 'csrf_token', value: csrf });
     expect(csrfCookie!.options).toMatchObject({ httpOnly: false, secure: false, sameSite: 'lax', path: '/' });
@@ -83,7 +87,7 @@ describe('set', () => {
   it('marks both cookies Secure and prefixes the session cookie in production-style settings', () => {
     const cookies = cookiesFor({ COOKIE_SECURE: 'true', CSRF_COOKIE_DOMAIN: 'example.com' });
     const { reply, calls } = fakeReply();
-    cookies.set(reply, 'client', 'tok', new Date(Date.now() + 60_000));
+    cookies.set(reply, 'client', 'tok', after(60 * SECOND));
     expect(calls[0]).toMatchObject({ name: '__Host-gsm_client_session' });
     expect(calls[0]!.options).toMatchObject({ secure: true, httpOnly: true });
     expect('domain' in calls[0]!.options).toBe(false);
@@ -93,7 +97,7 @@ describe('set', () => {
 
   it('gives a session that already ended a Max-Age of 0 instead of a negative one', () => {
     const { reply, calls } = fakeReply();
-    cookiesFor({}).set(reply, 'staff', 'tok', new Date(Date.now() - 5_000));
+    cookiesFor({}).set(reply, 'staff', 'tok', after(-5 * SECOND));
     expect(calls[0]!.options.maxAge).toBe(0);
   });
 
@@ -102,7 +106,7 @@ describe('set', () => {
     const csrf = new CsrfService(config);
     const tokens = new TokenService(config);
     const { reply } = fakeReply();
-    const value = new SessionCookies(config, csrf, tokens).set(reply, 'staff', 'abc', new Date(Date.now() + 1000));
+    const value = new SessionCookies(config, csrf, tokens, clock).set(reply, 'staff', 'abc', after(SECOND));
     expect(value).toBe(csrf.tokenFor(tokens.hash('abc')));
   });
 });

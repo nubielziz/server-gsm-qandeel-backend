@@ -4,8 +4,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
-import { CacheKeys, CacheService } from '../../src/infra/cache';
-import { TokenService } from '../../src/infra/crypto';
 import { schema as s } from '../../src/infra/db';
 import {
   AccessHandlers,
@@ -17,6 +15,7 @@ import {
 } from '../../src/modules/identity';
 import { ACCESS_KINDS } from '../../src/common/contract';
 import { type TestApp, createTestApp } from '../support/app';
+import { DAY, MINUTE, SECOND, TestClock } from '../support/clock';
 import {
   clearIdentityCaches,
   insertMerchant,
@@ -32,6 +31,8 @@ import { TestController } from '../support/routes';
 import { PLACEHOLDER_URLS, SecurityTestController } from '../support/security-routes';
 
 const CONSOLE = 'https://console.example.com';
+/** The app's clock: sessions end and go idle when the test moves it, nothing is waited for (decision 031). */
+const clock = new TestClock();
 let t: TestApp;
 let customers: Map<number, 'ok' | 'suspended' | 'gone'>;
 
@@ -39,6 +40,7 @@ beforeAll(async () => {
   t = await createTestApp({
     controllers: [SecurityTestController, TestController],
     env: { CORS_ORIGINS: CONSOLE },
+    clock,
   });
   // The customers module registers its resolver when its feature is built; the test stands in for it.
   customers = new Map();
@@ -53,6 +55,7 @@ afterAll(async () => {
   await closeTestDb();
 });
 beforeEach(async () => {
+  clock.reset();
   await resetDb();
   await clearIdentityCaches(t);
   customers.clear();
@@ -91,42 +94,47 @@ describe('staff session guard', () => {
     expect((await get('/admin/t/sec/session', session.headers)).statusCode).toBe(401);
   });
 
-  it('refuses a session past its absolute end, and one idle for longer than the staff idle limit', async () => {
-    const { db } = await testDb();
+  it('refuses a session at its absolute end, however recently it was used', async () => {
+    const { staffId } = await signInStaff(t, []);
+    const session = await openSession(t, { type: 'staff', id: staffId }, { ttlSeconds: 3600 });
+    // Used every 20 minutes, so idleness never applies; only the absolute end of the hour does.
+    for (let minutes = 0; minutes < 2; minutes++) {
+      clock.advance(20 * MINUTE);
+      expect((await get('/admin/t/sec/session', session.headers)).statusCode).toBe(200);
+    }
+    clock.advance(20 * MINUTE - SECOND);
+    expect((await get('/admin/t/sec/session', session.headers)).statusCode, 'a second before the end').toBe(200);
+    clock.advance(SECOND);
+    expect((await get('/admin/t/sec/session', session.headers)).statusCode, 'at the end').toBe(401);
+  });
+
+  it('refuses a staff session that sat idle for longer than the 30 minute idle limit, and not one at the limit', async () => {
+    const atLimit = await signInStaff(t, []);
+    const past = await signInStaff(t, []);
+    clock.advance(30 * MINUTE);
+    expect((await get('/admin/t/sec/session', atLimit.session.headers)).statusCode).toBe(200);
+    clock.advance(1);
+    expect((await get('/admin/t/sec/session', past.session.headers)).statusCode).toBe(401);
+    // The one that was just used is not idle: its clock restarted.
+    expect((await get('/admin/t/sec/session', atLimit.session.headers)).statusCode).toBe(200);
+  });
+
+  it('keeps a session alive that is used within the idle limit again and again', async () => {
     const { session } = await signInStaff(t, []);
-    const key = () => t.app.get(CacheKeys).session(t.app.get(TokenService).hash(session.token));
-
-    await db
-      .update(s.sessions)
-      .set({ expiresAt: new Date(Date.now() - 1_000) })
-      .where(eq(s.sessions.id, session.sessionId));
-    await t.app.get(CacheService).del(key());
-    expect((await get('/admin/t/sec/session', session.headers)).statusCode).toBe(401);
-
-    const idle = await signInStaff(t, []);
-    await db
-      .update(s.sessions)
-      .set({ lastSeenAt: new Date(Date.now() - 31 * 60_000) })
-      .where(eq(s.sessions.id, idle.session.sessionId));
-    await t.app.get(CacheService).del(t.app.get(CacheKeys).session(t.app.get(TokenService).hash(idle.session.token)));
-    expect((await get('/admin/t/sec/session', idle.session.headers)).statusCode).toBe(401);
-
-    const recent = await signInStaff(t, []);
-    await db
-      .update(s.sessions)
-      .set({ lastSeenAt: new Date(Date.now() - 29 * 60_000) })
-      .where(eq(s.sessions.id, recent.session.sessionId));
-    await t.app.get(CacheService).del(t.app.get(CacheKeys).session(t.app.get(TokenService).hash(recent.session.token)));
-    expect((await get('/admin/t/sec/session', recent.session.headers)).statusCode).toBe(200);
+    for (let round = 0; round < 6; round++) {
+      clock.advance(29 * MINUTE);
+      expect((await get('/admin/t/sec/session', session.headers)).statusCode, `after ${round + 1} x 29 minutes`).toBe(
+        200,
+      );
+    }
   });
 
   it('judges a cached view again on every request: an ended session is refused before its cache entry expires', async () => {
     const { staffId } = await signInStaff(t, []);
-    // 4 s: under a loaded full-suite run the first request can take well over a second (2 s was flaky).
     const short = await openSession(t, { type: 'staff', id: staffId }, { ttlSeconds: 4 });
     expect((await get('/admin/t/sec/session', short.headers)).statusCode).toBe(200);
-    await Bun.sleep(4_200);
-    // The view is still in the cache (60 seconds), but its absolute end has passed.
+    // The view is cached (60 seconds), and the session ends at 4 s by the app's clock.
+    clock.advance(4 * SECOND);
     expect((await get('/admin/t/sec/session', short.headers)).statusCode).toBe(401);
   });
 
@@ -223,18 +231,19 @@ describe('staff session guard', () => {
     const seenAt = async () =>
       (await db.select().from(s.sessions).where(eq(s.sessions.id, session.sessionId)))[0]!.lastSeenAt.getTime();
     const created = await seenAt();
+    expect(created).toBe(clock.nowMs());
     expect((await get('/admin/t/sec/session', session.headers)).statusCode).toBe(200);
     expect(await seenAt()).toBe(created);
 
-    const old = Date.now() - 5 * 60_000;
-    await db
-      .update(s.sessions)
-      .set({ lastSeenAt: new Date(old) })
-      .where(eq(s.sessions.id, session.sessionId));
-    await t.app.get(CacheService).del(t.app.get(CacheKeys).session(t.app.get(TokenService).hash(session.token)));
+    clock.advance(MINUTE - 1);
+    expect((await get('/admin/t/sec/session', session.headers)).statusCode).toBe(200);
+    expect(await seenAt(), 'just under a minute: not written').toBe(created);
+
+    clock.advance(1);
     expect((await get('/admin/t/sec/session', session.headers)).statusCode).toBe(200);
     const touched = await seenAt();
-    expect(touched).toBeGreaterThan(old + 4 * 60_000);
+    expect(touched, 'a minute: written').toBe(clock.nowMs());
+    clock.advance(10 * SECOND);
     expect((await get('/admin/t/sec/session', session.headers)).statusCode).toBe(200);
     expect(await seenAt()).toBe(touched);
   });
@@ -431,21 +440,13 @@ describe('merchant session guard', () => {
 
   it('uses the merchant idle limit of seven days', async () => {
     const { db } = await testDb();
-    const session = await openSession(t, { type: 'client', id: await insertMerchant(db) });
-    const forget = () =>
-      t.app.get(CacheService).del(t.app.get(CacheKeys).session(t.app.get(TokenService).hash(session.token)));
-    await db
-      .update(s.sessions)
-      .set({ lastSeenAt: new Date(Date.now() - 6 * 24 * 3_600_000) })
-      .where(eq(s.sessions.id, session.sessionId));
-    await forget();
-    expect((await get('/client/t/sec/session', session.headers)).statusCode).toBe(200);
-    await db
-      .update(s.sessions)
-      .set({ lastSeenAt: new Date(Date.now() - 8 * 24 * 3_600_000) })
-      .where(eq(s.sessions.id, session.sessionId));
-    await forget();
-    expect((await get('/client/t/sec/session', session.headers)).statusCode).toBe(401);
+    const merchantId = await insertMerchant(db);
+    const atLimit = await openSession(t, { type: 'client', id: merchantId });
+    const past = await openSession(t, { type: 'client', id: merchantId });
+    clock.advance(7 * DAY);
+    expect((await get('/client/t/sec/session', atLimit.headers)).statusCode).toBe(200);
+    clock.advance(1);
+    expect((await get('/client/t/sec/session', past.headers)).statusCode).toBe(401);
   });
 });
 

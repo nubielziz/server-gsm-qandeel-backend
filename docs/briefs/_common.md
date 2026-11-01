@@ -37,6 +37,10 @@ You implement one brief in the GSM backend. These rules apply to every brief; th
   Controllers add `@route METHOD /path`. Inline comments only for rules, invariants, lock order, idempotency and
   non-obvious choices. No comments that restate the code.
 - Never `import type` a class that Nest injects (Bun needs the value import for decorator metadata).
+- Time (decision 031): inject `@Inject(CLOCK) private readonly clock: Clock` (`src/common/clock.ts`) and read `clock.now()` /
+  `clock.nowMs()`; `Date.now()` and `new Date()` without arguments are lint errors in `src/`. SQL that decides (expiry, age,
+  due dates, holds) takes the clock's time as a parameter instead of `now()`; column defaults may stay. Tests pass a `TestClock`
+  (`createTestApp({ clock })`) and move it with `advance`; they never `Bun.sleep` or write a time into a row to fake age.
 - `process.env` is read only in `src/config`. Modules import other modules only through their `index.ts`.
 - Errors are `AppError('<CODE>')` with codes from the catalog; never invent a code without adding it to
   `docs/contract/error-codes.md` and the catalog (and say so in your report).

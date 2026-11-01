@@ -84,15 +84,10 @@ export class TotpService {
    * @param secret the base32 secret
    * @param code the six digits the person typed
    * @param lastStep the last accepted time step of this account, or null
-   * @param nowMs the current time in milliseconds
+   * @param nowMs the current time in milliseconds (the injected clock's, decision 031)
    * @returns the time step the code belongs to, or `undefined` for a wrong, expired or already used code
    */
-  async check(
-    secret: string,
-    code: string,
-    lastStep: number | null,
-    nowMs: number = Date.now(),
-  ): Promise<number | undefined> {
+  async check(secret: string, code: string, lastStep: number | null, nowMs: number): Promise<number | undefined> {
     let result: Awaited<ReturnType<typeof verify>>;
     try {
       result = await verify({

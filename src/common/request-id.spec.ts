@@ -60,7 +60,7 @@ describe('request context', () => {
   it('follows awaits, timers and nested contexts', async () => {
     await runWithRequestId('outer', async () => {
       expect(getRequestId()).toBe('outer');
-      await new Promise((resolve) => setTimeout(resolve, 1));
+      await new Promise((resolve) => setImmediate(resolve));
       expect(getRequestId()).toBe('outer');
       await runWithRequestId('inner', async () => {
         await Promise.resolve();
@@ -72,14 +72,18 @@ describe('request context', () => {
   });
 
   it('keeps parallel requests apart', async () => {
+    // Each request hops through the event loop a different number of times, so they finish in the opposite order.
+    const finished: string[] = [];
     const seen = await Promise.all(
-      ['a', 'b', 'c'].map((id) =>
+      ['a', 'b', 'c'].map((id, index) =>
         runWithRequestId(id, async () => {
-          await new Promise((resolve) => setTimeout(resolve, Math.random() * 5));
+          for (let hop = 0; hop < 3 - index; hop++) await new Promise((resolve) => setImmediate(resolve));
+          finished.push(id);
           return getRequestId();
         }),
       ),
     );
+    expect(finished).toEqual(['c', 'b', 'a']);
     expect(seen).toEqual(['a', 'b', 'c']);
   });
 });

@@ -1,6 +1,7 @@
 // JobRunsService: the run log of scheduled and manual jobs (job_runs, health module). Processors wrap their work with
 // run(); the manual-run route of the health feature starts a run with start() and hands its id to the job.
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { DbService } from '../../../infra/db';
 import type { JobRun, JobTrigger } from '../db/schema';
@@ -83,7 +84,10 @@ function describe(error: unknown): string {
 export class JobRunsService {
   private readonly logger = new Logger(JobRunsService.name);
 
-  constructor(private readonly db: DbService) {}
+  constructor(
+    private readonly db: DbService,
+    @Inject(CLOCK) private readonly clock: Clock,
+  ) {}
 
   /**
    * Starts a run.
@@ -95,16 +99,16 @@ export class JobRunsService {
   async start(input: StartJobRunInput): Promise<JobRun> {
     const overlap = input.overlap ?? 'allow';
     const values = { job: input.job, trigger: input.trigger, triggeredBy: input.triggeredBy };
-    if (overlap === 'allow') return insertRunningJobRun(this.db.db, values);
+    if (overlap === 'allow') return insertRunningJobRun(this.db.db, values, this.clock.now());
     return this.db.runInTransaction(async ({ tx }) => {
       // The lock makes "is one running?" and the insert one step, so two workers cannot both start the job.
       await lockJobRuns(tx, input.job);
       const running = await findRunningJobRun(tx, input.job);
-      if (!running) return insertRunningJobRun(tx, values);
+      if (!running) return insertRunningJobRun(tx, values, this.clock.now());
       if (overlap === 'refuse') {
         throw new AppError('JOB_ALREADY_RUNNING', { detail: `The job "${input.job}" is already running.` });
       }
-      return insertSkippedJobRun(tx, values, running.id);
+      return insertSkippedJobRun(tx, values, running.id, this.clock.now());
     });
   }
 
@@ -116,7 +120,7 @@ export class JobRunsService {
    * @returns the closed run, or `undefined` when it was not `running` any more (already closed by the reaper)
    */
   finish(id: number, outcome: JobRunOutcome): Promise<JobRun | undefined> {
-    return finishJobRun(this.db.db, id, outcome);
+    return finishJobRun(this.db.db, id, outcome, this.clock.now());
   }
 
   /**
@@ -189,7 +193,7 @@ export class JobRunsService {
    * @returns how many runs were closed
    */
   async failStuck(maxAgeMs: number): Promise<number> {
-    const ids = await failStuckJobRuns(this.db.db, maxAgeMs);
+    const ids = await failStuckJobRuns(this.db.db, maxAgeMs, this.clock.now());
     if (ids.length > 0)
       this.logger.warn(`Closed ${ids.length} job runs that were stuck in "running": ${ids.join(', ')}`);
     return ids.length;

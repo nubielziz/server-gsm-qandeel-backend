@@ -1,5 +1,5 @@
-// Tests of the project's own lint rules (decisions 013, 016): module boundaries with their two schema exceptions,
-// process.env only in src/config, no console in src. Code strings are linted with the same config blocks that
+// Tests of the project's own lint rules (decisions 013, 016, 031): module boundaries with their two schema exceptions,
+// process.env only in src/config, no wall clock outside src/common/clock.ts, no console in src. Code strings are linted with the same config blocks that
 // eslint.config.mjs uses (scripts/eslint/structural-rules.mjs), without type information.
 import { join } from 'node:path';
 import { describe, expect, it } from 'bun:test';
@@ -214,6 +214,72 @@ describe('process.env only in src/config', () => {
 
   it('does not flag other uses of process', async () => {
     expect(await fired('src/infra/x.ts', `export const a = process.pid;\nexport const b = process.argv;`)).toEqual([]);
+  });
+});
+
+describe('no wall clock outside src/common/clock.ts', () => {
+  const WALL_CLOCK_FORMS = {
+    'Date.now()': `export const a = Date.now();`,
+    "Date['now']()": `export const a = Date['now']();`,
+    'a reference to Date.now': `export const a = Date.now;`,
+    'globalThis.Date.now()': `export const a = globalThis.Date.now();`,
+    'new Date()': `export const a = new Date();`,
+    'new Date without parentheses': `export const a = new Date;`,
+    'new globalThis.Date()': `export const a = new globalThis.Date();`,
+    'Date.now() inside a call': `export const a = (n: number) => new Date(n + Date.now());`,
+  };
+
+  for (const [name, code] of Object.entries(WALL_CLOCK_FORMS)) {
+    it(`flags ${name} in a module, in common, in infra and in a spec`, async () => {
+      for (const file of [
+        'src/modules/orders/application/x.ts',
+        'src/common/x.ts',
+        'src/infra/logging/x.ts',
+        'src/app.bootstrap.ts',
+        'src/config/env.ts',
+        'src/common/short-memo.spec.ts',
+      ]) {
+        expect(await fired(file, code), `${name} in ${file}`).toContain('no-restricted-syntax');
+      }
+    });
+
+    it(`allows ${name} in src/common/clock.ts, tests and scripts`, async () => {
+      for (const file of ['src/common/clock.ts', 'test/support/clock.ts', 'scripts/seed/run.ts']) {
+        expect(await fired(file, code), `${name} in ${file}`).not.toContain('no-restricted-syntax');
+      }
+    });
+  }
+
+  it('says why and what to use instead', async () => {
+    const [result] = await eslint.lintText(`export const a = Date.now();`, {
+      filePath: join(ROOT, 'src/modules/orders/application/x.ts'),
+    });
+    expect(result.messages[0].message).toContain('injected Clock');
+    expect(result.messages[0].message).toContain('decision 031');
+  });
+
+  it('allows what is not the current time: dates built from a value, parsing, monotonic timers', async () => {
+    const code = [
+      `export const a = new Date(1_700_000_000_000);`,
+      `export const b = new Date('2026-11-01T00:00:00Z');`,
+      `export const c = new Date(a.getTime() + 1000);`,
+      `export const d = Date.parse('2026-11-01T00:00:00Z');`,
+      `export const e = Date.UTC(2026, 10, 1);`,
+      `export const f = performance.now();`,
+    ].join('\n');
+    for (const file of ['src/modules/orders/application/x.ts', 'src/common/x.ts', 'src/config/env.ts']) {
+      expect(await fired(file, code), file).toEqual([]);
+    }
+  });
+
+  it('still forbids the environment in src/common/clock.ts', async () => {
+    expect(await fired('src/common/clock.ts', `export const a = process.env.X;`)).toContain('no-restricted-syntax');
+  });
+
+  it('applies together with the environment rule: one file with both mistakes reports both', async () => {
+    const code = `export const a = process.env.X;\nexport const b = Date.now();`;
+    const [result] = await eslint.lintText(code, { filePath: join(ROOT, 'src/infra/x.ts') });
+    expect(result.messages.map((message) => message.ruleId)).toEqual(['no-restricted-syntax', 'no-restricted-syntax']);
   });
 });
 

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'bun:test';
 import type { FastifyRequest } from 'fastify';
 import { AppError } from '../../../../common/errors';
 import type { RequestPipeline } from '../../../../common/pipeline';
+import { TestClock } from '../../../../../test/support/clock';
 import { expectRejection } from '../../../../../test/support/rejection';
 import { type ActiveIpRule, type CompiledIpRules, compileIpRules } from './ip-rule-matcher';
 import type { IpRuleCache } from './ip-rule-cache';
@@ -23,6 +24,7 @@ function hookWith(compiled: CompiledIpRules | Error) {
     pipeline,
     cache as unknown as IpRuleCache,
     { record: (id: number) => void hits.push(id) } as unknown as IpRuleHits,
+    new TestClock('2026-11-01T10:00:00.000Z'),
   );
   return { hook, hits, registered };
 }

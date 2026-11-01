@@ -1,7 +1,8 @@
 // Hit counters of the IP rules, recording side (identity module, scenario ip-rules): the hook counts the requests a rule decided
 // in a Redis hash; the worker's flush job (ip-rule-hits-flush.ts) writes them to ip_rules.hit_count and last_hit_at.
-import { Injectable, Logger, type OnApplicationShutdown } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnApplicationShutdown } from '@nestjs/common';
 import { Counter } from 'prom-client';
+import { CLOCK, type Clock } from '../../../../common/clock';
 import { LogThrottle } from '../../../../common/log-throttle';
 import { withTimeout } from '../../../../common/timeout';
 import { CacheKeys } from '../../../../infra/cache';
@@ -45,6 +46,7 @@ export class IpRuleHits implements OnApplicationShutdown {
     private readonly redis: RedisService,
     private readonly keys: CacheKeys,
     metrics: MetricsService,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {
     this.failures = new Counter({
       name: 'ip_rule_hit_record_failures_total',
@@ -62,9 +64,9 @@ export class IpRuleHits implements OnApplicationShutdown {
    * Side effects: one Redis round trip, not awaited; a failure is counted and logged (throttled), never thrown.
    *
    * @param ruleId the rule that decided
-   * @param atMs when, in epoch milliseconds (default: now)
+   * @param atMs when, in epoch milliseconds (default: now by the injected clock, decision 031)
    */
-  record(ruleId: number, atMs: number = Date.now()): void {
+  record(ruleId: number, atMs: number = this.clock.nowMs()): void {
     if (this.pending.size >= MAX_PENDING_WRITES) {
       this.failures.inc({ reason: 'dropped' });
       return;

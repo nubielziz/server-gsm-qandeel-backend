@@ -1,6 +1,7 @@
 // OutboxService: the one way to write an outbox event (platform module, decision 020). It runs inside the caller's
 // transaction, so the event exists if and only if the change that caused it was committed.
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { CLOCK, type Clock } from '../../../common/clock';
 import { getRequestId } from '../../../common/request-id';
 import type { DbExecutor } from '../../../infra/db';
 import type { OutboxEvent } from '../db/schema';
@@ -23,7 +24,10 @@ import type { OutboxBacklog, OutboxEventInput } from './outbox.types';
  */
 @Injectable()
 export class OutboxService {
-  constructor(private readonly routes: OutboxRouteRegistry) {}
+  constructor(
+    private readonly routes: OutboxRouteRegistry,
+    @Inject(CLOCK) private readonly clock: Clock,
+  ) {}
 
   /**
    * Writes an event in the caller's transaction.
@@ -42,12 +46,16 @@ export class OutboxService {
         `No queue is registered for the outbox event type "${event.type}". Register it in your module with OutboxRouteRegistry.register() (onModuleInit).`,
       );
     }
-    return insertOutboxEvent(tx, {
-      type: event.type,
-      aggregateType: event.aggregateType,
-      aggregateId: event.aggregateId,
-      payload: packOutboxPayload(event.payload, getRequestId()),
-    });
+    return insertOutboxEvent(
+      tx,
+      {
+        type: event.type,
+        aggregateType: event.aggregateType,
+        aggregateId: event.aggregateId,
+        payload: packOutboxPayload(event.payload, getRequestId()),
+      },
+      this.clock.now(),
+    );
   }
 
   /**
@@ -60,6 +68,6 @@ export class OutboxService {
    * @returns the pending count and the age of the oldest pending event
    */
   backlog(db: DbExecutor): Promise<OutboxBacklog> {
-    return outboxBacklog(db);
+    return outboxBacklog(db, this.clock.now());
   }
 }

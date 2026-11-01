@@ -7,7 +7,8 @@ Single source of truth for status. The lead updates it after every step. Read it
 **Phase 2 (foundation) is done** (P2.1-P2.7). **Phase 3 is planned, not started** (the user starts it): read
 `docs/PHASE3-PLAN.md`. Before it, the 262 console endpoints still to build were audited against the plan (102
 findings, `docs/contract/AUDIT-PHASE3.md`) and every finding is resolved (`docs/contract/RESOLUTIONS.md`, migration
-0003, corrected docs and briefs). Wave 1 (2a, 2b, 3) has its briefs written. Each feature needs a brief in `docs/briefs/` written from `_feature.md` (routes from `docs/slices/<module>.json`,
+0003, corrected docs and briefs). P2.8 added an injectable Clock (decision 031): no code decides on the wall clock and no
+test waits on it. **Wave 1 (2a, 2b, 3) is running.** Each feature needs a brief in `docs/briefs/` written from `_feature.md` (routes from `docs/slices/<module>.json`,
 user rules from the table below). Briefs: `docs/briefs/` (`_common.md` first; `_feature.md` is the
 Phase 3 recipe). Parallel implementers work in sibling worktrees of this repo (`git worktree add
 ../backend-p2-<name> -b feat/backend-p2-<name>`, then `bun install` there; a sibling path keeps the relative
@@ -122,7 +123,8 @@ re-review), max 2 review rounds.
 | P2.5b pipeline-hooks | 2 (implementer, review: pass, no blocking) |
 | P2.5c machine-auth | 4 (implementer, review: 1 blocking, fix, re-review: pass) |
 | P2.6 staff-sign-in | 2 (implementer, review: pass, no blocking) |
-| **Total** | **34** |
+| P2.8 clock | 4 (implementer, review: 1 blocking, fix, re-review: pass) |
+| **Total** | **38** |
 
 ## Decisions
 

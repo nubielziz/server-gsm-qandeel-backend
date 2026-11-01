@@ -1,9 +1,11 @@
-// Unit tests of PgListener (decision 020) with a fake client: it listens, reports notifications, reconnects after an error
-// or an end of the connection, reports reconnects, and stops cleanly. The behaviour against a real Postgres is in
-// test/integration/pg-listener.test.ts.
+// Unit tests of PgListener (decision 020) with a fake client and manual timers: it listens, reports notifications, reconnects
+// after an error or an end of the connection, waits longer after each failure, reports reconnects, and stops cleanly. No test
+// waits for a delay: reconnect timers fire when the test advances virtual time (decision 031). The behaviour against a real
+// Postgres is in test/integration/pg-listener.test.ts.
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { EventEmitter } from 'node:events';
 import { Logger } from '@nestjs/common';
+import { ManualTimers } from '../../../test/support/clock';
 import { PgListener } from './pg-listener';
 
 // The listener logs every reconnect; these tests cause dozens, and the lines would bury the test report.
@@ -43,6 +45,7 @@ function setup(options: { channels?: string[]; reconnectMs?: { first: number; ma
   FakeClient.failConnects = 0;
   const notifications: Array<[string, string | undefined]> = [];
   const connected: boolean[] = [];
+  const timers = new ManualTimers();
   const listener = new PgListener({
     connectionString: 'postgres://u:p@localhost/db',
     channels: options.channels ?? ['outbox'],
@@ -51,17 +54,21 @@ function setup(options: { channels?: string[]; reconnectMs?: { first: number; ma
     onConnected: ({ reconnect }) => connected.push(reconnect),
     createClient: (config) => new FakeClient(config),
     reconnectMs: options.reconnectMs ?? { first: 5, max: 20 },
+    timers,
   });
-  return { listener, notifications, connected };
+  return { listener, notifications, connected, timers };
 }
 
-const until = async (condition: () => boolean, ms = 1_000): Promise<void> => {
-  const deadline = Date.now() + ms;
-  while (!condition()) {
-    if (Date.now() > deadline) throw new Error('condition not met in time');
-    await Bun.sleep(2);
-  }
-};
+/** Lets every promise the fakes resolved settle (they all resolve in microtasks) before the test looks at the result. */
+const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+/** Fires the next reconnect timer, as if its wait had passed, and lets the attempt finish. */
+async function fireReconnect(timers: ManualTimers): Promise<void> {
+  const [delay] = timers.delays;
+  if (delay === undefined) throw new Error('no reconnect is scheduled');
+  timers.advance(delay);
+  await settle();
+}
 
 describe('PgListener', () => {
   it('connects under its application name and listens on every channel', async () => {
@@ -89,11 +96,12 @@ describe('PgListener', () => {
   });
 
   it('reconnects after an error and says it is a reconnect', async () => {
-    const { listener, connected } = setup();
+    const { listener, connected, timers } = setup();
     await listener.start();
     FakeClient.instances[0]!.emit('error', new Error('terminating connection due to administrator command'));
     expect(listener.listening).toBe(false);
-    await until(() => connected.length === 2);
+    expect(timers.pending, 'a reconnect is scheduled, not yet made').toBe(1);
+    await fireReconnect(timers);
     expect(connected).toEqual([false, true]);
     expect(listener.listening).toBe(true);
     expect(FakeClient.instances).toHaveLength(2);
@@ -102,23 +110,37 @@ describe('PgListener', () => {
   });
 
   it('reconnects once when both error and end arrive for one lost connection', async () => {
-    const { listener, connected } = setup();
+    const { listener, connected, timers } = setup();
     await listener.start();
     const client = FakeClient.instances[0]!;
     client.emit('error', new Error('Connection terminated unexpectedly'));
     client.emit('end');
-    await until(() => connected.length === 2);
-    await Bun.sleep(40);
+    expect(timers.pending, 'one reconnect for one lost connection').toBe(1);
+    await fireReconnect(timers);
+    expect(connected).toEqual([false, true]);
+    // Nothing else is scheduled, however long the listener runs on.
+    expect(timers.pending).toBe(0);
+    timers.advance(60_000);
+    await settle();
     expect(FakeClient.instances).toHaveLength(2);
     await listener.stop();
   });
 
   it('keeps trying, with a growing wait, while Postgres is down at start, and never throws', async () => {
-    const { listener, connected } = setup();
+    const { listener, connected, timers } = setup();
     FakeClient.failConnects = 3;
     await listener.start();
     expect(listener.listening).toBe(false);
-    await until(() => listener.listening);
+    // The waits double from 5 ms to the 20 ms limit, each spread by +-20 %: 4-6, 8-12, 16-24 ms.
+    const waits: number[] = [];
+    for (let attempt = 0; attempt < 3; attempt++) {
+      waits.push(timers.delays[0]!);
+      await fireReconnect(timers);
+    }
+    expect(waits[0]!).toBeLessThanOrEqual(6);
+    expect(waits[1]!).toBeGreaterThan(waits[0]!);
+    expect(waits[2]!).toBeGreaterThan(waits[1]!);
+    expect(listener.listening).toBe(true);
     expect(FakeClient.instances).toHaveLength(4);
     // The first successful connection is not a "reconnect": nothing was connected before it.
     expect(connected).toEqual([false]);
@@ -126,7 +148,7 @@ describe('PgListener', () => {
   });
 
   it('stops: ends the connection and does not reconnect', async () => {
-    const { listener } = setup();
+    const { listener, timers } = setup();
     await listener.start();
     const client = FakeClient.instances[0]!;
     await listener.stop();
@@ -134,21 +156,25 @@ describe('PgListener', () => {
     expect(listener.listening).toBe(false);
     // A late error from the old connection must not bring it back.
     client.emit('error', new Error('late'));
-    await Bun.sleep(40);
+    expect(timers.pending).toBe(0);
+    timers.advance(60_000);
+    await settle();
     expect(FakeClient.instances).toHaveLength(1);
   });
 
   it('can be stopped while a connection attempt is still going on', async () => {
-    const { listener } = setup();
+    const { listener, timers } = setup();
     FakeClient.failConnects = 100;
     const started = listener.start();
     await listener.stop();
     await started;
-    await Bun.sleep(40);
+    await settle();
     expect(listener.listening).toBe(false);
-    // Whatever attempts were made stopped when stop() was called.
+    // Whatever attempts were made stopped when stop() was called: no reconnect is left to fire.
     const attempts = FakeClient.instances.length;
-    await Bun.sleep(40);
+    expect(timers.pending).toBe(0);
+    timers.advance(60_000);
+    await settle();
     expect(FakeClient.instances).toHaveLength(attempts);
   });
 

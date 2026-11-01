@@ -1,6 +1,7 @@
 // The relay's wake-up (platform module, decision 020): one dedicated Postgres connection LISTENing on the `outbox` channel.
 // Worker only. The one-second scheduler tick is the safety net for a NOTIFY that is missed.
 import { Inject, Injectable, type OnApplicationBootstrap, type OnModuleDestroy } from '@nestjs/common';
+import { TIMERS, type Timers } from '../../../common/clock';
 import { APP_CONFIG, type AppConfig } from '../../../config';
 import { PgListener, databaseUrlFor } from '../../../infra/db';
 import { OutboxRelay } from './outbox-relay';
@@ -21,8 +22,9 @@ import { OUTBOX_CHANNEL } from './outbox.repository';
 export class OutboxListener implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly listener: PgListener;
 
-  constructor(@Inject(APP_CONFIG) config: AppConfig, relay: OutboxRelay) {
+  constructor(@Inject(APP_CONFIG) config: AppConfig, relay: OutboxRelay, @Inject(TIMERS) timers: Timers) {
     this.listener = new PgListener({
+      timers,
       connectionString: databaseUrlFor(config),
       channels: [OUTBOX_CHANNEL],
       applicationName: 'gsm-outbox-listener',

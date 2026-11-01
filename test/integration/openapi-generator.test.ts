@@ -170,6 +170,7 @@ describe('forbidConnections (what keeps the generator offline)', () => {
       `const { Redis } = await import('ioredis');
        const redis = new Redis('redis://127.0.0.1:6380', { maxRetriesPerRequest: 0 });
        redis.on('error', () => undefined);
+       // Real wait (decision 031): this runs in a child process; ioredis reports its refused connection as an event.
        await new Promise((resolve) => setTimeout(resolve, 200));
        redis.disconnect();`,
     );

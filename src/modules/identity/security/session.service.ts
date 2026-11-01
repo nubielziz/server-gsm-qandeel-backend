@@ -1,7 +1,8 @@
 // SessionService: create, rotate, touch, revoke and look up the sessions of staff, merchants and customers (decision 018).
 // Tokens are random and stored only as keyed hashes (decision 019); lookups are cached 60 seconds in the cache Redis and
 // deleted after the commit of any change to the session or its account.
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { CacheKeys, CacheService } from '../../../infra/cache';
 import { TokenService } from '../../../infra/crypto';
@@ -72,6 +73,7 @@ export class SessionService {
     private readonly tokens: TokenService,
     private readonly policy: SessionPolicy,
     private readonly subjects: SessionSubjects,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   /**
@@ -89,7 +91,7 @@ export class SessionService {
    */
   create(input: CreateSessionInput, work?: SessionWork): Promise<IssuedSession> {
     assertCreateInput(input);
-    return this.within(work, ({ tx }) => this.insert(tx, input, new Date()));
+    return this.within(work, ({ tx }) => this.insert(tx, input, this.clock.now()));
   }
 
   /**
@@ -108,7 +110,7 @@ export class SessionService {
    */
   rotate(current: Pick<SessionView, 'id'>, input: RotateSessionInput, work?: SessionWork): Promise<IssuedSession> {
     return this.within(work, async (context) => {
-      const now = new Date();
+      const now = this.clock.now();
       const old = await revokeLiveSession(context.tx, current.id, now);
       // An ended session cannot be carried forward; throwing rolls the revoke back with the transaction.
       if (!old || old.expiresAt.getTime() <= now.getTime()) throw new AppError('UNAUTHORIZED');
@@ -157,10 +159,10 @@ export class SessionService {
    * failed write on every request until the entry expires.
    *
    * @param view the session as the guard saw it
-   * @param nowMs the current time in milliseconds
+   * @param nowMs the current time in milliseconds; default the injected clock's (decision 031)
    * @returns true when this call wrote the row
    */
-  async touch(view: SessionView, nowMs: number = Date.now()): Promise<boolean> {
+  async touch(view: SessionView, nowMs: number = this.clock.nowMs()): Promise<boolean> {
     if (nowMs - view.lastSeenAtMs < TOUCH_INTERVAL_MS) return false;
     const written = await touchSession(this.db.db, view.id, new Date(nowMs), TOUCH_INTERVAL_MS);
     await this.cache.del(this.keys.session(view.tokenHash));
@@ -180,7 +182,7 @@ export class SessionService {
    */
   revoke(sessionId: number, work?: SessionWork): Promise<boolean> {
     return this.within(work, async (context) => {
-      const row = await revokeLiveSession(context.tx, sessionId, new Date());
+      const row = await revokeLiveSession(context.tx, sessionId, this.clock.now());
       if (row) this.forgetAfterCommit(context, [row.tokenHash]);
       return row !== undefined;
     });
@@ -207,7 +209,13 @@ export class SessionService {
     work?: SessionWork,
   ): Promise<number> {
     return this.within(work, async (context) => {
-      const rows = await revokeLiveSessionsOf(context.tx, subjectType, subjectId, new Date(), options.exceptSessionId);
+      const rows = await revokeLiveSessionsOf(
+        context.tx,
+        subjectType,
+        subjectId,
+        this.clock.now(),
+        options.exceptSessionId,
+      );
       this.forgetAfterCommit(
         context,
         rows.map((row) => row.tokenHash),
@@ -235,7 +243,7 @@ export class SessionService {
   }
 
   private async load(hash: string): Promise<SessionView | undefined> {
-    const row = await findLiveSessionByHash(this.db.db, hash, new Date());
+    const row = await findLiveSessionByHash(this.db.db, hash, this.clock.now());
     if (!row) return undefined;
     const subject = await this.subjects.resolve(row.subjectType, row.subjectId);
     if (subject.state === 'gone') return undefined;
