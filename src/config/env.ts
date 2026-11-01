@@ -26,6 +26,15 @@ export type LogLevel = 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' |
 export type ReferenceDocsMode = 'open' | 'staff' | 'off';
 
 /**
+ * The exchange-rate drivers `FX_PROVIDER` can name: `openexchangerates` (USD base, `latest.json`) or `manual`
+ * (no provider; rates are edited by hand).
+ *
+ * Why: `POST /admin/currencies/refresh-fx` needs a named driver; `manual` makes it answer 502 FX_PROVIDER_DOWN
+ * (RESOLUTIONS money-9).
+ */
+export type FxProviderName = 'openexchangerates' | 'manual';
+
+/**
  * Which proxies may set `X-Forwarded-*`: `false` (none), a hop count (the last N hops) or a list of
  * IP/CIDR entries and named ranges (`loopback`, `linklocal`, `uniquelocal`).
  *
@@ -53,7 +62,19 @@ export interface AppConfig {
     readonly corsOrigins: readonly string[];
     /** Base of the problem+json `type` URI, without a trailing slash (decision 028). */
     readonly errorsBaseUrl: string;
+    /** Base URL of the merchant portal, without a trailing slash; links in invitation emails are built from it. */
+    readonly portalBaseUrl: string;
+    /** Lower-case name of the country header a trusted proxy sets (e.g. `cf-ipcountry`); unset = not used. */
+    readonly geoipCountryHeader: string | undefined;
     readonly referenceDocs: ReferenceDocsMode;
+  };
+  /** Exchange-rate provider used by `POST /admin/currencies/refresh-fx` (RESOLUTIONS money-9). */
+  readonly fx: {
+    readonly provider: FxProviderName;
+    /** Secret of the provider account; unset with `openexchangerates` means "not configured". */
+    readonly apiKey: string | undefined;
+    /** Explicit timeout of the provider call in milliseconds (decision 023). */
+    readonly timeoutMs: number;
   };
   readonly log: { readonly level: LogLevel };
   readonly database: { readonly url: string; readonly testUrl: string; readonly poolMax: number };
@@ -112,6 +133,7 @@ export class ConfigError extends Error {
 const NODE_ENVS = ['development', 'test', 'production'] as const;
 const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
 const NAMED_PROXY_RANGES = ['loopback', 'linklocal', 'uniquelocal'] as const;
+const FX_PROVIDERS = ['openexchangerates', 'manual'] as const satisfies readonly FxProviderName[];
 const MAX_TRUST_PROXY_HOPS = 10;
 
 /**
@@ -137,6 +159,7 @@ export const DEV_DEFAULTS = {
   encryptionKid: 'dev1',
   encryptionKey: Buffer.alloc(32, 'gsm-dev-key').toString('base64'),
   errorsBaseUrl: 'http://localhost:3000/errors',
+  portalBaseUrl: 'http://localhost:5174',
   corsOrigins: 'http://localhost:5173,http://127.0.0.1:5173',
 } as const;
 
@@ -156,6 +179,14 @@ const rawSchema = z.object({
   BODY_LIMIT_BYTES: int(1024, 100 * 1024 * 1024).optional(),
   CORS_ORIGINS: z.string().optional(),
   ERRORS_BASE_URL: httpUrl.optional(),
+  PORTAL_BASE_URL: httpUrl.optional(),
+  GEOIP_COUNTRY_HEADER: z
+    .string()
+    .regex(/^[A-Za-z0-9-]{1,64}$/, 'use a header name: letters, digits or "-" (1-64 characters)')
+    .optional(),
+  FX_PROVIDER: z.enum(FX_PROVIDERS).optional(),
+  FX_API_KEY: z.string().min(1).optional(),
+  FX_TIMEOUT_MS: int(100, 60_000).optional(),
   DATABASE_URL: postgresUrl.optional(),
   DATABASE_URL_TEST: postgresUrl.optional(),
   DATABASE_POOL_MAX: int(1, 200).optional(),
@@ -385,6 +416,11 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
     /\/+$/,
     '',
   );
+  // The merchant invite link is `<PORTAL_BASE_URL>/set-password?token=...` (RESOLUTIONS identity-platform-2).
+  const portalBaseUrl = withDefault('PORTAL_BASE_URL', raw.PORTAL_BASE_URL, DEV_DEFAULTS.portalBaseUrl).replace(
+    /\/+$/,
+    '',
+  );
   const s3Endpoint = raw.S3_ENDPOINT ?? (production ? undefined : DEV_DEFAULTS.s3Endpoint);
 
   return {
@@ -397,7 +433,15 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
       bodyLimitBytes: raw.BODY_LIMIT_BYTES ?? 1024 * 1024,
       corsOrigins: cors.ok ? cors.value : [],
       errorsBaseUrl,
+      portalBaseUrl,
+      geoipCountryHeader: raw.GEOIP_COUNTRY_HEADER?.toLowerCase(),
       referenceDocs: raw.REFERENCE_DOCS ?? (production ? 'staff' : 'open'),
+    },
+    // The key stays optional: without it the refresh answers 502 FX_PROVIDER_DOWN instead of stopping the boot.
+    fx: {
+      provider: raw.FX_PROVIDER ?? (production ? 'openexchangerates' : 'manual'),
+      apiKey: raw.FX_API_KEY,
+      timeoutMs: raw.FX_TIMEOUT_MS ?? 5000,
     },
     log: { level: raw.LOG_LEVEL ?? (production ? 'info' : env === 'test' ? 'warn' : 'debug') },
     database: {
@@ -559,8 +603,11 @@ export function summarizeConfig(config: AppConfig): Record<string, unknown> {
       bodyLimitBytes: config.http.bodyLimitBytes,
       corsOrigins: config.http.corsOrigins,
       errorsBaseUrl: config.http.errorsBaseUrl,
+      portalBaseUrl: config.http.portalBaseUrl,
+      geoipCountryHeader: config.http.geoipCountryHeader,
       referenceDocs: config.http.referenceDocs,
     },
+    fx: { provider: config.fx.provider, apiKey: flag(config.fx.apiKey), timeoutMs: config.fx.timeoutMs },
     logLevel: config.log.level,
     database: { url: redactUrl(config.database.url), poolMax: config.database.poolMax },
     redis: {

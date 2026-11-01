@@ -92,25 +92,52 @@ await this.db.runInTransaction(async ({ tx, afterCommit }) => {
 (`test/support/db.ts`; nothing runs from the global preload, so `bun test ./src` works without Docker).
 `test/schema/structure.test.ts` checks the schema without a database. See `test/README.md`.
 
-## Open vocabularies and type guesses (for the Phase 3 features to settle)
+## Vocabularies settled by the audit resolutions (migration `0003`)
 
-Columns left as plain `text` because no source (frontend wire enum, decisions 018/024/025, scenarios, endpoint docs)
-fixes their values; each feature that owns one adds the CHECK with its migration once the values are known:
+`docs/contract/RESOLUTIONS.md` closed these vocabularies before Phase 3. Each is an exported `as const` array in the
+owning module's `db/schema.ts` and a named `CHECK`; a new value needs a migration. Several rules pin a vocabulary per
+`purpose` or per other column:
 
-- identity: `auth_tokens.purpose`
-- platform: `notifications.recipient_type`, `audit_logs.actor_type`, `files.owner_type`, `outbox_events.type` and
-  `aggregate_type`
-- money: `ledger_transactions.kind` (the 13 money events plus reversal kinds), `payments.status`,
-  `payments.method_type`, `refunds.method`, `withdrawal_requests.method` and `status`, `tax_rates.tax_type` and
-  `applies_to`
-- catalog: `client_groups.kind` (`b2c_retail` is known), `services.price_mode` and `duplicate_rule`, `tac_catalog.source`
-- orders: `orders.verification_status` (`requested` is known), `order_events.type`
-- suppliers: `suppliers.driver` and `param_format`, `supplier_services.type`
-- health: `service_checks.component`, `alert_rules.metric` (a registry in code), `alert_events.subject_type`,
+- identity: `auth_tokens.purpose` (`invite`, `reset`, `verify_email`, `magic_link`; staff use `STAFF_TOKEN_PURPOSES`, the
+  subset `invite` and `reset`)
+- platform: `notifications.recipient_type` (`staff`, `client`, `customer`; the template audience still says `merchant`),
+  `audit_logs.actor_type` (`staff`, `client`, `customer`, `system`) with the new `audit_logs.actor_name` snapshot
+- money: `payments.status` and `payments.method_type` per purpose (top-up: `pending`/`approved`/`rejected` and
+  `bank`/`card`/`usdt`/`wise`; order: `pending`/`captured`/`failed`/`refunded`/`partial_refund`/`disputed`/`chargeback`
+  and `card`/`wallet`/`crypto`), `refunds.method` (`original`, `manual`), `ledger_transactions.ref_type` (no
+  `ledger_transaction`; `ref_id` is never null, `0` for `system`), `currencies.decimals` (0 to 4)
+- catalog: `services.price_mode` (`fixed`) and `duplicate_rule` (`allow`, `block_open`)
+- orders: `orders.verification_status` (`requested`, `accepted`, `refunded`; null when none) and `order_events.type`
+  (21 types)
+- suppliers: `suppliers.driver` (`dhru`, `rest`) and `param_format` (`dhru_xml`, `json`), `supplier_api_logs.outcome`
+  (`ok`, `error`, `timeout`)
+- health: `alert_events.subject_type` (default `system`) and `unit`, `service_checks` keys (`supplier:<id>`,
+  `gateway:<id>`)
+- commissions: `commission_accruals.status` (`accrued`, `approved`, `reversed`; `approved_at` is set exactly when
+  approved)
+- customers and storefront: `checkout_sessions.status` (`open`, `paid`, `expired`), `consent_records.purpose` and
+  `subject_type`, `legal_documents.type` (`terms`, `privacy`, `refund`, `cookies`)
+- support: `support_tickets.status` (no `closed`)
+
+Other changes of `0003` worth knowing: `services.effective_cost` (the price floor), `services.archived_at` (archive
+instead of delete; an archived service gives its code back), a composite foreign key keeping `services.type` equal to
+its category's type, `inventory_codes.batch_ref` numbered from `inventory_batch_ref_seq`, `payments.review_required`,
+`auto_credit_at`, `brand` and `card_fingerprint`, `alert_events` keeping a snapshot of its rule, `commission_plans.tiers`
+as a jsonb object, one current commission assignment per merchant, one accrual per order and beneficiary, one incident
+per alert, and `job_runs`, `supplier_api_logs`, `invoices` and `consent_records` columns that are never null.
+
+Still plain `text` because no source fixes the values; each feature that owns one adds the CHECK with its migration
+once the values are known:
+
+- platform: `files.owner_type`, `outbox_events.type` and `aggregate_type`
+- money: `ledger_transactions.kind` (the 13 money events plus reversal kinds), `withdrawal_requests.method` and `status`
+  (later phase), `tax_rates.tax_type` and `applies_to`
+- catalog: `client_groups.kind` (`b2c_retail` is known), `tac_catalog.source`
+- suppliers: `supplier_services.type`
+- health: `service_checks.component` (shaped by the two key checks above), `alert_rules.metric` (a registry in code),
   `job_runs.job`
-- commissions: `commission_plans.basis` and `period`, `commission_assignments.scope`, `commission_accruals.status`
-- customers: `checkout_sessions.status`, `consent_records.subject_type` and `purpose`
-- storefront: `help_articles.category`, `legal_documents.type`
+- commissions: `commission_plans.basis` and `period`, `commission_assignments.scope`
+- storefront: `help_articles.category`
 
 Types and nullability that the map and decision 027 do not settle (guesses):
 
@@ -119,14 +146,15 @@ Types and nullability that the map and decision 027 do not settle (guesses):
   is `jsonb` without a default (any JSON value).
 - `alert_rules.threshold` and `alert_events.value` are `numeric(18,4)` (a measure in the metric's unit, not money);
   `files.size` is `bigint`; `suppliers.credit_rate` is `numeric(18,8)`.
-- `supplier_services.custom_fields`, `risk_assessments.signals`, `incidents.timeline` and `commission_plans.tiers`
-  are `jsonb` lists (default `[]`); every other `jsonb` defaults to `{}`.
+- `supplier_services.custom_fields`, `risk_assessments.signals` and `incidents.timeline` are `jsonb` lists (default
+  `[]`); every other `jsonb` defaults to `{}`, including `commission_plans.tiers` (an object, enforced by a CHECK).
 - Credentials are nullable until set: `clients.password_hash`, `totp_secret_enc`, `payment_gateways.config_enc` and
   `webhook_secret_enc`, `suppliers.api_key_enc`. Optional links are nullable foreign keys (for example
-  `payments.invoice_id`, `refunds.payment_id`, `orders.api_key_id`).
+  `payments.invoice_id`, `refunds.payment_id`, `orders.api_key_id`). `suppliers.api_key_hint` shows which key is set
+  without decrypting it.
 - Defaults: `currencies.decimals` 2, `client_groups.kind` `b2b`, `services.cost_currency` and `suppliers.currency` `USD`,
   free-text fields without a meaning `''`, initial states from the sources (`pending`, `new`, `firing`, ...).
 - Extra constraints read from error codes and scenarios: one default and one retail merchant group, one current legal
-  document per type and locale, one active assignment per plan and merchant, one payment per gateway reference, unique
+  document per type and locale, one current commission assignment per merchant, one payment per gateway reference, unique
   `(client_id, idempotency_key)` on orders, unique non-void inventory `code_hash`, `(scope = 'global') = (target_id is null)`
   on pricing rules.

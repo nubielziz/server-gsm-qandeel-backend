@@ -60,6 +60,49 @@ export const ORDER_EVENT_ACTOR_TYPES = ['staff', 'client', 'customer', 'supplier
 export type OrderEventActorType = (typeof ORDER_EVENT_ACTOR_TYPES)[number];
 
 /**
+ * Where a buyer's verification request stands: `requested`, then `accepted` or `refunded` by staff. Null means none.
+ *
+ * Why: RESOLUTIONS orders-suppliers-14 and the console's order wire enum (verification after delivery).
+ */
+export const ORDER_VERIFICATION_STATUSES = ['requested', 'accepted', 'refunded'] as const;
+
+/** One value of {@link ORDER_VERIFICATION_STATUSES}. */
+export type OrderVerificationStatus = (typeof ORDER_VERIFICATION_STATUSES)[number];
+
+/**
+ * What happened to an order, one value per timeline line.
+ *
+ * Why: RESOLUTIONS orders-suppliers-15: the order engine's transitions (decision 025) and the console's timeline. The
+ * list is closed on purpose; a new event type needs a migration.
+ */
+export const ORDER_EVENT_TYPES = [
+  'created',
+  'hold',
+  'dispatch',
+  'ack',
+  'accepted',
+  'completed',
+  'settle',
+  'rejected',
+  'release',
+  'refund',
+  'retry',
+  'review',
+  'reopened',
+  'supplier_changed',
+  'verification',
+  'note',
+  'paid',
+  'risk',
+  'notify',
+  'dispute',
+  'fetch',
+] as const;
+
+/** One value of {@link ORDER_EVENT_TYPES}. */
+export type OrderEventType = (typeof ORDER_EVENT_TYPES)[number];
+
+/**
  * Orders; id equals REFERENCEID. client_id accepts null for storefront (B2C) orders, which fill customer_id instead;
  * exactly one of the two is set.
  *
@@ -81,7 +124,10 @@ export const orders = pgTable(
     apiKeyId: fk((): AnyPgColumn => apiKeys.id),
     status: text().$type<OrderStatus>().notNull().default('pending'),
     dispatchState: text().$type<OrderDispatchState>().notNull().default('pending'),
-    /** null for server and file orders; erased on anonymisation */
+    /**
+     * main input of the order (IMEI, first required field, or file name); null only when erased or absent; sent as
+     * empty string
+     */
     imei: text(),
     quantity: integer().notNull().default(1),
     inputs: jsonObject(),
@@ -107,8 +153,8 @@ export const orders = pgTable(
     resultComment: text(),
     clientNote: text(),
     adminNote: text(),
-    /** requested when the buyer asks for verification; no source fixes the other values */
-    verificationStatus: text(),
+    /** requested when the buyer asks for verification, then accepted or refunded by staff; null when none */
+    verificationStatus: text().$type<OrderVerificationStatus>(),
     /** REST v1 Idempotency-Key, unique per merchant (decision 026) */
     idempotencyKey: text(),
     /** keyed hash of merchant, service and IMEI for the open-duplicate rule */
@@ -132,6 +178,10 @@ export const orders = pgTable(
     check('orders_source_check', inList(t.source, ORDER_SOURCES)),
     check('orders_status_check', inList(t.status, ORDER_STATUSES)),
     check('orders_dispatch_state_check', inList(t.dispatchState, ORDER_DISPATCH_STATES)),
+    check(
+      'orders_verification_status_check',
+      sql`${t.verificationStatus} is null or ${inList(t.verificationStatus, ORDER_VERIFICATION_STATUSES)}`,
+    ),
     index('orders_client_created_idx').on(t.clientId, t.createdAt.desc()),
     index('orders_customer_created_idx').on(t.customerId, t.createdAt.desc()),
     index('orders_service_id_idx').on(t.serviceId),
@@ -180,8 +230,7 @@ export const orderEvents = pgTable(
   {
     id: pk(),
     orderId: fk((): AnyPgColumn => orders.id).notNull(),
-    /** placed, accepted, sent, completed, ...; an open vocabulary that grows with the order engine */
-    type: text().notNull(),
+    type: text().$type<OrderEventType>().notNull(),
     fromStatus: text().$type<OrderStatus>(),
     toStatus: text().$type<OrderStatus>(),
     actorType: text().$type<OrderEventActorType>().notNull(),
@@ -192,6 +241,7 @@ export const orderEvents = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
+    check('order_events_type_check', inList(t.type, ORDER_EVENT_TYPES)),
     check('order_events_from_status_check', inList(t.fromStatus, ORDER_STATUSES)),
     check('order_events_to_status_check', inList(t.toStatus, ORDER_STATUSES)),
     check('order_events_actor_type_check', inList(t.actorType, ORDER_EVENT_ACTOR_TYPES)),

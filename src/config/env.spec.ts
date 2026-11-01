@@ -20,6 +20,7 @@ const SECRET = 'x'.repeat(40);
 const production = (): Record<string, string> => ({
   NODE_ENV: 'production',
   ERRORS_BASE_URL: 'https://errors.gsm.example/',
+  PORTAL_BASE_URL: 'https://portal.gsm.example/',
   DATABASE_URL: 'postgres://app:pw@db.internal:5432/gsm',
   REDIS_QUEUE_URL: 'redis://queue.internal:6379/0',
   REDIS_CACHE_URL: 'redis://cache.internal:6379/0',
@@ -66,6 +67,14 @@ describe('parseEnv in development and test', () => {
     expect(config.log.level).toBe('debug');
     expect(config.http.corsOrigins).toEqual(['http://localhost:5173', 'http://127.0.0.1:5173']);
     expect(config.redis.bullPrefix).toBe('gsm:development:bull');
+    expect(config.http.portalBaseUrl).toBe(DEV_DEFAULTS.portalBaseUrl);
+  });
+
+  it('reads PORTAL_BASE_URL without a trailing slash and refuses a value that is not an http(s) URL', () => {
+    expect(parseEnv({ PORTAL_BASE_URL: 'https://portal.example.com//' }).http.portalBaseUrl).toBe(
+      'https://portal.example.com',
+    );
+    expect(issuesOf({ PORTAL_BASE_URL: 'portal.example.com' }).map((i) => i.variable)).toEqual(['PORTAL_BASE_URL']);
   });
 
   it('uses warn logs and no CORS origins in test', () => {
@@ -142,6 +151,7 @@ describe('parseEnv in production', () => {
     const config = parseEnv(production());
     expect(config.isProduction).toBe(true);
     expect(config.http.errorsBaseUrl).toBe('https://errors.gsm.example');
+    expect(config.http.portalBaseUrl).toBe('https://portal.gsm.example');
     expect(config.http.referenceDocs).toBe('staff');
     expect(config.log.level).toBe('info');
     expect(config.security.cookieSecure).toBe(true);
@@ -156,6 +166,7 @@ describe('parseEnv in production', () => {
     const names = issues.map((i) => i.variable);
     for (const required of [
       'ERRORS_BASE_URL',
+      'PORTAL_BASE_URL',
       'DATABASE_URL',
       'REDIS_QUEUE_URL',
       'REDIS_CACHE_URL',
@@ -243,6 +254,55 @@ describe('METRICS_TOKEN', () => {
 
   it('stays optional outside production', () => {
     expect(parseEnv({ NODE_ENV: 'development' }).observability.metricsToken).toBeUndefined();
+  });
+});
+
+describe('FX_* (RESOLUTIONS money-9)', () => {
+  it('defaults to the manual driver outside production and openexchangerates in production', () => {
+    const development = parseEnv({}).fx;
+    expect(development).toEqual({ provider: 'manual', apiKey: undefined, timeoutMs: 5000 });
+    expect(parseEnv({ NODE_ENV: 'test' }).fx.provider).toBe('manual');
+    expect(parseEnv(production()).fx).toEqual({ provider: 'openexchangerates', apiKey: undefined, timeoutMs: 5000 });
+  });
+
+  it('reads the provider, the key and the timeout', () => {
+    const fx = parseEnv({ FX_PROVIDER: 'openexchangerates', FX_API_KEY: 'app-id-123', FX_TIMEOUT_MS: '2500' }).fx;
+    expect(fx).toEqual({ provider: 'openexchangerates', apiKey: 'app-id-123', timeoutMs: 2500 });
+    expect(parseEnv({ ...production(), FX_PROVIDER: 'manual' }).fx.provider).toBe('manual');
+  });
+
+  it('keeps the key optional in production (an unconfigured provider is a 502 at call time, not a boot failure)', () => {
+    expect(issuesOf({ ...production(), FX_PROVIDER: 'openexchangerates' })).toEqual([]);
+  });
+
+  it('refuses an unknown driver and a timeout outside 100-60000 ms, naming the variable', () => {
+    expect(issuesOf({ FX_PROVIDER: 'ecb' }).map((i) => i.variable)).toEqual(['FX_PROVIDER']);
+    expect(issuesOf({ FX_TIMEOUT_MS: '50' }).map((i) => i.variable)).toEqual(['FX_TIMEOUT_MS']);
+    expect(issuesOf({ FX_TIMEOUT_MS: 'soon' }).map((i) => i.variable)).toEqual(['FX_TIMEOUT_MS']);
+  });
+
+  it('redacts the key in the summary but shows the driver and the timeout', () => {
+    const text = JSON.stringify(
+      summarizeConfig(parseEnv({ FX_PROVIDER: 'openexchangerates', FX_API_KEY: 'app-id-123' })),
+    );
+    expect(text).not.toContain('app-id-123');
+    expect(text).toContain('"fx":{"provider":"openexchangerates","apiKey":"[set]","timeoutMs":5000}');
+  });
+});
+
+describe('GEOIP_COUNTRY_HEADER', () => {
+  it('is unset by default, so the country lookup by header is skipped', () => {
+    expect(parseEnv({}).http.geoipCountryHeader).toBeUndefined();
+    expect(parseEnv(production()).http.geoipCountryHeader).toBeUndefined();
+  });
+
+  it('is read as a lower-case header name', () => {
+    expect(parseEnv({ GEOIP_COUNTRY_HEADER: 'CF-IPCountry' }).http.geoipCountryHeader).toBe('cf-ipcountry');
+  });
+
+  it('refuses a value that is not a header name', () => {
+    expect(issuesOf({ GEOIP_COUNTRY_HEADER: 'cf ipcountry' }).map((i) => i.variable)).toEqual(['GEOIP_COUNTRY_HEADER']);
+    expect(issuesOf({ GEOIP_COUNTRY_HEADER: 'x-country:' }).map((i) => i.variable)).toEqual(['GEOIP_COUNTRY_HEADER']);
   });
 });
 

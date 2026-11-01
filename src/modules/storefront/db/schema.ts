@@ -156,6 +156,16 @@ export type HelpArticle = typeof helpArticles.$inferSelect;
 export type NewHelpArticle = typeof helpArticles.$inferInsert;
 
 /**
+ * The kinds of legal document the storefront publishes.
+ *
+ * Why: RESOLUTIONS b2c-14: GET /admin/legal-documents groups documents by these four types.
+ */
+export const LEGAL_DOCUMENT_TYPES = ['terms', 'privacy', 'refund', 'cookies'] as const;
+
+/** One value of {@link LEGAL_DOCUMENT_TYPES}. */
+export type LegalDocumentType = (typeof LEGAL_DOCUMENT_TYPES)[number];
+
+/**
  * Terms, privacy, refund and cookie documents, with archived versions.
  *
  * Why: Terms, privacy, refund and cookie documents with archived versions (routes /admin/legal-documents).
@@ -164,8 +174,7 @@ export const legalDocuments = pgTable(
   'legal_documents',
   {
     id: pk(),
-    /** terms, privacy, refund or cookie; the wire leaves it a free string */
-    type: text().notNull(),
+    type: text().$type<LegalDocumentType>().notNull(),
     version: text().notNull(),
     locale: text().notNull().default('en'),
     bodyMd: text().notNull(),
@@ -178,6 +187,7 @@ export const legalDocuments = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
+    check('legal_documents_type_check', inList(t.type, LEGAL_DOCUMENT_TYPES)),
     unique('legal_documents_version_uq').on(t.type, t.locale, t.version),
     uniqueIndex('legal_documents_current_uq')
       .on(t.type, t.locale)

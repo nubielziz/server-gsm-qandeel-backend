@@ -201,7 +201,7 @@ describe('append-only tables', () => {
     const orderId = await insertOrder(db, parents);
     await db
       .insert(s.orderEvents)
-      .values({ orderId, type: 'placed', toStatus: 'pending', actorType: 'client', actorId: parents.clientId });
+      .values({ orderId, type: 'created', toStatus: 'pending', actorType: 'client', actorId: parents.clientId });
     await db
       .insert(s.auditLogs)
       .values({ actorType: 'staff', actorId: 1, action: 'suspended admin', entityType: 'staff', entityId: 2 });

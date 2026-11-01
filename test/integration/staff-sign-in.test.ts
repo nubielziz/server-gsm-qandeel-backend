@@ -834,7 +834,7 @@ describe('password set by an emailed link (token mode)', () => {
     const tokens = t.app.get(TokenService);
     const odd = tokens.random(32);
     await db.insert(s.authTokens).values({
-      purpose: 'magic-link',
+      purpose: 'magic_link',
       subjectType: 'staff',
       subjectId: staff.id,
       tokenHash: tokens.hash(odd),

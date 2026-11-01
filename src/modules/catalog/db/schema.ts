@@ -4,8 +4,10 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   check,
+  foreignKey,
   index,
   integer,
+  pgSequence,
   pgTable,
   text,
   unique,
@@ -60,6 +62,27 @@ export const FULFILLMENT_MODES = ['auto', 'manual'] as const;
 
 /** One value of {@link FULFILLMENT_MODES}. */
 export type FulfillmentMode = (typeof FULFILLMENT_MODES)[number];
+
+/**
+ * How a service is priced: a fixed base price (the only mode today).
+ *
+ * Why: RESOLUTIONS catalog-2: the console form has no pricing-mode field, so `fixed` is the one value; a new mode needs
+ * a migration.
+ */
+export const SERVICE_PRICE_MODES = ['fixed'] as const;
+
+/** One value of {@link SERVICE_PRICE_MODES}. */
+export type ServicePriceMode = (typeof SERVICE_PRICE_MODES)[number];
+
+/**
+ * What happens when a merchant orders the same IMEI twice: `allow` it, or `block_open` while the first order is open.
+ *
+ * Why: RESOLUTIONS catalog-2 and the map's duplicate-order rule (error DUPLICATE_ORDER).
+ */
+export const SERVICE_DUPLICATE_RULES = ['allow', 'block_open'] as const;
+
+/** One value of {@link SERVICE_DUPLICATE_RULES}. */
+export type ServiceDuplicateRule = (typeof SERVICE_DUPLICATE_RULES)[number];
 
 /**
  * Input types of a custom service field.
@@ -152,6 +175,10 @@ export const clientGroups = pgTable(
     uniqueIndex('client_groups_single_retail_uq')
       .on(t.kind)
       .where(sql`${t.kind} = 'b2c_retail'`),
+    check(
+      'client_groups_amounts_check',
+      sql`${t.earnThreshold} >= 0 and ${t.depositLimit} >= 0 and ${t.discountPercent} >= 0 and ${t.discountPercent} <= 100`,
+    ),
   ],
 );
 
@@ -182,6 +209,8 @@ export const serviceCategories = pgTable(
   (t) => [
     uniqueIndex('service_categories_name_uq').on(t.type, lower(t.name)),
     check('service_categories_type_check', inList(t.type, SERVICE_TYPES)),
+    // The target of the composite foreign key that keeps a service's type equal to its category's (services).
+    unique('service_categories_id_type_uq').on(t.id, t.type),
   ],
 );
 
@@ -201,7 +230,9 @@ export const services = pgTable(
   'services',
   {
     id: pk(),
-    categoryId: fk((): AnyPgColumn => serviceCategories.id).notNull(),
+    /** with `type`, a composite foreign key to `service_categories (id, type)` (declared below) */
+    categoryId: bigId().notNull(),
+    /** always the type of the category (RESOLUTIONS catalog-13) */
     type: text().$type<ServiceType>().notNull(),
     name: text().notNull(),
     info: text().notNull().default(''),
@@ -209,18 +240,21 @@ export const services = pgTable(
     deliveryTime: text().notNull().default(''),
     status: text().$type<ServiceStatus>().notNull().default('active'),
     fulfillment: text().$type<FulfillmentMode>().notNull(),
-    /** no source fixes the values (fixed price or margin over cost) */
-    priceMode: text().notNull(),
-    /** null when the price comes from rules only */
-    basePrice: money(),
+    priceMode: text().$type<ServicePriceMode>().notNull().default('fixed'),
+    /** the price of the default group, always above zero (RESOLUTIONS catalog-9) */
+    basePrice: money().notNull(),
     cost: money().notNull().default('0'),
+    /**
+     * the floor of every price: the larger of the service cost and the latest synced supplier cost of its first
+     * active link (RESOLUTIONS catalog-1, decision 9 of the user rules); refreshed by the price sync
+     */
+    effectiveCost: money().notNull().default('0'),
     costCurrency: text().notNull().default('USD'),
     minQty: integer().notNull().default(1),
     maxQty: integer().notNull().default(1),
     qtyOptions: intList(),
     allowFree: boolean().notNull().default(false),
-    /** no source fixes the values (the map's duplicate-order rule) */
-    duplicateRule: text().notNull(),
+    duplicateRule: text().$type<ServiceDuplicateRule>().notNull().default('block_open'),
     allowCancel: boolean().notNull().default(false),
     allowVerify: boolean().notNull().default(false),
     verifyWindowH: integer().notNull().default(0),
@@ -234,19 +268,40 @@ export const services = pgTable(
     minProfit: money(),
     /** previous cost, to show a price change; schema addition B116 */
     costWas: money(),
+    /** set when staff delete a service that orders already use; an archived service is disabled (RESOLUTIONS catalog-3) */
+    archivedAt: timestampTz(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
-    uniqueIndex('services_code_uq').on(lower(t.code)),
+    // An archived service gives its code back for a new service.
+    uniqueIndex('services_code_uq')
+      .on(lower(t.code))
+      .where(sql`${t.archivedAt} is null`),
     check('services_type_check', inList(t.type, SERVICE_TYPES)),
     check('services_status_check', inList(t.status, SERVICE_STATUSES)),
     check('services_fulfillment_check', inList(t.fulfillment, FULFILLMENT_MODES)),
+    check('services_price_mode_check', inList(t.priceMode, SERVICE_PRICE_MODES)),
+    check('services_duplicate_rule_check', inList(t.duplicateRule, SERVICE_DUPLICATE_RULES)),
     index('services_type_status_idx').on(t.type, t.status),
+    index('services_live_type_status_idx')
+      .on(t.type, t.status)
+      .where(sql`${t.archivedAt} is null`),
     check('services_qty_check', sql`${t.minQty} >= 1 and ${t.maxQty} >= ${t.minQty}`),
-    check('services_prices_check', sql`${t.cost} >= 0 and (${t.basePrice} is null or ${t.basePrice} >= 0)`),
+    check('services_prices_check', sql`${t.cost} >= 0 and ${t.basePrice} > 0`),
+    check('services_effective_cost_check', sql`${t.effectiveCost} >= ${t.cost}`),
+    check('services_archived_check', sql`${t.archivedAt} is null or ${t.status} = 'disabled'`),
     check('services_sla_check', sql`${t.slaMinutes} > 0`),
-    index('services_category_id_idx').on(t.categoryId),
+    foreignKey({
+      name: 'services_category_type_fk',
+      columns: [t.categoryId, t.type],
+      foreignColumns: [serviceCategories.id, serviceCategories.type],
+    })
+      .onUpdate('cascade')
+      .onDelete('restrict'),
+    // Leads with category_id and carries the type too, so it also serves the composite foreign key above.
+    index('services_category_type_idx').on(t.categoryId, t.type),
+    index('services_effective_cost_idx').on(t.effectiveCost),
     index('services_name_idx').on(t.name),
   ],
 );
@@ -430,6 +485,14 @@ export type PricingRule = typeof pricingRules.$inferSelect;
 export type NewPricingRule = typeof pricingRules.$inferInsert;
 
 /**
+ * Numbers the import batches of inventory codes: `B-0001`, `B-0002`, ...
+ *
+ * Why: RESOLUTIONS catalog-15: every imported code carries the reference of its batch, drawn from one sequence so
+ * two concurrent imports never share one (POST /admin/services/:id/inventory/import).
+ */
+export const inventoryBatchRefSeq = pgSequence('inventory_batch_ref_seq');
+
+/**
  * Stock of digital codes.
  *
  * Why: Stock of digital codes: reserved at placement, sold on completion (decision 025, routes
@@ -444,7 +507,8 @@ export const inventoryCodes = pgTable(
     codeEnc: text().notNull(),
     status: text().$type<InventoryCodeStatus>().notNull().default('available'),
     orderId: fk((): AnyPgColumn => orders.id),
-    batchRef: text(),
+    /** `B-0001`-style reference of the import batch, from {@link inventoryBatchRefSeq}; never empty */
+    batchRef: text().notNull(),
     createdBy: fk((): AnyPgColumn => staffUsers.id),
     /** keyed hash of the code, to detect duplicates on import without decrypting (B18); schema addition B116 */
     codeHash: text().notNull(),
@@ -458,6 +522,7 @@ export const inventoryCodes = pgTable(
       .on(t.codeHash)
       .where(sql`${t.status} <> 'void'`),
     check('inventory_codes_status_check', inList(t.status, INVENTORY_CODE_STATUSES)),
+    check('inventory_codes_batch_ref_check', sql`${t.batchRef} <> ''`),
     index('inventory_codes_available_idx')
       .on(t.serviceId, t.id)
       .where(sql`${t.status} = 'available'`),

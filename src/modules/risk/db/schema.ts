@@ -3,6 +3,7 @@
 import { sql } from 'drizzle-orm';
 import { check, index, integer, pgTable, text, unique, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import {
+  bigId,
   createdAt,
   fk,
   inList,
@@ -120,14 +121,16 @@ export const imeiChecks = pgTable(
   'imei_checks',
   {
     id: pk(),
-    /** keyed hash of the IMEI, for cache lookups without decrypting */
-    imeiHash: text().notNull(),
-    /** the IMEI, AES-GCM text of decision 019 */
-    imeiEnc: text().notNull(),
+    /** keyed hash of the IMEI, for cache lookups without decrypting; null after the customer is anonymised */
+    imeiHash: text(),
+    /** the IMEI, AES-GCM text of decision 019; null after the customer is anonymised (set together with imei_hash) */
+    imeiEnc: text(),
     /** null when the TAC is not in the catalogue */
     tac: text().references((): AnyPgColumn => tacCatalog.tac, { onDelete: 'restrict' }),
     brand: text().notNull().default(''),
     model: text().notNull().default(''),
+    /** ISO 3166-1 alpha-2 country of the device's carrier or origin when the check reports one (RESOLUTIONS b2c-3) */
+    country: text(),
     checkType: text().$type<ImeiCheckType>().notNull(),
     status: text().$type<ImeiCheckStatus>().notNull().default('unknown'),
     result: jsonObject(),
@@ -147,6 +150,9 @@ export const imeiChecks = pgTable(
     check('imei_checks_check_type_check', inList(t.checkType, IMEI_CHECK_TYPES)),
     check('imei_checks_status_check', inList(t.status, IMEI_CHECK_STATUSES)),
     check('imei_checks_source_check', inList(t.source, IMEI_CHECK_SOURCES)),
+    check('imei_checks_country_check', sql`${t.country} is null or ${t.country} ~ '^[A-Z]{2}$'`),
+    // Erasing a customer clears both IMEI columns together (RESOLUTIONS b2c-4).
+    check('imei_checks_imei_erased_check', sql`(${t.imeiEnc} is null) = (${t.imeiHash} is null)`),
     index('imei_checks_imei_hash_idx').on(t.imeiHash, t.checkType, t.createdAt.desc()),
     index('imei_checks_source_created_idx').on(t.source, t.createdAt.desc()),
     index('imei_checks_created_idx').on(t.createdAt.desc()),
@@ -179,7 +185,7 @@ export const riskAssessments = pgTable(
     customerId: fk((): AnyPgColumn => customers.id),
     score: integer().notNull(),
     decision: text().$type<RiskDecision>().notNull(),
-    /** list of the signals that raised the score */
+    /** array of strings (the signals that raised the score) */
     signals: jsonList(),
     provider: text().notNull().default('internal'),
     reviewedBy: fk((): AnyPgColumn => staffUsers.id),
@@ -225,6 +231,8 @@ export const blocklistEntries = pgTable(
     reason: text().notNull().default(''),
     expiresAt: timestampTz(),
     source: text().$type<BlocklistSource>().notNull().default('manual'),
+    /** the customer a block came from (POST /admin/customers/:id/block); kept null if the customer is deleted (RESOLUTIONS b2c-5) */
+    customerId: bigId().references((): AnyPgColumn => customers.id, { onDelete: 'set null' }),
     createdBy: fk((): AnyPgColumn => staffUsers.id),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -235,6 +243,7 @@ export const blocklistEntries = pgTable(
     check('blocklist_entries_source_check', inList(t.source, BLOCKLIST_SOURCES)),
     index('blocklist_entries_created_idx').on(t.createdAt.desc()),
     index('blocklist_entries_created_by_idx').on(t.createdBy),
+    index('blocklist_entries_customer_id_idx').on(t.customerId),
   ],
 );
 

@@ -53,6 +53,37 @@ export const RISK_LEVELS = ['low', 'medium', 'high'] as const;
 export type RiskLevel = (typeof RISK_LEVELS)[number];
 
 /**
+ * Life of a checkout session: `open` until it is paid or runs out.
+ *
+ * Why: RESOLUTIONS b2c-14: the abandoned-checkouts report reads `open` sessions past `expires_at`; `paid` creates the order.
+ */
+export const CHECKOUT_SESSION_STATUSES = ['open', 'paid', 'expired'] as const;
+
+/** One value of {@link CHECKOUT_SESSION_STATUSES}. */
+export type CheckoutSessionStatus = (typeof CHECKOUT_SESSION_STATUSES)[number];
+
+/**
+ * What a consent record agrees to.
+ *
+ * Why: RESOLUTIONS b2c-14: the legal documents a customer accepts at checkout (terms, privacy, refund policy), the
+ * withdrawal-right waiver for digital goods, and marketing.
+ */
+export const CONSENT_PURPOSES = ['terms', 'privacy', 'refund_policy', 'withdrawal_waiver', 'marketing'] as const;
+
+/** One value of {@link CONSENT_PURPOSES}. */
+export type ConsentPurpose = (typeof CONSENT_PURPOSES)[number];
+
+/**
+ * Who gave a consent: a storefront customer or a merchant.
+ *
+ * Why: RESOLUTIONS b2c-14; `subject_id` points at `customers` or `clients` accordingly.
+ */
+export const CONSENT_SUBJECT_TYPES = ['customer', 'client'] as const;
+
+/** One value of {@link CONSENT_SUBJECT_TYPES}. */
+export type ConsentSubjectType = (typeof CONSENT_SUBJECT_TYPES)[number];
+
+/**
  * Storefront customers: a guest with an email, or an account with a password or a sign-in link. Status is active,
  * suspended (a reversible pause), blocked (fraud) or anonymized.
  *
@@ -174,8 +205,7 @@ export const checkoutSessions = pgTable(
     utm: jsonObject(),
     ip: text(),
     userAgent: text().notNull().default(''),
-    /** open, paid, expired, ...; no source fixes the values */
-    status: text().notNull(),
+    status: text().$type<CheckoutSessionStatus>().notNull().default('open'),
     expiresAt: timestampTz().notNull(),
     /** set when the payment created the order */
     orderId: fk((): AnyPgColumn => orders.id),
@@ -185,6 +215,7 @@ export const checkoutSessions = pgTable(
   },
   (t) => [
     uniqueIndex('checkout_sessions_token_uq').on(t.token),
+    check('checkout_sessions_status_check', inList(t.status, CHECKOUT_SESSION_STATUSES)),
     index('checkout_sessions_status_created_idx').on(t.status, t.createdAt.desc()),
     index('checkout_sessions_created_idx').on(t.createdAt.desc()),
     index('checkout_sessions_customer_id_idx').on(t.customerId),
@@ -212,21 +243,22 @@ export const consentRecords = pgTable(
   'consent_records',
   {
     id: pk(),
-    /** customer or client; no source fixes the strings */
-    subjectType: text().notNull(),
+    subjectType: text().$type<ConsentSubjectType>().notNull(),
     /** polymorphic: customers or clients by subject_type */
     subjectId: bigId().notNull(),
     legalDocumentId: fk((): AnyPgColumn => legalDocuments.id),
-    /** terms, privacy, marketing or the withdrawal waiver; no source fixes the strings */
-    purpose: text().notNull(),
+    purpose: text().$type<ConsentPurpose>().notNull(),
     granted: boolean().notNull().default(false),
     checkoutSessionId: fk((): AnyPgColumn => checkoutSessions.id),
     orderId: fk((): AnyPgColumn => orders.id),
-    ip: text(),
+    /** the address the consent came from; empty when unknown, never null (RESOLUTIONS b2c-12) */
+    ip: text().notNull(),
     userAgent: text().notNull().default(''),
     createdAt: createdAt(),
   },
   (t) => [
+    check('consent_records_purpose_check', inList(t.purpose, CONSENT_PURPOSES)),
+    check('consent_records_subject_type_check', inList(t.subjectType, CONSENT_SUBJECT_TYPES)),
     index('consent_records_subject_idx').on(t.subjectType, t.subjectId, t.purpose, t.createdAt.desc()),
     index('consent_records_legal_document_id_idx').on(t.legalDocumentId),
     index('consent_records_checkout_session_id_idx').on(t.checkoutSessionId),

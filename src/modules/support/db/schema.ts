@@ -56,11 +56,11 @@ export const TICKET_PRIORITIES = ['low', 'normal', 'high'] as const;
 export type TicketPriority = (typeof TICKET_PRIORITIES)[number];
 
 /**
- * Ticket life as the map writes it; the console receives `pending_customer` as `pending` and `closed` is not used.
+ * Ticket life as the map writes it; the console receives `pending_customer` as `pending`. `resolved` is the last state.
  *
- * Why: scenario b2c-ticket and MISMATCHES B112.
+ * Why: scenario b2c-ticket, MISMATCHES B112 and RESOLUTIONS b2c-2 (the map's `closed` is dropped: it was never used).
  */
-export const TICKET_STATUSES = ['new', 'open', 'pending_customer', 'resolved', 'closed'] as const;
+export const TICKET_STATUSES = ['new', 'open', 'pending_customer', 'resolved'] as const;
 
 /** One value of {@link TICKET_STATUSES}. */
 export type TicketStatus = (typeof TICKET_STATUSES)[number];
@@ -118,7 +118,7 @@ export const supportTickets = pgTable(
     index('support_tickets_updated_idx').on(t.updatedAt.desc()),
     index('support_tickets_sla_idx')
       .on(t.slaDueAt)
-      .where(sql`${t.status} not in ('resolved', 'closed')`),
+      .where(sql`${t.status} <> 'resolved'`),
     index('support_tickets_order_id_idx').on(t.orderId),
     check('support_tickets_csat_check', sql`${t.csatScore} is null or ${t.csatScore} between 1 and 5`),
     index('support_tickets_assignee_id_idx').on(t.assigneeId),

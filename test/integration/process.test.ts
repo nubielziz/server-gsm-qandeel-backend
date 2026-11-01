@@ -105,6 +105,7 @@ describe('configuration failure', () => {
       'TOKEN_PEPPER',
       'ENCRYPTION_KEYS',
       'ERRORS_BASE_URL',
+      'PORTAL_BASE_URL',
     ]) {
       expect(stderr).toContain(`${name}: is required in production`);
     }

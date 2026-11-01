@@ -78,6 +78,18 @@ export const SUBJECT_TYPES = ['staff', 'client', 'customer'] as const;
 export type SubjectType = (typeof SUBJECT_TYPES)[number];
 
 /**
+ * What a one-time token is for: a staff or merchant invitation, a password reset, an email verification or a
+ * magic sign-in link.
+ *
+ * Why: RESOLUTIONS identity-platform-2 settles the vocabulary: the invite link of POST /admin/clients uses `invite`
+ * (decisions 010 and 019); staff use `invite` and `reset` today.
+ */
+export const AUTH_TOKEN_PURPOSES = ['invite', 'reset', 'verify_email', 'magic_link'] as const;
+
+/** One value of {@link AUTH_TOKEN_PURPOSES}. */
+export type AuthTokenPurpose = (typeof AUTH_TOKEN_PURPOSES)[number];
+
+/**
  * Sign-in step a session has reached; only `active` is a full session.
  *
  * Why: decision 018 and MISMATCHES B106: the staff sign-in is a multi-step flow.
@@ -308,8 +320,7 @@ export const authTokens = pgTable(
   'auth_tokens',
   {
     id: pk(),
-    /** invite, reset, magic-link or verify; no source fixes the exact strings */
-    purpose: text().notNull(),
+    purpose: text().$type<AuthTokenPurpose>().notNull(),
     subjectType: text().$type<SubjectType>().notNull(),
     /** polymorphic: staff_users, clients or customers by subject_type */
     subjectId: bigId().notNull(),
@@ -325,6 +336,7 @@ export const authTokens = pgTable(
   (t) => [
     uniqueIndex('auth_tokens_token_hash_uq').on(t.tokenHash),
     check('auth_tokens_subject_type_check', inList(t.subjectType, SUBJECT_TYPES)),
+    check('auth_tokens_purpose_check', inList(t.purpose, AUTH_TOKEN_PURPOSES)),
     index('auth_tokens_subject_idx').on(t.subjectType, t.subjectId, t.purpose, t.createdAt.desc()),
     index('auth_tokens_created_by_idx').on(t.createdBy),
   ],

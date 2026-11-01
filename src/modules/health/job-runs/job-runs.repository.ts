@@ -3,8 +3,12 @@ import { and, eq, lt, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
 import { type JobRun, type JobStatus, type JobTrigger, jobRuns } from '../db/schema';
 
-/** `(now() - started_at)` in whole milliseconds, computed by the database clock that also stamped `started_at`. */
-const elapsedMs = sql<number>`(extract(epoch from (now() - ${jobRuns.startedAt})) * 1000)::int`;
+/**
+ * `(now() - started_at)` in whole milliseconds, computed by the database clock that also stamped `started_at`.
+ * Never below zero: `job_runs_counts_check` refuses a negative duration, and a wall clock that stepped back (NTP, a VM
+ * resume) must not stop a run from being closed.
+ */
+const elapsedMs = sql<number>`greatest(0, (extract(epoch from (now() - ${jobRuns.startedAt})) * 1000)::int)`;
 
 /** How a run ended. */
 export interface JobRunOutcome {

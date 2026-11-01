@@ -1,5 +1,6 @@
 // Suppliers tables (map domain C): connections, their synced services, links to our services, the call log.
 // Conventions: decision 027; schema additions: MISMATCHES B116; ownership: scripts/module-map.mjs.
+import { sql } from 'drizzle-orm';
 import {
   boolean,
   check,
@@ -39,6 +40,36 @@ export const SUPPLIER_STATUSES = ['active', 'disabled', 'paused'] as const;
 export type SupplierStatus = (typeof SUPPLIER_STATUSES)[number];
 
 /**
+ * The connection drivers a supplier can use: Dhru-compatible API or a REST/JSON one.
+ *
+ * Why: RESOLUTIONS orders-suppliers-9: POST /admin/suppliers accepts these two; a new driver needs code and a migration.
+ */
+export const SUPPLIER_DRIVERS = ['dhru', 'rest'] as const;
+
+/** One value of {@link SUPPLIER_DRIVERS}. */
+export type SupplierDriver = (typeof SUPPLIER_DRIVERS)[number];
+
+/**
+ * How a driver sends parameters: Dhru's XML-style form post or JSON.
+ *
+ * Why: RESOLUTIONS orders-suppliers-9: the writer derives it from the driver, so the console never sends it.
+ */
+export const SUPPLIER_PARAM_FORMATS = ['dhru_xml', 'json'] as const;
+
+/** One value of {@link SUPPLIER_PARAM_FORMATS}. */
+export type SupplierParamFormat = (typeof SUPPLIER_PARAM_FORMATS)[number];
+
+/**
+ * How one supplier call ended: answered (`ok`), failed (`error`) or got no answer in time (`timeout`).
+ *
+ * Why: RESOLUTIONS health-commissions-8: the supplier health figures count errors and timeouts apart.
+ */
+export const SUPPLIER_CALL_OUTCOMES = ['ok', 'error', 'timeout'] as const;
+
+/** One value of {@link SUPPLIER_CALL_OUTCOMES}. */
+export type SupplierCallOutcome = (typeof SUPPLIER_CALL_OUTCOMES)[number];
+
+/**
  * Supplier connections and your balance with each one.
  *
  * Why: Supplier connections and our prepaid balance with each (scenarios success, reject, timeout, system-alert).
@@ -48,14 +79,15 @@ export const suppliers = pgTable(
   {
     id: pk(),
     name: text().notNull(),
-    /** the connection driver, for example Dhru; no source fixes the list */
-    driver: text().notNull(),
+    driver: text().$type<SupplierDriver>().notNull(),
     baseUrl: text().notNull(),
     username: text().notNull().default(''),
     /** write-only key, AES-GCM text of decision 019 */
     apiKeyEnc: text(),
-    /** how the driver sends parameters; no source fixes the values */
-    paramFormat: text().notNull(),
+    /** last characters of the key so the console can show which one is set; null until a key is saved (orders-suppliers-4) */
+    apiKeyHint: text(),
+    /** how the driver sends parameters; the writer derives it from the driver, so there is no default */
+    paramFormat: text().$type<SupplierParamFormat>().notNull(),
     /** the supplier's credit currency; free text, not a reference to currencies */
     currency: text().notNull().default('USD'),
     /** base-currency value of one supplier credit */
@@ -63,15 +95,20 @@ export const suppliers = pgTable(
     status: text().$type<SupplierStatus>().notNull().default('active'),
     balance: money().notNull().default('0'),
     balanceCheckedAt: timestampTz(),
-    lowBalanceAlert: money().notNull().default('0'),
-    maxConcurrency: integer().notNull(),
-    rateLimitPerMin: integer().notNull(),
-    timeoutMs: integer().notNull(),
+    /** when the last successful price sync finished; null before the first one (health-commissions-8) */
+    pricesSyncedAt: timestampTz(),
+    lowBalanceAlert: money().notNull().default('150'),
+    maxConcurrency: integer().notNull().default(5),
+    rateLimitPerMin: integer().notNull().default(60),
+    timeoutMs: integer().notNull().default(15000),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     check('suppliers_status_check', inList(t.status, SUPPLIER_STATUSES)),
+    check('suppliers_driver_check', inList(t.driver, SUPPLIER_DRIVERS)),
+    check('suppliers_param_format_check', inList(t.paramFormat, SUPPLIER_PARAM_FORMATS)),
+    check('suppliers_limits_check', sql`${t.maxConcurrency} > 0 and ${t.rateLimitPerMin} > 0 and ${t.timeoutMs} > 0`),
     index('suppliers_status_idx').on(t.status),
   ],
 );
@@ -181,12 +218,18 @@ export const supplierApiLogs = pgTable(
     /** credentials are never stored */
     request: jsonb().$type<Record<string, unknown>>(),
     response: jsonb().$type<Record<string, unknown>>(),
-    httpStatus: integer(),
-    durationMs: integer(),
-    error: text(),
+    /** 0 when the supplier gave no HTTP answer (timeout, connection refused) */
+    httpStatus: integer().notNull().default(0),
+    /** the time waited, always measured by the outbound client */
+    durationMs: integer().notNull().default(0),
+    /** the reason of a failure; empty for a successful call */
+    error: text().notNull().default(''),
+    outcome: text().$type<SupplierCallOutcome>().notNull().default('ok'),
     createdAt: createdAt(),
   },
   (t) => [
+    check('supplier_api_logs_numbers_check', sql`${t.httpStatus} >= 0 and ${t.durationMs} >= 0`),
+    check('supplier_api_logs_outcome_check', inList(t.outcome, SUPPLIER_CALL_OUTCOMES)),
     index('supplier_api_logs_supplier_created_idx').on(t.supplierId, t.createdAt.desc()),
     index('supplier_api_logs_order_id_idx').on(t.orderId),
   ],

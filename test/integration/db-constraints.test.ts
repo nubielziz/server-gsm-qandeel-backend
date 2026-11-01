@@ -114,8 +114,9 @@ describe('unique keys', () => {
       type: 'imei' as const,
       name: 'Another',
       fulfillment: 'auto' as const,
-      priceMode: 'margin',
-      duplicateRule: 'allow',
+      priceMode: 'fixed' as const,
+      basePrice: '5.0000',
+      duplicateRule: 'allow' as const,
       slaMinutes: 60,
     };
     expect((await pgErrorOf(db.insert(s.services).values({ ...service, code: 'imei-icl-chk' }))).constraint).toBe(
@@ -143,8 +144,8 @@ describe('unique keys', () => {
       gatewayId: gateway!.id,
       amount: '10',
       currency: 'USD',
-      status: 'captured',
-      methodType: 'card',
+      status: 'captured' as const,
+      methodType: 'card' as const,
     };
     await db.insert(s.payments).values([{ ...payment }, { ...payment }]);
     await db.insert(s.payments).values({ ...payment, gatewayTxnId: 'pi_1' });

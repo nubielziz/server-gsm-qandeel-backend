@@ -65,22 +65,31 @@ const IMMUTABLE = new Set([
   'ticket_messages',
 ]);
 
-/** Columns MISMATCHES B116 adds to the map's tables, and later features' additions (staff_users.totp_last_step: P2.6). */
+/**
+ * Columns MISMATCHES B116 adds to the map's tables, and later additions: staff_users.totp_last_step (P2.6) and the
+ * pre-Phase-3 audit resolutions (docs/contract/RESOLUTIONS.md, migration 0003).
+ */
 const ADDITIONS: Record<string, string[]> = {
   sessions: ['stage'],
-  audit_logs: ['entity_label'],
-  services: ['code', 'sla_minutes', 'min_profit', 'cost_was'],
+  audit_logs: ['entity_label', 'actor_name'],
+  services: ['code', 'sla_minutes', 'min_profit', 'cost_was', 'effective_cost', 'archived_at'],
   pricing_rules: ['starts_at', 'ends_at'],
   inventory_codes: ['code_hash', 'code_last4'],
   clients: ['suspended_at', 'suspended_reason', 'suspended_by'],
   staff_users: ['totp_last_step'],
-  payments: ['reviewed_at', 'review_note'],
+  payments: ['reviewed_at', 'review_note', 'review_required', 'auto_credit_at', 'brand', 'card_fingerprint'],
   invoices: ['description'],
   refunds: ['note'],
   data_requests: ['note'],
   notifications: ['error'],
   webhook_deliveries: ['response_body', 'error'],
   alert_rules: ['deleted_at'],
+  alert_events: ['rule_name', 'metric', 'comparator', 'threshold', 'window_seconds', 'unit'],
+  commission_accruals: ['approved_at'],
+  suppliers: ['api_key_hint', 'prices_synced_at'],
+  supplier_api_logs: ['outcome'],
+  imei_checks: ['country'],
+  blocklist_entries: ['customer_id'],
 };
 
 interface Slice {
@@ -192,5 +201,181 @@ describe('enumerations', () => {
         `${name} is not used in any CHECK constraint`,
       ).toBe(true);
     }
+  });
+});
+
+describe('audit resolutions (docs/contract/RESOLUTIONS.md, migration 0003)', () => {
+  const all = tablesOf(barrel);
+  const tableConfig = (name: string) => getTableConfig(all.find((table) => nameOf(table) === name)!);
+  const columnOf = (table: string, name: string) =>
+    tableConfig(table).columns.find((column) => casing.getColumnCasing(column) === name)!;
+  const checkNames = (table: string) => tableConfig(table).checks.map((check) => check.name);
+  const indexOf = (table: string, name: string) =>
+    tableConfig(table).indexes.find((index) => index.config.name === name);
+
+  it('makes these columns required (the wire never carries null for them)', () => {
+    const required: Array<[string, string[]]> = [
+      ['audit_logs', ['actor_name']],
+      ['ledger_transactions', ['ref_id']],
+      ['invoices', ['net_amount', 'tax_amount', 'tax_rate', 'tax_country', 'customer_vat_id']],
+      ['services', ['base_price', 'effective_cost', 'price_mode', 'duplicate_rule']],
+      ['inventory_codes', ['batch_ref']],
+      ['supplier_api_logs', ['http_status', 'duration_ms', 'error', 'outcome']],
+      ['alert_events', ['rule_name', 'metric', 'comparator', 'threshold', 'window_seconds', 'subject_type']],
+      ['job_runs', ['duration_ms', 'processed']],
+      ['commission_accruals', ['order_id']],
+      ['consent_records', ['ip']],
+      ['payments', ['brand', 'review_required']],
+    ];
+    for (const [table, columns] of required) {
+      for (const name of columns) expect(columnOf(table, name).notNull, `${table}.${name}`).toBe(true);
+    }
+  });
+
+  it('makes these columns optional on purpose', () => {
+    const optional: Array<[string, string[]]> = [
+      ['service_checks', ['detail']],
+      ['imei_checks', ['imei_hash', 'imei_enc', 'country']],
+      ['alert_events', ['unit']],
+      ['suppliers', ['api_key_hint', 'prices_synced_at']],
+      ['services', ['archived_at']],
+      ['payments', ['auto_credit_at', 'card_fingerprint']],
+      ['commission_accruals', ['approved_at']],
+      ['blocklist_entries', ['customer_id']],
+    ];
+    for (const [table, columns] of optional) {
+      for (const name of columns) expect(columnOf(table, name).notNull, `${table}.${name}`).toBe(false);
+    }
+  });
+
+  it('sets the defaults the writers rely on', () => {
+    const defaults: Array<[string, string, unknown]> = [
+      ['audit_logs', 'actor_name', ''],
+      ['ledger_transactions', 'ref_id', 0],
+      ['invoices', 'tax_amount', '0'],
+      ['invoices', 'tax_rate', '0'],
+      ['invoices', 'tax_country', ''],
+      ['invoices', 'customer_vat_id', ''],
+      ['services', 'price_mode', 'fixed'],
+      ['services', 'duplicate_rule', 'block_open'],
+      ['services', 'effective_cost', '0'],
+      ['suppliers', 'low_balance_alert', '150'],
+      ['suppliers', 'max_concurrency', 5],
+      ['suppliers', 'rate_limit_per_min', 60],
+      ['suppliers', 'timeout_ms', 15000],
+      ['supplier_api_logs', 'http_status', 0],
+      ['supplier_api_logs', 'duration_ms', 0],
+      ['supplier_api_logs', 'error', ''],
+      ['supplier_api_logs', 'outcome', 'ok'],
+      ['alert_events', 'subject_type', 'system'],
+      ['job_runs', 'duration_ms', 0],
+      ['job_runs', 'processed', 0],
+      ['checkout_sessions', 'status', 'open'],
+      ['payments', 'brand', ''],
+      ['payments', 'review_required', false],
+    ];
+    for (const [table, name, value] of defaults) {
+      expect(columnOf(table, name).default, `${table}.${name}`).toEqual(value);
+    }
+    // The paramFormat of a supplier has no default on purpose: the writer derives it from the driver.
+    expect(columnOf('suppliers', 'param_format').hasDefault).toBe(false);
+    expect(columnOf('commission_plans', 'tiers').getSQLType()).toBe('jsonb');
+    expect(columnOf('commission_plans', 'tiers').default).toEqual({});
+    expect(columnOf('service_checks', 'detail').getSQLType()).toBe('text');
+  });
+
+  it('closes each open vocabulary with a named CHECK', () => {
+    const expected: Array<[string, string[]]> = [
+      ['auth_tokens', ['auth_tokens_purpose_check']],
+      ['audit_logs', ['audit_logs_actor_type_check']],
+      ['notifications', ['notifications_recipient_type_check']],
+      ['payments', ['payments_status_check', 'payments_method_type_check']],
+      ['refunds', ['refunds_method_check', 'refunds_storefront_refs_check']],
+      ['ledger_transactions', ['ledger_transactions_ref_type_check', 'ledger_transactions_ref_id_check']],
+      ['services', ['services_price_mode_check', 'services_duplicate_rule_check', 'services_effective_cost_check']],
+      ['services', ['services_archived_check', 'services_prices_check']],
+      ['orders', ['orders_verification_status_check']],
+      ['order_events', ['order_events_type_check']],
+      ['suppliers', ['suppliers_driver_check', 'suppliers_param_format_check', 'suppliers_limits_check']],
+      ['supplier_api_logs', ['supplier_api_logs_numbers_check', 'supplier_api_logs_outcome_check']],
+      ['alert_events', ['alert_events_comparator_check', 'alert_events_unit_check', 'alert_events_subject_type_check']],
+      ['commission_accruals', ['commission_accruals_status_check', 'commission_accruals_approved_at_check']],
+      ['commission_plans', ['commission_plans_tiers_check']],
+      ['checkout_sessions', ['checkout_sessions_status_check']],
+      ['consent_records', ['consent_records_purpose_check', 'consent_records_subject_type_check']],
+      ['legal_documents', ['legal_documents_type_check']],
+      ['imei_checks', ['imei_checks_country_check', 'imei_checks_imei_erased_check']],
+      ['service_checks', ['service_checks_supplier_key_check', 'service_checks_gateway_key_check']],
+      ['job_runs', ['job_runs_counts_check']],
+      ['inventory_codes', ['inventory_codes_batch_ref_check']],
+      ['client_groups', ['client_groups_amounts_check']],
+    ];
+    for (const [table, names] of expected) {
+      for (const name of names) expect(checkNames(table), `${table} lacks ${name}`).toContain(name);
+    }
+  });
+
+  it('drops the values the resolutions removed, and keeps the lists closed', () => {
+    expect(money.LEDGER_REF_TYPES).not.toContain('ledger_transaction');
+    expect(support.TICKET_STATUSES).not.toContain('closed');
+    expect(money.TOPUP_PAYMENT_STATUSES).toEqual(['pending', 'approved', 'rejected']);
+    expect(money.TOPUP_METHODS).toEqual(['bank', 'card', 'usdt', 'wise']);
+    expect(money.ORDER_METHODS).toEqual(['card', 'wallet', 'crypto']);
+    expect(catalog.SERVICE_PRICE_MODES).toEqual(['fixed']);
+    expect(identity.AUTH_TOKEN_PURPOSES).toEqual(['invite', 'reset', 'verify_email', 'magic_link']);
+    // Every order event type the engine writes is in the list (a new one needs a migration).
+    expect(orders.ORDER_EVENT_TYPES).toHaveLength(21);
+  });
+
+  it('keeps a service in the type of its category with a composite foreign key', () => {
+    const composite = tableConfig('services').foreignKeys.find((key) => key.getName() === 'services_category_type_fk');
+    expect(composite, 'services_category_type_fk').toBeDefined();
+    const reference = composite!.reference();
+    expect(reference.columns.map((column) => casing.getColumnCasing(column))).toEqual(['category_id', 'type']);
+    expect(reference.foreignColumns.map((column) => casing.getColumnCasing(column))).toEqual(['id', 'type']);
+    expect(composite!.onUpdate).toBe('cascade');
+    expect(composite!.onDelete).toBe('restrict');
+    // The single-column foreign key is replaced, not doubled.
+    const onCategory = tableConfig('services').foreignKeys.filter(
+      (key) => casing.getColumnCasing(key.reference().columns[0]!) === 'category_id',
+    );
+    expect(onCategory).toHaveLength(1);
+    const target = tableConfig('service_categories').uniqueConstraints.map((unique) => unique.name);
+    expect(target).toContain('service_categories_id_type_uq');
+    // The database check of the foreign key index wants a full index that starts with both columns.
+    const serving = indexOf('services', 'services_category_type_idx');
+    expect(serving?.config.columns.map((column) => toSnakeCase((column as { name: string }).name))).toEqual([
+      'category_id',
+      'type',
+    ]);
+    expect(indexOf('services', 'services_category_id_idx')).toBeUndefined();
+  });
+
+  it('adds the unique and partial indexes of the resolutions', () => {
+    const unique: Array<[string, string, boolean]> = [
+      ['services', 'services_code_uq', true],
+      ['commission_assignments', 'commission_assignments_current_uq', true],
+      ['commission_accruals', 'commission_accruals_order_beneficiary_uq', true],
+      ['incidents', 'incidents_alert_event_uq', true],
+      ['services', 'services_live_type_status_idx', false],
+      ['services', 'services_effective_cost_idx', false],
+      ['payments', 'payments_auto_credit_idx', false],
+      ['payments', 'payments_card_fingerprint_idx', false],
+      ['blocklist_entries', 'blocklist_entries_customer_id_idx', false],
+    ];
+    for (const [table, name, isUnique] of unique) {
+      const index = indexOf(table, name);
+      expect(index, `${table}.${name}`).toBeDefined();
+      expect(index!.config.unique, `${table}.${name} unique`).toBe(isUnique);
+    }
+    // The old per-plan and per-event indexes are gone.
+    expect(indexOf('commission_assignments', 'commission_assignments_active_uq')).toBeUndefined();
+    expect(indexOf('incidents', 'incidents_alert_event_id_idx')).toBeUndefined();
+    // A full order_id index stays beside the partial unique one: only a full index serves the foreign key.
+    expect(indexOf('commission_accruals', 'commission_accruals_order_id_idx')).toBeDefined();
+  });
+
+  it('numbers inventory batches from one sequence', () => {
+    expect(catalog.inventoryBatchRefSeq.seqName).toBe('inventory_batch_ref_seq');
   });
 });

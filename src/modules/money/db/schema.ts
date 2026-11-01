@@ -72,6 +72,7 @@ export type LedgerOwnerType = (typeof LEDGER_OWNER_TYPES)[number];
  * What a ledger transaction points at through `ref_id`.
  *
  * Why: decision 024 and MISMATCHES B34: the map lists four, the console finds deposits and commission batches too.
+ * RESOLUTIONS money-1 drops `ledger_transaction`: a reversal points at the original's own `ref_type` and `ref_id`.
  */
 export const LEDGER_REF_TYPES = [
   'order',
@@ -83,7 +84,6 @@ export const LEDGER_REF_TYPES = [
   'supplier',
   'client',
   'system',
-  'ledger_transaction',
 ] as const;
 
 /** One value of {@link LEDGER_REF_TYPES}. */
@@ -140,7 +140,65 @@ export const PAYMENT_PURPOSES = ['topup', 'order'] as const;
 export type PaymentPurpose = (typeof PAYMENT_PURPOSES)[number];
 
 /**
- * Refund states; `processing` is internal (the gateway call is in flight) and reaches the console as completed.
+ * States of a wallet top-up payment: staff approve or reject it.
+ *
+ * Why: RESOLUTIONS money-2: `/admin/payments` serves top-ups only, and their wire enum is pending, approved, rejected.
+ */
+export const TOPUP_PAYMENT_STATUSES = ['pending', 'approved', 'rejected'] as const;
+
+/** One value of {@link TOPUP_PAYMENT_STATUSES}. */
+export type TopupPaymentStatus = (typeof TOPUP_PAYMENT_STATUSES)[number];
+
+/**
+ * States of a B2C order payment, as the gateway reports them.
+ *
+ * Why: RESOLUTIONS money-2 and scenarios b2c-paid, b2c-refund and b2c-chargeback.
+ */
+export const ORDER_PAYMENT_STATUSES = [
+  'pending',
+  'captured',
+  'failed',
+  'refunded',
+  'partial_refund',
+  'disputed',
+  'chargeback',
+] as const;
+
+/** One value of {@link ORDER_PAYMENT_STATUSES}. */
+export type OrderPaymentStatus = (typeof ORDER_PAYMENT_STATUSES)[number];
+
+/**
+ * How a merchant pays a top-up: bank transfer, card, USDT or Wise.
+ *
+ * Why: RESOLUTIONS money-2 and b2c-6: the money.md wire enum of top-ups.
+ */
+export const TOPUP_METHODS = ['bank', 'card', 'usdt', 'wise'] as const;
+
+/** One value of {@link TOPUP_METHODS}. */
+export type TopupMethod = (typeof TOPUP_METHODS)[number];
+
+/**
+ * How a storefront customer pays an order: card, wallet (Apple Pay, PayPal, ...) or crypto (any coin).
+ *
+ * Why: RESOLUTIONS money-2 and b2c-6: B2C gateway drivers store only these three.
+ */
+export const ORDER_METHODS = ['card', 'wallet', 'crypto'] as const;
+
+/** One value of {@link ORDER_METHODS}. */
+export type OrderMethod = (typeof ORDER_METHODS)[number];
+
+/**
+ * How a refund is paid back: to the original payment method or by hand.
+ *
+ * Why: RESOLUTIONS money-12: the console's refund wire enum (B81 settled).
+ */
+export const REFUND_METHODS = ['original', 'manual'] as const;
+
+/** One value of {@link REFUND_METHODS}. */
+export type RefundMethod = (typeof REFUND_METHODS)[number];
+
+/**
+ * Refund states; `processing` is sent as is (B82 resolved, console M258): the gateway call is in flight.
  *
  * Why: the console's refund wire enum plus `processing` of MISMATCHES B82.
  */
@@ -187,7 +245,7 @@ export const currencies = pgTable(
     markupPercent: percent().notNull().default('0'),
     charmRounding: boolean().notNull().default(false),
     isStorefront: boolean().notNull().default(false),
-    /** fraction digits shown for the currency (0 to 8) */
+    /** fraction digits shown for the currency (0 to 4, RESOLUTIONS money-13) */
     decimals: integer().notNull().default(2),
     isActive: boolean().notNull().default(true),
     createdAt: createdAt(),
@@ -196,7 +254,7 @@ export const currencies = pgTable(
   (t) => [
     unique('currencies_code_uq').on(t.code),
     check('currencies_rate_check', sql`${t.rateToBase} > 0`),
-    check('currencies_decimals_check', sql`${t.decimals} between 0 and 8`),
+    check('currencies_decimals_check', sql`${t.decimals} between 0 and 4`),
   ],
 );
 
@@ -272,8 +330,8 @@ export const ledgerTransactions = pgTable(
      */
     kind: text().notNull(),
     refType: text().$type<LedgerRefType>().notNull(),
-    /** polymorphic by ref_type; null for system postings */
-    refId: bigId(),
+    /** polymorphic by ref_type; 0 for system postings (RESOLUTIONS money-6), never null */
+    refId: bigId().notNull().default(0),
     memo: text().notNull().default(''),
     idempotencyKey: text().notNull(),
     createdByType: text().$type<LedgerActorType>().notNull(),
@@ -289,6 +347,7 @@ export const ledgerTransactions = pgTable(
     index('ledger_transactions_kind_idx').on(t.kind, t.createdAt.desc()),
     index('ledger_transactions_created_idx').on(t.createdAt.desc()),
     check('ledger_transactions_actor_check', sql`(${t.createdByType} = 'system') = (${t.createdById} is null)`),
+    check('ledger_transactions_ref_id_check', sql`${t.refId} > 0 or ${t.refType} = 'system'`),
   ],
 );
 
@@ -349,12 +408,14 @@ export const invoices = pgTable(
     kind: text().$type<InvoiceKind>().notNull(),
     amount: money().notNull(),
     fee: money().notNull().default('0'),
-    netAmount: money(),
-    taxAmount: money(),
-    taxRate: percent(),
-    taxCountry: text(),
-    /** the buyer's VAT number (text, not a database id) */
-    customerVatId: text(),
+    /** amount minus fee; the service sets it (RESOLUTIONS money-7) */
+    netAmount: money().notNull(),
+    taxAmount: money().notNull().default('0'),
+    taxRate: percent().notNull().default('0'),
+    /** ISO country of the tax; empty when no tax applies */
+    taxCountry: text().notNull().default(''),
+    /** the buyer's VAT number (text, not a database id); empty when none */
+    customerVatId: text().notNull().default(''),
     total: money().notNull(),
     currency: text()
       .references((): AnyPgColumn => currencies.code, { onDelete: 'restrict' })
@@ -460,10 +521,18 @@ export const payments = pgTable(
     currency: text()
       .references((): AnyPgColumn => currencies.code, { onDelete: 'restrict' })
       .notNull(),
-    /** captured, pending, ...; no source fixes the full list (B37 leaves the vocabulary open) */
-    status: text().notNull(),
-    /** bank, card, usdt, wise, wallet or crypto; the wire enums of top-ups and B2C payments differ */
-    methodType: text().notNull(),
+    /** a top-up has {@link TOPUP_PAYMENT_STATUSES}, an order payment {@link ORDER_PAYMENT_STATUSES} (RESOLUTIONS money-2) */
+    status: text().$type<TopupPaymentStatus | OrderPaymentStatus>().notNull(),
+    /** a top-up has {@link TOPUP_METHODS}, an order payment {@link ORDER_METHODS} (RESOLUTIONS money-2, b2c-6) */
+    methodType: text().$type<TopupMethod | OrderMethod>().notNull(),
+    /** card brand or wallet name for display (visa, apple_pay, ...); empty when unknown (RESOLUTIONS money-4) */
+    brand: text().notNull().default(''),
+    /** the gateway's card fingerprint for the blocklist, never card data (RESOLUTIONS b2c-5) */
+    cardFingerprint: text(),
+    /** true when risk flagged the payment, so it waits for staff instead of crediting itself (RESOLUTIONS money-3) */
+    reviewRequired: boolean().notNull().default(false),
+    /** when an automatic gateway's confirmed top-up credits itself; null when it waits for staff (money-3) */
+    autoCreditAt: timestampTz(),
     threeDs: boolean().notNull().default(false),
     capturedAt: timestampTz(),
     receiptFileId: fk((): AnyPgColumn => files.id),
@@ -482,6 +551,17 @@ export const payments = pgTable(
       .on(t.gatewayId, t.gatewayTxnId)
       .where(sql`${t.gatewayTxnId} is not null`),
     check('payments_purpose_check', inList(t.purpose, PAYMENT_PURPOSES)),
+    // One vocabulary per purpose (RESOLUTIONS money-2); the union also covers b2c-6 (method_type in the six values).
+    check(
+      'payments_status_check',
+      sql`(${t.purpose} = 'topup' and ${inList(t.status, TOPUP_PAYMENT_STATUSES)})
+ or (${t.purpose} = 'order' and ${inList(t.status, ORDER_PAYMENT_STATUSES)})`,
+    ),
+    check(
+      'payments_method_type_check',
+      sql`(${t.purpose} = 'topup' and ${inList(t.methodType, TOPUP_METHODS)})
+ or (${t.purpose} = 'order' and ${inList(t.methodType, ORDER_METHODS)})`,
+    ),
     index('payments_purpose_status_created_idx').on(t.purpose, t.status, t.createdAt.desc()),
     index('payments_customer_id_idx').on(t.customerId),
     check('payments_amount_check', sql`${t.amount} > 0 and ${t.feeAmount} >= 0`),
@@ -491,6 +571,12 @@ export const payments = pgTable(
     index('payments_currency_idx').on(t.currency),
     index('payments_receipt_file_id_idx').on(t.receiptFileId),
     index('payments_reviewed_by_idx').on(t.reviewedBy),
+    index('payments_auto_credit_idx')
+      .on(t.autoCreditAt)
+      .where(sql`${t.status} = 'pending' and ${t.autoCreditAt} is not null`),
+    index('payments_card_fingerprint_idx')
+      .on(t.cardFingerprint)
+      .where(sql`${t.cardFingerprint} is not null`),
   ],
 );
 
@@ -552,8 +638,8 @@ export const refunds = pgTable(
       .references((): AnyPgColumn => currencies.code, { onDelete: 'restrict' })
       .notNull(),
     reason: text().notNull().default(''),
-    /** the map says card, wallet or store credit while the wire says original or manual (B81) */
-    method: text().notNull(),
+    /** the map says card, wallet or store credit while the wire says original or manual (B81, RESOLUTIONS money-12) */
+    method: text().$type<RefundMethod>().notNull(),
     status: text().$type<RefundStatus>().notNull().default('requested'),
     /** the gateway's reference, kept as text */
     gatewayRefundId: text(),
@@ -570,6 +656,12 @@ export const refunds = pgTable(
   },
   (t) => [
     check('refunds_status_check', inList(t.status, REFUND_STATUSES)),
+    check('refunds_method_check', inList(t.method, REFUND_METHODS)),
+    // A storefront refund always points at its payment and order (RESOLUTIONS money-12).
+    check(
+      'refunds_storefront_refs_check',
+      sql`${t.customerId} is null or (${t.paymentId} is not null and ${t.orderId} is not null)`,
+    ),
     check('refunds_requested_by_type_check', inList(t.requestedByType, REFUND_REQUESTER_TYPES)),
     index('refunds_status_created_idx').on(t.status, t.createdAt.desc()),
     index('refunds_created_idx').on(t.createdAt.desc()),

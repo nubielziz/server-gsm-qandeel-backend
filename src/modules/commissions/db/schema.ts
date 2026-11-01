@@ -2,7 +2,17 @@
 // Conventions: decision 027; schema additions: MISMATCHES B116; ownership: scripts/module-map.mjs.
 import { sql } from 'drizzle-orm';
 import { boolean, check, index, pgTable, text, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core';
-import { createdAt, fk, inList, jsonList, money, percent, pk, timestampTz, updatedAt } from '../../../infra/db/columns';
+import {
+  createdAt,
+  fk,
+  inList,
+  jsonObject,
+  money,
+  percent,
+  pk,
+  timestampTz,
+  updatedAt,
+} from '../../../infra/db/columns';
 import { clients } from '../../identity/db/schema';
 import { ledgerTransactions } from '../../money/db/schema';
 import { orders } from '../../orders/db/schema';
@@ -18,6 +28,17 @@ export const COMMISSION_PLAN_KINDS = ['referral', 'rebate'] as const;
 export type CommissionPlanKind = (typeof COMMISSION_PLAN_KINDS)[number];
 
 /**
+ * Life of a commission accrual: `accrued` when the order completes, `approved` by staff (the commission money event),
+ * `reversed` when the order is refunded.
+ *
+ * Why: RESOLUTIONS health-commissions-11 and the console's accrual wire enum (GET /admin/commission-accruals).
+ */
+export const COMMISSION_ACCRUAL_STATUSES = ['accrued', 'approved', 'reversed'] as const;
+
+/** One value of {@link COMMISSION_ACCRUAL_STATUSES}. */
+export type CommissionAccrualStatus = (typeof COMMISSION_ACCRUAL_STATUSES)[number];
+
+/**
  * Referral and cashback plans.
  *
  * Why: Referral and cashback plans a merchant can be assigned to (routes /admin/commission-plans).
@@ -31,8 +52,8 @@ export const commissionPlans = pgTable(
     /** what the percentage applies to (revenue, profit, ...); no source fixes the values */
     basis: text().notNull(),
     percent: percent().notNull().default('0'),
-    /** list of volume tiers */
-    tiers: jsonList(),
+    /** the volume tiers as an object (for example `{ brackets: [...] }`); `{}` for a flat plan (RESOLUTIONS health-commissions-1) */
+    tiers: jsonObject(),
     /** accrual period (monthly, ...); no source fixes the values */
     period: text().notNull(),
     isActive: boolean().notNull().default(true),
@@ -42,6 +63,7 @@ export const commissionPlans = pgTable(
   (t) => [
     check('commission_plans_kind_check', inList(t.kind, COMMISSION_PLAN_KINDS)),
     check('commission_plans_percent_check', sql`${t.percent} between 0 and 100`),
+    check('commission_plans_tiers_check', sql`jsonb_typeof(${t.tiers}) = 'object'`),
   ],
 );
 
@@ -71,8 +93,9 @@ export const commissionAssignments = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    uniqueIndex('commission_assignments_active_uq')
-      .on(t.planId, t.beneficiaryId)
+    // A merchant has one current plan at a time (RESOLUTIONS health-commissions-2).
+    uniqueIndex('commission_assignments_current_uq')
+      .on(t.beneficiaryId)
       .where(sql`${t.endsAt} is null`),
     index('commission_assignments_beneficiary_id_idx').on(t.beneficiaryId),
     index('commission_assignments_plan_id_idx').on(t.planId),
@@ -97,13 +120,15 @@ export const commissionAccruals = pgTable(
     id: pk(),
     planId: fk((): AnyPgColumn => commissionPlans.id).notNull(),
     beneficiaryId: fk((): AnyPgColumn => clients.id).notNull(),
-    orderId: fk((): AnyPgColumn => orders.id),
+    /** every accrual comes from one completed order (RESOLUTIONS health-commissions-3) */
+    orderId: fk((): AnyPgColumn => orders.id).notNull(),
     period: text().notNull(),
     basisAmount: money().notNull(),
     percent: percent().notNull(),
     amount: money().notNull(),
-    /** accrued, approved, ...; the console lists accrued and approved, no source fixes the full list */
-    status: text().notNull(),
+    status: text().$type<CommissionAccrualStatus>().notNull(),
+    /** set exactly when the status is `approved` (RESOLUTIONS health-commissions-4) */
+    approvedAt: timestampTz(),
     ledgerTxId: fk((): AnyPgColumn => ledgerTransactions.id),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -113,7 +138,17 @@ export const commissionAccruals = pgTable(
     index('commission_accruals_status_created_idx').on(t.status, t.createdAt.desc()),
     index('commission_accruals_created_idx').on(t.createdAt.desc()),
     index('commission_accruals_plan_id_idx').on(t.planId),
+    // The full order_id index stays: a partial one cannot serve the foreign key's restrict check.
     index('commission_accruals_order_id_idx').on(t.orderId),
+    // A completed order accrues once per beneficiary; a reversed accrual does not block a re-completion.
+    uniqueIndex('commission_accruals_order_beneficiary_uq')
+      .on(t.orderId, t.beneficiaryId)
+      .where(sql`${t.status} <> 'reversed'`),
+    check('commission_accruals_status_check', inList(t.status, COMMISSION_ACCRUAL_STATUSES)),
+    check('commission_accruals_approved_at_check', sql`(${t.status} = 'approved') = (${t.approvedAt} is not null)`),
+    index('commission_accruals_approved_idx')
+      .on(t.approvedAt.desc())
+      .where(sql`${t.approvedAt} is not null`),
     index('commission_accruals_ledger_tx_id_idx').on(t.ledgerTxId),
   ],
 );

@@ -1,10 +1,10 @@
 // Drizzle queries on `auth_tokens` for the staff invite and reset links (identity module). Only keyed hashes are stored.
 import { and, eq, gt, isNull, ne } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
-import { type AuthToken, type NewAuthToken, authTokens } from '../db/schema';
+import { type AuthToken, type AuthTokenPurpose, type NewAuthToken, authTokens } from '../db/schema';
 
-/** The purposes a staff member's one-time token can have. */
-export const STAFF_TOKEN_PURPOSES = ['invite', 'reset'] as const;
+/** The purposes a staff member's one-time token can have: the staff subset of {@link AuthTokenPurpose}. */
+export const STAFF_TOKEN_PURPOSES = ['invite', 'reset'] as const satisfies readonly AuthTokenPurpose[];
 
 /** One value of {@link STAFF_TOKEN_PURPOSES}. */
 export type StaffTokenPurpose = (typeof STAFF_TOKEN_PURPOSES)[number];

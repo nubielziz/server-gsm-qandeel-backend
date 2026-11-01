@@ -57,6 +57,17 @@ export const NOTIFICATION_STATUSES = ['queued', 'sent', 'failed'] as const;
 export type NotificationStatus = (typeof NOTIFICATION_STATUSES)[number];
 
 /**
+ * Who a logged notification was sent to: staff, a merchant (`client`) or a storefront customer.
+ *
+ * Why: RESOLUTIONS identity-platform-11: the log says `client` where the template audience says `merchant`; the
+ * notification worker maps one to the other.
+ */
+export const NOTIFICATION_RECIPIENT_TYPES = ['staff', 'client', 'customer'] as const;
+
+/** One value of {@link NOTIFICATION_RECIPIENT_TYPES}. */
+export type NotificationRecipientType = (typeof NOTIFICATION_RECIPIENT_TYPES)[number];
+
+/**
  * Delivery state of one webhook attempt chain.
  *
  * Why: the console's webhook log wire enum (GET /admin/webhook-deliveries).
@@ -65,6 +76,16 @@ export const WEBHOOK_DELIVERY_STATUSES = ['pending', 'delivered', 'failed'] as c
 
 /** One value of {@link WEBHOOK_DELIVERY_STATUSES}. */
 export type WebhookDeliveryStatus = (typeof WEBHOOK_DELIVERY_STATUSES)[number];
+
+/**
+ * Who acted in an audit log row: a staff member, a merchant, a storefront customer or the system.
+ *
+ * Why: RESOLUTIONS identity-platform-7: the only values `AuditService` writes (the request actor, or `system` for jobs).
+ */
+export const AUDIT_ACTOR_TYPES = ['staff', 'client', 'customer', 'system'] as const;
+
+/** One value of {@link AUDIT_ACTOR_TYPES}. */
+export type AuditActorType = (typeof AUDIT_ACTOR_TYPES)[number];
 
 /**
  * System settings as key and value pairs.
@@ -134,8 +155,7 @@ export const notifications = pgTable(
   'notifications',
   {
     id: pk(),
-    /** staff, client or customer; the wire leaves it a free string */
-    recipientType: text().notNull(),
+    recipientType: text().$type<NotificationRecipientType>().notNull(),
     /** polymorphic: staff_users, clients or customers by recipient_type */
     recipientId: bigId().notNull(),
     channel: text().$type<NotificationChannel>().notNull(),
@@ -153,6 +173,7 @@ export const notifications = pgTable(
   (t) => [
     check('notifications_channel_check', inList(t.channel, NOTIFICATION_CHANNELS)),
     check('notifications_status_check', inList(t.status, NOTIFICATION_STATUSES)),
+    check('notifications_recipient_type_check', inList(t.recipientType, NOTIFICATION_RECIPIENT_TYPES)),
     index('notifications_recipient_idx').on(t.recipientType, t.recipientId),
     index('notifications_status_created_idx').on(t.status, t.createdAt.desc()),
     index('notifications_created_idx').on(t.createdAt.desc()),
@@ -283,10 +304,14 @@ export const auditLogs = pgTable(
   'audit_logs',
   {
     id: pk(),
-    /** staff or system; the wire leaves it a free string */
-    actorType: text().notNull(),
-    /** polymorphic: staff_users; null for system actions */
+    actorType: text().$type<AuditActorType>().notNull(),
+    /** polymorphic: staff_users or clients by actor_type; null for system actions */
     actorId: bigId(),
+    /**
+     * name of the actor when the row was written, so a rename or delete does not change history; empty for the
+     * system (RESOLUTIONS identity-platform-7)
+     */
+    actorName: text().notNull().default(''),
     /** a readable English verb phrase, as the demo writes it (ANSWERS) */
     action: text().notNull(),
     entityType: text().notNull(),
@@ -303,6 +328,7 @@ export const auditLogs = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
+    check('audit_logs_actor_type_check', inList(t.actorType, AUDIT_ACTOR_TYPES)),
     index('audit_logs_created_idx').on(t.createdAt.desc()),
     index('audit_logs_actor_idx').on(t.actorType, t.actorId, t.createdAt.desc()),
     index('audit_logs_entity_idx').on(t.entityType, t.entityId),
