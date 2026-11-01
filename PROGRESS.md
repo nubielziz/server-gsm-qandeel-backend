@@ -4,9 +4,8 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
-**Phase 2 (foundation) is done** (P2.1-P2.7). Next: **Phase 3, the feature loop by map stage**, starting with **2a
-identity-staff-access**, **2b identity-merchant-auth** and **3 money-wallets-ledger** (independent: run up to 3 at once in
-worktrees). Each feature needs a brief in `docs/briefs/` written from `_feature.md` (routes from `docs/slices/<module>.json`,
+**Phase 2 (foundation) is done** (P2.1-P2.7). **Phase 3 has started**: **2a identity-staff-access**, **2b
+identity-merchant-auth** and **3 money-wallets-ledger** are running in parallel worktrees. Each feature needs a brief in `docs/briefs/` written from `_feature.md` (routes from `docs/slices/<module>.json`,
 user rules from the table below). Briefs: `docs/briefs/` (`_common.md` first; `_feature.md` is the
 Phase 3 recipe). Parallel implementers work in sibling worktrees of this repo (`git worktree add
 ../backend-p2-<name> -b feat/backend-p2-<name>`, then `bun install` there; a sibling path keeps the relative
@@ -80,9 +79,9 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 | P2.5c | machine-auth | capability-token guard registry, API key guard, Dhru credentials guard, webhook signature registry (brief P2.5 split; after P2.5a, parallel with P2.6) | | done (`feat(machine-auth)` commit) |
 | P2.6 | staff-sign-in | `POST /admin/auth/login`, `/2fa`, `/2fa/setup`, `/logout`, `/password/set`, `GET /admin/auth/me` (6) | | done (`feat(staff-sign-in)` commit) |
 | P2.7 | contract-tests | route/shape/error parity tests, fixture harvest from the frontend mocks, allowlist, `pending.ts` | | done (`test(contract)` commit) |
-| 2a | identity-staff-access | staff, roles, permissions, sessions, IP rules, access restriction, audit logs, settings (st2 admin, 31) | admin-team, ip-rules | |
-| 2b | identity-merchant-auth | merchant portal sign-in, security, sessions (st2 client, 15) | | |
-| 3 | money-wallets-ledger | postTransaction, money events, wallets, statement, adjust, credit limit (user rule 2), ledger, reconcile, currencies (st3, 14) | | |
+| 2a | identity-staff-access | staff, roles, permissions, sessions, IP rules, access restriction, merchants, audit logs, settings (st2 admin, 31; brief `docs/briefs/2a-identity-staff-access.md`) | admin-team, ip-rules | in progress (worktree `../backend-f2a`) |
+| 2b | identity-merchant-auth | merchant portal sign-in, security, sessions (st2 client, 15; brief `docs/briefs/2b-identity-merchant-auth.md`) | | in progress (worktree `../backend-f2b`) |
+| 3 | money-wallets-ledger | postTransaction, money events, wallets, statement, adjust, credit limit (user rule 2), ledger, reconcile, currencies (st3, 14) (brief `docs/briefs/3-money-wallets-ledger.md`) | | in progress (worktree `../backend-f3`) |
 | 4a | catalog-structure | client groups + nightly promotion job (user rule 1), categories, services, fields, options, inventory (st4/5) | | |
 | 4b | catalog-pricing | group/client prices, pricing rules (user rule 8: the demo's resolver), price protection (user rule 9: effective-cost floor, listed-price memory, PRICE_CHANGED guard, raise in the snapshot), bulk price, resolve, merchant catalog and price export | | |
 | 5 | orders-engine | state machine, placement + hold, admin order actions, bulk reply, export, merchant orders, files (st5) | manual | |
