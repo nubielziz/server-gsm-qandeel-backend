@@ -2,7 +2,6 @@
 // the test instances: block rules by scope, the admin allowlist, expiry, address forms (IPv6, IPv4-mapped, TRUST_PROXY, escaped
 // paths), the cache and its invalidation, Redis or Postgres being down, the hit counters and their flush job in a real worker.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
-import { APP_GUARD } from '@nestjs/core';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
@@ -35,7 +34,7 @@ import { createInfra, deadRedisUrl, eventually } from '../support/infra';
 import { metricValue } from '../support/metrics';
 import {
   PipelineTestController,
-  TestAuthGuard,
+  TestAccessModule,
   freshClientIp as freshIp,
   freshClientPrefix,
 } from '../support/pipeline-routes';
@@ -51,10 +50,10 @@ const extraApps: TestApp[] = [];
 
 const appOptions = {
   controllers: [TestController, PipelineTestController],
-  providers: [{ provide: APP_GUARD, useClass: TestAuthGuard }],
+  imports: [TestAccessModule],
 };
 // The API process does not load the flush; the hit-counter tests add it to reach IpRuleHitsFlush (and run it by hand).
-const withFlush = { ...appOptions, imports: [IpRuleHitsFlushModule] };
+const withFlush = { ...appOptions, imports: [...appOptions.imports, IpRuleHitsFlushModule] };
 
 beforeAll(async () => {
   await resetDb();
@@ -103,7 +102,13 @@ const call = (app: TestApp, method: 'GET' | 'POST', url: string, ip: string, hea
   app.app.inject({ method, url, remoteAddress: ip, headers, ...(method === 'POST' ? { payload: {} } : {}) });
 const get = (url: string, ip: string, headers: Record<string, string> = {}) => call(t, 'GET', url, ip, headers);
 
-const isIpRefusal = (res: LightMyRequestResponse) => res.statusCode === 403 && res.json().code === 'IP_NOT_ALLOWED';
+// The Dhru surface answers every refusal in its own envelope with HTTP 200 (decision 026).
+const isIpRefusal = (res: LightMyRequestResponse) => {
+  if (!String(res.headers['content-type'] ?? '').includes('json')) return false;
+  const body = res.json<{ code?: string; ERROR?: Array<{ MESSAGE?: string }> }>();
+  if (body.ERROR) return res.statusCode === 200 && /blocked|not allowed/i.test(body.ERROR[0]?.MESSAGE ?? '');
+  return res.statusCode === 403 && body.code === 'IP_NOT_ALLOWED';
+};
 
 describe('block rules by scope', () => {
   const REQUESTS: Record<string, { audience: string; send: (ip: string) => Promise<LightMyRequestResponse> }> = {

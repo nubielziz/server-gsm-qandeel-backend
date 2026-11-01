@@ -2,11 +2,26 @@
 // The routes sit on the public surfaces under /t/ paths so their keys never meet a real route; the guard answers 401 to
 // every sample route unless the request carries `x-test-auth`, which lets a test prove a hook ran before authentication.
 import { randomInt } from 'node:crypto';
-import { type CanActivate, Controller, Injectable, type ExecutionContext } from '@nestjs/common';
+import {
+  type CanActivate,
+  Controller,
+  Injectable,
+  Module,
+  type OnModuleInit,
+  type ExecutionContext,
+} from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { type ParamsOf, type ResultOf, Route, defineRoute, zJsonObject } from '../../src/common/contract';
+import {
+  type AccessKind,
+  type ParamsOf,
+  type ResultOf,
+  Route,
+  defineRoute,
+  zJsonObject,
+} from '../../src/common/contract';
 import { AppError } from '../../src/common/errors';
+import { AccessHandlers, PLACEHOLDER_ACCESS_KINDS } from '../../src/modules/identity';
 
 const ok = z.object({ ok: z.boolean() });
 
@@ -152,6 +167,52 @@ export class TestAuthGuard implements CanActivate {
     throw new AppError('UNAUTHORIZED', { detail: 'No session (test guard).' });
   }
 }
+
+/** The access kinds the sample routes use; the test handler stands in for all of them. */
+// Dhru keeps its fail-closed placeholder: the Dhru tests expect its own "Authentication Failed".
+const TEST_AUTH_KINDS: AccessKind[] = [
+  'staff-session',
+  'staff-permission',
+  'merchant-session',
+  ...PLACEHOLDER_ACCESS_KINDS.filter((kind) => kind !== 'dhru-credentials'),
+];
+
+/**
+ * Replaces the real authentication of the sample routes' access kinds with {@link TestAuthGuard}'s rule (401 without
+ * `x-test-auth`).
+ *
+ * Why: the pipeline hooks must run before any authentication; the hook tests need a request that authentication lets
+ * through, without building real sessions or API keys. Import it in a test app (`imports: [TestAccessModule]`).
+ */
+@Injectable()
+class TestAccessInstaller implements OnModuleInit {
+  constructor(private readonly handlers: AccessHandlers) {}
+
+  /** Installs the test handler for every kind the sample routes use. */
+  onModuleInit(): void {
+    // Public sample routes refuse too without the header (the old test guard did), so a test can tell "a hook refused"
+    // from "authentication refused" on every sample route; real public routes stay open.
+    this.handlers.replace('public', {
+      authenticate: (request) => {
+        const template = request.routeOptions?.url ?? '';
+        if (!template.includes('/t/') || request.headers['x-test-auth']) return {};
+        throw new AppError('UNAUTHORIZED', { detail: 'No session (test guard).' });
+      },
+    });
+    for (const kind of TEST_AUTH_KINDS) {
+      this.handlers.replace(kind, {
+        authenticate: (request) => {
+          if (request.headers['x-test-auth']) return {};
+          throw new AppError('UNAUTHORIZED', { detail: 'No session (test guard).' });
+        },
+      });
+    }
+  }
+}
+
+/** Test module: see {@link TestAccessInstaller}. */
+@Module({ providers: [TestAccessInstaller] })
+export class TestAccessModule {}
 
 const RUN = randomInt(0, 256);
 let counter = 0;

@@ -3,7 +3,6 @@
 // refusal is problem+json with the CORS and security headers. A stand-in guard answers 401 to every sample route, so a 403,
 // 503 or 429 proves its hook ran before authentication.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
-import { APP_GUARD } from '@nestjs/core';
 import type { LightMyRequestResponse } from 'fastify';
 import { ErrorFormatterRegistry } from '../../src/common/errors';
 import { ipRateLimitKey, parseIpAddress } from '../../src/common/ip-address';
@@ -20,7 +19,7 @@ import { deadRedisUrl } from '../support/infra';
 import { logSink } from '../support/log-sink';
 import {
   PipelineTestController,
-  TestAuthGuard,
+  TestAccessModule,
   freshClientIp as freshIp,
   freshClientPrefix,
 } from '../support/pipeline-routes';
@@ -46,7 +45,7 @@ beforeAll(async () => {
   await resetDb();
   t = await createTestApp({
     controllers: [TestController, PipelineTestController],
-    providers: [{ provide: APP_GUARD, useClass: TestAuthGuard }],
+    imports: [TestAccessModule],
     env: { CORS_ORIGINS: CONSOLE },
   });
   t.app.get(ErrorFormatterRegistry).register(DHRU);
@@ -406,7 +405,7 @@ describe('the per-IP rate limit (decision 021)', () => {
   it('keeps limiting in memory when the cache Redis is down, and never fails the request', async () => {
     const down = await createTestApp({
       controllers: [PipelineTestController],
-      providers: [{ provide: APP_GUARD, useClass: TestAuthGuard }],
+      imports: [TestAccessModule],
       env: { REDIS_CACHE_URL_TEST: await deadRedisUrl(3) },
     });
     extraApps.push(down);
