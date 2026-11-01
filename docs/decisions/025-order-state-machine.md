@@ -15,7 +15,35 @@ frontend Order contract (`docs/contract/endpoints/orders.md`).
 - `queue` on the wire is derived: `review` = held; `manual` = pending + manual; `needs_attention` = needs_attention
   (status stays pending until a REFERENCEID exists); `verification` = completed + `verification_status` requested;
   `pending` = pending + dispatch pending; otherwise null. `reviewReason` = text stored on the event that opened the
-  queue. `pastSla` = open and older than the service's SLA minutes (one predicate for orders and System health).
+  queue. `pastSla` = `status IN ('pending','processing') AND placed_at < now() - make_interval(mins => services.sla_minutes)`: age
+  only, no queue exclusion (B92), one exported query fragment of the orders read model shared by `GET /admin/orders`, the
+  dashboard and System health. The clock is `placed_at`, which the partial index `orders_open_idx (dispatch_state, placed_at)
+  WHERE status open` covers; placement never sets `placed_at` or `created_at` explicitly, so both take the same transaction
+  `now()` and the wire `createdAt` (= `created_at`, used by the console's SlaCell) is the same instant (a contract test checks
+  it on every placement path). A service with a null or 0 SLA is never past SLA.
+- **`dispatch_state` transitions** (lead resolution orders-suppliers-11; every action has a test of its resulting queue):
+
+  | Event | From | To (status) |
+  |---|---|---|
+  | Placement | - | `held` (B2C risk hold), `done` (inventory code delivered at once), `manual` (fulfillment manual or no active supplier link), else `pending` (dispatch job enqueued) |
+  | Dispatch job: REFERENCEID | `pending` | `sent` (processing, `sent_at`) |
+  | Dispatch job: explicit refusal, timeout, or no eligible link (disabled, paused, or costlier than the charged price, B117 (6)) | `pending` | `needs_attention` (status unchanged, review event with the reason) |
+  | Poll or fetch: STATUS 4 / STATUS 3 | `sent`, `needs_attention` | `done` (completed / rejected) |
+  | Fetch finds it still running | `needs_attention` | `sent` |
+  | `accept` | `manual` | `operator` (processing, queue null) |
+  | `reply` / `reject` | any open, not `held` | `done` (completed / rejected) |
+  | `refund` (B2B completed) | `done` | `done` (rejected) |
+  | `reopen` | `done` (completed) | `operator` (processing, queue null) |
+  | Verification accept / refund | `done` | `done` (accept: stays completed, `verification_status` `accepted`; refund: rejected, `verification_status` `refunded`) |
+  | Risk approve / risk refund | `held` | `pending` (or `manual` by the placement rule) / `done` (rejected) |
+  | Merchant cancel | `pending`, `manual`, `held` | `done` (rejected) |
+  | Staff `dispatch` | `needs_attention`, `manual`, `operator` | `pending` + job; `pending` is a 204 no-op (already queued); `held` is `409 ORDER_HELD`; `sent` is `409 ALREADY_SENT` |
+  | `change-supplier` | any | unchanged, except `sent` + `resetReference` becomes `needs_attention` (reason 'Supplier changed: dispatch needed'); with `dispatch: true` it becomes `pending` + job |
+
+  The derived queue stays as defined above: `operator`, `sent` and `done` have queue `null`. The B117 (6) failover limit
+  applies to automatic failover by the dispatch job only; a staff `change-supplier` may choose a costlier link (the cost
+  fields are refreshed and the `supplier_changed` event records `costAbovePrice`), and the following staff `dispatch`
+  sends to the chosen supplier service as is.
 - Every transition is one DB transaction: guarded `UPDATE orders … WHERE id = $1 AND status = $2 [AND
   dispatch_state = $3]` (0 rows → 409), an `order_events` row (actor `staff | client | customer | supplier | system`),
   the ledger posting through `postTransaction` with idempotency key `order_event:<event id>`, and an outbox

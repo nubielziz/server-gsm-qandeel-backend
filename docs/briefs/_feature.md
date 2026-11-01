@@ -7,8 +7,10 @@ they are done. Read `_common.md` first.
 1. The brief: routes (manifest keys), out-of-scope list, decisions that matter, user-answered rules
    (`docs/contract/OPEN-QUESTIONS.md` and the PROGRESS table "Business rules answered by the user": they override any
    default or proposal).
-2. `docs/contract/RESOLUTIONS.md`: the lead's decisions for the pre-Phase-3 audit findings of your routes; they win over
-   any older text below.
+2. `docs/contract/RESOLUTIONS.md`: the lead's decisions for the pre-Phase-3 audit findings of your routes (the brief lists
+   their ids, and `docs/PHASE3-PLAN.md` has the table per feature); they win over any older text below. The endpoint docs,
+   `RULES.md`, `ANSWERS.md` and `MISMATCHES.md` already carry them (regenerated from `docs/contract/lead-decisions.json`
+   and `docs/contract/extraction/*.json`), and `resolutions.json` has the schema changes the lead's migration `0003` ships.
 3. `docs/contract/endpoints/<module>.md`: per route the map rule, the frontend function and types, query/request/
    response semantics, errors, B-ids and the mock that answers it today.
 3. `docs/contract/frontend-endpoints.json`: the exact request/response shapes (query with node, never read whole).
@@ -26,8 +28,10 @@ they are done. Read `_common.md` first.
    simple-rest query (filters, sort, range, search) to SQL with an exact `COUNT`; no N+1 (batch joins).
 3. **Domain** (`domain/`): pure functions for rules, transitions, prices, thresholds, ledger lines; unit tests.
 4. **Application** (`application/`): one use case per action, one DB transaction (`runInTransaction`), ownership and
-   guard checks, `AuditService.record` for admin writes, outbox rows for async work, `afterCommit` cache
-   invalidation, other modules only through their public services (passing `tx`).
+   guard checks, `AuditService.record` for admin writes (the audit `entityType` must come from `AUDIT_ENTITY_TYPES` of
+   the platform audit module; a new type is added to that list in your own commit, resolution identity-platform-15),
+   outbox rows for async work, `afterCommit` cache invalidation, other modules only through their public services
+   (passing `tx`).
 5. **Controller** (`controllers/`): thin; `@Route(contract)`; maps the principal and inputs to the use case.
 6. **Jobs and schedules** (`jobs/`): idempotent processors (ids only, re-read state, guarded transitions,
    deterministic job ids), retry policy, `job_runs` for scheduled runs; document each in `docs/queues.md`.

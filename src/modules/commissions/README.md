@@ -74,3 +74,14 @@ None yet. List each queue, job, schedule, idempotency key and retry policy here 
 ## Cache keys
 
 None yet. Register each key family (owner, TTL, invalidation after commit) in `docs/cache-keys.md` (see `CONTRIBUTING.md` → "Add a cache key").
+
+## Audit resolutions
+
+The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, machine-readable `docs/contract/resolutions.json`) settled the points below for this module's routes. Where they differ from older text in this README or the endpoint docs, the resolution wins; the endpoint docs, `RULES.md`, `ANSWERS.md` and `MISMATCHES.md` were updated to match.
+
+- `health-commissions-1` · GET /admin/commission-plans
+- `health-commissions-2` · POST /admin/commission-assignments
+- `health-commissions-3` · GET /admin/commission-accruals
+- `health-commissions-4` · POST /admin/commission-accruals/approve, GET /admin/commission-accruals
+- `health-commissions-11` · GET /admin/commission-accruals
+- `health-commissions-12` · DELETE /admin/commission-assignments/:id

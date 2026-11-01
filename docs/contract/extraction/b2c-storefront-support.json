@@ -9,19 +9,19 @@
           "successStatus": 200,
           "query": "Paging _start/_end, 25 per page (customers/lib/filters.ts:11). Filters: status (repeat = IN; tabs send one of active|suspended|blocked), riskLevel (repeat = IN; the Flagged tab sends riskLevel=medium&riskLevel=high, filters.ts:187), country (ISO-2, upper case), hasAccount=true|false. q: case-insensitive contains over name and email only (mocks/customerHandlers.ts:16; country is its own filter, M86). _sort is one of name|country|hasAccount|ordersCount|totalSpent|lastOrderAt|riskLevel|status, with _order asc|desc; default totalSpent desc (filters.ts:76-100). riskLevel sorts by order low<medium<high. Counts: five tab calls (no filter, status=active, riskLevel=medium&riskLevel=high, status=suspended, status=blocked) plus hasAccount=true, each _start=0&_end=1 with no toolbar filter (hooks/useCustomerCounts.ts:20-45). Palette: q=<text>&_start=0&_end=4 with no _sort, so the server's default order applies (lib/paletteSource.ts:10-21).",
           "request": "",
-          "response": "JSON array + x-total-count. Row = customers columns: id, email, emailVerifiedAt, name, phone ('' when none), country, locale (en|ar), currency (currency id), hasAccount, createdBy (staff id; null for self-signup or guest), marketingOptIn, riskLevel low|medium|high, status active|suspended|blocked|anonymized, suspendedAt, suspendedReason and suspendedBy (null unless suspended), internalNotes, lastLoginAt, firstOrderAt, totalSpent (4-dp USD, gross incl. VAT of non-rejected orders, '0.0000' when none), anonymizedAt, createdAt. Plus ordersCount (every order, any status), lastOrderAt (latest order created_at or null) and optional currencyCode (currencies.code). Never credential data. Anonymized rows carry name 'Deleted customer' and email deleted-<id>@redacted.invalid.",
+          "response": "JSON array + x-total-count. Row = customers columns: id, email, emailVerifiedAt, name, phone ('' when none), country, locale (en|ar), currency (currency id, see below), hasAccount, createdBy (staff id; null for self-signup or guest), marketingOptIn, riskLevel low|medium|high, status active|suspended|blocked|anonymized, suspendedAt, suspendedReason and suspendedBy (null unless suspended), internalNotes, lastLoginAt, firstOrderAt, totalSpent (4-dp USD, gross incl. VAT of non-rejected orders, '0.0000' when none), anonymizedAt, createdAt. Plus ordersCount (every order, any status), lastOrderAt (latest order created_at or null) and currencyCode (currencies.code); currency = currencies.id (JSON number) and currencyCode = currencies.code, both null when the customer has no currency: customers.currency stays the ISO code FK to currencies.code (as checkout_sessions and payments do) and every row builder (list, detail, create result, patch result) LEFT JOINs currencies ON currencies.code = customers.currency; request bodies carry no currency (create and a country change derive the code from the country and write the code). Never credential data. Anonymized rows carry name 'Deleted customer' and email deleted-<id>@redacted.invalid.",
           "errors": [
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks customers:read", "ui": "table error state with Retry; page hidden from the menu" }
           ],
           "assumed": true,
-          "mapConflict": "ordersCount and lastOrderAt are not columns (customers has only total_spent and first_order_at). Compute them in one aggregate per page over orders.customer_id (also usable in ORDER BY), or denormalize them next to total_spent. currencyCode needs a currencies join, which is not in the route's tables (M87)."
+          "mapConflict": "ordersCount and lastOrderAt are not columns (customers has only total_spent and first_order_at). Compute them in one aggregate per page over orders.customer_id (also usable in ORDER BY), or denormalize them next to total_spent. currency and currencyCode need a currencies join, which is not in the route's tables: add currencies to the route tables (M87)."
         },
         {
           "key": "GET /admin/customers/:id",
           "successStatus": 200,
           "query": "",
           "request": ":id is the numeric customer id.",
-          "response": "The list row, plus:\n- stats {orders, spent (= totalSpent), lastOrderAt, refunds (refunds of the customer's orders), tickets (support_tickets with requester_type customer and this requester_id, any status), disputes}.\n- account: null when hasAccount is false. Otherwise {emailVerified (email_verified_at not null), mustChangePassword, passwordChangedAt (customer_credentials), resetSentAt (created_at of the latest invite or password-reset auth_token, else null), activeSessions (sessions not revoked and not expired), lastIp (the most recent of sessions.ip and checkout_sessions.ip)}.\n- latestConsents: null without orders. Otherwise {orderId of the latest order, records[] of that order's consent_records}. Each record has purpose (terms|privacy|refund_policy|withdrawal_waiver|marketing), document (legal type label + ' v' + version, e.g. 'Terms of service v3.2'; null when there is no legal document), at and ip.\n- risk {highestScore (max risk_assessments.score of the customer; null when none), signals [{text, orderId}]}.\nFor a guest, 'last seen from' is latestConsents.records[0].ip (lib/text.ts:50-51). The page re-reads this after every action.",
+          "response": "The list row, plus:\n- stats {orders, spent (= totalSpent), lastOrderAt, refunds (refunds of the customer's orders), tickets (support_tickets with requester_type customer and this requester_id, any status), disputes}.\n- account: null when hasAccount is false. Otherwise {emailVerified (email_verified_at not null), mustChangePassword, passwordChangedAt (customer_credentials), resetSentAt (created_at of the latest invite or password-reset auth_token, else null), activeSessions (sessions not revoked and not expired), lastIp (the most recent of sessions.ip and checkout_sessions.ip)}.\n- latestConsents: null without orders. Otherwise {orderId of the latest order, records[] of that order's consent_records}. Each record has purpose (terms|privacy|refund_policy|withdrawal_waiver|marketing; CHECK consent_records_purpose_check; consent_records.subject_type is customer|client), document (TYPE_LABEL[type] + ' v' + version with the labels terms 'Terms of service', privacy 'Privacy policy', refund 'Refund policy', cookies 'Cookie policy', e.g. 'Terms of service v3.2'; null when legal_document_id is null; purpose to legal type: terms to terms, privacy to privacy, refund_policy to refund, withdrawal_waiver and marketing have no document), at and ip (always a string: consent_records.ip is NOT NULL, every consent row is written inside a request and stores the request IP, decision 018; no staff action writes consent rows).\n- risk {highestScore (max risk_assessments.score of the customer; null when none), signals [{text, orderId}]: the signals of the customer's assessments with order_id NOT NULL, newest created_at first, flattened in stored order to {text, orderId: assessment.order_id}, capped at 20 items}.\nFor a guest, 'last seen from' is latestConsents.records[0].ip (lib/text.ts:50-51). The page re-reads this after every action. Currency fields as in the list: currency = currencies.id (JSON number) and currencyCode = currencies.code, both null when the customer has no currency: customers.currency stays the ISO code FK to currencies.code (as checkout_sessions and payments do) and every row builder (list, detail, create result, patch result) LEFT JOINs currencies ON currencies.code = customers.currency; request bodies carry no currency (create and a country change derive the code from the country and write the code). records[].ip is always a string (consent_records.ip NOT NULL).",
           "errors": [
             { "status": 404, "code": "NOT_FOUND", "when": "no customer with that id", "ui": "CustomerNotFound page (hooks/useCustomer.ts:20)" },
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks customers:read", "ui": "no-access state" }
@@ -34,11 +34,11 @@
           "successStatus": 201,
           "query": "",
           "request": "Body {name (trimmed, inner spaces collapsed, >= 2 chars), email (trimmed, lower case), country (ISO-2 the storefront sells to), locale (en|ar), phone? (left out when empty), password: {mode: reset_link|temporary_password}}.\nServer:\n- Inserts customers (has_account true, created_by = staff, status active, risk_level low, marketing_opt_in false, currency from the country) and customer_credentials.\n- reset_link: issues a one-hour, single-use invite auth_token (hash only) and emails it through outbox/notifications.\n- temporary_password: stores the hash of a generated 14-character password, with must_change_password true and password_changed_at now.\n- Writes audit_logs without any password (scenario b2c-account steps 1-2).",
-          "response": "201 with the Customer row (ordersCount 0, totalSpent '0.0000', lastOrderAt null). In temporary_password mode only, the answer also carries temporaryPassword (plaintext, in this answer only). The toast uses name and email; the password dialog shows the password once.",
+          "response": "201 with the Customer row (ordersCount 0, totalSpent '0.0000', lastOrderAt null). In temporary_password mode only, the answer also carries temporaryPassword (plaintext, in this answer only). The toast uses name and email; the password dialog shows the password once. Currency fields as in the list: currency = currencies.id (JSON number) and currencyCode = currencies.code, both null when the customer has no currency: customers.currency stays the ISO code FK to currencies.code (as checkout_sessions and payments do) and every row builder (list, detail, create result, patch result) LEFT JOINs currencies ON currencies.code = customers.currency; request bodies carry no currency (create and a country change derive the code from the country and write the code). Route tables also read currencies.",
           "errors": [
             { "status": 422, "code": "VALIDATION_FAILED", "when": "bad input; errors[].field is one of name|email|country|locale|phone|password.mode (dotted path)", "ui": "message under the field; password.mode goes to the Password choice (AddCustomerDialog.tsx:58)" },
             { "status": 409, "code": "EMAIL_TAKEN", "when": "another customer (guest or account) already has the email, compared case-insensitively. The detail names the owner; for a guest it says to open them and use Create account (mocks/customerHandlers.ts:19-26). Send no errors[].", "ui": "detail shown under Email (the code maps to the field only when errors[] is empty)" },
-            { "status": 422, "code": "VALIDATION_FAILED", "when": "the email is on the blocklist (proposal: errors[{field: 'email', code: 'EMAIL_BLOCKED'}])", "ui": "message under Email" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "the email is on the blocklist: errors[{field:'email', message:'This email is blocked.'}], no code", "ui": "message under Email" },
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks customers:create", "ui": "Add customer disabled, with the permission named" }
           ],
           "assumed": true,
@@ -48,13 +48,13 @@
           "key": "PATCH /admin/customers/:id",
           "successStatus": 200,
           "query": "",
-          "request": "Partial body: only the changed fields of {name, email, country, locale, phone, internalNotes}. The dialog sends nothing when nothing changed. internalNotes is at most 300 chars (EditCustomerDialog.tsx:114).\n- A different email on an account clears email_verified_at; it should also send a new verification link.\n- A country change re-derives currency (mocks/customerHandlers.ts:127-147).\nSame field rules as create. Writes audit_logs with before and after.",
-          "response": "200 with the updated Customer row (list shape).",
+          "request": "Partial body: only the changed fields of {name, email, country, locale, phone, internalNotes}. The dialog sends nothing when nothing changed. internalNotes is at most 300 chars (EditCustomerDialog.tsx:114).\n- A different email sets email_verified_at = NULL; when has_account is true it also issues a new email-verification token (auth_tokens) and sends the verification email through the outbox; guests get no email.\n- A country change re-derives currency (mocks/customerHandlers.ts:127-147).\nSame field rules as create. Writes audit_logs with before and after.",
+          "response": "200 with the updated Customer row (list shape). Currency fields as in the list: currency = currencies.id (JSON number) and currencyCode = currencies.code, both null when the customer has no currency: customers.currency stays the ISO code FK to currencies.code (as checkout_sessions and payments do) and every row builder (list, detail, create result, patch result) LEFT JOINs currencies ON currencies.code = customers.currency; request bodies carry no currency (create and a country change derive the code from the country and write the code). Route tables also read currencies.",
           "errors": [
             { "status": 404, "code": "NOT_FOUND", "when": "no customer with that id", "ui": "dialog error slot" },
             { "status": 409, "code": "ANONYMIZED", "when": "the customer is anonymized and cannot be edited (customerHandlers.ts:116-118)", "ui": "dialog error slot" },
             { "status": 409, "code": "EMAIL_TAKEN", "when": "another customer already uses the new email", "ui": "detail under Email (EditCustomerDialog.tsx:46)" },
-            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[].field is one of name|email|country|locale|phone|internalNotes; also a blocklisted new email", "ui": "message under the field" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[].field is one of name|email|country|locale|phone|internalNotes; also a blocklisted new email: errors[{field:'email', message:'This email is blocked.'}]", "ui": "message under the field" },
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks customers:update", "ui": "Edit disabled, with the permission named" }
           ],
           "assumed": true,
@@ -141,7 +141,7 @@
           "key": "POST /admin/customers/:id/block",
           "successStatus": 204,
           "query": "",
-          "request": "Body {blocked: true, reason} or {blocked: false}.\n- reason is one of 'Chargeback or dispute', 'Card testing or fraud', 'Abuse of refunds', 'Other' (lib/status.ts:55-60).\n- {blocked: false} carries no reason; accept an optional one.\nBlock: sets status blocked and risk_level high. Adds the customer's email (hash, masked display) and known card fingerprints and devices to blocklist_entries, with source manual and the reason. Revokes sessions.\nUnblock: sets status active, moves risk_level high to medium, and lifts the entries this block added.\nWrites audit_logs both ways.",
+          "request": "Body {blocked: true, reason} or {blocked: false}.\n- reason is one of 'Chargeback or dispute', 'Card testing or fraud', 'Abuse of refunds', 'Other' (lib/status.ts:55-60).\n- {blocked: false} carries no reason; accept an optional one.\nBlock: sets status blocked and risk_level high. Adds to blocklist_entries, each with source manual, the reason, created_by = caller and customer_id = the customer: kind email (the normalised email hash), kind card for each distinct non-null payments.card_fingerprint of the customer's payments, kind imei for each distinct IMEI on the customer's orders and checkout sessions still stored (device = IMEI per M106/B77; kind 'device' stays non-addable). Inserts use ON CONFLICT (kind, value_hash) DO NOTHING: an existing entry (from a risk refund, chargeback, manual add or another customer's block) is kept unchanged and not linked. Only this route sets blocklist_entries.customer_id; the risk refund route and manual adds leave it null. Revokes sessions.\nUnblock: sets status active, moves risk_level high to medium, and deletes only the entries WHERE customer_id = :id AND source = 'manual'.\nWrites audit_logs both ways. Card fingerprint = the gateway's card fingerprint (for example Stripe payment_method.card.fingerprint, never card data), written by the B2C payment webhook into the new payments.card_fingerprint column (partial index where not null).",
           "response": "204.",
           "errors": [
             { "status": 404, "code": "NOT_FOUND", "when": "no customer with that id", "ui": "dialog error slot" },
@@ -158,21 +158,21 @@
           "key": "GET /admin/customers/:id/export",
           "successStatus": 200,
           "query": "",
-          "request": ":id. Side effects: marks the customer's open or in_progress export request completed (completed_at, handled_by) and writes audit_logs. It may also store the file and set data_requests.file_id.",
+          "request": ":id. Side effects: marks the customer's open or in_progress export request completed (completed_at, handled_by) and writes audit_logs. It may also store the file and set data_requests.file_id. Contract flag originCheck: true (defineRoute; allowed only on GET routes with a session access): the CSRF guard requires, for a safe method whose contract has originCheck, Sec-Fetch-Site in (same-origin, same-site) or, when absent, an Origin header exactly in the configured CORS origins, else 403 CSRF_FAILED. No CSRF token is sent on this GET (apiDownload sends none). Content-Disposition is already in CORS_EXPOSED_HEADERS.",
           "response": "200 with a JSON file and Content-Disposition: attachment; filename=customer-<id>.json. The console falls back to that name when the header is missing; expose the header through CORS. Content: profile, orders (id, service, IMEI, status, totals, dates), payments without card data, consents, checkout sessions, support tickets with their public messages, and data requests. Works for every customer, anonymized ones included.",
           "errors": [
             { "status": 404, "code": "NOT_FOUND", "when": "no customer with that id", "ui": "shown in the Export dialog" },
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks customers:privacy", "ui": "shown in the Export dialog; button disabled" }
           ],
           "assumed": true,
-          "mapConflict": "The route's tables lack audit_logs (the demo logs 'exported data of') and the payment, checkout and ticket tables a complete export reads; add them. This GET has side effects: see crossCutting (CSRF)."
+          "mapConflict": "The route's tables lack audit_logs (the demo logs 'exported data of') and the payment, checkout and ticket tables a complete export reads; add them. This GET has side effects: see crossCutting (CSRF); resolved by the contract flag originCheck (lead resolution b2c-8)."
         },
         {
           "key": "POST /admin/customers/:id/anonymize",
           "successStatus": 204,
           "query": "",
           "request": "No body. Irreversible.\n- customers: status anonymized, anonymized_at now, name 'Deleted customer', email deleted-<id>@redacted.invalid, phone '', internal_notes '', marketing_opt_in false, has_account false.\n- Deletes credentials and revokes sessions and tokens.\n- Cuts stored IMEIs to the TAC plus a mask on the customer's orders, checkout sessions and IMEI checks.\n- Keeps payments, ledger entries and amounts.\n- Closes an open or in_progress erasure request (completed).\n- Writes audit_logs.",
-          "response": "204. The console then refetches the customer, the data requests and the orders (hooks/usePrivacyMutations.ts:31-46).",
+          "response": "204. The console then refetches the customer, the data requests and the orders (hooks/usePrivacyMutations.ts:31-46). Anonymization erases the customer's imei_checks the same way as the retention job: imei_enc, imei_hash and cached_until set to NULL together.",
           "errors": [
             { "status": 404, "code": "NOT_FOUND", "when": "no customer with that id", "ui": "shown in the confirm dialog" },
             { "status": 409, "code": "ANONYMIZED", "when": "already anonymized", "ui": "shown in the confirm dialog" },
@@ -210,7 +210,7 @@
           "key": "PATCH /admin/data-requests/:id",
           "successStatus": 200,
           "query": "",
-          "request": "Body {status: in_progress|completed|rejected, note?}.\n- Moves: open to in_progress, completed or rejected; in_progress to completed or rejected.\n- completed sets completed_at now. Every move sets handled_by = staff.\n- note is required for rejected and at most 300 chars (RejectRequestDialog.tsx:46-52). It is kept in audit_logs.",
+          "request": "Body {status: in_progress|completed|rejected, note?}.\n- Moves: open to in_progress, completed or rejected; in_progress to completed or rejected.\n- completed sets completed_at now. Every move sets handled_by = staff.\n- note is required for rejected and at most 300 chars (RejectRequestDialog.tsx:46-52). It is stored in data_requests.note (text NOT NULL default '') and also in audit_logs.after.note; required (non-blank) when status = rejected, optional otherwise.",
           "response": "200 with the updated DataRequest.",
           "errors": [
             { "status": 404, "code": "NOT_FOUND", "when": "no request with that id", "ui": "toast" },
@@ -219,7 +219,7 @@
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks customers:privacy", "ui": "toast" }
           ],
           "assumed": true,
-          "mapConflict": "data_requests has no note column: keep the note in audit_logs (after.note), or add a column."
+          "mapConflict": "data_requests already has a note column (text NOT NULL default ''): store the note there and in audit_logs (after.note)."
         }
       ],
       "businessRules": [
@@ -280,7 +280,7 @@
           "successStatus": 200,
           "query": "Paging 25. q: contains over publicTitle, slug, service.name and service.code (mocks/listingRoutes.ts:21). Filters isListed=true|false and locked=true|false. _sort publicTitle|isListed, default publicTitle asc (lib/views.ts:22-26). Counts, each with _start=0&_end=1: isListed=true; isListed=false&locked=false; locked=true (components/ListingStats.tsx:10-14; lib/counts.ts:5).",
           "request": "",
-          "response": "JSON array + x-total-count. One row per service and locale:\n- id, serviceId, locale (en|ar), slug, publicTitle, isListed, isFeatured.\n- service {id, name, code, basePrice (B2B base, 4-dp), cost}.\n- retailPrice: service_group_prices.price of the b2c_retail group, net USD before VAT, shared by every locale of the service; null when unset.\n- floorPrice: the lowest retail price accepted.\n- marginPct: (retail - cost) / retail x 100 as a 4-dp decimal string; null without a retail price (mocks/dto.ts:35).\n- orders30d and revenue30d: the service's non-rejected storefront orders of the last 30 days; revenue as net total_price.\n- locked (never public) and lockedReason (text or null).",
+          "response": "JSON array + x-total-count. One row per service and locale:\n- id, serviceId, locale (en|ar), slug, publicTitle, isListed, isFeatured.\n- service {id, name, code, basePrice (B2B base, 4-dp), cost (the effective cost of B117, 4-dp USD, so cost, marginPct and floorPrice agree)}.\n- retailPrice: service_group_prices.price of the b2c_retail group, net USD before VAT, shared by every locale of the service; null when unset.\n- floorPrice: the lowest retail price accepted: the B117 effective floor for the b2c_retail group (effective cost + the minimum profit from pricing_rules), computed by the same resolver function checkout uses (exported by the catalog pricing service of feature 4b).\n- marginPct: (retail - cost) / retail x 100 as a 4-dp decimal string; null without a retail price (mocks/dto.ts:35).\n- orders30d and revenue30d: the service's non-rejected storefront orders of the last 30 days; revenue as net total_price.\n- locked (never public) and lockedReason (text or null).",
           "errors": [
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks storefront:read", "ui": "tab hidden" }
           ],
@@ -318,7 +318,7 @@
           "key": "PATCH /admin/service-listings/:id",
           "successStatus": 200,
           "query": "",
-          "request": "Body is any of {isListed: boolean, retailPrice: 4-dp money string, net USD before VAT (components/PriceDialog.tsx:52)}. The switch sends only isListed; the price dialog sends only retailPrice. retailPrice upserts service_group_prices(service_id, b2c_retail group), so it applies to every locale's listing of the service and only to new storefront checkouts. Refuse a price <= 0 or below floorPrice.",
+          "request": "Body is any of {isListed: boolean, retailPrice: 4-dp money string, net USD before VAT (components/PriceDialog.tsx:52)}. The switch sends only isListed; the price dialog sends only retailPrice. retailPrice upserts service_group_prices(service_id, b2c_retail group), so it applies to every locale's listing of the service and only to new storefront checkouts. Refuse a price <= 0 or below floorPrice. floorPrice is the same B117 effective floor (effective cost + minimum profit for the b2c_retail group); retailPrice below it is 422 on retailPrice.",
           "response": "200 with the updated row; retailPrice, marginPct and floorPrice are worked out again.",
           "errors": [
             { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[{field: 'retailPrice'}] for a price <= 0, or below the floor, with a message naming the floor (demo text 'Below the floor...', listingRoutes.ts:106-124)", "ui": "message under the price field" },
@@ -404,7 +404,7 @@
           "request": "Body {brands: string[], models: string[], networks: string[]} (split on commas and new lines, trimmed).\nAn empty list means all:\n- brands: distinct tac_catalog.brand.\n- models: tac_catalog marketing_name (else model) of those brands, plus typed models that are not in the catalogue.\n- networks: distinct service_listings.carrier (the mock falls back to AT&T, T-Mobile, Vodafone).\nFor each model x network: title 'Unlock <model> on <network>', slug slugOf(title), locale en, kind model, status draft, template_params {brand, model, network}, and a short draft body. Combinations whose slug already exists in that locale are skipped. Nothing is published.",
           "response": "200 with {created: ContentPage[] (the new drafts), skipped: number (combinations that already had a page)}.",
           "errors": [
-            { "status": 422, "code": "VALIDATION_FAILED", "when": "proposal: the run would create more drafts than the per-run cap (the mock silently stops at 6, pageRoutes.ts:27, 85)", "ui": "dialog error slot" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "the run would create more than 50 new drafts (cap STOREFRONT_GENERATE_MAX_PER_RUN = 50, a code constant with no setting and no console field): the server computes brands x models x networks, removes the combinations that already have a page (counted in skipped) and, if more than 50 remain, refuses the whole run without truncating: detail 'This run would create N pages; the limit is 50 per run. Narrow the lists.', errors [] (no field); the mock silently stops at 6, pageRoutes.ts:27, 85", "ui": "dialog error slot" },
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks storefront:create", "ui": "Generate disabled" }
           ],
           "assumed": true,
@@ -466,7 +466,7 @@
           "successStatus": 200,
           "query": "_start=0&_end=200&_sort=type&_order=asc with no filters (components/LegalPanel.tsx:19-23). Filters type, locale and isCurrent are accepted.",
           "request": "",
-          "response": "Every version. Row:\n- id, type terms|privacy|refund|cookies, version (text, e.g. '3.2'), locale, bodyMd.\n- effectiveFrom: null until published, and kept after the version is superseded.\n- isCurrent: one per type and locale.\n- requiresReacceptance, createdAt.\n- acceptedCount: count of granted consent_records with this legal_document_id; null if not counted.\nThe console groups rows: current = isCurrent; draft = not current and effectiveFrom null; earlier = not current and effectiveFrom set (lib/legal.ts:66-74).",
+          "response": "Every version. Row:\n- id, type terms|privacy|refund|cookies (CHECK legal_documents_type_check; labels terms 'Terms of service', privacy 'Privacy policy', refund 'Refund policy', cookies 'Cookie policy'), version (text, e.g. '3.2'), locale, bodyMd.\n- effectiveFrom: null until published, and kept after the version is superseded.\n- isCurrent: one per type and locale.\n- requiresReacceptance, createdAt.\n- acceptedCount: count of granted consent_records with this legal_document_id; null if not counted.\nThe console groups rows: current = isCurrent; draft = not current and effectiveFrom null; earlier = not current and effectiveFrom set (lib/legal.ts:66-74).",
           "errors": [
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks legal:read", "ui": "legal half hidden" }
           ],
@@ -519,7 +519,7 @@
           "successStatus": 200,
           "query": "Paging 25. q: contains over tac (typed digits find prefixes), brand, model and marketingName (mocks/tacRoutes.ts:9). A brand filter is accepted. _sort tac|brand|model|releaseYear, default tac asc (lib/views.ts:43-47).",
           "request": "",
-          "response": "JSON array + x-total-count. Row: id, tac (8-digit text), brand, model (model code, e.g. A2633), marketingName ('' when none), releaseYear (number; null when unknown, shown as '-' since TacTable.tsx:62 treats any falsy value so), source (text; manual for console entries).",
+          "response": "JSON array + x-total-count. Row: id, tac (8-digit text), brand, model (model code, e.g. A2633), marketingName ('' when none), releaseYear (number; 0 when unknown: the column stays nullable and null is sent as 0, which the console shows as '-' since TacTable.tsx:62 treats any falsy value so; sorting by releaseYear puts unknown first in asc order, matching 0; input accepts a 4-digit integer 1990 to current year + 1, and 0 or null in a body are refused with 422), source (text; manual for console entries).",
           "errors": [
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks catalog:read", "ui": "tab hidden" }
           ],
@@ -556,11 +556,11 @@
           "key": "PATCH /admin/tac-catalog/:id",
           "successStatus": 200,
           "query": "",
-          "request": "Partial body, changed fields only. tac stays editable (8 digits, unique). brand and model cannot be emptied. The console never sends null, so a year cannot be cleared.",
+          "request": "Partial body, changed fields only. tac is editable (8 digits, unique) only while no imei_checks row references the old TAC (imei_checks.tac records the TAC of the IMEI actually checked, a historical fact, so there is no ON UPDATE CASCADE); otherwise 422 VALIDATION_FAILED errors[{field:'tac', message:'N IMEI checks already use TAC <old>; add a new entry for the new TAC instead.'}]. brand and model cannot be emptied. The console never sends null, so a year cannot be cleared.",
           "response": "200 with the updated entry.",
           "errors": [
             { "status": 404, "code": "NOT_FOUND", "when": "no entry with that id", "ui": "dialog error slot" },
-            { "status": 422, "code": "VALIDATION_FAILED", "when": "bad tac, empty brand or model, bad year", "ui": "message under the field" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "bad tac or a tac already used by IMEI checks, empty brand or model, bad year", "ui": "message under the field" },
             { "status": 409, "code": "TAC_TAKEN", "when": "another entry has the new TAC, with errors[{field: 'tac'}]", "ui": "message under TAC" },
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks catalog:update", "ui": "Edit disabled" }
           ],
@@ -625,7 +625,7 @@
           "successStatus": 200,
           "query": "_start/_end, 12 per page. _sort createdAt|grossAmount|recoveryEmailedAt, default createdAt desc (lib/filters.ts:54-57, 105-115). 'Needs a reminder' sends canRecover=true; 'All' sends no filter. q: case-insensitive contains over the FULL email, since rows carry it masked (mocks/handlers.ts:63-69).",
           "request": "",
-          "response": "JSON array + x-total-count. Row:\n- id.\n- email: masked as 'ab•••@domain'; the console masks again, which leaves this format unchanged.\n- grossAmount: USD, 4-dp, incl. VAT.\n- fxRate: decimal string, currency units per USD; the console shows grossAmount x fxRate.\n- currencyCode (currencies.code) and serviceName (services.name).\n- status (checkout_sessions.status).\n- utm: the stored jsonb; the console reads utm.source.\n- createdAt.\n- recoveryEmailedAt: null until a recovery email is sent, automatic or manual.\n- orderId: set when the session was paid.\n- marketingConsent: the latest marketing consent record for the session or customer is a grant.\n- canRecover: the server's verdict.",
+          "response": "JSON array + x-total-count. Row:\n- id.\n- email: masked as 'ab•••@domain'; the console masks again, which leaves this format unchanged.\n- grossAmount: USD, 4-dp, incl. VAT.\n- fxRate: decimal string, currency units per USD; the console shows grossAmount x fxRate.\n- currencyCode (currencies.code) and serviceName (services.name).\n- status (checkout_sessions.status: open|paid|expired, CHECK checkout_sessions_status_check, default open; sent as stored).\n- utm: the stored jsonb; the console reads utm.source.\n- createdAt.\n- recoveryEmailedAt: null until a recovery email is sent, automatic or manual.\n- orderId: set when the session was paid.\n- marketingConsent: the latest marketing consent record (consent_records.purpose marketing; subject_type customer|client) for the session or customer is a grant.\n- canRecover: the server's verdict.",
           "errors": [
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks growth:read", "ui": "page hidden; table error state" }
           ],
@@ -650,7 +650,7 @@
           "successStatus": 200,
           "query": "days=7|30|90, always sent; default 30 (lib/filters.ts:24, 71-74).",
           "request": "",
-          "response": "{days, imeiChecks, paymentStarted, paid, delivered}, all integers. Storefront only, over the last `days` days. The console shows each step's share of the one before (display only).",
+          "response": "{days, imeiChecks, paymentStarted, paid, delivered}, all integers. Storefront only, over the last `days` days. The console shows each step's share of the one before (display only). Window [now - days x 24 h, now]. imeiChecks = count(imei_checks) with source IN (storefront_free, pre_order) and created_at in the window. paymentStarted = count(checkout_sessions) created in the window, any status. paid = those sessions with order_id IS NOT NULL (status paid). delivered = those sessions whose order (orders.id = order_id) has status completed. One read-only function storefrontFunnel(days) in the customers module's public index; the dashboard storefront block (feature 9, fixed 30 days) calls the same function; feature 9 builds it and feature 19 reuses it.",
           "errors": [
             { "status": 422, "code": "VALIDATION_FAILED", "when": "days not in 7|30|90, errors[{field: 'days'}] (mocks/handlers.ts:27-30)", "ui": "panel error state" },
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks reports:growth", "ui": "panel hidden (CheckoutsPage.tsx:113)" }
@@ -705,9 +705,9 @@
         {
           "key": "GET /admin/support-tickets",
           "successStatus": 200,
-          "query": "Paging 25. Filters:\n- status: repeat = IN. Open sends new&open&pending; Resolved sends resolved.\n- late=true: Overdue.\n- assigneeId=<me>: Mine.\n- requesterType=customer|client: Who.\n- requesterId=<customer id> with requesterType=customer: link from a customer.\n- q: contains over number, subject and requester name.\nSort: _sort=late,updatedAt&_order=desc,desc; the Resolved filter sends updatedAt desc only (lib/filters.ts:152-175).\nCounts, each with _start=0&_end=1, every 30 s: status=new&status=open&status=pending; status=new; late=true; status=resolved (hooks/useTicketCounts.ts:18-34).\nCustomer page: requesterType=customer&requesterId=<id>&_sort=updatedAt&_order=desc&_start=0&_end=10 (hooks/useCustomerTickets.ts:8-16).\nPalette: q&_start=0&_end=3&_sort=updatedAt&_order=desc.\nThe list itself is also refetched every 30 s.",
+          "query": "Paging 25. Filters:\n- status: repeat = IN. Open sends new&open&pending; Resolved sends resolved. status=pending is translated to the stored pending_customer (status IN (pending_customer)) by the status codec.\n- late=true: Overdue.\n- assigneeId=<me>: Mine.\n- requesterType=customer|client: Who.\n- requesterId=<customer id> with requesterType=customer: link from a customer.\n- q: contains over number, subject and requester name.\nSort: _sort=late,updatedAt&_order=desc,desc; the Resolved filter sends updatedAt desc only (lib/filters.ts:152-175).\nCounts, each with _start=0&_end=1, every 30 s: status=new&status=open&status=pending; status=new; late=true; status=resolved (hooks/useTicketCounts.ts:18-34).\nCustomer page: requesterType=customer&requesterId=<id>&_sort=updatedAt&_order=desc&_start=0&_end=10 (hooks/useCustomerTickets.ts:8-16).\nPalette: q&_start=0&_end=3&_sort=updatedAt&_order=desc.\nThe list itself is also refetched every 30 s.",
           "request": "",
-          "response": "JSON array + x-total-count. Row:\n- id, number (server-made, 'T-1042' style), subject.\n- channel email|web|chat|telegram.\n- requesterType customer|client, requesterId, requester {name, email or null}.\n- orderId or null, category (one of 8 words), priority high|normal|low.\n- status: only new|open|pending|resolved. Any other word crashes the badge (TicketStatusBadge.tsx:7-8).\n- assigneeId or null, and assignee {id, name} or null.\n- slaDueAt: when the next reply is due; null when nobody is waiting.\n- firstResponseAt, resolvedAt.\n- csatScore: 1-5 or null.\n- createdAt, updatedAt (last activity).\n- lastPublicAt: time of the latest non-internal message, or null.\n- late: a reply is awaited and slaDueAt has passed; always false when resolved.",
+          "response": "JSON array + x-total-count. Row:\n- id, number (server-made, 'T-1042' style), subject.\n- channel email|web|chat|telegram.\n- requesterType customer|client, requesterId, requester {name, email or null}.\n- orderId or null, category (one of 8 words), priority high|normal|low.\n- status: only new|open|pending|resolved (the stored pending_customer is sent as pending: status codec, B112; closed is removed from the stored vocabulary so it can never reach the console). Any other word crashes the badge (TicketStatusBadge.tsx:7-8).\n- assigneeId or null, and assignee {id, name} or null.\n- slaDueAt: when the next reply is due; null when nobody is waiting.\n- firstResponseAt, resolvedAt.\n- csatScore: 1-5 or null.\n- createdAt, updatedAt (last activity).\n- lastPublicAt: time of the latest non-internal message, or null.\n- late: a reply is awaited and slaDueAt has passed; always false when resolved.",
           "errors": [
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks support:read", "ui": "inbox error state; page hidden" }
           ],
@@ -731,7 +731,7 @@
           "key": "PATCH /admin/support-tickets/:id",
           "successStatus": 200,
           "query": "",
-          "request": "Partial body {priority?, assigneeId?, status?}.\n- assigneeId: null unassigns; otherwise it must be an active staff member.\n- status 'resolved': sets resolved_at now, adds an internal system message 'Marked resolved by <name>. A satisfaction survey is emailed to the customer.', and sends the CSAT survey (outbox/notifications).\n- status 'open' (reopen): only from resolved; sets resolved_at null.\nValues equal to the current ones are ignored. audit_logs entry per change.",
+          "request": "Partial body {priority?, assigneeId?, status?}. Status codec (B112): the body word pending is stored as pending_customer; status accepts only new|open|pending|resolved (anything else is 422 on status); stored words other than pending_customer pass through. Status codec in one place, the support repository: toWire(pending_customer) = 'pending', fromWire('pending') = 'pending_customer'.\n- assigneeId: null unassigns; otherwise it must be an active staff member.\n- status 'resolved': sets resolved_at now, adds an internal system message 'Marked resolved by <name>. A satisfaction survey is emailed to the customer.', and sends the CSAT survey (outbox/notifications).\n- status 'open' (reopen): only from resolved; sets resolved_at null.\nValues equal to the current ones are ignored. audit_logs entry per change.",
           "response": "200 with the updated list row (no messages).",
           "errors": [
             { "status": 404, "code": "NOT_FOUND", "when": "no ticket with that id", "ui": "toast" },
@@ -745,7 +745,7 @@
           "key": "POST /admin/support-tickets/:id/reply",
           "successStatus": 201,
           "query": "",
-          "request": "Body {body, channel?}.\n- body: trimmed text; templates are already filled in by the console.\n- channel: email|telegram, sent only when replyChannels has more than one entry (Composer.tsx:48-51, 91). Without it, use the ticket's channel when allowed, else email.\nEffects: inserts a staff message (is_internal false) and delivers it on the channel. The first public reply sets first_response_at. A new or open ticket becomes pending, and sla_due_at becomes null. An unassigned ticket is assigned to the sender. updated_at is set.",
+          "request": "Body {body, channel?}.\n- body: trimmed text; templates are already filled in by the console.\n- channel: email|telegram, sent only when replyChannels has more than one entry (Composer.tsx:48-51, 91). Without it, use the ticket's channel when allowed, else email.\nEffects: inserts a staff message (is_internal false) and delivers it on the channel. The first public reply sets first_response_at. A new or open ticket becomes pending_customer (sent as pending, see the status codec), and sla_due_at becomes null. An unassigned ticket is assigned to the sender. updated_at is set.",
           "response": "201 with the new TicketMessage.",
           "errors": [
             { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[{field: 'body'}] for empty text (shown under the text, Composer.tsx:32), or errors[{field: 'channel'}] for a channel outside replyChannels", "ui": "message under the composer" },
@@ -775,7 +775,7 @@
           "successStatus": 200,
           "query": "_start=0&_end=200&_sort=title&_order=asc (hooks/useTemplates.ts:9-16). q is accepted (title, body, shortcut).",
           "request": "",
-          "response": "JSON array + x-total-count. Row: id, title, category (ticket category words), locale en|ar, body (raw, with {{name}}, {{order}}, {{eta}}), shortcut ('' when none), createdBy (staff id or null), createdAt, updatedAt. When the total exceeds 200, the view says so.",
+          "response": "JSON array + x-total-count. Row: id, title, category (ticket category words), locale en|ar, body (raw, with {{name}}, {{order}}, {{eta}}), shortcut ('' when none), createdBy (staff id or null), createdAt, updatedAt. When the total exceeds 200, the view says so. Shortcut: shortcut is trimmed; empty or whitespace-only is stored as NULL and read back as ''; the unique index on lower(shortcut) WHERE shortcut IS NOT NULL stays, so many templates without a shortcut are allowed and SHORTCUT_TAKEN compares lower case among non-empty shortcuts only.",
           "errors": [
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks support:read", "ui": "picker and view error state" }
           ],
@@ -798,7 +798,7 @@
           "key": "POST /admin/reply-templates",
           "successStatus": 201,
           "query": "",
-          "request": "Body {title, category, locale, body, shortcut}, all trimmed. shortcut may be ''; otherwise it must start with '/' and be unique (lib/templateForm.ts:15-23). created_by = staff.",
+          "request": "Body {title, category, locale, body, shortcut}, all trimmed. shortcut may be ''; otherwise it must start with '/' and be unique (lib/templateForm.ts:15-23). created_by = staff. Shortcut: shortcut is trimmed; empty or whitespace-only is stored as NULL and read back as ''; the unique index on lower(shortcut) WHERE shortcut IS NOT NULL stays, so many templates without a shortcut are allowed and SHORTCUT_TAKEN compares lower case among non-empty shortcuts only.",
           "response": "201 with the ReplyTemplate.",
           "errors": [
             { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[].field is one of title|body|category|locale|shortcut (mocks/templateHandlers.ts:15-33)", "ui": "message under the field" },
@@ -812,7 +812,7 @@
           "key": "PATCH /admin/reply-templates/:id",
           "successStatus": 200,
           "query": "",
-          "request": "Partial body of the changed, trimmed fields only (lib/templateForm.ts:26-38). Fields that are present follow the same rules as create.",
+          "request": "Partial body of the changed, trimmed fields only (lib/templateForm.ts:26-38). Fields that are present follow the same rules as create. Shortcut: shortcut is trimmed; empty or whitespace-only is stored as NULL and read back as ''; the unique index on lower(shortcut) WHERE shortcut IS NOT NULL stays, so many templates without a shortcut are allowed and SHORTCUT_TAKEN compares lower case among non-empty shortcuts only.",
           "response": "200 with the updated template; updatedAt moves forward.",
           "errors": [
             { "status": 404, "code": "NOT_FOUND", "when": "no template with that id", "ui": "dialog error slot" },

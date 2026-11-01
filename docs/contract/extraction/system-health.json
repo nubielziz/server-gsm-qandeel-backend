@@ -9,7 +9,7 @@
           "successStatus": 200,
           "query": "",
           "request": "",
-          "response": "UI: polled every 15 s by the page (verdict, KPI 'Uptime 30 days' and 'Open alerts', Overview, Build card) AND by the app-shell maintenance banner on every admin page for system:read holders, deduped by React Query (staleTime 5 s, refetch on focus) (hooks/useHealth.ts:13-15, header/MaintenanceBanner.tsx:20) -> serve a snapshot the worker rebuilds every minute in the cache Redis + a live read of settings 'maintenance'. status: 'outage' when a core component is down, 'degraded' when any component is down/degraded or a critical alert is open, else 'operational'; never 'operational' while monitoring.status is 'unavailable' (send 'unknown' unless service_checks prove outage/degraded) (mocks/facts.ts:172-177, M216). since = start of the current status: earliest current problem (component since, open critical alert started_at); operational = last incident resolved_at or null; unknown = monitoring.lastScrapeAt (mocks/buildHealth.ts:100-121). checkedAt = snapshot time. monitoring = Prometheus reachability, detail text when not, lastScrapeAt of the API target. build = APP_VERSION as built (e.g. v1.42.0), 7-char GIT_SHA, APP_ENV, deploy time. components (service_checks, latest row per component): core keys api, postgres, redis, redis_queue, storage, workers, mail (kind core), 'supplier:<suppliers.id>' for EVERY supplier (disabled: status unknown, since null, lastCheckedAt null, detail 'checks are off'), 'gateway:<payment_gateways.id>'; latency = last latency_ms as Measure (thresholds per kind); uptime h24/d7/d30 = (checks not down)/checks x 100, value null without checks; detail = failure text only while failing. uptime = platform uptime (minutes with no core component down / minutes with checks) for 24h/7d/30d + daily = 30 UTC-day points oldest first, null for a day without checks. alerts (alert_events): open = Measure {value = firing + acknowledged count, unit count, warn 1, no crit/direction; state crit when any open critical (acknowledged included, M214), warn when any open, ok when none; {value null, state unknown} when rules could not be evaluated and nothing is open (M213)}; critical = open critical count incl. acknowledged; items = open alerts as AlertSummary, critical first then newest; trend = 96 x 15-min points of the open count over 24 h (from started_at/resolved_at). incidents = unresolved incidents newest first (IncidentSummary; components = component keys). maintenance = settings 'maintenance' (off: enabled false, the other five fields null).",
+          "response": "UI: polled every 15 s by the page (verdict, KPI 'Uptime 30 days' and 'Open alerts', Overview, Build card) AND by the app-shell maintenance banner on every admin page for system:read holders, deduped by React Query (staleTime 5 s, refetch on focus) (hooks/useHealth.ts:13-15, header/MaintenanceBanner.tsx:20) -> serve a snapshot the worker rebuilds every minute in the cache Redis + a live read of settings 'maintenance'. status: 'outage' when a core component is down, 'degraded' when any component is down/degraded or a critical alert is open, else 'operational'; never 'operational' while monitoring.status is 'unavailable' (send 'unknown' unless service_checks prove outage/degraded) (mocks/facts.ts:172-177, M216). since = start of the current status: earliest current problem (component since, open critical alert started_at); operational = last incident resolved_at or null; unknown = monitoring.lastScrapeAt (mocks/buildHealth.ts:100-121). checkedAt = snapshot time. monitoring = Prometheus reachability, detail text when not, lastScrapeAt of the API target. build = APP_VERSION as built (e.g. v1.42.0), 7-char GIT_SHA, APP_ENV, deploy time. components (service_checks, latest row per component): core keys api, postgres, redis, redis_queue, storage, workers, mail (kind core), 'supplier:<suppliers.id>' for EVERY supplier (disabled: status unknown, since null, lastCheckedAt null, detail 'checks are off'), 'gateway:<payment_gateways.id>'; latency = last latency_ms as Measure (thresholds per kind); uptime h24/d7/d30 = (checks not down)/checks x 100, value null without checks; detail = the service_checks.detail text (nullable text: the checker writes null when ok and a short English failure text when degraded or down) of the latest row while status is degraded or down, else null; for a disabled supplier the server sends 'checks are off' (synthesized, no row). The stored key rule: service_checks.component holds the full key, the core keys as is and 'supplier:<suppliers.id>' / 'gateway:<payment_gateways.id>' (supplier_id and gateway_id are still set for the cascade; CHECKs service_checks_supplier_key_check and service_checks_gateway_key_check); ?component= matches the stored key exactly (ANSWERS Q19). uptime = platform uptime (minutes with no core component down / minutes with checks) for 24h/7d/30d + daily = 30 UTC-day points oldest first, null for a day without checks. alerts (alert_events): open = Measure {value = firing + acknowledged count, unit count, warn 1, no crit/direction; state crit when any open critical (acknowledged included, M214), warn when any open, ok when none; {value null, state unknown} when rules could not be evaluated and nothing is open (M213)}; critical = open critical count incl. acknowledged; items = open alerts as AlertSummary, critical first then newest; trend = 96 x 15-min points of the open count over 24 h (from started_at/resolved_at). incidents = unresolved incidents newest first (IncidentSummary; components = component keys). maintenance = settings 'maintenance' (off: enabled false, the other five fields null).",
           "errors": [
             {
               "status": 401,
@@ -44,7 +44,7 @@
           "successStatus": 200,
           "query": "range=1h|6h|24h|7d (default 24h; any other value -> 422 errors[{field:'range'}], mocks/http.ts:72-75) and optional component=<HealthComponent.key> (unknown key -> 404). Overview sends ?range=<page range> for every component (tabs/overview/ComponentsCard.tsx:81) and ?range=<r>&component=<key> for the picked chart (tabs/overview/ResponseTimeCard.tsx:79).",
           "request": "",
-          "response": "UI: polled every 30 s (hooks/useHealth.ts:21-29). Source service_checks aggregated with date_bin: bucketSeconds 60/300/1800/10800 for 1h/6h/24h/7d = 60/72/48/56 buckets, oldest first, the last one still filling (mocks/clock.ts:65-80). Bucket: status = worst check in it (down > degraded > ok), 'unknown' with no checks (worker restart, disabled supplier); checks = rows; failures = rows with status down; latencyMs = p95 of answered checks' latency_ms, null when none. Component: uptime = (checks - failures)/checks x 100 over the range (uptime thresholds; null without checks); latency = last check latency with its thresholds (drawn on the chart); key/name as in health, same order; range echoed. Cache each (range, component) answer ~30 s: the all-components 7d read aggregates ~150k rows (index service_checks(component, checked_at)).",
+          "response": "UI: polled every 30 s (hooks/useHealth.ts:21-29). Source service_checks aggregated with date_bin: bucketSeconds 60/300/1800/10800 for 1h/6h/24h/7d = 60/72/48/56 buckets, oldest first, the last one still filling (mocks/clock.ts:65-80). Bucket: status = worst check in it (down > degraded > ok), 'unknown' with no checks (worker restart, disabled supplier); checks = rows; failures = rows with status down; latencyMs = p95 of answered checks' latency_ms, null when none. Component: uptime = (checks - failures)/checks x 100 over the range (uptime thresholds; null without checks); latency = last check latency with its thresholds (drawn on the chart); key/name as in health, same order; range echoed. Cache each (range, component) answer ~30 s: the all-components 7d read aggregates ~150k rows (index service_checks(component, checked_at)). Component key = the stored service_checks.component (core key or supplier:<id> / gateway:<id>); bucket and component detail text is service_checks.detail (null when ok); aggregation by (component, checked_at) stays per supplier.",
           "errors": [
             {
               "status": 401,
@@ -178,7 +178,7 @@
           "successStatus": 200,
           "query": "",
           "request": "",
-          "response": "UI: polled every 30 s; feeds the Orders tab, the verdict's impact line and KPI 'Orders past SLA' (hooks/usePipeline.ts:8-15, header/ImpactLine.tsx:60, header/kpi.ts:90-94). Sources: orders (+ the service SLA minutes), order_events, risk_assessments, ledger holds. stuck.total = Measure count (warn 5, crit 20, above) of open orders older than their service SLA (now - placed_at > SLA) in pending, processing or needs_attention; stuck.heldAmount = Money (4 dp, base currency) held for them (client_hold for B2B, captured payment for paid B2C); byStatus rows {status, label, count, oldestAgeSeconds, heldAmount} with status exactly 'pending' (queue pending), 'processing' or 'needs_attention' (dispatch queue; those orders are not counted again under pending/processing); the console links them to Orders tabs queued/processing/review + pastSla=true (M230); rows with count 0 may be omitted (mock); trend = 96 x 15-min points of the past-SLA count over 24 h. needsAttention = every order in the needs_attention queue (any age). dispatchP95 = p95 seconds from placed to sent to the supplier (sent_at) over 24 h (unit s, warn 120, crit 300). byServiceType = one row per type imei, server, remote, file: total = finished (completed + rejected) in the last 24 h, success/failure = percent Measures (success below 97/90, failure above 3/10). heldByRisk = paid storefront orders held by the risk rules: count, amount (Money), oldestAt.",
+          "response": "UI: polled every 30 s; feeds the Orders tab, the verdict's impact line and KPI 'Orders past SLA' (hooks/usePipeline.ts:8-15, header/ImpactLine.tsx:60, header/kpi.ts:90-94). Sources: orders (+ the service SLA minutes), order_events, risk_assessments, ledger holds. stuck.total = Measure count (warn 5, crit 20, above) of open orders older than their service SLA (now - placed_at > SLA) in pending, processing or needs_attention, the same age-only pastSla predicate as GET /admin/orders?pastSla=true (B92; implemented once as an exported query fragment of the orders read model and reused by feature 9; placed_at equals created_at); stuck.heldAmount = Money (4 dp, base currency) held for them (client_hold for B2B, captured payment for paid B2C); byStatus rows {status, label, count, oldestAgeSeconds, heldAmount} with status exactly 'pending' (queue pending), 'processing' or 'needs_attention' (dispatch queue; those orders are not counted again under pending/processing); the console links them to Orders tabs queued/processing/review + pastSla=true (M230); rows with count 0 may be omitted (mock); trend = 96 x 15-min points of the past-SLA count over 24 h. needsAttention = every order in the needs_attention queue (any age). dispatchP95 = p95 seconds from placed to sent to the supplier (sent_at) over 24 h (unit s, warn 120, crit 300). byServiceType = one row per type imei, server, remote, file: total = finished (completed + rejected) in the last 24 h, success/failure = percent Measures (success below 97/90, failure above 3/10). heldByRisk = paid storefront orders held by the risk rules: count, amount (Money), oldestAt.",
           "errors": [
             {
               "status": 401,
@@ -207,7 +207,7 @@
           "successStatus": 200,
           "query": "",
           "request": "",
-          "response": "UI: polled every 30 s (hooks/usePipeline.ts:18-25). One row per supplier, all statuses. status = the switch active|disabled|paused (M197). health = latest service_checks status of 'supplier:<id>' (a paused supplier keeps its checks; disabled -> 'unknown'); since = start of the current health. lastSuccessAt = last successful supplier call (supplier_api_logs) or check. latency = last check latency (ms; warn 2000, crit 5000). errorRate/timeoutRate = percent of supplier_api_logs calls that failed / timed out in the last 15 min (warn 5, crit 20), {value null, state unknown} without calls; Postgres-sourced, so valid while Prometheus is down. circuit = outbound breaker state closed|open|half_open (D023, shared state). lastSyncAt = last balance/price sync. balance = our balance with the supplier: amount Money in the supplier's currency, currency code, state = server low-balance verdict (warn below the supplier's low-balance alert amount, crit at or below 10 % of it, mocks/buildPipeline.ts:98-104), checkedAt; must agree with lowBalance on GET /admin/suppliers (M65). Pause/Resume buttons call PATCH /admin/suppliers/:id {status:'paused'|'active'} (suppliers:update), then refetch this route, health and the dashboard (hooks/useSetSupplierStatus.ts:14).",
+          "response": "UI: polled every 30 s (hooks/usePipeline.ts:18-25). One row per supplier, all statuses. status = the switch active|disabled|paused (M197). health = latest service_checks status of 'supplier:<id>' (a paused supplier keeps its checks; disabled -> 'unknown'); since = start of the current health. lastSuccessAt = max(created_at of supplier_api_logs rows with outcome 'ok', the latest ok service check). latency = last check latency (ms; warn 2000, crit 5000). errorRate/timeoutRate over the last 15 minutes per supplier from supplier_api_logs.outcome (ok | error | timeout, written by the supplier client): timeout = the outbound call hit timeoutMs or the network timed out (no HTTP answer); error = any other failure (network error, HTTP >= 400, unparsable answer, a Dhru ERROR result even on HTTP 200); ok otherwise; errorRate = error/total x 100 and timeoutRate = timeout/total x 100 (separate: a timeout is not also an error) (warn 5, crit 20), {value null, state unknown} without calls; Postgres-sourced, so valid while Prometheus is down. circuit = outbound breaker state closed|open|half_open (D023, shared state). lastSyncAt = GREATEST(suppliers.balance_checked_at, suppliers.prices_synced_at), null when both are null (the price sync sets prices_synced_at at the end of a successful run). balance = our balance with the supplier: amount Money in the supplier's currency, currency code, state = server low-balance verdict (warn below the supplier's low-balance alert amount, crit at or below 10 % of it, mocks/buildPipeline.ts:98-104), checkedAt; must agree with lowBalance on GET /admin/suppliers (M65). Pause/Resume buttons call PATCH /admin/suppliers/:id {status:'paused'|'active'} (suppliers:update), then refetch this route, health and the dashboard (hooks/useSetSupplierStatus.ts:14).",
           "errors": [
             {
               "status": 401,
@@ -364,7 +364,7 @@
           "successStatus": 200,
           "query": "Optional job=<name> (History drawer, tabs/queues/JobHistoryDrawer.tsx:24); without it runs is [].",
           "request": "",
-          "response": "UI: polled every 30 s, every 5 s while any jobs[].running or runs[].status is 'running' (hooks/useQueues.ts:41-53). jobs = every scheduled job (BullMQ job schedulers of D020 joined with job_runs): name (stable key, e.g. ledger_integrity), label (English), schedule = cron pattern, scheduleText = cron in words (server-rendered, may be ''), state = verdict of the last finished run (failed crit, skipped warn, succeeded ok, none unknown; an overdue job may be warn), running = a job_runs row of the job is 'running', lastRun = newest FINISHED run, never the running one (mocks/buildQueues.ts:131), nextRunAt from the scheduler. runs (with ?job=) = that job's job_runs newest first, at most 50, running ones included (mocks/buildQueues.ts:143). JobRun: durationMs and processed are non-null numbers (0 while running), finishedAt null while running, result = small object of counters printed as one line (no secrets), error text or null, triggeredBy {id,name} for manual runs.",
+          "response": "UI: polled every 30 s, every 5 s while any jobs[].running or runs[].status is 'running' (hooks/useQueues.ts:41-53). jobs = every scheduled job (BullMQ job schedulers of D020 joined with job_runs): name (stable key, e.g. ledger_integrity), label (English), schedule = cron pattern, scheduleText = cron in words (server-rendered, may be ''), state = verdict of the last finished run (failed crit, skipped warn, succeeded ok, none unknown; an overdue job may be warn), running = a job_runs row of the job is 'running', lastRun = newest FINISHED run, never the running one (mocks/buildQueues.ts:131), nextRunAt from the scheduler. runs (with ?job=) = that job's job_runs newest first, at most 50, running ones included (mocks/buildQueues.ts:143). JobRun: durationMs and processed are non-null numbers (0 while running), finishedAt null while running, result = small object of counters printed as one line (no secrets), error text or null, triggeredBy {id,name} for manual runs. job_runs.duration_ms and processed are NOT NULL DEFAULT 0: 0 while running; the job-run service sets duration_ms = finished_at - started_at in ms and processed = the job's count on finish (a contract test checks a running run: both 0, finishedAt null).",
           "errors": [
             {
               "status": 401,
@@ -393,7 +393,7 @@
           "successStatus": 202,
           "query": "",
           "request": "No body; :name = a scheduled job name (tabs/queues/ActionDialogs.tsx:109). Insert job_runs {job, trigger 'manual', status 'running', started_at now, triggered_by staff} and enqueue the job now outside its schedule (BullMQ add, jobId 'manual-<run id>'); audit_logs.",
-          "response": "202 + the new JobRun (status running, trigger manual). The console ignores the body (toast from its own label) and polls jobs every 5 s until the run ends.",
+          "response": "202 + the new JobRun (status running, trigger manual). The console ignores the body (toast from its own label) and polls jobs every 5 s until the run ends. A new run starts with durationMs 0 and processed 0 (finished runs get both on finish).",
           "errors": [
             {
               "status": 401,
@@ -445,7 +445,7 @@
             {
               "status": 503,
               "code": "DATABASE_UNAVAILABLE",
-              "when": "Postgres not accepting connections (propose)",
+              "when": "Postgres not accepting connections: these reads need live rows, so during an outage they answer 503 through the shared database-error mapping",
               "ui": "card error with the server title, detail and request id + Retry"
             }
           ],
@@ -509,7 +509,7 @@
           "successStatus": 200,
           "query": "",
           "request": "",
-          "response": "UI: polled every 30 s, every 5 s while running (hooks/useIntegrity.ts:10-16). From job_runs of job 'ledger_integrity' (nightly + manual): running = a run is 'running'; lastRun = newest FINISHED run (a running lastRun makes the badge read 'Not checked', tabs/integrity/report.ts:52-66); lastSuccessAt = finished_at of the newest succeeded run with zero failed checks (mocks/seedIntegrity.ts:48-54); checks = the four checks of lastRun.result in map order entries_balanced, accounts_match_lines, stuck_holds, payments_without_entry: label, status pass|fail|unknown (unknown when never run or the run failed/skipped), count = full number of findings, difference = Money sum (4 dp, '-37.5000'; '0.0000' on a pass; null for stuck_holds), findings = the first 20: entry (id = ledger_transactions.id, ref = journal number, difference), account (id = ledger_accounts.id, ref '<kind>:<owner_id>' e.g. 'client_wallet:4', label e.g. 'Wallet · <merchant>', difference, lastEntryAt), hold (id, ref, ageSeconds), payment (id = payments.id, ref = gateway txn id, difference). Read-only: never corrects anything.",
+          "response": "UI: polled every 30 s, every 5 s while running (hooks/useIntegrity.ts:10-16). From job_runs of job 'ledger_integrity' (nightly + manual): running = a run is 'running'; lastRun = newest FINISHED run (a running lastRun makes the badge read 'Not checked', tabs/integrity/report.ts:52-66); lastSuccessAt = finished_at of the newest succeeded run with zero failed checks (mocks/seedIntegrity.ts:48-54); checks = the four checks of lastRun.result in map order entries_balanced, accounts_match_lines, stuck_holds, payments_without_entry: label, status pass|fail|unknown (unknown when never run or the run failed/skipped), count = full number of findings, difference = Money sum (4 dp, '-37.5000'; '0.0000' on a pass; null for stuck_holds), findings = the first 20 per check, every label non-null and unused fields null: entry (id = ledger_transactions.id, ref = '#<id>' (the ledger has no separate journal number; the console opens journals by id), label = '<kind> · <ref_type> #<ref_id>' or '<kind> · system', difference = the sum of its lines), account (id = ledger_accounts.id, ref = '<kind>:<owner_id>' e.g. 'client_wallet:4', bare kind when owner-less, label 'Wallet · <merchant>' for client_wallet, 'Hold · <merchant>' for client_hold, 'Supplier prepaid · <supplier>' for supplier_prepaid, else the account kind in words e.g. 'Bank', difference = balance - sum(lines), lastEntryAt), hold (stuck_holds: a B2B order whose order_hold transaction, ref_type order, is older than 24 h with no release or settle transaction for that order and the order still open; id = orders.id, ref = '#<order id>', label = 'Order #<id> · <merchant name>', ageSeconds = now - hold created_at, difference null), payment (id = payments.id, ref = gateway_txn_id, label = 'Payment · <gateway name>', difference = the payment amount). Read-only: never corrects anything.",
           "errors": [
             {
               "status": 401,
@@ -573,7 +573,7 @@
           "successStatus": 200,
           "query": "_start, _end only (25 a page; no sort, filters or q: hooks/useAlerts.ts:51). Default order name asc (mocks/routes/rules.ts:117); the console then lifts rules with open alerts to the top of the page. q (unused) over name, key, metric.",
           "request": "",
-          "response": "UI: polled every 30 s. AlertRule rows: threshold and windowSeconds as JSON numbers (convert pg numeric), unit from the server's metric registry (null for plain numbers), open = an alert of the rule is firing or acknowledged (computed), mutedUntil ISO or null (a past time = not muted; propose an extra computed muted), channels subset of telegram|email, updatedAt null until edited. x-total-count. Soft-deleted rules are not listed.",
+          "response": "UI: polled every 30 s. AlertRule rows: threshold and windowSeconds as JSON numbers (convert pg numeric), unit from the server's metric registry (null for plain numbers), open = an alert of the rule is firing or acknowledged (computed), mutedUntil ISO or null (a past time = not muted; propose an extra computed muted), channels subset of telegram|email, updatedAt null until edited. x-total-count. Soft-deleted rules are not listed. unit comes from the metric registry (see POST /admin/alert-rules): percent, ms, s, count or null for supplier.balance.",
           "errors": [
             {
               "status": 401,
@@ -586,6 +586,11 @@
               "code": "FORBIDDEN",
               "when": "staff lacks alerts:read (detail must name it: 'You need the alerts:read permission.')",
               "ui": "Rules view forbidden state"
+            },
+            {
+              "status": 503,
+              "code": "DATABASE_UNAVAILABLE",
+              "when": "Postgres not accepting connections: these reads need live rows and answer 503 through the shared database-error mapping during an outage (the console shows a server error)"
             }
           ],
           "assumed": true,
@@ -615,6 +620,11 @@
               "code": "NOT_FOUND",
               "when": "unknown or deleted rule",
               "ui": "Refine error"
+            },
+            {
+              "status": 503,
+              "code": "DATABASE_UNAVAILABLE",
+              "when": "Postgres not accepting connections: these reads need live rows and answer 503 through the shared database-error mapping during an outage (the console shows a server error)"
             }
           ],
           "assumed": true,
@@ -624,7 +634,7 @@
           "key": "POST /admin/alert-rules",
           "successStatus": 201,
           "query": "",
-          "request": "Form sends every field incl. isActive (tabs/alerts/rules.ts:139-151). 422 per field (mocks/routes/rules.ts:24-86): key ^[a-z][a-z0-9_]{2,40}$ and unique (a duplicate is 422 on key, not 409: the dialog places only field errors), name 3-80, metric in the server registry, comparator gt|gte|lt|lte, threshold finite number in the metric's unit, windowSeconds integer 60-86400, severity info|warning|critical, channels non-empty subset of telegram|email, isActive boolean (default true). Server sets unit, created_by, mutedUntil null; audit_logs.",
+          "request": "Form sends every field incl. isActive (tabs/alerts/rules.ts:139-151). 422 per field (mocks/routes/rules.ts:24-86): key ^[a-z][a-z0-9_]{2,40}$ and unique (a duplicate is 422 on key, not 409: the dialog places only field errors), name 3-80, metric in the server registry (the 11 keys and their wire units: supplier.timeout_rate percent, supplier.error_rate percent, supplier.balance no unit (null), api.p95 ms, api.rate5xx percent, queue.oldest_age s, orders.past_sla count, ledger.mismatch_count count, db.connection_usage percent, redis.memory_usage percent, webhooks.success_rate percent; '%' is always sent as 'percent' and 'no unit' as null; OpenAPI carries the metric enum of the 11 keys and the unit enum percent|ms|s|per_min|count|bytes, nullable), comparator gt|gte|lt|lte, threshold finite number in the metric's unit, windowSeconds integer 60-86400, severity info|warning|critical, channels non-empty subset of telegram|email, isActive boolean (default true). Server sets unit, created_by, mutedUntil null; audit_logs.",
           "response": "201 + the new AlertRule (open false); the console refetches the rules.",
           "errors": [
             {
@@ -718,7 +728,7 @@
           "successStatus": 200,
           "query": "_start, _end (25 a page), _sort=startedAt&_order=desc, filters status (firing|acknowledged|resolved) and severity (hooks/useAlerts.ts:10-27). The default 'Open' view makes two reads, status=firing and status=acknowledged, first page each; Firing/Acknowledged/Resolved/All make one read (tabs/alerts/useAlertList.ts:21-23). Also accept repeated status (IN) and open=true; q (unused) over rule name, subjectLabel, note.",
           "request": "",
-          "response": "UI: polled every 15 s. AlertEvent rows: rule = {id,key,name,metric,comparator,threshold,windowSeconds,unit} (soft-deleted rules included), severity copied at fire time, value = the metric value that fired (JSON number), subjectType 'system'|'supplier'|'queue'|'gateway'|'ledger_account'|'client', subjectId = number (0 when the subject has no id, e.g. system or a queue; never null), subjectLabel = supplier name, queue name, 'Wallet · <merchant>', null for system; acknowledgedBy {id,name} or null (null with acknowledgedAt set prints 'Unknown'); note; incidentId = the incident whose alert_event_id is this alert. x-total-count.",
+          "response": "UI: polled every 15 s. AlertEvent rows: rule = {id: rule_id, key (alert_rules.key, soft-deleted rules included), name, metric, comparator, threshold (JSON number), windowSeconds, unit} where every field except id and key is read from the snapshot columns written on alert_events at fire time (rule_name, metric, comparator, threshold, window_seconds, unit), so a later edit or soft delete of the rule never rewrites what fired (ANSWERS Q31) and unit and metric never disagree, severity copied at fire time, value = the metric value that fired (JSON number), subjectType 'system'|'supplier'|'queue'|'gateway'|'ledger_account'|'client' (never null, 'system' by default; the metric registry fixes the subject: supplier.* gives supplier with subject_id = the supplier id, queue.oldest_age gives queue with subject_id null sent as 0 (B103), everything else gives system; CHECK alert_events_subject_type_check), subjectId = number (0 when the subject has no id, e.g. system or a queue; never null), subjectLabel = supplier name, queue name, 'Wallet · <merchant>', null for system; acknowledgedBy {id,name} or null (null with acknowledgedAt set prints 'Unknown'); note; incidentId = the incident whose alert_event_id is this alert. x-total-count.",
           "errors": [
             {
               "status": 401,
@@ -731,6 +741,11 @@
               "code": "FORBIDDEN",
               "when": "staff lacks alerts:read (detail must name it: 'You need the alerts:read permission.')",
               "ui": "Alerts view forbidden state"
+            },
+            {
+              "status": 503,
+              "code": "DATABASE_UNAVAILABLE",
+              "when": "Postgres not accepting connections: these reads need live rows and answer 503 through the shared database-error mapping during an outage (the console shows a server error)"
             }
           ],
           "assumed": true,
@@ -741,7 +756,7 @@
           "successStatus": 200,
           "query": "",
           "request": "",
-          "response": "Same shape as a list row. Used by Refine show (api/resources.ts).",
+          "response": "Same shape as a list row. Used by Refine show (api/resources.ts). rule is the fire-time snapshot and subjectType is never null, as in the list.",
           "errors": [
             {
               "status": 401,
@@ -760,6 +775,11 @@
               "code": "NOT_FOUND",
               "when": "unknown alert",
               "ui": "Refine error"
+            },
+            {
+              "status": 503,
+              "code": "DATABASE_UNAVAILABLE",
+              "when": "Postgres not accepting connections: these reads need live rows and answer 503 through the shared database-error mapping during an outage (the console shows a server error)"
             }
           ],
           "assumed": true,
@@ -830,6 +850,11 @@
               "code": "FORBIDDEN",
               "when": "staff lacks incidents:read (detail must name it: 'You need the incidents:read permission.')",
               "ui": "Incidents view forbidden state"
+            },
+            {
+              "status": 503,
+              "code": "DATABASE_UNAVAILABLE",
+              "when": "Postgres not accepting connections: these reads need live rows and answer 503 through the shared database-error mapping during an outage (the console shows a server error)"
             }
           ],
           "assumed": true,
@@ -859,6 +884,11 @@
               "code": "NOT_FOUND",
               "when": "unknown incident",
               "ui": "drawer 'Incident not found' (tabs/alerts/IncidentDrawer.tsx:28)"
+            },
+            {
+              "status": 503,
+              "code": "DATABASE_UNAVAILABLE",
+              "when": "Postgres not accepting connections: these reads need live rows and answer 503 through the shared database-error mapping during an outage (the console shows a server error)"
             }
           ],
           "assumed": true,
@@ -886,7 +916,7 @@
             {
               "status": 422,
               "code": "VALIDATION_FAILED",
-              "when": "errors[] with field 'title','severity','components' (empty or unknown key),'summary','alertEventId' (no such alert, or it already has an incident)",
+              "when": "errors[] with field 'title','severity','components' (empty or unknown key),'summary','alertEventId' (no such alert, or it already has an incident: one incident per alert, unique index incidents_alert_event_uq on alert_event_id (NULLs distinct), pre-checked and a 23505 mapped to errors[{field:'alertEventId', message:'This alert already has an incident.'}]; a resolved alert may still start one)",
               "ui": "under the field; alertEventId in the dialog error slot"
             }
           ],

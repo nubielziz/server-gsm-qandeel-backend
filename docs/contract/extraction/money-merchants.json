@@ -48,13 +48,13 @@
           "key": "POST /admin/clients",
           "successStatus": 201,
           "query": "",
-          "request": "Body {name, email (trimmed, lower-cased), country (ISO-2, upper-cased), groupId? (omitted when groups are unreadable: use the is_default group), creditLimit? (4-dp money string, may be \"0.0000\"), invite: true (always)}. Server: insert clients with status=pending, kyc_status=none, a generated unique username (Dhru username) and referral_code; create the merchant ledger accounts client_wallet (overdraft_limit = creditLimit or 0) and client_hold; issue a one-time sign-up token in auth_tokens (hash only, like the admin-team invite) and email the link through outbox/notifications; audit_logs entry. No money event.",
-          "response": "201 with the new Client (same shape as GET; status pending, kycStatus none, wallet zeros). The console toasts \"Invitation sent\" and refetches lists and counts.",
+          "request": "Body {name, email (trimmed, lower-cased), country (ISO-2, upper-cased), groupId? (omitted when groups are unreadable: use the is_default group), creditLimit? (4-dp money string, may be \"0.0000\"), invite: true (always)}. Server: insert clients with status=pending, kyc_status=none, a generated unique username (Dhru username) and referral_code; in the same DB transaction open the merchant's ledger accounts through money's public `MerchantAccounts.open(tx, { clientId, currency: 'USD', creditLimit, overdraftAllowed })` (feature 3; raw inserts with ON CONFLICT DO NOTHING of client_wallet with overdraft_limit = creditLimit or '0.0000' and client_hold; no postTransaction; it also applies the credit rule below and returns the wallet view); issue the invite token in auth_tokens (purpose 'invite', subject_type 'client', hash only, expires after 1 hour like every one-time token, decisions 010/019) and write the outbox event `merchant.invited` (ids only, never the token); the emailed link is `<PORTAL_BASE_URL>/set-password?token=<token>` and the merchant consumes it with POST /client/auth/password/reset {token, password} (purposes reset and invite); a merchant who misses the hour uses POST /client/auth/password/forgot, which also works for a pending merchant with no password yet; audit_logs entry. No money event. Credit rule (user rule 2): creditLimit > 0 is refused when the chosen group (groupId, or the is_default group when omitted) has overdraft_allowed = false (see Errors).",
+          "response": "201 with the new Client (same shape as GET; status pending, kycStatus none, wallet {balance '0.0000', reserved '0.0000', creditLimit, available = creditLimit} returned by MerchantAccounts.open). The console toasts \"Invitation sent\" and refetches lists and counts.",
           "errors": [
             {
               "status": 422,
               "code": "VALIDATION_FAILED",
-              "when": "bad input; errors[].field in name | email | country | groupId | creditLimit (e.g. country not ISO-2, unknown group, group of kind b2c_retail, negative credit limit)",
+              "when": "bad input; errors[].field in name | email | country | groupId | creditLimit (e.g. country not ISO-2, unknown group, group of kind b2c_retail, negative credit limit; creditLimit > 0 while the chosen group (groupId, or the is_default group when omitted) has overdraft_allowed = false answers errors[{field:'creditLimit', message:'This group does not allow credit.'}], user rule 2, raised by MerchantAccounts.open)",
               "ui": "message under the named field"
             },
             {
@@ -77,7 +77,7 @@
           "key": "PATCH /admin/clients/:id",
           "successStatus": 200,
           "query": "",
-          "request": "Partial body, one action per call: approve {status:\"active\"} from pending; reactivate {status:\"active\"} from suspended; suspend {status:\"suspended\", reason} from active (reason trimmed, 3-140 chars, staff-only); group move {groupId}. Server enforces pending->active, active->suspended, suspended->active; writes audit_logs (field from/to, reason). Suspension refuses new orders on Dhru, v1 and portal while open orders keep processing and the wallet is untouched; a group move prices new orders only (open orders keep pricing_snapshot). No money event.",
+          "request": "Partial body, one action per call: approve {status:\"active\"} from pending; reactivate {status:\"active\"} from suspended; suspend {status:\"suspended\", reason} from active (reason trimmed, 3-140 chars, staff-only); group move {groupId} (refused with 422 on groupId when the target group has overdraft_allowed = false while the merchant's credit limit is above 0). Server enforces pending->active, active->suspended, suspended->active; writes audit_logs (field from/to, reason). Suspension refuses new orders on Dhru, v1 and portal while open orders keep processing and the wallet is untouched; a group move prices new orders only (open orders keep pricing_snapshot). No money event.",
           "response": "200 with the full updated Client.",
           "errors": [
             {
@@ -89,7 +89,7 @@
             {
               "status": 422,
               "code": "VALIDATION_FAILED",
-              "when": "errors[].field reason (missing on suspend) | groupId (unknown or b2c_retail) | status",
+              "when": "errors[].field reason (missing on suspend) | groupId (unknown, b2c_retail, or a group without overdraft_allowed while the merchant's wallet overdraft_limit is above 0: user rule 2) | status",
               "ui": "suspend dialog shows it under Reason; group menu/approve show the default error toast"
             },
             {
@@ -228,8 +228,8 @@
           "key": "GET /admin/reports/client-statement/:clientId",
           "successStatus": 200,
           "query": "",
-          "request": "No query parameters are sent (no period). Accept: */*.",
-          "response": "The official statement as a file (PDF proposed, Content-Type application/pdf) with Content-Disposition: attachment; filename=\"...\" (console falls back to statement-<id>.pdf when the header is missing or not exposed by CORS). Content: the merchant wallet lines (ledger_entries) and invoices; default period = whole history, optional from/to (YYYY-MM-DD) accepted.",
+          "request": "No query parameters are sent (no period). Accept: */*. Optional from/to (YYYY-MM-DD, inclusive, in the business time-zone setting of finance Q7); the default is the whole history.",
+          "response": "The official statement as a PDF (final format), Content-Type application/pdf, Content-Disposition: attachment; filename=\"statement-<clientId>-<from>-<to>.pdf\" with filename*=UTF-8''... (ALIGNMENT § 6), exposed through Access-Control-Expose-Headers (the console falls back to statement-<id>.pdf when the header is missing). Content: merchant header (name, company, country), period, opening balance, client_wallet lines (date, JRN-<id>, kind, memo, debit, credit, balance after), closing balance, the credit limit, then the invoices issued in the period (number, kind, status, total, paid at). Rendered synchronously and streamed, not stored, with an audit entry, by the shared PdfRenderer of the platform module (pdf-lib, decision 030; English text, Latin fonts embedded, no Arabic shaping).",
           "errors": [
             {
               "status": 404,
@@ -242,6 +242,11 @@
               "code": "FORBIDDEN",
               "when": "caller lacks reports:read",
               "ui": "Download button disabled"
+            },
+            {
+              "status": 422,
+              "code": "VALIDATION_FAILED",
+              "when": "from or to is not a valid YYYY-MM-DD date, or from is after to (errors[].field = from or to)"
             }
           ],
           "assumed": true,
@@ -252,7 +257,7 @@
           "successStatus": 200,
           "query": "",
           "request": "",
-          "response": "Plain JSON array (no paging, no x-total-count), newest first (id desc), every key incl. revoked and expired: id, clientId, name, prefix, scopes[], allowedIps[] (CIDR strings), rateLimitPerMin, lastUsedAt, lastUsedIp, expiresAt, revokedAt, createdAt. Never key_hash or the secret. The console derives Active/Revoked/Expired from revokedAt and expiresAt.",
+          "response": "Plain JSON array (no paging, no x-total-count), newest first (id desc), every key incl. revoked and expired: id, clientId, name, prefix, scopes[], allowedIps[] (CIDR strings written like ip_rules.cidr: a host prefix /32 (IPv4) or /128 (IPv6) is dropped on read, so '203.0.113.55/32' is sent as '203.0.113.55' and ranges keep their prefix; the merchant write side (/client/api-keys, 7b) accepts a bare IP and stores /32 or /128; one shared formatter, moved to an identity helper), rateLimitPerMin, lastUsedAt, lastUsedIp ('' when the key was never used: the console type is a non-null string; the same rule applies wherever an ApiKey is serialized), expiresAt, revokedAt, createdAt. Never key_hash or the secret. The console derives Active/Revoked/Expired from revokedAt and expiresAt.",
           "errors": [
             {
               "status": 404,
@@ -304,7 +309,7 @@
           "successStatus": 200,
           "query": "Whole list: _start=0&_end=200&_sort=sort&_order=asc (also used by settings gateways and services lookups); tab count _start=0&_end=1. No filters.",
           "request": "",
-          "response": "JSON array + x-total-count: id, name, kind (\"b2b\" for merchant groups, \"b2c_retail\" for the single storefront group, which must be included), discountPercent (percent decimal string, \"4.0000\" = 4%), isDefault, earnThreshold (USD money), depositLimit (USD money, most a merchant may add at once), overdraftAllowed, sort, createdAt, merchantCount (clients in the group; recommended: Delete is disabled when > 0, retail count not shown).",
+          "response": "JSON array + x-total-count: id, name, kind (\"b2b\" for merchant groups, \"b2c_retail\" for the single storefront group, which must be included), discountPercent (percent decimal string, \"4.0000\" = 4%), isDefault, earnThreshold (USD money), depositLimit (USD money, the most a merchant of the group may add in one deposit; 0 = no per-deposit limit, the gateway min/max still apply; a deposit above a non-zero limit is refused at deposit creation with 422 on amount, feature 8), overdraftAllowed, sort, createdAt, merchantCount (clients in the group; recommended: Delete is disabled when > 0, retail count not shown).",
           "errors": [
             {
               "status": 403,
@@ -337,7 +342,7 @@
           "key": "POST /admin/client-groups",
           "successStatus": 201,
           "query": "",
-          "request": "Body {name, discountPercent, earnThreshold, depositLimit, overdraftAllowed, isDefault}. discountPercent arrives as plain decimal text (\"4\", \"2.5\"; 0-100, max 2 dp); money fields as 4-dp strings. Server sets kind = \"b2b\" (a b2c_retail group cannot be created) and sort = last + 1; isDefault = true clears it on every other group.",
+          "request": "Body {name, discountPercent, earnThreshold, depositLimit, overdraftAllowed, isDefault}; earnThreshold, depositLimit >= 0 (CHECK client_groups_amounts_check also bounds discount_percent to 0-100). A group with earnThreshold 0 is never a promotion target (user rule 1). discountPercent arrives as plain decimal text (\"4\", \"2.5\"; 0-100, max 2 dp); money fields as 4-dp strings. Server sets kind = \"b2b\" (a b2c_retail group cannot be created) and sort = last + 1; isDefault = true clears it on every other group.",
           "response": "201 with the group (decimals normalised to 4 dp, merchantCount 0).",
           "errors": [
             {
@@ -418,14 +423,14 @@
             }
           ],
           "assumed": true,
-          "mapConflict": "Map does not say what happens to service_group_prices, payment_gateways.allowed_group_ids and service_categories.allowed_group_ids that reference the group. Proposal: when no merchant is in it, delete its group prices and drop the id from those arrays in the same transaction."
+          "mapConflict": "Map does not say what happens to service_group_prices, payment_gateways.allowed_group_ids and service_categories.allowed_group_ids that reference the group. Proposal: when no merchant is in it, delete its group prices and its pricing rules (pricing_rules.group_id) and drop the id from those arrays in the same transaction."
         },
         {
           "key": "GET /admin/client-prices",
           "successStatus": 200,
           "query": "clientId=<id> (eq) with _start=0&_end=200; no _sort sent (propose service name asc). A serviceId filter is declared but unused.",
           "request": "",
-          "response": "JSON array + x-total-count: id, serviceId, clientId, price, note, createdAt plus service {id, name, type (imei|server|remote|file), basePrice, floorPrice (cost + minimum profit: the lowest price accepted)} and groupPrice = what this merchant pays without the override (the PriceResolver of GET /admin/pricing/resolve without the client price: the group fixed price from service_group_prices, else base price less the group discount), null when unknown.",
+          "response": "JSON array + x-total-count: id, serviceId, clientId, price, note, createdAt plus service {id, name, type (imei|server|remote|file), basePrice, floorPrice (effective cost B117 + the minimum profit of the merchant's group: the lowest price accepted)} and groupPrice = what this merchant pays without the override (the PriceResolver of GET /admin/pricing/resolve without the client price, for the merchant's group: after the 2-dp rounding, the rule rounding step and the floor clamp, equal to that group's otherGroups price; a 4-dp string such as '0.1200'), null only when the service cannot be priced (never in practice: base_price is NOT NULL).",
           "errors": [
             {
               "status": 403,
@@ -447,7 +452,7 @@
             {
               "status": 422,
               "code": "VALIDATION_FAILED",
-              "when": "errors[].field price (<= 0 or below the floor, message naming it, e.g. \"Below the floor of $X (cost $Y plus $Z minimum profit).\") | serviceId (unknown/inactive) | clientId (unknown; mock answers 404)",
+              "when": "errors[].field price (<= 0 or below the floor (effective cost B117 + minimum profit of the merchant's group), message naming it, e.g. \"Below the floor of $X (cost $Y plus $Z minimum profit).\") | serviceId (unknown/inactive) | clientId (unknown; mock answers 404)",
               "ui": "under the field"
             },
             {
@@ -470,7 +475,7 @@
           "key": "PATCH /admin/client-prices/:id",
           "successStatus": 200,
           "query": "",
-          "request": "Partial {price?, note?}; note may be \"\" to clear it. Same floor check as POST.",
+          "request": "Partial {price?, note?}; note may be \"\" to clear it. Same floor check as POST. The floor is the effective cost (B117) plus the minimum profit of the merchant's group.",
           "response": "200 with the row and joins.",
           "errors": [
             {
@@ -598,7 +603,7 @@
         "Credit limit = client_wallet.overdraft_limit, >= 0, 0 removes the credit; only for merchants whose group has overdraft_allowed (GroupDialog label \"Merchants in this group can use a credit limit\"); audit entry; no ledger entry (M55).",
         "Balance updates use ledger_accounts.version (optimistic lock) so concurrent holds, deposits and adjustments cannot overspend; the statement, wallet and reconciliation all read the same client_wallet account.",
         "API keys: staff can only list and revoke (M45); revoke sets revoked_at, acts immediately (key cache), writes audit_logs (manifest tables api_keys, audit_logs); key_hash is never returned; a second revoke is 409 ALREADY_REVOKED (kycRoutes.ts:69).",
-        "Client groups: exactly one default group (groupRoutes.ts:26-31); names unique case-insensitive (groupRoutes.ts:33-34); delete refused while merchants are in it with 409 GROUP_IN_USE (groupRoutes.ts:96); groups created through the API get kind \"b2b\" (groupRoutes.ts:60); the b2c_retail group cannot be deleted; a discount change applies to the next orders only (useClientGroups.ts:41-53).",
+        "Client groups: exactly one default group (groupRoutes.ts:26-31); names unique case-insensitive (groupRoutes.ts:33-34); delete refused while merchants are in it with 409 GROUP_IN_USE (groupRoutes.ts:96); groups created through the API get kind \"b2b\" (groupRoutes.ts:60); the b2c_retail group cannot be deleted; a discount change applies to the next orders only (useClientGroups.ts:41-53); depositLimit is the most a merchant of the group may add in one deposit (0 = no limit; a deposit above a non-zero limit is 422 on amount, feature 8); promotion (user rule 1): the nightly job moves a merchant to the b2b group with the highest earnThreshold > 0 that is <= the merchant's spend and above the current group's threshold; a group with earnThreshold 0 (the default group, or any left at 0) and b2c_retail are never targets; earnThreshold and depositLimit are >= 0.",
         "Client prices: price must be >= the service floor (cost + minimum profit) else 422 on price (priceRoutes.ts:13-21; demo setPrice floor rule in 11-state.js); one price per (client, service) else 409 PRICE_EXISTS (priceRoutes.ts:48); it beats group price, category rule and discounts (api/prices.ts:1-3); deleting returns the merchant to the group price from the next order.",
         "KYC decide: pending only (409 ALREADY_DECIDED, kycRoutes.ts:41); reject needs a note (kycRoutes.ts:39); sets clients.kyc_status (kycRoutes.ts:51; manifest tables kyc_submissions, clients), reviewed_by, reviewed_at; the merchant is notified.",
         "Invite: account starts pending with kyc_status none, unique email (409 EMAIL_TAKEN), default group when groupId is omitted (clientRoutes.ts:57-74), sign-up link emailed with a hashed one-time token (identity scenario admin-team step 2 pattern).",
@@ -845,9 +850,9 @@
         {
           "key": "GET /admin/ledger/transactions",
           "successStatus": 200,
-          "query": "_start/_end (25 per page; palette _end=5). _sort: createdAt | id | kind (default createdAt desc; record trails use createdAt asc). Filters (eq): refType + refId (order drawer refType=order&refId=<orderId>, orders/hooks/useLedgerTrail.ts:13; deposit dialog refType=payment&refId=<paymentId>, usePaymentEntries.ts:13), kind (ledger_transactions.kind), accountKind (transactions with at least one line on an account of that kind, e.g. client_wallet from the trial balance or the integrity finding link, M256). q: the console strips \"JRN-\"/\"#\" and leading zeros, so a numeric q must match the transaction id; text q matches memo, kind and account owner names (placeholder \"Search journal, memo, merchant\").",
+          "query": "_start/_end (25 per page; palette _end=5). _sort: createdAt | id | kind (default createdAt desc; record trails use createdAt asc). Filters (eq): refType (the wire words; refType=system matches stored ref_type IN (system, client)) + refId (order drawer refType=order&refId=<orderId>, orders/hooks/useLedgerTrail.ts:13; deposit dialog refType=payment&refId=<paymentId>, usePaymentEntries.ts:13), kind (ledger_transactions.kind), accountKind (transactions with at least one line on an account of that kind, e.g. client_wallet from the trial balance or the integrity finding link, M256). q: the console strips \"JRN-\"/\"#\" and leading zeros, so a numeric q matches id = q OR ref_id = q (any ref_type); text q matches memo, kind and account owner names (case-insensitive) (placeholder \"Search journal, memo, merchant\").",
           "request": "",
-          "response": "JSON array + x-total-count of transactions: id, kind, memo, refType, refId, createdAt, createdBy {type: staff|system|client|customer, id|null, name|null}, entries [{id, amount, balanceAfter, account {id, kind, ownerType: client|supplier|customer|null, ownerId|null, ownerName|null}}]. amount is signed debit-positive and the entries of one transaction sum to zero; balanceAfter = that account balance after the line, same sign. The table shows the merchant from the line whose owner is a client and the amount as the sum of debit lines.",
+          "response": "JSON array + x-total-count of transactions: id, kind, memo, refType, refId (a number, never null: 0 for a system posting, which the console treats as no link), createdAt, createdBy {type: staff|system|client|customer, id|null, name|null}, entries [{id, amount, balanceAfter, account {id, kind, ownerType: client|supplier|customer|null, ownerId|null, ownerName|null}}]. amount is signed debit-positive and the entries of one transaction sum to zero; balanceAfter = that account balance after the line, same sign. The table shows the merchant from the line whose owner is a client and the amount as the sum of debit lines. refType wire mapping: the database keeps ref_type 'client' for manual adjustments (B34, ref_id = client id) and the wire sends it as refType 'system' with refId = the client id (the console's referenceLink gives no link for 'system'; the merchant still shows through the line's ownerName); every other stored value goes out unchanged, so the wire set stays a subset of the console's 8 words (mapper toWireRefType() in the money module's ledger read service). Stored ref_type set: order, payment, invoice, refund, dispute, accrual, supplier, client, system ('ledger_transaction' is dropped: no writer uses it); reversals carry the ref of the record they reverse (order, refund or dispute), with the reversed transaction id only in the memo ('Reversal of JRN-<id>') and the idempotency key ('reverse:<txId>'); corrections are adjustments. B2C money events post ref_type 'order', never 'payment'. postTransaction refuses ref_id 0 for every ref_type but 'system'.",
           "errors": [
             {
               "status": 403,
@@ -864,7 +869,7 @@
           "successStatus": 200,
           "query": "",
           "request": "",
-          "response": "Same shape as a list row. Opened by the Ledger drawer (?journal=<id>) and by the merchant statement \"View journal\" (transactionId).",
+          "response": "Same shape as a list row (refType mapped for the wire and refId a number, as in the list). Opened by the Ledger drawer (?journal=<id>) and by the merchant statement \"View journal\" (transactionId).",
           "errors": [
             {
               "status": 404,
@@ -925,9 +930,9 @@
         {
           "key": "GET /admin/payments",
           "successStatus": 200,
-          "query": "Deposits tab always sends purpose=topup plus status=pending|approved|rejected (omitted for All; finance/lib/paymentView.ts:41). _sort: createdAt | id | amount | status (default createdAt desc), _start/_end 25 per page. Sub-tab counts and the header \"waiting for review\" figure: same filters with _start=0&_end=1, refetched every 30 s. q and clientId are declared but not sent (support q over gateway reference and merchant name, as the mock does).",
+          "query": "Deposits tab always sends purpose=topup (the server always adds purpose=topup: a purpose=order filter answers [] with x-total-count 0) plus status=pending|approved|rejected (omitted for All; finance/lib/paymentView.ts:41). _sort: createdAt | id | amount | status (default createdAt desc), _start/_end 25 per page. Sub-tab counts and the header \"waiting for review\" figure: same filters with _start=0&_end=1, refetched every 30 s. q and clientId are declared but not sent (support q over gateway reference and merchant name, as the mock does).",
           "request": "",
-          "response": "JSON array + x-total-count: id, purpose (topup|order), status (pending|approved|rejected), methodType (bank|card|usdt|wise; other words shown via the gateway name), amount (gross the merchant paid), feeAmount, netAmount (= amount - feeAmount, credited to the wallet), currency (ISO code), gatewayTxnId, capturedAt, createdAt, invoiceId|null, receiptFileId|null (download via /admin/files/:id), client {id, name, group (the group NAME as a string), walletBalance (current client_wallet balance, merchant side) | null} | null, gateway {id, name} | null, reviewedBy {id|null, name} | null, reviewedAt | null, note | null (while pending: a hint for the reviewer such as a large or first deposit; once rejected: the reason).",
+          "response": "JSON array + x-total-count: id, purpose (always topup here), status (pending|approved|rejected for top-ups; order payments use pending|captured|failed|refunded|partial_refund|disputed|chargeback and are read only through /admin/reports/payments and /admin/refunds), methodType (top-ups bank|card|usdt|wise; order payments card|wallet|crypto), amount (gross the merchant paid), feeAmount, netAmount (= amount - feeAmount, credited to the wallet), currency (ISO code), gatewayTxnId (the column stays nullable for the partial unique index; a manual bank or Wise transfer without a reference is NULL and is sent as '', a reference the merchant typed on the receipt upload is stored there), capturedAt, createdAt, invoiceId|null, receiptFileId|null (download via /admin/files/:id), client {id, name, group (the group NAME as a string), walletBalance (current client_wallet balance, merchant side) | null} | null, gateway {id, name} | null, reviewedBy {id|null, name} | null (an automatic credit is {id: null, name: 'System'}: reviewed_by NULL and reviewed_at = the credit time), reviewedAt | null, note | null (while pending: a hint for the reviewer such as a large or first deposit, or for an automatic-gateway top-up that is waiting: 'Credited automatically after the gateway check at <time>'; once rejected: the reason; when the auto-credit job sets review_required the note is the reason). Automatic-gateway top-ups (user rule 6): the gateway confirmation webhook creates or updates the payment as status pending with captured_at = the confirmation time and auto_credit_at = captured_at + max(setting payments.auto_credit_delay_minutes (10), the gateway's hold_hours h); payments.review_required (default false) and auto_credit_at are new columns. The auto-credit job locks the row (SELECT ... FOR UPDATE), re-checks the gateway API and risk, then posts the deposit (status approved, reviewed_by NULL, reviewed_at = now). If the gateway no longer says confirmed or risk flags the payment, the job sets review_required = true, note = the reason and leaves it pending for staff.",
           "errors": [
             {
               "status": 403,
@@ -944,12 +949,12 @@
           "successStatus": 200,
           "query": "",
           "request": "",
-          "response": "Same row as the list. Read when the review dialog opens from a link (ledger refType payment, audit log) and again after a decision.",
+          "response": "Same row as the list. An order payment is not served here: 404 NOT_FOUND. Read when the review dialog opens from a link (ledger refType payment, audit log) and again after a decision.",
           "errors": [
             {
               "status": 404,
               "code": "NOT_FOUND",
-              "when": "no payment with that id",
+              "when": "no top-up payment with that id, or the id belongs to an order (storefront) payment",
               "ui": "dialog error state"
             },
             {
@@ -966,7 +971,7 @@
           "key": "POST /admin/payments/:id/approve",
           "successStatus": 200,
           "query": "",
-          "request": "No body, no Idempotency-Key. Only a pending purpose=topup payment. One DB transaction: payment status approved with captured_at, reviewed_by, reviewed_at; map moneyEvent \"deposit\": Dr gateway_clearing (amount) / Cr client_wallet (netAmount) / Cr fee_income (feeAmount, omitted when 0), ledger kind \"deposit\", ref_type payment, ref_id payment id, memo \"Deposit PAY-<id> (<method>)\", idempotency_key derived from the payment id; linked invoice -> paid with paid_at; outbox EVENT invoice.paid to the merchant webhook and a notification; audit entry.",
+          "request": "No body, no Idempotency-Key. Only a pending purpose=topup payment. One DB transaction: payment status approved with captured_at, reviewed_by, reviewed_at; map moneyEvent \"deposit\": Dr gateway_clearing (amount) / Cr client_wallet (netAmount) / Cr fee_income (feeAmount, omitted when 0), ledger kind \"deposit\", ref_type payment, ref_id payment id, memo \"Deposit PAY-<id> (<method>)\", idempotency_key derived from the payment id; linked invoice -> paid with paid_at; outbox EVENT invoice.paid to the merchant webhook and a notification; audit entry. Allowed only when the payment's gateway is_manual or review_required = true; otherwise 409 PAYMENT_AUTO_CREDIT_PENDING (detail 'PAY-<id> is credited automatically after the gateway check.'). The auto-credit job and approve both lock the payment row, re-check status = 'pending' and post with the same ledger idempotency key 'deposit:payment:<id>'; the loser of a race gets 409 PAYMENT_ALREADY_REVIEWED and posts nothing. An order payment answers 404 NOT_FOUND.",
           "response": "200 with the updated Payment; client.walletBalance must already include the credit (toast \"<net> credited to <merchant>. Wallet is now <balance>.\", usePaymentMutations.ts:16-31).",
           "errors": [
             {
@@ -978,7 +983,7 @@
             {
               "status": 404,
               "code": "NOT_FOUND",
-              "when": "no payment with that id",
+              "when": "no top-up payment with that id, or an order payment",
               "ui": "dialog error slot"
             },
             {
@@ -986,6 +991,11 @@
               "code": "FORBIDDEN",
               "when": "caller lacks payments:approve",
               "ui": "Approve disabled"
+            },
+            {
+              "status": 409,
+              "code": "PAYMENT_AUTO_CREDIT_PENDING",
+              "when": "the gateway is automatic and review_required is false: the payment is credited by the auto-credit job (detail 'PAY-<id> is credited automatically after the gateway check.')"
             }
           ],
           "assumed": true,
@@ -995,7 +1005,7 @@
           "key": "POST /admin/payments/:id/reject",
           "successStatus": 200,
           "query": "",
-          "request": "Body {reason}: one non-empty string the merchant sees, composed by the console as \"<chosen reason>. <message>\", the message alone for \"Other\", or \"Rejected\" (finance/lib/payments.ts rejectReason). Pending only. Sets status rejected, review note = reason, reviewed_by, reviewed_at; voids the linked top-up invoice; notifies the merchant; audit entry. No money event.",
+          "request": "Body {reason}: one non-empty string the merchant sees, composed by the console as \"<chosen reason>. <message>\", the message alone for \"Other\", or \"Rejected\" (finance/lib/payments.ts rejectReason). Pending only. Sets status rejected, review note = reason, reviewed_by, reviewed_at; voids the linked top-up invoice; notifies the merchant; audit entry. No money event. Same guard as approve: allowed only when the payment's gateway is_manual or review_required = true, else 409 PAYMENT_AUTO_CREDIT_PENDING; the row is locked and re-checked as in approve; an order payment answers 404 NOT_FOUND.",
           "response": "200 with the updated Payment (note = reason).",
           "errors": [
             {
@@ -1013,7 +1023,7 @@
             {
               "status": 404,
               "code": "NOT_FOUND",
-              "when": "no payment with that id",
+              "when": "no top-up payment with that id, or an order payment",
               "ui": "dialog error slot"
             },
             {
@@ -1021,6 +1031,11 @@
               "code": "FORBIDDEN",
               "when": "caller lacks payments:approve",
               "ui": "Reject disabled (same permission as approve)"
+            },
+            {
+              "status": 409,
+              "code": "PAYMENT_AUTO_CREDIT_PENDING",
+              "when": "the gateway is automatic and review_required is false (credited by the auto-credit job)"
             }
           ],
           "assumed": true,
@@ -1031,7 +1046,7 @@
           "successStatus": 200,
           "query": "q (invoice number or merchant/customer name, placeholder \"Search number or merchant\"), status=open|paid|void, kind=topup|manual|receipt|statement, _sort: createdAt | total | status (default createdAt desc), _start/_end 25 per page. clientId declared, unused.",
           "request": "",
-          "response": "JSON array + x-total-count: id, number (e.g. INV-2026-0042), kind, status, amount, fee, netAmount, taxAmount, taxRate (percent string, \"20.0000\"), taxCountry, customerVatId, total, currency (ISO code, not the currencies id), client {id, name} | null or customer {id, name, email} | null (the console masks the email; server may pre-mask), orderId | null, pdfFileId | null (download via /admin/files/:id), description | null, dueAt, paidAt, createdAt. Unknown kind/status words show greyed.",
+          "response": "JSON array + x-total-count: id, number (e.g. INV-2026-0042), kind, status, amount, fee, netAmount (set by the service: top-up and manual = amount - fee, receipt = price without VAT), taxAmount (non-null, default 0), taxRate (non-null percent string, \"20.0000\"; the B2B VAT rate setting, default 0, user rule 3), taxCountry (non-null: clients.country for B2B, the checkout session's tax country for receipts), customerVatId (non-null, '' by default), total, currency (ISO code, not the currencies id), client {id, name} | null or customer {id, name, email} | null (the console masks the email; server may pre-mask), orderId | null, pdfFileId | null (download via /admin/files/:id), description | null (the column is NOT NULL DEFAULT ''; '' is sent as null), dueAt, paidAt, createdAt. Unknown kind/status words show greyed.",
           "errors": [
             {
               "status": 403,
@@ -1064,13 +1079,13 @@
           "key": "POST /admin/invoices",
           "successStatus": 201,
           "query": "",
-          "request": "Body {clientId, amount (4-dp string > 0), description (non-empty)}. Server: kind manual, status open, number INV-<year>-<sequence>, fee 0, net = amount, tax by the server rule (proposal: 0 for B2B), total = net + tax, currency = base, due_at = now + 14 days (mock), audit entry. No ledger entry and no money event at issue. The merchant picker reads GET /admin/clients (needs clients:read).",
+          "request": "Body {clientId, amount (4-dp string > 0), description (non-empty)}. Server: kind manual, status open, number INV-<year>-<sequence>, fee 0, net = amount, tax 0 (B2B VAT rate setting, default 0), taxCountry = the merchant's country, total = net + tax, currency = base, due_at = now + 14 days (mock), audit entry. No ledger entry and no money event at issue. The merchant picker reads GET /admin/clients (needs clients:read).",
           "response": "201 with the new Invoice.",
           "errors": [
             {
               "status": 422,
               "code": "VALIDATION_FAILED",
-              "when": "errors[].field clientId (unknown merchant, no billing country) | amount (<= 0, malformed, out of range) | description (empty)",
+              "when": "errors[].field clientId (unknown merchant, no billing country: clients.country is empty, 'no billing country' on field clientId) | amount (<= 0, malformed, out of range) | description (empty)",
               "ui": "under the field"
             },
             {
@@ -1346,7 +1361,7 @@
           "successStatus": 200,
           "query": "Whole list: _start=0&_end=200&_sort=id&_order=asc. No filters.",
           "request": "",
-          "response": "JSON array + x-total-count: id, name, kind (referral|rebate), basis (free text, e.g. \"Order revenue of referred merchants\"), percent (percent string, \"3.0000\" = 3%), tiers (JSON object, {} when none; e.g. {minPayout: \"50.0000\", minReferrals: 3} or {brackets: [{from: \"1000\", percent: \"1.0\"}]}; shown as key: value, never interpreted), period (free text, e.g. \"monthly\"), isActive, createdAt, updatedAt.",
+          "response": "JSON array + x-total-count: id, name, kind (referral|rebate), basis (free text, e.g. \"Order revenue of referred merchants\"), percent (percent string, \"3.0000\" = 3%), tiers (JSON object stored as sent, {} when none and never []; a POST/PATCH whose tiers is not a plain object (array, string, null) is 422 on tiers; e.g. {minPayout: \"50.0000\", minReferrals: 3} or {brackets: [{from: \"1000\", percent: \"1.0\"}]}; shown as key: value, never interpreted), period (free text, e.g. \"monthly\"), isActive, createdAt, updatedAt.",
           "errors": [
             {
               "status": 403,
@@ -1500,7 +1515,7 @@
           "key": "POST /admin/commission-assignments",
           "successStatus": 201,
           "query": "",
-          "request": "Body {beneficiaryId (merchant id), planId}. Server sets scope (\"referrals\" for referral plans, own orders for rebate plans), starts_at = now, ends_at = null. The merchant menu reads GET /admin/clients (_start=0&_end=200&_sort=name). No money event.",
+          "request": "Body {beneficiaryId (merchant id), planId}. Server sets scope (\"referrals\" for referral plans, own orders for rebate plans), starts_at = now, ends_at = null. One current plan per merchant: the unique index commission_assignments_current_uq on (beneficiary_id) WHERE ends_at IS NULL; changing plan = end the current assignment (ends_at = now) and insert the new one in one transaction. The merchant menu reads GET /admin/clients (_start=0&_end=200&_sort=name). No money event.",
           "response": "201 with the assignment incl. beneficiary and plan joins.",
           "errors": [
             {
@@ -1512,7 +1527,7 @@
             {
               "status": 409,
               "code": "ALREADY_ASSIGNED",
-              "when": "the merchant already has a current plan (detail \"<merchant> is already on the <plan> plan. Change its plan instead.\")",
+              "when": "the merchant already has a current plan (ends_at null): service pre-check, and a 23505 on commission_assignments_current_uq (race) maps to the same answer; detail '<merchant name> is already on the <plan name> plan'",
               "ui": "dialog error slot"
             },
             {
@@ -1565,19 +1580,13 @@
           "successStatus": 204,
           "query": "",
           "request": "No body. Ends the assignment: set ends_at = now; no accrual on orders completed afterwards; accruals already earned stay approvable.",
-          "response": "204 empty.",
+          "response": "204 empty, also when ready accruals exist (they stay approvable): the server never sends 409 HAS_PENDING (ANSWERS commissions Q6).",
           "errors": [
             {
               "status": 404,
               "code": "NOT_FOUND",
               "when": "no assignment with that id",
               "ui": "dialog error slot"
-            },
-            {
-              "status": 409,
-              "code": "HAS_PENDING",
-              "when": "optional policy refusal, e.g. ready accruals must be approved first (example from CommissionsAgents.test.tsx:245)",
-              "ui": "end dialog shows the detail"
             },
             {
               "status": 403,
@@ -1592,9 +1601,9 @@
         {
           "key": "GET /admin/commission-accruals",
           "successStatus": 200,
-          "query": "status=accrued|approved (omitted for All; the tab opens on accrued), beneficiaryId=<agent merchant id>, createdAt_gte=<ISO date-time at UTC midnight 30 days back> (header strip), _sort: createdAt | basisAmount | percent | amount | status (default createdAt desc; agent and merchant names are not sortable), _start/_end 25 per page. \"Select all N\" reads _start=0&_end=1000 with status=accrued (+ beneficiaryId) sorted createdAt desc (useAccrualMutations.ts:22-28); counts use _start=0&_end=1 (status=accrued; status=approved&createdAt_gte=...).",
+          "query": "status=accrued|approved|reversed (omitted for All; the tab opens on accrued), beneficiaryId=<agent merchant id>, createdAt_gte=<ISO date-time at UTC midnight 30 days back> (header strip), approvedAt_gte and approvedAt_lte (ISO date-times on approved_at, whitelisted), _sort: createdAt | approvedAt | basisAmount | percent | amount | status (default createdAt desc; agent and merchant names are not sortable), _start/_end 25 per page. \"Select all N\" reads _start=0&_end=1000 with status=accrued (+ beneficiaryId) sorted createdAt desc (useAccrualMutations.ts:22-28); counts use _start=0&_end=1 (status=accrued; status=approved&createdAt_gte=...).",
           "request": "",
-          "response": "JSON array + x-total-count: id, planId, beneficiaryId, orderId, period (YYYY-MM), basisAmount (order revenue), percent (rate at accrual, percent string), amount (basisAmount x percent / 100, rounded to cents in the demo: 20.9900 at 5% = 1.0500), status (accrued|approved; any other word shown as sent), ledgerTxId (null until paid), createdAt (when earned), updatedAt, beneficiary {id, name} (the agent), merchant {id, name} (the referred merchant = the order client).",
+          "response": "JSON array + x-total-count: id, planId, beneficiaryId, orderId (always an Id: an accrual always comes from one completed order, commission_accruals.order_id is NOT NULL), period (YYYY-MM), basisAmount (order revenue), percent (rate at accrual, percent string), amount (basisAmount x percent / 100, rounded to cents in the demo: 20.9900 at 5% = 1.0500), status (accrued|approved|reversed, CHECK commission_accruals_status_check; reversed = the order was refunded or reopened before approval, approve skips it with that reason; after approval the accrual stays approved and a reversing commission entry is posted, user rule 5; the console prints unknown words raw, so reversed needs no console change), ledgerTxId (null until paid), approvedAt (ISO, null until approved; set in the approve transaction and kept when an approved accrual is later reversed), createdAt (when earned), updatedAt, beneficiary {id, name} (the agent), merchant {id, name} (the referred merchant = the order client, never null). A completed order accrues once per beneficiary: unique index on (order_id, beneficiary_id) WHERE status <> reversed.",
           "errors": [
             {
               "status": 403,
@@ -1611,7 +1620,7 @@
           "successStatus": 200,
           "query": "",
           "request": "",
-          "response": "Same row as the list.",
+          "response": "Same row as the list (orderId and merchant always set, approvedAt included).",
           "errors": [
             {
               "status": 404,
@@ -1627,7 +1636,7 @@
           "key": "POST /admin/commission-accruals/approve",
           "successStatus": 200,
           "query": "",
-          "request": "Body {ids: number[]} (1 to 1000, from ticked rows or Select all). Skip, do not fail: unknown id -> \"This accrual does not exist.\", status not accrued -> \"Already approved.\" (and an accrual whose order was refunded -> skipped with that reason). Group the ready accruals by beneficiary and post one map moneyEvent \"commission\" per agent for the batch sum: Dr commission_expense / Cr client_wallet (agent), ledger kind \"commission\", ref_type accrual, ref_id = first accrual id, memo \"Commission batch, N accruals to <agent>\"; set each accrual status approved and ledger_tx_id (approved_at proposed); audit entry per agent; all in one DB transaction.",
+          "request": "Body {ids: number[]} (1 to 1000, from ticked rows or Select all). Skip, do not fail: unknown id -> \"This accrual does not exist.\", status not accrued -> \"Already approved.\" (and an accrual whose order was refunded -> skipped with that reason). Group the ready accruals by beneficiary and post one map moneyEvent \"commission\" per agent for the batch sum: Dr commission_expense / Cr client_wallet (agent), ledger kind \"commission\", ref_type accrual, ref_id = first accrual id, memo \"Commission batch, N accruals to <agent>\"; set each accrual status approved, ledger_tx_id and approved_at = now(); audit entry per agent; all in one DB transaction.",
           "response": "200 {approved (count approved), total (money actually posted, 4 dp), skipped: [{id, reason}]}. Clean run: toast \"N commissions approved\" / \"$X credited to M agent wallets.\" from total; any skipped: summary dialog with each reason (ApproveResultDialog).",
           "errors": [
             {

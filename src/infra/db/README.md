@@ -158,3 +158,38 @@ Types and nullability that the map and decision 027 do not settle (guesses):
   document per type and locale, one current commission assignment per merchant, one payment per gateway reference, unique
   `(client_id, idempotency_key)` on orders, unique non-void inventory `code_hash`, `(scope = 'global') = (target_id is null)`
   on pricing rules.
+
+## Audit resolution notes (docs pass)
+
+Details the documentation pass recorded next to the schema pass (both apply `docs/contract/RESOLUTIONS.md`):
+
+- identity: none left (`auth_tokens.purpose` is closed: `invite`, `reset`, `verify_email`, `magic_link`, from the exported
+  `AUTH_TOKEN_PURPOSES`)
+- platform: `files.owner_type`, `outbox_events.type` and `aggregate_type` (`audit_logs.actor_type` is closed to
+  `staff | client | customer | system` and `notifications.recipient_type` to `staff | client | customer`; the audit entity
+  type is enforced in code from `AUDIT_ENTITY_TYPES`, with no CHECK)
+- money: `ledger_transactions.kind` (the 13 money events plus reversal kinds), `withdrawal_requests.method` and `status`,
+  `tax_rates.tax_type` and `applies_to` (`payments.status` and `method_type` are closed per purpose, `refunds.method` to
+  `original | manual`)
+- catalog: `client_groups.kind` (`b2c_retail` is known), `tac_catalog.source` (`services.price_mode` is closed to `fixed` and
+  `duplicate_rule` to `allow | block_open`)
+- orders: none left (`orders.verification_status` is `NULL | requested | accepted | refunded`; `order_events.type` is a
+  closed list)
+- suppliers: `supplier_services.type` (`suppliers.driver` is `dhru | rest` and `param_format` is derived from it)
+- health: `service_checks.component`, `alert_rules.metric` (a registry in code), `job_runs.job` (`alert_events.subject_type`
+  is closed)
+- commissions: `commission_plans.basis` and `period`, `commission_assignments.scope`
+- customers: none left (`checkout_sessions.status`, `consent_records.subject_type` and `purpose` are closed lists)
+- storefront: `help_articles.category` (`legal_documents.type` is closed)
+
+The resolutions of the pre-Phase-3 audit (`docs/contract/RESOLUTIONS.md`) closed the vocabularies struck from this list; the
+lead's migration `0003` adds their CHECKs, and each feature that owns a column still open adds its CHECK with its own migration.
+- `supplier_services.custom_fields`, `risk_assessments.signals` (an array of plain strings) and `incidents.timeline` are `jsonb`
+  lists (default `[]`); every other `jsonb` defaults to `{}`, `commission_plans.tiers` included (a free JSON object of plan
+  conditions, never a list).
+- From migration `0003` (audit resolutions money-6, catalog-1): `ledger_transactions.ref_id` is `NOT NULL DEFAULT 0`, where `0`
+  means no record (a system posting) and a CHECK allows it only for `ref_type = 'system'`.
+- From migration `0003`: `services.effective_cost` is a derived column the catalog module maintains (`recomputeEffectiveCost`, B117): the greater of
+  `services.cost` and the first active supplier link's `credit x credit_rate`; floors, `belowFloor` and the `cost` on the wire
+  read it.
+  document per type and locale, one current assignment per merchant (`commission_assignments` with `ends_at` null), one payment per gateway reference, unique

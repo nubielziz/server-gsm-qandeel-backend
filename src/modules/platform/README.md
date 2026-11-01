@@ -127,7 +127,11 @@ Keep this list in step with the contracts (`permission` of each `defineRoute`).
 
 `SettingsService` is the only code outside the (future) settings routes that reads the `settings` table: other modules call it
 (identity reads `adminAllowlistOnly`). The routes that write settings arrive with their features and call the `invalidate()` of
-whatever cache holds a value after their commit.
+whatever cache holds a value after their commit. `PATCH /admin/settings` is an allow-list (lead resolution identity-platform-13):
+it accepts only the keys of a settings registry in this module, each with its validator (today only `imeiRetentionDays`, a JSON
+integer 0 to 3650, shared with `PATCH /admin/storefront/settings`); any other key, including the keys owned by stricter routes
+(`adminAllowlistOnly`, `maintenance`, risk rules, storefront policies), is `422 VALIDATION_FAILED` with `errors[].field` = the key.
+A feature that needs another key editable there adds it to the registry with its validator.
 
 **Maintenance** (scenario `system-integrity`, `docs/contract/endpoints/health.md` `PUT /admin/system/maintenance`) is the settings
 key `maintenance`, stored as the console's `MaintenanceState` (`enabled`, `scope`, `message`, `expectedEndAt`, `startedAt`,
@@ -225,6 +229,20 @@ await this.db.runInTransaction(async ({ tx }) => {
 The actor (`actor_type`, `actor_id`) and the IP come from the request context the session guards filled in; outside a request the
 actor is `system`. The row is written on the caller's transaction, so a rolled-back change leaves no row.
 
+**Snapshots and vocabularies** (lead resolutions identity-platform-7 and -15, built with feature 2a):
+- `audit_logs.actor_name` is a snapshot written by `AuditService.record` from `RequestActor.name` (the session guards fill it from
+  the subject, the API-key and Dhru guards set `{type: 'client', id, name}`; `''` for `system`), the same way as `entity_label`, so
+  renamed or deleted accounts still read correctly and `q` can search it in SQL. On the wire `actorName` is `null` when the snapshot
+  is `''`. `actor_type` is `staff | client | customer | system` (exported `AUDIT_ACTOR_TYPES`, CHECK `audit_logs_actor_type_check`).
+- `entityType` must come from the exported `AUDIT_ENTITY_TYPES` (the console's 19 words plus `role`, `client_group`, `category`,
+  `currency`, `payment_gateway`, `invoice`, `api_key`, `webhook_endpoint`, `kyc_submission`, `notification_template`,
+  `alert_rule`, `alert`, `incident`, `tax_rate`, `help_article`, `content_page`, `ledger_transaction`); `record` throws a
+  `RangeError` (a programming error that rolls the transaction back) on any other value. The list is enforced in code with no
+  DB CHECK, so the append-only table never needs a migration for it; a feature that needs a new type adds it in its own commit.
+  Table to word: `clients` is `merchant`, `staff_users` `staff`, `checkout_sessions` `checkout`, `legal_documents` `legal`,
+  blocklist entries `blocklist`, `settings` `setting`, `commission_plans` `plan`, `withdrawal_requests` `withdrawal`,
+  `support_tickets` `ticket`.
+
 **Enforcement.** A global interceptor (`AuditEnforcementInterceptor`) checks every successful staff mutation (a staff-authenticated
 route whose method is not GET and whose contract does not say `audit: false`): if the request wrote no audit row, development and
 tests answer `500` with a message that names the route, and production logs an error (the change is already committed). A sign-in
@@ -236,3 +254,18 @@ step opts out with `audit: false` and says why in the contract description.
 provides it (`StaffSystemReadGuard`: a staff session with `system:read`; `401` without a session, `403 FORBIDDEN` without the
 permission). Without any provider `staff` behaves like `off` (404). The reference routes have no contract, so the guard dispatcher
 lets them through to this guard (`DOCUMENTATION_ROUTES`). `test/integration/docs.test.ts` shows both.
+
+## Audit resolutions
+
+The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, machine-readable `docs/contract/resolutions.json`) settled the points below for this module's routes. Where they differ from older text in this README or the endpoint docs, the resolution wins; the endpoint docs, `RULES.md`, `ANSWERS.md` and `MISMATCHES.md` were updated to match.
+
+- `b2c-10` · GET /admin/reports/funnel
+- `identity-platform-7` · GET /admin/audit-logs
+- `identity-platform-8` · GET /admin/dashboard
+- `identity-platform-9` · GET /admin/dashboard
+- `identity-platform-10` · GET /admin/dashboard
+- `identity-platform-11` · GET /admin/notification-templates
+- `identity-platform-12` · GET /admin/webhook-deliveries
+- `identity-platform-13` · PATCH /admin/settings
+- `identity-platform-15` · GET /admin/audit-logs
+- `identity-platform-16` · POST /client/* , /v1/files, /webhooks/telegram/:secret

@@ -353,7 +353,7 @@
           "successStatus": 200,
           "query": "`_start=0&_end=200`, no `_sort`, no filters (useStaffList.ts:7-18; the same call feeds the audit person filter and the support assignee picker). Also support `q` (name, email; mock searchFields), `status` and repeated `id` (Refine getMany). No sort is sent: use a stable default (proposed createdAt asc, then id); the table sorts client-side.",
           "request": "",
-          "response": "Rows (StaffMember): `role {id,name}`; `createdBy`/`suspendedBy` = `{id,name}` or null (seed/system or deleted account); `activeSessions` = live, fully signed-in staff sessions (not revoked, not expired); `resetSentAt` = when the latest invite/reset link was issued (auth_tokens), null when none or when a temporary password was set after it (mock accessStaff.ts:178-183); `passwordChangedAt` is set when a temporary password is issued: for an invited account the drawer reads \"Temporary password set …\" from it, else \"Invitation link sent … / expired\" from resetSentAt (staffText.ts:14-26); `suspendedReason` as sent (\"Reason: note\"; the table shows the part before the colon); `lastLoginIp` null until the first sign-in. x-total-count required (tab count, truncation note). Never send password_hash or TOTP data.",
+          "response": "Rows (StaffMember): `role {id,name}`; `createdBy`/`suspendedBy` = `{id,name}` or null (seed/system or deleted account); `activeSessions` = live, fully signed-in staff sessions (the same live-session predicate as GET /admin/sessions: not revoked, not past expires_at, last_seen_at within the staff idle limit; decision 018); `resetSentAt` = when the latest invite/reset link was issued (auth_tokens), null when none or when a temporary password was set after it (mock accessStaff.ts:178-183); `passwordChangedAt` is set when a temporary password is issued: for an invited account the drawer reads \"Temporary password set …\" from it, else \"Invitation link sent … / expired\" from resetSentAt (staffText.ts:14-26); `suspendedReason` as sent (\"Reason: note\"; the table shows the part before the colon); `lastLoginIp` null until the first sign-in. x-total-count required (tab count, truncation note). Never send password_hash or TOTP data.",
           "errors": [
             {
               "status": 401,
@@ -475,7 +475,7 @@
           "successStatus": 200,
           "query": "",
           "request": "`{mode:'reset_link'|'temporary_password', revokeSessions:boolean}` (dialog defaults: reset_link, revokeSessions true, PasswordDialog.tsx:40). reset_link: issue a token (1 h; purpose invite while the account is still 'invited', reset otherwise — proposed) and email `/set-password?token=…`; the current password keeps working until the link is used. temporary_password: generate + hash, must_change_password=true, password_changed_at=now, void unused reset tokens. revokeSessions=true: revoke every session of the target (when the target is the caller, the caller's next request answers 401).",
-          "response": "200 `{temporaryPassword}` for temporary_password (once, never stored in clear); `{}` or 204 for reset_link (the client only reads `result?.temporaryPassword`). Update resetSentAt (link) or set it null (temporary; mock accessStaff.ts:175-186). Audit 'set a temporary password for admin' / 'sent a password reset link to admin' without any secret (map: never readable, never in the log).",
+          "response": "200 `{temporaryPassword}` for temporary_password (once, never stored in clear); 200 `{}` for reset_link (there is no 204; the client only reads `result?.temporaryPassword`); `Cache-Control: no-store` on both answers. Update resetSentAt (link) or set it null (temporary; mock accessStaff.ts:175-186). Audit 'set a temporary password for admin' / 'sent a password reset link to admin' without any secret (map: never readable, never in the log).",
           "errors": [
             {
               "status": 422,
@@ -855,8 +855,8 @@
             },
             {
               "status": 409,
-              "code": "ROLE_PROTECTED",
-              "when": "proposed: renaming the Owner role or removing '*' from it (see question 2)",
+              "code": "LAST_OWNER",
+              "when": "removing '*' from the role would leave no active staff member whose role holds '*' (errors[{field:\"permissions\"}]); renaming the Owner role is allowed (ANSWERS access Q2)",
               "ui": "dialog error slot"
             },
             {
@@ -926,7 +926,7 @@
           "successStatus": 200,
           "query": "`_start`/`_end` pages of 25 (useSessions.ts:8-26), optional `subjectType=staff` or `subjectType=client`. No `_sort` is sent: server default (proposed lastSeenAt desc, then id desc).",
           "request": "",
-          "response": "Only live sessions (revoked_at null, expires_at in the future) of staff (fully signed in) and merchants; exclude storefront customer sessions and pre-2FA sessions. `subject {id, name, email}` joined from staff_users/clients; `current: true` only on the session making the request (the mock marks the caller's first session, accessSessions.ts:11-23); lastSeenAt null reads \"Unknown\", expiresAt null \"Never\". x-total-count drives the pager.",
+          "response": "Only live sessions (revoked_at IS NULL AND expires_at > now() AND (stage <> 'active' OR last_seen_at > now() - the idle limit of the subject type), the one live-session predicate of the identity sessions repository (idle limits from SessionPolicy: settings sessions.staff_idle_minutes 30 and sessions.client_idle_minutes 10080, decision 018)) of staff (fully signed in) and merchants; exclude storefront customer sessions and pre-2FA sessions. `subject {id, name, email}` joined from staff_users/clients; `current: true` only on the session making the request (the mock marks the caller's first session, accessSessions.ts:11-23); lastSeenAt null reads \"Unknown\", expiresAt null \"Never\". x-total-count drives the pager.",
           "errors": [
             {
               "status": 403,
@@ -943,12 +943,12 @@
           "successStatus": 204,
           "query": "",
           "request": "No body; any session id from the list (staff or merchant).",
-          "response": "204; revoked_at=now; audit (entityType 'session'). Ending your own session signs you out (next request 401; EndSessionDialog.tsx warns).",
+          "response": "204; revoked_at=now (revokeAllOf still revokes every non-revoked row, idle-dead ones included); audit (entityType 'session'). Ending your own session signs you out (next request 401; EndSessionDialog.tsx warns).",
           "errors": [
             {
               "status": 404,
               "code": "NOT_FOUND",
-              "when": "unknown or already ended session (accessSessions.ts:26-32)",
+              "when": "unknown session, or one that is no longer live by the same predicate as GET /admin/sessions (an idle-dead session reads as already ended) (accessSessions.ts:26-32)",
               "ui": "confirm dialog shows the detail"
             },
             {
@@ -1185,9 +1185,9 @@
         {
           "key": "GET /admin/audit-logs",
           "successStatus": 200,
-          "query": "`_start`/`_end` in pages of 25 (0-25, 25-50, …; Refine useInfiniteList, view.ts:14, useAuditLogs.ts:16-23) and always `_sort=createdAt&_order=desc`. Optional plain filters: `actorType=staff&actorId=<id>` (a person) or `actorType=system`; `entityType=<singular name>` from the fixed list order, merchant, service, supplier, payment, withdrawal, plan, session, customer, staff, ip_rule, checkout, refund, dispute, ticket, listing, blocklist, legal, setting (entities.ts:7-27; a type from the URL outside the list is passed through); `q` = case-insensitive contains over actorName, action and entityLabel (mock routes.ts:13); `from=YYYY-MM-DD` and `to=YYYY-MM-DD`, both days included (mock: whole UTC days, routes.ts:17-27) — NOT createdAt_gte/lte (view.ts:41-51).",
+          "query": "`_start`/`_end` in pages of 25 (0-25, 25-50, …; Refine useInfiniteList, view.ts:14, useAuditLogs.ts:16-23) and always `_sort=createdAt&_order=desc`. Optional plain filters: `actorType=staff|client|customer|system` with `actorId=<id>` (a person) or `actorType=system`; `entityType=<singular name>` from the fixed list order, merchant, service, supplier, payment, withdrawal, plan, session, customer, staff, ip_rule, checkout, refund, dispute, ticket, listing, blocklist, legal, setting (entities.ts:7-27; a type from the URL outside the list is passed through) plus the backend additions role, client_group, category, currency, payment_gateway, invoice, api_key, webhook_endpoint, kyc_submission, notification_template, alert_rule, alert, incident, tax_rate, help_article, content_page, ledger_transaction; every value comes from the exported AUDIT_ENTITY_TYPES of the platform audit module, and AuditService.record throws a RangeError (programming error, rolls back) on any other value; table to word: clients→merchant, staff_users→staff, checkout_sessions→checkout, legal_documents→legal, blocklist entries→blocklist, settings→setting, commission_plans→plan, withdrawal_requests→withdrawal, support_tickets→ticket; the list is enforced in code with no DB CHECK, so the append-only table never needs a migration for it, and a feature that needs a new type adds it to the list in its own commit; `q` = case-insensitive contains over actor_name, action and entity_label (mock routes.ts:13); `from=YYYY-MM-DD` and `to=YYYY-MM-DD`, both days included (mock: whole UTC days, routes.ts:17-27) — NOT createdAt_gte/lte (view.ts:41-51).",
           "request": "",
-          "response": "Array newest first + exact x-total-count for the filter: it drives \"Show more\", the toolbar count and \"of N remaining\" (Refine computes hasNextPage from total/pageSize). Rows: `actorName` and `entityLabel` joined or snapshotted at write time so deleted records and accounts still read well (without them the screen falls back to \"Staff #3\" / \"Order #4812\"); `actorType` 'staff' or 'system' (system: actorId null and ip null, shown as \"automatic\"); `action` = a readable verb phrase that follows the person's name (\"suspended admin\", \"blocked IP\", \"changed price of\"; demo logAudit verbs) — a code like order.completed is rendered as \"order completed\"; `entityId` a number, 0 when no numeric record exists (then no link, link.ts:34); `before`/`after` = JSON snapshots (objects of the changed fields; whole row for create/delete), both null for a plain action such as a sign-in; they may be omitted from list rows, and the screen then calls GET /:id on expand (AuditDetails.tsx:22-23). Secrets masked. The client dedupes rows by id across pages (pages.ts), so a growing log is tolerated.",
+          "response": "Array newest first + exact x-total-count for the filter: it drives \"Show more\", the toolbar count and \"of N remaining\" (Refine computes hasNextPage from total/pageSize). Rows: `actorName` and `entityLabel` joined or snapshotted at write time so deleted records and accounts still read well (without them the screen falls back to \"Staff #3\" / \"Order #4812\"); `actorName` = the audit_logs.actor_name snapshot written by AuditService.record from the request actor (RequestActor.name: staff and merchant names are filled by the session guards, the API-key and Dhru guards set {type:'client', id, name}); null when the snapshot is '' (system), where the console shows \"System\"; a renamed or deleted account still reads correctly and q can search it in SQL; `actorType` staff|client|customer|system (audit_logs.actor_type CHECK from AUDIT_ACTOR_TYPES; system: actorId null and ip null, shown as \"automatic\"); `action` = a readable verb phrase that follows the person's name (\"suspended admin\", \"blocked IP\", \"changed price of\"; demo logAudit verbs) — a code like order.completed is rendered as \"order completed\"; `entityId` a number, 0 when no numeric record exists (then no link, link.ts:34); `before`/`after` = JSON snapshots (objects of the changed fields; whole row for create/delete), both null for a plain action such as a sign-in; they may be omitted from list rows, and the screen then calls GET /:id on expand (AuditDetails.tsx:22-23). Secrets masked. The client dedupes rows by id across pages (pages.ts), so a growing log is tolerated.",
           "errors": [
             {
               "status": 401,
@@ -1209,7 +1209,7 @@
             }
           ],
           "assumed": true,
-          "mapConflict": "Map: CRUD row with ops LS and no filters or bodies (M188-M191). The console adds the from/to day filters and the joined actorName/entityLabel; audit_logs has no label column in the map (proposal: add an entity_label snapshot column; resolve actorName by joining staff_users)."
+          "mapConflict": "Map: CRUD row with ops LS and no filters or bodies (M188-M191). The console adds the from/to day filters and the joined actorName/entityLabel; audit_logs has no label column in the map (proposal: add an entity_label snapshot column; actorName is likewise an actor_name snapshot column written by AuditService from the request actor, not a join, so renamed or deleted accounts still read correctly: lead resolution identity-platform-7)."
         },
         {
           "key": "GET /admin/audit-logs/:id",
@@ -1463,7 +1463,7 @@
     "The client caches GET /admin/auth/me for 60 s (meCache.ts:15): enforce permission and role changes on the next request server-side; never snapshot permissions per session.",
     "Query strings come from URLSearchParams: space as +, repeated keys for arrays, booleans \"true\"/\"false\", empty values omitted (query.ts:11-22); accept string or string[] for every filter.",
     "All server strings are rendered as text, never HTML; the UI limits labels to 60 chars, block reasons to 120 and notes to 140, but the server must validate lengths itself.",
-    "Proposed new error codes (not referenced by the frontend; the UI shows any code's title/detail): TWOFA_ALREADY_ENABLED, CANNOT_CHANGE_OWN_ROLE, SELF_LOCKOUT, TWOFA_NOT_ENABLED, ROLE_PROTECTED; reuse NOT_SUSPENDED and LAST_OWNER for staff.",
+    "Proposed new error codes (not referenced by the frontend; the UI shows any code's title/detail): TWOFA_ALREADY_ENABLED, CANNOT_CHANGE_OWN_ROLE, SELF_LOCKOUT, TWOFA_NOT_ENABLED; reuse NOT_SUSPENDED and LAST_OWNER for staff.",
     "Test-only placeholder codes in frontend tests (X, BOOM, REFUSED, A1, B2, FIVE, FIRST_CODE, SECOND_CODE, THIRD_CODE, WITH_ISSUE, WITHOUT_ISSUE) are not server codes; country/currency literals (GB, USD, SEK…) only matched the scan.",
     "The mock layer checks no permissions (except system-health and supplier writes) and fakes only simple state changes (decision 014; src/test/mockApi.ts:36-40); rules missing from the mocks still apply (see each endpoint's mapConflict).",
     "Lockout guards (restriction on, self-block, last allow rule) must use the real request IP from a trusted proxy chain; the console's own hints use me.lastLoginIp (M15), so keep last_login_ip = the IP of the current sign-in."
@@ -1754,7 +1754,7 @@
         "src/mocks/handlers/accessStaff.ts:209",
         "src/features/access/pages/AccessPage.test.tsx:277"
       ],
-      "meaning": "Suspending (and, proposed, demoting) the last active Owner.",
+      "meaning": "Any change that would leave no active staff member holding '*': suspending or demoting the last Owner, or removing '*' from the last Owner's role (PATCH /admin/roles/:id, errors[{field:\"permissions\"}]).",
       "ui": "Dialog error slot; dialog stays open."
     },
     {
@@ -1975,7 +1975,7 @@
       "where": [
         "src/features/commissions/pages/CommissionsAgents.test.tsx:245"
       ],
-      "meaning": "DELETE /admin/commission-assignments/:id with pending accruals (test only).",
+      "meaning": "Not sent: DELETE /admin/commission-assignments/:id ends the assignment and answers 204 even with ready accruals (ANSWERS commissions Q6); the console handler stays harmless (test only).",
       "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
     },
     {
@@ -2275,7 +2275,7 @@
       "where": [
         "src/features/services/mocks/serviceRoutes.ts:176"
       ],
-      "meaning": "DELETE /admin/services/:id while referenced.",
+      "meaning": "Retired: no route answers it (DELETE /admin/services/:id archives a service that is referenced and deletes it otherwise, B-entry catalog-3); the console mock still answers it.",
       "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
     },
     {

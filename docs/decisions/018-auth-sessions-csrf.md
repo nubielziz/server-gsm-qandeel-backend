@@ -30,8 +30,10 @@ Status: accepted, 2026-10-31. Source of the staff flow: `docs/contract/ALIGNMENT
   value is sent as `X-CSRF-Token` on login, 2fa and me responses (cross-site consoles cannot read the cookie). Every
   mutation that carries a session must send the header (`403 CSRF_FAILED`, does not sign out). Mutations without a
   session (login, token-mode password set, public store routes) are protected by the exact-origin check and the
-  rate limits instead. GETs never change state, except the customer data export, which also requires
-  `Sec-Fetch-Site: same-origin|same-site` or a matching Origin.
+  rate limits instead. GETs never change state, except routes whose contract sets `originCheck: true` (only allowed on GET routes
+  with a session access; today the customer data export): the CSRF guard then requires `Sec-Fetch-Site: same-origin|same-site`
+  or, when that header is absent, an `Origin` exactly in the configured CORS origins, else `403 CSRF_FAILED`; such a GET sends
+  no CSRF token.
 - **API keys** (REST v1) `Authorization: Bearer <key>`; **Dhru** `username` + `apiaccesskey`: both resolve an
   `api_keys` row by keyed hash, then check revoked/expired, `allowed_ips`, scopes (`dhru` scope for Dhru), the key's
   per-minute limit and the merchant's status.

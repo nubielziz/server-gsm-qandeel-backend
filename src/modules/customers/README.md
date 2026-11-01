@@ -94,3 +94,17 @@ None yet. List each queue, job, schedule, idempotency key and retry policy here 
 ## Cache keys
 
 None yet. Register each key family (owner, TTL, invalidation after commit) in `docs/cache-keys.md` (see `CONTRIBUTING.md` → "Add a cache key").
+
+## Audit resolutions
+
+The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, machine-readable `docs/contract/resolutions.json`) settled the points below for this module's routes. Where they differ from older text in this README or the endpoint docs, the resolution wins; the endpoint docs, `RULES.md`, `ANSWERS.md` and `MISMATCHES.md` were updated to match.
+
+- `b2c-1` · GET /admin/customers, GET /admin/customers/:id, POST /admin/customers, PATCH /admin/customers/:id
+- `b2c-4` · GET /admin/imei-checks, POST /admin/customers/:id/anonymize
+- `b2c-5` · POST /admin/customers/:id/block
+- `b2c-8` · GET /admin/customers/:id/export
+- `b2c-10` · GET /admin/reports/funnel
+- `b2c-11` · GET /admin/customers/:id, GET /admin/risk/queue
+- `b2c-12` · GET /admin/customers/:id
+- `b2c-14` · GET /admin/checkouts/abandoned, GET /admin/customers/:id, GET /admin/legal-documents
+- `b2c-16` · POST /admin/customers, PATCH /admin/customers/:id

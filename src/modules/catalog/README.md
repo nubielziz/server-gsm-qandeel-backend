@@ -14,6 +14,8 @@ Not built yet: the module is an empty shell (`catalog.module.ts`, `index.ts`). I
 
 Exports `CatalogModule` only. Add the services other modules may call here, and nothing else: other modules import only `src/modules/catalog/index.ts` (lint rule `gsm/module-boundaries`).
 
+Planned exports (audit resolutions): a read-only `ClientGroupDirectory` (group exists, kind not `b2c_retail`, `overdraft_allowed`) for `POST/PATCH /admin/clients` (identity-platform-3, extended by 4a); the `PriceResolver` (one resolver for resolve, orders, price lists and the group/client price checks, plus the b2c_retail floor for the storefront listings: catalog-4, b2c-7; algorithm in `RULES.md` services 3); and `recomputeEffectiveCost(serviceIds, tx)`, called by supplier import and cost writes, sync, link changes and supplier `credit_rate` changes (catalog-1, B117).
+
 ## Owned tables
 
 Only this module reads and writes these 10 tables (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts` once the data layer exists.
@@ -127,3 +129,28 @@ None yet. List each queue, job, schedule, idempotency key and retry policy here 
 ## Cache keys
 
 None yet. Register each key family (owner, TTL, invalidation after commit) in `docs/cache-keys.md` (see `CONTRIBUTING.md` → "Add a cache key").
+
+## Audit resolutions
+
+The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, machine-readable `docs/contract/resolutions.json`) settled the points below for this module's routes. Where they differ from older text in this README or the endpoint docs, the resolution wins; the endpoint docs, `RULES.md`, `ANSWERS.md` and `MISMATCHES.md` were updated to match.
+
+- `b2c-7` · GET /admin/service-listings, PATCH /admin/service-listings/:id
+- `catalog-1` · GET /admin/services, GET/POST/PATCH /admin/services/:id, GET /admin/client-prices, GET /admin/pricing/resol...
+- `catalog-2` · POST /admin/services
+- `catalog-3` · DELETE /admin/services/:id
+- `catalog-4` · GET /admin/pricing/resolve
+- `catalog-5` · DELETE /admin/client-groups/:id
+- `catalog-6` · DELETE /admin/service-categories/:id
+- `catalog-7` · PATCH /admin/tac-catalog/:id
+- `catalog-8` · GET /admin/tac-catalog, GET/POST/PATCH /admin/tac-catalog/:id
+- `catalog-9` · GET /admin/services, GET /admin/services/:id, POST/PATCH /admin/services
+- `catalog-10` · POST /admin/service-categories, PATCH /admin/service-categories/:id
+- `catalog-11` · PUT /admin/services/:id/options, PUT /admin/services/:id/group-prices
+- `catalog-12` · PUT /admin/services/:id/group-prices
+- `catalog-13` · PATCH /admin/services/:id
+- `catalog-14` · PATCH /admin/services/:id
+- `catalog-15` · GET /admin/inventory-codes, POST /admin/services/:id/inventory/import
+- `catalog-16` · GET /admin/client-prices
+- `catalog-17` · POST /admin/client-groups, PATCH /admin/client-groups/:id
+- `identity-platform-3` · POST /admin/clients
+- `orders-suppliers-10` · POST /admin/suppliers/:id/import

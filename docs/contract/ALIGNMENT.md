@@ -35,15 +35,17 @@ Disagreements are B-entries; nothing is picked silently.
   never `""`. Date-only parameters (`YYYY-MM-DD`, e.g. audit `from`/`to`, report ranges) are UTC calendar days, both
   ends inclusive. Chart buckets are UTC days (`YYYY-MM-DD`) and months (`YYYY-MM`).
 - **Enums** are the frontend's words (lower case, `snake_case`); the backend never sends a value the frontend type
-  does not list (contract test). Internal values with no wire word are mapped (B-entries: ticket `pending`, refund
-  `completed` until the console adds `processing`).
+  does not list (contract test). Internal values with no wire word are mapped (B-entries: ticket `pending_customer` is sent
+  as `pending`, ledger `ref_type` `client` as `system`, a stored payment method as `card|wallet|crypto` where the console
+  expects those); refunds are sent as `processing` because the console has it (B82 resolved, console M258).
 - **Nullability and optionality** follow the frontend type: a nullable field is sent as `null`, an optional field may
   be omitted. Empty lists are `[]` with `x-total-count: 0`.
 - **Success statuses**: creates answer `201` with the created record; deletes `204`; actions answer `204` when the
   console expects no body, otherwise `200` with the documented body (`successStatus` per endpoint). The console accepts
   any 2xx, the contract fixes one.
-- **GETs never change state.** The one exception, `GET /admin/customers/:id/export` (closes the export request), also
-  requires a same-site `Sec-Fetch-Site` or a matching `Origin`.
+- **GETs never change state.** The one exception, `GET /admin/customers/:id/export` (closes the export request), sets the
+  contract flag `originCheck: true`: the CSRF guard also requires a same-site `Sec-Fetch-Site` or, when absent, an `Origin`
+  that is one of `CORS_ORIGINS` (`403 CSRF_FAILED` otherwise); the console sends no CSRF token on that GET.
 
 ## 2. Lists (simple-rest dialect)
 

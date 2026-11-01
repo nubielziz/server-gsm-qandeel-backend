@@ -27,7 +27,9 @@ when a queue is missing here or when the numbers in a section differ from `QUEUE
 - **Retention:** completed jobs 24 hours (at most 10 000), failed jobs 14 days (decision 020), so the noeviction Redis stays
   bounded and staff can retry failed jobs from the console (`GET /admin/system/queues/:name/failed`).
 - **Runs are recorded:** a scheduled or manual job wraps its work with `JobRunsService.run(...)` (health module), which
-  writes `job_runs` (start, end, duration, items, result, error). Event-driven jobs (supplier dispatch, webhooks) are
+  writes `job_runs` (start, end, duration, items, result, error). `duration_ms` and `processed` are `NOT NULL DEFAULT 0`: both
+  are 0 while the run is `running`, and finishing a run sets `duration_ms = finished_at - started_at` in milliseconds and
+  `processed` = the job's count (the job-run service always sets both; a contract test checks a running run). Event-driven jobs (supplier dispatch, webhooks) are
   recorded by their own tables, not in `job_runs`. The outbox relay tick (every second) and the IP rule hit flush (every
   minute) are not recorded either: high-frequency housekeeping whose health is shown by metrics (decision 020).
 - **Shutdown:** on SIGTERM the worker stops taking jobs, lets the running ones finish (at most 25 s), then closes its
@@ -127,7 +129,10 @@ Refreshes supplier services, prices and balances.
 
 - **Concurrency:** 2 per worker process.
 - **Jobs:** none yet. Built by the suppliers feature (6): the price sync (every 15 minutes in the console's job list) and the
-  supplier balance check (every 30 minutes).
+  supplier balance check (every 30 minutes). The balance check sets `suppliers.balance_checked_at` and the price sync sets
+  `suppliers.prices_synced_at` at the end of a successful run; `GET /admin/system/suppliers` reports `lastSyncAt` as the
+  greater of the two. The supplier client writes an `outcome` (`ok | error | timeout`) on every `supplier_api_logs` row,
+  which the System health error and timeout rates read.
 - **Payload:** none yet (supplier id).
 - **Idempotency:** none yet. Rule: a sync replaces the supplier's rows in one transaction and is safe to repeat.
 - **Retry policy:** 3 attempts, exponential backoff from 1 min (jitter 50 %).
@@ -165,7 +170,9 @@ Scheduled housekeeping: group promotion, data retention, integrity checks, FX re
   registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
   `client_group_promotion` (feature 4a, nightly), `ledger_integrity` (12b, nightly 02:30 UTC), `data_retention` (nightly
   03:00 UTC), `fx_refresh` (hourly), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). The names are the
-  console's job names (`GET /admin/system/jobs`).
+  console's job names (`GET /admin/system/jobs`). `data_retention` erases `imei_checks` older than `imeiRetentionDays` by
+  setting `imei_enc`, `imei_hash` and `cached_until` to NULL together (no marker column; the wire then shows the TAC followed
+  by bullets up to 15 characters), the same erasure `POST /admin/customers/:id/anonymize` applies to the customer's checks.
 - **Payload:** none for `ip_rule_hits_flush`. A manual run of the others carries `{ runId }` of the `job_runs` row that
   `POST /admin/system/jobs/:name/run` inserted; the job id is `manual-<run id>`.
 - **Idempotency:** `ip_rule_hits_flush` takes the whole Redis hash of counters and deletes it in one Lua step, so a second or

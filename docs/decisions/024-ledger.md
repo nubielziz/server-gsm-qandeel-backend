@@ -27,8 +27,13 @@ version)`, `ledger_transactions (kind, ref_type, ref_id, memo, idempotency_key, 
   4. guard: a `client_wallet` may not end below `-overdraft_limit` (`INSUFFICIENT_FUNDS`), except events the map
      allows to (credits, reversals);
   5. insert entries with `balance_after`, update balances and `version`.
-- `ref_type` ∈ `order, payment, invoice, refund, dispute, accrual, supplier, client, system, ledger_transaction` (the
-  map lists only the first four; the console finds deposits by `payment`, commission batches by `accrual`).
+- `ref_type` ∈ `order, payment, invoice, refund, dispute, accrual, supplier, client, system` (the map lists only the first
+  four; the console finds deposits by `payment`, commission batches by `accrual`; `ledger_transaction` was dropped because no
+  writer uses it). `ref_id` is `NOT NULL DEFAULT 0`: a system posting (opening balances, gateway settlement) stores `0`, and
+  `postTransaction` refuses `0` for every other `ref_type`. Manual adjustments keep `ref_type = 'client'` (`ref_id` = the
+  client id) in the database; on the wire a stored `client` is sent as `refType = 'system'` with `refId` = the client id, and a
+  wire filter `refType=system` matches stored `system` and `client` (B-entry "ledger refType wire mapping", resolution money-1).
+  B2C money events post `ref_type = 'order'`, never `payment`.
 - Rules beyond the 13 map events: approving a top-up through a manual gateway (`is_manual`) debits `bank` instead of
   `gateway_clearing`; reopen moves revenue back to the hold (B2B) or customer funds (B2C) and keeps cogs; a B2B refund
   of a completed order moves revenue straight back to the wallet, cogs kept; each is a reversing entry.
@@ -37,7 +42,9 @@ version)`, `ledger_transactions (kind, ref_type, ref_id, memo, idempotency_key, 
   line (no supplier cost) is dropped. Each builder has a unit test with the map's numbers.
 - Database enforcement: a `DEFERRABLE INITIALLY DEFERRED` constraint trigger on `ledger_entries` checks Σ amount = 0
   and a single account currency per transaction at commit; `BEFORE UPDATE OR DELETE` triggers reject changes to `ledger_entries` and
-  `ledger_transactions`. Corrections are reversing transactions (`ref_type = 'ledger_transaction'`).
+  `ledger_transactions`. Reversals (reopen, B2B refund, `b2c_refund`) carry the `ref_type`/`ref_id` of the record they reverse (order, refund or
+  dispute), so an order's money trail shows them; the reversed transaction id goes into the memo ('Reversal of JRN-<id>') and
+  the idempotency key ('reverse:<txId>'), not into `ref_type`. Corrections are adjustments (`adjust`).
 - Integrity job (nightly and `POST /admin/system/integrity/run`): Σ entries per account = balance, global Σ = 0,
   `balance_after` chains, holds of finished orders; results in `job_runs`, failures raise alerts.
 - Balances, holds and ledger rows are never cached and are read inside the transaction that decides.

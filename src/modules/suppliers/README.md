@@ -85,3 +85,20 @@ None yet. List each queue, job, schedule, idempotency key and retry policy here 
 ## Cache keys
 
 None yet. Register each key family (owner, TTL, invalidation after commit) in `docs/cache-keys.md` (see `CONTRIBUTING.md` → "Add a cache key").
+
+## Audit resolutions
+
+The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, machine-readable `docs/contract/resolutions.json`) settled the points below for this module's routes. Where they differ from older text in this README or the endpoint docs, the resolution wins; the endpoint docs, `RULES.md`, `ANSWERS.md` and `MISMATCHES.md` were updated to match.
+
+- `catalog-1` · GET /admin/services, GET/POST/PATCH /admin/services/:id, GET /admin/client-prices, GET /admin/pricing/resol...
+- `orders-suppliers-3` · GET /admin/supplier-api-logs, GET /admin/supplier-api-logs/:id
+- `orders-suppliers-4` · GET /admin/suppliers, GET /admin/suppliers/:id
+- `orders-suppliers-5` · GET /admin/suppliers, GET /admin/suppliers/:id
+- `orders-suppliers-6` · POST /admin/suppliers/:id/sync
+- `orders-suppliers-7` · GET /admin/suppliers
+- `orders-suppliers-8` · DELETE /admin/suppliers/:id
+- `orders-suppliers-9` · POST /admin/suppliers
+- `orders-suppliers-10` · POST /admin/suppliers/:id/import
+- `orders-suppliers-13` · GET /admin/suppliers/:id
+- `orders-suppliers-16` · GET /admin/suppliers, GET /admin/suppliers/:id
+- `orders-suppliers-20` · GET /admin/suppliers

@@ -14,6 +14,8 @@ Not built yet: the module is an empty shell (`money.module.ts`, `index.ts`). Its
 
 Exports `MoneyModule` only. Add the services other modules may call here, and nothing else: other modules import only `src/modules/money/index.ts` (lint rule `gsm/module-boundaries`).
 
+Planned first export (feature 3, signature written by the lead before wave 1; resolution identity-platform-1): `MerchantAccounts.open(tx, { clientId, currency: 'USD', creditLimit, overdraftAllowed })`, called by `POST /admin/clients` (2a) and `POST /client/auth/register` (2b) in the transaction that creates the merchant. It inserts `client_wallet` (`overdraft_limit` = `creditLimit`, default `'0.0000'`) and `client_hold` with `ON CONFLICT (ledger_accounts_identity_uq) DO NOTHING` (no `postTransaction`, no money event), refuses `creditLimit > 0` for a group without `overdraft_allowed` (`422` on `creditLimit`, user rule 2; the same check as `PATCH /admin/clients/:id/credit-limit`) and returns the wallet view `{ balance, reserved, creditLimit, available }`.
+
 ## Owned tables
 
 Only this module reads and writes these 11 tables (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts` once the data layer exists.
@@ -157,3 +159,26 @@ None yet. List each queue, job, schedule, idempotency key and retry policy here 
 ## Cache keys
 
 None yet. Register each key family (owner, TTL, invalidation after commit) in `docs/cache-keys.md` (see `CONTRIBUTING.md` → "Add a cache key").
+
+## Audit resolutions
+
+The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, machine-readable `docs/contract/resolutions.json`) settled the points below for this module's routes. Where they differ from older text in this README or the endpoint docs, the resolution wins; the endpoint docs, `RULES.md`, `ANSWERS.md` and `MISMATCHES.md` were updated to match.
+
+- `b2c-6` · GET /admin/risk/queue
+- `identity-platform-1` · POST /admin/clients
+- `identity-platform-3` · POST /admin/clients
+- `money-1` · GET /admin/ledger/transactions, GET /admin/ledger/transactions/:id
+- `money-2` · GET /admin/payments, GET /admin/payments/:id, POST /admin/payments/:id/approve|reject
+- `money-3` · GET /admin/payments, POST /admin/payments/:id/approve
+- `money-4` · GET /admin/reports/payments, GET /admin/refunds, GET /admin/refunds/:id
+- `money-5` · GET /admin/reports/payments, GET /admin/payment-gateways
+- `money-6` · GET /admin/ledger/transactions, GET /admin/ledger/transactions/:id
+- `money-7` · GET /admin/invoices, GET /admin/invoices/:id, POST /admin/invoices
+- `money-8` · GET /admin/payments, GET /admin/payments/:id
+- `money-9` · POST /admin/currencies/refresh-fx
+- `money-10` · GET /admin/reports/client-statement/:clientId
+- `money-11` · GET /admin/refunds, POST /admin/refunds/:id/approve|retry
+- `money-12` · GET /admin/refunds, GET /admin/refunds/:id
+- `money-13` · GET /admin/currencies, POST /admin/currencies, PATCH /admin/currencies/:id
+- `money-14` · POST /admin/payment-gateways, PATCH /admin/payment-gateways/:id
+- `money-15` · GET /admin/ledger/transactions

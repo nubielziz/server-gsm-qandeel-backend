@@ -70,14 +70,14 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 - **Query**: Paging 25. q: contains over publicTitle, slug, service.name and service.code (mocks/listingRoutes.ts:21). Filters isListed=true|false and locked=true|false. _sort publicTitle|isListed, default publicTitle asc (lib/views.ts:22-26). Counts, each with _start=0&_end=1: isListed=true; isListed=false&locked=false; locked=true (components/ListingStats.tsx:10-14; lib/counts.ts:5).
 - **Response**: JSON array + x-total-count. One row per service and locale:
 - id, serviceId, locale (en|ar), slug, publicTitle, isListed, isFeatured.
-- service {id, name, code, basePrice (B2B base, 4-dp), cost}.
+- service {id, name, code, basePrice (B2B base, 4-dp), cost (the effective cost of B117, 4-dp USD, so cost, marginPct and floorPrice agree)}.
 - retailPrice: service_group_prices.price of the b2c_retail group, net USD before VAT, shared by every locale of the service; null when unset.
-- floorPrice: the lowest retail price accepted.
+- floorPrice: the lowest retail price accepted: the B117 effective floor for the b2c_retail group (effective cost + the minimum profit from pricing_rules), computed by the same resolver function checkout uses (exported by the catalog pricing service of feature 4b).
 - marginPct: (retail - cost) / retail x 100 as a 4-dp decimal string; null without a retail price (mocks/dto.ts:35).
 - orders30d and revenue30d: the service's non-rejected storefront orders of the last 30 days; revenue as net total_price.
 - locked (never public) and lockedReason (text or null).
 - **Errors**: 403 FORBIDDEN (caller lacks storefront:read)
-- **B53**: The route's tables are service_listings and services. Rows also need service_group_prices with client_groups (kind b2c_retail), orders (30-day figures), service_categories (locked) and pricing_rules (min profit for the floor). No column marks a service that is never public. Proposal: locked when the service's category allowed_group_ids excludes the b2c_retail group (lockedReason 'B2B only ...') or the service is disabled ('Service disabled'), following the demo's B2C_UNLISTED reasons (M183). → Proposal accepted.
+- **B53**: The route's tables are service_listings and services. Rows also need service_group_prices with client_groups (kind b2c_retail), orders (30-day figures), service_categories (locked) and pricing_rules (min profit for the floor). No column marks a service that is never public. Proposal: locked when the service's category allowed_group_ids excludes the b2c_retail group (lockedReason 'B2B only ...') or the service is disabled ('Service disabled'), following the demo's B2C_UNLISTED reasons (M183). → Proposal accepted; superseded on cost by B117 (lead resolution b2c-7): floorPrice and service.cost use the effective cost through the shared catalog pricing resolver, so cost, marginPct and floorPrice agree.
 - **Mock**: src/features/storefront/mocks/listingRoutes.ts (Rows come from mocks/dto.ts (toListing, floorOf) over mocks/seed.ts (demo S.listings, S.services, S.retail, S.orders). Query and body expectations are in api/listings.test.ts.)
 
 ## GET /admin/service-listings/:id
@@ -102,7 +102,7 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 
 - **Map**: Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked. (الخدمات المعروضة بالمتجر وسعر Retail لكل خدمة؛ منع البيع تحت الحد الأدنى) · staff-permission `storefront:*` · stage 15 · tables service_listings, services
 - **Frontend**: `updateListing` (src/features/storefront/api/listings.ts:53) · params `id: number`, `body: UpdateListingBody` · returns `ServiceListing` · success 200 · assumed contract
-- **Request**: Body is any of {isListed: boolean, retailPrice: 4-dp money string, net USD before VAT (components/PriceDialog.tsx:52)}. The switch sends only isListed; the price dialog sends only retailPrice. retailPrice upserts service_group_prices(service_id, b2c_retail group), so it applies to every locale's listing of the service and only to new storefront checkouts. Refuse a price <= 0 or below floorPrice.
+- **Request**: Body is any of {isListed: boolean, retailPrice: 4-dp money string, net USD before VAT (components/PriceDialog.tsx:52)}. The switch sends only isListed; the price dialog sends only retailPrice. retailPrice upserts service_group_prices(service_id, b2c_retail group), so it applies to every locale's listing of the service and only to new storefront checkouts. Refuse a price <= 0 or below floorPrice. floorPrice is the same B117 effective floor (effective cost + minimum profit for the b2c_retail group); retailPrice below it is 422 on retailPrice.
 - **Response**: 200 with the updated row; retailPrice, marginPct and floorPrice are worked out again.
 - **Errors**: 422 VALIDATION_FAILED (errors[{field: 'retailPrice'}] for a price <= 0, or below the floor, with a message naming the floor (demo text 'Below the floor...', listingRoutes.ts:106-124)); 409 LISTING_LOCKED (switching on or pricing a locked listing); 409 SERVICE_DISABLED (isListed true while the service status is not active (listingRoutes.ts:135-141)); 404 NOT_FOUND (no listing with that id); 403 FORBIDDEN (caller lacks storefront:update)
 - **B54**: The map says this route sets 'the retail price of each service', but service_listings has no price column. The Retail price is service_group_prices for the b2c_retail group (M182). Proposal: add service_group_prices (write) to the route's tables. → Proposal accepted.
@@ -174,7 +174,7 @@ An empty list means all:
 - networks: distinct service_listings.carrier (the mock falls back to AT&T, T-Mobile, Vodafone).
 For each model x network: title 'Unlock <model> on <network>', slug slugOf(title), locale en, kind model, status draft, template_params {brand, model, network}, and a short draft body. Combinations whose slug already exists in that locale are skipped. Nothing is published.
 - **Response**: 200 with {created: ContentPage[] (the new drafts), skipped: number (combinations that already had a page)}.
-- **Errors**: 422 VALIDATION_FAILED (proposal: the run would create more drafts than the per-run cap (the mock silently stops at 6, pageRoutes.ts:27, 85)); 403 FORBIDDEN (caller lacks storefront:create)
+- **Errors**: 422 VALIDATION_FAILED (the run would create more than 50 new drafts (cap STOREFRONT_GENERATE_MAX_PER_RUN = 50, a code constant with no setting and no console field): the server computes brands x models x networks, removes the combinations that already have a page (counted in skipped) and, if more than 50 remain, refuses the whole run without truncating: detail 'This run would create N pages; the limit is 50 per run. Narrow the lists.', errors [] (no field); the mock silently stops at 6, pageRoutes.ts:27, 85); 403 FORBIDDEN (caller lacks storefront:create)
 - **B57**: The permission storefront:* on an action row is ambiguous. Proposal: storefront:create, which the console uses as its hint (M186). → POST /admin/content-pages/generate requires storefront:create (frontend M186); PUT /admin/risk/rules keeps the literal risk:*.
 - **Mock**: src/features/storefront/mocks/pageRoutes.ts (Seeded from demo S.landing and S.pages (seed.ts:115-119). Generator rules at pageRoutes.ts:63-100; api/contentPages.test.ts.)
 
@@ -221,7 +221,7 @@ For each model x network: title 'Unlock <model> on <network>', slug slugOf(title
 - **Frontend**: `listLegalDocuments` (src/features/storefront/api/legalDocuments.ts:22) · params `query?: ListQuery` · returns `ListResult<LegalDocument>` · success 200 · assumed contract
 - **Query**: _start=0&_end=200&_sort=type&_order=asc with no filters (components/LegalPanel.tsx:19-23). Filters type, locale and isCurrent are accepted.
 - **Response**: Every version. Row:
-- id, type terms|privacy|refund|cookies, version (text, e.g. '3.2'), locale, bodyMd.
+- id, type terms|privacy|refund|cookies (CHECK legal_documents_type_check; labels terms 'Terms of service', privacy 'Privacy policy', refund 'Refund policy', cookies 'Cookie policy'), version (text, e.g. '3.2'), locale, bodyMd.
 - effectiveFrom: null until published, and kept after the version is superseded.
 - isCurrent: one per type and locale.
 - requiresReacceptance, createdAt.

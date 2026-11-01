@@ -47,7 +47,7 @@ Frontend features covering this module: `support` (rules in `RULES.md`).
 - **Map**: Support inbox: priority, assignment, status and SLA timers. (صندوق الدعم: الأولوية والإسناد والحالة ومؤقتات SLA) · staff-permission `support:*` · stage 17 · tables support_tickets, orders
 - **Frontend**: `listSupportTickets` (src/features/support/api/tickets.ts:31) · params `query?: ListQuery` · returns `ListResult<SupportTicket>` · success 200 · assumed contract
 - **Query**: Paging 25. Filters:
-- status: repeat = IN. Open sends new&open&pending; Resolved sends resolved.
+- status: repeat = IN. Open sends new&open&pending; Resolved sends resolved. status=pending is translated to the stored pending_customer (status IN (pending_customer)) by the status codec.
 - late=true: Overdue.
 - assigneeId=<me>: Mine.
 - requesterType=customer|client: Who.
@@ -63,7 +63,7 @@ The list itself is also refetched every 30 s.
 - channel email|web|chat|telegram.
 - requesterType customer|client, requesterId, requester {name, email or null}.
 - orderId or null, category (one of 8 words), priority high|normal|low.
-- status: only new|open|pending|resolved. Any other word crashes the badge (TicketStatusBadge.tsx:7-8).
+- status: only new|open|pending|resolved (the stored pending_customer is sent as pending: status codec, B112; closed is removed from the stored vocabulary so it can never reach the console). Any other word crashes the badge (TicketStatusBadge.tsx:7-8).
 - assigneeId or null, and assignee {id, name} or null.
 - slaDueAt: when the next reply is due; null when nobody is waiting.
 - firstResponseAt, resolvedAt.
@@ -92,7 +92,7 @@ Refetched every 30 s while open.
 
 - **Map**: Support inbox: priority, assignment, status and SLA timers. (صندوق الدعم: الأولوية والإسناد والحالة ومؤقتات SLA) · staff-permission `support:*` · stage 17 · tables support_tickets, orders
 - **Frontend**: `updateSupportTicket` (src/features/support/api/tickets.ts:54) · params `id: number`, `body: UpdateTicketBody` · returns `SupportTicket` · success 200 · assumed contract
-- **Request**: Partial body {priority?, assigneeId?, status?}.
+- **Request**: Partial body {priority?, assigneeId?, status?}. Status codec (B112): the body word pending is stored as pending_customer; status accepts only new|open|pending|resolved (anything else is 422 on status); stored words other than pending_customer pass through. Status codec in one place, the support repository: toWire(pending_customer) = 'pending', fromWire('pending') = 'pending_customer'.
 - assigneeId: null unassigns; otherwise it must be an active staff member.
 - status 'resolved': sets resolved_at now, adds an internal system message 'Marked resolved by <name>. A satisfaction survey is emailed to the customer.', and sends the CSAT survey (outbox/notifications).
 - status 'open' (reopen): only from resolved; sets resolved_at null.
@@ -109,7 +109,7 @@ Values equal to the current ones are ignored. audit_logs entry per change.
 - **Request**: Body {body, channel?}.
 - body: trimmed text; templates are already filled in by the console.
 - channel: email|telegram, sent only when replyChannels has more than one entry (Composer.tsx:48-51, 91). Without it, use the ticket's channel when allowed, else email.
-Effects: inserts a staff message (is_internal false) and delivers it on the channel. The first public reply sets first_response_at. A new or open ticket becomes pending, and sla_due_at becomes null. An unassigned ticket is assigned to the sender. updated_at is set.
+Effects: inserts a staff message (is_internal false) and delivers it on the channel. The first public reply sets first_response_at. A new or open ticket becomes pending_customer (sent as pending, see the status codec), and sla_due_at becomes null. An unassigned ticket is assigned to the sender. updated_at is set.
 - **Response**: 201 with the new TicketMessage.
 - **Errors**: 422 VALIDATION_FAILED (errors[{field: 'body'}] for empty text (shown under the text, Composer.tsx:32), or errors[{field: 'channel'}] for a channel outside replyChannels); 409 TICKET_RESOLVED (the ticket is resolved; reopen it first (mocks/ticketHandlers.ts:79-81)); 404 NOT_FOUND (no ticket with that id); 403 FORBIDDEN (caller lacks support:reply)
 - **Mock**: src/features/support/mocks/ticketHandlers.ts (Seeded from demo S.tickets with the customers and merchants (mocks/store.ts:50-99). Timers are in mocks/dto.ts; exact queries are in api/support.test.ts.)
@@ -129,7 +129,7 @@ Effects: inserts a staff message (is_internal false) and delivers it on the chan
 - **Map**: Canned replies (macros) with order variables. (ردود جاهزة (macros) بمتغيرات الطلب) · staff-permission `support:*` · stage 17 · tables reply_templates
 - **Frontend**: `listReplyTemplates` (src/features/support/api/templates.ts:24) · params `query?: ListQuery` · returns `ListResult<ReplyTemplate>` · success 200 · assumed contract
 - **Query**: _start=0&_end=200&_sort=title&_order=asc (hooks/useTemplates.ts:9-16). q is accepted (title, body, shortcut).
-- **Response**: JSON array + x-total-count. Row: id, title, category (ticket category words), locale en|ar, body (raw, with {{name}}, {{order}}, {{eta}}), shortcut ('' when none), createdBy (staff id or null), createdAt, updatedAt. When the total exceeds 200, the view says so.
+- **Response**: JSON array + x-total-count. Row: id, title, category (ticket category words), locale en|ar, body (raw, with {{name}}, {{order}}, {{eta}}), shortcut ('' when none), createdBy (staff id or null), createdAt, updatedAt. When the total exceeds 200, the view says so. Shortcut: shortcut is trimmed; empty or whitespace-only is stored as NULL and read back as ''; the unique index on lower(shortcut) WHERE shortcut IS NOT NULL stays, so many templates without a shortcut are allowed and SHORTCUT_TAKEN compares lower case among non-empty shortcuts only.
 - **Errors**: 403 FORBIDDEN (caller lacks support:read)
 - **Mock**: src/features/support/mocks/templateHandlers.ts (Seeded from demo S.macros, converted to {{ }} variables (mocks/store.ts:105).)
 
@@ -146,7 +146,7 @@ Effects: inserts a staff message (is_internal false) and delivers it on the chan
 
 - **Map**: Canned replies (macros) with order variables. (ردود جاهزة (macros) بمتغيرات الطلب) · staff-permission `support:*` · stage 17 · tables reply_templates
 - **Frontend**: `createReplyTemplate` (src/features/support/api/templates.ts:44) · params `body: CreateTemplateBody` · returns `ReplyTemplate` · success 201 · assumed contract
-- **Request**: Body {title, category, locale, body, shortcut}, all trimmed. shortcut may be ''; otherwise it must start with '/' and be unique (lib/templateForm.ts:15-23). created_by = staff.
+- **Request**: Body {title, category, locale, body, shortcut}, all trimmed. shortcut may be ''; otherwise it must start with '/' and be unique (lib/templateForm.ts:15-23). created_by = staff. Shortcut: shortcut is trimmed; empty or whitespace-only is stored as NULL and read back as ''; the unique index on lower(shortcut) WHERE shortcut IS NOT NULL stays, so many templates without a shortcut are allowed and SHORTCUT_TAKEN compares lower case among non-empty shortcuts only.
 - **Response**: 201 with the ReplyTemplate.
 - **Errors**: 422 VALIDATION_FAILED (errors[].field is one of title|body|category|locale|shortcut (mocks/templateHandlers.ts:15-33)); 409 SHORTCUT_TAKEN (another template has this non-empty shortcut. The detail names it; send no errors[] (templateHandlers.ts:36-42).); 403 FORBIDDEN (caller lacks support:create)
 - **Mock**: src/features/support/mocks/templateHandlers.ts (Seeded from demo S.macros, converted to {{ }} variables (mocks/store.ts:105).)
@@ -155,7 +155,7 @@ Effects: inserts a staff message (is_internal false) and delivers it on the chan
 
 - **Map**: Canned replies (macros) with order variables. (ردود جاهزة (macros) بمتغيرات الطلب) · staff-permission `support:*` · stage 17 · tables reply_templates
 - **Frontend**: `updateReplyTemplate` (src/features/support/api/templates.ts:53) · params `id: number`, `body: Partial<CreateTemplateBody>` · returns `ReplyTemplate` · success 200 · assumed contract
-- **Request**: Partial body of the changed, trimmed fields only (lib/templateForm.ts:26-38). Fields that are present follow the same rules as create.
+- **Request**: Partial body of the changed, trimmed fields only (lib/templateForm.ts:26-38). Fields that are present follow the same rules as create. Shortcut: shortcut is trimmed; empty or whitespace-only is stored as NULL and read back as ''; the unique index on lower(shortcut) WHERE shortcut IS NOT NULL stays, so many templates without a shortcut are allowed and SHORTCUT_TAKEN compares lower case among non-empty shortcuts only.
 - **Response**: 200 with the updated template; updatedAt moves forward.
 - **Errors**: 404 NOT_FOUND (no template with that id); 422 VALIDATION_FAILED (a present field is invalid); 409 SHORTCUT_TAKEN (another template has the new shortcut); 403 FORBIDDEN (caller lacks support:update)
 - **Mock**: src/features/support/mocks/templateHandlers.ts (Seeded from demo S.macros, converted to {{ }} variables (mocks/store.ts:105).)

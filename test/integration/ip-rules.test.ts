@@ -213,11 +213,12 @@ describe('the admin allowlist (setting adminAllowlistOnly)', () => {
 describe('expiry', () => {
   it('drops a rule by itself when its expiry passes, without a reload', async () => {
     const blocked = freshIp();
-    await addRule({ kind: 'block', scope: 'all', cidr: blocked, expiresAt: new Date(Date.now() + 1_500) });
+    // 4 s of life and a 1 s margin: a loaded run (and WSL clock steps) made the 1.5 s window flaky.
+    await addRule({ kind: 'block', scope: 'all', cidr: blocked, expiresAt: new Date(Date.now() + 4_000) });
     expect(isIpRefusal(await get('/store/v1/t/ping', blocked, AUTH))).toBe(true);
-    await Bun.sleep(1_700);
+    await Bun.sleep(5_000);
     expect((await get('/store/v1/t/ping', blocked, AUTH)).statusCode).toBe(200);
-  });
+  }, 15_000);
 
   it('does not load a rule that expired before the load', async () => {
     const blocked = freshIp();

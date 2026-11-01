@@ -86,7 +86,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 - **Map**: Merchant groups: discount, upgrade threshold and deposit limit. (الفئات: الخصم وحد الترقية وحد الإيداع) · staff-permission `groups:*` · stage 4 · tables client_groups
 - **Frontend**: `listClientGroups` (src/features/merchants/api/groups.ts:24) · params `query?: ListQuery` · returns `ListResult<ClientGroup>` · success 200 · assumed contract
 - **Query**: Whole list: _start=0&_end=200&_sort=sort&_order=asc (also used by settings gateways and services lookups); tab count _start=0&_end=1. No filters.
-- **Response**: JSON array + x-total-count: id, name, kind ("b2b" for merchant groups, "b2c_retail" for the single storefront group, which must be included), discountPercent (percent decimal string, "4.0000" = 4%), isDefault, earnThreshold (USD money), depositLimit (USD money, most a merchant may add at once), overdraftAllowed, sort, createdAt, merchantCount (clients in the group; recommended: Delete is disabled when > 0, retail count not shown).
+- **Response**: JSON array + x-total-count: id, name, kind ("b2b" for merchant groups, "b2c_retail" for the single storefront group, which must be included), discountPercent (percent decimal string, "4.0000" = 4%), isDefault, earnThreshold (USD money), depositLimit (USD money, the most a merchant of the group may add in one deposit; 0 = no per-deposit limit, the gateway min/max still apply; a deposit above a non-zero limit is refused at deposit creation with 422 on amount, feature 8), overdraftAllowed, sort, createdAt, merchantCount (clients in the group; recommended: Delete is disabled when > 0, retail count not shown).
 - **Errors**: 403 FORBIDDEN (caller lacks groups:read)
 - **Mock**: src/features/merchants/mocks/groupRoutes.ts (Seed groups in mocks/seed.ts (Standard default, Wholesale, VIP, Storefront retail with kind b2c_retail); merchantCount from dto.ts toGroup.)
 
@@ -102,7 +102,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 
 - **Map**: Merchant groups: discount, upgrade threshold and deposit limit. (الفئات: الخصم وحد الترقية وحد الإيداع) · staff-permission `groups:*` · stage 4 · tables client_groups
 - **Frontend**: `createClientGroup` (src/features/merchants/api/groups.ts:42) · params `body: CreateClientGroupBody` · returns `ClientGroup` · success 201 · assumed contract
-- **Request**: Body {name, discountPercent, earnThreshold, depositLimit, overdraftAllowed, isDefault}. discountPercent arrives as plain decimal text ("4", "2.5"; 0-100, max 2 dp); money fields as 4-dp strings. Server sets kind = "b2b" (a b2c_retail group cannot be created) and sort = last + 1; isDefault = true clears it on every other group.
+- **Request**: Body {name, discountPercent, earnThreshold, depositLimit, overdraftAllowed, isDefault}; earnThreshold, depositLimit >= 0 (CHECK client_groups_amounts_check also bounds discount_percent to 0-100). A group with earnThreshold 0 is never a promotion target (user rule 1). discountPercent arrives as plain decimal text ("4", "2.5"; 0-100, max 2 dp); money fields as 4-dp strings. Server sets kind = "b2b" (a b2c_retail group cannot be created) and sort = last + 1; isDefault = true clears it on every other group.
 - **Response**: 201 with the group (decimals normalised to 4 dp, merchantCount 0).
 - **Errors**: 422 VALIDATION_FAILED (errors[].field name (missing or duplicate, case-insensitive) | discountPercent | earnThreshold | depositLimit | overdraftAllowed | isDefault); 403 FORBIDDEN (caller lacks groups:create)
 - **Mock**: src/features/merchants/mocks/groupRoutes.ts (Seed groups in mocks/seed.ts (Standard default, Wholesale, VIP, Storefront retail with kind b2c_retail); merchantCount from dto.ts toGroup.)
@@ -122,7 +122,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 - **Frontend**: `deleteClientGroup` (src/features/merchants/api/groups.ts:61) · params `id: number` · returns `void` · success 204 · assumed contract
 - **Response**: 204 empty.
 - **Errors**: 409 GROUP_IN_USE (merchants are still in the group (detail names how many); also for the b2c_retail group and the default group); 404 NOT_FOUND (no group with that id); 403 FORBIDDEN (caller lacks groups:delete)
-- **B32**: Map does not say what happens to service_group_prices, payment_gateways.allowed_group_ids and service_categories.allowed_group_ids that reference the group. Proposal: when no merchant is in it, delete its group prices and drop the id from those arrays in the same transaction. → Proposal accepted.
+- **B32**: Map does not say what happens to service_group_prices, payment_gateways.allowed_group_ids and service_categories.allowed_group_ids that reference the group. Proposal: when no merchant is in it, delete its group prices and its pricing rules (pricing_rules.group_id) and drop the id from those arrays in the same transaction. → Proposal accepted, extended (lead resolution catalog-5): when the group can be deleted (no merchants, not default, not b2c_retail), in the same transaction delete its service_group_prices and the pricing_rules with group_id = id, drop the id from payment_gateways.allowed_group_ids and service_categories.allowed_group_ids, then delete the group; 204; one audit entry listing the removed rule ids. Orders keep their pricing_snapshot, so no history is lost.
 - **Mock**: src/features/merchants/mocks/groupRoutes.ts (Seed groups in mocks/seed.ts (Standard default, Wholesale, VIP, Storefront retail with kind b2c_retail); merchantCount from dto.ts toGroup.)
 
 ## GET /admin/service-categories
@@ -148,7 +148,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 - **Frontend**: `createCategory` (src/features/services/api/categories.ts:40) · params `body: CreateCategoryBody` · returns `ServiceCategory` · success 201 · assumed contract
 - **Request**: Full body `{ name, type, allowedGroupIds, sort, isActive }`.
 - **Response**: The new category (serviceCount 0).
-- **Errors**: 422 VALIDATION_FAILED (name missing, bad type/sort/group ids); 403 FORBIDDEN (no catalog:create)
+- **Errors**: 422 VALIDATION_FAILED (name missing or duplicate within the type (case-insensitive, trimmed: errors[{field:'name', message:'A <type> category with this name already exists.'}], checked before the write and mapped from a unique violation on service_categories_name_uq, never 500), bad type/sort/group ids); 403 FORBIDDEN (no catalog:create)
 - **Mock**: src/features/services/mocks/categoryRoutes.ts (Categories seeded from the services' category names.)
 
 ## PATCH /admin/service-categories/:id
@@ -157,15 +157,15 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 - **Frontend**: `updateCategory` (src/features/services/api/categories.ts:49) · params `id: number`, `body: Partial<CreateCategoryBody>` · returns `ServiceCategory` · success 200 · assumed contract
 - **Request**: Partial: any of name, type, allowedGroupIds, sort, isActive.
 - **Response**: The updated category (with serviceCount).
-- **Errors**: 422 VALIDATION_FAILED (empty name, unknown type, sort not a whole number >= 0, unknown group ids (categoryRoutes.ts:12-40)); 404 NOT_FOUND (category id unknown)
+- **Errors**: 422 VALIDATION_FAILED (empty name, a name duplicate within the type (the new type too when only the type changes), unknown type, a type change while live services are in the category (errors[{field:'type', message:'N services in this category are <type>. Move them first.'}]; archived services follow through ON UPDATE CASCADE), sort not a whole number >= 0, unknown group ids (categoryRoutes.ts:12-40)); 404 NOT_FOUND (category id unknown)
 - **Mock**: src/features/services/mocks/categoryRoutes.ts (Categories seeded from the services' category names.)
 
 ## DELETE /admin/service-categories/:id
 
 - **Map**: Service categories and the merchant groups that can see them. (التصنيفات والفئات اللي بتشوفها) · staff-permission `catalog:*` · stage 4 · tables service_categories
 - **Frontend**: `deleteCategory` (src/features/services/api/categories.ts:58) · params `id: number` · returns `void` · success 204 · assumed contract
-- **Response**: 204.
-- **Errors**: 409 CATEGORY_IN_USE (services still belong to it; detail like '<name> still has N services. Move them to another category first.' (categoryRoutes.ts:93-105)); 404 NOT_FOUND (category id unknown); 403 FORBIDDEN (no catalog:delete)
+- **Response**: 204. Deleted only when no service row, live or archived, references the category: in the same transaction delete the pricing_rules with scope 'category' and target_id = id, then the category; audit entry.
+- **Errors**: 409 CATEGORY_IN_USE (services still belong to it; detail '<name> still has N services. Move them to another category first.' (serviceCount counts live services only); when only archived services remain (FK RESTRICT) the detail is '<name> still has N archived services kept for order history, so it cannot be deleted. Turn it off instead.' (categoryRoutes.ts:93-105)); 404 NOT_FOUND (category id unknown); 403 FORBIDDEN (no catalog:delete)
 - **Mock**: src/features/services/mocks/categoryRoutes.ts (Categories seeded from the services' category names.)
 
 ## GET /admin/services
@@ -173,9 +173,9 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 - **Map**: Services: type, execution, pricing mode and rules. (الخدمات: النوع والتنفيذ ووضع التسعير والقواعد) · staff-permission `catalog:*` · stage 4 · tables services
 - **Frontend**: `listServices` (src/features/services/api/services.ts:26) · params `query?: ListQuery` · returns `ListResult<Service>` · success 200 · assumed contract
 - **Query**: `_start`/`_end` (25 per page; pickers `_end=200&_sort=name&_order=asc`, palette small `_end`; counts `_start=0&_end=1`). `_sort` name|type|cost|basePrice (lib/filters.ts:64; default name asc). Filters: `type`, `status` (active|disabled), `belowFloor=true`, `categoryId`; the chips combine (M104). Header count = `belowFloor=true&status=active` (useServiceCounts.ts:22). `q`: contains over name, code and category name (serviceRoutes.ts:13). Also read by the storefront feature's service picker.
-- **Response**: Array + x-total-count. Row: id, name, code, type, status, executionMode (auto|manual), categoryId, category {id,name}, basePrice, cost (USD), costChangedFrom (previous cost when the cost changed since the price was set, else null), minProfit (effective), floorPrice = cost + minProfit, marginPct = (basePrice - cost) / basePrice x 100 as a 4-dp string, belowFloor = basePrice < floorPrice, slaMinutes, supplier and fallbackSupplier {id,name} from service_supplier_links priority 1 and 2 (dto.ts:10-34).
+- **Response**: Array + x-total-count. Row: id, name, code, type, status, executionMode (auto|manual), categoryId, category {id,name}, basePrice, cost (USD) = the effective cost (B117): services.effective_cost = greatest(services.cost, credit × credit_rate of the first active supplier link by priority, 0 with no link), costChangedFrom (cost_was = the previous effective cost when the effective cost rose since the price was set, else null), minProfit (effective: the service's own, else the first matching rule's with min_profit > 0, else the default policy), floorPrice = cost + minProfit (so cost + minProfit = floorPrice holds on screen), marginPct = (basePrice - cost) / basePrice x 100 as a 4-dp string, belowFloor = basePrice < floorPrice (all computed in SQL; the belowFloor filter and _sort=cost use effective_cost; the rule minProfit comes from a LATERAL subquery; merchant-less contexts use only pricing rules with group_id null), slaMinutes, supplier and fallbackSupplier {id,name} from service_supplier_links priority 1 and 2 (dto.ts:10-34).
 - **Errors**: 403 FORBIDDEN (no catalog:read); 422 VALIDATION_FAILED (unknown sort field or filter value)
-- **B21**: services lacks code, sla_minutes, min_profit and a previous-cost column (M91). Proposal: add code (unique, case-insensitive), sla_minutes int (delivery_time text can be derived, seedData.ts:62), min_profit numeric nullable (null = default policy), cost_was numeric nullable; executionMode = fulfillment (auto|manual). belowFloor must be filterable in SQL. → Proposal accepted.
+- **B21**: services lacks code, sla_minutes, min_profit and a previous-cost column (M91). Proposal: add code (unique, case-insensitive), sla_minutes int (delivery_time text can be derived, seedData.ts:62), min_profit numeric nullable (null = default policy), cost_was numeric nullable (the previous effective cost), effective_cost numeric NOT NULL (maintained by the catalog function recomputeEffectiveCost(serviceIds, tx), called by supplier import and cost writes, sync, link changes and supplier credit_rate changes); executionMode = fulfillment (auto|manual). belowFloor must be filterable in SQL. → Proposal accepted.
 - **Mock**: src/features/services/mocks/serviceRoutes.ts (Validation, floor refusal, CODE_TAKEN, SERVICE_IN_USE; DTO in mocks/dto.ts; seed mocks/seed.ts from the demo's S.services and GROUPS (Standard 1, Wholesale 2 -4%, VIP 3 -8%).)
 
 ## GET /admin/services/:id
@@ -190,26 +190,26 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 
 - **Map**: Services: type, execution, pricing mode and rules. (الخدمات: النوع والتنفيذ ووضع التسعير والقواعد) · staff-permission `catalog:*` · stage 4 · tables services
 - **Frontend**: `createService` (src/features/services/api/services.ts:45) · params `body: CreateServiceBody` · returns `Service` · success 201 · assumed contract
-- **Request**: Full body `{ name (up to 120), code (up to 40, unique), categoryId, type, slaMinutes (integer >= 1), basePrice (4-dp, > 0) }`. Defaults: status active, executionMode auto, minProfit null (default policy), cost 0 until a supplier is linked or imported.
+- **Request**: Full body `{ name (up to 120), code (up to 40, unique), categoryId, type, slaMinutes (integer >= 1), basePrice (4-dp, > 0) }`. Defaults (the same for supplier import, B24): status active, executionMode auto, price_mode 'fixed' (the only mode: the resolver always starts from base_price, user rule 8), duplicate_rule 'block_open' (block_open refuses 409 DUPLICATE_ORDER when the same client has an open order for the same service and IMEI, and matches nothing for a service without an IMEI; the other value is allow; feature 5 enforces it at placement), minProfit null (default policy), cost 0 and effective_cost 0 until a supplier is linked or imported. price_mode and duplicate_rule are not on the console wire. basePrice must be > 0 on create and on PATCH (services.base_price is NOT NULL; a supplier import sets it to the suggested price).
 - **Response**: The new service (list-row shape with the worked-out figures).
-- **Errors**: 422 VALIDATION_FAILED (name, code or basePrice missing, unknown categoryId, bad type or slaMinutes (serviceRoutes.ts:89-121)); 409 CODE_TAKEN (code already used (case-insensitive), errors[{field: code}]); 403 FORBIDDEN (no catalog:create)
+- **Errors**: 422 VALIDATION_FAILED (name, code or basePrice missing, unknown categoryId, bad type or slaMinutes (serviceRoutes.ts:89-121), a type that differs from the category's type (errors[{field:'categoryId', message:'<category> holds <type> services.'}])); 409 CODE_TAKEN (code already used (case-insensitive), errors[{field: code}]); 403 FORBIDDEN (no catalog:create)
 - **Mock**: src/features/services/mocks/serviceRoutes.ts (Validation, floor refusal, CODE_TAKEN, SERVICE_IN_USE; DTO in mocks/dto.ts; seed mocks/seed.ts from the demo's S.services and GROUPS (Standard 1, Wholesale 2 -4%, VIP 3 -8%).)
 
 ## PATCH /admin/services/:id
 
 - **Map**: Services: type, execution, pricing mode and rules. (الخدمات: النوع والتنفيذ ووضع التسعير والقواعد) · staff-permission `catalog:*` · stage 4 · tables services
 - **Frontend**: `updateService` (src/features/services/api/services.ts:56) · params `id: number`, `body: UpdateServiceBody` · returns `Service` · success 200 · assumed contract
-- **Request**: Partial: the switches send `{ status }` or `{ executionMode }` alone; Edit price sends `{ basePrice?, minProfit? }` (4-dp strings); Edit service sends any of name, code, categoryId, type, slaMinutes.
+- **Request**: Partial: the switches send `{ status }` or `{ executionMode }` alone; Edit price sends `{ basePrice?, minProfit? }` (4-dp strings); Edit service sends any of name, code, categoryId, type, slaMinutes. Saving basePrice (here or by bulk price apply) clears costChangedFrom (cost_was = null); a minProfit-only PATCH does not. minProfit may be null to reset to the default policy (API completeness; the console never sends it).
 - **Response**: The updated service with floorPrice, marginPct and belowFloor worked out again (the toast shows the floor and margin).
-- **Errors**: 422 VALIDATION_FAILED (errors[{field: basePrice}] when the price is under the floor computed with the minProfit being saved, message naming cost and minimum profit (serviceRoutes.ts:145-155); other field checks (name, code, type, slaMinutes >= 1, minProfit >= 0, status, executionMode, categoryId)); 409 CODE_TAKEN (code used by another service (case-insensitive), with errors[{field: code}]); 404 NOT_FOUND (service id unknown); 403 FORBIDDEN (no catalog:update)
+- **Errors**: 422 VALIDATION_FAILED (errors[{field: basePrice}] when the price is under the floor (effective cost B117 + the minProfit being saved) or not above 0, message naming cost and minimum profit (serviceRoutes.ts:145-155); basePrice not above 0; other field checks (name, code, type, slaMinutes >= 1, minProfit >= 0, status, executionMode, categoryId; the resulting categoryId and type must agree: errors[{field: 'categoryId' if it was sent, else 'type', message:'<category> holds <type> services.'}])); 409 CODE_TAKEN (code used by another service (case-insensitive), with errors[{field: code}]); 404 NOT_FOUND (service id unknown); 403 FORBIDDEN (no catalog:update)
 - **Mock**: src/features/services/mocks/serviceRoutes.ts (Validation, floor refusal, CODE_TAKEN, SERVICE_IN_USE; DTO in mocks/dto.ts; seed mocks/seed.ts from the demo's S.services and GROUPS (Standard 1, Wholesale 2 -4%, VIP 3 -8%).)
 
 ## DELETE /admin/services/:id
 
 - **Map**: Services: type, execution, pricing mode and rules. (الخدمات: النوع والتنفيذ ووضع التسعير والقواعد) · staff-permission `catalog:*` · stage 4 · tables services
 - **Frontend**: `deleteService` (src/features/services/api/services.ts:66) · params `id: number` · returns `void` · success 204 · assumed contract
-- **Response**: 204. Proposal: cascade the service's fields, options, group prices, client prices and supplier links; refuse when orders or inventory codes reference it.
-- **Errors**: 409 SERVICE_IN_USE (the service has orders; detail '<name> has N orders, so it cannot be deleted. Disable it instead.' (serviceRoutes.ts:169-185)); 404 NOT_FOUND (service id unknown); 403 FORBIDDEN (no catalog:delete)
+- **Response**: 204 in both cases. One transaction: when the service has any orders, service_supplier_links or service_listings, or any other RESTRICT reference (inventory_codes, checkout_sessions, help_articles, imei_checks), it is ARCHIVED: archived_at = now(), status = 'disabled' and its scope='service' pricing_rules set is_active = false (fields, options, group prices, client prices, links and codes are kept for history; open orders continue and can still dispatch); otherwise it is HARD DELETED: its scope='service' pricing_rules with target_id = id are deleted, then the service (fields, options, group prices, client prices and supplier links cascade). Audit action service.archived or service.deleted. An archived service is gone for every reader: GET /admin/services and :id (404), PATCH and PUT parts (404), GET /admin/client-prices, merchant catalogs (Dhru *servicelist, /v1/services, /client/services, price export), storefront listings (public and admin), bulk price and resolve (404); placement treats it as an unknown service; pricing rule rows still resolve its target {id, name}. Its code is freed for reuse (partial unique index on archived_at IS NULL). There is no restore route.
+- **Errors**: 404 NOT_FOUND (service id unknown); 403 FORBIDDEN (no catalog:delete)
 - **Mock**: src/features/services/mocks/serviceRoutes.ts (Validation, floor refusal, CODE_TAKEN, SERVICE_IN_USE; DTO in mocks/dto.ts; seed mocks/seed.ts from the demo's S.services and GROUPS (Standard 1, Wholesale 2 -4%, VIP 3 -8%).)
 
 ## PUT /admin/services/:id/fields
@@ -227,16 +227,16 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 - **Frontend**: `replaceServiceOptions` (src/features/services/api/serviceParts.ts:33) · params `id: number`, `body: ReplaceOptionsBody` · returns `ServiceOption[]` · success 200 · assumed contract
 - **Request**: Body `{ options: [...] }`: all three lists together (model, network, mep); entries left out are deleted. A model list can hold hundreds of entries (M101): allow a large body.
 - **Response**: The saved list.
-- **Errors**: 422 VALIDATION_FAILED (options.N.list unknown, options.N.value empty (servicePartRoutes.ts:54-77)); 403 FORBIDDEN (no catalog:update)
+- **Errors**: 422 VALIDATION_FAILED (options.N.list unknown, options.N.value empty (servicePartRoutes.ts:54-77), or a value repeated within the same list after trimming (errors[{field:'options.N.value', message:'Duplicate in the <list> list'}], N = the later occurrence; a unique violation on service_options_value_uq maps to the same 422, never 500)); 403 FORBIDDEN (no catalog:update); 404 NOT_FOUND (unknown or archived service)
 - **Mock**: src/features/services/mocks/servicePartRoutes.ts (Replace-all checks with dotted error paths.)
 
 ## PUT /admin/services/:id/group-prices
 
 - **Map**: Service price for each merchant group. (سعر الخدمة لكل فئة) · staff-permission `pricing:update` · stage 4 · tables service_group_prices
 - **Frontend**: `replaceServiceGroupPrices` (src/features/services/api/serviceParts.ts:46) · params `id: number`, `body: ReplaceGroupPricesBody` · returns `ServiceGroupPrice[]` · success 200 · assumed contract
-- **Request**: Body `{ prices: [{ groupId, price }] }`: the whole set; a group left out loses its fixed price (pays base price less its discount). The dialog lists every group including the b2c_retail group and keeps groups it does not show, so the Retail price survives (M101, M102). Proposal: refuse a price under the floor like PATCH basePrice and the storefront retailPrice.
+- **Request**: Body `{ prices: [{ groupId, price }] }`: the whole set; a group left out loses its fixed price (pays base price less its discount). The dialog lists every group including the b2c_retail group and keeps groups it does not show, so the Retail price survives (M101, M102). Floors (accepted): each b2b row must be >= the service floor for that group (effective cost + minProfit with the row's group, RULES services 3), else 422 errors[{field:'prices.N.price', message:'Below the floor of $X (cost $Y plus $Z minimum profit).'}]; the b2c_retail row must be >= the storefront retail floor max(round(base_price x 1.10, 2), floor), the same function PATCH /admin/service-listings uses, else 422 prices.N.price 'Below the storefront floor of $X.'; rows kept unchanged are checked too (the whole set is validated). Bulk price apply keeps its accepted exception.
 - **Response**: The saved list.
-- **Errors**: 422 VALIDATION_FAILED (prices.N.groupId unknown, prices.N.price <= 0 (servicePartRoutes.ts:79-104), or (proposal) under the floor); 403 FORBIDDEN (no pricing:update)
+- **Errors**: 422 VALIDATION_FAILED (prices.N.groupId unknown, prices.N.price <= 0 (servicePartRoutes.ts:79-104), a repeated groupId (errors[{field:'prices.N.groupId', message:'Listed twice'}], later occurrence; a unique violation on service_group_prices_uq maps to the same 422), or a price under the floor (see Request)); 403 FORBIDDEN (no pricing:update); 404 NOT_FOUND (unknown or archived service)
 - **Mock**: src/features/services/mocks/servicePartRoutes.ts (Replace-all checks with dotted error paths.)
 
 ## GET /admin/client-prices
@@ -244,7 +244,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 - **Map**: A special price for a merchant on a service. (سعر خاص لتاجر على خدمة) · staff-permission `pricing:*` · stage 4 · tables service_client_prices
 - **Frontend**: `listClientPrices` (src/features/merchants/api/prices.ts:23) · params `query?: ListQuery` · returns `ListResult<ClientPrice>` · success 200 · assumed contract
 - **Query**: clientId=<id> (eq) with _start=0&_end=200; no _sort sent (propose service name asc). A serviceId filter is declared but unused.
-- **Response**: JSON array + x-total-count: id, serviceId, clientId, price, note, createdAt plus service {id, name, type (imei|server|remote|file), basePrice, floorPrice (cost + minimum profit: the lowest price accepted)} and groupPrice = what this merchant pays without the override (the PriceResolver of GET /admin/pricing/resolve without the client price: the group fixed price from service_group_prices, else base price less the group discount), null when unknown.
+- **Response**: JSON array + x-total-count: id, serviceId, clientId, price, note, createdAt plus service {id, name, type (imei|server|remote|file), basePrice, floorPrice (effective cost B117 + the minimum profit of the merchant's group: the lowest price accepted)} and groupPrice = what this merchant pays without the override (the PriceResolver of GET /admin/pricing/resolve without the client price, for the merchant's group: after the 2-dp rounding, the rule rounding step and the floor clamp, equal to that group's otherGroups price; a 4-dp string such as '0.1200'), null only when the service cannot be priced (never in practice: base_price is NOT NULL).
 - **Errors**: 403 FORBIDDEN (caller lacks pricing:read)
 - **B33**: Map row is LCUD (no show route) on service_client_prices only; the joins read services, service_group_prices, client_groups and pricing_rules. Proposal: allow these read joins. → Proposal accepted.
 - **Mock**: src/features/merchants/mocks/priceRoutes.ts (Floor and groupPrice computed in mocks/dto.ts floorOf/toPrice from the demo services and group prices; tests in api/catalog.test.ts.)
@@ -255,14 +255,14 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 - **Frontend**: `createClientPrice` (src/features/merchants/api/prices.ts:33) · params `body: CreateClientPriceBody` · returns `ClientPrice` · success 201 · assumed contract
 - **Request**: Body {clientId, serviceId, price (4-dp string > 0), note? (omitted when empty)}. created_by = staff; audit entry. The fixed price beats the group price, the category rule and every discount from the next order.
 - **Response**: 201 with the row incl. the service and groupPrice joins.
-- **Errors**: 422 VALIDATION_FAILED (errors[].field price (<= 0 or below the floor, message naming it, e.g. "Below the floor of $X (cost $Y plus $Z minimum profit).") | serviceId (unknown/inactive) | clientId (unknown; mock answers 404)); 409 PRICE_EXISTS (the merchant already has a fixed price for that service); 403 FORBIDDEN (caller lacks pricing:create)
+- **Errors**: 422 VALIDATION_FAILED (errors[].field price (<= 0 or below the floor (effective cost B117 + minimum profit of the merchant's group), message naming it, e.g. "Below the floor of $X (cost $Y plus $Z minimum profit).") | serviceId (unknown/inactive) | clientId (unknown; mock answers 404)); 409 PRICE_EXISTS (the merchant already has a fixed price for that service); 403 FORBIDDEN (caller lacks pricing:create)
 - **Mock**: src/features/merchants/mocks/priceRoutes.ts (Floor and groupPrice computed in mocks/dto.ts floorOf/toPrice from the demo services and group prices; tests in api/catalog.test.ts.)
 
 ## PATCH /admin/client-prices/:id
 
 - **Map**: A special price for a merchant on a service. (سعر خاص لتاجر على خدمة) · staff-permission `pricing:*` · stage 4 · tables service_client_prices
 - **Frontend**: `updateClientPrice` (src/features/merchants/api/prices.ts:42) · params `id: number`, `body: UpdateClientPriceBody` · returns `ClientPrice` · success 200 · assumed contract
-- **Request**: Partial {price?, note?}; note may be "" to clear it. Same floor check as POST.
+- **Request**: Partial {price?, note?}; note may be "" to clear it. Same floor check as POST. The floor is the effective cost (B117) plus the minimum profit of the merchant's group.
 - **Response**: 200 with the row and joins.
 - **Errors**: 422 VALIDATION_FAILED (errors[].field price below the floor or <= 0); 404 NOT_FOUND (no price with that id); 403 FORBIDDEN (caller lacks pricing:update)
 - **Mock**: src/features/merchants/mocks/priceRoutes.ts (Floor and groupPrice computed in mocks/dto.ts floorOf/toPrice from the demo services and group prices; tests in api/catalog.test.ts.)
@@ -333,7 +333,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 - **Map**: Apply the bulk price change. (تطبيق التعديل) · staff-permission `pricing:update` · stage 4 · tables services, audit_logs
 - **Frontend**: `applyBulkPrice` (src/features/services/api/pricing.ts:29) · params `body: BulkPriceBody` · returns `BulkPriceResult` · success 200 · assumed contract
 - **Request**: Same body as the preview; recompute from current prices (the preview is not a token).
-- **Response**: `{ updated, belowFloor }`. Every computed price is saved, including those under the floor (counted; toast says they 'still are under the floor', useBulkPrice.ts:25-29); one audit_logs entry (map tables services, audit_logs); orders then pay max(price, floor).
+- **Response**: `{ updated, belowFloor }`. Every computed price is saved, including those under the floor (counted; toast says they 'still are under the floor', useBulkPrice.ts:25-29); one audit_logs entry (map tables services, audit_logs); orders then pay max(price, floor). Every repriced service has its cost_was cleared (costChangedFrom becomes null).
 - **Errors**: 422 VALIDATION_FAILED (same checks as the preview); 403 FORBIDDEN (no pricing:update)
 - **Mock**: src/features/services/mocks/pricingRoutes.ts (Price maths and resolver steps in mocks/pricing.ts.)
 
@@ -342,7 +342,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 - **Map**: The price of a service for a merchant, with the resolution trace. (سعر تاجر لخدمة مع الـ trace) · staff-permission `pricing:read` · stage 4 · tables pricing_rules, service_group_prices, service_client_prices
 - **Frontend**: `resolvePrice` (src/features/services/api/pricing.ts:40) · params `query: ResolveQuery` · returns `PriceResolution` · success 200 · assumed contract
 - **Query**: `serviceId` and `clientId`, both required integers (pricing.ts:40).
-- **Response**: price (final, after the floor clamp), rawPrice (before the clamp), floor, clamped, source (client|group|base), cost, minProfit, margin (price - cost), marginPct (margin / price x 100, 4-dp), steps[], optional otherGroups. Steps in the demo's order: client override, group service price, base price, category rule, group discount (mock pricing.ts:63-141); step = {id, label, state win|apply|skip|none, value, after, note}; value is a price except for ids `category` and `discount`, where it is a signed fraction (-0.02 = -2%); value/after may be numbers or decimal strings. otherGroups = the same service priced for each merchant group without a client override: [{group {id,name}, price, clamped}] (table hidden when absent). Same step shape as orders.pricing_snapshot (M29, M98).
+- **Response**: price (final, after the floor clamp), rawPrice (before the clamp), floor, clamped, source (client|group|base), cost, minProfit, margin (price - cost), marginPct (margin / price x 100, 4-dp), steps[], optional otherGroups. cost = the effective cost (B117), so cost + minProfit = floor. Steps in the demo's order: client override, group service price, base price, the rule (id category, dynamic label Service rule | Category rule | Global rule), group discount, then the optional rounding step (RULES services 3; mock pricing.ts:63-141 is only a sketch of it); step = {id, label, state win|apply|skip|none, value, after, note}; value is a price except for ids `category` and `discount`, where it is a signed fraction (-0.02 = -2%); value/after may be numbers or decimal strings. otherGroups = the same service priced for each merchant group without a client override: [{group {id,name}, price, clamped}] (table hidden when absent). Same step shape as orders.pricing_snapshot (M29, M98).
 - **Errors**: 422 VALIDATION_FAILED (serviceId or clientId missing (errors[{field}])); 404 NOT_FOUND (service or merchant unknown); 403 FORBIDDEN (no pricing:read)
 - **B20**: Minimum profit exists only on pricing_rules in the map; the floor row needs a per-service effective minProfit (see GET /admin/services). → Proposal accepted.
 - **Mock**: src/features/services/mocks/pricingRoutes.ts (Price maths and resolver steps in mocks/pricing.ts.)
@@ -352,7 +352,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 - **Map**: Code inventory and the status of each code. (مخزون الأكواد وحالتها) · staff-permission `inventory:read` · stage 5 · tables inventory_codes
 - **Frontend**: `listInventoryCodes` (src/features/services/api/inventory.ts:18) · params `query?: ListQuery` · returns `ListResult<InventoryCode>` · success 200 · assumed contract
 - **Query**: `_start`/`_end` (25 per page), always `_sort=createdAt&_order=desc` (useInventory.ts:28; default newest first), filters `serviceId` and `status` (available|reserved|sold|void). No q from the UI.
-- **Response**: Array + x-total-count. Row: id, maskedCode (every character but the last four replaced by bullets, dto.ts:94; the plain code is never sent), service {id,name}, status, orderId or null, batchRef, createdAt.
+- **Response**: Array + x-total-count. Row: id, maskedCode (8 bullets + code_last4, '••••••••1234': a fixed length, so no decrypt per row; the plain code is never sent), service {id,name}, status, orderId or null, batchRef, createdAt.
 - **Errors**: 403 FORBIDDEN (no inventory:read)
 - **B18**: inventory_codes has only code_enc. Masking and global duplicate detection on import need a deterministic keyed hash (e.g. code_hash, HMAC per decision 019) plus decrypt-on-read or a stored last-4. → Proposal accepted.
 - **Mock**: src/features/services/mocks/inventoryRoutes.ts (Codes seeded for the Z3X credits and UnlockTool licence services.)
@@ -361,9 +361,9 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 
 - **Map**: Import codes with duplicate detection. (استيراد أكواد مع كشف التكرار) · staff-permission `inventory:write` · stage 5 · tables inventory_codes
 - **Frontend**: `importInventoryCodes` (src/features/services/api/inventory.ts:31) · params `serviceId: number`, `body: ImportCodesBody` · returns `ImportCodesResult` · success 200 · assumed contract
-- **Request**: Body `{ codes: string[], batchRef? }`: one entry per pasted or uploaded line, trimmed, duplicates kept for the server to count (lib/codes.ts). Plain codes travel once; encrypt at rest and never log them.
-- **Response**: `{ imported, duplicates, rejected, batchRef }`. Mock: rejected = shorter than 6 chars or containing whitespace; duplicates = already in stock (any service) or repeated in the batch; batchRef generated when absent (inventoryRoutes.ts:25-56).
-- **Errors**: 422 VALIDATION_FAILED (errors[{field: codes}]: no codes); 404 NOT_FOUND (service id unknown); 403 FORBIDDEN (no inventory:write)
+- **Request**: Body `{ codes: string[], batchRef? }` (batchRef optional: when sent, trimmed, 1-40 characters of [A-Za-z0-9._-], else 422 on batchRef; when absent it is generated as 'B-' || lpad(nextval('inventory_batch_ref_seq')::text, 4, '0'), e.g. 'B-0031'; inventory_codes.batch_ref is NOT NULL): one entry per pasted or uploaded line, trimmed, duplicates kept for the server to count (lib/codes.ts). Plain codes travel once; encrypt at rest and never log them.
+- **Response**: `{ imported, duplicates, rejected, batchRef }`. Server rule (not only the mock): rejected (counted, not 422) = after trimming shorter than 6 or longer than 128 characters, or any whitespace or control character inside; duplicates (counted) = code_hash matches a non-void code of any service or repeats in the same batch; batchRef is the sent or generated value (mock inventoryRoutes.ts:25-56).
+- **Errors**: 422 VALIDATION_FAILED (errors[{field: codes}]: the list is empty or longer than 10000 entries, or a bad batchRef); 404 NOT_FOUND (service id unknown); 403 FORBIDDEN (no inventory:write)
 - **Mock**: src/features/services/mocks/inventoryRoutes.ts (Codes seeded for the Z3X credits and UnlockTool licence services.)
 
 ## POST /admin/inventory-codes/void
@@ -380,7 +380,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 - **Map**: TAC table: brand and model for each IMEI prefix. (جدول TAC: الماركة والموديل لكل بادئة IMEI) · staff-permission `catalog:*` · stage 14 · tables tac_catalog
 - **Frontend**: `listTacEntries` (src/features/storefront/api/tacCatalog.ts:21) · params `query?: ListQuery` · returns `ListResult<TacEntry>` · success 200 · assumed contract
 - **Query**: Paging 25. q: contains over tac (typed digits find prefixes), brand, model and marketingName (mocks/tacRoutes.ts:9). A brand filter is accepted. _sort tac|brand|model|releaseYear, default tac asc (lib/views.ts:43-47).
-- **Response**: JSON array + x-total-count. Row: id, tac (8-digit text), brand, model (model code, e.g. A2633), marketingName ('' when none), releaseYear (number; null when unknown, shown as '-' since TacTable.tsx:62 treats any falsy value so), source (text; manual for console entries).
+- **Response**: JSON array + x-total-count. Row: id, tac (8-digit text), brand, model (model code, e.g. A2633), marketingName ('' when none), releaseYear (number; 0 when unknown: the column stays nullable and null is sent as 0, which the console shows as '-' since TacTable.tsx:62 treats any falsy value so; sorting by releaseYear puts unknown first in asc order, matching 0; input accepts a 4-digit integer 1990 to current year + 1, and 0 or null in a body are refused with 422), source (text; manual for console entries).
 - **Errors**: 403 FORBIDDEN (caller lacks catalog:read)
 - **Mock**: src/features/storefront/mocks/tacRoutes.ts (Seeded from demo S.tac (B2C_TAC, seed.ts:170); api/tacCatalog.test.ts.)
 
@@ -406,8 +406,8 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 
 - **Map**: TAC table: brand and model for each IMEI prefix. (جدول TAC: الماركة والموديل لكل بادئة IMEI) · staff-permission `catalog:*` · stage 14 · tables tac_catalog
 - **Frontend**: `updateTacEntry` (src/features/storefront/api/tacCatalog.ts:48) · params `id: number`, `body: Partial<CreateTacBody>` · returns `TacEntry` · success 200 · assumed contract
-- **Request**: Partial body, changed fields only. tac stays editable (8 digits, unique). brand and model cannot be emptied. The console never sends null, so a year cannot be cleared.
+- **Request**: Partial body, changed fields only. tac is editable (8 digits, unique) only while no imei_checks row references the old TAC (imei_checks.tac records the TAC of the IMEI actually checked, a historical fact, so there is no ON UPDATE CASCADE); otherwise 422 VALIDATION_FAILED errors[{field:'tac', message:'N IMEI checks already use TAC <old>; add a new entry for the new TAC instead.'}]. brand and model cannot be emptied. The console never sends null, so a year cannot be cleared.
 - **Response**: 200 with the updated entry.
-- **Errors**: 404 NOT_FOUND (no entry with that id); 422 VALIDATION_FAILED (bad tac, empty brand or model, bad year); 409 TAC_TAKEN (another entry has the new TAC, with errors[{field: 'tac'}]); 403 FORBIDDEN (caller lacks catalog:update)
+- **Errors**: 404 NOT_FOUND (no entry with that id); 422 VALIDATION_FAILED (bad tac or a tac already used by IMEI checks, empty brand or model, bad year); 409 TAC_TAKEN (another entry has the new TAC, with errors[{field: 'tac'}]); 403 FORBIDDEN (caller lacks catalog:update)
 - **Mock**: src/features/storefront/mocks/tacRoutes.ts (Seeded from demo S.tac (B2C_TAC, seed.ts:170); api/tacCatalog.test.ts.)
 

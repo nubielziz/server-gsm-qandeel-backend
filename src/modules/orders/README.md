@@ -132,3 +132,18 @@ None yet. List each queue, job, schedule, idempotency key and retry policy here 
 ## Cache keys
 
 None yet. Register each key family (owner, TTL, invalidation after commit) in `docs/cache-keys.md` (see `CONTRIBUTING.md` → "Add a cache key").
+
+## Audit resolutions
+
+The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, machine-readable `docs/contract/resolutions.json`) settled the points below for this module's routes. Where they differ from older text in this README or the endpoint docs, the resolution wins; the endpoint docs, `RULES.md`, `ANSWERS.md` and `MISMATCHES.md` were updated to match.
+
+- `identity-platform-10` · GET /admin/dashboard
+- `orders-suppliers-1` · GET /admin/orders
+- `orders-suppliers-2` · GET /admin/orders, GET /admin/orders/:id
+- `orders-suppliers-11` · POST /admin/orders/:id/accept, reply, reject, reopen, refund, verification, dispatch, fetch, change-supplier
+- `orders-suppliers-12` · POST /admin/orders/:id/change-supplier, POST /admin/orders/:id/dispatch
+- `orders-suppliers-14` · GET /admin/orders, GET /admin/orders/:id
+- `orders-suppliers-15` · GET /admin/orders/:id/events
+- `orders-suppliers-17` · POST /admin/orders/:id/change-supplier
+- `orders-suppliers-18` · POST /admin/orders/:id/reject
+- `orders-suppliers-19` · POST /admin/orders/:id/dispatch, POST /admin/orders/bulk-reply/apply, GET /admin/orders/export

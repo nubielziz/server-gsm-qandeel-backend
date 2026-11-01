@@ -69,6 +69,13 @@ rotated. A same-origin deployment must list its own origin in `CORS_ORIGINS` too
 `sessions.client_idle_minutes` / `sessions.customer_idle_minutes` 10080, `sessions.pending_minutes` 10. An invalid value is ignored
 (the default applies, with a warning in the log).
 
+**One "live session" predicate** (lead resolution identity-platform-6, built by feature 2a in the sessions repository):
+`revoked_at IS NULL AND expires_at > now() AND (stage <> 'active' OR last_seen_at > now() - the idle limit of the subject
+type)`. `GET /admin/sessions` (still limited to fully signed-in staff and merchant sessions, B9), `StaffMember.activeSessions`
+(which enables "Sign out all devices"), the `DELETE /admin/sessions/:id` 404 (an idle-dead session reads as already ended) and
+the merchant `GET /client/sessions` all use it; `SessionService.revokeAllOf` keeps revoking every non-revoked row, idle-dead ones
+included.
+
 **What a feature does when an account changes** (always pass the transaction so the cache is cleaned after the commit):
 
 ```ts
@@ -339,7 +346,12 @@ except `/health` and `/metrics`, and refuses with **`403 IP_NOT_ALLOWED`** (prob
 
 ## Events
 
-Outbox events produced (types, payload ids): none yet. Consumed: none yet. Record each outbox type and the queue it maps to here and in `docs/queues.md`.
+Outbox events produced (types, payload ids): none yet. Planned (features 2a and 2b, ids only, never a token):
+`merchant.invited` (`POST /admin/clients`, invite token purpose `invite`), `merchant.email_verification` (register, purpose
+`verify_email`) and `merchant.password_reset` (forgot password, purpose `reset`); until feature 12a adds the templates, the
+`MailSender` development implementation logs a redacted line. The links are built from the config key `PORTAL_BASE_URL`
+(`<PORTAL_BASE_URL>/set-password?token=<token>`). `auth_tokens.purpose` is closed to `invite | reset | verify_email |
+magic_link` (exported `AUTH_TOKEN_PURPOSES`); `POST /client/auth/password/reset` accepts `reset` and `invite`. Consumed: none yet. Record each outbox type and the queue it maps to here and in `docs/queues.md`.
 
 ## Jobs and schedules
 
@@ -365,3 +377,17 @@ Both are listed in `docs/cache-keys.md`. The sign-in rate limits use the existin
 | `gsm:{env}:identity:webhook-event:{gateway}:{eventHash}` | mark that a gateway event was accepted (replay filter) | 15 min | released after a `5xx` reply; otherwise expires |
 
 All four are registered in `docs/cache-keys.md`.
+
+## Audit resolutions
+
+The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, machine-readable `docs/contract/resolutions.json`) settled the points below for this module's routes. Where they differ from older text in this README or the endpoint docs, the resolution wins; the endpoint docs, `RULES.md`, `ANSWERS.md` and `MISMATCHES.md` were updated to match.
+
+- `identity-platform-1` · POST /admin/clients
+- `identity-platform-2` · POST /admin/clients
+- `identity-platform-3` · POST /admin/clients
+- `identity-platform-4` · PATCH /admin/roles/:id
+- `identity-platform-5` · GET /admin/clients/:id/api-keys
+- `identity-platform-6` · GET /admin/sessions
+- `identity-platform-7` · GET /admin/audit-logs
+- `identity-platform-14` · POST /admin/staff/:id/password
+- `identity-platform-16` · POST /client/* , /v1/files, /webhooks/telegram/:secret

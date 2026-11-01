@@ -8,7 +8,7 @@ codes internally. Client-only codes of the console (NETWORK_ERROR, INVALID_RESPO
 emitted. **Session-ending codes** (401 UNAUTHORIZED, 403 ACCOUNT_SUSPENDED, 403 IP_NOT_ALLOWED) are only ever about
 the caller. Titles are fixed English sentences written with the catalog in Phase 2.
 
-120 codes. "Frontend" = referenced by the console's code or mocks; other codes are backend additions the
+122 codes. "Frontend" = referenced by the console's code or mocks; other codes are backend additions the
 console shows through their title and detail.
 
 | Code | Status | Meaning | Routes | Frontend |
@@ -20,10 +20,10 @@ console shows through their title and detail.
 | PAYMENT_DECLINED | 402 | Data value: storefront payment declined. | any | yes |
 | ACCOUNT_SUSPENDED | 403 | The CALLER's staff account is suspended (login with the right password, or any request on a session of a suspended account). Never use it for an action on another (suspended) account. | `POST /admin/auth/login`, `GET /admin/auth/me` | yes |
 | CSRF_FAILED | 403 | A mutation with a session but a missing or mismatched X-CSRF-Token. | `POST /admin/auth/2fa`, `POST /admin/auth/2fa/setup`, `POST /admin/auth/logout` | yes |
-| FORBIDDEN | 403 | Signed in but the role lacks the permission; detail should name it ("You need the x:y permission"). | `GET /admin/staff`, `GET /admin/staff/:id`, `POST /admin/staff` +231 | yes |
+| FORBIDDEN | 403 | Signed in but the role lacks the permission; detail should name it ("You need the x:y permission"). | `GET /admin/staff`, `GET /admin/staff/:id`, `POST /admin/staff` +234 | yes |
 | IP_NOT_ALLOWED | 403 | The caller's IP is blocked (scope admin\|all) or not allowlisted while the console restriction is on; decided before authentication on every /admin route incl. login. Never use it for IP-rule validation errors. | `POST /admin/auth/login`, `GET /admin/auth/me` | yes |
 | TURNSTILE_FAILED | 403 | The storefront anti-bot check (Turnstile) failed or is missing. | any |  |
-| NOT_FOUND | 404 | No record with this id (also unknown routes). | `GET /admin/staff/:id`, `PATCH /admin/staff/:id`, `POST /admin/staff/:id/password` +135 | yes |
+| NOT_FOUND | 404 | No record with this id (also unknown routes). | `GET /admin/staff/:id`, `PATCH /admin/staff/:id`, `POST /admin/staff/:id/password` +142 | yes |
 | ACCOUNT_EXISTS | 409 | POST /admin/customers/:id/account for a customer who already has an account. | `POST /admin/customers/:id/account` | yes |
 | ALERT_ACKNOWLEDGED | 409 | POST /admin/alerts/:id/ack on an alert already acknowledged. | `POST /admin/alerts/:id/ack` | yes |
 | ALERT_RESOLVED | 409 | POST /admin/alerts/:id/ack on an alert that already closed. | `POST /admin/alerts/:id/ack` | yes |
@@ -32,6 +32,7 @@ console shows through their title and detail.
 | ALREADY_CURRENT | 409 | POST /admin/legal-documents/:id/publish on the version already current. | `POST /admin/legal-documents/:id/publish` | yes |
 | ALREADY_DECIDED | 409 | POST /admin/kyc-submissions/:id/decide on a decided request. | `POST /admin/kyc-submissions/:id/decide` | yes |
 | ALREADY_REVOKED | 409 | DELETE /admin/api-keys/:id on a revoked key. | `DELETE /admin/api-keys/:id` | yes |
+| ALREADY_SENT | 409 | the order is already sent (dispatch_state sent): detail 'The supplier already has this order: fetch it, or change supplier with a reset reference first' | `POST /admin/orders/:id/dispatch` |  |
 | ALREADY_SUSPENDED | 409 | Suspending an account that is already suspended. | `POST /admin/staff/:id/suspend` | yes |
 | ANONYMIZED | 409 | Any change to an anonymised customer. | `PATCH /admin/customers/:id`, `POST /admin/customers/:id/account`, `POST /admin/customers/:id/password` +5 | yes |
 | APPROVAL_REQUIRED | 409 | POST /admin/clients/:id/wallet/adjust above the single-approver limit. | `POST /admin/clients/:id/wallet/adjust` | yes |
@@ -45,13 +46,13 @@ console shows through their title and detail.
 | DEFAULT_GROUP_REQUIRED | 409 | the change would leave no default group | `PATCH /admin/client-groups/:id` |  |
 | DELIVERY_SUCCEEDED | 409 | POST /admin/webhook-deliveries/:id/retry on a delivered webhook. | `POST /admin/webhook-deliveries/:id/retry` | yes |
 | DISPUTE_NOT_OPEN | 409 | Dispute action when the dispute no longer waits for evidence. | `POST /admin/disputes/:id/evidence`, `POST /admin/disputes/:id/accept` | yes |
-| DUPLICATE_ORDER | 409 | Same client, service and IMEI while an earlier order is still open (the map duplicate rule). | any |  |
+| DUPLICATE_ORDER | 409 | Same client, service and IMEI while an earlier order is still open and the service has duplicate_rule = block_open (the map duplicate rule; the other value is allow). | any |  |
 | EMAIL_TAKEN | 409 | The email already belongs to another staff member / customer / merchant. | `POST /admin/staff`, `PATCH /admin/staff/:id`, `POST /admin/clients` +2 | yes |
 | ERASURE_NOT_DONE | 409 | An erasure request cannot be completed before the customer is anonymized. | any |  |
 | EVIDENCE_DEADLINE_PASSED | 409 | POST /admin/disputes/:id/evidence after the deadline. | `POST /admin/disputes/:id/evidence` | yes |
 | GATEWAY_IN_USE | 409 | DELETE /admin/payment-gateways/:id while in use. | `DELETE /admin/payment-gateways/:id` | yes |
 | GROUP_IN_USE | 409 | DELETE /admin/client-groups/:id while merchants are in it. | `DELETE /admin/client-groups/:id` | yes |
-| HAS_PENDING | 409 | DELETE /admin/commission-assignments/:id with pending accruals (test only). | `DELETE /admin/commission-assignments/:id` | yes |
+| HAS_PENDING | 409 | Not sent: DELETE /admin/commission-assignments/:id ends the assignment and answers 204 even with ready accruals (ANSWERS commissions Q6); the console handler stays harmless (test only). | any | yes |
 | IDEMPOTENCY_IN_PROGRESS | 409 | A request with the same Idempotency-Key is still being processed. | any |  |
 | IDEMPOTENCY_KEY_REUSED | 409 | The Idempotency-Key was already used with a different request body. | any |  |
 | IN_USE | 409 | DELETE /admin/reply-templates/:id while in use (test only). | any | yes |
@@ -63,7 +64,7 @@ console shows through their title and detail.
 | KYC_REQUIRED | 409 | PATCH /admin/clients/:id activation without approved KYC (test only). | any | yes |
 | LAST_ACTIVE | 409 | PATCH /admin/clients/:id refused for the last active item (test only). | any | yes |
 | LAST_CURRENCY | 409 | PATCH /admin/currencies/:id would leave no offered currency (test only). | any | yes |
-| LAST_OWNER | 409 | Suspending (and, proposed, demoting) the last active Owner. | `PATCH /admin/staff/:id`, `POST /admin/staff/:id/suspend` | yes |
+| LAST_OWNER | 409 | Any change that would leave no active staff member holding '*': suspending or demoting the last Owner, or removing '*' from the last Owner's role (PATCH /admin/roles/:id, errors[{field:"permissions"}]). | `PATCH /admin/staff/:id`, `POST /admin/staff/:id/suspend`, `PATCH /admin/roles/:id` | yes |
 | LAST_SUPPLIER | 409 | PATCH /admin/suppliers/:id would leave services without a supplier (test only). | any | yes |
 | LINK_CONFLICT | 409 | PUT /admin/services/:id/supplier-links conflict (test only). | any | yes |
 | LISTING_EXISTS | 409 | POST /admin/service-listings for a service already listed. | `POST /admin/service-listings` | yes |
@@ -71,7 +72,7 @@ console shows through their title and detail.
 | LOCKED | 409 | DELETE /admin/blocklist/:id on a locked entry (test only). | any | yes |
 | NO_ACCOUNT | 409 | Password action on a guest customer without an account. | `POST /admin/customers/:id/password` | yes |
 | NO_REFERENCE | 409 | Order fetch action without a supplier reference. | `POST /admin/orders/:id/fetch` | yes |
-| NO_SUPPLIER | 409 | proposal: no active supplier link for the service (manual order) | `POST /admin/orders/:id/dispatch` |  |
+| NO_SUPPLIER | 409 | the order's service has no active supplier link and the order has no supplier service (manual order) | `POST /admin/orders/:id/dispatch` |  |
 | NOT_A_DRAFT | 409 | proposal: the version was superseded (effective_from set); only drafts can be published | `POST /admin/legal-documents/:id/publish` |  |
 | NOT_ACTIVE | 409 | Customer action that needs an active account. | `POST /admin/customers/:id/suspend` | yes |
 | NOT_BLOCKED | 409 | Unblocking a customer who is not blocked. | `POST /admin/customers/:id/block` | yes |
@@ -80,10 +81,11 @@ console shows through their title and detail.
 | NOT_MANUAL | 409 | Order accept action on an order not in the manual queue. | `POST /admin/orders/:id/accept` | yes |
 | NOT_SUSPENDED | 409 | Reactivating a customer who is not suspended (proposed for staff reactivate too). | `POST /admin/staff/:id/reactivate`, `POST /admin/customers/:id/reactivate` | yes |
 | OPEN_DISPUTE | 409 | POST /admin/customers/:id/anonymize while a dispute is open (test only). | any | yes |
-| ORDER_HELD | 409 | proposal: B2C order held by risk (decisions are POST /admin/risk/orders/:id/*, M28) | `POST /admin/orders/:id/dispatch`, `POST /admin/orders/:id/reject`, `POST /admin/orders/:id/reply` |  |
+| ORDER_HELD | 409 | B2C order held by risk (decisions are POST /admin/risk/orders/:id/*, M28) | `POST /admin/orders/:id/dispatch`, `POST /admin/orders/:id/reject`, `POST /admin/orders/:id/reply` |  |
 | ORDER_NOT_COMPLETED | 409 | Reopen/refund on an order that is not completed. | `POST /admin/orders/:id/refund`, `POST /admin/orders/:id/reopen` | yes |
 | ORDER_NOT_OPEN | 409 | Change to an order that is no longer pending/processing. | `POST /admin/orders/:id/accept`, `POST /admin/orders/:id/change-supplier`, `POST /admin/orders/:id/dispatch` +3 | yes |
 | PAYMENT_ALREADY_REVIEWED | 409 | POST /admin/payments/:id/approve\|reject on a reviewed payment. | `POST /admin/payments/:id/approve`, `POST /admin/payments/:id/reject` | yes |
+| PAYMENT_AUTO_CREDIT_PENDING | 409 | the gateway is automatic and review_required is false: the payment is credited by the auto-credit job (detail 'PAY-<id> is credited automatically after the gateway check.') | `POST /admin/payments/:id/approve`, `POST /admin/payments/:id/reject` |  |
 | PLAN_IN_USE | 409 | DELETE /admin/commission-plans/:id while assigned. | `DELETE /admin/commission-plans/:id` | yes |
 | PLAN_LOCKED | 409 | PATCH /admin/commission-assignments/:id plan change refused (test only). | `PATCH /admin/commission-plans/:id`, `PATCH /admin/commission-assignments/:id` | yes |
 | PRICE_CHANGED | 409 | The charged price is more than the tolerance above the price the merchant was last listed (B117); the Dhru surface answers "Price changed. Please refresh the service list and order again.". | any |  |
@@ -96,7 +98,7 @@ console shows through their title and detail.
 | ROLE_IN_USE | 409 | DELETE /admin/roles/:id while staff still hold the role. | `DELETE /admin/roles/:id` | yes |
 | SELF_LOCKOUT | 409 | proposed: a block with scope admin\|all covering the caller's request IP (map ip-rules step 5); add `errors[{field:'cidr'}]` | `POST /admin/ip-rules`, `DELETE /admin/ip-rules/:id` |  |
 | SERVICE_DISABLED | 409 | Listing a disabled service. | `PATCH /admin/service-listings/:id` | yes |
-| SERVICE_IN_USE | 409 | DELETE /admin/services/:id while referenced. | `DELETE /admin/services/:id` | yes |
+| SERVICE_IN_USE | 409 | Retired: no route answers it (DELETE /admin/services/:id archives a service that is referenced and deletes it otherwise, B-entry catalog-3); the console mock still answers it. | any | yes |
 | SETTLEMENT_PENDING | 409 | PATCH /admin/payment-gateways/:id with settlements pending (test only). | any | yes |
 | SHORTCUT_TAKEN | 409 | Reply template shortcut already used. | `POST /admin/reply-templates`, `PATCH /admin/reply-templates/:id` | yes |
 | SLUG_TAKEN | 409 | Content page slug already used in the locale (with errors[{field:"slug"}]). | `POST /admin/content-pages`, `PATCH /admin/content-pages/:id` | yes |
@@ -111,14 +113,14 @@ console shows through their title and detail.
 | TICKET_RESOLVED | 409 | Reply/note on a resolved ticket. | `POST /admin/support-tickets/:id/reply` | yes |
 | TWOFA_ALREADY_ENABLED | 409 | proposed code: the staff member is already enrolled (login said totp). Must refuse, or a password alone could enrol a new authenticator | `POST /admin/auth/2fa/setup` |  |
 | TWOFA_NOT_ENABLED | 409 | proposed: 2FA already off | `POST /admin/staff/:id/reset-2fa` |  |
-| USE_REFUNDS | 409 | Order refund action on a storefront order (refunds go through /admin/refunds). | `POST /admin/orders/:id/refund` | yes |
+| USE_REFUNDS | 409 | Order refund action on a storefront order (refunds go through /admin/refunds). | `POST /admin/orders/:id/refund`, `POST /admin/orders/:id/reject` | yes |
 | VERSION_EXISTS | 409 | POST /admin/legal-documents with a version already present. | `POST /admin/legal-documents` | yes |
 | TOKEN_INVALID | 410 | Invite/reset token unknown, expired, already used or superseded. | `POST /admin/auth/password/set` | yes |
 | PAYLOAD_TOO_LARGE | 413 | The request body is over the route limit. | any |  |
 | UNSUPPORTED_MEDIA_TYPE | 415 | The request body type is not accepted by the route. | any |  |
 | INVALID_IMEI | 422 | Data value: IMEI failed validation (Luhn/format) on order placement. | any | yes |
 | TEMPLATE_INVALID | 422 | POST /admin/notification-templates/:id/preview with invalid template syntax (test only). | any | yes |
-| VALIDATION_FAILED | 422 | Invalid input; errors[] items {field, message} with camelCase dotted paths. | `POST /admin/auth/login`, `POST /admin/auth/2fa`, `POST /admin/auth/password/set` +111 | yes |
+| VALIDATION_FAILED | 422 | Invalid input; errors[] items {field, message} with camelCase dotted paths. | `POST /admin/auth/login`, `POST /admin/auth/2fa`, `POST /admin/auth/password/set` +112 | yes |
 | WEAK_PASSWORD | 422 | POST /admin/auth/password/set refuses the password (policy: ≥ 10 characters, not trivial). | `POST /admin/auth/password/set` | yes |
 | RATE_LIMITED | 429 | Too many requests; must carry Retry-After (seconds or HTTP date). | `POST /admin/auth/login`, `POST /admin/auth/2fa`, `POST /admin/auth/2fa/setup` +2 | yes |
 | INTERNAL_ERROR | 500 | Unexpected server failure (backend decision 028 name); also a data value in System health top errors. | `POST /admin/auth/logout`, `GET /admin/auth/me`, `GET /admin/audit-logs` +2 | yes |
@@ -128,8 +130,8 @@ console shows through their title and detail.
 | FX_PROVIDER_DOWN | 502 | POST /admin/currencies/refresh-fx when the rate provider fails. | `POST /admin/currencies/refresh-fx` | yes |
 | GATEWAY_ERROR | 502 | POST /admin/refunds/:id/retry when the payment gateway fails. | any | yes |
 | SUPPLIER_UNREACHABLE | 502 | POST /admin/suppliers/:id/test when the supplier does not answer (test only). | any | yes |
-| DATABASE_UNAVAILABLE | 503 | Postgres not accepting connections (system-health order-health and integrity reads); also a data value in top errors. | `GET /admin/system/health`, `GET /admin/system/orders-health`, `GET /admin/system/suppliers` +4 | yes |
+| DATABASE_UNAVAILABLE | 503 | Postgres not accepting connections (system-health order-health and integrity reads); also a data value in top errors. | `GET /admin/system/health`, `GET /admin/system/orders-health`, `GET /admin/system/suppliers` +10 | yes |
 | MAINTENANCE | 503 | Storefront checkout maintenance answer (map scenario system-integrity); appears only as data in System health top errors — the admin console keeps working. | any | yes |
 | MONITORING_UNAVAILABLE | 503 | Prometheus/Sentry could not be asked (GET /admin/system/metrics, /errors…). | `GET /admin/system/metrics`, `GET /admin/system/errors` | yes |
 | UNAVAILABLE | 503 | Test-only generic "service unavailable". | `GET /health` | yes |
-| SUPPLIER_TIMEOUT | 504 | Data value: supplier call timed out. | any | yes |
+| SUPPLIER_TIMEOUT | 504 | Data value: supplier call timed out. | `POST /admin/suppliers/:id/sync` | yes |

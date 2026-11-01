@@ -6,8 +6,45 @@ Phase 2 (foundation) is done: 10 of 382 map endpoints are built (health, metrics
 
 ## Before wave 1: resolve the audit
 `docs/contract/AUDIT-PHASE3.md` lists 102 differences between the console and the backend plan (9 high, 56 medium,
-37 low) over the 262 console endpoints still to build. The lead resolves them first (docs, decisions, schema
-migration, briefs); each feature brief then cites the findings of its routes.
+37 low) over the 262 console endpoints still to build. The lead resolved them in `docs/contract/RESOLUTIONS.md`
+(machine-readable `resolutions.json`), and the documentation fixes are applied: the endpoint docs, `RULES.md`,
+`ANSWERS.md`, `MISMATCHES.md` (new entries B119 and up), `error-codes.md` (two new codes, `PAYMENT_AUTO_CREDIT_PENDING` and
+`ALREADY_SENT`), decisions 018, 024 and 025 (new: 029 FX provider, 030 PDF rendering), the module READMEs and the briefs.
+Done before wave 1: migration `0003`, the config keys `PORTAL_BASE_URL`, `FX_PROVIDER`, `FX_API_KEY`, `FX_TIMEOUT_MS`,
+`GEOIP_COUNTRY_HEADER`, the schema comments, and the `MerchantAccounts.open` signature (brief 3). Each feature brief cites the
+findings of its routes; this table is the whole mapping (ip = identity-platform, os = orders-suppliers,
+hc = health-commissions):
+
+| Feature | Resolutions to carry |
+|---|---|
+| 2a | ip-1, ip-2, ip-3, ip-4, ip-6, ip-7, ip-13, ip-14, ip-15 |
+| 2b | ip-1, ip-2, ip-6, ip-16 (B121 to B136) |
+| 3 | ip-1, ip-3, money-1, money-6, money-13, money-15 |
+| 4a | ip-3, catalog-1, -2, -3, -5, -6, -9, -10, -11, -13, -14, -15, -17, os-10 |
+| 4b | catalog-1, -3, -4, -11, -12, -14, -16, b2c-7 |
+| 5 | ip-10, ip-16, money-1, catalog-2, -3, -4, os-1, -2, -11, -14, -15, -18, -19, hc-10 |
+| 6 | catalog-1, -2, -9, os-3 to -13, -15 to -17, -19, -20, hc-8 |
+| 7a | ip-7, ip-16, catalog-3, os-2 |
+| 7b | ip-5, ip-7, ip-12, ip-16 |
+| 8 | ip-16, money-2, -3, -5, -7, -8, -10, -14, catalog-17, b2c-6 |
+| 9 | ip-8, ip-9, ip-10, catalog-1, os-1, os-5, hc-6, -7, -8, -10, -16, -17, b2c-10 |
+| 11 | money-10, hc-1, -2, -3, -4, -11, -12 |
+| 12a | ip-2, ip-11, ip-16 |
+| 12b | hc-5, -9, -13, -14, -15, -16, -17 |
+| 14a | catalog-3, os-2, b2c-3, -7, -12, -14 |
+| 14b | money-9, catalog-7, -8, b2c-1, -5, -11, -12, -14, -16 |
+| 15 | catalog-3, -12, b2c-7, -14 |
+| 16 | money-1, -2, -4, -5, -7, -11, -12, b2c-5, -6 |
+| 17 | b2c-2, -9 |
+| 18 | money-3, os-11, b2c-3, -4, -5, -6, -8, -11, -13, -17 |
+| 19 | b2c-10, -15 |
+
+Contract and unit tests the resolutions require (each feature adds them with its routes): `placed_at = created_at` on every
+placement path (5); the `/admin/suppliers` `health` field only holds `up|degraded|down` and `creditRate` matches
+`^\d+\.\d{8}$` (6); the four dashboard supplier health mappings (9); a running job run has `durationMs` and `processed` 0
+(9); a tested but never used supplier deletes with 204 (6); every order action has a test of its resulting queue (5); the
+`LedgerTransaction.refType` wire set stays inside the console's words (3, contract test); `PAYMENT_AUTO_CREDIT_PENDING` and
+the auto-credit race (8); rule-2 credit checks on `POST /admin/clients` and `PATCH /admin/clients/:id/credit-limit` (2a, 3).
 
 ## How each feature runs
 1. The lead writes its brief (`docs/briefs/<id>-<name>.md`): routes, rules, scenarios, user rules, out of scope.

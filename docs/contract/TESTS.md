@@ -28,7 +28,8 @@ live in `test/contract/` and run in `bun run check`; a red contract test blocks 
      default); types match (`string`, `number`, `boolean`, arrays, objects, records); `Money` ↔ money pattern,
      `IsoDateTime` ↔ `date-time`, `Id` ↔ integer, `DateOnly` ↔ `date` (in requests a plain console string fits a
      backend `DateOnly`: the console has no date-only type); the backend enum ⊆ the frontend enum (the backend never sends a
-     value the frontend does not know); a nullable backend field must be nullable in the frontend; `ListResult<T>` ↔
+     value the frontend does not know, which includes `LedgerTransaction.refType`: a stored `client` reaches the wire as
+     `system`, so the wire set stays inside the console's 8 words); a nullable backend field must be nullable in the frontend; `ListResult<T>` ↔
      array of `T` + `x-total-count`. Extra backend fields are allowed and reported.
    - Request: every field the frontend sends is accepted with a compatible type; every field the backend requires is
      sent by the frontend (required in its type).

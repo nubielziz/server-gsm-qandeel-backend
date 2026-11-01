@@ -921,3 +921,15 @@ change or a user answer.
 
 **Doc fixes.** risk.md GET /admin/risk/queue: device source (orders.imei TAC → tac_catalog) and exact format; add tac_catalog to the route tables.
 
+
+## Deviations made while applying (migration 0003)
+
+- health-commissions-15: `incidents_alert_event_uq` is a plain unique index on `alert_event_id` (NULLs stay distinct),
+  not a partial one: a partial index cannot back the foreign key (structure test rule).
+- health-commissions-3: `commission_accruals_order_id_idx` is kept: a partial unique index cannot serve the foreign key.
+- `services_category_id_idx` became `services_category_type_idx (category_id, type)` so the composite FK has an index.
+- b2c-6 is folded into money-2: `payments_method_type_check` is per purpose (top-up bank|card|usdt|wise, order
+  card|wallet|crypto), stricter than one six-value list.
+- The 15 merchant-portal route specs drafted for 2b (MISMATCHES B121-B136: login answers `{ next: 'totp' | 'done' }`, a
+  pending merchant may sign in, `clients.twofa_enabled` and `password_changed_at` come with 2b's migration) are
+  accepted by the lead.

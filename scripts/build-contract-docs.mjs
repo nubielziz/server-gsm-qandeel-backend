@@ -37,11 +37,13 @@ const BACKEND_CODES = [
   ['UNSUPPORTED_MEDIA_TYPE', 415, 'The request body type is not accepted by the route.'],
   ['RESPONSE_CONTRACT_VIOLATION', 500, 'The handler produced a body that does not match its response contract (logged; never expected in production).'],
   ['LEDGER_UNBALANCED', 500, 'A ledger posting whose lines do not sum to zero was refused (programming error; logged and alerted).'],
-  ['DUPLICATE_ORDER', 409, 'Same client, service and IMEI while an earlier order is still open (the map duplicate rule).'],
+  ['DUPLICATE_ORDER', 409, 'Same client, service and IMEI while an earlier order is still open and the service has duplicate_rule = block_open (the map duplicate rule; the other value is allow).'],
   ['IDEMPOTENCY_KEY_REUSED', 409, 'The Idempotency-Key was already used with a different request body.'],
   ['IDEMPOTENCY_IN_PROGRESS', 409, 'A request with the same Idempotency-Key is still being processed.'],
   ['TURNSTILE_FAILED', 403, 'The storefront anti-bot check (Turnstile) failed or is missing.'],
   ['ERASURE_NOT_DONE', 409, 'An erasure request cannot be completed before the customer is anonymized.'],
+  ['PAYMENT_AUTO_CREDIT_PENDING', 409, 'Approve or reject refused: an automatic-gateway top-up is credited by the auto-credit job after the gateway check (staff may decide only when the gateway is manual or review_required is set).'],
+  ['ALREADY_SENT', 409, 'POST /admin/orders/:id/dispatch refused: the order was already sent to a supplier (dispatch_state sent).'],
   ['PRICE_CHANGED', 409, 'The charged price is more than the tolerance above the price the merchant was last listed (B117); the Dhru surface answers "Price changed. Please refresh the service list and order again.".'],
 ];
 

@@ -119,3 +119,22 @@ Queues, jobs and schedules: `docs/queues.md`.
 ## Cache keys
 
 None yet. Register each key family (owner, TTL, invalidation after commit) in `docs/cache-keys.md` (see `CONTRIBUTING.md` → "Add a cache key").
+
+## Audit resolutions
+
+The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, machine-readable `docs/contract/resolutions.json`) settled the points below for this module's routes. Where they differ from older text in this README or the endpoint docs, the resolution wins; the endpoint docs, `RULES.md`, `ANSWERS.md` and `MISMATCHES.md` were updated to match.
+
+- `health-commissions-5` · GET /admin/alerts
+- `health-commissions-6` · GET /admin/system/health, GET /admin/system/checks
+- `health-commissions-7` · GET /admin/system/health, GET /admin/system/checks, GET /admin/system/suppliers
+- `health-commissions-8` · GET /admin/system/suppliers
+- `health-commissions-9` · GET /admin/system/integrity
+- `health-commissions-10` · GET /admin/system/orders-health
+- `health-commissions-13` · GET /admin/alert-rules
+- `health-commissions-14` · GET /admin/alerts
+- `health-commissions-15` · POST /admin/incidents
+- `health-commissions-16` · GET /admin/system/jobs, POST /admin/system/jobs/:name/run, GET /admin/system/integrity, POST /admin/system/...
+- `health-commissions-17` · GET /admin/alerts, GET /admin/incidents, GET /admin/alert-rules, GET /admin/system/webhooks
+- `identity-platform-9` · GET /admin/dashboard
+- `identity-platform-10` · GET /admin/dashboard
+- `orders-suppliers-1` · GET /admin/orders
