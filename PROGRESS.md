@@ -4,14 +4,15 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
-**State on 2026-11-07, afternoon.** Phase 3 waves 1 and 2 are merged on `main`, and wave 3 has started: **3** money
+**State on 2026-11-07, night.** Phase 3 waves 1 to 3 are merged on `main`, and wave 4 has started: **3** money
 (`c332201`), **2b** merchant portal (`446fd46`), **2a** staff access (`ed74e0b`), **4a** catalog structure (`7c012d2`),
 **4b** catalog pricing (`3838d27`), the 4 tax rate routes of 14b built early by the lead (`23dc5d5`), **7b** merchant API
-keys and webhooks (`e9322de`, fixes `2193b45`, `68a3fb5`), **5** orders engine (`e6de28a`) and **6** suppliers
-(`bbf84f4`). **166 of 382** map endpoints are built (events included); the console calls 269, of which **122** are built
-(`docs/COVERAGE.md`, generated and checked by `bun run check`). `bun run check` is green on the merged 6 tree (3067 pass, 1
-skip, 0 fail; shape parity compares 122 of 163 built routes). Scenario e2e tests: 6 of 13 (admin-team, ip-rules, manual,
-success, reject, timeout; the merchant-side Dhru steps come with 7a).
+keys and webhooks (`e9322de`, fixes `2193b45`, `68a3fb5`), **5** orders engine (`e6de28a`), **6** suppliers (`bbf84f4`),
+**7a** Dhru and REST v1 (`13cdb12`) and **8** billing (`8f8f4b0`). **210 of 382** map endpoints are built (events
+included); the console calls 269, of which **137** are built (`docs/COVERAGE.md`, generated and checked by `bun run
+check`). `bun run check` is green on the merged 8 tree (3383 pass, 1 skip, 0 fail; shape parity compares 137 of 200 built
+routes). Scenario e2e tests: 6 of 13 (admin-team, ip-rules, manual, success, reject, timeout, the last four with the
+merchant's Dhru steps).
 
 **Phase 4 (frontend integration) is running alongside.** The console has a partial mock mode (`VITE_API_MOCKS=unbuilt`,
 frontend decision 018): built routes go to this API through the Vite dev proxy, the rest stays mocked; `npm run mocks:live`
