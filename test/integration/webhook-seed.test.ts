@@ -6,7 +6,13 @@ import { eq } from 'drizzle-orm';
 import { parseEnv } from '../../src/config';
 import { EncryptionService, hashToken } from '../../src/infra/crypto';
 import { schema as s } from '../../src/infra/db';
-import { WEBHOOK_EVENT_NAMES } from '../../src/modules/platform';
+import {
+  WEBHOOK_EVENT_NAMES,
+  invoicePaid,
+  orderStatusChanged,
+  servicePriceChanged,
+  walletLowBalance,
+} from '../../src/modules/platform';
 import { WEBHOOK_SECRET_AAD } from '../../src/modules/platform/webhooks/webhook-deliveries';
 import { demoStatePath, loadDemoState } from '../../scripts/seed/demo-state';
 import { seedIdentity } from '../../scripts/seed/identity';
@@ -68,9 +74,15 @@ describe.skipIf(!frontendPresent)('the 7b seed', () => {
 
     const deliveries = await db.select().from(s.webhookDeliveries).orderBy(s.webhookDeliveries.id);
     expect(deliveries).toHaveLength(36);
+    const contracts = { invoicePaid, orderStatusChanged, servicePriceChanged, walletLowBalance };
+    const contractOf = Object.fromEntries(Object.values(contracts).map((contract) => [contract.name, contract]));
     for (const delivery of deliveries) {
       expect(WEBHOOK_EVENT_NAMES as readonly string[]).toContain(delivery.event);
-      expect((delivery.payload as { id: string }).id).toBe(delivery.eventId);
+      const envelope = delivery.payload as { id: string; type: string; data: unknown };
+      expect(envelope.id).toBe(delivery.eventId);
+      expect(envelope.type).toBe(delivery.event);
+      // Each event carries its own documented data (an invoice for invoice.paid, not an order).
+      expect(contractOf[delivery.event]?.payload.safeParse(envelope.data).success, delivery.event).toBe(true);
     }
     const byStatus = (status: string) => deliveries.filter((delivery) => delivery.status === status).length;
     expect([byStatus('delivered'), byStatus('failed'), byStatus('pending')]).toEqual([24, 8, 4]);

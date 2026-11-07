@@ -3,7 +3,14 @@
 import type { AppConfig } from '../../src/config';
 import { EncryptionService, TokenService } from '../../src/infra/crypto';
 import { schema as s, type DbExecutor } from '../../src/infra/db';
+import type { JsonObject } from '../../src/common/contract';
 import { WEBHOOK_SECRET_AAD } from '../../src/modules/platform/webhooks/webhook-deliveries';
+import {
+  invoicePaid,
+  orderStatusChanged,
+  servicePriceChanged,
+  walletLowBalance,
+} from '../../src/modules/platform/webhooks/webhook-events';
 import { type DemoSeed, demoNumericId, demoRows } from './demo-state';
 import { type SeedReport, insertRows, syncIdentity } from './helpers';
 
@@ -30,6 +37,35 @@ const MINUTE_MS = 60_000;
 
 /** The events the seeded deliveries cycle through (the public four). */
 const SEED_EVENTS = ['order.status_changed', 'wallet.low_balance', 'invoice.paid', 'service.price_changed'] as const;
+
+/** The contract of each seeded event: its documented example is the base of the seeded `data`. */
+const SEED_EVENT_CONTRACTS = {
+  'order.status_changed': orderStatusChanged,
+  'wallet.low_balance': walletLowBalance,
+  'invoice.paid': invoicePaid,
+  'service.price_changed': servicePriceChanged,
+} as const;
+
+/**
+ * The `data` of a seeded delivery: the documented example of its event with the ids moved per row.
+ *
+ * Why: the console's delivery drawer shows the request as sent, so every event carries its own payload (an invoice for
+ * `invoice.paid`, not an order); the payload schema checks it, so a change of an event's contract cannot leave the seed behind.
+ *
+ * @param event the event name
+ * @param index the row number, which moves the order or invoice id
+ * @returns the event data
+ */
+function seedEventData(event: (typeof SEED_EVENTS)[number], index: number): JsonObject {
+  const example = SEED_EVENT_CONTRACTS[event].example as JsonObject;
+  const moved: JsonObject =
+    event === 'order.status_changed'
+      ? { orderId: 48100 - index }
+      : event === 'invoice.paid'
+        ? { invoiceId: 300 + index, number: `INV-2026-${String(300 + index).padStart(4, '0')}` }
+        : {};
+  return SEED_EVENT_CONTRACTS[event].payload.parse({ ...example, ...moved });
+}
 
 /**
  * Seeds the webhook log the console's Webhook deliveries tab shows: an endpoint for each of the first four demo merchants and 36
@@ -79,7 +115,7 @@ async function seedWebhooks(db: DbExecutor, demo: DemoSeed, config: AppConfig): 
       endpointId: endpoint.id,
       event,
       eventId,
-      payload: { id: eventId, type: event, createdAt: at.toISOString(), data: { orderId: 48100 - index } },
+      payload: { id: eventId, type: event, createdAt: at.toISOString(), data: seedEventData(event, index) },
       // A failed delivery used its 8 attempts; a waiting one is on its 2nd to 4th.
       attempt: kind === 'delivered' ? 1 : kind === 'waiting' ? 2 + (index % 3) : 8,
       status:
