@@ -42,9 +42,14 @@ must send `Authorization: Bearer <token>`: the comment at the top of that file s
 ## Local sign-in
 
 `bun run db:migrate && bun run db:seed` (development only) loads the frontend's demo staff and gives them credentials, so the
-console can sign in against the real API (`VITE_API_BASE_URL=http://localhost:3000`, CORS origin `http://localhost:5173`
-from `CORS_ORIGINS`). The seed also allows `127.0.0.1` and `::1` on the admin allowlist (IP rules 8 and 9), so a console on
-the same machine is not locked out. Nothing here exists in production, and no code path skips the TOTP step.
+console can sign in against the real API. The simplest way is the console's partial mock mode (frontend decision 018):
+run `bun src/main.ts` (and `bun src/worker.ts` for the jobs), then in the frontend
+`VITE_API_MOCKS=unbuilt VITE_DEV_PROXY_TARGET=http://localhost:3000 VITE_API_BASE_URL= npm run dev`: the routes this API has
+built go to it through the Vite proxy (one origin, no CORS), the others stay mocked (`npm run mocks:live` there after this
+repository gains routes). Calling the API cross-origin (`VITE_API_BASE_URL=http://localhost:3000`) also works: the dev
+default of `CORS_ORIGINS` allows `http://localhost:5173`. The seed also allows `127.0.0.1` and `::1` on the admin allowlist
+(IP rules 8 and 9), so a console on the same machine is not locked out. Nothing here exists in production, and no code path
+skips the TOTP step.
 
 Password of every seeded member: `demo-password`. TOTP secrets (base32, 30 s, 6 digits; public on purpose, development
 databases only):
