@@ -22,6 +22,13 @@ all the unbuilt pages show their error state with the server's 404 detail. Fixes
 catalog), the role member count (2a), a default merchant group on a fresh database (4a migration 0005), and in the console
 the mid-session sign-out keeps the page (`?to=`).
 
+**Running now (second agent budget approved by the user: 4 more calls, 2 at once):** feature **5** in `../backend-5` and
+feature **7b** in `../backend-7b` (test DB `gsm_7b_test`, Redis DB 8), in parallel; then **6**, then **7a**. Ownership set by
+the lead for the parallel run: 5 registers the outbox routes `order.status_changed` (→ `merchant-webhooks`) and
+`order.dispatch_requested` (→ `supplier-dispatch`); 7b builds the webhook fan-out processor and registers only its own events
+(`wallet.low_balance`, `service.price_changed`, `ping`), reading orders through a documented foreign read until 5's reader is
+on `main`.
+
 **Next, in order:**
 1. **Feature 5** orders-engine: brief `docs/briefs/5-orders-engine.md` (portal file spec B154 done; seed decision inside);
    start from branch `feat/backend-5` (worktree `../backend-5`, test DB `gsm_5_test`, Redis DB 6): the lead's state machine
@@ -156,7 +163,8 @@ re-review), max 2 review rounds.
 | P2.8 clock | 4 (implementer, review: 1 blocking, fix, re-review: pass) |
 | Wave 1, first run (2026-11-01) | 3 (Sonnet implementers 2a, 2b, 3; cut off before finishing, no review) |
 | Session 2026-11-07 | limit set by the user: 4 calls in all, 2 at once. All 4 used: 2a finish (Sonnet), frontend partial mocks (Sonnet), 4a (Sonnet), 4b (Sonnet). Reviews, fixes and merges of 3, 2b and 2a by the lead (Opus). |
-| **Total** | **45** |
+| Session 2026-11-07, second budget | approved by the user: 4 more calls, 2 at once. 5 (Sonnet) and 7b (Sonnet) running; 6 and 7a next. |
+| **Total** | **47** |
 
 ## Decisions
 
