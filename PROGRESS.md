@@ -55,8 +55,22 @@ MinIO run; the API, worker and Vite start only for a walk and stop after it.
   gateway_clearing, idle suppliers shown as degraded.
 
 **Stopping for the night (the user's instruction, 2026-11-07, 23:50).** No new feature tonight; 17, 18 and 19 start the next
-day. State of the six runs at 23:48 (each worktree keeps its files whatever happens to the run):
-- **14b** (`wf_4b060a2c-6a7`, continue): finished, reviewed (blocking findings), the fix agent was running.
+day. State of the six runs at 00:25 (each worktree keeps its files whatever happens to the run):
+- **14b** customers and accounts (`wf_4b060a2c-6a7`): **pass after fix, ready to merge** (23 routes, about 153 tests; the
+  review's blocking finding fixed: create and a country change need a current tax rate for the country, else 422 on
+  `country` 'Choose a country.', and the currency is the country's active storefront currency, else USD; its check: 3053
+  pass, 0 fail). At the merge: set `turnstile: true` on its three store auth routes; the checkout items of 14a above (link a
+  signed-in customer, let a signed-in account holder record marketing, `withoutModules` for the link-token tests, one
+  `findCustomer`); make 14a's `GET /store/v1/config` use the same tax window `[valid_from, valid_to)` as 14b's
+  `hasCurrentTaxRate`; compare the country against the locked row in PATCH (customer-admin.service.ts:225); the review
+  minors (b2c-account e2e step 3: assert the `customer.invited` outbox event; store-account.test.ts:113 assert the IP equals
+  the request address; READMEs: the `customers:sign-in-failures` cache key and identity's new exports; the unused
+  `CustomerSignInLimiter.enforceLink`; the B148 allowlist wording); decide who builds the hourly `fx_refresh` job (not built).
+  B-entry: sign-in lockout in cache Redis keyed by the email hash (10 failures lock 15 minutes, an unknown email locks the same
+  way) instead of the DB columns; magic-link self-signup turns an unknown email into a nameless guest (limited per email+IP,
+  plus Turnstile at the merge); TAC audit `added TAC entry` / `edited TAC entry` on a new entity type `tac_entry`; B148
+  allowlist entries for `currency: null` on four customer routes; PATCH checks the country only when it changes; the FX
+  audit phrase `refreshed exchange rate`; `GET /store/v1/me/orders` reads orders through a documented foreign read.
 - **12a** notifications (`wf_4cd665ad-733`): **pass after fix, ready to merge** (12 routes; the review's two blocking findings
   fixed and re-reviewed: a queued or digest row re-checks suspension and the merchant's current choice when it is sent, and
   the log detail masks `payload.chatId`; its check: 3050 pass, 0 fail). At the merge: renumber
@@ -94,7 +108,10 @@ day. State of the six runs at 23:48 (each worktree keeps its files whatever happ
   `commission:<agent>:<lowest accrual id>`; amounts rounding to zero accrue nothing; a switched-off plan stops accruals for
   agents still assigned (confirm); `clients.referral_code` is NOT NULL so B164's "generate on read" never happens; the portal
   does not send `reversedAt`; `report.repository.ts` reads other modules' tables (decision 016 deviation, decide).
-- **12b** (`wf_31478c9a-770`) and **16** (`wf_73269427-02a`) (feature, new worktrees): the Sonnet implementer was running.
+- **12b** (`wf_31478c9a-770`) and **16** (`wf_73269427-02a`) (feature, new worktrees): stopped by the lead at 00:25 for the
+  night while their Sonnet implementers were still building (no review yet). Their partial work is in `../backend-12b` and
+  `../backend-16`: tomorrow launch `.lead/workflows/gsm-backend-continue.js` for each with its args from
+  `.lead/feature-args.json`.
 
 **How to resume tomorrow.** Read the end of each run's `journal.jsonl` (lead session directory,
 `subagents/workflows/<run id>/`) to see the last finished step; a run that ended `pass` or `pass-after-fix` is ready to merge
