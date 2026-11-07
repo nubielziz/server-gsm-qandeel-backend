@@ -4,17 +4,58 @@ Map domain I. Storefront customers and checkout (B2C): customer accounts and cre
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
-Decisions that shape this module: 018 authentication, sessions and CSRF. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 010 ids and tokens, 018 authentication, sessions and CSRF, 019 encryption, 034 Turnstile. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
 
-Not built yet: the module is an empty shell (`customers.module.ts`, `index.ts`). Its feature adds controllers, services, repositories and the owned tables.
+Built (feature 14a, storefront-checkout): the checkout, 3 of the 13 storefront routes (`POST /store/v1/checkout-sessions`,
+`GET /store/v1/checkout-sessions/:token`, `POST /store/v1/checkout-sessions/:token/consents`). Store sign-in, accounts and the admin
+customer routes are feature 14b; paying a session (`.../pay`) and creating the order are feature 16. Checkout files:
+`checkout.module.ts` (routes), `application/checkout-session.service.ts`, `application/consent.service.ts`,
+`application/checkout-token.resolver.ts`, `infra/checkout.repository.ts`, `infra/consent.repository.ts`, `domain/checkout.ts`.
+
+- **Open** (scenario b2c-paid steps 2 and 3): body `{ serviceId, email, country, region?, currency?, quantity?, imei?, inputs?,
+  utm? }`. In one transaction: the policy `guestCheckout` (off answers `401 UNAUTHORIZED` "Sign in to check out.": a signed-in
+  customer is not read on this public route yet, the lead links it when 14b merges); the service must be one the shop sells, lists
+  (a switched-on `service_listings` row) and has priced (`StorefrontQuotes`, else `422` on `serviceId`; a `file` service cannot be ordered online yet); the quantity and the
+  order fields are checked with the orders module's placement rules (`quantityProblem`, `inputProblems`); an IMEI service needs a
+  valid IMEI (`INVALID_IMEI`, stored as `imei_enc`, context `checkout_sessions.imei_enc`, never returned: the answer shows the last
+  four digits). The email (trimmed, lower case) finds the customer or inserts a guest (`has_account` false; `ON CONFLICT DO NOTHING`
+  on the unique `lower(email)` index, so two checkouts racing on a new email make one customer); a `suspended` or `blocked`
+  customer is refused with `403 ACCOUNT_SUSPENDED` and one neutral detail (scenario b2c-account step 8). A failed open rolls
+  everything back (no customer is left behind). The session stores USD `net_amount`, `tax_rate`, `tax_amount`, `gross_amount`
+  (RULES customers 6), the `currency` and the locked `fx_rate` (8 decimals, the markup included), `tax_country`, the encrypted
+  IMEI, `inputs`, `utm`, `ip` (the trusted-proxy address) and the user agent; the token is 128 random bits (base64url, 22
+  characters), `expires_at` is 30 minutes after the clock's time (`CHECKOUT_SESSION_TTL_MINUTES`). Maintenance with scope
+  `checkout` or `store` already answers `503 MAINTENANCE` before this runs (the pipeline hook).
+- **Status** (RESOLUTIONS b2c-14): `open | paid | expired`; an `open` session past `expires_at` reads `expired` for every reader at
+  once without a job (`effectiveStatus`); `paid` is feature 16's.
+- **Read** (`GET`): the capability guard of the identity module resolves the token (`CheckoutTokenResolver`, registered in
+  `onModuleInit`): the row is found by the unique index and the stored token is compared with the presented one in constant time
+  (decision 010 stores the checkout token as is so the link can be re-sent, so this is not a hash lookup like a session). One
+  answer (`404 NOT_FOUND`, "This link is not valid.") for an unknown, malformed or nearly-right token; lookups are limited to 30 a
+  minute per address by the pipeline. The view: status, expiry, the service, quantity, masked IMEI and email, the country, currency,
+  rate and tax rate, the amounts in USD and in the buyer's currency (`gross` is what is charged), the consent state and the active
+  B2C payment methods. The locked numbers never change after the session opens, whatever staff do to prices, tax or rates.
+- **Consents** (RESOLUTIONS b2c-12, b2c-14): body `{ consents: [{ purpose, granted }], locale? }`; purposes `terms`, `privacy`,
+  `refund_policy`, `withdrawal_waiver`, `marketing`. Each record stores the subject (the session's customer), the current legal
+  document of the purpose's type and language (`terms`, `privacy`, `refund_policy` -> `terms`, `privacy`, `refund`; the waiver and
+  marketing have no document; an English fallback), the session, the buyer's IP and user agent and the clock's time. Records are
+  append only: a withdrawal is a new row with `granted = false`, the latest row of a purpose decides, and repeating the same
+  answer for the same text is a retry that writes nothing. Required before payment: `terms`, `privacy` and, while the policy
+  `withdrawalWaiver` is on, `withdrawal_waiver` (`consent.complete`). `422` for a purpose listed twice or without a published
+  text; `409 INVALID_TRANSITION` on a paid or expired session. The route needs no anti-bot token: the capability token in the path
+  is the credential.
+- **Anti-bot**: opening a session is `turnstile: true` (decision 034).
 
 ## Public API (`index.ts`)
 
-Exports `CustomersModule` and `storefrontFunnel(db, now, days)` (`storefront-funnel.ts`, resolution b2c-10): a read-only function that counts
-the storefront funnel (IMEI checks, checkouts started, paid, delivered) over the last `days` days. The dashboard's storefront block (feature 9,
-30 days) and the funnel report (feature 19) share it; every number is zero until checkouts exist (14a, 16). Add the services other modules may call here, and nothing else: other modules import only `src/modules/customers/index.ts` (lint rule `gsm/module-boundaries`).
+Exports `CHECKOUT_SESSION_TTL_MINUTES`, `CHECKOUT_IMEI_AAD`, `LEGAL_TYPE_OF_PURPOSE`, `effectiveStatus`, `requiredConsents`,
+`CheckoutModule`, `CustomersModule` and `storefrontFunnel(db, now, days)` (`storefront-funnel.ts`, resolution b2c-10): a read-only
+function that counts the storefront funnel (IMEI checks, checkouts started, paid, delivered) over the last `days` days. The
+dashboard's storefront block (feature 9, 30 days) and the funnel report (feature 19) share it. Feature 16 reads a session through
+its own use case in this module. Add the services other modules may call here, and nothing else: other modules import only
+`src/modules/customers/index.ts` (lint rule `gsm/module-boundaries`).
 
 ## Owned tables
 
@@ -87,7 +128,7 @@ Keep this list in step with the contracts (`permission` of each `defineRoute`).
 
 ## Events
 
-Outbox events produced (types, payload ids): none yet. Consumed: none yet. Record each outbox type and the queue it maps to here and in `docs/queues.md`.
+Outbox events produced (types, payload ids): none yet (the checkout routes write none). Consumed: none yet.
 
 ## Jobs and schedules
 
@@ -95,7 +136,7 @@ None yet. List each queue, job, schedule, idempotency key and retry policy here 
 
 ## Cache keys
 
-None yet. Register each key family (owner, TTL, invalidation after commit) in `docs/cache-keys.md` (see `CONTRIBUTING.md` → "Add a cache key").
+None: a session, its consents and the guest customer are decision-making state and are read from Postgres every time.
 
 ## Audit resolutions
 

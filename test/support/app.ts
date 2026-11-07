@@ -28,7 +28,10 @@ import { StaffAuthModule } from '../../src/modules/identity/staff-auth.module';
 import { IpRulesModule } from '../../src/modules/identity/security/ip-rules/ip-rules.module';
 import { HealthAdminModule } from '../../src/modules/health';
 import { MoneyAdminModule } from '../../src/modules/money/money-admin.module';
-import { OrdersAdminModule } from '../../src/modules/orders';
+import { OrderTrackingModule, OrdersAdminModule } from '../../src/modules/orders';
+import { CheckoutModule } from '../../src/modules/customers';
+import { ImeiCheckModule } from '../../src/modules/risk';
+import { StorefrontPublicModule } from '../../src/modules/storefront';
 import { SuppliersAdminModule } from '../../src/modules/suppliers';
 import {
   MaintenanceModule,
@@ -57,6 +60,7 @@ export const PRODUCTION_ENV: Record<string, string> = {
   ENCRYPTION_ACTIVE_KID: 'k1',
   METRICS_TOKEN: 'm'.repeat(32),
   LOG_LEVEL: 'warn',
+  TURNSTILE_SECRET_KEY: 'turnstile-secret-for-tests',
 };
 
 /**
@@ -78,7 +82,7 @@ class NoInfrastructureModule {}
  * Stands in for the modules that read Postgres and the cache on every request: the security stack (sessions, CSRF,
  * permissions, the guard dispatcher), the staff sign-in routes, the staff access, merchant, merchant portal, platform admin
  * and money routes, the settings readers, and the IP rules and maintenance stages of the pipeline. An app built without the
- * database or the infrastructure has no guards, and those stages do nothing.
+ * database or the infrastructure has no guards, and those stages do nothing. Also the empty stand-in for `withoutModules`.
  */
 @Module({})
 class NoSecurityModule {}
@@ -102,6 +106,10 @@ const NEEDS_DATABASE_AND_CACHE = [
   CatalogAdminModule,
   OrdersAdminModule,
   SuppliersAdminModule,
+  OrderTrackingModule,
+  StorefrontPublicModule,
+  ImeiCheckModule,
+  CheckoutModule,
   MerchantWebhooksModule,
   WebhookDeliveryModule,
   HealthAdminModule,
@@ -137,6 +145,11 @@ export interface TestAppOptions {
    * security stack and the pipeline stages that use them (IP rules, maintenance, per-IP limit) go too.
    */
   readonly withoutInfrastructure?: boolean;
+  /**
+   * Modules replaced with an empty one, wherever they are imported. A test that registers its own capability token resolver for
+   * `checkout-token` or `tracking-token` leaves out the module that registers the real one (a kind has one resolver).
+   */
+  readonly withoutModules?: readonly Type<unknown>[];
   /** Called for every route Fastify registers (method `string | string[]`, url as registered), before `init()` ends. */
   readonly onRoute?: (route: { method: string | readonly string[]; url: string }) => void;
 }
@@ -182,6 +195,7 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   if (options.withoutDatabase || options.withoutInfrastructure) {
     for (const module of NEEDS_DATABASE_AND_CACHE) builder.overrideModule(module).useModule(NoSecurityModule);
   }
+  for (const module of options.withoutModules ?? []) builder.overrideModule(module).useModule(NoSecurityModule);
   if (options.withoutInfrastructure) {
     const replaced = [RedisModule, CacheModule, RateLimitModule, QueuesModule, StorageModule, ...NEEDS_INFRASTRUCTURE];
     for (const module of replaced) builder.overrideModule(module).useModule(NoInfrastructureModule);

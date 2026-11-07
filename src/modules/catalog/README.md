@@ -113,12 +113,15 @@ appear (orders 5, suppliers 6, storefront 14a and 15, customers, risk 18). Nothi
 ## Public API (`index.ts`)
 
 Exports `CatalogModule` (global) and `CatalogAdminModule` (the routes; a database-less test app leaves it out), the read-only
-`ClientGroupDirectory` (`find(db, id, { lock: 'share' }?)`, `findDefault`, `refsOf`, `promotionLadder`; a `ClientGroupRef` has id,
+`ClientGroupDirectory` (`find(db, id, { lock: 'share' }?)`, `findDefault`, `findRetail` (the storefront's `b2c_retail` group, feature 14a), `refsOf`, `promotionLadder`; a `ClientGroupRef` has id,
 name, kind, discountPercent, isDefault, overdraftAllowed, earnThreshold, depositLimit; identity uses it for the group a new
 merchant joins, the group inside a merchant row and the nightly promotion), `recomputeEffectiveCost(tx, serviceIds)` (feature 6
 calls it from sync, import and link changes), the figure rules (`defaultMinProfit`, `effectiveMinProfit`, `floorPrice`,
 `marginPercent`, `isBelowFloor`, `deliveryTimeText`), the closed vocabularies `SERVICE_PRICE_MODES`, `SERVICE_DUPLICATE_RULES` and
-`SERVICE_TYPES`, and the inventory helpers the seed uses. Other modules import only `src/modules/catalog/index.ts` (lint rule
+`SERVICE_TYPES`, the inventory helpers the seed uses, and the storefront's read-only views (feature 14a): `StorefrontServices`
+(`sellable(db, ids, groupId)`: the merchant catalog's visibility rule for the retail group, no cost or supplier; `priced(db, groupId)`: the
+sellable ids that also have a fixed price for the group; `names(db, ids)`: name, type and delivery time whatever the service's state;
+`fields(db, serviceId)`) and `TacDirectory.find(db, tac)` (brand, model, marketing name and year of a TAC). Other modules import only `src/modules/catalog/index.ts` (lint rule
 `gsm/module-boundaries`). The export order matters (decision 032): the leaves identity injects come first, `CatalogAdminModule`
 (whose controllers use identity's decorators) last.
 

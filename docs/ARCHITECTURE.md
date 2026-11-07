@@ -85,6 +85,8 @@ a contract is refused:
    signature + replay window (webhooks), network or token (`/metrics`).
 6. **CSRF** on every cookie-authenticated mutation (`403 CSRF_FAILED`).
 7. **Permission**: the contract's `permission` (`resource:action`; `x:*` and `*` grant all actions of a resource).
+   **Anti-bot** (D034): a `/store/v1` route with `turnstile: true` needs a passing `X-Turnstile-Token` (`403 TURNSTILE_FAILED`); the
+   verifier is Cloudflare's siteverify through `OutboundHttp`, or a dummy one without `TURNSTILE_SECRET_KEY` outside production.
 8. **Validation**: zod contract pipes (`422 VALIDATION_FAILED`).
 9. **Handler**; the response passes the response schema; admin writes are written to `audit_logs` (actor, action,
    entity, before, after, ip) by the use case (`AuditService.record(tx, ...)`, in its transaction), and an audit

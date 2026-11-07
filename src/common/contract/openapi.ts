@@ -87,6 +87,18 @@ export interface OperationParts {
   readonly security: string | undefined;
 }
 
+/** The header of the anti-bot token (decision 034), documented on every `turnstile` route. */
+const TURNSTILE_PARAMETER: OperationParameter = {
+  in: 'header',
+  name: 'x-turnstile-token',
+  required: true,
+  description:
+    "The Cloudflare Turnstile widget's token (its `cf-turnstile-response` value). A missing or failed check answers `403 TURNSTILE_FAILED`; " +
+    'a token is single use and valid for five minutes, so a retried write needs a new one.',
+  schema: { type: 'string', minLength: 1, maxLength: 2048 },
+  repeatable: false,
+};
+
 /** The media type documented for each way a request body is sent. */
 const REQUEST_MEDIA_TYPES: Readonly<Record<BodyType, string>> = {
   json: 'application/json',
@@ -314,6 +326,8 @@ export function buildOperation(contract: AnyRouteContract): OperationParts {
     ...(contract.params ? objectProperties(contract.params, 'path') : []),
     ...queryParameters(contract),
     ...(contract.headers ? objectProperties(contract.headers, 'header') : []),
+    // Decision 034: a route behind the anti-bot check documents the header the storefront copies the widget's token into.
+    ...(contract.turnstile ? [TURNSTILE_PARAMETER] : []),
   ];
   const responses: Record<string, OperationResponse> = successResponses(contract);
   const byStatus = new Map<number, ErrorCode[]>();
@@ -383,6 +397,8 @@ export function openApiDecorators(contract: AnyRouteContract): MethodDecorator[]
   if (contract.access === 'merchant-session')
     decorators.push(ApiExtension('x-gsm-pending-merchant', contract.pendingMerchant));
   if (isStaffWrite(contract)) decorators.push(ApiExtension('x-gsm-audit', contract.audit));
+  // Storefront writes behind the anti-bot check say so (decision 034), for the parity test and the reader of the docs.
+  if (contract.turnstile) decorators.push(ApiExtension('x-gsm-turnstile', true));
   if (parts.security) decorators.push(ApiSecurity(parts.security));
   for (const parameter of parts.parameters) {
     const common = {

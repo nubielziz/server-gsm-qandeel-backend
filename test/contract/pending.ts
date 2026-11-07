@@ -47,7 +47,6 @@ export const PENDING: readonly string[] = [
   'PATCH /admin/tac-catalog/:id',
   // orders
   'GET /admin/reports/top-clients',
-  'GET /store/v1/orders/:token',
   'GET /store/v1/orders/:token/receipt',
   'GET /store/v1/me/orders',
   // suppliers
@@ -88,9 +87,6 @@ export const PENDING: readonly string[] = [
   'GET /admin/commission-accruals/:id',
   'POST /admin/commission-accruals/approve',
   // customers
-  'POST /store/v1/checkout-sessions',
-  'GET /store/v1/checkout-sessions/:token',
-  'POST /store/v1/checkout-sessions/:token/consents',
   'POST /store/v1/checkout-sessions/:token/pay',
   'POST /store/v1/auth/magic-link',
   'POST /store/v1/auth/verify',
@@ -117,9 +113,6 @@ export const PENDING: readonly string[] = [
   'POST /admin/checkouts/recover',
   'GET /admin/reports/funnel',
   // storefront
-  'GET /store/v1/config',
-  'GET /store/v1/services',
-  'GET /store/v1/services/:slug',
   'GET /store/v1/pages/:slug',
   'GET /store/v1/help',
   'GET /store/v1/help/:slug',
@@ -158,7 +151,6 @@ export const PENDING: readonly string[] = [
   'PATCH /admin/reply-templates/:id',
   'DELETE /admin/reply-templates/:id',
   // risk
-  'POST /store/v1/imei/check',
   'POST /store/v1/me/data-export',
   'POST /store/v1/me/data-delete',
   'GET /admin/data-requests',

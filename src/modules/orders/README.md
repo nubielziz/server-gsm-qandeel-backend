@@ -82,6 +82,20 @@ the one `POST /api/index.php` transport route.
   feature 6 runs before this one; `supplier_service_id` and `supplier_ref` stay null (the demo has no supplier order numbers, so a
   seeded order is never polled). The 104 storefront orders wait for customers (14b).
 
+### Storefront order tracking (feature 14a)
+
+`GET /store/v1/orders/:token` (`access: tracking-token`, `order-tracking.module.ts`): the holder of an order's public token sees its
+status, result and timeline. `TrackingTokenResolver` registers with the identity guard in `onModuleInit`: the order is found by the
+unique partial index on `orders.public_token` and the stored token is compared with the presented one in constant time (decision
+010 keeps the token as is so the tracking link can be re-sent); a merchant order has no token and can never be opened this way. One
+answer (`404 NOT_FOUND`, "This link is not valid.") for an unknown, malformed or nearly-right token; lookups are limited to 30 a
+minute per address by the pipeline. The view (`application/order-tracking.service.ts`, `domain/tracking.ts`): `status` (a risk hold
+reads `pending`), the service name, type and delivery time, the main input with all but its last four characters hidden, the
+quantity, `placedAt`, `completedAt`, `result { code, comment }` once the order is `completed` (null before; a rejection's reason
+never leaves), and the timeline limited to `created`, `paid`, `accepted`, `completed`, `rejected`, `refund` and `reopened` in fixed
+words (never the stored `data.message`, which can name a supplier, a cost or a merchant). Never cached (`Cache-Control:
+no-store`). Placing a storefront order (which writes `public_token`) is feature 16.
+
 ### Merchant portal contract (no console screen; ALIGNMENT § 7, B121, B153, recorded as B160)
 
 The shapes of the seven `/client` routes are written here because the map rows are one-liners (MISMATCHES B160 holds the same

@@ -13,6 +13,8 @@ export type {
   OrderTransition,
 } from './domain/order-machine';
 export { mainInputOf } from './domain/main-input';
+export { MAX_INPUT_LENGTH, inputProblems, isValidImei, normalizeImei, quantityProblem } from './domain/placement-rules';
+export type { PlacementField, QuantityRules } from './domain/placement-rules';
 export type { MainInputField, MainInputSource } from './domain/main-input';
 export { channelSql, pastSlaPredicate, queueSql } from './infra/order-sql';
 export {
@@ -51,4 +53,5 @@ export type { PollCandidate, SupplierOrderCounts, SupplierOrderUsage } from './i
 export { OrdersOutboxModule } from './orders-outbox.module';
 export { OrdersEngineModule } from './orders-engine.module';
 export { OrdersAdminModule } from './orders-admin.module';
+export { OrderTrackingModule } from './order-tracking.module';
 export { OrdersModule } from './orders.module';

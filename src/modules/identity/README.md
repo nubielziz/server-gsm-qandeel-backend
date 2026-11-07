@@ -45,8 +45,9 @@ Exports `IdentityModule` and the security stack (`SecurityModule`, global). Othe
 ## The security stack (decision 018)
 
 One global guard, `AccessGuard`, reads each route's contract (`getContract`) and runs, in this order: **authentication by access
-kind**, the **CSRF guard**, the **permission guard**. Validation, the handler and the audit follow in the route's own pipes and
-interceptors. A route without a contract is refused (`500`), except `DOCUMENTATION_ROUTES`, which keep their own guard.
+kind**, the **CSRF guard**, the **permission guard**, then, for a `turnstile: true` storefront route only, the **anti-bot check**
+(`TurnstileGuard`, `src/infra/turnstile`, decision 034: `403 TURNSTILE_FAILED`). Validation, the handler and the audit follow in the
+route's own pipes and interceptors. A route without a contract is refused (`500`), except `DOCUMENTATION_ROUTES`, which keep their own guard.
 
 | Access kind | Who authenticates |
 |---|---|

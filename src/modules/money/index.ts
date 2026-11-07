@@ -5,6 +5,8 @@ export { MerchantAccounts } from './application/merchant-accounts';
 export type { OpenMerchantAccountsInput, OpenedWallet } from './application/merchant-accounts';
 export { MerchantWallets } from './application/merchant-wallets';
 export { MerchantSpend } from './application/merchant-spend';
+export { StorefrontMoney } from './application/storefront-money';
+export type { StorefrontCurrency, StorefrontPaymentMethod, TaxInForce } from './application/storefront-money';
 export { OrderSettlements } from './application/order-settlements';
 export type { Settlement } from './application/order-settlements';
 export { WalletLowBalanceWatch } from './application/wallet-low-balance-watch';

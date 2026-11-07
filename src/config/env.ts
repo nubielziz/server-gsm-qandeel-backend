@@ -99,6 +99,13 @@ export interface AppConfig {
     /** argon2id cost of new password hashes (decision 007); each stored hash carries the parameters it was made with. */
     readonly argon2: { readonly memoryKib: number; readonly timeCost: number; readonly parallelism: number };
   };
+  /** The anti-bot check of the public storefront writes (decision 034). */
+  readonly turnstile: {
+    /** Cloudflare Turnstile secret; unset outside production means the dummy verifier (no network). */
+    readonly secretKey: string | undefined;
+    /** Host names a verified token may have been issued for; empty = any. */
+    readonly hostnames: readonly string[];
+  };
   readonly observability: {
     /** When set, `/metrics` requires `Authorization: Bearer <token>`; when unset only private networks may read it. */
     readonly metricsToken: string | undefined;
@@ -230,6 +237,8 @@ const rawSchema = z.object({
   GIT_SHA: z.string().trim().min(1).max(64).optional(),
   DEPLOYED_AT: z.iso.datetime({ offset: true }).optional(),
   REFERENCE_DOCS: z.enum(['open', 'staff', 'off']).optional(),
+  TURNSTILE_SECRET_KEY: z.string().min(1).optional(),
+  TURNSTILE_HOSTNAMES: z.string().optional(),
 });
 
 type RawEnv = z.output<typeof rawSchema>;
@@ -317,6 +326,30 @@ export function parseCorsOrigins(
     if (!origins.includes(origin)) origins.push(origin);
   }
   return { ok: true, value: origins };
+}
+
+/**
+ * Parses `TURNSTILE_HOSTNAMES`: a comma list of host names (`shop.example.com`).
+ *
+ * Why: decision 034: a token is only accepted when Cloudflare says it was issued for one of our storefront hosts; a
+ * scheme, a port or a path in an entry is a typo that would silently never match, so it stops the deploy.
+ *
+ * @param value raw variable text
+ * @returns the unique lower-case host names, or the reason one is invalid
+ */
+export function parseTurnstileHostnames(
+  value: string,
+): { ok: true; value: readonly string[] } | { ok: false; message: string } {
+  const hosts: string[] = [];
+  for (const part of value.split(',')) {
+    const host = part.trim().toLowerCase();
+    if (host === '') continue;
+    if (!/^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/.test(host)) {
+      return { ok: false, message: `"${host}" is not a host name (no scheme, port or path)` };
+    }
+    if (!hosts.includes(host)) hosts.push(host);
+  }
+  return { ok: true, value: hosts };
 }
 
 /**
@@ -433,6 +466,10 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
     '',
   );
   const s3Endpoint = raw.S3_ENDPOINT ?? (production ? undefined : DEV_DEFAULTS.s3Endpoint);
+  // Decision 034: production never runs the dummy verifier, which accepts a public test token.
+  if (production && raw.TURNSTILE_SECRET_KEY === undefined) fail('TURNSTILE_SECRET_KEY', 'is required in production');
+  const turnstileHosts = parseTurnstileHostnames(raw.TURNSTILE_HOSTNAMES ?? '');
+  if (!turnstileHosts.ok) fail('TURNSTILE_HOSTNAMES', turnstileHosts.message);
 
   return {
     env,
@@ -490,6 +527,7 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
       encryptionActiveKid: activeKid,
       argon2,
     },
+    turnstile: { secretKey: raw.TURNSTILE_SECRET_KEY, hostnames: turnstileHosts.ok ? turnstileHosts.value : [] },
     observability: {
       metricsToken: raw.METRICS_TOKEN,
       workerMetricsPort: raw.WORKER_METRICS_PORT ?? 9464,
@@ -648,6 +686,7 @@ export function summarizeConfig(config: AppConfig): Record<string, unknown> {
       encryptionActiveKid: config.security.encryptionActiveKid,
       argon2: config.security.argon2,
     },
+    turnstile: { secretKey: flag(config.turnstile.secretKey), hostnames: config.turnstile.hostnames },
     observability: {
       metricsToken: flag(config.observability.metricsToken),
       workerMetricsPort: config.observability.workerMetricsPort,

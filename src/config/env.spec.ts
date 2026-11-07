@@ -10,6 +10,7 @@ import {
   parseEncryptionKeys,
   parseEnv,
   parseTrustProxy,
+  parseTurnstileHostnames,
   summarizeConfig,
 } from './env';
 
@@ -32,6 +33,7 @@ const production = (): Record<string, string> => ({
   ENCRYPTION_KEYS: `k1:${KEY}`,
   ENCRYPTION_ACTIVE_KID: 'k1',
   METRICS_TOKEN: 'metrics-token-for-prometheus',
+  TURNSTILE_SECRET_KEY: 'turnstile-secret-for-tests',
 });
 
 const issuesOf = (env: Record<string, string>) => {
@@ -303,6 +305,39 @@ describe('GEOIP_COUNTRY_HEADER', () => {
   it('refuses a value that is not a header name', () => {
     expect(issuesOf({ GEOIP_COUNTRY_HEADER: 'cf ipcountry' }).map((i) => i.variable)).toEqual(['GEOIP_COUNTRY_HEADER']);
     expect(issuesOf({ GEOIP_COUNTRY_HEADER: 'x-country:' }).map((i) => i.variable)).toEqual(['GEOIP_COUNTRY_HEADER']);
+  });
+});
+
+describe('Turnstile settings (decision 034)', () => {
+  it('has no secret and no host list by default, which selects the dummy verifier', () => {
+    expect(parseEnv({}).turnstile).toEqual({ secretKey: undefined, hostnames: [] });
+  });
+
+  it('requires the secret in production', () => {
+    const env = production();
+    delete env.TURNSTILE_SECRET_KEY;
+    expect(issuesOf(env)).toEqual([{ variable: 'TURNSTILE_SECRET_KEY', message: 'is required in production' }]);
+  });
+
+  it('reads the secret and a host list (lower-cased, de-duplicated)', () => {
+    const config = parseEnv({
+      ...production(),
+      TURNSTILE_HOSTNAMES: 'Shop.Example.com, shop.example.com ,www.example.com',
+    });
+    expect(config.turnstile.secretKey).toBe('turnstile-secret-for-tests');
+    expect(config.turnstile.hostnames).toEqual(['shop.example.com', 'www.example.com']);
+  });
+
+  it('refuses a host entry with a scheme, a port or a path', () => {
+    for (const bad of ['https://shop.example.com', 'shop.example.com:443', 'shop.example.com/x', 'bad host'])
+      expect(issuesOf({ TURNSTILE_HOSTNAMES: bad }).map((i) => i.variable)).toEqual(['TURNSTILE_HOSTNAMES']);
+    expect(parseTurnstileHostnames(' , ')).toEqual({ ok: true, value: [] });
+  });
+
+  it('keeps the secret out of the boot summary', () => {
+    const summary = JSON.stringify(summarizeConfig(parseEnv(production())));
+    expect(summary).not.toContain('turnstile-secret-for-tests');
+    expect(summary).toContain('"secretKey":"[set]"');
   });
 });
 

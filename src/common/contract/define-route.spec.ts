@@ -435,6 +435,41 @@ describe('defineRoute', () => {
   });
 });
 
+describe('defineRoute turnstile option (decision 034)', () => {
+  const store = (override: Record<string, unknown> = {}) =>
+    define({
+      key: `POST /store/v1/spec-turnstile-${(counter += 1)}`,
+      surface: 'store',
+      access: 'public',
+      body: z.object({ email: z.string() }),
+      ...override,
+    });
+
+  it('is off by default and does not touch the errors', () => {
+    const contract = store({ errors: ['VALIDATION_FAILED'] });
+    expect(contract.turnstile).toBe(false);
+    expect(contract.errors).toEqual(['VALIDATION_FAILED']);
+  });
+
+  it('adds TURNSTILE_FAILED to the errors of a store route', () => {
+    const contract = store({ turnstile: true, errors: ['VALIDATION_FAILED'] });
+    expect(contract.turnstile).toBe(true);
+    expect(contract.errors).toEqual(['VALIDATION_FAILED', 'TURNSTILE_FAILED']);
+    expect(declaredStatuses(contract)).toContain(403);
+  });
+
+  it('does not list the code twice when the author already named it', () => {
+    expect(store({ turnstile: true, errors: ['TURNSTILE_FAILED'] }).errors).toEqual(['TURNSTILE_FAILED']);
+  });
+
+  it('is refused outside the storefront surface', () => {
+    expect(() => define({ turnstile: true })).toThrow(/only applies to \/store\/v1 routes/);
+    expect(() =>
+      define({ key: 'POST /admin/spec/turnstile', surface: 'admin', access: 'staff-session', turnstile: true }),
+    ).toThrow(/only applies to \/store\/v1 routes/);
+  });
+});
+
 describe('operationIdOf', () => {
   it('builds a stable camelCase id from the key', () => {
     expect(operationIdOf('GET /admin/staff/:id')).toBe('getAdminStaffById');

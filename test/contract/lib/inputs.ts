@@ -22,6 +22,8 @@ export interface ManifestEndpoint {
   readonly path: string;
   readonly surface: string;
   readonly module: string | null;
+  /** The map marks the route with the anti-bot check (decision 034). */
+  readonly turnstile?: boolean;
 }
 
 /**

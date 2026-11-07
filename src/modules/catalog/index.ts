@@ -1,6 +1,6 @@
 // Public API of the catalog module: the module, the read-only directory of merchant groups (identity uses it), the effective
 // cost function (suppliers use it), the price resolver, the listed-price memory, the merchant catalog and the price guard
-// (orders, Dhru, REST v1 and the storefront use them), the price version and the service figure rules, then the admin routes
+// (orders, Dhru, REST v1 and the storefront use them), the storefront's service view and the TAC directory (feature 14a), the price version and the service figure rules, then the admin routes
 // module. Other modules import only this file.
 // Order matters: `CatalogModule` and the leaves other modules use come first, ahead of `CatalogAdminModule`, whose controllers
 // lead into identity (decision 032).
@@ -53,6 +53,8 @@ export {
   marginPercent,
 } from './domain/service-figures';
 export { INVENTORY_CODE_AAD, inventoryCodeHashInput, lastFour } from './domain/inventory-codes';
+export { StorefrontServices, TacDirectory } from './application/storefront-services';
+export type { SellableField, SellableService, ServiceName, TacRef } from './application/storefront-services';
 export { InventoryStock } from './application/inventory-stock';
 export type { StockClaim } from './application/inventory-stock';
 export { SERVICE_DUPLICATE_RULES, SERVICE_PRICE_MODES, SERVICE_TYPES } from './db/schema';

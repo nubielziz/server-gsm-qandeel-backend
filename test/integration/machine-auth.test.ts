@@ -19,6 +19,8 @@ import {
   UrlSecretVerifiers,
   WebhookVerifiers,
 } from '../../src/modules/identity';
+import { CheckoutModule } from '../../src/modules/customers';
+import { OrderTrackingModule } from '../../src/modules/orders';
 import { MaintenanceService } from '../../src/modules/platform';
 import { type TestApp, createTestApp } from '../support/app';
 import { insertMerchant } from '../support/auth';
@@ -38,6 +40,9 @@ import {
 } from '../support/machine-auth';
 import { freshClientIp } from '../support/pipeline-routes';
 
+/** The checkout and tracking modules register the real resolvers of their kinds; this file stands in its own for all four. */
+const REAL_RESOLVER_MODULES = [CheckoutModule, OrderTrackingModule];
+
 const DHRU_FAILED = { ERROR: [{ MESSAGE: 'Authentication Failed' }], apiversion: '6.1' };
 
 let t: TestApp;
@@ -55,7 +60,7 @@ const tokens: Record<'checkout' | 'tracking' | 'ticket' | 'link', string> = {
 beforeAll(async () => {
   ({ db } = await testDb());
   await resetDb();
-  t = await createTestApp({ controllers: [MachineTestController], clock });
+  t = await createTestApp({ controllers: [MachineTestController], clock, withoutModules: REAL_RESOLVER_MODULES });
   tokens.checkout = randomCapabilityToken(t);
   tokens.tracking = randomCapabilityToken(t);
   tokens.ticket = randomCapabilityToken(t);
@@ -167,7 +172,10 @@ describe('capability tokens', () => {
   });
 
   it('refuses every request on a kind nobody registered a resolver for (fails closed)', async () => {
-    const bare = await createTestApp({ controllers: [MachineTestController] });
+    const bare = await createTestApp({
+      controllers: [MachineTestController],
+      withoutModules: REAL_RESOLVER_MODULES,
+    });
     try {
       expect(bare.app.get(CapabilityTokenResolvers).has('checkout-token')).toBe(false);
       const res = await bare.app.inject({
@@ -188,7 +196,10 @@ describe('capability tokens', () => {
   });
 
   it('turns a failing resolver into a 5xx, never into a pass', async () => {
-    const own = await createTestApp({ controllers: [MachineTestController] });
+    const own = await createTestApp({
+      controllers: [MachineTestController],
+      withoutModules: REAL_RESOLVER_MODULES,
+    });
     try {
       own.app.get(CapabilityTokenResolvers).register({
         kind: 'tracking-token',

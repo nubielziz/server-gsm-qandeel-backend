@@ -210,6 +210,12 @@ export interface RouteSpec<
    * `/client`.
    */
   readonly csrf?: boolean;
+  /**
+   * `true` makes the route need a passing anti-bot token in the `X-Turnstile-Token` header (decision 034): a missing or bad
+   * one is `403 TURNSTILE_FAILED`. Only for `/store/v1` routes (the public storefront writes the map flags with Turnstile).
+   * It adds `TURNSTILE_FAILED` to the route's errors and the header to its OpenAPI parameters.
+   */
+  readonly turnstile?: boolean;
 }
 
 /**
@@ -260,6 +266,8 @@ export interface RouteContract<
   readonly audit: boolean;
   /** False when the route declared that it has no session to bind a CSRF token to (`csrf: false`). */
   readonly csrf: boolean;
+  /** True when the route needs a passing `X-Turnstile-Token` (decision 034); `TURNSTILE_FAILED` is then in `errors`. */
+  readonly turnstile: boolean;
 }
 
 /**
@@ -506,6 +514,12 @@ export function defineRoute<
     if (method === 'GET') problem('csrf: false only applies to routes that change data (a GET is never CSRF-checked)');
   }
 
+  if (spec.turnstile !== undefined && typeof spec.turnstile !== 'boolean') problem('turnstile must be true or false');
+  if (spec.turnstile === true && spec.surface !== 'store')
+    problem(
+      'turnstile: true only applies to /store/v1 routes (the anti-bot check guards the public storefront writes)',
+    );
+
   // Inputs.
   const declared = spec.params ? Object.keys(spec.params.shape) : [];
   if (paramNames.length > 0 && !spec.params) problem(`path parameters (${paramNames.join(', ')}) need a params schema`);
@@ -551,6 +565,11 @@ export function defineRoute<
       problem(`unknown error code "${String(code)}" (add it to the catalog and docs/contract/error-codes.md)`);
   }
   if (new Set(spec.errors).size !== spec.errors.length) problem('errors lists a code twice');
+  // A route behind the anti-bot check can always answer 403 TURNSTILE_FAILED (decision 034), so the contract says so.
+  const errors: readonly ErrorCode[] =
+    spec.turnstile === true && !spec.errors.includes('TURNSTILE_FAILED')
+      ? [...spec.errors, 'TURNSTILE_FAILED']
+      : spec.errors;
 
   // Examples must satisfy the schemas they document.
   const examples = spec.examples ?? {};
@@ -597,12 +616,13 @@ export function defineRoute<
       alsoStatuses: Object.freeze([...(spec.success.alsoStatuses ?? [])]),
       list,
     }),
-    errors: Object.freeze([...spec.errors]),
+    errors: Object.freeze([...errors]),
     examples: Object.freeze({ request: examples.request, response: examples.response }),
     sessionStages,
     pendingMerchant: spec.pendingMerchant ?? DEFAULT_PENDING_MERCHANT_POLICY,
     audit: spec.audit ?? true,
     csrf: spec.csrf ?? true,
+    turnstile: spec.turnstile ?? false,
   });
   contractRegistry.register(contract);
   return contract;

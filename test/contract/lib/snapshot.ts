@@ -19,6 +19,8 @@ export interface RouteSnapshot {
   readonly access: string;
   readonly permission: string | null;
   readonly errors: readonly string[];
+  /** True for a route behind the anti-bot check (decision 034). */
+  readonly turnstile?: boolean;
   readonly success: {
     readonly status: number;
     readonly alsoStatuses: readonly number[];

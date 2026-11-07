@@ -10,6 +10,7 @@ export {
   parseEncryptionKeys,
   parseEnv,
   parseTrustProxy,
+  parseTurnstileHostnames,
   summarizeConfig,
 } from './env';
 export type { AppConfig, ConfigIssue, LogLevel, NodeEnv, ReferenceDocsMode, TrustProxy } from './env';

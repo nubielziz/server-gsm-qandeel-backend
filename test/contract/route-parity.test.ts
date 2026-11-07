@@ -93,6 +93,23 @@ describe('the registry against the manifest', () => {
   });
 });
 
+describe('the anti-bot check (decision 034)', () => {
+  it('a built route has the turnstile flag the map gives it', () => {
+    const rows = new Map(manifest.map((endpoint) => [endpoint.key, endpoint]));
+    const wrong = snapshot.contracts.filter((contract) => {
+      const row = rows.get(contract.key);
+      return row !== undefined && (row.turnstile ?? false) !== (contract.turnstile ?? false);
+    });
+    expect(wrong.map((contract) => `${contract.key} (contract ${contract.turnstile ?? false})`)).toEqual([]);
+  });
+
+  it('a turnstile route can answer TURNSTILE_FAILED, and no other route lists it', () => {
+    for (const contract of snapshot.contracts) {
+      expect(contract.errors.includes('TURNSTILE_FAILED'), contract.key).toBe(contract.turnstile ?? false);
+    }
+  });
+});
+
 describe('the router against the registry', () => {
   it('the Dhru transport is the one contract that is no manifest route, and it is served', () => {
     expect(snapshot.contracts.map((contract) => contract.key)).toContain(DHRU_TRANSPORT);

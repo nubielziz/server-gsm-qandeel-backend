@@ -16,6 +16,8 @@ const SECRET_HEADERS = [
   'set-cookie',
   'x-csrf-token',
   'idempotency-key',
+  // The storefront's anti-bot token is single use but still a credential for five minutes (decision 034).
+  'x-turnstile-token',
   'Authorization',
   'Cookie',
 ] as const;
@@ -54,9 +56,9 @@ const BODY_HOLDERS = ['body', 'req.body', 'request.body', '*.body', '*.*.body'] 
 /**
  * Every pino redaction path: credential headers, secret fields and body-only secrets.
  *
- * Why: decision 012 lists `authorization`, `cookie`, `set-cookie`, `x-csrf-token`, `idempotency-key` and the body
- * fields `password`, `currentPassword`, `newPassword`, `token`, `code`, `secret`, `apiaccesskey`, `apiKey`,
- * `totpSecret`, `otpauthUrl` as never loggable.
+ * Why: decision 012 lists `authorization`, `cookie`, `set-cookie`, `x-csrf-token`, `idempotency-key` (plus decision 034's
+ * `x-turnstile-token`) and the body fields `password`, `currentPassword`, `newPassword`, `token`, `code`, `secret`,
+ * `apiaccesskey`, `apiKey`, `totpSecret`, `otpauthUrl` as never loggable.
  */
 export const REDACT_PATHS: readonly string[] = [
   ...HEADER_HOLDERS.flatMap((holder) => SECRET_HEADERS.map((header) => `${holder}["${header}"]`)),

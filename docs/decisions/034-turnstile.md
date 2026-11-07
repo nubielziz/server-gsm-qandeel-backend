@@ -38,3 +38,11 @@ is built once.
 **Consequences.** The three storefront features never handle tokens themselves: they set `turnstile: true` on their routes
 and their tests send `X-Turnstile-Token: XXXX.DUMMY.TOKEN.XXXX` (one helper in `test/support/`). A token is single use and
 valid five minutes, so a client that retries a refused write must get a new token from the widget.
+
+**Built (feature 14a, 2026-11-07).** `src/infra/turnstile` (README there): the guard is called by `AccessGuard` after
+authentication, CSRF and permission (an explicit call, not a second `APP_GUARD`, so the order is a line of code and not module
+registration order); `defineRoute` rejects `turnstile: true` outside `/store/v1`, appends `TURNSTILE_FAILED` to the route's errors
+and the OpenAPI header is `x-turnstile-token` (lower case like the other documented headers) with the extension `x-gsm-turnstile`;
+the route-parity test compares the flag with the manifest both ways. Counter: `turnstile_failures_total{reason}`. Routes flagged
+today: `POST /store/v1/imei/check` and `POST /store/v1/checkout-sessions`.
+

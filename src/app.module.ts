@@ -1,5 +1,5 @@
 // Root module of the API process (decision 016): config, the clock (decision 031), logging, metrics, the infrastructure (database, Redis, cache, rate
-// limits, crypto, storage, outbound HTTP, queue producers), the error filter, the request pipeline registry and the 12 domain
+// limits, crypto, storage, outbound HTTP, the anti-bot check, queue producers), the error filter, the request pipeline registry and the 12 domain
 // modules. The API only produces work (queue producers, outbox writes). Fastify hooks (IP rules, maintenance, per-IP limit)
 // register with the pipeline; sessions, guards and CSRF are added by their own feature.
 import { Module } from '@nestjs/common';
@@ -18,6 +18,7 @@ import { QueuesModule } from './infra/queues';
 import { PublicIpLimitModule, RateLimitModule } from './infra/rate-limit';
 import { RedisModule } from './infra/redis';
 import { StorageModule } from './infra/storage';
+import { TurnstileModule } from './infra/turnstile';
 import { CatalogAdminModule, CatalogModule, CatalogPricesModule } from './modules/catalog';
 import { CommissionsModule } from './modules/commissions';
 import { CustomersModule } from './modules/customers';
@@ -50,6 +51,7 @@ import { SupportModule } from './modules/support';
     CryptoModule,
     StorageModule,
     OutboundHttpModule,
+    TurnstileModule,
     QueuesModule,
     ErrorsModule,
     DhruModule,

@@ -8,11 +8,31 @@ Decisions common to all modules: 008 route contracts, 016 layout and boundaries,
 
 ## Status
 
-Not built yet: the module is an empty shell (`risk.module.ts`, `index.ts`). Its feature adds controllers, services, repositories and the owned tables.
+Built (feature 14a, storefront-checkout): `POST /store/v1/imei/check` (stage 14: checksum and TAC). The risk rules, the review
+queue, the blocklist, the data requests and the IMEI log are stage 18.
+
+- **The check** (`application/imei-check.service.ts`, `domain/imei-check.ts`): the typed IMEI loses spaces and dashes
+  (`normalizeImei` of the orders module) and must be 15 digits with a valid Luhn digit (`isValidImei`), else `422 INVALID_IMEI`
+  with `errors[{field: 'imei'}]` and nothing is stored. The first 8 digits are looked up in `tac_catalog` through the catalog's
+  `TacDirectory`; an unknown TAC is a valid check with `device: null`. Blacklist and lock status come with stage 18, so the status
+  is `unknown`, the type `basic` and `result` `{ stage: 'basic', checksum: 'valid', tac: 'known' | 'unknown' }`.
+- **Privacy** (decision 019): the IMEI is stored only as `imei_enc` (AES-GCM, context `imei_checks.imei_enc`) with `imei_hash` =
+  `TokenService.hash('imei:' + imei)` for the lookup; it is never in a log line, an error or a metric (a test checks the log).
+- **No reuse**: every check writes its own row (`cached_until` null, `cached: false`). Answering from another visitor's stored
+  result would tell a stranger that, and when, someone checked the same IMEI, and the basic check costs nothing to repeat.
+  `cached_until` is for the paid supplier check of stage 18.
+- **Source**: with `serviceId` (a service the shop sells: sellable for the retail group and listed, else `422` on `serviceId`) the check is `pre_order` for that service;
+  without it, `storefront_free`. `ip` is the trusted-proxy address; `country` is the country header of a trusted proxy when
+  `GEOIP_COUNTRY_HEADER` is configured (two letters, `XX` and `T1` ignored), else null (RESOLUTIONS b2c-3: a free check has no
+  checkout and no signed-in customer; once a check is linked to a checkout session the session's tax country is the first source).
+- **Anti-bot**: the route is `turnstile: true` (decision 034), so it needs `X-Turnstile-Token`; the per-IP limit of decision 021
+  applies to the whole store surface.
 
 ## Public API (`index.ts`)
 
-Exports `RiskModule` only. Add the services other modules may call here, and nothing else: other modules import only `src/modules/risk/index.ts` (lint rule `gsm/module-boundaries`).
+`imeiHashInput`, `IMEI_CHECK_AAD` (the retention job and the account erasure of stage 18 hash and
+decrypt the same way), `ImeiCheckModule`, `RiskModule`. Other modules import only `src/modules/risk/index.ts` (lint rule
+`gsm/module-boundaries`).
 
 ## Owned tables
 
@@ -74,7 +94,7 @@ Keep this list in step with the contracts (`permission` of each `defineRoute`).
 
 ## Events
 
-Outbox events produced (types, payload ids): none yet. Consumed: none yet. Record each outbox type and the queue it maps to here and in `docs/queues.md`.
+Outbox events produced (types, payload ids): none. Consumed: none yet. Record each outbox type and the queue it maps to here and in `docs/queues.md`.
 
 ## Jobs and schedules
 

@@ -63,11 +63,12 @@ describe('pino options', () => {
       'set-cookie': ['gsm_admin_session=abc; HttpOnly'],
       'x-csrf-token': 'csrf-value',
       'idempotency-key': 'idem-1',
+      'x-turnstile-token': 'turnstile-value',
       'user-agent': 'curl/8',
     };
     logger.info({ req: { headers }, res: { headers }, headers, request: { headers } }, 'headers');
     const text = JSON.stringify(lines[0]);
-    for (const secret of ['secret-token', 'gsm_admin_session', 'csrf-value', 'idem-1'])
+    for (const secret of ['secret-token', 'gsm_admin_session', 'csrf-value', 'idem-1', 'turnstile-value'])
       expect(text).not.toContain(secret);
     expect((lines[0]?.req as { headers: Record<string, string> }).headers['user-agent']).toBe('curl/8');
     expect((lines[0]?.req as { headers: Record<string, string> }).headers.authorization).toBe('[redacted]');

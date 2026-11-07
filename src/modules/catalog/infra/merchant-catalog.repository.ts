@@ -21,7 +21,7 @@ export const MAX_CATALOG_ROWS = 10_000;
  * @param groupId the merchant's group
  * @returns the SQL condition
  */
-function visibleTo(groupId: number) {
+export function visibleTo(groupId: number) {
   return and(
     isNull(services.archivedAt),
     eq(services.status, 'active'),

@@ -8,6 +8,7 @@ import { ListedPrices } from './application/listed-prices';
 import { InventoryStock } from './application/inventory-stock';
 import { MerchantCatalog } from './application/merchant-catalog';
 import { PriceResolver } from './application/price-resolver';
+import { StorefrontServices, TacDirectory } from './application/storefront-services';
 import { ServiceImporter } from './application/service-importer';
 
 /**
@@ -23,7 +24,25 @@ import { ServiceImporter } from './application/service-importer';
  */
 @Global()
 @Module({
-  providers: [ClientGroupDirectory, PriceResolver, ListedPrices, MerchantCatalog, ServiceImporter, InventoryStock],
-  exports: [ClientGroupDirectory, PriceResolver, ListedPrices, MerchantCatalog, ServiceImporter, InventoryStock],
+  providers: [
+    ClientGroupDirectory,
+    PriceResolver,
+    ListedPrices,
+    MerchantCatalog,
+    ServiceImporter,
+    InventoryStock,
+    StorefrontServices,
+    TacDirectory,
+  ],
+  exports: [
+    ClientGroupDirectory,
+    PriceResolver,
+    ListedPrices,
+    MerchantCatalog,
+    ServiceImporter,
+    InventoryStock,
+    StorefrontServices,
+    TacDirectory,
+  ],
 })
 export class CatalogModule {}

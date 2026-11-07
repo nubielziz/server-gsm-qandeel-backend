@@ -1,0 +1,137 @@
+// Drizzle queries of the public storefront (feature 14a): the page of listed service pages, one page by slug and the FAQs of a
+// service. Read only; the admin routes that create and edit listings arrive with feature 15.
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import type { ParsedListQuery } from '../../../common/contract';
+import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../infra/db';
+import { type HelpArticle, type ServiceListing, helpArticles, serviceListings } from '../db/schema';
+
+/** The sort fields of the public service list. */
+export type ListingSort = 'featured' | 'sort' | 'title';
+
+/** The wire fields the public list filters and searches, mapped to columns. */
+const COLUMNS: ListColumns = {
+  featured: serviceListings.isFeatured,
+  sort: serviceListings.sort,
+  title: serviceListings.publicTitle,
+  summary: serviceListings.summary,
+  brand: serviceListings.brand,
+  network: serviceListings.carrier,
+  country: serviceListings.country,
+  locale: serviceListings.locale,
+};
+
+/** The language a request without one reads. */
+export const DEFAULT_LOCALE = 'en';
+
+/**
+ * Lists one page of the listed service pages that can be sold.
+ *
+ * Why: the public list shows a listing only when it is switched on (`is_listed`) and its service is one the catalog says the
+ * storefront may sell and has priced (`serviceIds`), so the total is exact. The language defaults to English; `brand`,
+ * `network` and `country` match case-insensitively.
+ *
+ * @param db the database or a transaction
+ * @param serviceIds the sellable and priced service ids (catalog)
+ * @param query the parsed list request (filters, search, sort, range)
+ * @returns the page of listings and the exact total
+ */
+export async function pageListings(
+  db: DbExecutor,
+  serviceIds: readonly number[],
+  query: ParsedListQuery<ListingSort, unknown>,
+): Promise<{ rows: ServiceListing[]; total: number }> {
+  if (serviceIds.length === 0) return { rows: [], total: 0 };
+  const hasLocale = query.filters.some((filter) => filter.field === 'locale');
+  // brand, network and country compare case-insensitively: staff type them by hand.
+  const filters = query.filters.map((filter) =>
+    ['brand', 'network', 'country'].includes(filter.field) && filter.op === 'eq'
+      ? { ...filter, values: filter.values.map((value) => String(value).toLowerCase()) }
+      : filter,
+  );
+  const lowered: ListColumns = {
+    ...COLUMNS,
+    brand: sql`lower(${serviceListings.brand})`,
+    network: sql`lower(${serviceListings.carrier})`,
+    country: sql`lower(${serviceListings.country})`,
+  };
+  const where = listWhere(
+    { filters, search: query.search },
+    lowered,
+    eq(serviceListings.isListed, true),
+    hasLocale ? undefined : eq(serviceListings.locale, DEFAULT_LOCALE),
+    inArray(serviceListings.serviceId, [...serviceIds]),
+  );
+  const [rows, [count]] = await Promise.all([
+    db
+      .select()
+      .from(serviceListings)
+      .where(where)
+      .orderBy(...listOrderBy(query.sort, COLUMNS, serviceListings.id))
+      .limit(query.range.limit)
+      .offset(query.range.start),
+    db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(serviceListings)
+      .where(where),
+  ]);
+  return { rows, total: count?.total ?? 0 };
+}
+
+/**
+ * Finds which of some services have a switched-on service page in any language.
+ *
+ * Why: catalog-3 and the checkout rule of feature 14a: a service is public only when staff switched a `service_listings` row
+ * on for it, so the list, the page and the checkout (and the pre-order IMEI check) all ask this one question. A service whose
+ * only switched-on page is in another language than the buyer's is still one the shop sells.
+ *
+ * @param db the database or a transaction
+ * @param serviceIds the services to check
+ * @returns the ids that have at least one listing with `is_listed = true`
+ */
+export async function listedServiceIds(db: DbExecutor, serviceIds: readonly number[]): Promise<Set<number>> {
+  if (serviceIds.length === 0) return new Set();
+  const rows = await db
+    .selectDistinct({ serviceId: serviceListings.serviceId })
+    .from(serviceListings)
+    .where(and(eq(serviceListings.isListed, true), inArray(serviceListings.serviceId, [...serviceIds])));
+  return new Set(rows.map((row) => row.serviceId));
+}
+
+/**
+ * Finds a listed service page by its slug in a language.
+ *
+ * @param db the database or a transaction
+ * @param locale the language
+ * @param slug the slug
+ * @returns the listing, or `undefined` when it does not exist or is not switched on
+ */
+export async function findListedBySlug(
+  db: DbExecutor,
+  locale: string,
+  slug: string,
+): Promise<ServiceListing | undefined> {
+  const [row] = await db
+    .select()
+    .from(serviceListings)
+    .where(and(eq(serviceListings.locale, locale), eq(serviceListings.slug, slug), eq(serviceListings.isListed, true)))
+    .limit(1);
+  return row;
+}
+
+/**
+ * Reads the published FAQs linked to a service in a language.
+ *
+ * @param db the database or a transaction
+ * @param serviceId the service
+ * @param locale the language
+ * @returns the articles by `sort`, then id
+ */
+export async function findServiceFaqs(db: DbExecutor, serviceId: number, locale: string): Promise<HelpArticle[]> {
+  return db
+    .select()
+    .from(helpArticles)
+    .where(
+      and(eq(helpArticles.serviceId, serviceId), eq(helpArticles.locale, locale), eq(helpArticles.isPublished, true)),
+    )
+    .orderBy(asc(helpArticles.sort), asc(helpArticles.id));
+}

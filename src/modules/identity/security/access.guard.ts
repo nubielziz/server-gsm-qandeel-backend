@@ -1,10 +1,12 @@
 // The guard dispatcher (decision 018): one global guard that reads the route's contract and runs, in the pipeline order of
-// decision 018, authentication by access kind, then the CSRF guard, then the permission guard.
+// decision 018, authentication by access kind, then the CSRF guard, then the permission guard, then (storefront writes only) the
+// anti-bot check of decision 034.
 import { type CanActivate, type ExecutionContext, Injectable, Logger } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { getContract } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { setRequestActor } from '../../../common/request-context';
+import { TurnstileGuard } from '../../../infra/turnstile';
 import { DOCUMENTATION_ROUTES } from '../../platform';
 import { AccessHandlers } from './access-handlers';
 import { actorOf, setAccessState } from './access-state';
@@ -17,7 +19,8 @@ import { PermissionGuard } from './permission.guard';
  * Why: security must not depend on each controller remembering a decorator. The contract of a route says how it
  * authenticates (`access`), which sign-in stages it accepts (`sessionStages`), whether it needs a permission and what its
  * CSRF protection is; this guard enforces all of it for every route, in the order of decision 018: authentication (with the
- * account state), CSRF, permission; validation, the handler and the audit follow in the route's own pipes and interceptors.
+ * account state), CSRF, permission, then the anti-bot check of a `turnstile` route (decision 034, last so that a refused
+ * caller never costs an outbound call); validation, the handler and the audit follow in the route's own pipes and interceptors.
  *
  * A route without a contract is refused (fail closed); the documentation routes (`DOCUMENTATION_ROUTES`) are the exception and
  * keep their own guard, which applies `REFERENCE_DOCS`.
@@ -32,6 +35,7 @@ export class AccessGuard implements CanActivate {
     private readonly handlers: AccessHandlers,
     private readonly csrf: CsrfGuard,
     private readonly permissions: PermissionGuard,
+    private readonly turnstile: TurnstileGuard,
   ) {}
 
   /**
@@ -42,7 +46,8 @@ export class AccessGuard implements CanActivate {
    * @throws {AppError} the refusal: `UNAUTHORIZED` (401), `ACCOUNT_SUSPENDED` (403), `IP_NOT_ALLOWED` (403, an API key's own
    *   address list), `CSRF_FAILED` (403), `FORBIDDEN` (403); `RATE_LIMITED` (429, an API key's limit); `NOT_FOUND` (404) and
    *   `TOKEN_INVALID` (410) for a capability token that opens nothing; `WEBHOOK_SIGNATURE_INVALID` (400);
-   *   `INTERNAL_ERROR` (500) for a route that has no contract
+   *   `TURNSTILE_FAILED` (403) for a storefront write whose anti-bot token is missing or bad; `INTERNAL_ERROR` (500) for a
+   *   route that has no contract
    */
   async canActivate(context: ExecutionContext): Promise<boolean> {
     if (context.getType() !== 'http') return true;
@@ -64,6 +69,7 @@ export class AccessGuard implements CanActivate {
 
     this.csrf.canActivate(context);
     this.permissions.canActivate(context);
+    await this.turnstile.canActivate(context);
     return true;
   }
 }

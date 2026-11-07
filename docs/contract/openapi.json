@@ -55,6 +55,12 @@
       "name": "merchant-account"
     },
     {
+      "name": "checkout"
+    },
+    {
+      "name": "storefront"
+    },
+    {
       "name": "admin: api-keys"
     },
     {
@@ -161,6 +167,13 @@
         "client: finance",
         "client: webhooks",
         "merchant-account"
+      ]
+    },
+    {
+      "name": "Storefront (B2C)",
+      "tags": [
+        "checkout",
+        "storefront"
       ]
     },
     {
@@ -115887,6 +115900,3831 @@
         "x-gsm-access": "public",
         "x-gsm-key": "GET /openapi.json",
         "x-gsm-surface": "system"
+      }
+    },
+    "/store/v1/checkout-sessions": {
+      "post": {
+        "description": "Starts a purchase as a guest: the email makes (or finds) a guest customer, and the session locks the retail price, the tax rate of the buyer's `country` and the exchange rate of `currency` for 30 minutes. An IMEI service needs a valid `imei` (else `422 INVALID_IMEI`); a service with order fields needs their `inputs`. A suspended or blocked customer is refused (`403 ACCOUNT_SUSPENDED`); when the shop requires an account (`guestCheckout` off) the answer is `401 UNAUTHORIZED`. A service the shop cannot sell is `422` on `serviceId`. The answer carries the session token: the whole credential of the next two routes. Paying comes later. Needs the anti-bot token (`X-Turnstile-Token`). The answer holds the token, so it is never cached.",
+        "operationId": "postStoreV1CheckoutSessions",
+        "parameters": [
+          {
+            "name": "x-turnstile-token",
+            "in": "header",
+            "description": "The Cloudflare Turnstile widget's token (its `cf-turnstile-response` value). A missing or failed check answers `403 TURNSTILE_FAILED`; a token is single use and valid for five minutes, so a retried write needs a new one.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "serviceId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "x-gsm-alias": "Id",
+                    "description": "The service page the buyer is on (`id` of `GET /store/v1/services`).",
+                    "examples": [
+                      42
+                    ]
+                  },
+                  "email": {
+                    "description": "Where the receipt and the tracking link go; with no account the email is the identity of a guest customer.",
+                    "type": "string",
+                    "maxLength": 254
+                  },
+                  "country": {
+                    "description": "The buyer's country: the tax of its window is locked on the session.",
+                    "type": "string",
+                    "pattern": "^[A-Za-z]{2}$"
+                  },
+                  "region": {
+                    "description": "The buyer's region, for the countries that tax by region.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
+                  "currency": {
+                    "description": "The currency to pay in (one `GET /store/v1/config` lists). Default: USD.",
+                    "type": "string",
+                    "pattern": "^[A-Za-z]{3}$"
+                  },
+                  "quantity": {
+                    "description": "Defaults to the service's minimum.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100000
+                  },
+                  "imei": {
+                    "description": "The 15-digit IMEI of an IMEI service (required there).",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "inputs": {
+                    "description": "The values of the service's order fields by field key (`GET /store/v1/services/:slug`).",
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 60
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "maxLength": 500
+                    }
+                  },
+                  "utm": {
+                    "type": "object",
+                    "properties": {
+                      "source": {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      "medium": {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      "campaign": {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      "term": {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      "content": {
+                        "type": "string",
+                        "maxLength": 100
+                      }
+                    },
+                    "description": "Where the buyer came from (the abandoned-checkouts report reads `source`)."
+                  }
+                },
+                "required": [
+                  "serviceId",
+                  "email",
+                  "country"
+                ]
+              },
+              "examples": {
+                "example": {
+                  "value": {
+                    "serviceId": 1,
+                    "email": "sam@mail.example",
+                    "country": "GB",
+                    "currency": "GBP",
+                    "imei": "353890110000004"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": {
+                      "type": "string",
+                      "description": "The capability token of this checkout: the whole credential of its routes."
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "paid",
+                        "expired"
+                      ],
+                      "description": "`open` until paid; `expired` once `expiresAt` has passed unpaid."
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "x-gsm-alias": "IsoDateTime",
+                      "description": "ISO 8601 UTC time with milliseconds.",
+                      "examples": [
+                        "2026-03-01T09:30:00.000Z"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "x-gsm-alias": "IsoDateTime",
+                      "description": "ISO 8601 UTC time with milliseconds.",
+                      "examples": [
+                        "2026-03-01T09:30:00.000Z"
+                      ]
+                    },
+                    "service": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "x-gsm-alias": "Id",
+                          "description": "Numeric record id.",
+                          "examples": [
+                            42
+                          ]
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "imei",
+                            "server",
+                            "remote",
+                            "file"
+                          ]
+                        },
+                        "deliveryTime": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "type",
+                        "deliveryTime"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "quantity": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "imei": {
+                      "description": "The IMEI with all but its last four digits hidden; null for a service that takes none.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "email": {
+                      "type": "string",
+                      "description": "The buyer's address with most of it hidden."
+                    },
+                    "country": {
+                      "description": "The country the tax was locked for.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "currency": {
+                      "type": "string",
+                      "description": "The currency the buyer pays in."
+                    },
+                    "fxRate": {
+                      "type": "string",
+                      "maxLength": 40,
+                      "pattern": "^-?\\d+(\\.\\d+)?$",
+                      "x-gsm-alias": "Decimal",
+                      "description": "Units of the currency per 1 USD, locked on the session (8 decimals).",
+                      "examples": [
+                        "19.0000"
+                      ]
+                    },
+                    "taxRate": {
+                      "type": "string",
+                      "maxLength": 40,
+                      "pattern": "^-?\\d+(\\.\\d+)?$",
+                      "x-gsm-alias": "Decimal",
+                      "description": "The locked tax rate in percent.",
+                      "examples": [
+                        "19.0000"
+                      ]
+                    },
+                    "amounts": {
+                      "type": "object",
+                      "properties": {
+                        "usd": {
+                          "type": "object",
+                          "properties": {
+                            "net": {
+                              "type": "string",
+                              "pattern": "^-?\\d+\\.\\d{4}$",
+                              "x-gsm-alias": "Money",
+                              "description": "Decimal string with exactly 4 fraction digits.",
+                              "examples": [
+                                "12.4900"
+                              ]
+                            },
+                            "tax": {
+                              "type": "string",
+                              "pattern": "^-?\\d+\\.\\d{4}$",
+                              "x-gsm-alias": "Money",
+                              "description": "Decimal string with exactly 4 fraction digits.",
+                              "examples": [
+                                "12.4900"
+                              ]
+                            },
+                            "gross": {
+                              "type": "string",
+                              "pattern": "^-?\\d+\\.\\d{4}$",
+                              "x-gsm-alias": "Money",
+                              "description": "`net` plus `tax`.",
+                              "examples": [
+                                "12.4900"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "net",
+                            "tax",
+                            "gross"
+                          ],
+                          "additionalProperties": false,
+                          "description": "What the session stores, in USD."
+                        },
+                        "display": {
+                          "type": "object",
+                          "properties": {
+                            "net": {
+                              "type": "string",
+                              "pattern": "^-?\\d+\\.\\d{4}$",
+                              "x-gsm-alias": "Money",
+                              "description": "Decimal string with exactly 4 fraction digits.",
+                              "examples": [
+                                "12.4900"
+                              ]
+                            },
+                            "tax": {
+                              "type": "string",
+                              "pattern": "^-?\\d+\\.\\d{4}$",
+                              "x-gsm-alias": "Money",
+                              "description": "Decimal string with exactly 4 fraction digits.",
+                              "examples": [
+                                "12.4900"
+                              ]
+                            },
+                            "gross": {
+                              "type": "string",
+                              "pattern": "^-?\\d+\\.\\d{4}$",
+                              "x-gsm-alias": "Money",
+                              "description": "`net` plus `tax`.",
+                              "examples": [
+                                "12.4900"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "net",
+                            "tax",
+                            "gross"
+                          ],
+                          "additionalProperties": false,
+                          "description": "The same in the buyer's currency: the gross is what is charged."
+                        }
+                      },
+                      "required": [
+                        "usd",
+                        "display"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "consent": {
+                      "type": "object",
+                      "properties": {
+                        "required": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "terms",
+                              "privacy",
+                              "refund_policy",
+                              "withdrawal_waiver",
+                              "marketing"
+                            ]
+                          },
+                          "description": "What must be granted before payment."
+                        },
+                        "granted": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "terms",
+                              "privacy",
+                              "refund_policy",
+                              "withdrawal_waiver",
+                              "marketing"
+                            ]
+                          },
+                          "description": "What is granted now (the latest record of each purpose)."
+                        },
+                        "complete": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "required",
+                        "granted",
+                        "complete"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "paymentMethods": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "supports3ds": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "name",
+                          "supports3ds"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "token",
+                    "status",
+                    "expiresAt",
+                    "createdAt",
+                    "service",
+                    "quantity",
+                    "imei",
+                    "email",
+                    "country",
+                    "currency",
+                    "fxRate",
+                    "taxRate",
+                    "amounts",
+                    "consent",
+                    "paymentMethods"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "token": "Zk3b0jY8mQe1xVn7hT2cLw",
+                  "status": "open",
+                  "expiresAt": "2026-11-07T12:30:00.000Z",
+                  "createdAt": "2026-11-07T12:00:00.000Z",
+                  "service": {
+                    "id": 1,
+                    "name": "iCloud Clean / Lost Check",
+                    "type": "imei",
+                    "deliveryTime": "2 minutes"
+                  },
+                  "quantity": 1,
+                  "imei": "•••••••••••0004",
+                  "email": "sa•••@mail.example",
+                  "country": "GB",
+                  "currency": "GBP",
+                  "fxRate": "0.80185000",
+                  "taxRate": "20.0000",
+                  "amounts": {
+                    "usd": {
+                      "net": "3.9900",
+                      "tax": "0.8000",
+                      "gross": "4.7900"
+                    },
+                    "display": {
+                      "net": "3.2000",
+                      "tax": "0.6400",
+                      "gross": "3.8400"
+                    }
+                  },
+                  "consent": {
+                    "required": [
+                      "terms",
+                      "privacy",
+                      "withdrawal_waiver"
+                    ],
+                    "granted": [],
+                    "complete": false
+                  },
+                  "paymentMethods": [
+                    {
+                      "code": "card",
+                      "name": "Card gateway",
+                      "supports3ds": true
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "ACCOUNT_SUSPENDED: This account is suspended.\nTURNSTILE_FAILED: The anti-bot check failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "ACCOUNT_SUSPENDED",
+                        "TURNSTILE_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "ACCOUNT_SUSPENDED": {
+                    "summary": "This account is suspended.",
+                    "value": {
+                      "type": "https://errors.gsm.example/account-suspended",
+                      "title": "This account is suspended.",
+                      "status": 403,
+                      "code": "ACCOUNT_SUSPENDED",
+                      "detail": "This account is suspended.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "TURNSTILE_FAILED": {
+                    "summary": "The anti-bot check failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/turnstile-failed",
+                      "title": "The anti-bot check failed.",
+                      "status": 403,
+                      "code": "TURNSTILE_FAILED",
+                      "detail": "The anti-bot check failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.\nINVALID_IMEI: This IMEI is not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED",
+                        "INVALID_IMEI"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "INVALID_IMEI": {
+                    "summary": "This IMEI is not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/invalid-imei",
+                      "title": "This IMEI is not valid.",
+                      "status": 422,
+                      "code": "INVALID_IMEI",
+                      "detail": "This IMEI is not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Open a checkout",
+        "tags": [
+          "checkout"
+        ],
+        "x-gsm-access": "public",
+        "x-gsm-key": "POST /store/v1/checkout-sessions",
+        "x-gsm-surface": "store",
+        "x-gsm-turnstile": true
+      }
+    },
+    "/store/v1/checkout-sessions/{token}": {
+      "get": {
+        "description": "The session by its token: status (an unpaid session past its expiry reads `expired`), the locked amounts in USD and in the buyer's currency, where the consents stand and the payment methods on offer. The IMEI and the email are masked. An unknown, malformed or wrong token is `404`. Never cached.",
+        "operationId": "getStoreV1CheckoutSessionsByToken",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "description": "The checkout token.",
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128,
+              "description": "The checkout token."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": {
+                      "type": "string",
+                      "description": "The capability token of this checkout: the whole credential of its routes."
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "paid",
+                        "expired"
+                      ],
+                      "description": "`open` until paid; `expired` once `expiresAt` has passed unpaid."
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "x-gsm-alias": "IsoDateTime",
+                      "description": "ISO 8601 UTC time with milliseconds.",
+                      "examples": [
+                        "2026-03-01T09:30:00.000Z"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "x-gsm-alias": "IsoDateTime",
+                      "description": "ISO 8601 UTC time with milliseconds.",
+                      "examples": [
+                        "2026-03-01T09:30:00.000Z"
+                      ]
+                    },
+                    "service": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "x-gsm-alias": "Id",
+                          "description": "Numeric record id.",
+                          "examples": [
+                            42
+                          ]
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "imei",
+                            "server",
+                            "remote",
+                            "file"
+                          ]
+                        },
+                        "deliveryTime": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "type",
+                        "deliveryTime"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "quantity": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "imei": {
+                      "description": "The IMEI with all but its last four digits hidden; null for a service that takes none.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "email": {
+                      "type": "string",
+                      "description": "The buyer's address with most of it hidden."
+                    },
+                    "country": {
+                      "description": "The country the tax was locked for.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "currency": {
+                      "type": "string",
+                      "description": "The currency the buyer pays in."
+                    },
+                    "fxRate": {
+                      "type": "string",
+                      "maxLength": 40,
+                      "pattern": "^-?\\d+(\\.\\d+)?$",
+                      "x-gsm-alias": "Decimal",
+                      "description": "Units of the currency per 1 USD, locked on the session (8 decimals).",
+                      "examples": [
+                        "19.0000"
+                      ]
+                    },
+                    "taxRate": {
+                      "type": "string",
+                      "maxLength": 40,
+                      "pattern": "^-?\\d+(\\.\\d+)?$",
+                      "x-gsm-alias": "Decimal",
+                      "description": "The locked tax rate in percent.",
+                      "examples": [
+                        "19.0000"
+                      ]
+                    },
+                    "amounts": {
+                      "type": "object",
+                      "properties": {
+                        "usd": {
+                          "type": "object",
+                          "properties": {
+                            "net": {
+                              "type": "string",
+                              "pattern": "^-?\\d+\\.\\d{4}$",
+                              "x-gsm-alias": "Money",
+                              "description": "Decimal string with exactly 4 fraction digits.",
+                              "examples": [
+                                "12.4900"
+                              ]
+                            },
+                            "tax": {
+                              "type": "string",
+                              "pattern": "^-?\\d+\\.\\d{4}$",
+                              "x-gsm-alias": "Money",
+                              "description": "Decimal string with exactly 4 fraction digits.",
+                              "examples": [
+                                "12.4900"
+                              ]
+                            },
+                            "gross": {
+                              "type": "string",
+                              "pattern": "^-?\\d+\\.\\d{4}$",
+                              "x-gsm-alias": "Money",
+                              "description": "`net` plus `tax`.",
+                              "examples": [
+                                "12.4900"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "net",
+                            "tax",
+                            "gross"
+                          ],
+                          "additionalProperties": false,
+                          "description": "What the session stores, in USD."
+                        },
+                        "display": {
+                          "type": "object",
+                          "properties": {
+                            "net": {
+                              "type": "string",
+                              "pattern": "^-?\\d+\\.\\d{4}$",
+                              "x-gsm-alias": "Money",
+                              "description": "Decimal string with exactly 4 fraction digits.",
+                              "examples": [
+                                "12.4900"
+                              ]
+                            },
+                            "tax": {
+                              "type": "string",
+                              "pattern": "^-?\\d+\\.\\d{4}$",
+                              "x-gsm-alias": "Money",
+                              "description": "Decimal string with exactly 4 fraction digits.",
+                              "examples": [
+                                "12.4900"
+                              ]
+                            },
+                            "gross": {
+                              "type": "string",
+                              "pattern": "^-?\\d+\\.\\d{4}$",
+                              "x-gsm-alias": "Money",
+                              "description": "`net` plus `tax`.",
+                              "examples": [
+                                "12.4900"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "net",
+                            "tax",
+                            "gross"
+                          ],
+                          "additionalProperties": false,
+                          "description": "The same in the buyer's currency: the gross is what is charged."
+                        }
+                      },
+                      "required": [
+                        "usd",
+                        "display"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "consent": {
+                      "type": "object",
+                      "properties": {
+                        "required": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "terms",
+                              "privacy",
+                              "refund_policy",
+                              "withdrawal_waiver",
+                              "marketing"
+                            ]
+                          },
+                          "description": "What must be granted before payment."
+                        },
+                        "granted": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "terms",
+                              "privacy",
+                              "refund_policy",
+                              "withdrawal_waiver",
+                              "marketing"
+                            ]
+                          },
+                          "description": "What is granted now (the latest record of each purpose)."
+                        },
+                        "complete": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "required",
+                        "granted",
+                        "complete"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "paymentMethods": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "supports3ds": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "name",
+                          "supports3ds"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "token",
+                    "status",
+                    "expiresAt",
+                    "createdAt",
+                    "service",
+                    "quantity",
+                    "imei",
+                    "email",
+                    "country",
+                    "currency",
+                    "fxRate",
+                    "taxRate",
+                    "amounts",
+                    "consent",
+                    "paymentMethods"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "token": "Zk3b0jY8mQe1xVn7hT2cLw",
+                  "status": "open",
+                  "expiresAt": "2026-11-07T12:30:00.000Z",
+                  "createdAt": "2026-11-07T12:00:00.000Z",
+                  "service": {
+                    "id": 1,
+                    "name": "iCloud Clean / Lost Check",
+                    "type": "imei",
+                    "deliveryTime": "2 minutes"
+                  },
+                  "quantity": 1,
+                  "imei": "•••••••••••0004",
+                  "email": "sa•••@mail.example",
+                  "country": "GB",
+                  "currency": "GBP",
+                  "fxRate": "0.80185000",
+                  "taxRate": "20.0000",
+                  "amounts": {
+                    "usd": {
+                      "net": "3.9900",
+                      "tax": "0.8000",
+                      "gross": "4.7900"
+                    },
+                    "display": {
+                      "net": "3.2000",
+                      "tax": "0.6400",
+                      "gross": "3.8400"
+                    }
+                  },
+                  "consent": {
+                    "required": [
+                      "terms",
+                      "privacy",
+                      "withdrawal_waiver"
+                    ],
+                    "granted": [],
+                    "complete": false
+                  },
+                  "paymentMethods": [
+                    {
+                      "code": "card",
+                      "name": "Card gateway",
+                      "supports3ds": true
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: The requested item was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 404
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_FOUND"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "NOT_FOUND": {
+                    "summary": "The requested item was not found.",
+                    "value": {
+                      "type": "https://errors.gsm.example/not-found",
+                      "title": "The requested item was not found.",
+                      "status": 404,
+                      "code": "NOT_FOUND",
+                      "detail": "The requested item was not found.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "capabilityToken": []
+          }
+        ],
+        "summary": "Show a checkout",
+        "tags": [
+          "checkout"
+        ],
+        "x-gsm-access": "checkout-token",
+        "x-gsm-key": "GET /store/v1/checkout-sessions/:token",
+        "x-gsm-surface": "store"
+      }
+    },
+    "/store/v1/checkout-sessions/{token}/consents": {
+      "post": {
+        "description": "Writes proof of what the buyer agreed to: for each purpose (`terms`, `privacy`, `refund_policy`, `withdrawal_waiver`, `marketing`) one record with the version of the current legal document (`terms`, `privacy` and `refund_policy` have one; the waiver and marketing do not), the time and the buyer's IP. A repeat of the latest record changes nothing. When the checkout's email belongs to an account, `marketing` is not recorded and is left out of `records`: only the account's own page changes it. `422` when a purpose has no published document or a purpose is listed twice; `409 INVALID_TRANSITION` when the session is paid or expired. The answer says whether the session now has every required consent. The token in the path is the credential.",
+        "operationId": "postStoreV1CheckoutSessionsByTokenConsents",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "description": "The checkout token.",
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128,
+              "description": "The checkout token."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "consents": {
+                    "minItems": 1,
+                    "maxItems": 5,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "purpose": {
+                          "type": "string",
+                          "enum": [
+                            "terms",
+                            "privacy",
+                            "refund_policy",
+                            "withdrawal_waiver",
+                            "marketing"
+                          ]
+                        },
+                        "granted": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "purpose",
+                        "granted"
+                      ]
+                    },
+                    "description": "One entry per purpose. `granted: false` records a refusal or a withdrawal (a new row, nothing is overwritten)."
+                  },
+                  "locale": {
+                    "description": "The language of the texts the buyer saw (default `en`).",
+                    "type": "string",
+                    "enum": [
+                      "en",
+                      "ar"
+                    ]
+                  }
+                },
+                "required": [
+                  "consents"
+                ]
+              },
+              "examples": {
+                "example": {
+                  "value": {
+                    "consents": [
+                      {
+                        "purpose": "terms",
+                        "granted": true
+                      },
+                      {
+                        "purpose": "privacy",
+                        "granted": true
+                      },
+                      {
+                        "purpose": "withdrawal_waiver",
+                        "granted": true
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "records": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "purpose": {
+                            "type": "string",
+                            "enum": [
+                              "terms",
+                              "privacy",
+                              "refund_policy",
+                              "withdrawal_waiver",
+                              "marketing"
+                            ]
+                          },
+                          "granted": {
+                            "type": "boolean"
+                          },
+                          "document": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string"
+                                  },
+                                  "version": {
+                                    "type": "string"
+                                  },
+                                  "locale": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "version",
+                                  "locale"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "recordedAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "x-gsm-alias": "IsoDateTime",
+                            "description": "ISO 8601 UTC time with milliseconds.",
+                            "examples": [
+                              "2026-03-01T09:30:00.000Z"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "purpose",
+                          "granted",
+                          "document",
+                          "recordedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "consent": {
+                      "type": "object",
+                      "properties": {
+                        "required": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "terms",
+                              "privacy",
+                              "refund_policy",
+                              "withdrawal_waiver",
+                              "marketing"
+                            ]
+                          },
+                          "description": "What must be granted before payment."
+                        },
+                        "granted": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "terms",
+                              "privacy",
+                              "refund_policy",
+                              "withdrawal_waiver",
+                              "marketing"
+                            ]
+                          },
+                          "description": "What is granted now (the latest record of each purpose)."
+                        },
+                        "complete": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "required",
+                        "granted",
+                        "complete"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "records",
+                    "consent"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "records": [
+                    {
+                      "purpose": "terms",
+                      "granted": true,
+                      "document": {
+                        "type": "terms",
+                        "version": "3.2",
+                        "locale": "en"
+                      },
+                      "recordedAt": "2026-11-07T12:01:00.000Z"
+                    },
+                    {
+                      "purpose": "privacy",
+                      "granted": true,
+                      "document": {
+                        "type": "privacy",
+                        "version": "2.1",
+                        "locale": "en"
+                      },
+                      "recordedAt": "2026-11-07T12:01:00.000Z"
+                    },
+                    {
+                      "purpose": "withdrawal_waiver",
+                      "granted": true,
+                      "document": null,
+                      "recordedAt": "2026-11-07T12:01:00.000Z"
+                    }
+                  ],
+                  "consent": {
+                    "required": [
+                      "terms",
+                      "privacy",
+                      "withdrawal_waiver"
+                    ],
+                    "granted": [
+                      "terms",
+                      "privacy",
+                      "withdrawal_waiver"
+                    ],
+                    "complete": true
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: The requested item was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 404
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_FOUND"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "NOT_FOUND": {
+                    "summary": "The requested item was not found.",
+                    "value": {
+                      "type": "https://errors.gsm.example/not-found",
+                      "title": "The requested item was not found.",
+                      "status": 404,
+                      "code": "NOT_FOUND",
+                      "detail": "The requested item was not found.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "INVALID_TRANSITION: This status change is not allowed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 409
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "INVALID_TRANSITION"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "INVALID_TRANSITION": {
+                    "summary": "This status change is not allowed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/invalid-transition",
+                      "title": "This status change is not allowed.",
+                      "status": 409,
+                      "code": "INVALID_TRANSITION",
+                      "detail": "This status change is not allowed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "capabilityToken": []
+          }
+        ],
+        "summary": "Record the consents of a checkout",
+        "tags": [
+          "checkout"
+        ],
+        "x-gsm-access": "checkout-token",
+        "x-gsm-key": "POST /store/v1/checkout-sessions/:token/consents",
+        "x-gsm-surface": "store"
+      }
+    },
+    "/store/v1/config": {
+      "get": {
+        "description": "What the storefront needs to start: the currencies on offer with their exchange rate (the markup included), the tax windows in force today (a country without one has no tax), the payment methods that are on, the policy switches (`guestCheckout`, `withdrawalWaiver`, `imeiPrecheck`) and the current version of each legal document. Public; answers may be cached by the browser for 30 seconds.",
+        "operationId": "getStoreV1Config",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "baseCurrency": {
+                      "type": "string"
+                    },
+                    "currencies": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "decimals": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 4
+                          },
+                          "fxRate": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^-?\\d+(\\.\\d+)?$",
+                            "x-gsm-alias": "Decimal",
+                            "description": "Units per 1 USD with the markup, 8 decimals.",
+                            "examples": [
+                              "19.0000"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "name",
+                          "decimals",
+                          "fxRate"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "taxRates": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "country": {
+                            "type": "string"
+                          },
+                          "region": {
+                            "type": "string",
+                            "description": "Empty for the whole country."
+                          },
+                          "ratePercent": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^-?\\d+(\\.\\d+)?$",
+                            "x-gsm-alias": "Decimal",
+                            "description": "Exact decimal number as a string.",
+                            "examples": [
+                              "19.0000"
+                            ]
+                          },
+                          "taxType": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "country",
+                          "region",
+                          "ratePercent",
+                          "taxType",
+                          "label"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "paymentMethods": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "supports3ds": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "name",
+                          "supports3ds"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "policies": {
+                      "type": "object",
+                      "properties": {
+                        "guestCheckout": {
+                          "type": "boolean"
+                        },
+                        "withdrawalWaiver": {
+                          "type": "boolean"
+                        },
+                        "imeiPrecheck": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "guestCheckout",
+                        "withdrawalWaiver",
+                        "imeiPrecheck"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "legalDocuments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "terms",
+                              "privacy",
+                              "refund",
+                              "cookies"
+                            ]
+                          },
+                          "version": {
+                            "type": "string"
+                          },
+                          "locale": {
+                            "type": "string"
+                          },
+                          "effectiveFrom": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time",
+                                "x-gsm-alias": "IsoDateTime",
+                                "description": "ISO 8601 UTC time with milliseconds.",
+                                "examples": [
+                                  "2026-03-01T09:30:00.000Z"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "version",
+                          "locale",
+                          "effectiveFrom"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "baseCurrency",
+                    "currencies",
+                    "taxRates",
+                    "paymentMethods",
+                    "policies",
+                    "legalDocuments"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "baseCurrency": "USD",
+                  "currencies": [
+                    {
+                      "code": "USD",
+                      "name": "US dollar",
+                      "decimals": 2,
+                      "fxRate": "1.00000000"
+                    },
+                    {
+                      "code": "GBP",
+                      "name": "British pound",
+                      "decimals": 2,
+                      "fxRate": "0.80185000"
+                    }
+                  ],
+                  "taxRates": [
+                    {
+                      "country": "GB",
+                      "region": "",
+                      "ratePercent": "20.0000",
+                      "taxType": "vat",
+                      "label": "UK VAT"
+                    }
+                  ],
+                  "paymentMethods": [
+                    {
+                      "code": "card",
+                      "name": "Card gateway",
+                      "supports3ds": true
+                    }
+                  ],
+                  "policies": {
+                    "guestCheckout": true,
+                    "withdrawalWaiver": true,
+                    "imeiPrecheck": true
+                  },
+                  "legalDocuments": [
+                    {
+                      "type": "terms",
+                      "version": "3.2",
+                      "locale": "en",
+                      "effectiveFrom": "2025-11-22T12:00:00.000Z"
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Storefront configuration",
+        "tags": [
+          "storefront"
+        ],
+        "x-gsm-access": "public",
+        "x-gsm-key": "GET /store/v1/config",
+        "x-gsm-surface": "store"
+      }
+    },
+    "/store/v1/imei/check": {
+      "post": {
+        "description": "Reads an IMEI before payment: 15 digits with a valid Luhn check digit (else `422 INVALID_IMEI`), then the device the first 8 digits (the TAC) name in the catalogue. Blacklist and lock status come with a later stage, so `status` is `unknown` for now. The IMEI is stored encrypted with a keyed hash for lookups, never logged; every check writes its own record and is never answered from another visitor's check (`cached` stays false here). With `serviceId` the check counts as `pre_order` for that service, without it as the free tool (`storefront_free`). Needs the anti-bot token (`X-Turnstile-Token`).",
+        "operationId": "postStoreV1ImeiCheck",
+        "parameters": [
+          {
+            "name": "x-turnstile-token",
+            "in": "header",
+            "description": "The Cloudflare Turnstile widget's token (its `cf-turnstile-response` value). A missing or failed check answers `403 TURNSTILE_FAILED`; a token is single use and valid for five minutes, so a retried write needs a new one.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "imei": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "description": "15 digits; spaces and dashes are ignored."
+                  },
+                  "serviceId": {
+                    "description": "The service the buyer is about to order: a check before an order (`pre_order`). Without it the check is the free tool.",
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "x-gsm-alias": "Id",
+                    "examples": [
+                      42
+                    ]
+                  }
+                },
+                "required": [
+                  "imei"
+                ]
+              },
+              "examples": {
+                "example": {
+                  "value": {
+                    "imei": "353890110000004",
+                    "serviceId": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "imei": {
+                      "type": "string",
+                      "description": "The 15 digits, as read."
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "clean",
+                        "blacklisted",
+                        "locked",
+                        "unknown"
+                      ],
+                      "description": "`unknown` until the blacklist and lock lookup exists."
+                    },
+                    "checks": {
+                      "type": "object",
+                      "properties": {
+                        "checksum": {
+                          "type": "string",
+                          "const": "valid"
+                        },
+                        "tac": {
+                          "type": "string",
+                          "enum": [
+                            "known",
+                            "unknown"
+                          ],
+                          "description": "Whether the catalogue knows the first 8 digits."
+                        }
+                      },
+                      "required": [
+                        "checksum",
+                        "tac"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "device": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "tac": {
+                              "type": "string"
+                            },
+                            "brand": {
+                              "type": "string"
+                            },
+                            "model": {
+                              "type": "string"
+                            },
+                            "marketingName": {
+                              "type": "string"
+                            },
+                            "releaseYear": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "tac",
+                            "brand",
+                            "model",
+                            "marketingName",
+                            "releaseYear"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Null when the TAC is not in the catalogue."
+                    },
+                    "cached": {
+                      "type": "boolean",
+                      "description": "True when a stored result was reused. Always false for this check: only the paid supplier check reuses results."
+                    },
+                    "checkedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "x-gsm-alias": "IsoDateTime",
+                      "description": "When the result was produced.",
+                      "examples": [
+                        "2026-03-01T09:30:00.000Z"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "imei",
+                    "status",
+                    "checks",
+                    "device",
+                    "cached",
+                    "checkedAt"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "imei": "353890110000004",
+                  "status": "unknown",
+                  "checks": {
+                    "checksum": "valid",
+                    "tac": "known"
+                  },
+                  "device": {
+                    "tac": "35389011",
+                    "brand": "Apple",
+                    "model": "iPhone 13",
+                    "marketingName": "iPhone 13",
+                    "releaseYear": 2021
+                  },
+                  "cached": false,
+                  "checkedAt": "2026-11-07T12:00:00.000Z"
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "TURNSTILE_FAILED: The anti-bot check failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "TURNSTILE_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "TURNSTILE_FAILED": {
+                    "summary": "The anti-bot check failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/turnstile-failed",
+                      "title": "The anti-bot check failed.",
+                      "status": 403,
+                      "code": "TURNSTILE_FAILED",
+                      "detail": "The anti-bot check failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "INVALID_IMEI: This IMEI is not valid.\nVALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "INVALID_IMEI",
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "INVALID_IMEI": {
+                    "summary": "This IMEI is not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/invalid-imei",
+                      "title": "This IMEI is not valid.",
+                      "status": 422,
+                      "code": "INVALID_IMEI",
+                      "detail": "This IMEI is not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Check an IMEI",
+        "tags": [
+          "storefront"
+        ],
+        "x-gsm-access": "public",
+        "x-gsm-key": "POST /store/v1/imei/check",
+        "x-gsm-surface": "store",
+        "x-gsm-turnstile": true
+      }
+    },
+    "/store/v1/orders/{token}": {
+      "get": {
+        "description": "The order the tracking token names: its public status (`pending`, `processing`, `completed`, `rejected`), the service, the input with all but its last four characters hidden, the result once it is completed, and the timeline in the shop's own words (no supplier, risk, note or cost line ever appears). The token is the whole credential (128 random bits, in the link the buyer received); an unknown, malformed or wrong token is `404`. Lookups are limited to 30 a minute per address. Never cached.",
+        "operationId": "getStoreV1OrdersByToken",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "description": "The tracking token.",
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128,
+              "description": "The tracking token."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "processing",
+                        "completed",
+                        "rejected"
+                      ]
+                    },
+                    "service": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "imei",
+                            "server",
+                            "remote",
+                            "file"
+                          ]
+                        },
+                        "deliveryTime": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "type",
+                        "deliveryTime"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "input": {
+                      "description": "The IMEI or other main input with all but its last four characters hidden.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "quantity": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "placedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "x-gsm-alias": "IsoDateTime",
+                      "description": "ISO 8601 UTC time with milliseconds.",
+                      "examples": [
+                        "2026-03-01T09:30:00.000Z"
+                      ]
+                    },
+                    "completedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "x-gsm-alias": "IsoDateTime",
+                          "description": "ISO 8601 UTC time with milliseconds.",
+                          "examples": [
+                            "2026-03-01T09:30:00.000Z"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "result": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "comment": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "comment"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "What the service delivered: set once the order is completed, null before."
+                    },
+                    "timeline": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "description": "`created`, `paid`, `accepted`, `completed`, `rejected`, `refund` or `reopened`."
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "x-gsm-alias": "IsoDateTime",
+                            "description": "ISO 8601 UTC time with milliseconds.",
+                            "examples": [
+                              "2026-03-01T09:30:00.000Z"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "message",
+                          "createdAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "service",
+                    "input",
+                    "quantity",
+                    "placedAt",
+                    "completedAt",
+                    "result",
+                    "timeline"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "status": "completed",
+                  "service": {
+                    "name": "iCloud Clean / Lost Check",
+                    "type": "imei",
+                    "deliveryTime": "2 minutes"
+                  },
+                  "input": "•••••••••••0004",
+                  "quantity": 1,
+                  "placedAt": "2026-11-07T12:00:00.000Z",
+                  "completedAt": "2026-11-07T12:02:10.000Z",
+                  "result": {
+                    "code": "Status: Clean. Carrier: unlocked. Not on the GSMA blacklist.",
+                    "comment": null
+                  },
+                  "timeline": [
+                    {
+                      "type": "created",
+                      "message": "Order received",
+                      "createdAt": "2026-11-07T12:00:00.000Z"
+                    },
+                    {
+                      "type": "paid",
+                      "message": "Payment received",
+                      "createdAt": "2026-11-07T12:00:05.000Z"
+                    },
+                    {
+                      "type": "completed",
+                      "message": "Completed",
+                      "createdAt": "2026-11-07T12:02:10.000Z"
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: The requested item was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 404
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_FOUND"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "NOT_FOUND": {
+                    "summary": "The requested item was not found.",
+                    "value": {
+                      "type": "https://errors.gsm.example/not-found",
+                      "title": "The requested item was not found.",
+                      "status": 404,
+                      "code": "NOT_FOUND",
+                      "detail": "The requested item was not found.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "capabilityToken": []
+          }
+        ],
+        "summary": "Track an order",
+        "tags": [
+          "storefront"
+        ],
+        "x-gsm-access": "tracking-token",
+        "x-gsm-key": "GET /store/v1/orders/:token",
+        "x-gsm-surface": "store"
+      }
+    },
+    "/store/v1/services": {
+      "get": {
+        "description": "The service pages that are switched on, at the retail price: `net` before tax, `tax` of the buyer's country and `gross`, in the buyer's currency (`buyerCountry`, `currency`). Only services the shop may sell and has priced appear (an archived, disabled or B2B-only service never does, and the price is never under the retail floor). Filter by `brand`, `network` and `country` (case-insensitive), `featured` and `locale` (default `en`); `q` searches title, summary, brand and network; sort by `featured` (default: featured first), `sort` and `title`; pages of up to 100 rows with `x-total-count`. Public; cacheable for 30 seconds.",
+        "operationId": "getStoreV1Services",
+        "parameters": [
+          {
+            "name": "_start",
+            "required": false,
+            "in": "query",
+            "description": "First row to return (0-based, inclusive). Default 0.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000000
+            }
+          },
+          {
+            "name": "_end",
+            "required": false,
+            "in": "query",
+            "description": "Row after the last one to return (exclusive). Default _start + 25; a page holds at most 100 rows.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "_sort",
+            "required": false,
+            "in": "query",
+            "description": "Comma-separated sort fields. Allowed: featured, sort, title. Default: featured desc, sort asc, title asc.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "_order",
+            "required": false,
+            "in": "query",
+            "description": "Comma-separated directions (asc or desc), one per sort field in the same order.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Case-insensitive text search over: title, summary, brand, network.",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "brand",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where brand equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 200
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "network",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where network equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 200
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "country",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where country equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 200
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "featured",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where featured equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "true",
+                  "false"
+                ]
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "locale",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where locale equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "en",
+                  "ar"
+                ]
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "buyerCountry",
+            "required": false,
+            "in": "query",
+            "description": "The buyer's country: the tax of its window is added. Without it no tax is added.",
+            "schema": {
+              "description": "The buyer's country: the tax of its window is added. Without it no tax is added.",
+              "type": "string",
+              "pattern": "^[A-Za-z]{2}$"
+            }
+          },
+          {
+            "name": "region",
+            "required": false,
+            "in": "query",
+            "description": "The buyer's region, for the countries that tax by region.",
+            "schema": {
+              "description": "The buyer's region, for the countries that tax by region.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 60
+            }
+          },
+          {
+            "name": "currency",
+            "required": false,
+            "in": "query",
+            "description": "The currency to show prices in (one `GET /store/v1/config` lists). Default: USD.",
+            "schema": {
+              "description": "The currency to show prices in (one `GET /store/v1/config` lists). Default: USD.",
+              "type": "string",
+              "pattern": "^[A-Za-z]{3}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "x-gsm-alias": "Id",
+                        "description": "The service id: what `POST /store/v1/checkout-sessions` takes as `serviceId`.",
+                        "examples": [
+                          42
+                        ]
+                      },
+                      "slug": {
+                        "type": "string"
+                      },
+                      "locale": {
+                        "type": "string",
+                        "enum": [
+                          "en",
+                          "ar"
+                        ]
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "summary": {
+                        "type": "string"
+                      },
+                      "brand": {
+                        "type": "string"
+                      },
+                      "network": {
+                        "type": "string",
+                        "description": "The carrier or network the service unlocks (empty when none)."
+                      },
+                      "country": {
+                        "type": "string",
+                        "description": "The country the service is for (empty when none)."
+                      },
+                      "isFeatured": {
+                        "type": "boolean"
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "imei",
+                          "server",
+                          "remote",
+                          "file"
+                        ]
+                      },
+                      "deliveryTime": {
+                        "type": "string",
+                        "description": "How long it takes, as text."
+                      },
+                      "price": {
+                        "type": "object",
+                        "properties": {
+                          "currency": {
+                            "type": "string",
+                            "description": "The currency of net, tax and gross."
+                          },
+                          "fxRate": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^-?\\d+(\\.\\d+)?$",
+                            "x-gsm-alias": "Decimal",
+                            "description": "Units of the currency per 1 USD, the exchange markup included (8 decimals).",
+                            "examples": [
+                              "19.0000"
+                            ]
+                          },
+                          "net": {
+                            "type": "string",
+                            "pattern": "^-?\\d+\\.\\d{4}$",
+                            "x-gsm-alias": "Money",
+                            "description": "The price before tax.",
+                            "examples": [
+                              "12.4900"
+                            ]
+                          },
+                          "tax": {
+                            "type": "string",
+                            "pattern": "^-?\\d+\\.\\d{4}$",
+                            "x-gsm-alias": "Money",
+                            "description": "Decimal string with exactly 4 fraction digits.",
+                            "examples": [
+                              "12.4900"
+                            ]
+                          },
+                          "gross": {
+                            "type": "string",
+                            "pattern": "^-?\\d+\\.\\d{4}$",
+                            "x-gsm-alias": "Money",
+                            "description": "What the buyer pays: net plus tax.",
+                            "examples": [
+                              "12.4900"
+                            ]
+                          },
+                          "taxRate": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^-?\\d+(\\.\\d+)?$",
+                            "x-gsm-alias": "Decimal",
+                            "description": "The tax rate in percent (0 when the buyer gave no country or it has no tax).",
+                            "examples": [
+                              "19.0000"
+                            ]
+                          },
+                          "taxCountry": {
+                            "description": "The country the tax was worked out for.",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "currency",
+                          "fxRate",
+                          "net",
+                          "tax",
+                          "gross",
+                          "taxRate",
+                          "taxCountry"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "slug",
+                      "locale",
+                      "title",
+                      "summary",
+                      "brand",
+                      "network",
+                      "country",
+                      "isFeatured",
+                      "type",
+                      "deliveryTime",
+                      "price"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "example": [
+                  {
+                    "id": 1,
+                    "slug": "icloud-clean-lost-check",
+                    "locale": "en",
+                    "title": "iCloud Clean / Lost Check",
+                    "summary": "Find out if the phone is clean before you buy.",
+                    "brand": "Apple",
+                    "network": "",
+                    "country": "",
+                    "isFeatured": true,
+                    "type": "imei",
+                    "deliveryTime": "2 minutes",
+                    "price": {
+                      "currency": "GBP",
+                      "fxRate": "0.80185000",
+                      "net": "3.2000",
+                      "tax": "0.6400",
+                      "gross": "3.8400",
+                      "taxRate": "20.0000",
+                      "taxCountry": "GB"
+                    }
+                  }
+                ]
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "x-total-count": {
+                "description": "Rows that match the filters, before the range is applied.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List the services on sale",
+        "tags": [
+          "storefront"
+        ],
+        "x-gsm-access": "public",
+        "x-gsm-key": "GET /store/v1/services",
+        "x-gsm-surface": "store"
+      }
+    },
+    "/store/v1/services/{slug}": {
+      "get": {
+        "description": "One service page by slug and language: description, delivery time, what the order form asks for, the quantities, the published FAQs of the service and its retail price (see the list). `404` when the page does not exist, is switched off, or the service cannot be sold. Public; cacheable for 30 seconds.",
+        "operationId": "getStoreV1ServicesBySlug",
+        "parameters": [
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "locale",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "en",
+                "ar"
+              ]
+            }
+          },
+          {
+            "name": "buyerCountry",
+            "required": false,
+            "in": "query",
+            "description": "The buyer's country: the tax of its window is added. Without it no tax is added.",
+            "schema": {
+              "description": "The buyer's country: the tax of its window is added. Without it no tax is added.",
+              "type": "string",
+              "pattern": "^[A-Za-z]{2}$"
+            }
+          },
+          {
+            "name": "region",
+            "required": false,
+            "in": "query",
+            "description": "The buyer's region, for the countries that tax by region.",
+            "schema": {
+              "description": "The buyer's region, for the countries that tax by region.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 60
+            }
+          },
+          {
+            "name": "currency",
+            "required": false,
+            "in": "query",
+            "description": "The currency to show prices in (one `GET /store/v1/config` lists). Default: USD.",
+            "schema": {
+              "description": "The currency to show prices in (one `GET /store/v1/config` lists). Default: USD.",
+              "type": "string",
+              "pattern": "^[A-Za-z]{3}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "x-gsm-alias": "Id",
+                      "description": "The service id: what `POST /store/v1/checkout-sessions` takes as `serviceId`.",
+                      "examples": [
+                        42
+                      ]
+                    },
+                    "slug": {
+                      "type": "string"
+                    },
+                    "locale": {
+                      "type": "string",
+                      "enum": [
+                        "en",
+                        "ar"
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "brand": {
+                      "type": "string"
+                    },
+                    "network": {
+                      "type": "string",
+                      "description": "The carrier or network the service unlocks (empty when none)."
+                    },
+                    "country": {
+                      "type": "string",
+                      "description": "The country the service is for (empty when none)."
+                    },
+                    "isFeatured": {
+                      "type": "boolean"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "imei",
+                        "server",
+                        "remote",
+                        "file"
+                      ]
+                    },
+                    "deliveryTime": {
+                      "type": "string",
+                      "description": "How long it takes, as text."
+                    },
+                    "price": {
+                      "type": "object",
+                      "properties": {
+                        "currency": {
+                          "type": "string",
+                          "description": "The currency of net, tax and gross."
+                        },
+                        "fxRate": {
+                          "type": "string",
+                          "maxLength": 40,
+                          "pattern": "^-?\\d+(\\.\\d+)?$",
+                          "x-gsm-alias": "Decimal",
+                          "description": "Units of the currency per 1 USD, the exchange markup included (8 decimals).",
+                          "examples": [
+                            "19.0000"
+                          ]
+                        },
+                        "net": {
+                          "type": "string",
+                          "pattern": "^-?\\d+\\.\\d{4}$",
+                          "x-gsm-alias": "Money",
+                          "description": "The price before tax.",
+                          "examples": [
+                            "12.4900"
+                          ]
+                        },
+                        "tax": {
+                          "type": "string",
+                          "pattern": "^-?\\d+\\.\\d{4}$",
+                          "x-gsm-alias": "Money",
+                          "description": "Decimal string with exactly 4 fraction digits.",
+                          "examples": [
+                            "12.4900"
+                          ]
+                        },
+                        "gross": {
+                          "type": "string",
+                          "pattern": "^-?\\d+\\.\\d{4}$",
+                          "x-gsm-alias": "Money",
+                          "description": "What the buyer pays: net plus tax.",
+                          "examples": [
+                            "12.4900"
+                          ]
+                        },
+                        "taxRate": {
+                          "type": "string",
+                          "maxLength": 40,
+                          "pattern": "^-?\\d+(\\.\\d+)?$",
+                          "x-gsm-alias": "Decimal",
+                          "description": "The tax rate in percent (0 when the buyer gave no country or it has no tax).",
+                          "examples": [
+                            "19.0000"
+                          ]
+                        },
+                        "taxCountry": {
+                          "description": "The country the tax was worked out for.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "currency",
+                        "fxRate",
+                        "net",
+                        "tax",
+                        "gross",
+                        "taxRate",
+                        "taxCountry"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "descriptionMd": {
+                      "type": "string",
+                      "description": "Markdown."
+                    },
+                    "etaText": {
+                      "type": "string"
+                    },
+                    "requirementsMd": {
+                      "type": "string",
+                      "description": "Markdown."
+                    },
+                    "seoTitle": {
+                      "type": "string"
+                    },
+                    "seoDescription": {
+                      "type": "string"
+                    },
+                    "quantity": {
+                      "type": "object",
+                      "properties": {
+                        "min": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "max": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "options": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "description": "Fixed packs; empty means any quantity from min to max."
+                        }
+                      },
+                      "required": [
+                        "min",
+                        "max",
+                        "options"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "fields": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "fieldType": {
+                            "type": "string",
+                            "enum": [
+                              "text",
+                              "number",
+                              "select",
+                              "textarea"
+                            ]
+                          },
+                          "options": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "The choices of a `select` field."
+                          },
+                          "required": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "label",
+                          "fieldType",
+                          "options",
+                          "required"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "What the order form asks for besides the IMEI."
+                    },
+                    "faqs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "question": {
+                            "type": "string"
+                          },
+                          "answerMd": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "question",
+                          "answerMd"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "slug",
+                    "locale",
+                    "title",
+                    "summary",
+                    "brand",
+                    "network",
+                    "country",
+                    "isFeatured",
+                    "type",
+                    "deliveryTime",
+                    "price",
+                    "descriptionMd",
+                    "etaText",
+                    "requirementsMd",
+                    "seoTitle",
+                    "seoDescription",
+                    "quantity",
+                    "fields",
+                    "faqs"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "id": 1,
+                  "slug": "icloud-clean-lost-check",
+                  "locale": "en",
+                  "title": "iCloud Clean / Lost Check",
+                  "summary": "Find out if the phone is clean before you buy.",
+                  "brand": "Apple",
+                  "network": "",
+                  "country": "",
+                  "isFeatured": true,
+                  "type": "imei",
+                  "deliveryTime": "2 minutes",
+                  "price": {
+                    "currency": "GBP",
+                    "fxRate": "0.80185000",
+                    "net": "3.2000",
+                    "tax": "0.6400",
+                    "gross": "3.8400",
+                    "taxRate": "20.0000",
+                    "taxCountry": "GB"
+                  },
+                  "descriptionMd": "We check iCloud and Find My status from the IMEI.",
+                  "etaText": "Usually 2 minutes",
+                  "requirementsMd": "The 15-digit IMEI of the phone (dial *#06#).",
+                  "seoTitle": "iCloud Clean / Lost Check",
+                  "seoDescription": "Check iCloud status from the IMEI.",
+                  "quantity": {
+                    "min": 1,
+                    "max": 1,
+                    "options": []
+                  },
+                  "fields": [],
+                  "faqs": [
+                    {
+                      "question": "How fast is it?",
+                      "answerMd": "Most checks finish in two minutes."
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: The requested item was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 404
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_FOUND"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "NOT_FOUND": {
+                    "summary": "The requested item was not found.",
+                    "value": {
+                      "type": "https://errors.gsm.example/not-found",
+                      "title": "The requested item was not found.",
+                      "status": 404,
+                      "code": "NOT_FOUND",
+                      "detail": "The requested item was not found.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Show a service page",
+        "tags": [
+          "storefront"
+        ],
+        "x-gsm-access": "public",
+        "x-gsm-key": "GET /store/v1/services/:slug",
+        "x-gsm-surface": "store"
       }
     },
     "/v1/account": {

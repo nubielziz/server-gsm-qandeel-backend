@@ -130,4 +130,6 @@ sit next to the code (`*.spec.ts`, fakes for the directory, the limiter and the 
   Per-address counters need a fresh address per request (`freshClientIp()`); the unknown-key budget is keyed by address too.
 - Registries (`CapabilityTokenResolvers`, `UrlSecretVerifiers`, `WebhookVerifiers`) refuse a second registration, so register once per
   app (`beforeAll`) and build a second app to test a registry that is empty.
+  A module that registers the real resolver of a kind (the checkout and order tracking modules, features 14a and later 14b) must be left
+  out with `createTestApp({ withoutModules: [...] })` before a test registers its own stand-in for that kind.
 

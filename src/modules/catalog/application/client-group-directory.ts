@@ -87,6 +87,19 @@ export class ClientGroupDirectory {
   }
 
   /**
+   * Finds the storefront's retail group (kind `b2c_retail`; at most one exists).
+   *
+   * Why: the storefront prices every service for this group and the retail floor applies to it (catalog-12, b2c-7).
+   *
+   * @param db the database or the caller's transaction
+   * @returns the retail group, or `undefined` when none exists (a fresh database before migration 0005)
+   */
+  async findRetail(db: DbExecutor): Promise<ClientGroupRef | undefined> {
+    const [row] = await db.select().from(clientGroups).where(eq(clientGroups.kind, RETAIL_GROUP_KIND)).limit(1);
+    return row ? toRef(row) : undefined;
+  }
+
+  /**
    * Finds several groups at once (one query for a whole page of merchants).
    *
    * @param db the database or the caller's transaction
