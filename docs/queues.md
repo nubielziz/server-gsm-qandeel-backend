@@ -76,13 +76,28 @@ Ticks that move pending outbox rows to the queues of their event types.
 
 Sends accepted orders to their supplier.
 
-- **Concurrency:** 10 per worker process (the per-supplier limit is the semaphore of `RateLimitService`, decision 021).
-- **Jobs:** none yet. Built by the suppliers feature (6): `dispatch` for an order that is ready to send.
-- **Payload:** none yet. The jobs come from `order.dispatch_requested` (an `OutboxJobData`, payload `{ orderId }`), written by the orders feature (5); the processor is feature 6.
-- **Idempotency:** none yet. Rule: re-read the order, move `dispatch_state` with a guarded update before the call; a
-  timeout is never re-sent (the order goes to `needs_attention`, decision 025).
-- **Retry policy:** 3 attempts, exponential backoff from 5 s (jitter 50 %); a processor throws `UnrecoverableError` for a
-  send that may have reached the supplier. Stalled jobs are not re-run (`maxStalledCount` 0).
+- **Concurrency:** 10 per worker process (the per-supplier limits are `suppliers.max_concurrency`, a semaphore of `RateLimitService`, and
+  `suppliers.rate_limit_per_min`, the `supplier` limiter, decision 021).
+- **Jobs:** one catch-all processor, `SupplierDispatchProcessor` (`src/modules/suppliers/jobs/`), for the outbox event `order.dispatch_requested`
+  (the relay names the job by the event type). The logic is `SupplierDispatch.run`.
+- **Payload:** the `OutboxJobData` of the event (`payload: { orderId }`, written by the orders feature at placement and by every move that
+  makes an order dispatchable again: staff `dispatch`, `change-supplier` with `dispatch: true`, a risk release). Ids only.
+- **Idempotency:** the job id is `outbox-<event id>`. The run re-reads the order and does nothing unless it is open with `dispatch_state =
+  'pending'`. It then claims the order with the guarded update `UPDATE orders ... WHERE dispatch_state = 'pending' AND sent_at IS NULL`
+  (it also pins `supplier_id`, `supplier_service_id` and refreshes `unit_cost` and `total_cost` from the chosen link) BEFORE the supplier call, so
+  two runs never send twice. The call is made outside any transaction; its answer moves the order in one transaction: a REFERENCEID gives
+  `sent` (status `processing`, `supplier_ref` stored once, an `ack` event), an explicit refusal, a timeout, any other failure, or no eligible
+  link gives `needs_attention` (status unchanged, a `review` event with the reason, the hold kept). A run that finds a claim whose answer was
+  never recorded (`sent_at` set, still `pending`: a crash, or a recording that failed) does not send again: it moves the order to
+  `needs_attention`. A staff dispatch clears `sent_at` in the same transaction that queues the new job.
+- **Eligibility** (automatic dispatch only): the first active link by priority whose supplier is `active` (not paused, not disabled), whose
+  supplier service is still listed by the supplier and whose cost (`credit x credit_rate`) is not above the price charged for one unit
+  (user rule 9, B117 (6)); never a failover to a costlier link. An order that already names a supplier service (a staff choice) goes there as it
+  is, whatever it costs.
+- **Retry policy:** 3 attempts, exponential backoff from 5 s (jitter 50 %). Only a busy supplier (its semaphore or its rate limit is full)
+  throws, so the queue retries; on the last attempt a busy supplier sends the order to `needs_attention` instead. A processor throws
+  `UnrecoverableError` for a payload without an order id. A supplier timeout is never retried (decision 025). Stalled jobs are not re-run
+  (`maxStalledCount` 0).
 - **Schedule:** none (event-driven).
 
 ## supplier-poll
@@ -90,13 +105,18 @@ Sends accepted orders to their supplier.
 Asks suppliers for the status of orders they accepted.
 
 - **Concurrency:** 20 per worker process.
-- **Jobs:** none yet. Built by the suppliers feature (6): `poll` per sent order.
-- **Payload:** none yet (order id).
-- **Idempotency:** none yet. Rule: job id `order-poll-<order id>-<n>`; a poll re-reads the order and acts through guarded
-  transitions.
-- **Retry policy:** 3 attempts, exponential backoff from 10 s (jitter 50 %). The poll rhythm (every minute for one hour,
-  then every 5 minutes, then every 30 minutes) is a new delayed job per poll, not a retry (decision 025).
-- **Schedule:** none (each poll schedules the next).
+- **Jobs:** one catch-all processor, `SupplierPollProcessor`, for two job names: `supplier_poll_tick`, created every minute by the scheduler
+  `supplier-poll-tick`, finds the sent orders that are due a poll and adds one `poll` job for each (at most 500 a tick); `poll` asks one supplier
+  (`getimeiorder`) about one order (`SupplierPoll.check`). Neither is recorded in `job_runs`: they are high-frequency housekeeping.
+- **Payload:** `poll` carries `{ orderId }` (ids only); the tick carries nothing.
+- **Idempotency:** the tick keeps no state: an order is due when its `sent_at`, and the `created_at` of its newest `getimeiorder` row in
+  `supplier_api_logs`, are older than the rhythm (every minute during the first hour, every 5 minutes after it, every 30 minutes once the order is
+  older than the setting `orders.poll_slow_after_hours`, default 24). The `poll` job id is `order-poll-<order id>-<minute>`, so two ticks in
+  the same minute queue one job. A poll re-reads the order, and STATUS 4 (the CODE becomes `result_code`) or STATUS 3 (the supplier's text is the
+  reason) settles it through `OrderTransitions` (ledger, events, outbox); still running changes nothing; an order that moved on (staff replied) is
+  left alone; an unreachable supplier leaves the order as it is for the next round.
+- **Retry policy:** 3 attempts, exponential backoff from 10 s (jitter 50 %). The poll rhythm is the tick, not a retry (decision 025).
+- **Schedule:** `supplier-poll-tick`, every minute (`src/modules/suppliers/jobs/supplier-jobs.module.ts`).
 
 ## merchant-webhooks
 
@@ -144,15 +164,23 @@ Sends emails and Telegram messages.
 Refreshes supplier services, prices and balances.
 
 - **Concurrency:** 2 per worker process.
-- **Jobs:** none yet. Built by the suppliers feature (6): the price sync (every 15 minutes in the console's job list) and the
-  supplier balance check (every 30 minutes). The balance check sets `suppliers.balance_checked_at` and the price sync sets
-  `suppliers.prices_synced_at` at the end of a successful run; `GET /admin/system/suppliers` reports `lastSyncAt` as the
-  greater of the two. The supplier client writes an `outcome` (`ok | error | timeout`) on every `supplier_api_logs` row,
-  which the System health error and timeout rates read.
-- **Payload:** none yet (supplier id).
-- **Idempotency:** none yet. Rule: a sync replaces the supplier's rows in one transaction and is safe to repeat.
+- **Jobs:** one catch-all processor, `SupplierSyncProcessor`, for three job names: `supplier_sync` (one supplier: `imeiservicelist` and
+  `accountinfo`, asked by staff through `POST /admin/suppliers/:id/sync`, which waits for it), `price_sync` (every supplier that is not
+  disabled, every 15 minutes) and `balance_check` (`accountinfo` of every supplier that is not disabled, every 30 minutes). The two scheduled
+  jobs are recorded in `job_runs` (`price_sync`, `balance_check`; the console's job list). The balance check sets `suppliers.balance` and
+  `balance_checked_at`; the price sync sets `suppliers.prices_synced_at` at the end of a successful run, and `GET /admin/system/suppliers`
+  reports `lastSyncAt` as the greater of the two. The supplier client writes an `outcome` (`ok | error | timeout`) on every
+  `supplier_api_logs` row, which the System health error and timeout rates read.
+- **Payload:** `supplier_sync` carries `{ supplierId, trigger }` (`api` or `schedule`); the scheduled jobs carry nothing (a manual run, feature 9,
+  carries `runId`).
+- **Idempotency:** a sync takes the supplier row `FOR UPDATE`, upserts `supplier_services` by `(supplier_id, remote_id)` in one transaction (a
+  changed credit sets `price_changed_at`; a service not listed is marked unavailable), recomputes the effective cost of every linked service and
+  moves the catalog price version after the commit; nothing is written unless both supplier calls worked. It is safe to repeat. A staff request
+  has the job id `manual-sync-<supplier id>-<ms>` and `attempts: 1` (a click is its own retry); `supplier_sync` returns its outcome (a supplier
+  failure is a value, so the API answers `409 SUPPLIER_UNAVAILABLE`), and the API answers `504 SUPPLIER_TIMEOUT` when the job is still
+  running after `timeout_ms + 5 s` (the job goes on).
 - **Retry policy:** 3 attempts, exponential backoff from 1 min (jitter 50 %).
-- **Schedule:** none yet (registered with `JobSchedulerRegistry` by the owning feature).
+- **Schedule:** `supplier-price-sync` (`*/15 * * * *`) and `supplier-balance-check` (`*/30 * * * *`) (`src/modules/suppliers/jobs/supplier-jobs.module.ts`).
 
 ## imports
 

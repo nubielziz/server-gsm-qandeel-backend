@@ -8,6 +8,7 @@ import { ListedPrices } from './application/listed-prices';
 import { InventoryStock } from './application/inventory-stock';
 import { MerchantCatalog } from './application/merchant-catalog';
 import { PriceResolver } from './application/price-resolver';
+import { ServiceImporter } from './application/service-importer';
 
 /**
  * Nest module for Catalog & pricing (map domain B).
@@ -22,7 +23,7 @@ import { PriceResolver } from './application/price-resolver';
  */
 @Global()
 @Module({
-  providers: [ClientGroupDirectory, PriceResolver, ListedPrices, MerchantCatalog, InventoryStock],
-  exports: [ClientGroupDirectory, PriceResolver, ListedPrices, MerchantCatalog, InventoryStock],
+  providers: [ClientGroupDirectory, PriceResolver, ListedPrices, MerchantCatalog, ServiceImporter, InventoryStock],
+  exports: [ClientGroupDirectory, PriceResolver, ListedPrices, MerchantCatalog, ServiceImporter, InventoryStock],
 })
 export class CatalogModule {}

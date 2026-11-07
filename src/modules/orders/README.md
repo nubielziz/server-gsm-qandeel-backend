@@ -9,8 +9,8 @@ Decisions that shape this module: 024 ledger, 025 order state machine, 026 Dhru 
 ## Status
 
 Built (feature 5, orders-engine): 20 routes of this module (13 admin, 7 merchant portal) plus the two file downloads of the platform
-module, the lead's state machine, and the demo seed. Dispatch, fetch and change-supplier with the supplier jobs are feature 6, the
-Dhru and REST v1 order routes 7a, the outgoing webhook 7b, storefront orders 14a and 16, the top-clients report 11.
+module, the lead's state machine, and the demo seed. Dispatch, fetch and change-supplier (and the supplier jobs) are built by feature 6 in
+the suppliers module, through `OrderSupplierMoves`; the Dhru and REST v1 order routes are 7a, the outgoing webhook 7b, storefront orders 14a and 16, the top-clients report 11.
 
 - **State machine** (`domain/order-machine.ts`, decision 025): `decideOrderAction` is the only place the rules live; every use case
   asks it and applies its answer through `application/order-transitions.ts` (`OrderTransitions.apply`): the order is read, the
@@ -76,9 +76,9 @@ Dhru and REST v1 order routes 7a, the outgoing webhook 7b, storefront orders 14a
   (completed and rejected are `done`; processing `sent`; a supplier problem is `processing` + `needs_attention`; the first queued
   order becomes the manual order and the two newest completed ones wait for a verification decision), with their 4,491 timeline
   lines. The money seed already posted their holds and settlements: every merchant's `client_hold` equals the sum of its open
-  orders (a test proves it) and this seeder posts nothing. `supplier_id`, `supplier_service_id` and `supplier_ref` stay null:
-  feature 6's seeder must run before this one and then fills them (the seeder already links a supplier by name when the table has
-  rows). The 104 storefront orders wait for customers (14b).
+  orders (a test proves it) and this seeder posts nothing. `supplier_id` is the order's demo supplier (`sup`), the suppliers seeder of
+  feature 6 runs before this one; `supplier_service_id` and `supplier_ref` stay null (the demo has no supplier order numbers, so a
+  seeded order is never polled). The 104 storefront orders wait for customers (14b).
 
 ### Merchant portal contract (no console screen; ALIGNMENT § 7, B121, B153, recorded as B160)
 
@@ -115,7 +115,8 @@ can set them a merchant can neither cancel nor ask for a verification (the route
 Exports `OrdersModule` (with `OrdersOutboxModule`, which the worker loads, and `OrdersAdminModule`, the routes and use cases), the pure
 rules (`decideOrderAction`, `deriveQueue`, `isOpen`, `placementDispatchState`, `mainInputOf`), the SQL fragments (`pastSlaPredicate`,
 `queueSql`, `channelSql`), the services other features call (`OrderPlacement` for Dhru, REST v1 and the storefront; `OrderTransitions`
-for the supplier jobs and the risk actions; `OrderReadService`), the outbox event names (`ORDER_OUTBOX_EVENTS`, `OrderOutbox`) and the
+for the risk actions; `OrderSupplierMoves`, the door of the supplier flows, and `OrdersEngineModule`, which provides both without routes for
+the worker; `OrderReadService`), the outbox event names (`ORDER_OUTBOX_EVENTS`, `OrderOutbox`) and the
 vocabularies and row types of the two tables. Other modules import only `src/modules/orders/index.ts` (lint rule
 `gsm/module-boundaries`).
 
@@ -142,9 +143,9 @@ Only this module reads and writes these 2 tables (`scripts/module-map.mjs`); oth
 | `GET /admin/orders/export` | staff-permission · `orders:read` | Export a CSV file according to the filters. | 5 |
 | `GET /admin/reports/top-clients` | staff-permission · `reports:read` | Top merchants by volume and by profit. | 11 |
 | `POST /admin/orders/:id/accept` | staff-permission · `orders:update` | Accept a manual order and move it to processing. | 5 |
-| `POST /admin/orders/:id/change-supplier` | staff-permission · `orders:update` | Change the supplier or reset the reference. | 6 |
-| `POST /admin/orders/:id/dispatch` | staff-permission · `orders:update` | Manually send the order to the supplier (force send). | 6 |
-| `POST /admin/orders/:id/fetch` | staff-permission · `orders:update` | Fetch the result now (force get). | 6 |
+| `POST /admin/orders/:id/change-supplier` | staff-permission · `orders:update` | Change the supplier or reset the reference. | 6 (built in the suppliers module) |
+| `POST /admin/orders/:id/dispatch` | staff-permission · `orders:update` | Manually send the order to the supplier (force send). | 6 (built in the suppliers module) |
+| `POST /admin/orders/:id/fetch` | staff-permission · `orders:update` | Fetch the result now (force get). | 6 (built in the suppliers module) |
 | `POST /admin/orders/:id/notes` | staff-permission · `orders:update` | Add an internal note. | 5 |
 | `POST /admin/orders/:id/refund` | staff-permission · `orders:reopen` | Refund a completed merchant order: reopen, then reject; storefront orders are refunded from /admin/refunds. | 5 |
 | `POST /admin/orders/:id/reject` | staff-permission · `orders:update` | Reject the order with a reason and refund it. | 5 |
@@ -231,10 +232,10 @@ Outbox events produced (ids and status words only, written in the transition's o
 | Type | Queue | Payload | Written when | Consumer |
 |---|---|---|---|---|
 | `order.status_changed` | `merchant-webhooks` | `{ orderId, clientId (null for a storefront order), fromStatus, toStatus }` | the status of an order changed (accept, reply, reject, cancel, reopen, refund, a verification refund) | the webhook fan-out of feature 7b |
-| `order.dispatch_requested` | `supplier-dispatch` | `{ orderId }` | placement of an automatic order with an active supplier link; later a staff dispatch (feature 6) | the dispatch job of feature 6 |
+| `order.dispatch_requested` | `supplier-dispatch` | `{ orderId }` | placement of an automatic order with an active supplier link; a staff `dispatch` and a `change-supplier` with `dispatch: true` (feature 6) | the dispatch job of feature 6 (`SupplierDispatchProcessor`) |
 
-Feature 5 registers both routes (`OrderOutbox.onModuleInit`, loaded by the API and the worker) and adds no processor for either queue,
-so their jobs wait until 7b and 6 build them. The creation of an order is not a status change and writes no `order.status_changed`.
+Feature 5 registers both routes (`OrderOutbox.onModuleInit`, loaded by the API and the worker) and adds no processor for either queue:
+7b built the webhook fan-out and 6 the dispatch job. The creation of an order is not a status change and writes no `order.status_changed`.
 A dispatch row for an order that is rejected or completed before the job runs is harmless: the job re-reads the order and moves it
 only through the guarded transition (decision 025). Consumed: none.
 
@@ -242,8 +243,8 @@ Outgoing webhook events from the map (documented as OpenAPI `webhooks` once defi
 
 ## Jobs and schedules
 
-None in this feature. The dispatch job (`supplier-dispatch`) and the poll jobs are feature 6; the webhook deliveries (`merchant-webhooks`)
-are 7b. See `docs/queues.md`.
+None in this feature. The dispatch job (`supplier-dispatch`) and the poll jobs (`supplier-poll`) are feature 6 (suppliers module); the
+webhook deliveries (`merchant-webhooks`) are 7b. See `docs/queues.md`.
 
 ## Cache keys
 

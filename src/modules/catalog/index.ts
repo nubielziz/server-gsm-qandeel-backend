@@ -7,6 +7,8 @@
 export { ClientGroupDirectory, RETAIL_GROUP_KIND } from './application/client-group-directory';
 export type { ClientGroupRef, FindGroupOptions } from './application/client-group-directory';
 export { recomputeEffectiveCost } from './application/effective-cost';
+export { ServiceImporter } from './application/service-importer';
+export type { ImportedServiceInput } from './application/service-importer';
 export { PriceResolver, PricingContext } from './application/price-resolver';
 export type { ContextOptions, FloorQuote, PriceRequest } from './application/price-resolver';
 export { ListedPrices } from './application/listed-prices';

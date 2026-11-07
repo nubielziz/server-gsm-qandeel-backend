@@ -27,6 +27,7 @@ import { StaffAuthModule } from '../../src/modules/identity/staff-auth.module';
 import { IpRulesModule } from '../../src/modules/identity/security/ip-rules/ip-rules.module';
 import { MoneyAdminModule } from '../../src/modules/money/money-admin.module';
 import { OrdersAdminModule } from '../../src/modules/orders';
+import { SuppliersAdminModule } from '../../src/modules/suppliers';
 import {
   MaintenanceModule,
   MerchantWebhooksModule,
@@ -97,6 +98,7 @@ const NEEDS_DATABASE_AND_CACHE = [
   CatalogPricesModule,
   CatalogAdminModule,
   OrdersAdminModule,
+  SuppliersAdminModule,
   MerchantWebhooksModule,
   WebhookDeliveryModule,
 ];

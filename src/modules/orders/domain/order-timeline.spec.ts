@@ -44,6 +44,16 @@ describe('placement lines', () => {
 describe('transitionLines', () => {
   const base = { actor: staff, from: 'processing', to: 'completed', money } as const;
 
+  it('a completion by the supplier says so, a completion by staff says staff reply', () => {
+    const bySupplier = transitionLines('completed', 'complete', { ...base, actor: { type: 'supplier', id: 4 } });
+    expect(bySupplier[0]).toMatchObject({
+      type: 'completed',
+      actor: { type: 'supplier', id: 4 },
+      data: { message: 'Completed by the supplier' },
+    });
+    expect(transitionLines('completed', 'complete', base)[0]!.data.message).toBe('Completed by staff reply');
+  });
+
   it('accept writes accepted', () => {
     const lines = transitionLines('accepted', null, { ...base, to: 'processing', from: 'pending' });
     expect(kinds(lines)).toEqual(['accepted']);

@@ -1,6 +1,6 @@
 // Root module of the worker process (decision 016): config, the clock (decision 031), logging, metrics, the infrastructure (database, Redis, cache,
 // rate limits, crypto, storage, outbound HTTP), the queue workers and schedulers, the outbox relay, job runs, the IP rule
-// hit flush, the ended-session purge, the nightly merchant group promotion, the merchant mail jobs (verification, reset and invitation links), the order outbox routes (`order.status_changed` to the merchant webhook deliveries, `order.dispatch_requested`: its processor arrives with feature 6), the merchant webhook deliveries, the price change scan, and the metrics listener. Domain modules add their processors and schedules here as their features are built.
+// hit flush, the ended-session purge, the nightly merchant group promotion, the merchant mail jobs (verification, reset and invitation links), the order outbox routes (`order.status_changed` to the merchant webhook deliveries, `order.dispatch_requested` to the supplier dispatch job), the merchant webhook deliveries, the price change scan, the supplier jobs (dispatch, poll, sync) and the metrics listener. Domain modules add their processors and schedules here as their features are built.
 import { Module } from '@nestjs/common';
 import { ClockModule } from './common/clock.module';
 import { ConfigModule } from './config';
@@ -24,6 +24,7 @@ import {
 } from './modules/identity';
 import { OrdersOutboxModule } from './modules/orders';
 import { OutboxRelayModule, WebhookDeliveryModule } from './modules/platform';
+import { SupplierJobsModule } from './modules/suppliers';
 
 /**
  * Root Nest module of the worker process.
@@ -57,6 +58,7 @@ import { OutboxRelayModule, WebhookDeliveryModule } from './modules/platform';
     OrdersOutboxModule,
     WebhookDeliveryModule,
     PriceChangeScanModule,
+    SupplierJobsModule,
   ],
   providers: [WorkerMetricsServer],
 })

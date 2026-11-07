@@ -153,7 +153,12 @@ export function transitionLines(
     case 'completed': {
       const cost = dollars(context.money.cost);
       return [
-        line('completed', context.actor, { message: 'Completed by staff reply' }, status),
+        line(
+          'completed',
+          context.actor,
+          { message: context.actor.type === 'supplier' ? 'Completed by the supplier' : 'Completed by staff reply' },
+          status,
+        ),
         line('settle', SYSTEM_ACTOR, {
           message: `Settled: revenue ${amount}, cost ${cost}`,
           revenue: context.money.amount,

@@ -9,6 +9,7 @@ import { seedIdentity } from './identity';
 import { seedMoney } from './money';
 import { seedOrders } from './orders';
 import { seedPlatform } from './platform';
+import { seedSupplierLogs, seedSuppliers } from './suppliers';
 
 /** One module's seeder. */
 export interface Seeder {
@@ -22,14 +23,16 @@ export interface Seeder {
 
 /**
  * The seeders, in the order they run: identity first (staff are referenced by almost everything), then platform, money and
- * catalog (which needs the merchant groups), then the orders, which need the merchants, the services and the ledger the others seed.
+ * catalog (which needs the merchant groups), the suppliers with their links (they need the services), then the orders, which need the merchants, the services, the suppliers and the ledger the others seed, and last the supplier call log, whose rows point at orders.
  */
 export const SEEDERS: readonly Seeder[] = [
   { module: 'identity', run: seedIdentity },
   { module: 'platform', run: seedPlatform },
   { module: 'money', run: seedMoney },
   { module: 'catalog', run: seedCatalog },
+  { module: 'suppliers', run: seedSuppliers },
   { module: 'orders', run: seedOrders },
+  { module: 'supplier-logs', run: seedSupplierLogs },
 ];
 
 /**

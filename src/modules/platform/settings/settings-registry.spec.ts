@@ -58,3 +58,26 @@ describe('settingsPatchProblems', () => {
     ]);
   });
 });
+
+describe('the supplier settings', () => {
+  it('accept the whole numbers and the boolean the supplier jobs read', () => {
+    expect(
+      settingsPatchProblems({
+        'catalog.importDefaultSlaMinutes': 1440,
+        'orders.poll_slow_after_hours': 24,
+        'suppliers.allowPlainHttp': true,
+      }),
+    ).toEqual([]);
+  });
+
+  it('refuse values outside their range or of another type', () => {
+    expect(
+      settingsPatchProblems({
+        'catalog.importDefaultSlaMinutes': 0,
+        'orders.poll_slow_after_hours': 9000,
+        'suppliers.allowPlainHttp': 'yes',
+      }).map((problem) => problem.key),
+    ).toEqual(['catalog.importDefaultSlaMinutes', 'orders.poll_slow_after_hours', 'suppliers.allowPlainHttp']);
+    expect(settingsPatchProblems({ 'catalog.importDefaultSlaMinutes': 1.5 })).toHaveLength(1);
+  });
+});

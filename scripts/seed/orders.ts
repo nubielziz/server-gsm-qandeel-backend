@@ -4,8 +4,8 @@
 // `enrich`. Their holds and settlements are in the ledger already (the money seed replays the demo's journals): this seeder links the
 // orders to them and posts nothing.
 //
-// Left for later features, by the lead's seed order (2026-11-07): `supplier_id`, `supplier_service_id` and `supplier_ref` stay null (feature 6
-// fills them: its seeder runs before this one and this seeder then links the supplier of each order by name); the storefront (B2C)
+// Left for later features, by the lead's seed order (2026-11-07): `supplier_service_id` and `supplier_ref` stay null (the demo has no
+// supplier order numbers: a seeded order is never polled); `supplier_id` is the order's demo supplier once feature 6's seeder has run before this one; the storefront (B2C)
 // orders need customers (14b) and arrive with 14b and 16.
 import type { AppConfig } from '../../src/config';
 import { hashToken } from '../../src/infra/crypto';
@@ -37,6 +37,8 @@ interface DemoOrder {
   reply: string | null;
   events: DemoEvent[];
   updated?: number;
+  /** The supplier that fulfilled (or was asked to fulfil) the order, as the demo stores it (`sup5`). */
+  sup?: string;
   risk?: { decision: string; reviewedAt: number | null };
 }
 
@@ -157,12 +159,9 @@ export async function seedOrders(db: DbExecutor, demo: DemoSeed, config?: AppCon
   const merchants = new Map(demoRows<{ id: string; name: string }>(demo, 'merchants').map((m) => [m.id, m]));
   const known = await db.select({ id: s.clients.id }).from(s.clients);
   const clientIds = new Set(known.map((row) => row.id));
-  const suppliers = new Map(
-    (await db.select({ id: s.suppliers.id, name: s.suppliers.name }).from(s.suppliers)).map((row) => [
-      row.name,
-      row.id,
-    ]),
-  );
+  const supplierRows = await db.select({ id: s.suppliers.id, name: s.suppliers.name }).from(s.suppliers);
+  const suppliers = new Map(supplierRows.map((row) => [row.name, row.id]));
+  const supplierIds = new Set(supplierRows.map((row) => row.id));
 
   const verifying = verificationOrderIds(demoOrders.filter((order) => order.mid));
   const firstQueued = demoOrders.find((order) => order.status === 'queued');
@@ -240,9 +239,13 @@ export async function seedOrders(db: DbExecutor, demo: DemoSeed, config?: AppCon
       lines.sort((a, b) => a.createdAt!.getTime() - b.createdAt!.getTime()),
     );
 
-    const supplierName = manual
-      ? undefined
-      : demoOrder.events.find((event) => suppliers.has(event.by) && event.k === 'dispatch')?.by;
+    // The demo names the supplier on the order (`sup`); its `dispatch` line is written by the system, so the supplier is not found there.
+    const supplierId =
+      manual || dispatched === undefined || demoOrder.sup === undefined
+        ? null
+        : supplierIds.has(demoNumericId(demoOrder.sup))
+          ? demoNumericId(demoOrder.sup)
+          : null;
     orderRows.push({
       id,
       clientId,
@@ -259,7 +262,7 @@ export async function seedOrders(db: DbExecutor, demo: DemoSeed, config?: AppCon
       totalCost: toMoney(demoOrder.cost),
       currency: 'USD',
       pricingSnapshot: snapshotOf(demoOrder, service),
-      supplierId: supplierName === undefined ? null : (suppliers.get(supplierName) ?? null),
+      supplierId,
       resultCode:
         demoOrder.status === 'completed' ? demoOrder.reply : demoOrder.status === 'rejected' ? demoOrder.reason : null,
       verificationStatus: verification ? 'requested' : null,

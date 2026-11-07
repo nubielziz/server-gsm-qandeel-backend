@@ -58,8 +58,8 @@ describe.skipIf(!frontendPresent)('the orders seed', () => {
       totalCost: '2.4000',
       currency: 'USD',
       resultCode: 'File delivered: SMS911B.zip (0.9 MB).',
-      // The suppliers are seeded by feature 6, which also fills these three columns for these orders.
-      supplierId: null,
+      // The supplier of the demo order (FileForge, seeded by feature 6); the demo has no supplier order number, so these two stay null.
+      supplierId: 5,
       supplierServiceId: null,
       supplierRef: null,
     });

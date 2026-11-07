@@ -63,6 +63,8 @@ export type OrderChanges = Partial<
     | 'supplierId'
     | 'supplierServiceId'
     | 'supplierRef'
+    | 'unitCost'
+    | 'totalCost'
   >
 >;
 

@@ -40,6 +40,15 @@ export type { PlacementItem, PlacementRequest } from './application/order-placem
 export { OrderTransitions, refusalError } from './application/order-transitions';
 export type { TransitionOutcome, TransitionRequest } from './application/order-transitions';
 export { OrderReadService } from './application/order-read.service';
+export { OrderSupplierMoves } from './application/order-supplier-moves';
+export type {
+  EventData,
+  SupplierMove,
+  SupplierMoveAction,
+  SupplierSettlement,
+} from './application/order-supplier-moves';
+export type { PollCandidate, SupplierOrderCounts, SupplierOrderUsage } from './infra/order-supplier.repository';
 export { OrdersOutboxModule } from './orders-outbox.module';
+export { OrdersEngineModule } from './orders-engine.module';
 export { OrdersAdminModule } from './orders-admin.module';
 export { OrdersModule } from './orders.module';

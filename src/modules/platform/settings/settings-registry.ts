@@ -46,6 +46,58 @@ export function priceChangeTolerancePercentProblem(value: unknown): string | und
   return undefined;
 }
 
+/** The key of the SLA an imported service gets when the supplier's time text cannot be read (RESOLUTIONS orders-suppliers-10). */
+export const IMPORT_DEFAULT_SLA_KEY = 'catalog.importDefaultSlaMinutes';
+
+/**
+ * Checks the value of `catalog.importDefaultSlaMinutes`: a JSON integer from 1 to 525600 (one year of minutes).
+ *
+ * Why: orders-suppliers-10: a supplier's delivery text that cannot be read gives the imported service this SLA (default 1440), a long
+ * one on purpose so that a guess does not make the service past its SLA at once. The supplier import reads it.
+ *
+ * @param value the value as sent
+ * @returns the problem, or `undefined` when the value is acceptable
+ */
+export function importDefaultSlaMinutesProblem(value: unknown): string | undefined {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return 'Use a whole number of minutes.';
+  if (value < 1 || value > 525_600) return 'Use a number from 1 to 525600.';
+  return undefined;
+}
+
+/** The key of the hour from which supplier status polls slow down to every 30 minutes (decision 025). */
+export const POLL_SLOW_AFTER_HOURS_KEY = 'orders.poll_slow_after_hours';
+
+/**
+ * Checks the value of `orders.poll_slow_after_hours`: a JSON integer from 1 to 8760.
+ *
+ * Why: decision 025: a sent order is polled every minute for an hour, every 5 minutes after, and every 30 minutes once it is older
+ * than this many hours (default 24). The supplier poll tick reads it.
+ *
+ * @param value the value as sent
+ * @returns the problem, or `undefined` when the value is acceptable
+ */
+export function pollSlowAfterHoursProblem(value: unknown): string | undefined {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return 'Use a whole number of hours.';
+  if (value < 1 || value > 8760) return 'Use a number from 1 to 8760.';
+  return undefined;
+}
+
+/** The key of the opt-out that lets suppliers be called over plain `http` in production (decision 023). */
+export const SUPPLIERS_ALLOW_PLAIN_HTTP_KEY = 'suppliers.allowPlainHttp';
+
+/**
+ * Checks the value of `suppliers.allowPlainHttp`: a JSON boolean.
+ *
+ * Why: decision 023 and the infra notes: a supplier call needs `https` in production; a supplier that only speaks plain `http` needs an
+ * admin-visible opt-out, and this setting is it (it applies to every supplier; the host still has to be a public address).
+ *
+ * @param value the value as sent
+ * @returns the problem, or `undefined` when the value is acceptable
+ */
+export function allowPlainHttpProblem(value: unknown): string | undefined {
+  return typeof value === 'boolean' ? undefined : 'Use true or false.';
+}
+
 /**
  * The settings `PATCH /admin/settings` accepts. A later feature that needs another key editable here adds it with its
  * validator; the keys with their own guarded routes (`adminAllowlistOnly`, `maintenance`, the risk rules, the storefront
@@ -54,6 +106,9 @@ export function priceChangeTolerancePercentProblem(value: unknown): string | und
 export const EDITABLE_SETTINGS: readonly EditableSetting[] = [
   { key: 'imeiRetentionDays', validate: imeiRetentionDaysProblem },
   { key: PRICE_CHANGE_TOLERANCE_KEY, validate: priceChangeTolerancePercentProblem },
+  { key: IMPORT_DEFAULT_SLA_KEY, validate: importDefaultSlaMinutesProblem },
+  { key: POLL_SLOW_AFTER_HOURS_KEY, validate: pollSlowAfterHoursProblem },
+  { key: SUPPLIERS_ALLOW_PLAIN_HTTP_KEY, validate: allowPlainHttpProblem },
 ];
 
 /** A refused key of a settings patch. */
