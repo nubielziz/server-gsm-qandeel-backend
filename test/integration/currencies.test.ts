@@ -78,7 +78,7 @@ describe('POST /admin/currencies', () => {
     const { db } = await testDb();
     const [audit] = await db.select().from(s.auditLogs);
     expect(audit).toMatchObject({
-      action: 'Added a currency',
+      action: 'added currency',
       entityType: 'currency',
       entityId: row.id,
       entityLabel: 'GBP',
@@ -303,7 +303,7 @@ describe('PATCH /admin/currencies/:id', () => {
     await send(staff, 'PATCH', `/admin/currencies/${gbp.id}`, {});
     const { db } = await testDb();
     const audits = await db.select().from(s.auditLogs).orderBy(s.auditLogs.id);
-    expect(audits.map((row) => row.action)).toEqual(['Added a currency', 'Changed a currency', 'Changed a currency']);
+    expect(audits.map((row) => row.action)).toEqual(['added currency', 'changed currency', 'changed currency']);
     expect(audits[1]).toMatchObject({
       entityType: 'currency',
       entityId: gbp.id,

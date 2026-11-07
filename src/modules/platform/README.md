@@ -240,7 +240,7 @@ await this.db.runInTransaction(async ({ tx }) => {
   const before = await this.repository.find(tx, id);
   const after = await this.repository.update(tx, id, patch);
   await this.audit.record(tx, {
-    action: 'Suspended staff member', // a readable English verb phrase, as the console shows it
+    action: 'suspended admin', // the demo's lower-case verb phrase; the console prints `<actor> <action> <entityLabel>` (ANSWERS audit Q3)
     entityType: 'staff', // snake_case, from the console's fixed list
     entityId: id, // omit for an action without a numeric record (settings, a queue pause): stored as 0
     entityLabel: after.name, // a name snapshot, or the target when there is no id

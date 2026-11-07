@@ -422,7 +422,7 @@ describe('POST /admin/ledger/reconcile', () => {
     });
     const [audit] = await db.select().from(s.auditLogs);
     expect(audit).toMatchObject({
-      action: 'Ran the ledger reconciliation',
+      action: 'ran',
       actorId: staff.staffId,
       after: { accountsChecked: accounts, entriesChecked: 20, differences: 0 },
     });

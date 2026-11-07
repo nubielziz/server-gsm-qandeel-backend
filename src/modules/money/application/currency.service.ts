@@ -153,7 +153,7 @@ export class CurrencyService {
         throw error;
       });
       await this.audit.record(tx, {
-        action: 'Added a currency',
+        action: 'added currency',
         entityType: 'currency',
         entityId: row.id,
         entityLabel: row.code,
@@ -221,7 +221,7 @@ export class CurrencyService {
       const row =
         Object.keys(changes).length > 0 ? await updateCurrency(tx, id, { ...changes, updatedAt: now }) : current;
       await this.audit.record(tx, {
-        action: 'Changed a currency',
+        action: 'changed currency',
         entityType: 'currency',
         entityId: id,
         entityLabel: row.code,

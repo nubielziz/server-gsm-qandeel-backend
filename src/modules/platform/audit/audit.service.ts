@@ -14,7 +14,10 @@ import { redactForAudit } from './audit-redaction';
  * `GET /admin/audit-logs`, MISMATCHES B10).
  */
 export interface AuditEntry {
-  /** A readable English verb phrase, as the console shows it: `Suspended staff member`, `Turned the allowlist on`. */
+  /**
+   * The demo's lower-case verb phrase, completed by `entityLabel` on screen (`<actor> <action> <entityLabel>`, ANSWERS audit
+   * Q3): `suspended admin`, `adjusted wallet of`, `changed group of`, `turned on the IP restriction for the admin console`.
+   */
   readonly action: string;
   /** The kind of record, from the closed list `AUDIT_ENTITY_TYPES`: `staff`, `session`, `ip_rule`, `setting`, `order`, ... */
   readonly entityType: AuditEntityType;

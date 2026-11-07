@@ -210,11 +210,8 @@ export class WalletService {
       const after = viewOf(await readWalletAccounts(tx, clientId, BASE_CURRENCY));
       const wallet = posted.touched.find((account) => account.kind === 'client_wallet');
       await this.audit.record(tx, {
-        action: posted.replayed
-          ? 'Repeated a wallet adjustment (same idempotency key)'
-          : input.direction === 'credit'
-            ? 'Credited a merchant wallet'
-            : 'Debited a merchant wallet',
+        // The demo's phrase (ANSWERS audit Q3); the direction and amount are in `after`.
+        action: posted.replayed ? 'repeated wallet adjustment of' : 'adjusted wallet of',
         entityType: 'merchant',
         entityId: clientId,
         entityLabel: merchant.name,
@@ -257,7 +254,7 @@ export class WalletService {
       await writeCreditLimit(tx, walletId, limit.toWire(), this.clock.now());
       const after = viewOf(await readWalletAccounts(tx, clientId, BASE_CURRENCY));
       await this.audit.record(tx, {
-        action: 'Changed a merchant credit limit',
+        action: 'changed credit limit of',
         entityType: 'merchant',
         entityId: clientId,
         entityLabel: merchant.name,

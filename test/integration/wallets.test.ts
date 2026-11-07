@@ -260,7 +260,7 @@ describe('POST /admin/clients/:id/wallet/adjust', () => {
     expect(audits[0]).toMatchObject({
       actorType: 'staff',
       actorId: staff.staffId,
-      action: 'Credited a merchant wallet',
+      action: 'adjusted wallet of',
       entityType: 'merchant',
       entityId: merchant.id,
       entityLabel: 'Zain Mobile Hub',
@@ -282,7 +282,7 @@ describe('POST /admin/clients/:id/wallet/adjust', () => {
     );
     expect(res.json().wallet.balance).toBe('37.5000');
     const [audit] = await db.select().from(s.auditLogs);
-    expect(audit).toMatchObject({ action: 'Debited a merchant wallet' });
+    expect(audit).toMatchObject({ action: 'adjusted wallet of', after: { direction: 'debit' } });
     expect(await accountFigures(db, 'adjustments')).toMatchObject({ balance: '-12.5000' });
   });
 
@@ -423,8 +423,8 @@ describe('POST /admin/clients/:id/wallet/adjust', () => {
       expect(again.json().wallet.balance).toBe('10.0000');
       expect((await ledgerTotals(db)).transactions).toBe(1);
       expect((await db.select().from(s.auditLogs)).map((row) => row.action)).toEqual([
-        'Credited a merchant wallet',
-        'Repeated a wallet adjustment (same idempotency key)',
+        'adjusted wallet of',
+        'repeated wallet adjustment of',
       ]);
     });
 
@@ -503,7 +503,7 @@ describe('PATCH /admin/clients/:id/credit-limit (user rule 2)', () => {
     });
     const [audit] = await db.select().from(s.auditLogs);
     expect(audit).toMatchObject({
-      action: 'Changed a merchant credit limit',
+      action: 'changed credit limit of',
       entityType: 'merchant',
       entityId: merchant.id,
       entityLabel: 'Al-Noor',

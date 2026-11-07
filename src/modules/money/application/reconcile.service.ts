@@ -69,9 +69,9 @@ export class ReconcileService {
     });
     await this.db.runInTransaction(({ tx }) =>
       this.audit.record(tx, {
-        action: 'Ran the ledger reconciliation',
+        action: 'ran',
         entityType: 'ledger_transaction',
-        entityLabel: 'ledger reconciliation',
+        entityLabel: 'the ledger reconciliation',
         after: {
           accountsChecked: report.accountsChecked,
           entriesChecked: report.entriesChecked,
