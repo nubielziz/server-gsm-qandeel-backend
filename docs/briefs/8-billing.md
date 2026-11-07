@@ -1,9 +1,8 @@
 # 8 billing
 
-> **Lead, before launching the implementer:** write the per-route specs of the portal routes without a console caller
-> (`GET|POST /client/kyc`, resolution identity-platform-16; and, for the same reason, `GET /client/payment-methods`,
-> `GET|POST /client/invoices`, `GET /client/invoices/:id`, `POST /client/invoices/:id/receipt`) as B-entries in
-> `docs/contract/lead-decisions.json`, then `bun scripts/build-contract-docs.mjs` (as B121-B136 and B154-B157 were written).
+> Portal spec prerequisite (resolution identity-platform-16): done. `GET|POST /client/kyc` are MISMATCHES **B161**,
+> `GET /client/payment-methods` **B162**, `GET|POST /client/invoices`, `GET /client/invoices/:id` and
+> `POST /client/invoices/:id/receipt` **B163** (lead, 2026-11-07). They upload through `POST /client/files` (feature 7a).
 
 Phase 3, map stage 8 (admin, client, incoming-webhook and outgoing-event surfaces). Read `_common.md` and `_feature.md`
 first: this brief only names the scope. Modules: money (gateways, invoices, payments, the payment webhook, `invoice.paid`)

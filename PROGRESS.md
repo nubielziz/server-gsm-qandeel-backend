@@ -42,8 +42,8 @@ decision 025 amended for decision 031; `bun run check` green, 2883 pass) and B16
    optional service flags `allowCancel`, `allowVerify`, `verifyWindowH` on `POST|PATCH /admin/services` (the columns exist,
    no route sets them, the console's service form lacks them: merchant cancel and verify are refused until then), and
    `POST /client/files` (still pending; the same upload path as `POST /v1/files`).
-3. Lead: the portal specs of 8 (B161 onwards: B numbers are positions in `lead-decisions.json` `extra`; check that 6 and 7a
-   added none first).
+3. Done by the lead: the portal specs of 8, B161 (KYC), B162 (payment methods), B163 (invoices and receipts). B numbers are
+   positions in `lead-decisions.json` `extra`: an entry 6 adds goes after them at the merge (7a is told to add none).
 4. Wave 4: **8** billing (`8-billing.md`) in parallel with **9** health and dashboard (`9-health-dashboard.md`). Wave 5:
    **12b** (`12b-alerts-integrity.md`). Briefs still to write: 11, 12a, 14a, 14b without tax rates, 15, 16, 17, 18, 19.
 5. After every merge: restart the API and worker, `bun run db:migrate && bun run db:seed`, `npm run mocks:live` in the
