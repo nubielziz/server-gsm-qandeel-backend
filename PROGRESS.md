@@ -42,6 +42,14 @@ adds the `notifications` routes of 8's events only after 8 merges; nobody edits 
 B-entries from the reports). Waiting by dependency: **12b** (after 9), **16** (after 8 and 14a), **17** (after 12a and
 14b), **18** (after 16), **19** (after 9, 12a, 14a and 15).
 
+**Session restart (2026-11-07 evening):** the eight workflows stopped with the session; every worktree kept its partial
+work. They were relaunched with the `gsm-backend-continue` workflow (a Sonnet implementer finishes the partial work, then the
+same Opus review, fix and re-review). Run ids: 8 `wf_779c1264-d03`, 14a `wf_744ae232-c1a`, 14b `wf_57317f17-9b6`, 7a
+`wf_e5268c79-678`, 9 `wf_377fc5e9-3b1`, 15 `wf_eb2f7830-3f0`, 11 `wf_e67cc2d5-016`, 12a `wf_8dfd6d99-4a7`. Their arguments
+are saved in the lead's scratchpad (`continue-args.json`); to resume after another restart, relaunch the script
+`workflows/scripts/gsm-backend-continue-*.js` with `resumeFromRunId` AND the same args (a resumed run does not keep its
+args). The dev API, worker and Vite server must be restarted before the next walk.
+
 **Next, in order:**
 1. Merge **6** (its migration starts at 0009), walk Suppliers, the order drawer's dispatch/fetch/change-supplier and the
    supplier logs.
