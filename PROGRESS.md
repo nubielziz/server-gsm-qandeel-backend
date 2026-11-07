@@ -54,7 +54,24 @@ MinIO run; the API, worker and Vite start only for a walk and stop after it.
   orders, the FILEDATA 1 MiB form limit, invoice PDF inline rendering, mismatched payments not reconciling through
   gateway_clearing, idle suppliers shown as degraded.
 
-**The user's instruction (2026-11-07, 23:45):** finish the six running workflows and merge them, then stop for the night; 17, 18 and 19 start the next day (do not launch them tonight).
+**Stopping for the night (the user's instruction, 2026-11-07, 23:50).** No new feature tonight; 17, 18 and 19 start the next
+day. State of the six runs at 23:48 (each worktree keeps its files whatever happens to the run):
+- **14b** (`wf_4b060a2c-6a7`, continue): finished, reviewed (blocking findings), the fix agent was running.
+- **12a** (`wf_4cd665ad-733`), **15** (`wf_c039bfd4-270`), **11** (`wf_a50bf7cb-24e`) (continue): finished, the Opus review
+  was running.
+- **12b** (`wf_31478c9a-770`) and **16** (`wf_73269427-02a`) (feature, new worktrees): the Sonnet implementer was running.
+
+**How to resume tomorrow.** Read the end of each run's `journal.jsonl` (lead session directory,
+`subagents/workflows/<run id>/`) to see the last finished step; a run that ended `pass` or `pass-after-fix` is ready to merge
+(`.lead/merge-prep.sh start <feature>`, resolve, `finish`, full check, squash-merge, B-entry from the reports). A run that did
+not finish: `resumeFromRunId` works only inside the same Claude session, so in a new session launch
+`.lead/workflows/gsm-backend-continue.js` (a copy of the script) with the feature's args from `.lead/continue-args.json`
+(12a, 14b, 15, 11) or `.lead/feature-args.json` (12b, 16; the continue script reads a subset of the same fields): it finishes
+the partial work in the worktree, then the Opus review, a fix of blocking findings and a re-review. If the machine shut down,
+start Docker first (`docker compose up -d postgres redis-queue redis-cache minio`) and wait for Postgres to accept connections
+(after an unclean stop it replays its data directory for several minutes). Then 17, 18 and 19 per their args in
+`.lead/feature-args.json` (`base` is set at launch; test databases `gsm_17_test`, `gsm_18_test`, `gsm_19_test` exist; Redis
+8, 11, 13) as soon as their dependencies are merged: 17 after 12a and 14b, 18 after 16 and 14b, 19 after 12a and 15.
 
 **Next, in order:** merge each running feature as it finishes (commit its work, merge `main` in, resolve, regenerate, full
 check, squash-merge, B-entry, walk what the console can show, `npm run mocks:live` in the frontend); start **17** support
