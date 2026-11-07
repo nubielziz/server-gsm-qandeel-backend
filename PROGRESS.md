@@ -50,7 +50,12 @@ feature for the `gsm-backend-continue` workflow), `merge-prep.sh` (start / finis
 reboot only Postgres, the two Redis servers and MinIO were started (Prometheus and Mailpit were already stopped; start them
 for a walk that needs them); Postgres replayed its data directory for about 7 minutes before accepting connections.
 **The user asked for 3 agents at a time** (to keep the machine free): the features run as one sequential workflow each, three
-at once, the next starting when one ends. Done: **7a**, **8** and **9** (merged and walked). Running: **12a** (`wf_70efd984-263`), **14a**
+at once, the next starting when one ends. **Stopped at the user's usage limit (2026-11-07, late):** **14a** is finished, reviewed and fixed (the review's one blocking
+finding, checkout selling unlisted services, is fixed; full check green in its worktree: 3016 pass) but NOT merged yet:
+merge it next (expect overlaps with 14b in customers.module.ts, index.ts, README, machine-auth.test.ts, test/support/app.ts;
+record its spec decisions as a B-entry; 14b's tests need the `withoutModules` option 14a added). **12a** and **14b** were
+stopped mid-run (their work is in their worktrees): relaunch both with the `gsm-backend-continue` script and the args in
+`.lead/continue-args.json`. Then the queue below. Done: **7a**, **8** and **9** (merged and walked). Was running: **12a** (`wf_70efd984-263`), **14a**
 (`wf_3a5177e0-444`), **14b** (`wf_169264a1-f10`). Queue: 15, 11, 12b (9 is merged: a new worktree from `main` with the
 `gsm-backend-feature` workflow), then 16 (after 14a; 8 is merged), 17 (after 12a and 14b), 18 (after 16), 19. To resume a stopped run: the script `workflows/scripts/gsm-backend-continue-*.js` with `resumeFromRunId` and the same
 args from `.lead/continue-args.json`.
