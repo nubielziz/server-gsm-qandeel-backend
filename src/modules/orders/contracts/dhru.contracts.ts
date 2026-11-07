@@ -1,7 +1,7 @@
 // The Dhru Fusion v6.1 surface of the orders module (decision 026): the transport route `POST /api/index.php` and the contracts of the six
 // order actions (`placeimeiorder`, `placeimeiorderbulk`, `getimeiorder`, `getimeiorderbulk`, `placefileorder`, `getfileorder`). The other two
 // actions are owned by money (`accountinfo`) and catalog (`imeiservicelist`). The keys and spellings are the decision's; the parameters of
-// the file actions are fixed here (decision 026 leaves them to this feature, MISMATCHES entry of 7a).
+// the file actions are fixed here (decision 026 leaves them to this feature; MISMATCHES B166).
 import { z } from 'zod';
 import { MAX_ID, defineRoute } from '../../../common/contract';
 import { defineDhruAction } from '../../../common/dhru';
