@@ -1,9 +1,7 @@
 # 7b merchant-api-webhooks
 
-> **Lead, before launching the implementer (resolution identity-platform-16):** write the per-route specs of
-> `/client/api-keys` and `/client/webhooks` (request, response with status, errors, list query) as B-entries in
-> `docs/contract/lead-decisions.json` and regenerate the contract docs (`bun scripts/build-contract-docs.mjs`), as
-> B121-B136 did for 2b; 7a needs the `/v1/files` specs the same way.
+> Portal spec prerequisite (resolution identity-platform-16): done for 7b. `/client/api-keys` is `docs/contract/MISMATCHES.md`
+> **B155** and `/client/webhooks` is **B156** (lead, 2026-11-07); 7a still needs the `/v1/files` specs.
 
 Phase 3, map stage 7 (admin, client and outgoing-event surfaces). Read `_common.md` and `_feature.md` first: this brief only
 names the scope. Modules: identity (API keys) and platform (webhook endpoints, deliveries, outgoing events). Wave 3, in
