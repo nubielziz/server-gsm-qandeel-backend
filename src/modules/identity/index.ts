@@ -10,6 +10,8 @@ export { CurrentMerchant, CurrentPrincipal, CurrentStaff, accessStateOf, princip
 export type { AccessState } from './security/access-state';
 export { ALL_PERMISSIONS, grants, grantsEverything, isValidPermission } from './security/permission-grammar';
 export { assertOwnerTargetAllowed, isOwner } from './security/principal';
+// Leaf services other modules inject (the catalog's group routes): no dependencies, so they load before anything that leads back.
+export { MerchantGroupMembers } from './application/merchant-group-members';
 export { IdentityModule } from './identity.module';
 export { SecurityModule } from './security/security.module';
 export { StaffAuthModule } from './staff-auth.module';
@@ -20,6 +22,12 @@ export type { ClientStats, ClientStatsSource } from './application/client-stats'
 export { MERCHANT_INVITED_EVENT } from './application/client-admin.service';
 export { cidrToWire } from './domain/ip-rule-input';
 export { SessionPurgeModule, SESSION_PURGE_SCHEDULER } from './jobs/session-purge.module';
+export { GroupPromotionModule, GROUP_PROMOTION_SCHEDULER } from './jobs/group-promotion.module';
+export { GROUP_PROMOTION_JOB } from './jobs/group-promotion.processor';
+export { GroupPromotion, PROMOTION_BATCH_SIZE } from './jobs/group-promotion';
+export type { PromotionSummary } from './jobs/group-promotion';
+export { breaksCreditRule, decidePromotion } from './domain/group-promotion';
+export type { CurrentGroup, PromotionTarget } from './domain/group-promotion';
 export { SESSION_PURGE_JOB } from './jobs/session-purge.processor';
 export { PURGE_BATCH_SIZE, SESSION_RETENTION_DAYS, SessionPurge } from './jobs/session-purge';
 export { MerchantAuthModule } from './merchant-auth.module';

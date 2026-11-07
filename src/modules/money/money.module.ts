@@ -2,6 +2,7 @@
 // gateways, payments, refunds, disputes and tax rates arrive with their own features (docs/ARCHITECTURE.md § 2).
 import { Global, Module } from '@nestjs/common';
 import { MerchantAccounts } from './application/merchant-accounts';
+import { MerchantSpend } from './application/merchant-spend';
 import { MerchantWallets } from './application/merchant-wallets';
 import { LedgerPoster } from './application/post-transaction';
 import { MoneyAdminModule } from './money-admin.module';
@@ -17,7 +18,7 @@ import { MoneyAdminModule } from './money-admin.module';
 @Global()
 @Module({
   imports: [MoneyAdminModule],
-  providers: [MerchantAccounts, LedgerPoster, MerchantWallets],
-  exports: [MerchantAccounts, LedgerPoster, MerchantWallets],
+  providers: [MerchantAccounts, LedgerPoster, MerchantWallets, MerchantSpend],
+  exports: [MerchantAccounts, LedgerPoster, MerchantWallets, MerchantSpend],
 })
 export class MoneyModule {}

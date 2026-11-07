@@ -4,6 +4,7 @@ export { MoneyModule } from './money.module';
 export { MerchantAccounts } from './application/merchant-accounts';
 export type { OpenMerchantAccountsInput, OpenedWallet } from './application/merchant-accounts';
 export { MerchantWallets } from './application/merchant-wallets';
+export { MerchantSpend } from './application/merchant-spend';
 export { LedgerPoster, LedgerRefRequiredError, postTransaction } from './application/post-transaction';
 export type { PostTransactionInput, PostedAccount, PostedTransaction } from './application/post-transaction';
 export { WalletService } from './application/wallet.service';

@@ -2,6 +2,7 @@
 // groups they sit in) of the frontend demo. Mirrors the frontend mocks (src/mocks/roles.ts, staff.ts, ipRules.ts and
 // src/features/merchants/mocks/seed.ts); the development sign-in credentials are dev-credentials.ts (P2.6). The wallets of the
 // merchants are feature 3's seed (money.ts).
+import { and, eq, sql } from 'drizzle-orm';
 import { schema as s, type DbExecutor } from '../../src/infra/db';
 import { type DemoSeed, demoNumericId, demoRows, toDate, toMoney } from './demo-state';
 import { type SeedReport, insertRows, syncIdentity } from './helpers';
@@ -161,27 +162,57 @@ const GROUP_IDS = { std: 1, whl: 2, vip: 3 } as const;
 /**
  * Seeds the demo client groups.
  *
+ * Why: a fresh database already holds the default group and the storefront retail group (migration 0005, feature 4a), with
+ * neutral values and the next free ids (1 and 2). The demo's own groups take their place: a migration retail group is deleted
+ * when nothing refers to it (the demo's has id 4), and a group of the same id and name that still carries the migration's
+ * neutral values (Standard) gets the demo's values, so a second run (or a group staff edited) is left alone.
+ *
  * @param db the transaction to write with
  * @param now the rebased "now" of the demo; the groups are dated 400 days before it
  * @returns the report of `client_groups`
  */
 export async function seedClientGroups(db: DbExecutor, now: number): Promise<SeedReport> {
-  const report = await insertRows(
-    db,
-    s.clientGroups,
-    CLIENT_GROUPS.map((group) => ({
-      id: group.id,
-      name: group.name,
-      kind: group.kind,
-      discountPercent: toMoney(group.discount),
-      isDefault: group.isDefault,
-      earnThreshold: toMoney(group.threshold),
-      depositLimit: toMoney(group.deposit),
-      overdraftAllowed: group.overdraft,
-      sort: group.id,
-      createdAt: new Date(now - 400 * DAY_MS),
-    })),
-  );
+  const retailId = CLIENT_GROUPS.find((group) => group.kind === 'b2c_retail')!.id;
+  await db.execute(sql`
+    delete from ${s.clientGroups} g
+    where g.kind = 'b2c_retail' and g.id <> ${retailId}
+      and not exists (select 1 from ${s.clients} c where c.group_id = g.id)
+      and not exists (select 1 from ${s.serviceGroupPrices} p where p.group_id = g.id)
+      and not exists (select 1 from ${s.pricingRules} r where r.group_id = g.id)`);
+  const rows = CLIENT_GROUPS.map((group) => ({
+    id: group.id,
+    name: group.name,
+    kind: group.kind,
+    discountPercent: toMoney(group.discount),
+    isDefault: group.isDefault,
+    earnThreshold: toMoney(group.threshold),
+    depositLimit: toMoney(group.deposit),
+    overdraftAllowed: group.overdraft,
+    sort: group.id,
+    createdAt: new Date(now - 400 * DAY_MS),
+  }));
+  const report = await insertRows(db, s.clientGroups, rows);
+  for (const row of rows) {
+    await db
+      .update(s.clientGroups)
+      .set({
+        discountPercent: row.discountPercent,
+        earnThreshold: row.earnThreshold,
+        depositLimit: row.depositLimit,
+        overdraftAllowed: row.overdraftAllowed,
+        sort: row.sort,
+      })
+      .where(
+        and(
+          eq(s.clientGroups.id, row.id),
+          eq(s.clientGroups.name, row.name),
+          eq(s.clientGroups.discountPercent, '0.0000'),
+          eq(s.clientGroups.earnThreshold, '0.0000'),
+          eq(s.clientGroups.depositLimit, '0.0000'),
+          eq(s.clientGroups.overdraftAllowed, false),
+        ),
+      );
+  }
   await syncIdentity(db, s.clientGroups);
   return report;
 }

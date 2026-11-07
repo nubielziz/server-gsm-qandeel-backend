@@ -39,6 +39,8 @@ Exports `IdentityModule` and the security stack (`SecurityModule`, global). Othe
 | `MerchantMailOutbox`, `MERCHANT_MAIL_EVENTS` | `enqueue(work, { kind: 'email_verification' \| 'password_reset' \| 'invited', clientId, tokenId, token })`: writes the outbox event of a merchant mail (ids only) in the caller's transaction; feature 2a writes `invited` with it |
 | `MAIL_SENDER`, `MailSender`, `MerchantMail` | the seam between the mail jobs and a mail transport; feature 12a provides the real sender under the `MAIL_SENDER` token |
 | `CurrentMerchant` | parameter decorator: the signed-in merchant (`MerchantPrincipal`) of a `merchant-session` route |
+| `MerchantGroupMembers` | `countByGroup(db, groupIds)` (the `merchantCount` of the catalog's group routes and their delete guard) and `countInGroup(db, groupId, clientIds)` (the overdraft rule); read-only, no dependencies, exported in the leaf block of `index.ts` (decision 032) |
+| `GroupPromotionModule`, `GroupPromotion`, `decidePromotion`, `breaksCreditRule` | the nightly promotion job of feature 4a (worker only) and its pure decision |
 
 ## The security stack (decision 018)
 
@@ -522,6 +524,14 @@ magic_link` (exported `AUTH_TOKEN_PURPOSES`); `POST /client/auth/password/reset`
   schedule, no `job_runs`; safe to run twice (the job re-reads the merchant and the link and skips what is no longer worth
   sending). Retry: the queue's 5 attempts with backoff from 30 s for a failing sender, `UnrecoverableError` for a job without a
   token id. Listed in `docs/queues.md`.
+
+- `client_group_promotion` on the `maintenance` queue, scheduler `client-group-promotion`, nightly at 03:30 UTC (`GroupPromotionModule`,
+  imported by `src/worker.module.ts` only; processor `GroupPromotionProcessor`, use case `GroupPromotion`, pure decision
+  `domain/group-promotion.ts`; feature 4a, user rule 1). Promotes `active` merchants, never demotes, to the merchant group with the
+  highest `earn_threshold` above zero that their completed-order spend (money's `MerchantSpend`) reaches and that is above their
+  group's threshold; a group at 0 and the storefront group are never targets; a target without overdraft is skipped while the merchant
+  has credit (ip-3). One transaction per merchant (lock, re-read, update `clients.group_id`, audit row with actor `system`,
+  `SessionService.invalidateSubject`); safe to repeat or run in parallel; every run writes a `job_runs` row. Listed in `docs/queues.md`.
 
 Add the next job here and in `docs/queues.md` (see `CONTRIBUTING.md` → "Add a job").
 

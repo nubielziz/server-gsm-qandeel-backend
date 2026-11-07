@@ -29,7 +29,11 @@ export function ownerKey(ownerType: string, ownerId: number): string {
 }
 
 /**
- * Finds a merchant and whether its group allows credit.
+ * Finds a merchant and whether its group allows credit, and keeps the group row locked (`FOR SHARE`) until the transaction ends.
+ *
+ * Why: user rule 2 must hold when staff turn `overdraftAllowed` off for a group at the same moment as another request gives
+ * one of its merchants a credit limit; the group routes lock the row `FOR UPDATE` (catalog module), so one of the two waits and
+ * then sees the other's result. Called inside a transaction, as the lock lasts until it ends.
  *
  * @param db the database or a transaction
  * @param id the merchant id
@@ -41,7 +45,8 @@ export async function findMerchant(db: DbExecutor, id: number): Promise<Merchant
     .from(s.clients)
     .innerJoin(s.clientGroups, eq(s.clientGroups.id, s.clients.groupId))
     .where(eq(s.clients.id, id))
-    .limit(1);
+    .limit(1)
+    .for('share', { of: s.clientGroups });
   return row;
 }
 

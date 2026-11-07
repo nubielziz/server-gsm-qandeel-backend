@@ -34,6 +34,12 @@ routes). Invoices, gateways and payments arrive with feature 8, FX refresh and t
   synchronous (ANSWERS finance Q4) and never corrects anything.
 - **Currencies.** `CurrencyService`: CRUD with `decimals` 0 to 4 and `isStale` for a non-base rate older than 24 h
   (money-13).
+- **Spend and credit reads for the groups (feature 4a).** `MerchantSpend.completedSpend(db, clientIds)` is the cumulative
+  completed-order spend in USD (the `order_settle` debits on each merchant's `client_hold` minus the settlements that were
+  reversed: a transaction with the idempotency key `reverse:<settlement id>` exists, decision 024); the nightly group promotion
+  of identity reads it. `MerchantWallets.idsWithCreditLimit(db)` lists the merchants whose credit limit is above zero (the
+  catalog's `overdraftAllowed: false` guard). `findMerchant` takes `FOR SHARE` on the merchant's group row, so a credit limit
+  change and a change of the group's overdraft flag never interleave.
 - **Seed.** `scripts/seed/money.ts` opens the accounts of every demo merchant and posts the demo's ledger history through
   `postTransaction`, skipping merchants the identity seed has not created.
 
@@ -43,7 +49,7 @@ services as they appear (identity, catalog 4a, suppliers 6, customers 14b). Noth
 
 ## Public API (`index.ts`)
 
-`MoneyModule` (global: `MerchantAccounts`, `LedgerPoster`), `postTransaction`, the 13 money event builders and their ids,
+`MoneyModule` (global: `MerchantAccounts`, `LedgerPoster`, `MerchantWallets`, `MerchantSpend`), `postTransaction`, the 13 money event builders and their ids,
 the account helpers (`walletViewOf`, `balanceDelta`, `normalSideOf`, `toDebitPositive`, `BASE_CURRENCY`), the ledger line
 helpers and the wire ref types (`toWireRefType`, `storedRefTypesOf`). `WalletService` is exported by `MoneyAdminModule`
 (the routes and the services that read the database; a database-less test app leaves it out). Other modules import only

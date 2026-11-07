@@ -10,8 +10,13 @@ export interface RoleWithCount {
   readonly staffCount: number;
 }
 
-/** Counts the staff of a role, any status (the console disables Delete when it is above zero). */
-const staffCountOf = sql<number>`(select count(*)::int from ${staffUsers} where ${staffUsers.roleId} = ${roles.id})`;
+/**
+ * Counts the staff of a role, any status (the console disables Delete when it is above zero).
+ *
+ * The outer column is written out (`"roles"."id"`) and the inner table aliased: in a one-table select Drizzle prints
+ * `${roles.id}` as a bare `"id"`, which inside the subquery would mean `staff_users.id` and count the wrong rows.
+ */
+const staffCountOf = sql<number>`(select count(*)::int from ${staffUsers} as role_member where role_member.role_id = "roles"."id")`;
 
 const COLUMNS: ListColumns = { id: roles.id, name: roles.name };
 

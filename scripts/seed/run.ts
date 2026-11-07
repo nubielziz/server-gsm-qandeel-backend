@@ -1,6 +1,8 @@
 // The seed runner: executes the module seeders in dependency order inside one transaction.
 // Each Phase 3 feature adds its module's seeder to SEEDERS (mind foreign keys: parents first).
+import type { AppConfig } from '../../src/config';
 import type { Database } from '../../src/infra/db';
+import { seedCatalog } from './catalog';
 import type { DemoSeed } from './demo-state';
 import type { SeedReport } from './helpers';
 import { seedIdentity } from './identity';
@@ -10,14 +12,22 @@ import { seedPlatform } from './platform';
 /** One module's seeder. */
 export interface Seeder {
   readonly module: string;
-  run(db: Parameters<Parameters<Database['transaction']>[0]>[0], demo: DemoSeed): Promise<SeedReport[]>;
+  run(
+    db: Parameters<Parameters<Database['transaction']>[0]>[0],
+    demo: DemoSeed,
+    config?: AppConfig,
+  ): Promise<SeedReport[]>;
 }
 
-/** The seeders, in the order they run: identity first (staff are referenced by almost everything), then platform, money. */
+/**
+ * The seeders, in the order they run: identity first (staff are referenced by almost everything), then platform, money and
+ * catalog (which needs the merchant groups).
+ */
 export const SEEDERS: readonly Seeder[] = [
   { module: 'identity', run: seedIdentity },
   { module: 'platform', run: seedPlatform },
   { module: 'money', run: seedMoney },
+  { module: 'catalog', run: seedCatalog },
 ];
 
 /**
@@ -28,13 +38,18 @@ export const SEEDERS: readonly Seeder[] = [
  *
  * @param db the Drizzle database
  * @param demo the loaded frontend demo state
+ * @param config the application configuration; the catalog seeder needs it for the encrypted inventory codes and leaves them out without it
  * @returns the reports of all seeders, in order
  */
-export async function runSeed(db: Database, demo: DemoSeed): Promise<Array<SeedReport & { module: string }>> {
+export async function runSeed(
+  db: Database,
+  demo: DemoSeed,
+  config?: AppConfig,
+): Promise<Array<SeedReport & { module: string }>> {
   return db.transaction(async (tx) => {
     const reports: Array<SeedReport & { module: string }> = [];
     for (const seeder of SEEDERS) {
-      for (const report of await seeder.run(tx, demo)) reports.push({ module: seeder.module, ...report });
+      for (const report of await seeder.run(tx, demo, config)) reports.push({ module: seeder.module, ...report });
     }
     return reports;
   });

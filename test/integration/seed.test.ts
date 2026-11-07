@@ -42,6 +42,12 @@ async function snapshot() {
     settings: await db.select().from(s.settings).orderBy(s.settings.id),
     currencies: await db.select().from(s.currencies).orderBy(s.currencies.id),
     accounts: await db.select().from(s.ledgerAccounts).orderBy(s.ledgerAccounts.id),
+    categories: await db.select().from(s.serviceCategories).orderBy(s.serviceCategories.id),
+    services: await db.select().from(s.services).orderBy(s.services.id),
+    serviceFields: await db.select().from(s.serviceFields).orderBy(s.serviceFields.id),
+    serviceOptions: await db.select().from(s.serviceOptions).orderBy(s.serviceOptions.id),
+    groupPrices: await db.select().from(s.serviceGroupPrices).orderBy(s.serviceGroupPrices.id),
+    codes: await db.select().from(s.inventoryCodes).orderBy(s.inventoryCodes.id),
   });
 }
 

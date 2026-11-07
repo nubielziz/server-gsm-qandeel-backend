@@ -260,7 +260,7 @@ actor is `system`. The row is written on the caller's transaction, so a rolled-b
   is `''`. `actor_type` is `staff | client | customer | system` (exported `AUDIT_ACTOR_TYPES`, CHECK `audit_logs_actor_type_check`).
 - `entityType` must come from the exported `AUDIT_ENTITY_TYPES` (the console's 19 words plus `role`, `client_group`, `category`,
   `currency`, `payment_gateway`, `invoice`, `api_key`, `webhook_endpoint`, `kyc_submission`, `notification_template`,
-  `alert_rule`, `alert`, `incident`, `tax_rate`, `help_article`, `content_page`, `ledger_transaction`); `record` throws a
+  `alert_rule`, `alert`, `incident`, `tax_rate`, `help_article`, `content_page`, `ledger_transaction`, `inventory_code`); `record` throws a
   `RangeError` (a programming error that rolls the transaction back) on any other value. The list is enforced in code with no
   DB CHECK, so the append-only table never needs a migration for it; a feature that needs a new type adds it in its own commit.
   Table to word: `clients` is `merchant`, `staff_users` `staff`, `checkout_sessions` `checkout`, `legal_documents` `legal`,

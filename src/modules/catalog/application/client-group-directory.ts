@@ -1,7 +1,7 @@
 // ClientGroupDirectory: the read-only view of merchant groups other modules use (identity: creating a merchant, moving it to
-// another group, the group inside a merchant row). Resolution identity-platform-3; feature 4a extends it with the group routes.
+// another group, the group inside a merchant row, the nightly promotion ladder). Resolution identity-platform-3, user rule 1.
 import { Injectable } from '@nestjs/common';
-import { eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, asc } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
 import { type ClientGroup, clientGroups } from '../db/schema';
 
@@ -19,6 +19,22 @@ export interface ClientGroupRef {
   readonly isDefault: boolean;
   /** Whether merchants of the group may have a credit limit above zero (user rule 2). */
   readonly overdraftAllowed: boolean;
+  /** The spend in USD that promotes a merchant into the group, as the database prints it (`'5000.0000'`); `'0.0000'` = never a target. */
+  readonly earnThreshold: string;
+  /** The most a merchant of the group may add in one deposit (`'0.0000'` = no per-deposit limit). */
+  readonly depositLimit: string;
+}
+
+/** How {@link ClientGroupDirectory.find} reads a group. */
+export interface FindGroupOptions {
+  /**
+   * `share` takes a row lock (`FOR SHARE`) kept until the caller's transaction ends.
+   *
+   * Why: a merchant move, a credit limit change and a group change of `overdraftAllowed` or a group delete must not interleave
+   * (user rule 2): the group routes lock the row `FOR UPDATE`, so a reader that decides on the group's flags and then writes
+   * takes this shared lock first.
+   */
+  readonly lock?: 'share';
 }
 
 function toRef(row: ClientGroup): ClientGroupRef {
@@ -29,6 +45,8 @@ function toRef(row: ClientGroup): ClientGroupRef {
     discountPercent: row.discountPercent,
     isDefault: row.isDefault,
     overdraftAllowed: row.overdraftAllowed,
+    earnThreshold: row.earnThreshold,
+    depositLimit: row.depositLimit,
   };
 }
 
@@ -48,10 +66,12 @@ export class ClientGroupDirectory {
    *
    * @param db the database or the caller's transaction
    * @param id the group id
+   * @param options `{ lock: 'share' }` to keep the row locked until the transaction ends (see {@link FindGroupOptions})
    * @returns the group, or `undefined` when it does not exist
    */
-  async find(db: DbExecutor, id: number): Promise<ClientGroupRef | undefined> {
-    const [row] = await db.select().from(clientGroups).where(eq(clientGroups.id, id)).limit(1);
+  async find(db: DbExecutor, id: number, options: FindGroupOptions = {}): Promise<ClientGroupRef | undefined> {
+    const query = db.select().from(clientGroups).where(eq(clientGroups.id, id)).limit(1);
+    const [row] = await (options.lock === 'share' ? query.for('share') : query);
     return row ? toRef(row) : undefined;
   }
 
@@ -78,5 +98,24 @@ export class ClientGroupDirectory {
     if (unique.length === 0) return new Map();
     const rows = await db.select().from(clientGroups).where(inArray(clientGroups.id, unique));
     return new Map(rows.map((row) => [row.id, toRef(row)]));
+  }
+
+  /**
+   * Lists the groups a merchant can be promoted into, highest threshold first.
+   *
+   * Why: user rule 1 (RESOLUTIONS catalog-17): the nightly job promotes a merchant to the merchant group with the highest
+   * `earn_threshold` above zero that its spend reaches. A group at 0 is never a target and the storefront retail group is
+   * never one (a merchant cannot join it). Equal thresholds are ordered by id, so the choice is stable.
+   *
+   * @param db the database or the caller's transaction
+   * @returns the merchant groups with `earn_threshold > 0`, by threshold descending then id ascending
+   */
+  async promotionLadder(db: DbExecutor): Promise<ClientGroupRef[]> {
+    const rows = await db
+      .select()
+      .from(clientGroups)
+      .where(and(eq(clientGroups.kind, 'b2b'), gt(clientGroups.earnThreshold, '0')))
+      .orderBy(desc(clientGroups.earnThreshold), asc(clientGroups.id));
+    return rows.map(toRef);
   }
 }

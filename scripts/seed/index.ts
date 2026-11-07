@@ -26,7 +26,7 @@ console.log(`Seeding ${target.hostname}:${target.port || '5432'}${target.pathnam
 const pool = createPool(url, 2);
 try {
   const db = createDrizzle(pool);
-  const reports = await runSeed(db, await loadDemoState());
+  const reports = await runSeed(db, await loadDemoState(), config);
   // Development only (the seed refuses production): `demo-password` and a fixed TOTP secret per seeded member (README "Local sign-in").
   if (config.env === 'development') {
     reports.push({ module: 'identity', ...(await db.transaction((tx) => seedDevCredentials(tx, config))) });

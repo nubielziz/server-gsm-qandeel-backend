@@ -174,14 +174,14 @@ Processes uploaded and generated files (exports, result files).
 Scheduled housekeeping: group promotion, data retention, integrity checks, FX refresh.
 
 - **Concurrency:** 2 per worker process.
-- **Jobs:** `ip_rule_hits_flush`, every minute, and `session_purge`, daily at 03:15 UTC (identity module, below). The others are built by their features, each
+- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, and `client_group_promotion`, nightly at 03:30 UTC (identity module, below). The others are built by their features, each
   registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
-  `client_group_promotion` (feature 4a, nightly), `ledger_integrity` (12b, nightly 02:30 UTC), `data_retention` (nightly
+  `ledger_integrity` (12b, nightly 02:30 UTC), `data_retention` (nightly
   03:00 UTC), `fx_refresh` (hourly), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). The names are the
   console's job names (`GET /admin/system/jobs`). `data_retention` erases `imei_checks` older than `imeiRetentionDays` by
   setting `imei_enc`, `imei_hash` and `cached_until` to NULL together (no marker column; the wire then shows the TAC followed
   by bullets up to 15 characters), the same erasure `POST /admin/customers/:id/anonymize` applies to the customer's checks.
-- **Payload:** none for `ip_rule_hits_flush` and `session_purge` (a manual run of `session_purge` carries `{ runId }` like the others). A manual run of the others carries `{ runId }` of the `job_runs` row that
+- **Payload:** none for `ip_rule_hits_flush`, `session_purge` and `client_group_promotion` (a manual run of the last two carries `{ runId }` like the others). A manual run of the others carries `{ runId }` of the `job_runs` row that
   `POST /admin/system/jobs/:name/run` inserted; the job id is `manual-<run id>`.
 - **Idempotency:** `ip_rule_hits_flush` takes the whole Redis hash of counters and deletes it in one Lua step, so a second or
   parallel run finds nothing and no hit is written twice. `session_purge` deletes by a cutoff computed from the clock, so a
@@ -191,7 +191,8 @@ Scheduled housekeeping: group promotion, data retention, integrity checks, FX re
   `job_runs` row. A manual run is one row: a retry after it failed ends the job as failed (`UnrecoverableError`), a retry
   after it succeeded returns it unchanged.
 - **Schedule:** `ip-rule-hits-flush` every minute (`src/modules/identity/security/ip-rules/ip-rule-hits-flush.module.ts`);
-  `session-purge` at 03:15 UTC (`src/modules/identity/jobs/session-purge.module.ts`); the
+  `session-purge` at 03:15 UTC (`src/modules/identity/jobs/session-purge.module.ts`);
+  `client-group-promotion` at 03:30 UTC (`src/modules/identity/jobs/group-promotion.module.ts`); the
   others are registered with `JobSchedulerRegistry` by the owning features.
 
 ### `ip_rule_hits_flush` (identity module)
@@ -221,6 +222,32 @@ idle-dead but not yet past `expires_at` is not "ended" for the purge and goes wh
   so no statement holds a long lock and the job can be interrupted at any point.
 - **Attempts and retry:** the queue's policy (3 attempts, exponential backoff from 1 min, jitter 50 %); a retry deletes what is left.
 - **Cutoff:** `clock.now() - 30 days` (decision 031): exactly 30 days is kept, one millisecond older is deleted.
+
+### `client_group_promotion` (identity module)
+
+Promotes merchants to a higher merchant group by their cumulative completed-order spend (user rule 1, ANSWERS merchants Q7). A
+merchant moves up, never down, to the merchant group with the highest `client_groups.earn_threshold` above zero that the spend
+reaches and that is above the threshold of the group it is in; a group at 0 and the storefront group (`b2c_retail`) are never
+targets; staff change a group by hand at any time (`PATCH /admin/clients/:id`) and the job never undoes that.
+
+- **Spend:** `MerchantSpend.completedSpend` (money module): the sum of the `order_settle` debits on the merchant's `client_hold`
+  account in USD, minus the settlements that were reversed (a transaction with the idempotency key `reverse:<settlement id>`
+  exists, decision 024). Read from the ledger, never cached. Every merchant reads as zero until feature 5 settles orders.
+- **Who:** `active` merchants, read by id in batches of 500 (`PROMOTION_BATCH_SIZE`). A merchant below the lowest threshold is
+  skipped without further queries.
+- **Per promotion:** one transaction that locks the merchant row (`FOR UPDATE`) and the target group row (`FOR SHARE`), re-reads
+  the merchant's group and the thresholds, checks the credit rule (ip-3: a target without `overdraft_allowed` is skipped, and
+  logged, while the merchant has a credit limit above zero; it is tried again the next night), updates `clients.group_id`, writes
+  an `audit_logs` row (action `promoted merchant to group`, entity `merchant`, actor `system`, before and after group, spend
+  and threshold) and clears the merchant's cached session views (`SessionService.invalidateSubject`, after the commit).
+- **Idempotency:** a merchant already in the target group is not a candidate (the target must be above its threshold), and the
+  locked re-read makes a parallel run or a staff move in between skip the merchant. `JobRunsService` also skips a run while
+  another run of the job is going.
+- **Recorded in `job_runs`** (`JobRunsService.run`, trigger `schedule` or `manual` with `{ runId }`): `processed` = merchants
+  promoted, `result` = `{ checked, promoted, skipped }`.
+- **Attempts and retry:** the queue's policy (3 attempts, exponential backoff from 1 min, jitter 50 %); a retry only finds what
+  is left to promote.
+- **Schedule:** 03:30 UTC (after the 02:30 integrity check, the 03:00 retention job and the 03:15 session purge).
 
 ## alerts
 
@@ -260,6 +287,7 @@ Registered with `JobSchedulerRegistry.register` in `onModuleInit`; the worker up
 | `outbox-relay-tick` | `outbox-relay` | `tick` | every second | platform (`src/modules/platform/outbox/`) |
 | `ip-rule-hits-flush` | `maintenance` | `ip_rule_hits_flush` | every minute | identity (`src/modules/identity/security/ip-rules/`) |
 | `session-purge` | `maintenance` | `session_purge` | daily 03:15 UTC | identity (`src/modules/identity/jobs/`) |
+| `client-group-promotion` | `maintenance` | `client_group_promotion` | daily 03:30 UTC | identity (`src/modules/identity/jobs/`) |
 
 ## Adding a queue or a job
 

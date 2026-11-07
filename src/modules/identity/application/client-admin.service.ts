@@ -190,7 +190,7 @@ export class ClientAdminService {
       const group =
         input.groupId === undefined
           ? await this.groups.findDefault(work.tx)
-          : await this.groups.find(work.tx, input.groupId);
+          : await this.groups.find(work.tx, input.groupId, { lock: 'share' });
       if (!group) {
         throw invalid(
           'groupId',
@@ -295,7 +295,8 @@ export class ClientAdminService {
   }
 
   private async moveToGroup(work: TransactionContext, client: Client, groupId: number): Promise<void> {
-    const group = await this.groups.find(work.tx, groupId);
+    // The shared lock keeps the group from changing its credit rule or being deleted until this move commits.
+    const group = await this.groups.find(work.tx, groupId, { lock: 'share' });
     if (!group) throw invalid('groupId', 'This group does not exist.');
     if (group.kind === RETAIL_GROUP_KIND) throw invalid('groupId', 'A merchant cannot join the storefront group.');
     if (group.id === client.groupId) throw invalid('groupId', 'The merchant is already in this group.');

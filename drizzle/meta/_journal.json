@@ -36,6 +36,13 @@
       "when": 1793529142936,
       "tag": "0004_merchant_totp_and_password_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794033745478,
+      "tag": "0005_default_client_groups",
+      "breakpoints": true
     }
   ]
 }

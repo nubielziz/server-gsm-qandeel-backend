@@ -39,8 +39,32 @@ let migrated: Promise<void> | undefined;
  */
 export function migrateTestDb(): Promise<void> {
   assertTestDatabase(TEST_DATABASE_URL);
-  migrated ??= migrateDatabase(TEST_DATABASE_URL);
+  migrated ??= migrateDatabase(TEST_DATABASE_URL).then(() => keepLedgerStatisticsHonest(TEST_DATABASE_URL));
   return migrated;
+}
+
+/**
+ * Switches autovacuum (and with it auto-analyze) off for the ledger tables of the test database.
+ *
+ * Why: the demo seed replays about 2,000 journals in ONE transaction, and the deferred trigger `ledger_entries_zero_sum`
+ * then runs about 8,000 times at commit. If auto-analyze fires while that transaction is open it sees the uncommitted rows
+ * as no rows at all and stores `reltuples = 0` with many pages; the planner then believes the tables hold one row, picks a
+ * nested loop over the whole account index for every trigger call, and the commit takes minutes (seen as random 60 s test
+ * timeouts in the seed tests, more often when the machine is busy). Without auto-analyze the statistics stay those of a
+ * truncated table (`reltuples = -1`: use the real size), and the plan stays the indexed one. Production tables are
+ * untouched: its ledger writes are one small transaction each.
+ *
+ * @param url the test database
+ */
+async function keepLedgerStatisticsHonest(url: string): Promise<void> {
+  const pool = createPool(url, 1);
+  try {
+    for (const table of ['ledger_entries', 'ledger_transactions', 'ledger_accounts']) {
+      await pool.query(`alter table "${table}" set (autovacuum_enabled = false)`);
+    }
+  } finally {
+    await pool.end();
+  }
 }
 
 let shared: TestDb | undefined;

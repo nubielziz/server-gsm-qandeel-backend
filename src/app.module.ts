@@ -17,7 +17,7 @@ import { QueuesModule } from './infra/queues';
 import { PublicIpLimitModule, RateLimitModule } from './infra/rate-limit';
 import { RedisModule } from './infra/redis';
 import { StorageModule } from './infra/storage';
-import { CatalogModule } from './modules/catalog';
+import { CatalogAdminModule, CatalogModule } from './modules/catalog';
 import { CommissionsModule } from './modules/commissions';
 import { CustomersModule } from './modules/customers';
 import { HealthModule } from './modules/health';
@@ -57,6 +57,7 @@ import { SupportModule } from './modules/support';
     PlatformModule,
     MoneyModule,
     CatalogModule,
+    CatalogAdminModule,
     OrdersModule,
     SuppliersModule,
     HealthModule,

@@ -69,6 +69,20 @@ describe('listing and showing roles', () => {
     expect((await admin.get('/admin/roles?_sort=permissions')).status).toBe(422);
   });
 
+  it('counts the members of each role on its own (a list of several roles, ids that do not line up)', async () => {
+    const admin = await adminWith(t, ['roles:read'], { roleName: 'Zeta admin' });
+    const { db } = await testDb();
+    const busy = await insertRole(db, ['staff:read'], 'Busy');
+    const single = await insertRole(db, ['staff:read'], 'Single');
+    const empty = await insertRole(db, ['staff:read'], 'Empty');
+    for (let i = 0; i < 3; i++) await insertStaff(db, busy);
+    await insertStaff(db, single);
+    const all = await admin.get('/admin/roles?_start=0&_end=10&_sort=name&_order=asc');
+    const counts = Object.fromEntries(all.body.map((r: { id: number; staffCount: number }) => [r.id, r.staffCount]));
+    expect(counts).toEqual({ [busy]: 3, [single]: 1, [empty]: 0, [admin.roleId]: 1 });
+    expect((await admin.get(`/admin/roles/${busy}`)).body.staffCount).toBe(3);
+  });
+
   it('shows one role and answers 404 for an unknown id', async () => {
     const admin = await adminWith(t, ['roles:read']);
     const shown = await admin.get(`/admin/roles/${admin.roleId}`);

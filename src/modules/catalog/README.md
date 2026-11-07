@@ -8,17 +8,63 @@ Decisions that shape this module: 011 money, 026 Dhru compatibility. Common to a
 
 ## Status
 
-Not built yet: the module has no routes. It provides the read-only `ClientGroupDirectory` (`application/client-group-directory.ts`, added by feature 2b); its features add controllers, services, repositories and the owned tables.
+Built (feature 4a, catalog-structure, 20 routes): merchant groups, service categories, services with their custom fields and
+option lists, and the code inventory. Pricing (group and client prices, pricing rules, bulk price, resolve, the merchant catalog)
+is feature 4b; supplier links and import are feature 6; the TAC catalog is 14b.
+
+- **Merchant groups** (`application/client-group-admin.service.ts`, `infra/group.repository.ts`): list with `merchantCount`
+  (not for the retail group), show, create (`b2b`, last in the order), change, delete. One default group at all times: making a
+  group the default moves the mark in the same transaction (an advisory lock keeps two such changes apart), the default group
+  cannot be deleted (`GROUP_IN_USE`) or unmarked (`DEFAULT_GROUP_REQUIRED`), the storefront retail group (`b2c_retail`) cannot be
+  deleted or be the default. A group stops allowing overdraft (`overdraftAllowed: false`) only while no merchant of the group has
+  a credit limit above zero (user rule 2; credit holders from money's `MerchantWallets.idsWithCreditLimit`, members from identity's
+  `MerchantGroupMembers`). Deleting a free group also deletes its group prices and pricing rules and removes its id from
+  `service_categories.allowed_group_ids` (TODO feature 8: `payment_gateways.allowed_group_ids` through money). The group row is
+  locked `FOR UPDATE` while it changes; the code that moves a merchant into a group (`ClientAdminService`) or sets a credit limit
+  (`WalletService`) takes `FOR SHARE` on it, so these never interleave.
+- **Categories** (`category-admin.service.ts`): `serviceCount` counts live services; a name is unique per type (case-insensitive,
+  also mapped from the unique index); a type change waits until the live services have moved (archived ones follow by
+  `ON UPDATE CASCADE`); delete only without any service row (`CATEGORY_IN_USE`, two details), deleting the category's pricing
+  rules with it.
+- **Services** (`service-admin.service.ts`, `infra/service.repository.ts`, `infra/service-figures.sql.ts`): `cost` on the wire is
+  the effective cost, `minProfit` the service's own or the default policy `max(round(6 % of cost, 2), 0.02)`, `floorPrice` =
+  cost + minProfit, `marginPct`, `belowFloor`; all worked out in SQL so the list can filter and sort on them
+  (`domain/service-figures.ts` is the same rule in code; a test compares the two). Create sets the server defaults (`active`,
+  `auto`, `fixed`, `block_open`, cost 0) and derives `delivery_time` from `slaMinutes`; change refuses a `basePrice` under the
+  floor (the minimum profit being saved counts), clears `cost_was` when a base price is saved, keeps category and type in
+  agreement (composite FK), maps a code clash to `409 CODE_TAKEN`; delete archives (`archived_at`, status `disabled`, service
+  pricing rules off) when anything refers to the service and hard deletes otherwise. Archived services are hidden from every
+  read here and their code is free again.
+- **Fields and options** (`service-parts.service.ts`): replace-all in one transaction under a lock on the service row, `422` on
+  the later duplicate's dotted path.
+- **Inventory** (`inventory-admin.service.ts`, `domain/inventory-codes.ts`): codes AES-GCM encrypted (`inventory_codes.code_enc`)
+  with `code_hash` (`TokenService.hash` of `inventory-code:<code>`) and `code_last4`; import counts imported, duplicates and
+  rejected, never logs a clear code; void only `available` codes, idempotent.
+- **`recomputeEffectiveCost(tx, serviceIds)`** (`application/effective-cost.ts`): the one writer of `services.effective_cost`.
+
+Known deviation (tech debt): `infra/foreign-reads.repository.ts` reads supplier links, `orders`, `service_listings`,
+`checkout_sessions`, `help_articles` and `imei_checks` with plain selects, because those modules export no service yet (the
+supplier chain of a service row and the archive-or-delete decision); replace its bodies with their public services as they
+appear (orders 5, suppliers 6, storefront 14a and 15, customers, risk 18). Nothing outside that file knows.
 
 ## Public API (`index.ts`)
 
-Exports `CatalogModule` and `ClientGroupDirectory` (`find(db, id)` and `defaultGroup(db)`, each answering a `ClientGroupView`: id, name, kind, discountPercent, isDefault, overdraftAllowed; identity uses it for the group a new merchant joins and the group `GET /client/auth/me` shows). Add the services other modules may call here, and nothing else: other modules import only `src/modules/catalog/index.ts` (lint rule `gsm/module-boundaries`).
+Exports `CatalogModule` (global) and `CatalogAdminModule` (the routes; a database-less test app leaves it out), the read-only
+`ClientGroupDirectory` (`find(db, id, { lock: 'share' }?)`, `findDefault`, `refsOf`, `promotionLadder`; a `ClientGroupRef` has id,
+name, kind, discountPercent, isDefault, overdraftAllowed, earnThreshold, depositLimit; identity uses it for the group a new
+merchant joins, the group inside a merchant row and the nightly promotion), `recomputeEffectiveCost(tx, serviceIds)` (feature 6
+calls it from sync, import and link changes), the figure rules (`defaultMinProfit`, `effectiveMinProfit`, `floorPrice`,
+`marginPercent`, `isBelowFloor`, `deliveryTimeText`), the closed vocabularies `SERVICE_PRICE_MODES`, `SERVICE_DUPLICATE_RULES` and
+`SERVICE_TYPES`, and the inventory helpers the seed uses. Other modules import only `src/modules/catalog/index.ts` (lint rule
+`gsm/module-boundaries`). The export order matters (decision 032): the leaves identity injects come first, `CatalogAdminModule`
+(whose controllers use identity's decorators) last.
 
-Planned exports (audit resolutions): the `ClientGroupDirectory` also answers "group exists, kind not `b2c_retail`, `overdraft_allowed`" for `POST/PATCH /admin/clients` (identity-platform-3, feature 2a adds it; extended by 4a); the `PriceResolver` (one resolver for resolve, orders, price lists and the group/client price checks, plus the b2c_retail floor for the storefront listings: catalog-4, b2c-7; algorithm in `RULES.md` services 3); and `recomputeEffectiveCost(serviceIds, tx)`, called by supplier import and cost writes, sync, link changes and supplier `credit_rate` changes (catalog-1, B117).
+Planned exports (audit resolutions): the `PriceResolver` (one resolver for resolve, orders, price lists and the group/client price
+checks, plus the b2c_retail floor for the storefront listings: catalog-4, b2c-7; algorithm in `RULES.md` services 3), feature 4b.
 
 ## Owned tables
 
-Only this module reads and writes these 10 tables (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts` once the data layer exists.
+Only this module reads and writes these 10 tables (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts`.
 
 | Table | What it holds |
 |---|---|
@@ -35,7 +81,7 @@ Only this module reads and writes these 10 tables (`scripts/module-map.mjs`); ot
 
 ## Routes
 
-43 endpoints (admin 37, client 3, v1 2, dhru 1). Source: `docs/slices/catalog.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built.
+43 endpoints (admin 37, client 3, v1 2, dhru 1). Source: `docs/slices/catalog.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built: the 20 routes of feature 4a are in `contracts/{client-groups,categories,services,inventory}.contracts.ts`, the rest are pending (`test/contract/pending.ts`).
 
 ### Admin console (37)
 
@@ -112,7 +158,7 @@ Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touc
 
 ## Permissions
 
-Staff permissions the map requires on this module's admin routes: `catalog:*`, `catalog:update`, `groups:*`, `inventory:read`, `inventory:write`, `pricing:*`, `pricing:read`, `pricing:update`.
+Staff permissions the map requires on this module's admin routes: `catalog:*`, `catalog:update`, `groups:*`, `inventory:read`, `inventory:write`, `pricing:*`, `pricing:read`, `pricing:update`. A `*` row means the action of the method: `groups:read|create|update|delete` (client groups), `catalog:read|create|update|delete` (categories, services); fields and options need `catalog:update`; the inventory routes `inventory:read` and `inventory:write`. Audit entity types written: `client_group`, `category`, `service` and `inventory_code` (a void; the import is audited on the `service`).
 
 API key scopes on its REST v1 routes: `services:read`.
 
@@ -124,11 +170,22 @@ Outbox events produced (types, payload ids): none yet. Consumed: none yet. Recor
 
 ## Jobs and schedules
 
-None yet. List each queue, job, schedule, idempotency key and retry policy here and in `docs/queues.md` (see `CONTRIBUTING.md` → "Add a job").
+None in this module. The nightly group promotion (`client_group_promotion`) writes `clients.group_id`, so it lives in identity
+(`src/modules/identity/jobs/`); it reads thresholds through `ClientGroupDirectory.promotionLadder` and is documented in
+`docs/queues.md`.
+
+## Data migration
+
+`drizzle/0005_default_client_groups.sql` makes sure a default merchant group and the storefront retail group exist (a fresh
+database had none, so `POST /client/auth/register` and `POST /admin/clients` answered 500). It marks the first merchant group as the
+default when groups exist without one, inserts `Standard` (default, no discount, threshold 0, no deposit limit, no overdraft) when
+there is no merchant group, and inserts `Storefront retail` when there is no `b2c_retail` group. The seed's demo groups reuse or
+replace these rows (`scripts/seed/identity.ts`).
 
 ## Cache keys
 
-None yet. Register each key family (owner, TTL, invalidation after commit) in `docs/cache-keys.md` (see `CONTRIBUTING.md` → "Add a cache key").
+None: the structure of the catalog is read from Postgres on every request. The merchant catalog and price lists (feature 4b)
+add their cache keys with the price version.
 
 ## Audit resolutions
 

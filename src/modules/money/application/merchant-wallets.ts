@@ -1,7 +1,7 @@
 // MerchantWallets: the read-only wallet figures of merchants for modules that show a merchant (identity: the wallet inside a
 // merchant row). Reads only the merchant's two ledger accounts; the money module's own wallet routes arrive with feature 3.
 import { Injectable } from '@nestjs/common';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, gt, inArray } from 'drizzle-orm';
 import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
 import { ledgerAccounts } from '../db/schema';
@@ -106,5 +106,31 @@ export class MerchantWallets {
       )
       .limit(1);
     return row ? Money.fromWire(row.overdraftLimit) : Money.zero();
+  }
+
+  /**
+   * Lists the merchants whose credit limit is above zero.
+   *
+   * Why: a group stops allowing overdraft only while none of its merchants has credit (user rule 2, `PATCH
+   * /admin/client-groups/:id`); credit holders are few, so the group routes ask for them all and let identity say which
+   * of them sit in the group.
+   *
+   * @param db the database or the caller's transaction
+   * @returns the ids of the merchants whose wallet `overdraft_limit` is above zero, in id order
+   */
+  async idsWithCreditLimit(db: DbExecutor): Promise<number[]> {
+    const rows = await db
+      .select({ clientId: ledgerAccounts.ownerId })
+      .from(ledgerAccounts)
+      .where(
+        and(
+          eq(ledgerAccounts.ownerType, 'client'),
+          eq(ledgerAccounts.kind, 'client_wallet'),
+          eq(ledgerAccounts.currency, WALLET_CURRENCY),
+          gt(ledgerAccounts.overdraftLimit, '0'),
+        ),
+      )
+      .orderBy(ledgerAccounts.ownerId);
+    return rows.flatMap((row) => (row.clientId === null ? [] : [row.clientId]));
   }
 }
