@@ -4,22 +4,31 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
-**Session 2026-11-07 (in progress).** Wave 1 of Phase 3 is being finished and merged; the console gained a partial mock
-mode so it can run against this API (frontend decision 018). `PROGRESS.md` had been moved to a stray file named `ظ` in the
-working tree (identical content); it was put back.
+**Session 2026-11-07.** Wave 1 of Phase 3 is **done and merged on `main`** (the branch `feat/backend` was renamed `main` on
+2026-11-01): feature **3** money-wallets-ledger (`c332201`), **2b** identity-merchant-auth (`446fd46`), **2a**
+identity-staff-access (`ed74e0b`), each reviewed, fixed and squash-merged by the lead; then `f66d74a` (audit phrasing).
+70 of 382 map endpoints are built; the console calls 50 of them. `bun run check` green on the merged 2a tree (2181 pass,
+1 skip, 0 fail; shape parity compares 50 of 70 built routes). `PROGRESS.md` had been moved to a stray file named `ظ`
+(identical content); it was put back.
 
-- **Merged on `main`** (the branch `feat/backend` was renamed `main` on 2026-11-01): feature **3** money-wallets-ledger
-  (`c332201`) and feature **2b** identity-merchant-auth (`446fd46`), each squash-merged after the lead's review and fixes.
-  `bun run check` green on the merged 2b tree (1959 pass, 1 skip, 0 fail).
-- **In progress:** feature **2a** identity-staff-access in `../backend-f2a` (branch `feat/backend-f2a`): all 31 routes were
-  built by the first implementer (cut off on 2026-11-01); a second Sonnet implementer is writing the missing tests, scenarios,
-  seed and docs. Then the lead merges main into it (conflicts expected: `ClientGroupDirectory` exists in 2a and 2b with other
-  method names, keep 2a's superset `find/findDefault/refsOf` and adapt 2b's callers; `merchant.invited` is registered by 2b's
-  `MerchantMailOutbox` and by 2a's invite events module, keep one; `MerchantWallets` stays in money's global module) and
-  squash-merges it.
-- **Next:** wave 2 starts with **4a** catalog-structure (brief written: `docs/briefs/4a-catalog-structure.md`) once 2a is on
-  `main`; then 4b and 5. Phase 4 integration has started early: run the console with `VITE_API_MOCKS=unbuilt` against this
-  API (frontend README, "Against the real backend").
+**Phase 4 started early (frontend integration).** The console has a partial mock mode (`VITE_API_MOCKS=unbuilt`, frontend
+decision 018): built routes go to this API through the Vite dev proxy, the rest stays mocked; `npm run mocks:live` in the
+frontend regenerates the list from `docs/contract/openapi.json`. Runtime walk (Playwright, real sign-in with password and
+TOTP) on 2026-11-07: 15 pages (access: admins, allowed and blocked IPs, roles, sessions; merchants: list, pending, groups,
+detail, wallet; finance: ledger, trial balance; settings: tax and currency, system; audit log): 112 answers from the real
+API, 54 from mocks, no error. Real writes through the UI: reconciliation run, merchant approval (`PATCH /admin/clients/20`),
+wallet adjustment (`POST /admin/clients/3/wallet/adjust`, journal 1963), all visible in the audit log. Found and fixed
+at runtime: audit action phrases of the money module (`f66d74a`); `POST /client/auth/register` answers 500 on a database
+without a default merchant group (4a adds a data migration).
+
+- **In progress:** wave 2, feature **4a** catalog-structure (brief `docs/briefs/4a-catalog-structure.md`), Sonnet implementer
+  in `../backend-4a` (branch `feat/backend-4a`, test DB `gsm_4a_test`, Redis DB 5).
+- **Next:** review and merge 4a (merge `main` into it first; check its audit actions use the demo's verb phrases, ANSWERS
+  audit Q3), run the walk on the Services & pricing page, then **4b** (brief ready: `docs/briefs/4b-catalog-pricing.md`),
+  then **5** orders-engine (brief to write). After each merge: `npm run mocks:live` in the frontend and commit the list.
+- **Local run:** `docker compose up -d`; `bun run db:migrate && bun run db:seed`; `bun src/main.ts` and `bun src/worker.ts`;
+  in the frontend `VITE_API_MOCKS=unbuilt VITE_DEV_PROXY_TARGET=http://localhost:3000 VITE_API_BASE_URL= npx vite`; sign in
+  as in README "Local sign-in".
 
 How a feature runs: a brief in `docs/briefs/` written from `_feature.md` (routes from `docs/slices/<module>.json`, user
 rules from the table below; `_common.md` first). Parallel implementers work in sibling worktrees of this repo (`git worktree
@@ -60,7 +69,7 @@ and `docs/slices/<module>.json`, `docs/contract/RULES.md` for its frontend featu
 | 1 Architecture + contract | done | see `git log` (`docs: phase 1 ...`) | 6 (Opus analysts, one workflow, 3 at once) |
 | 2 Foundation | done | per feature, see below | 28 |
 | 3 Feature loop (by stage) | | | |
-| 4 Frontend integration | | | |
+| 4 Frontend integration | started 2026-11-07 (partial mock mode, runtime walk of wave 1) | frontend `169ddb9`, `8cb4756` | 1 (frontend Sonnet implementer) |
 
 ## Business rules answered by the user (2026-10-31)
 
@@ -96,11 +105,11 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 | P2.5c | machine-auth | capability-token guard registry, API key guard, Dhru credentials guard, webhook signature registry (brief P2.5 split; after P2.5a, parallel with P2.6) | | done (`feat(machine-auth)` commit) |
 | P2.6 | staff-sign-in | `POST /admin/auth/login`, `/2fa`, `/2fa/setup`, `/logout`, `/password/set`, `GET /admin/auth/me` (6) | | done (`feat(staff-sign-in)` commit) |
 | P2.7 | contract-tests | route/shape/error parity tests, fixture harvest from the frontend mocks, allowlist, `pending.ts` | | done (`test(contract)` commit) |
-| 2a | identity-staff-access | staff, roles, permissions, sessions, IP rules, access restriction, merchants, audit logs, settings (st2 admin, 31; brief `docs/briefs/2a-identity-staff-access.md`) | admin-team, ip-rules | in progress (`../backend-f2a`) |
+| 2a | identity-staff-access | staff, roles, permissions, sessions, IP rules, access restriction, merchants, audit logs, settings (st2 admin, 31; brief `docs/briefs/2a-identity-staff-access.md`) | admin-team, ip-rules | done (`ed74e0b`) |
 | 2b | identity-merchant-auth | merchant portal sign-in, security, sessions (st2 client, 15; brief `docs/briefs/2b-identity-merchant-auth.md`) | | done (`446fd46`) |
 | 3 | money-wallets-ledger | postTransaction, money events, wallets, statement, adjust, credit limit (user rule 2), ledger, reconcile, currencies (st3, 14) (brief `docs/briefs/3-money-wallets-ledger.md`) | | done (`c332201`) |
-| 4a | catalog-structure | client groups + nightly promotion job (user rule 1), categories, services, fields, options, inventory (st4/5) | | |
-| 4b | catalog-pricing | group/client prices, pricing rules (user rule 8: the demo's resolver), price protection (user rule 9: effective-cost floor, listed-price memory, PRICE_CHANGED guard, raise in the snapshot), bulk price, resolve, merchant catalog and price export | | |
+| 4a | catalog-structure | client groups + nightly promotion job (user rule 1), categories, services, fields, options, inventory (st4/5) (brief `docs/briefs/4a-catalog-structure.md`) | | in progress (`../backend-4a`) |
+| 4b | catalog-pricing | group/client prices, pricing rules (user rule 8: the demo's resolver), price protection (user rule 9: effective-cost floor, listed-price memory, PRICE_CHANGED guard, raise in the snapshot), bulk price, resolve, merchant catalog and price export (brief `docs/briefs/4b-catalog-pricing.md`) | | brief ready |
 | 5 | orders-engine | state machine, placement + hold, admin order actions, bulk reply, export, merchant orders, files (st5) | manual | |
 | 6 | suppliers | suppliers admin, Dhru supplier client, dispatch/poll jobs, dispatch/fetch/change-supplier, sync (user rule 9: recompute the effective cost, bump the price version, no failover above the charged price), import (st6) | success, reject, timeout | |
 | 7a | dhru-and-rest-v1 | Dhru surface (8 actions), REST v1 (12), idempotency, PRICE_CHANGED message and listed-price memory on the list actions (user rule 9) (st7) | | |
@@ -139,8 +148,8 @@ re-review), max 2 review rounds.
 | P2.6 staff-sign-in | 2 (implementer, review: pass, no blocking) |
 | P2.8 clock | 4 (implementer, review: 1 blocking, fix, re-review: pass) |
 | Wave 1, first run (2026-11-01) | 3 (Sonnet implementers 2a, 2b, 3; cut off before finishing, no review) |
-| Session 2026-11-07 | limit set by the user: 4 calls in all, 2 at once. 2a finish (Sonnet), frontend partial mocks (Sonnet). Reviews, fixes and merges of 3 and 2b by the lead. |
-| **Total** | **43** |
+| Session 2026-11-07 | limit set by the user: 4 calls in all, 2 at once. Used 3: 2a finish (Sonnet), frontend partial mocks (Sonnet), 4a (Sonnet). Reviews, fixes and merges of 3, 2b and 2a by the lead (Opus). |
+| **Total** | **44** |
 
 ## Decisions
 
@@ -158,6 +167,13 @@ None.
 
 ## Notes for later phases
 
+- Tests (2026-11-07): bunfig has no `timeout` key, so the old `timeout = 15000` was ignored and the suite ran on Bun's 5 s
+  default; the 15 s now comes from `--timeout 15000` in the `test` scripts (a heavy file sets `setDefaultTimeout`, as the
+  seed tests do). The seed opens accounts for the 20 demo merchants and leaves the credit limit at 0 where the group allows
+  none (user rule 2 wins over the demo data: the mock's Standard group has credit limits but no overdraft). Merchant mail
+  events have one owner, `MerchantMailOutbox` (2a's duplicate registration of `merchant.invited` would have stopped the API
+  and the worker at boot). The dev default of `CORS_ORIGINS` has no merchant-portal origin (`PORTAL_BASE_URL` defaults to
+  `http://localhost:5174`): add it when the portal frontend exists.
 - Wave 1 merge notes (2026-11-07): money's `infra/foreign-directory.repository.ts` reads `clients`, `client_groups`,
   `suppliers`, `customers` and `staff_users` with plain selects (documented deviation from decision 016): replace its bodies
   with the owners' public reads as they appear (identity after 2a, catalog 4a, suppliers 6, customers 14b). Merchant mail
