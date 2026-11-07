@@ -35,8 +35,9 @@ on `main`.
    `src/modules/orders/domain/order-machine.ts` (decision 025, 16 tests) is there; merge `main` into it first.
 2. Wave 3: **6** suppliers and **7b** merchant API keys and webhooks in parallel (briefs `6-suppliers.md`,
    `7b-merchant-api-webhooks.md`, portal specs B155/B156), then **7a** Dhru and REST v1 (`7a-dhru-and-rest-v1.md`, spec B157).
-3. Waves 4 to 7 (briefs to write: 8, 9, 11, 12a, 12b, 14a, 14b without tax rates, 15, 16, 17, 18, 19); `/client/kyc` needs its
-   portal spec before 8 (identity-platform-16).
+3. Wave 4: **8** billing (`8-billing.md`; the lead writes the portal specs it lists first) in parallel with **9** health and
+   dashboard (`9-health-dashboard.md`). Waves 5 to 7: briefs to write (11, 12a, 12b, 14a, 14b without tax rates, 15, 16,
+   17, 18, 19).
 4. After every merge: restart the API and worker, `bun run db:migrate && bun run db:seed`, `npm run mocks:live` in the
    frontend, walk the pages the new routes feed.
 
