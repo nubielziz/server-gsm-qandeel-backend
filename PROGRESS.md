@@ -189,7 +189,7 @@ re-review), max 2 review rounds.
 016 repo layout · 017 API docs exposure · 018 auth, sessions, CSRF, pipeline · 019 encryption and token hashing ·
 020 outbox and queues · 021 rate limiting · 022 caching · 023 outbound HTTP · 024 ledger · 025 order state machine ·
 026 Dhru compatibility · 027 database conventions · 028 error format · 029 FX provider · 030 PDF rendering · 031 clock ·
-032 module import cycles (identity exports its principal layer first; `test/unit/module-load.test.ts`).
+032 module import cycles (identity exports its principal layer first; `test/unit/module-load.test.ts`). 033 mail delivery (to write before 12a: SMTP through nodemailer, Mailpit locally). 034 Turnstile (`X-Turnstile-Token`, one guard, `turnstile: true` on the six store routes, a dummy verifier without a secret).
 
 ## Blockers
 
