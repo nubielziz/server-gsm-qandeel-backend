@@ -28,10 +28,12 @@ role member count (2a), a default merchant group on a fresh database (4a migrati
 and in the console the mid-session sign-out keeps the page (`?to=`).
 
 **Running now (second agent budget approved by the user: 4 calls, 2 at once; 5 and 7b done):** feature **6** in
-`../backend-6` (test DB `gsm_6_test`, Redis DB 10, from `e6de28a`). **The lead, on `main`, in parallel:** inventory-backed
-placement (RULES orders 10, orders-suppliers-11: a service with available codes delivers them at placement, the order
-completes at once; reserved codes become sold on completion and available on rejection). File ownership for the parallel
-run: 6 does not edit `orders/application/order-{placement,transitions,ledger}.ts` or the catalog inventory files.
+`../backend-6` (test DB `gsm_6_test`, Redis DB 10, from `e6de28a`). File ownership for the parallel run: 6 does not edit
+`orders/application/order-{placement,transitions,ledger}.ts` or the catalog inventory files. **Done by the lead on `main`
+meanwhile:** stock delivery at placement (`5b291ad`: RULES orders 10, orders-suppliers-11; a service with enough available
+codes completes the order at once with the codes as its result; `placed_at` and `created_at` from the injected clock,
+decision 025 amended for decision 031; `bun run check` green, 2883 pass) and B160, the spec of the 7 `/client` order routes
+(`75ce982`).
 
 **Next, in order:**
 1. Merge **6** (its migration starts at 0009), walk Suppliers, the order drawer's dispatch/fetch/change-supplier and the
@@ -40,8 +42,8 @@ run: 6 does not edit `orders/application/order-{placement,transitions,ledger}.ts
    optional service flags `allowCancel`, `allowVerify`, `verifyWindowH` on `POST|PATCH /admin/services` (the columns exist,
    no route sets them, the console's service form lacks them: merchant cancel and verify are refused until then), and
    `POST /client/files` (still pending; the same upload path as `POST /v1/files`).
-3. Lead: a B-entry for the 7 `/client` order routes' shapes (written in `src/modules/orders/README.md`), then the portal
-   specs of 8 (B161 onwards: B numbers are positions in `lead-decisions.json` `extra`).
+3. Lead: the portal specs of 8 (B161 onwards: B numbers are positions in `lead-decisions.json` `extra`; check that 6 and 7a
+   added none first).
 4. Wave 4: **8** billing (`8-billing.md`) in parallel with **9** health and dashboard (`9-health-dashboard.md`). Wave 5:
    **12b** (`12b-alerts-integrity.md`). Briefs still to write: 11, 12a, 14a, 14b without tax rates, 15, 16, 17, 18, 19.
 5. After every merge: restart the API and worker, `bun run db:migrate && bun run db:seed`, `npm run mocks:live` in the
