@@ -49,7 +49,8 @@ You implement one brief in the GSM backend. These rules apply to every brief; th
 - Run `bun run format`, then `bun run check` (typecheck, lint, format check, route/contract/OpenAPI checks, all tests;
   integration tests need the docker services); leave it green, or report exactly what fails and why. Every
   `eslint-disable` comment needs a reason (`-- why`). After changing a route contract, run `bun run docs:openapi` and
-  include the regenerated `docs/contract/openapi*.json`.
+  include the regenerated `docs/contract/openapi*.json`; after removing keys from `test/contract/pending.ts`, run
+  `bun run coverage:build` (`docs/COVERAGE.md`).
 - Never run `docker compose` from a worktree (it would re-create the shared containers with the worktree's paths).
 - Reply in at most 200 words: files created/changed (by folder), what is covered, tests added, open questions,
   anything you could not do (BLOCKED: reason).

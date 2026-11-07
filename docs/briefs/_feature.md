@@ -40,7 +40,7 @@ they are done. Read `_common.md` first.
 8. **Seed**: extend `scripts/seed/<module>.ts` so the frontend mock data appears through the real API (same ids,
    names and amounts where practical).
 9. **Docs**: TSDoc on every exported symbol; the module `README.md` (routes, tables, jobs, events, cache keys,
-   permissions, scenarios) updated; `test/contract/pending.ts` loses the built routes.
+   permissions, scenarios) updated; `test/contract/pending.ts` loses the built routes, then `bun run coverage:build` refreshes `docs/COVERAGE.md`.
 
 ## Tests
 - Unit: every domain function (each money event with the map's numbers, each transition, each price/threshold rule).

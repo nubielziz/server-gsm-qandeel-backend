@@ -31,14 +31,16 @@
     "db:check": "bun scripts/db-check.ts",
     "db:seed": "bun scripts/seed/index.ts",
     "bench:argon2": "bun scripts/bench-argon2.ts",
-    "check": "bun run typecheck && bun run lint && bun run format:check && bun run routes:check && bun run contract:check && bun run docs:openapi:check && bun run db:check && bun run test",
+    "check": "bun run typecheck && bun run lint && bun run format:check && bun run routes:check && bun run contract:check && bun run docs:openapi:check && bun run coverage:check && bun run db:check && bun run test",
     "contract:extract": "bun scripts/extract-frontend-contract.mjs",
     "contract:docs": "bun scripts/build-contract-docs.mjs",
     "contract:check": "bun scripts/extract-frontend-contract.mjs --check && bun scripts/build-contract-docs.mjs --check",
     "contract:harvest": "node scripts/contract-harvest.mjs",
     "contract:pending": "bun scripts/gen-contract-pending.mjs",
     "docs:openapi": "bun --no-env-file scripts/gen-openapi.ts",
-    "docs:openapi:check": "bun --no-env-file scripts/gen-openapi.ts --check"
+    "docs:openapi:check": "bun --no-env-file scripts/gen-openapi.ts --check",
+    "coverage:build": "bun scripts/build-coverage.mjs",
+    "coverage:check": "bun scripts/build-coverage.mjs --check"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1161.0",

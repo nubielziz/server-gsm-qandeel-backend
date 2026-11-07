@@ -74,7 +74,7 @@ else
   done
 fi
 
-step "bun run check (typecheck, lint, route manifest, contract docs, OpenAPI documents, tests)"
+step "bun run check (typecheck, lint, route manifest, contract docs, OpenAPI documents, coverage, tests)"
 bun run check
 
 printf '\nCI passed.\n'
