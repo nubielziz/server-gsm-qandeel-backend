@@ -4,44 +4,38 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
-**Session 2026-11-07.** Wave 1 of Phase 3 is **done and merged on `main`** (the branch `feat/backend` was renamed `main` on
-2026-11-01): feature **3** money-wallets-ledger (`c332201`), **2b** identity-merchant-auth (`446fd46`), **2a**
-identity-staff-access (`ed74e0b`), each reviewed, fixed and squash-merged by the lead; then `f66d74a` (audit phrasing).
-Wave 2 has started: **4a** catalog-structure is merged (`7c012d2`), and the lead built the 4 tax rate routes ahead of 14b
-(`23dc5d5`, no dependency; Settings > Tax and currency is all real). 94 of 382 map endpoints are built; the console calls
-74 of them. `docs/COVERAGE.md` (generated, `bun run coverage:build`, checked by `bun run check`) has the counts per
-module, surface and stage and the scenario tests (2 of 13). `bun run check` green on the merged 2a tree (2181 pass,
-1 skip, 0 fail; shape parity compares 50 of 70 built routes). `PROGRESS.md` had been moved to a stray file named `ظ`
-(identical content); it was put back.
+**State at the end of session 2026-11-07.** Phase 3 waves 1 and 2 are merged on `main` except feature 5: **3** money
+(`c332201`), **2b** merchant portal (`446fd46`), **2a** staff access (`ed74e0b`), **4a** catalog structure (`7c012d2`),
+**4b** catalog pricing (`3838d27`), plus the 4 tax rate routes of 14b built early by the lead (`23dc5d5`). **110 of 382**
+map endpoints are built; the console calls 269, of which **87** are built (`docs/COVERAGE.md`, generated and checked by
+`bun run check`). `bun run check` is green on `main` (the merged 4b tree: 2536 pass, 1 skip, 0 fail; shape parity compares
+87 of 110 built routes). Scenario e2e tests: 2 of 13 (admin-team, ip-rules).
 
-**Phase 4 started early (frontend integration).** The console has a partial mock mode (`VITE_API_MOCKS=unbuilt`, frontend
-decision 018): built routes go to this API through the Vite dev proxy, the rest stays mocked; `npm run mocks:live` in the
-frontend regenerates the list from `docs/contract/openapi.json`. Runtime walk (Playwright, real sign-in with password and
-TOTP) on 2026-11-07: 15 pages (access: admins, allowed and blocked IPs, roles, sessions; merchants: list, pending, groups,
-detail, wallet; finance: ledger, trial balance; settings: tax and currency, system; audit log): 112 answers from the real
-API, 54 from mocks, no error. Real writes through the UI: reconciliation run, merchant approval (`PATCH /admin/clients/20`),
-wallet adjustment (`POST /admin/clients/3/wallet/adjust`, journal 1963), all visible in the audit log. Found and fixed
-at runtime: audit action phrases of the money module (`f66d74a`); `POST /client/auth/register` answers 500 on a database
-without a default merchant group (4a adds a data migration).
+**Phase 4 (frontend integration) is running alongside.** The console has a partial mock mode (`VITE_API_MOCKS=unbuilt`,
+frontend decision 018): built routes go to this API through the Vite dev proxy, the rest stays mocked; `npm run mocks:live`
+in the frontend regenerates the list after each merge (87 routes, committed). Runtime walks with Playwright and a real
+sign-in (password + TOTP) after each merge: access, merchants, wallets, ledger, trial balance, currencies, tax rates, audit,
+settings, services, categories, inventory, client groups, the price resolver, rules and a merchant's pricing tab, all
+answered by the real API with no error; real writes through the UI (reconciliation, merchant approval, wallet adjustment,
+service disable/enable); a Support member sees the forbidden pages hidden and the API refuses them (403). With no mocks at
+all the unbuilt pages show their error state with the server's 404 detail. Fixes found at runtime: audit phrases (money,
+catalog), the role member count (2a), a default merchant group on a fresh database (4a migration 0005), and in the console
+the mid-session sign-out keeps the page (`?to=`).
 
-- **4a merged** (`7c012d2`): `bun run check` green on the merged tree (2342 pass, 1 skip, 0 fail; shape parity 70 of 90).
-  Lead fixes at merge: the demo's audit phrases (`archived service`, `deleted service`, `changed group of`), and a 2a bug: the
-  role member count subquery counted `staff_users.id = role_id` (Drizzle prints a bare `"id"` in a one-table select;
-  regression test added). Runtime walk of Services & pricing (services, categories, inventory, rules), merchant groups and
-  a merchant page: 42 real answers, no error; a real service disable and enable through the UI (`PATCH /admin/services/9`).
-  The 4a implementer ran scratch scripts against `gsm_test` by mistake (truncated and re-seeded it; the next `resetDb` puts it
-  right); briefs now say to use only the worktree's own test database.
-- **In progress:** **4b** catalog-pricing (brief `docs/briefs/4b-catalog-pricing.md`), Sonnet implementer in `../backend-4b`
-  (branch `feat/backend-4b`, test DB `gsm_4b_test`, Redis DB 7). Review and merge it like 4a (merge `main` in first, check the
-  audit phrases), then walk the price resolver, rules and merchant pricing tabs.
-- **Next:** review and merge 4a (merge `main` into it first; check its audit actions use the demo's verb phrases, ANSWERS
-  audit Q3), run the walk on the Services & pricing page, then **4b** (brief ready: `docs/briefs/4b-catalog-pricing.md`),
-  then **5** orders-engine (brief ready: `docs/briefs/5-orders-engine.md`; the lead's state machine groundwork is on
-  `feat/backend-5`, `48bf381`, worktree `../backend-5`). Briefs also ready for wave 3: `6-suppliers.md`,
-  `7b-merchant-api-webhooks.md` (its portal specs are B155 and B156) and `7a-dhru-and-rest-v1.md` (its `/v1/files` spec is B157). After each merge: `npm run mocks:live` in the frontend and commit the list.
-- **Local run:** `docker compose up -d`; `bun run db:migrate && bun run db:seed`; `bun src/main.ts` and `bun src/worker.ts`;
-  in the frontend `VITE_API_MOCKS=unbuilt VITE_DEV_PROXY_TARGET=http://localhost:3000 VITE_API_BASE_URL= npx vite`; sign in
-  as in README "Local sign-in".
+**Next, in order:**
+1. **Feature 5** orders-engine: brief `docs/briefs/5-orders-engine.md` (portal file spec B154 done; seed decision inside);
+   start from branch `feat/backend-5` (worktree `../backend-5`, test DB `gsm_5_test`, Redis DB 6): the lead's state machine
+   `src/modules/orders/domain/order-machine.ts` (decision 025, 16 tests) is there; merge `main` into it first.
+2. Wave 3: **6** suppliers and **7b** merchant API keys and webhooks in parallel (briefs `6-suppliers.md`,
+   `7b-merchant-api-webhooks.md`, portal specs B155/B156), then **7a** Dhru and REST v1 (`7a-dhru-and-rest-v1.md`, spec B157).
+3. Waves 4 to 7 (briefs to write: 8, 9, 11, 12a, 12b, 14a, 14b without tax rates, 15, 16, 17, 18, 19); `/client/kyc` needs its
+   portal spec before 8 (identity-platform-16).
+4. After every merge: restart the API and worker, `bun run db:migrate && bun run db:seed`, `npm run mocks:live` in the
+   frontend, walk the pages the new routes feed.
+
+**Local run:** `docker compose up -d`; `bun run db:migrate && bun run db:seed`; `bun src/main.ts` and `bun src/worker.ts`; in
+the frontend `VITE_API_MOCKS=unbuilt VITE_DEV_PROXY_TARGET=http://localhost:3000 VITE_API_BASE_URL= npx vite` (port 5173: the
+sign-in origin must be in `CORS_ORIGINS`); sign in as README "Local sign-in" says.
 
 How a feature runs: a brief in `docs/briefs/` written from `_feature.md` (routes from `docs/slices/<module>.json`, user
 rules from the table below; `_common.md` first). Parallel implementers work in sibling worktrees of this repo (`git worktree
@@ -82,7 +76,7 @@ and `docs/slices/<module>.json`, `docs/contract/RULES.md` for its frontend featu
 | 1 Architecture + contract | done | see `git log` (`docs: phase 1 ...`) | 6 (Opus analysts, one workflow, 3 at once) |
 | 2 Foundation | done | per feature, see below | 28 |
 | 3 Feature loop (by stage) | | | |
-| 4 Frontend integration | started 2026-11-07 (partial mock mode, runtime walk of wave 1) | frontend `169ddb9`, `8cb4756` | 1 (frontend Sonnet implementer) |
+| 4 Frontend integration | running since 2026-11-07 (partial mock mode; runtime walks after each merge; 87 console routes live) | frontend `169ddb9` … `0a91da5` | 1 (frontend Sonnet implementer) |
 
 ## Business rules answered by the user (2026-10-31)
 
@@ -122,7 +116,7 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 | 2b | identity-merchant-auth | merchant portal sign-in, security, sessions (st2 client, 15; brief `docs/briefs/2b-identity-merchant-auth.md`) | | done (`446fd46`) |
 | 3 | money-wallets-ledger | postTransaction, money events, wallets, statement, adjust, credit limit (user rule 2), ledger, reconcile, currencies (st3, 14) (brief `docs/briefs/3-money-wallets-ledger.md`) | | done (`c332201`) |
 | 4a | catalog-structure | client groups + nightly promotion job (user rule 1), categories, services, fields, options, inventory (st4/5) (brief `docs/briefs/4a-catalog-structure.md`) | | done (`7c012d2`) |
-| 4b | catalog-pricing | group/client prices, pricing rules (user rule 8: the demo's resolver), price protection (user rule 9: effective-cost floor, listed-price memory, PRICE_CHANGED guard, raise in the snapshot), bulk price, resolve, merchant catalog and price export (brief `docs/briefs/4b-catalog-pricing.md`) | | in progress (`../backend-4b`) |
+| 4b | catalog-pricing | group/client prices, pricing rules (user rule 8: the demo's resolver), price protection (user rule 9: effective-cost floor, listed-price memory, PRICE_CHANGED guard, raise in the snapshot), bulk price, resolve, merchant catalog and price export (brief `docs/briefs/4b-catalog-pricing.md`) | | done (`3838d27`) |
 | 5 | orders-engine | state machine, placement + hold, admin order actions, bulk reply, export, merchant orders, files (st5) | manual | |
 | 6 | suppliers | suppliers admin, Dhru supplier client, dispatch/poll jobs, dispatch/fetch/change-supplier, sync (user rule 9: recompute the effective cost, bump the price version, no failover above the charged price), import (st6) | success, reject, timeout | |
 | 7a | dhru-and-rest-v1 | Dhru surface (8 actions), REST v1 (12), idempotency, PRICE_CHANGED message and listed-price memory on the list actions (user rule 9) (st7) | | |
