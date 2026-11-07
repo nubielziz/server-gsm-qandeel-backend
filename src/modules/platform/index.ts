@@ -1,6 +1,7 @@
 // Public API of the platform module: the module itself, what the bootstrap, the generator script and the contract tests
 // need from its documentation routes, the audit log, the transactional outbox (write events, register their queues, relay
-// them), the settings readers and maintenance mode.
+// them), the settings readers, maintenance mode and the merchant webhooks (the event contracts and outbox routes of 7b, the
+// delivery engine, the processor of the `merchant-webhooks` queue).
 export { PlatformModule } from './platform.module';
 export { AuditModule } from './audit/audit.module';
 export { AuditService } from './audit/audit.service';
@@ -54,3 +55,36 @@ export type {
   OutboxPayloadValue,
   OutboxRoute,
 } from './outbox/outbox.types';
+export { WebhookEventsModule } from './webhooks/webhook-events.module';
+export { WebhookDeliveryModule } from './webhooks/webhook-delivery.module';
+export { MerchantWebhooksModule } from './webhooks/merchant-webhooks.module';
+export { MerchantWebhookService } from './webhooks/merchant-webhook.service';
+export {
+  portalCreateWebhook,
+  portalDeleteWebhook,
+  portalListWebhookDeliveries,
+  portalListWebhooks,
+  portalTestWebhook,
+  portalUpdateWebhook,
+} from './webhooks/webhooks.contracts';
+export {
+  SERVICE_PRICE_CHANGED_EVENT,
+  WALLET_LOW_BALANCE_EVENT,
+  MerchantEventRoutes,
+} from './webhooks/merchant-event-routes';
+export { invoicePaid, orderStatusChanged, servicePriceChanged, walletLowBalance } from './webhooks/webhook-events';
+export {
+  MAX_ENDPOINTS_PER_MERCHANT,
+  PING_EVENT,
+  WEBHOOK_EVENT_NAMES,
+  WEBHOOK_MAX_ATTEMPTS,
+  isWebhookEvent,
+} from './webhooks/webhook-delivery.rules';
+export type { WebhookEventName } from './webhooks/webhook-delivery.rules';
+export { WEBHOOK_DELIVER_JOB, WEBHOOK_QUEUE, WebhookDeliveries } from './webhooks/webhook-deliveries';
+export type { DeliverResult, WebhookJobData } from './webhooks/webhook-deliveries';
+export { WebhookFanOut } from './webhooks/webhook-fan-out';
+export type { FanOutResult } from './webhooks/webhook-fan-out';
+export { MerchantWebhooksProcessor } from './webhooks/merchant-webhooks.processor';
+export { WEBHOOK_TARGET_POLICY } from './webhooks/webhook-target-policy';
+export type { WebhookTargetPolicy } from './webhooks/webhook-target-policy';

@@ -13,6 +13,13 @@ const keysOfKind = (kind: string): string[] =>
   manifest.filter((endpoint) => endpoint.kind === kind).map((endpoint) => endpoint.key);
 
 /**
+ * Outgoing events the backend adds to the map's three (`order.status_changed`, `wallet.low_balance`, `invoice.paid`), each tied
+ * to a B-entry: `service.price_changed` is user rule 9 (MISMATCHES B117 (5)). They are built but not in the manifest, so the
+ * event test expects them next to the manifest's keys.
+ */
+const BACKEND_EVENTS: readonly string[] = ['EVENT service.price_changed'];
+
+/**
  * What is built, per kind of manifest key. Dhru actions and supplier calls have no registry yet: the feature that adds
  * one (7a Dhru, 6 suppliers) lists its keys here, otherwise removing them from pending.ts fails the first test below.
  */
@@ -62,8 +69,8 @@ describe('the registry against the manifest', () => {
     expect(difference('supplier', built['supplier-call'] ?? [], expected)).toEqual([]);
   });
 
-  it('outgoing event schemas equal the manifest EVENT keys minus pending', () => {
-    const expected = keysOfKind('event').filter((key) => !pending.has(key));
+  it('outgoing event schemas equal the manifest EVENT keys minus pending, plus the backend additions of a B-entry', () => {
+    const expected = [...keysOfKind('event').filter((key) => !pending.has(key)), ...BACKEND_EVENTS];
     expect(difference('event', built.event ?? [], expected)).toEqual([]);
   });
 

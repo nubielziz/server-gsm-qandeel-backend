@@ -50,6 +50,13 @@
       "when": 1794036739104,
       "tag": "0006_listed_prices",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794044241395,
+      "tag": "0007_webhook_delivery_event_id",
+      "breakpoints": true
     }
   ]
 }

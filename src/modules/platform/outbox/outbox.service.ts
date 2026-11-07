@@ -7,8 +7,8 @@ import type { DbExecutor } from '../../../infra/db';
 import type { OutboxEvent } from '../db/schema';
 import { assertOutboxEvent, packOutboxPayload } from './outbox-payload';
 import { OutboxRouteRegistry } from './outbox-routes';
-import { insertOutboxEvent, outboxBacklog } from './outbox.repository';
-import type { OutboxBacklog, OutboxEventInput } from './outbox.types';
+import { insertOutboxEvent, outboxBacklog, outboxEventExists } from './outbox.repository';
+import type { OutboxBacklog, OutboxEventInput, OutboxPayload } from './outbox.types';
 
 /**
  * Writes outbox events and reports the backlog.
@@ -56,6 +56,27 @@ export class OutboxService {
       },
       this.clock.now(),
     );
+  }
+
+  /**
+   * Tells whether an event with the given ids was written before.
+   * Why: a producer that can see the same occurrence more than once (the price change scan, which runs after every price change)
+   * writes the event only when it is new; the consumer is idempotent as well, so this only saves rows and jobs.
+   * @param db the database or a transaction
+   * @param type the event type
+   * @param aggregateType the aggregate of the event
+   * @param aggregateId the id of the aggregate row
+   * @param payload the ids the written row must contain (a subset of its payload)
+   * @returns true when such a row exists, processed or not
+   */
+  hasEvent(
+    db: DbExecutor,
+    type: string,
+    aggregateType: string,
+    aggregateId: number,
+    payload: OutboxPayload,
+  ): Promise<boolean> {
+    return outboxEventExists(db, type, aggregateType, aggregateId, payload);
   }
 
   /**

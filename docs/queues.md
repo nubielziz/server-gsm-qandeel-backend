@@ -103,13 +103,21 @@ Asks suppliers for the status of orders they accepted.
 Delivers signed events to the webhook endpoints of merchants.
 
 - **Concurrency:** 20 per worker process.
-- **Jobs:** none yet. Built by the merchant API feature (7b): one job per delivery of `order.status_changed`,
-  `wallet.low_balance` and `invoice.paid`.
-- **Payload:** none yet (event id, endpoint id; the body is rebuilt from Postgres).
-- **Idempotency:** none yet. Rule: one `webhook_deliveries` row per delivery; the job id is `webhook-<delivery id>`.
-- **Retry policy:** 8 attempts, exponential backoff from 10 min (jitter 20 %), about 21 hours in total, matching the public
-  rule "8 attempts over about 24 h" (`docs/contract/ALIGNMENT.md` § 7); every attempt is recorded in `webhook_deliveries`.
-- **Schedule:** none (event-driven).
+- **Jobs:** one catch-all processor, `MerchantWebhooksProcessor` (`src/modules/platform/webhooks/`), for two kinds of job (a queue cannot have a catch-all next to named processors, and the
+  event types are registered by several features, so no other processor may be added to this queue):
+  - an outbox event of a merchant, named by its type (`order.status_changed`, registered by feature 5; `wallet.low_balance`, written by the money module's `WalletLowBalanceWatch`;
+    `invoice.paid`, registered by feature 8; `service.price_changed`, written by the catalog's price change scan). The processor fans it out (`WebhookFanOut`): one
+    `webhook_deliveries` row per active endpoint of `payload.clientId` that subscribed to the type, then one `webhook.deliver` job per row;
+  - `webhook.deliver`, one attempt of one delivery (`WebhookDeliveries.deliver`).
+- **Payload:** the outbox jobs carry `OutboxJobData` (`payload.clientId` is required; the money strings of
+  `wallet.low_balance` and `service.price_changed` are the merchant's own public figures); `webhook.deliver` carries `{ deliveryId, attempt }` and nothing else: the body, the address and the encrypted secret are read from
+  Postgres at send time.
+- **Idempotency:** the outbox job id is `outbox-<event id>`. A fan-out run twice inserts nothing the second time (unique `(endpoint_id, event_id)`, the event id is a keyed hash of the event, or of the change for a price
+  change) and re-adds the jobs of deliveries it finds pending. A delivery job has the id `webhook-<delivery id>-<attempt>`; the row says which attempt is current, and a write is guarded by
+  `status = 'pending' and attempt = <this attempt>`, so a job that runs twice, or after a manual retry, records nothing twice. A job whose row has moved on only makes sure the current attempt has its job. Sends are at least
+  once; the same `X-GSM-Event-Id` on every retry lets the receiver drop repeats.
+- **Retry policy:** 8 attempts, exponential backoff from 10 min (jitter 20 %), about 21 hours in total, matching the public rule "8 attempts over about 24 h" (`docs/contract/ALIGNMENT.md` § 7). The worker itself schedules the retries of an HTTP outcome and writes them to the row: a failed attempt n (a non-2xx answer, no answer within 10 s, a refused connection) sets `attempt = n + 1`, `next_retry_at` to `10 min x 2^(n-1)` shortened by up to 20 % at random, and adds the delayed job `webhook-<delivery>-<n + 1>`; after the 8th attempt the delivery is `failed` (a manual retry by staff is one more attempt, never a new ladder). A refusal that cannot change (the address no longer passes the SSRF guard) fails the delivery at once. The queue's own policy above only covers a job that throws (Postgres or Redis failed); every such run is safe to repeat.
+- **Schedule:** none (event-driven). Open point: nothing re-queues a pending delivery whose job was lost with the queue Redis's data; `webhook_deliveries_retry_idx` supports a sweep.
 
 ## notifications
 
@@ -174,7 +182,7 @@ Processes uploaded and generated files (exports, result files).
 Scheduled housekeeping: group promotion, data retention, integrity checks, FX refresh.
 
 - **Concurrency:** 2 per worker process.
-- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, and `client_group_promotion`, nightly at 03:30 UTC (identity module, below). The others are built by their features, each
+- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), and `service_price_scan`, event-driven (catalog module, below). The others are built by their features, each
   registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
   `ledger_integrity` (12b, nightly 02:30 UTC), `data_retention` (nightly
   03:00 UTC), `fx_refresh` (hourly), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). The names are the
@@ -194,6 +202,17 @@ Scheduled housekeeping: group promotion, data retention, integrity checks, FX re
   `session-purge` at 03:15 UTC (`src/modules/identity/jobs/session-purge.module.ts`);
   `client-group-promotion` at 03:30 UTC (`src/modules/identity/jobs/group-promotion.module.ts`); the
   others are registered with `JobSchedulerRegistry` by the owning features.
+
+### `service_price_scan` (catalog module)
+
+Finds the merchants who would now pay another price than their last order's for a service they ordered in the last 30 days, and writes one `service.price_changed` outbox event (queue `merchant-webhooks`) for each.
+
+- **Trigger:** event-driven, not scheduled. Every move of the catalog price version (`CatalogPriceVersion.bump`, called after the commit of every write that can change a resolved price) asks for a scan: a delayed job (60 s) with the
+  id `price-scan-<minute>`, so a burst of price edits is one scan and there is at most one a minute. A failed request is only logged: the next price change asks again.
+- **Payload:** none. The scan reads `orders`, `clients` and the pricing tables (page by page, 500 merchant and service pairs a step) and compares the resolver's price (floor included) with the unit price of the merchant's latest order.
+- **Idempotency:** a difference is written only when no outbox row of the same service holds the same `clientId`, `previousPrice` and `price` (`OutboxService.hasEvent`); the webhook fan-out is idempotent on the same change too. A repeat or
+  a parallel run writes nothing new.
+- **Not recorded in `job_runs`** (event-driven, like the merchant mail jobs). 3 attempts with the queue's backoff.
 
 ### `ip_rule_hits_flush` (identity module)
 

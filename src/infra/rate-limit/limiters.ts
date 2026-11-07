@@ -23,7 +23,7 @@ export interface LimiterConfig {
  * Why: decision 021. The keys of the callers: `ip` the client IP; `api-key` the API key id (the points come from
  * `api_keys.rate_limit_per_min` through the `limit` option, this is the default); `sign-in` email + IP (build the key
  * with `RateLimitService.compositeKey`), counted per attempt and reset on success; `token` the client IP; `supplier` the
- * supplier id (the points come from `suppliers.rate_limit_per_min`).
+ * supplier id (the points come from `suppliers.rate_limit_per_min`); `webhook-retry` the delivery id.
  *
  * @see docs/decisions/021-rate-limiting.md
  */
@@ -54,6 +54,12 @@ export const RATE_LIMITERS = {
     points: 60,
     windowSeconds: 60,
     description: 'Outbound calls to one supplier: requests per supplier; the supplier own limit replaces the points.',
+  },
+  'webhook-retry': {
+    points: 1,
+    windowSeconds: 60,
+    description:
+      'Manual retries of one webhook delivery by staff: one a minute per delivery (POST /admin/webhook-deliveries/:id/retry).',
   },
 } as const satisfies Record<string, LimiterConfig>;
 

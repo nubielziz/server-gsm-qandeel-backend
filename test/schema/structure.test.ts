@@ -89,7 +89,7 @@ const ADDITIONS: Record<string, string[]> = {
   refunds: ['note'],
   data_requests: ['note'],
   notifications: ['error'],
-  webhook_deliveries: ['response_body', 'error'],
+  webhook_deliveries: ['response_body', 'error', 'event_id'],
   alert_rules: ['deleted_at'],
   alert_events: ['rule_name', 'metric', 'comparator', 'threshold', 'window_seconds', 'unit'],
   commission_accruals: ['approved_at'],

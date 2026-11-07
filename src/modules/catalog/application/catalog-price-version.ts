@@ -2,6 +2,7 @@
 // whenever a resolved price can change; every cached price list reads through a key that carries it, so one bump empties them all.
 import { Injectable, Logger } from '@nestjs/common';
 import { type CacheKey, CacheService } from '../../../infra/cache';
+import { PriceVersionListeners } from './price-version-listeners';
 
 /** The name of the version counter: the key is `gsm:{env}:cache:version:catalog`. */
 export const CATALOG_VERSION_NAME = 'catalog';
@@ -26,7 +27,10 @@ export interface AfterCommitHook {
 export class CatalogPriceVersion {
   private readonly logger = new Logger(CatalogPriceVersion.name);
 
-  constructor(private readonly cache: CacheService) {}
+  constructor(
+    private readonly cache: CacheService,
+    private readonly listeners: PriceVersionListeners,
+  ) {}
 
   /**
    * Registers the bump to run once the transaction has committed.
@@ -42,17 +46,24 @@ export class CatalogPriceVersion {
   /**
    * Moves the version now (call it after the commit, never before: a rolled-back change must not empty the cache).
    *
+   * Every move also tells the listeners ({@link PriceVersionListeners}): the price change scan asks for a run, so merchants who
+   * ordered the service in the last 30 days get the webhook event `service.price_changed` (user rule 9 (5)). A listener never fails
+   * the bump.
+   *
    * @returns the new version number, or `undefined` when Redis could not be reached (logged; lists then age out by TTL)
    */
   async bump(): Promise<number | undefined> {
+    let version: number;
     try {
-      return await this.cache.bumpVersion(CATALOG_VERSION_NAME);
+      version = await this.cache.bumpVersion(CATALOG_VERSION_NAME);
     } catch (error) {
       this.logger.error(
         `Could not move the catalog price version: ${error instanceof Error ? error.message : String(error)}`,
       );
       return undefined;
     }
+    await this.listeners.notify();
+    return version;
   }
 
   /**

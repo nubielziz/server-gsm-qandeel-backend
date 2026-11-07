@@ -11,7 +11,654 @@
       "description": "The server that serves this document"
     }
   ],
+  "tags": [
+    {
+      "name": "events"
+    }
+  ],
+  "x-tagGroups": [
+    {
+      "name": "Webhook events",
+      "tags": [
+        "events"
+      ]
+    }
+  ],
   "paths": {},
+  "webhooks": {
+    "invoice.paid": {
+      "post": {
+        "operationId": "webhookInvoicePaid",
+        "summary": "An invoice was paid",
+        "description": "Sent when an invoice of the merchant is paid and its amount is credited to the wallet.",
+        "tags": [
+          "events"
+        ],
+        "x-gsm-key": "EVENT invoice.paid",
+        "x-gsm-surface": "events",
+        "security": [
+          {
+            "webhookSignature": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-GSM-Signature",
+            "required": true,
+            "description": "Signature of the raw body: `t=<unix seconds>,v1=<hex HMAC-SHA256 of \"<t>.<body>\">`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-GSM-Event-Id",
+            "required": true,
+            "description": "Id of the event; the same id is repeated on every retry.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "type",
+                  "createdAt",
+                  "data"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "Id of this event. Also sent as `X-GSM-Event-Id`; use it to drop retries."
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "invoice.paid"
+                  },
+                  "createdAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-gsm-alias": "IsoDateTime",
+                    "description": "ISO 8601 UTC time with milliseconds.",
+                    "examples": [
+                      "2026-03-01T09:30:00.000Z"
+                    ]
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "invoiceId": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "x-gsm-alias": "Id",
+                        "description": "Numeric record id.",
+                        "examples": [
+                          42
+                        ]
+                      },
+                      "number": {
+                        "type": "string"
+                      },
+                      "amount": {
+                        "type": "string",
+                        "pattern": "^-?\\d+\\.\\d{4}$",
+                        "x-gsm-alias": "Money",
+                        "description": "Decimal string with exactly 4 fraction digits.",
+                        "examples": [
+                          "12.4900"
+                        ]
+                      },
+                      "currency": {
+                        "type": "string"
+                      },
+                      "paidAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "x-gsm-alias": "IsoDateTime",
+                        "description": "ISO 8601 UTC time with milliseconds.",
+                        "examples": [
+                          "2026-03-01T09:30:00.000Z"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "invoiceId",
+                      "number",
+                      "amount",
+                      "currency",
+                      "paidAt"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "id": "evt_1",
+                "type": "invoice.paid",
+                "createdAt": "2026-03-01T09:30:00.000Z",
+                "data": {
+                  "invoiceId": 311,
+                  "number": "INV-2026-0311",
+                  "amount": "250.0000",
+                  "currency": "USD",
+                  "paidAt": "2026-11-01T11:05:00.000Z"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Delivered. Any 2xx status counts; anything else (or no answer within the timeout) is retried with exponential backoff, 8 attempts over about 24 hours."
+          }
+        }
+      }
+    },
+    "order.status_changed": {
+      "post": {
+        "operationId": "webhookOrderStatusChanged",
+        "summary": "An order changed status",
+        "description": "Sent once for every status change of an order the merchant placed (through Dhru, REST v1 or the portal). `status` is the new status and `previousStatus` the one before; `completedAt` is set when the order is completed. `imei` is the main input of the order. Costs, suppliers and internal notes are never part of the event.",
+        "tags": [
+          "events"
+        ],
+        "x-gsm-key": "EVENT order.status_changed",
+        "x-gsm-surface": "events",
+        "security": [
+          {
+            "webhookSignature": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-GSM-Signature",
+            "required": true,
+            "description": "Signature of the raw body: `t=<unix seconds>,v1=<hex HMAC-SHA256 of \"<t>.<body>\">`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-GSM-Event-Id",
+            "required": true,
+            "description": "Id of the event; the same id is repeated on every retry.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "type",
+                  "createdAt",
+                  "data"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "Id of this event. Also sent as `X-GSM-Event-Id`; use it to drop retries."
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "order.status_changed"
+                  },
+                  "createdAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-gsm-alias": "IsoDateTime",
+                    "description": "ISO 8601 UTC time with milliseconds.",
+                    "examples": [
+                      "2026-03-01T09:30:00.000Z"
+                    ]
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "orderId": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "x-gsm-alias": "Id",
+                        "description": "Numeric record id.",
+                        "examples": [
+                          42
+                        ]
+                      },
+                      "serviceId": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "x-gsm-alias": "Id",
+                        "description": "Numeric record id.",
+                        "examples": [
+                          42
+                        ]
+                      },
+                      "serviceName": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "pending",
+                          "processing",
+                          "completed",
+                          "rejected"
+                        ]
+                      },
+                      "previousStatus": {
+                        "type": "string",
+                        "enum": [
+                          "pending",
+                          "processing",
+                          "completed",
+                          "rejected"
+                        ]
+                      },
+                      "imei": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "quantity": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "unitPrice": {
+                        "type": "string",
+                        "pattern": "^-?\\d+\\.\\d{4}$",
+                        "x-gsm-alias": "Money",
+                        "description": "Decimal string with exactly 4 fraction digits.",
+                        "examples": [
+                          "12.4900"
+                        ]
+                      },
+                      "totalPrice": {
+                        "type": "string",
+                        "pattern": "^-?\\d+\\.\\d{4}$",
+                        "x-gsm-alias": "Money",
+                        "description": "Decimal string with exactly 4 fraction digits.",
+                        "examples": [
+                          "12.4900"
+                        ]
+                      },
+                      "currency": {
+                        "type": "string"
+                      },
+                      "resultCode": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "resultComment": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "placedAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "x-gsm-alias": "IsoDateTime",
+                        "description": "ISO 8601 UTC time with milliseconds.",
+                        "examples": [
+                          "2026-03-01T09:30:00.000Z"
+                        ]
+                      },
+                      "completedAt": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "date-time",
+                            "x-gsm-alias": "IsoDateTime",
+                            "description": "ISO 8601 UTC time with milliseconds.",
+                            "examples": [
+                              "2026-03-01T09:30:00.000Z"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "orderId",
+                      "serviceId",
+                      "serviceName",
+                      "status",
+                      "previousStatus",
+                      "imei",
+                      "quantity",
+                      "unitPrice",
+                      "totalPrice",
+                      "currency",
+                      "resultCode",
+                      "resultComment",
+                      "placedAt",
+                      "completedAt"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "id": "evt_1",
+                "type": "order.status_changed",
+                "createdAt": "2026-03-01T09:30:00.000Z",
+                "data": {
+                  "orderId": 48102,
+                  "serviceId": 12,
+                  "serviceName": "iPhone iCloud Clean",
+                  "status": "completed",
+                  "previousStatus": "processing",
+                  "imei": "356938035643809",
+                  "quantity": 1,
+                  "unitPrice": "4.5000",
+                  "totalPrice": "4.5000",
+                  "currency": "USD",
+                  "resultCode": "CLEAN",
+                  "resultComment": "Device is clean",
+                  "placedAt": "2026-11-01T09:30:00.000Z",
+                  "completedAt": "2026-11-01T09:42:10.000Z"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Delivered. Any 2xx status counts; anything else (or no answer within the timeout) is retried with exponential backoff, 8 attempts over about 24 hours."
+          }
+        }
+      }
+    },
+    "service.price_changed": {
+      "post": {
+        "operationId": "webhookServicePriceChanged",
+        "summary": "A service price changed",
+        "description": "Sent to a merchant who ordered the service in the last 30 days when the price it would pay now differs from the price of its last order. `previousPrice` is the price of that last order and `price` the price a new order is charged now. Refresh the price list before ordering: an order priced far above the price last listed is refused with `PRICE_CHANGED`.",
+        "tags": [
+          "events"
+        ],
+        "x-gsm-key": "EVENT service.price_changed",
+        "x-gsm-surface": "events",
+        "security": [
+          {
+            "webhookSignature": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-GSM-Signature",
+            "required": true,
+            "description": "Signature of the raw body: `t=<unix seconds>,v1=<hex HMAC-SHA256 of \"<t>.<body>\">`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-GSM-Event-Id",
+            "required": true,
+            "description": "Id of the event; the same id is repeated on every retry.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "type",
+                  "createdAt",
+                  "data"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "Id of this event. Also sent as `X-GSM-Event-Id`; use it to drop retries."
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "service.price_changed"
+                  },
+                  "createdAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-gsm-alias": "IsoDateTime",
+                    "description": "ISO 8601 UTC time with milliseconds.",
+                    "examples": [
+                      "2026-03-01T09:30:00.000Z"
+                    ]
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "serviceId": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "x-gsm-alias": "Id",
+                        "description": "Numeric record id.",
+                        "examples": [
+                          42
+                        ]
+                      },
+                      "serviceName": {
+                        "type": "string"
+                      },
+                      "previousPrice": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^-?\\d+\\.\\d{4}$",
+                            "x-gsm-alias": "Money",
+                            "description": "Decimal string with exactly 4 fraction digits.",
+                            "examples": [
+                              "12.4900"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "price": {
+                        "type": "string",
+                        "pattern": "^-?\\d+\\.\\d{4}$",
+                        "x-gsm-alias": "Money",
+                        "description": "Decimal string with exactly 4 fraction digits.",
+                        "examples": [
+                          "12.4900"
+                        ]
+                      },
+                      "currency": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "serviceId",
+                      "serviceName",
+                      "previousPrice",
+                      "price",
+                      "currency"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "id": "evt_1",
+                "type": "service.price_changed",
+                "createdAt": "2026-03-01T09:30:00.000Z",
+                "data": {
+                  "serviceId": 12,
+                  "serviceName": "iPhone iCloud Clean",
+                  "previousPrice": "4.5000",
+                  "price": "4.8000",
+                  "currency": "USD"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Delivered. Any 2xx status counts; anything else (or no answer within the timeout) is retried with exponential backoff, 8 attempts over about 24 hours."
+          }
+        }
+      }
+    },
+    "wallet.low_balance": {
+      "post": {
+        "operationId": "webhookWalletLowBalance",
+        "summary": "The available balance is low",
+        "description": "Sent once each time a posting takes the available balance (balance plus credit limit) from the alert threshold or above to below it. It is not sent again until the balance has been at or above the threshold and fallen under it once more.",
+        "tags": [
+          "events"
+        ],
+        "x-gsm-key": "EVENT wallet.low_balance",
+        "x-gsm-surface": "events",
+        "security": [
+          {
+            "webhookSignature": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-GSM-Signature",
+            "required": true,
+            "description": "Signature of the raw body: `t=<unix seconds>,v1=<hex HMAC-SHA256 of \"<t>.<body>\">`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-GSM-Event-Id",
+            "required": true,
+            "description": "Id of the event; the same id is repeated on every retry.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "type",
+                  "createdAt",
+                  "data"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "Id of this event. Also sent as `X-GSM-Event-Id`; use it to drop retries."
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "wallet.low_balance"
+                  },
+                  "createdAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-gsm-alias": "IsoDateTime",
+                    "description": "ISO 8601 UTC time with milliseconds.",
+                    "examples": [
+                      "2026-03-01T09:30:00.000Z"
+                    ]
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "currency": {
+                        "type": "string"
+                      },
+                      "available": {
+                        "type": "string",
+                        "pattern": "^-?\\d+\\.\\d{4}$",
+                        "x-gsm-alias": "Money",
+                        "description": "Decimal string with exactly 4 fraction digits.",
+                        "examples": [
+                          "12.4900"
+                        ]
+                      },
+                      "threshold": {
+                        "type": "string",
+                        "pattern": "^-?\\d+\\.\\d{4}$",
+                        "x-gsm-alias": "Money",
+                        "description": "Decimal string with exactly 4 fraction digits.",
+                        "examples": [
+                          "12.4900"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "currency",
+                      "available",
+                      "threshold"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "id": "evt_1",
+                "type": "wallet.low_balance",
+                "createdAt": "2026-03-01T09:30:00.000Z",
+                "data": {
+                  "currency": "USD",
+                  "available": "42.5000",
+                  "threshold": "50.0000"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Delivered. Any 2xx status counts; anything else (or no answer within the timeout) is retried with exponential backoff, 8 attempts over about 24 hours."
+          }
+        }
+      }
+    }
+  },
   "components": {
     "securitySchemes": {
       "apiKey": {
@@ -19,6 +666,12 @@
         "scheme": "bearer",
         "bearerFormat": "API key",
         "description": "Merchant API key sent as `Authorization: Bearer <key>`. A key has scopes (each operation names the one it needs), an optional list of allowed IP addresses and its own requests-per-minute limit."
+      },
+      "webhookSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-GSM-Signature",
+        "description": "Header we add to every outgoing webhook event: `t=<unix seconds>,v1=<hex HMAC-SHA256 of \"<t>.<raw body>\">`, keyed with the secret of the webhook endpoint. Recompute it over the raw body and refuse deliveries older than 5 minutes. Documented for receivers; it cannot be used to call this API."
       }
     }
   }

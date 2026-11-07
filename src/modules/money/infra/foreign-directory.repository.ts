@@ -153,3 +153,26 @@ export async function findOwnersByName(db: DbExecutor, pattern: string): Promise
     customer: customer.map((row) => row.id),
   };
 }
+
+/**
+ * Reads the notification preferences of a merchant (where its low-balance threshold lives).
+ *
+ * Why: the `wallet.low_balance` event compares the available balance with the merchant's own threshold
+ * (`notification_prefs.lowBalanceThreshold`); the preferences belong to identity, which exports no reader yet (same deviation as
+ * the rest of this file).
+ *
+ * @param db the transaction of the posting
+ * @param clientId the merchant id
+ * @returns the preferences object, or `undefined` when there is no such merchant
+ */
+export async function notificationPrefsOf(
+  db: DbExecutor,
+  clientId: number,
+): Promise<Record<string, unknown> | undefined> {
+  const [row] = await db
+    .select({ prefs: s.clients.notificationPrefs })
+    .from(s.clients)
+    .where(eq(s.clients.id, clientId))
+    .limit(1);
+  return row?.prefs;
+}

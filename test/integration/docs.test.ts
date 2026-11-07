@@ -23,6 +23,8 @@ const apps: TestApp[] = [];
 async function appWith(options: Parameters<typeof createTestApp>[0] = {}): Promise<TestApp> {
   const t = await createTestApp({ controllers: [TestController, DocsFixtureController], ...options });
   apps.push(t);
+  // The real app registers the four merchant webhook events at load (feature 7b); these tests are about the fixture API, which has none.
+  t.app.get(OpenApiService).publish(t.app, { events: [] });
   return t;
 }
 afterAll(async () => {
@@ -76,6 +78,21 @@ function expectConsistent(doc: Json): void {
 }
 
 describe('GET /openapi.json (public document)', () => {
+  it('lists the four merchant webhook events of the real registry under `webhooks` (feature 7b)', async () => {
+    const t = await createTestApp();
+    apps.push(t);
+    const doc = (await get(t, '/openapi.json')).json();
+    expect(Object.keys(doc.webhooks)).toEqual([
+      'invoice.paid',
+      'order.status_changed',
+      'service.price_changed',
+      'wallet.low_balance',
+    ]);
+    expect(
+      doc.webhooks['order.status_changed'].post.parameters.map((parameter: { name: string }) => parameter.name),
+    ).toEqual(['X-GSM-Signature', 'X-GSM-Event-Id']);
+  });
+
   it('answers 200 JSON with the exact text the service published, cacheable for five minutes', async () => {
     const t = await appWith();
     const res = await get(t, '/openapi.json');
@@ -139,6 +156,7 @@ describe('GET /openapi.json (public document)', () => {
   it('answers the same on the app without the fixture API: a valid, empty public document', async () => {
     const t = await createTestApp();
     apps.push(t);
+    t.app.get(OpenApiService).publish(t.app, { events: [] });
     const doc = (await get(t, '/openapi.json')).json();
     expect(doc.paths).toEqual({});
     expect(Object.keys(doc.components.securitySchemes)).toEqual(['apiKey']);

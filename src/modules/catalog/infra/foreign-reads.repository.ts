@@ -138,3 +138,47 @@ export async function merchantsOf(db: DbExecutor, ids: readonly number[]): Promi
     .where(inArray(s.clients.id, unique));
   return new Map(rows.map((row) => [row.id, row]));
 }
+
+/** The last price a merchant paid for a service, with the merchant's group (what the price change scan compares). */
+export interface RecentOrderPrice {
+  readonly clientId: number;
+  readonly serviceId: number;
+  readonly groupId: number;
+  /** `orders.unit_price` of the merchant's latest order of the service (USD, four decimals). */
+  readonly lastPrice: string;
+}
+
+/**
+ * Reads, for each merchant and service, the unit price of the merchant's latest order since a time.
+ *
+ * Why: user rule 9 (5) and MISMATCHES B117: a merchant who ordered a service in the last 30 days is told when the price it would
+ * pay changes. The price of its latest order is the price it knows. Only active merchants are read, and the page after a key is
+ * returned so a scan can walk the whole set in small steps (one row per merchant and service, ordered by both ids).
+ *
+ * @param db the database or a transaction
+ * @param since the start of the window (30 days before now)
+ * @param after the last `(clientId, serviceId)` of the previous page; `undefined` for the first page
+ * @param limit the page size
+ * @returns the next page, ordered by merchant and service
+ */
+export async function recentOrderPrices(
+  db: DbExecutor,
+  since: Date,
+  after: { readonly clientId: number; readonly serviceId: number } | undefined,
+  limit: number,
+): Promise<RecentOrderPrice[]> {
+  const result = await db.execute<{ client_id: string; service_id: string; group_id: string; unit_price: string }>(sql`
+    select distinct on (o.client_id, o.service_id) o.client_id, o.service_id, c.group_id, o.unit_price
+    from ${s.orders} o
+    join ${s.clients} c on c.id = o.client_id
+    where o.client_id is not null and c.status = 'active' and o.created_at >= ${since}
+      ${after ? sql`and (o.client_id, o.service_id) > (${after.clientId}, ${after.serviceId})` : sql``}
+    order by o.client_id, o.service_id, o.created_at desc, o.id desc
+    limit ${limit}`);
+  return result.rows.map((row) => ({
+    clientId: Number(row.client_id),
+    serviceId: Number(row.service_id),
+    groupId: Number(row.group_id),
+    lastPrice: row.unit_price,
+  }));
+}

@@ -54,4 +54,9 @@ export { SERVICE_DUPLICATE_RULES, SERVICE_PRICE_MODES, SERVICE_TYPES } from './d
 export type { ServiceDuplicateRule, ServicePriceMode, ServiceType } from './db/schema';
 export { CatalogModule } from './catalog.module';
 export { CatalogPricesModule } from './catalog-prices.module';
+export { PriceVersionListeners } from './application/price-version-listeners';
+export type { PriceVersionListener } from './application/price-version-listeners';
+export { PriceChangeScan, PRICE_SCAN_JOB } from './application/price-change-scan';
+export type { PriceScanResult } from './application/price-change-scan';
+export { PriceChangeScanModule } from './jobs/price-change-scan.module';
 export { CatalogAdminModule } from './catalog-admin.module';

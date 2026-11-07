@@ -75,8 +75,9 @@ describe('migrations', () => {
     } finally {
       await pool.query(`drop database if exists "${name}" with (force)`);
     }
-    // Creating and dropping a database checkpoints Postgres, which can take several seconds on a busy disk.
-  }, 60_000);
+    // Creating and dropping a database checkpoints Postgres: alone the test takes seconds, but at the end of a full run (or with
+    // another worktree testing on the same server) flushing every dirty buffer can take over a minute on a slow disk.
+  }, 180_000);
 });
 
 describe('concurrent migrators', () => {
@@ -104,7 +105,7 @@ describe('concurrent migrators', () => {
     } finally {
       await pool.query(`drop database if exists "${name}" with (force)`);
     }
-  }, 60_000);
+  }, 180_000);
 });
 
 describe('the migrated database', () => {
@@ -184,5 +185,5 @@ describe('bun run db:check', () => {
     ]);
     expect(`${stdout}${stderr}`).toContain('no drift');
     expect(code).toBe(0);
-  }, 60_000);
+  }, 180_000);
 });

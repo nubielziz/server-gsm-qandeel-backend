@@ -8,6 +8,8 @@ Status: accepted, 2026-10-31.
   consecutive failures; per IP on token routes (tracking, checkout, tickets).
 - Outbound per supplier: `suppliers.rate_limit_per_min` through the same service and `max_concurrency` through a
   Redis semaphore; a limited dispatch job is delayed, not failed.
+- Manual retries of a webhook delivery by staff (`POST /admin/webhook-deliveries/:id/retry`): one a minute per delivery
+  (limiter `webhook-retry`, feature 7b).
 - A refusal is `429 RATE_LIMITED` problem+json with `Retry-After` (seconds), which the frontend reads.
 - Counters live on the cache instance: an evicted counter only loosens a limit briefly; nothing here is a source of
   truth.

@@ -218,11 +218,19 @@ Keep this list in step with the contracts (`permission` of each `defineRoute`).
 
 ## Events
 
-Outbox events produced (types, payload ids): none yet. Consumed: none yet. Record each outbox type and the queue it maps to here and in `docs/queues.md`.
+Outbox events produced: `service.price_changed` (queue `merchant-webhooks`, aggregate `services`, payload `{ clientId, serviceId, previousPrice, price, currency }`), written by
+`PriceChangeScan` (feature 7b, user rule 9 (5)): see "Jobs and schedules". Consumed: none. The route is registered by the platform module.
 
 ## Jobs and schedules
 
-None in this module. The nightly group promotion (`client_group_promotion`) writes `clients.group_id`, so it lives in identity
+`service_price_scan` (queue `maintenance`, processor `jobs/price-change-scan.processor.ts`, module `PriceChangeScanModule` in the worker; feature 7b): every move of the
+catalog price version tells its listeners (`PriceVersionListeners`), and `PriceChangeScan` adds a delayed job (60 s, job id `price-scan-<minute>`, so at most one a minute).
+The scan compares, for every active merchant and service of the last 30 days of orders (read through the foreign reads of `infra/foreign-reads.repository.ts`), the price a
+new order would pay now (`PriceResolver`, floor included) with the unit price of the merchant's latest order, and writes `service.price_changed` for each difference
+that has no event with the same ids yet (`OutboxService.hasEvent`; the webhook fan-out is idempotent on the same change as well). Event-driven, so no `job_runs` row.
+A merchant who has not ordered the service in 30 days is not told; a price that goes back to the last order's price is not announced.
+
+Otherwise none in this module. The nightly group promotion (`client_group_promotion`) writes `clients.group_id`, so it lives in identity
 (`src/modules/identity/jobs/`); it reads thresholds through `ClientGroupDirectory.promotionLadder` and is documented in
 `docs/queues.md`.
 

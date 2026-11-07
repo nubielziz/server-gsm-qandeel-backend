@@ -12,6 +12,8 @@ import { MaintenanceModule } from './maintenance/maintenance.module';
 import { OutboxModule } from './outbox/outbox.module';
 import { PlatformAdminModule } from './platform-admin.module';
 import { SettingsModule } from './settings/settings.module';
+import { MerchantWebhooksModule } from './webhooks/merchant-webhooks.module';
+import { WebhookEventsModule } from './webhooks/webhook-events.module';
 
 /**
  * Nest module for Platform (map domain G).
@@ -21,10 +23,20 @@ import { SettingsModule } from './settings/settings.module';
  * transactional outbox: `OutboxModule` (global) lets every module write events, `OutboxRelayModule` (worker only)
  * relays them to the queues. `AuditModule` (global) gives every use case `AuditService.record` and checks that staff
  * writes are audited; `SettingsModule` (global) is the read side of the settings table (`SettingsReader` cached,
- * `SettingsService` uncached); `MaintenanceModule` puts maintenance mode into the request pipeline.
+ * `SettingsService` uncached); `MaintenanceModule` puts maintenance mode into the request pipeline. The merchant webhooks (stage
+ * 7) are `WebhookEventsModule` (the event contracts and outbox routes), `MerchantWebhooksModule` (`/client/webhooks*` and
+ * `/admin/webhook-deliveries*`) and `WebhookDeliveryModule` (the sender, the fan-out and the queue processor, also loaded by the worker).
  */
 @Module({
-  imports: [OutboxModule, AuditModule, SettingsModule, MaintenanceModule, PlatformAdminModule],
+  imports: [
+    OutboxModule,
+    AuditModule,
+    SettingsModule,
+    MaintenanceModule,
+    PlatformAdminModule,
+    WebhookEventsModule,
+    MerchantWebhooksModule,
+  ],
   controllers: [DocsController, ReferenceController],
   providers: [OpenApiService, ReferenceAccessGuard],
 })

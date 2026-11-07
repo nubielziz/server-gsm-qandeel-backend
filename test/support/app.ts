@@ -19,12 +19,19 @@ import { RedisModule } from '../../src/infra/redis';
 import { StorageModule } from '../../src/infra/storage';
 import { CatalogAdminModule, CatalogPricesModule } from '../../src/modules/catalog';
 import { AccessAdminModule } from '../../src/modules/identity/access-admin.module';
+import { ApiKeysModule } from '../../src/modules/identity/api-keys.module';
+import { MerchantWebhookRoutesModule } from '../../src/modules/identity/merchant-webhook-routes.module';
 import { MerchantAdminModule } from '../../src/modules/identity/merchant-admin.module';
 import { MerchantAuthModule } from '../../src/modules/identity/merchant-auth.module';
 import { StaffAuthModule } from '../../src/modules/identity/staff-auth.module';
 import { IpRulesModule } from '../../src/modules/identity/security/ip-rules/ip-rules.module';
 import { MoneyAdminModule } from '../../src/modules/money/money-admin.module';
-import { MaintenanceModule, SettingsModule } from '../../src/modules/platform';
+import {
+  MaintenanceModule,
+  MerchantWebhooksModule,
+  SettingsModule,
+  WebhookDeliveryModule,
+} from '../../src/modules/platform';
 import { PlatformAdminModule } from '../../src/modules/platform/platform-admin.module';
 import { logSink } from './log-sink';
 import { testInstanceEnv } from './env';
@@ -83,9 +90,13 @@ const NEEDS_DATABASE_AND_CACHE = [
   MerchantAdminModule,
   PlatformAdminModule,
   MerchantAuthModule,
+  ApiKeysModule,
+  MerchantWebhookRoutesModule,
   MoneyAdminModule,
   CatalogPricesModule,
   CatalogAdminModule,
+  MerchantWebhooksModule,
+  WebhookDeliveryModule,
 ];
 /** The pipeline module that only uses the cache Redis and the rate limiter: replaced when the infrastructure is. */
 const NEEDS_INFRASTRUCTURE = [PublicIpLimitModule];

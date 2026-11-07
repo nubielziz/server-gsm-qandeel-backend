@@ -3,6 +3,8 @@
 // src/features/merchants/mocks/seed.ts); the development sign-in credentials are dev-credentials.ts (P2.6). The wallets of the
 // merchants are feature 3's seed (money.ts).
 import { and, eq, sql } from 'drizzle-orm';
+import type { AppConfig } from '../../src/config';
+import { hashToken } from '../../src/infra/crypto';
 import { schema as s, type DbExecutor } from '../../src/infra/db';
 import { type DemoSeed, demoNumericId, demoRows, toDate, toMoney } from './demo-state';
 import { type SeedReport, insertRows, syncIdentity } from './helpers';
@@ -277,7 +279,7 @@ export async function seedMerchants(db: DbExecutor, demo: DemoSeed): Promise<See
  * @param demo the loaded frontend demo state
  * @returns one report per table
  */
-export async function seedIdentity(db: DbExecutor, demo: DemoSeed): Promise<SeedReport[]> {
+export async function seedIdentity(db: DbExecutor, demo: DemoSeed, config?: AppConfig): Promise<SeedReport[]> {
   const roleIds = new Map<RoleKey, number>(ROLES.map((role) => [role.key, role.id]));
   const roles = await insertRows(
     db,
@@ -356,5 +358,73 @@ export async function seedIdentity(db: DbExecutor, demo: DemoSeed): Promise<Seed
   for (const table of [s.roles, s.staffUsers, s.ipRules]) await syncIdentity(db, table);
   const clientGroups = await seedClientGroups(db, demo.now);
   const clients = await seedMerchants(db, demo);
-  return [roles, staff, ipRules, loopback, clientGroups, clients];
+  // The keys are stored as keyed hashes, so they need the token pepper: without a configuration there are none.
+  const apiKeys = config ? [await seedApiKeys(db, demo, config)] : [];
+  return [roles, staff, ipRules, loopback, clientGroups, clients, ...apiKeys];
+}
+
+/** What the demo merchant carries about its API access: the key, the allowed addresses and the last time it was seen. */
+interface DemoMerchantAccess {
+  id: string;
+  key: string;
+  ips: string[];
+  status: 'active' | 'pending' | 'suspended';
+  joined: number;
+  lastSeen: number | null;
+}
+
+/**
+ * Seeds the API keys of the demo merchants as the frontend mock shows them (`keysOf` in src/features/merchants/mocks/seed.ts): a
+ * Production key for every merchant that is not pending, plus an unused Staging key and a revoked Legacy key for the first one.
+ *
+ * Why: the console's API access tab reads them through `GET /admin/clients/:id/api-keys`. The key text is the demo's (`gsm_live_...`) so a
+ * developer can call REST v1 with it; the database holds only its keyed hash and its first 8 characters, like a key a merchant creates.
+ * The mock's scope `orders:create` is `orders:write` here (the scope REST v1 checks), and each key text ends in `_seed0000` (the demo's
+ * keys are shorter than the 16 characters a key needs), e.g. `gsm_live_69xx31_seed0000`: usable in development, never in production.
+ *
+ * @param db the transaction to write with
+ * @param demo the loaded frontend demo state
+ * @param config the application configuration (the token pepper)
+ * @returns the report of `api_keys`
+ */
+async function seedApiKeys(db: DbExecutor, demo: DemoSeed, config: AppConfig): Promise<SeedReport> {
+  const merchants = demoRows<DemoMerchantAccess>(demo, 'merchants');
+  // The demo's keys are 15 characters; a key must be 16 or more to be accepted, so the seeded ones end in `_seed0000`.
+  const full = (key: string) => `${key}_seed0000`;
+  const base = (
+    m: DemoMerchantAccess,
+    name: string,
+    key: string,
+    extra: Partial<typeof s.apiKeys.$inferInsert> = {},
+  ) => ({
+    clientId: demoNumericId(m.id),
+    name,
+    prefix: full(key).slice(0, 8),
+    keyHash: hashToken(config.security.tokenPepper, full(key)),
+    scopes: ['orders:write', 'orders:read', 'account:read'],
+    allowedIps: m.ips.map((ip) => (ip.includes(':') ? `${ip}/128` : `${ip}/32`)),
+    rateLimitPerMin: 120,
+    lastUsedAt: toDate(m.lastSeen),
+    lastUsedIp: m.ips[0] ?? null,
+    createdAt: new Date(demo.now - Math.max(1, m.joined - 1) * DAY_MS),
+    ...extra,
+  });
+  const rows = merchants.filter((m) => m.status !== 'pending').map((m) => base(m, 'Production', m.key));
+  const first = merchants[0];
+  if (first) {
+    rows.push(
+      base(first, 'Staging', 'gsm_test_08xx', { lastUsedAt: null, lastUsedIp: null, allowedIps: [] }),
+      base(first, 'Legacy integration', 'gsm_live_01xx', {
+        revokedAt: new Date(demo.now - 30 * DAY_MS),
+        lastUsedAt: new Date(demo.now - 45 * DAY_MS),
+      }),
+    );
+  }
+  const report = await insertRows(
+    db,
+    s.apiKeys,
+    rows.map((row, index) => ({ ...row, id: index + 1 })),
+  );
+  await syncIdentity(db, s.apiKeys);
+  return report;
 }

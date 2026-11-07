@@ -5,6 +5,8 @@ export { MerchantAccounts } from './application/merchant-accounts';
 export type { OpenMerchantAccountsInput, OpenedWallet } from './application/merchant-accounts';
 export { MerchantWallets } from './application/merchant-wallets';
 export { MerchantSpend } from './application/merchant-spend';
+export { WalletLowBalanceWatch } from './application/wallet-low-balance-watch';
+export { LOW_BALANCE_THRESHOLD_KEY, availableOf, crossedBelow, thresholdFrom } from './domain/low-balance';
 export { LedgerPoster, LedgerRefRequiredError, postTransaction } from './application/post-transaction';
 export type { PostTransactionInput, PostedAccount, PostedTransaction } from './application/post-transaction';
 export { WalletService } from './application/wallet.service';

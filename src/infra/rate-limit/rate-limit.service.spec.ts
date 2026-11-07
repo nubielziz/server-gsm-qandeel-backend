@@ -17,7 +17,14 @@ describe('RATE_LIMITERS', () => {
   });
 
   it('has the limiters decision 021 names: per IP, per API key, sign-in, token lookups, per supplier', () => {
-    expect(Object.keys(RATE_LIMITERS).sort()).toEqual(['api-key', 'ip', 'sign-in', 'supplier', 'token']);
+    expect(Object.keys(RATE_LIMITERS).sort()).toEqual([
+      'api-key',
+      'ip',
+      'sign-in',
+      'supplier',
+      'token',
+      'webhook-retry',
+    ]);
   });
 
   it('locks a sign-in pair out for as long as its window after five attempts', () => {

@@ -116,3 +116,34 @@ export async function outboxBacklog(db: DbExecutor, now: Date): Promise<OutboxBa
   const row = rows[0];
   return { pending: row?.pending ?? 0, oldestAgeSeconds: Math.max(0, row?.oldest_age ?? 0) };
 }
+
+/**
+ * Tells whether an outbox row of a type and aggregate already carries the given ids.
+ *
+ * Why: a producer that finds the same change again (the price change scan runs after every price change) writes the event once; the
+ * check uses the aggregate index and a `jsonb` containment on the few rows of that aggregate.
+ *
+ * @param db the database or a transaction
+ * @param type the event type
+ * @param aggregateType the aggregate table-like name
+ * @param aggregateId the aggregate id
+ * @param payload the ids and codes the row must contain (a subset of its payload)
+ * @returns true when such a row exists, processed or not
+ */
+export async function outboxEventExists(
+  db: DbExecutor,
+  type: string,
+  aggregateType: string,
+  aggregateId: number,
+  payload: Record<string, unknown>,
+): Promise<boolean> {
+  const result = await db.execute<{ found: boolean }>(sql`
+    select exists (
+      select 1 from ${outboxEvents}
+      where ${outboxEvents.type} = ${type}
+        and ${outboxEvents.aggregateType} = ${aggregateType}
+        and ${outboxEvents.aggregateId} = ${aggregateId}
+        and ${outboxEvents.payload} @> ${JSON.stringify(payload)}::jsonb
+    ) as found`);
+  return result.rows[0]?.found === true;
+}

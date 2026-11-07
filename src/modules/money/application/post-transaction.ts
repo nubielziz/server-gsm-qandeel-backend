@@ -1,7 +1,7 @@
 // postTransaction(): the only writer of ledger rows (decision 024; map money events). It validates a posting, replays an
 // idempotency key, locks the accounts in id order, checks the wallet's credit limit and writes header, entries and balances in
 // the caller's transaction. LedgerPoster is the injectable form that reads the posting time from the Clock (decision 031).
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
@@ -17,6 +17,7 @@ import {
   writeBalances,
 } from '../infra/ledger-accounts.repository';
 import { findHeaderByKey, insertEntries, insertHeader } from '../infra/ledger-writer.repository';
+import { WalletLowBalanceWatch } from './wallet-low-balance-watch';
 
 /** What a posting needs. Spread a money event builder (`deposit(...)`) into it and add the rest. */
 export interface PostTransactionInput {
@@ -44,6 +45,8 @@ export interface PostedAccount {
   readonly before: string;
   /** The balance after the posting, in the account's normal sign. */
   readonly after: string;
+  /** The credit limit of the account (`0` unless it is a merchant wallet), read under the account lock. */
+  readonly overdraftLimit: string;
 }
 
 /** The result of a posting. */
@@ -220,6 +223,7 @@ export async function postTransaction(
     ownerId: account.ownerId,
     before: account.balance,
     after: running.get(account.id)!.toWire(),
+    overdraftLimit: account.overdraftLimit,
   }));
   return { id: created, replayed: false, touched };
 }
@@ -232,17 +236,24 @@ export async function postTransaction(
  */
 @Injectable()
 export class LedgerPoster {
-  constructor(@Inject(CLOCK) private readonly clock: Clock) {}
+  constructor(
+    @Inject(CLOCK) private readonly clock: Clock,
+    @Optional() private readonly lowBalance?: WalletLowBalanceWatch,
+  ) {}
 
   /**
-   * Posts one balanced journal entry in the caller's transaction.
+   * Posts one balanced journal entry in the caller's transaction, then writes the `wallet.low_balance` outbox event of every
+   * merchant wallet the posting took under its alert threshold ({@link WalletLowBalanceWatch}; the same transaction).
    *
    * @param tx the caller's transaction
    * @param input the posting (spread a money event builder into it)
    * @returns the transaction id and whether the idempotency key was a replay
    * @throws {AppError} `LEDGER_UNBALANCED` or `INSUFFICIENT_FUNDS`, as {@link postTransaction}
    */
-  post(tx: DbExecutor, input: PostTransactionInput): Promise<PostedTransaction> {
-    return postTransaction(tx, input, this.clock.now());
+  async post(tx: DbExecutor, input: PostTransactionInput): Promise<PostedTransaction> {
+    const posted = await postTransaction(tx, input, this.clock.now());
+    // The alert is written in the same transaction; a replayed posting changed nothing and alerts nothing.
+    if (!posted.replayed) await this.lowBalance?.afterPosting(tx, input.currency, posted);
+    return posted;
   }
 }

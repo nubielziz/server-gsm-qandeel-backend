@@ -31,6 +31,8 @@ export type { CurrentGroup, PromotionTarget } from './domain/group-promotion';
 export { SESSION_PURGE_JOB } from './jobs/session-purge.processor';
 export { PURGE_BATCH_SIZE, SESSION_RETENTION_DAYS, SessionPurge } from './jobs/session-purge';
 export { MerchantAuthModule } from './merchant-auth.module';
+export { ApiKeysModule } from './api-keys.module';
+export { MerchantWebhookRoutesModule } from './merchant-webhook-routes.module';
 export { MerchantMailModule } from './merchant-mail.module';
 export { STAFF_TOKEN_TTL_MS, StaffAuthTokens } from './application/staff-auth-tokens';
 export type { IssueStaffTokenInput, IssuedStaffToken } from './application/staff-auth-tokens';

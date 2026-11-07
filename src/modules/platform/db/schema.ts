@@ -226,6 +226,12 @@ export const webhookDeliveries = pgTable(
     /** deleting an endpoint deletes its delivery log (route lists only webhook_endpoints) */
     endpointId: fk((): AnyPgColumn => webhookEndpoints.id, 'cascade').notNull(),
     event: text().notNull(),
+    /**
+     * the id of the event in the delivery envelope and in `X-GSM-Event-Id` (`evt_...`); one event reaches an endpoint once, so
+     * (endpoint_id, event_id) is unique and a repeated fan-out cannot double a delivery; schema addition (feature 7b)
+     */
+    eventId: text().notNull(),
+    /** the whole envelope `{ id, type, createdAt, data }` that is sent (public fields only, never a secret) */
     payload: jsonObject(),
     attempt: integer().notNull().default(1),
     status: text().$type<WebhookDeliveryStatus>().notNull().default('pending'),
@@ -240,6 +246,7 @@ export const webhookDeliveries = pgTable(
   },
   (t) => [
     check('webhook_deliveries_status_check', inList(t.status, WEBHOOK_DELIVERY_STATUSES)),
+    unique('webhook_deliveries_endpoint_event_uq').on(t.endpointId, t.eventId),
     index('webhook_deliveries_endpoint_id_idx').on(t.endpointId),
     index('webhook_deliveries_retry_idx')
       .on(t.nextRetryAt)

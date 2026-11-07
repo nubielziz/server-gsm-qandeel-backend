@@ -8,7 +8,7 @@ Decisions that shape this module: 007 password hashing, 010 ids and tokens, 018 
 
 ## Status
 
-Built: the staff, role, permission, session, IP-rule and merchant routes of feature 2a (27 of its 31 routes; the other 4 are the platform's audit log and settings), the daily purge of ended sessions and the demo merchants of the seed (see "Staff access, merchants and sessions (feature 2a)" below); the 15 merchant portal routes of feature 2b (`/client/auth/*`, `/client/profile`, `/client/security/*`, `/client/sessions`, see "Merchant portal sign-in (2b)" below) and the pending-merchant rule of B153. Built earlier (P2.5a, P2.5c and the P2.6 sign-in routes, code in `security/`): the session service, cookies and CSRF token, the guard dispatcher with the staff, merchant and customer session guards, the CSRF guard, the permission guard with the permissions catalog and the Owner helpers, the staff gate of the internal API reference, and the machine guards (`security/machine/`): capability tokens, URL secrets, merchant API keys (REST v1 Bearer and Dhru credentials) and gateway webhook signatures. The sign-in routes (P2.6) and the IP rules, maintenance and rate-limit hooks (P2.5b) are built too.
+Built: the staff, role, permission, session, IP-rule and merchant routes of feature 2a (27 of its 31 routes; the other 4 are the platform's audit log and settings), the daily purge of ended sessions and the demo merchants of the seed (see "Staff access, merchants and sessions (feature 2a)" below); the 6 API key routes of feature 7b (see "API keys (feature 7b)" below); the 15 merchant portal routes of feature 2b (`/client/auth/*`, `/client/profile`, `/client/security/*`, `/client/sessions`, see "Merchant portal sign-in (2b)" below) and the pending-merchant rule of B153. Built earlier (P2.5a, P2.5c and the P2.6 sign-in routes, code in `security/`): the session service, cookies and CSRF token, the guard dispatcher with the staff, merchant and customer session guards, the CSRF guard, the permission guard with the permissions catalog and the Owner helpers, the staff gate of the internal API reference, and the machine guards (`security/machine/`): capability tokens, URL secrets, merchant API keys (REST v1 Bearer and Dhru credentials) and gateway webhook signatures. The sign-in routes (P2.6) and the IP rules, maintenance and rate-limit hooks (P2.5b) are built too.
 
 ## Public API (`index.ts`)
 
@@ -564,3 +564,23 @@ The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, 
 - `identity-platform-7` · GET /admin/audit-logs
 - `identity-platform-14` · POST /admin/staff/:id/password
 - `identity-platform-16` · POST /client/* , /v1/files, /webhooks/telegram/:secret (the 15 sign-in routes are specified by B121 to B136 and built by feature 2b)
+
+## API keys (feature 7b)
+
+Six routes (contracts `contracts/api-keys.contracts.ts`, controllers `controllers/api-keys.controller.ts`, use cases `application/merchant-api-key.service.ts` and
+`application/api-key-admin.service.ts`, queries `infra/api-key-manage.repository.ts`, pure rules `domain/api-key-input.ts`), wired by `ApiKeysModule`. Spec: MISMATCHES B155
+(portal) and identity.md (staff).
+
+| Route | Access | What it does |
+|---|---|---|
+| `GET /client/api-keys` | merchant | the merchant's keys, live first then revoked, newest first, `x-total-count`; the console's `ApiKey` (never the hash) |
+| `POST /client/api-keys` | merchant | `{ name 1-60, scopes, allowedIps?, expiresAt? }` → `201 { key, secret }`, `no-store`; `secret` is `gsm_` + 32 random bytes in base64url, shown once; stored: keyed hash (decision 019) and the first 8 characters; limit `60` a minute; at most 10 live keys (`422` on `name`, advisory lock against races) |
+| `PATCH /client/api-keys/:id` | merchant | `{ name?, allowedIps? }`; a revoked key is `409 INVALID_TRANSITION`; drops the cached view after the commit |
+| `DELETE /client/api-keys/:id` | merchant | `204`, a second delete too; drops the cached view after the commit |
+| `GET /admin/clients/:id/api-keys` | `api_keys:read` | every key of the merchant, plain array, newest first |
+| `DELETE /admin/api-keys/:id` | `api_keys:revoke` | `204`; `409 ALREADY_REVOKED`; drops the cached view; audited `revoked API key of <merchant>` (entity `merchant`, as the demo logs it) |
+
+Scopes a merchant may give: `dhru`, `account:read`, `orders:read`, `orders:write`, `services:read` and the area wildcards `account:*`, `orders:*`, `services:*`
+(`*` is never offered). B155 lists the first four; `services:read` is added because `GET /v1/services` needs it. `allowedIps` entries are an address or a CIDR range checked like the
+IP rules (`normaliseCidr`: host bits and ranges wider than /16 are refused, a bare address is stored as `/32` or `/128`); the wire drops the host prefix (`cidrToWire`);
+`lastUsedIp` is `''` for a key never used.

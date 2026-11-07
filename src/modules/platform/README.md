@@ -8,7 +8,7 @@ Decisions that shape this module: 004 file storage, 017 API documentation, 020 o
 
 ## Status
 
-Built: `GET /openapi.json` and `GET /docs` (the public documentation), plus the internal `GET /reference` and `GET /reference/openapi.json` (no contracts: they are documentation routes, gated by `REFERENCE_DOCS`). Code: `docs/`. The transactional outbox (`outbox_events`): writing events and the worker's relay. Code: `outbox/`. The audit log (`audit_logs`): `AuditService.record` and the check that staff writes are audited. Code: `audit/`. Cached read access to `settings` for other modules. Code: `settings/`. Feature 2a built the four admin routes of the audit log and the settings (`GET /admin/audit-logs[/:id]`, `GET` and `PATCH /admin/settings`): see "Audit log and settings routes (feature 2a)" below. Code: `contracts/`, `controllers/`, `application/`, `infra/`, wired by `PlatformAdminModule`.
+Built: `GET /openapi.json` and `GET /docs` (the public documentation), plus the internal `GET /reference` and `GET /reference/openapi.json` (no contracts: they are documentation routes, gated by `REFERENCE_DOCS`). Code: `docs/`. The transactional outbox (`outbox_events`): writing events and the worker's relay. Code: `outbox/`. The audit log (`audit_logs`): `AuditService.record` and the check that staff writes are audited. Code: `audit/`. Cached read access to `settings` for other modules. Code: `settings/`. Feature 7b built the merchant webhooks (9 routes, 4 events, the delivery engine): see "Merchant webhooks (feature 7b)" below. Feature 2a built the four admin routes of the audit log and the settings (`GET /admin/audit-logs[/:id]`, `GET` and `PATCH /admin/settings`): see "Audit log and settings routes (feature 2a)" below. Code: `contracts/`, `controllers/`, `application/`, `infra/`, wired by `PlatformAdminModule`.
 
 ## Public API (`index.ts`)
 
@@ -19,6 +19,8 @@ The audit log: `AuditModule` (global) provides `AuditService.record(tx, { action
 Settings and maintenance: `SettingsModule` (global) and `SettingsService.get(key, executor?)` (the raw JSON value of one setting, `undefined` when it was never set); `MaintenanceModule` with `MaintenanceService` (`state()`, `invalidate()`), the pure `maintenanceRefusal`, `scopesCovering`, `parseMaintenanceState`, `MAINTENANCE_KEY`, `MAINTENANCE_OFF`, `MAINTENANCE_SCOPES`, `DEFAULT_MAINTENANCE_MESSAGE` and the types `MaintenanceState`, `MaintenanceScope`, `MaintenanceRequest`.
 
 The outbox: `OutboxModule` (global: `OutboxService`, `OutboxRouteRegistry`), `OutboxService.add(tx, event)` and `backlog(db)`, `OutboxRouteRegistry.register({ type, queue, jobName? })`, the types `OutboxEventInput`, `OutboxPayload`, `OutboxJobData`, `OutboxRoute`, `OutboxBacklog`, and, for the worker only, `OutboxRelayModule` with `OutboxRelay`.
+
+The merchant webhooks (7b): `WebhookEventsModule` (event contracts and the outbox routes of `wallet.low_balance` and `service.price_changed`, loaded by the API and the worker), `WebhookDeliveryModule` (sender, fan-out, the processor of `merchant-webhooks`; API and worker), `MerchantWebhooksModule` (the staff log routes and `MerchantWebhookService`), the four `defineEvent` contracts (`orderStatusChanged`, `walletLowBalance`, `invoicePaid`, `servicePriceChanged`), `WEBHOOK_EVENT_NAMES`, `PING_EVENT`, `WebhookDeliveries`, `WebhookFanOut`, `MerchantWebhooksProcessor`, the event type constants and the `WEBHOOK_TARGET_POLICY` token. The portal's controller for `/client/webhooks*` (`MerchantWebhooksController`) lives in the identity module (`controllers/merchant-webhooks.controller.ts`, `MerchantWebhookRoutesModule`): it needs identity's `CurrentMerchant`, and platform imports no module, so a platform file that imported identity would make a cycle for every identity file that imports platform (decision 032). Platform exports `MerchantWebhookService` and the six portal contracts for it.
 
 ## Owned tables
 
@@ -294,3 +296,56 @@ The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, 
 - `identity-platform-13` · PATCH /admin/settings
 - `identity-platform-15` · GET /admin/audit-logs
 - `identity-platform-16` · POST /client/* , /v1/files, /webhooks/telegram/:secret
+
+## Merchant webhooks (feature 7b)
+
+Nine routes (contracts `webhooks/webhooks.contracts.ts` for the portal, `webhooks/webhook-deliveries.contracts.ts` for staff; controllers
+`webhooks/webhook-deliveries.controller.ts` (staff) and identity's `merchant-webhooks.controller.ts` (portal); use cases `merchant-webhook.service.ts` and `webhook-delivery-admin.service.ts`; queries
+`webhook-endpoint.repository.ts` and `webhook-delivery.repository.ts`; pure rules `webhook-delivery.rules.ts`), the engine and the events.
+Specs: MISMATCHES B156 (portal), RESOLUTIONS identity-platform-12 (the staff log), ALIGNMENT § 7 (the format).
+
+| Route | Access | What it does |
+|---|---|---|
+| `GET /client/webhooks` | merchant | the merchant's endpoints, newest first, `x-total-count`; never the secret |
+| `POST /client/webhooks` | merchant | `{ url, events, isActive? }` → `201 { endpoint, secret }`, `Cache-Control: no-store`; https with a public host (SSRF guard of decision 023, `422` on `url`), events a subset of the four (`422` on `events.N`), at most 5 endpoints (`422` on `url`, advisory lock against races); the secret is `whsec_` + 32 random bytes, stored AES-GCM (AAD `webhook_endpoints.secret_enc`), shown once |
+| `PATCH /client/webhooks/:id` | merchant | url, events, isActive; turning an endpoint back on resets `failureCount`; another merchant's or unknown id is `404` |
+| `DELETE /client/webhooks/:id` | merchant | `204`; the deliveries go with it (`ON DELETE CASCADE`) |
+| `POST /client/webhooks/:id/test` | merchant | `202 { deliveryId }`: a signed `ping` delivery `{ message, endpointId }`; `409 INVALID_TRANSITION` for a paused endpoint; if the queue cannot take the job the delivery is removed and the answer is `503` |
+| `GET /client/webhooks/:id/deliveries` | merchant | newest first: `{ id, event, attempt, status (pending, succeeded, failed), responseCode (0 without an answer), error (''), nextRetryAt, createdAt }` |
+| `GET /admin/webhook-deliveries` | `webhooks:read` | the log: delivery columns plus `endpoint {id, url}` and `client {id, name}`; filters `status` (`delivered`, `pending`, `failed`), `event`, `clientId`; `q` over merchant, event and address |
+| `GET /admin/webhook-deliveries/:id` | `webhooks:read` | the same row (it carries `payload`, `responseBody`, `error`) |
+| `POST /admin/webhook-deliveries/:id/retry` | `webhooks:update` | one more attempt of the same payload: `pending`, `attempt + 1`, due now; `409 DELIVERY_SUCCEEDED`, `429` (limiter `webhook-retry`, one a minute per delivery); audited `retried webhook delivery of <merchant>` |
+
+Merchant routes write no audit row (B121). The portal says `succeeded` where the console's log says `delivered` (B156 wording, kept).
+
+### The events (public OpenAPI `webhooks`, decision 017)
+
+| Event | Who writes the outbox row | Outbox payload (ids and codes) | `data` sent to the merchant |
+|---|---|---|---|
+| `order.status_changed` | feature 5 (registers the route to `merchant-webhooks`) | `{ orderId, clientId, fromStatus, toStatus }` | the order's public fields: ids, service name, status and previous status, IMEI, quantity, prices, currency, result, times; never cost, supplier or notes |
+| `wallet.low_balance` | money, `WalletLowBalanceWatch` inside `LedgerPoster.post` (route registered here) | `{ clientId, currency, available, threshold }` | `{ currency, available, threshold }` |
+| `invoice.paid` | feature 8 (registers the route to `merchant-webhooks`) | `{ invoiceId, clientId }` | `{ invoiceId, number, amount, currency, paidAt }` |
+| `service.price_changed` | catalog, `PriceChangeScan` (route registered here) | `{ clientId, serviceId, previousPrice, price, currency }` | `{ serviceId, serviceName, previousPrice, price, currency }` |
+
+The envelope is `{ id, type, createdAt, data }`; the id is `evt_` and 24 hex characters of a keyed hash of the event (stable, says nothing about volume). A merchant
+event reaches `merchant-webhooks` with `payload.clientId`; `WebhookFanOut` fans out ANY registered type that carries a `clientId` and has a contract.
+`order.status_changed` and `invoice.paid` are registered by features 5 and 8, not here (a type is registered once); until they exist the tests register them
+(`test/support/webhooks.ts`). The data is built at fan-out from the outbox row and, for orders and invoices, from the source row through
+`webhooks/webhook-foreign-reads.ts`, a documented deviation of decision 016 (platform imports no module; replace the bodies when orders and
+invoices export a reader). The data is checked against the event contract before it is stored.
+
+### Delivery (decision 020, `docs/queues.md`)
+
+`WebhookFanOut` inserts one `webhook_deliveries` row per active, subscribed endpoint (`ON CONFLICT (endpoint_id, event_id) DO NOTHING`; `event_id` is the
+envelope id, migration 0007) holding the envelope as `payload`, then adds the delivery job. `WebhookDeliveries.deliver` sends
+`POST` JSON with `X-GSM-Signature: t=<unix>,v1=<hex HMAC-SHA256 of "<t>.<body>">` and `X-GSM-Event-Id`, 10 s timeout, no redirects, answer read up to 64 KB and
+stored up to 4 KB. 2xx is delivered. Anything else is a failed attempt: `10 min x 2^(n-1)` shortened by up to 20 % before attempt n + 1, 8 attempts over about 21 h,
+then `failed`. The row is the truth (`attempt`, `next_retry_at`, `response_code` null for no answer, `response_body`, `error`); the BullMQ job
+(`webhook-<delivery>-<attempt>`, delayed) is the alarm clock. The address is checked again at every send; a host that is no longer public fails the delivery at once.
+Guarded writes (`status = 'pending' and attempt = n`) make a job that runs twice, or after a manual retry, harmless; sends are at least once, and the same
+event id on every retry lets the receiver drop repeats. `failure_count` of the endpoint counts failed attempts and resets on a success or when the endpoint is switched on.
+
+`WEBHOOK_TARGET_POLICY` (optional token) lets tests give the sender a local server and a stand-in DNS; nothing provides it in production.
+
+Open points: nothing re-queues a pending delivery whose job was lost (the queue Redis lost its data): `webhook_deliveries_retry_idx` supports a sweep for 12b;
+an endpoint is never switched off automatically after many failures; `invoice.paid` needs feature 8 to register its route and write `payload.clientId`.

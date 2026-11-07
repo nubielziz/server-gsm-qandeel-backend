@@ -4,6 +4,7 @@ import { Global, Module } from '@nestjs/common';
 import { MerchantAccounts } from './application/merchant-accounts';
 import { MerchantSpend } from './application/merchant-spend';
 import { MerchantWallets } from './application/merchant-wallets';
+import { WalletLowBalanceWatch } from './application/wallet-low-balance-watch';
 import { LedgerPoster } from './application/post-transaction';
 import { MoneyAdminModule } from './money-admin.module';
 
@@ -18,7 +19,7 @@ import { MoneyAdminModule } from './money-admin.module';
 @Global()
 @Module({
   imports: [MoneyAdminModule],
-  providers: [MerchantAccounts, LedgerPoster, MerchantWallets, MerchantSpend],
+  providers: [MerchantAccounts, WalletLowBalanceWatch, LedgerPoster, MerchantWallets, MerchantSpend],
   exports: [MerchantAccounts, LedgerPoster, MerchantWallets, MerchantSpend],
 })
 export class MoneyModule {}
