@@ -48,7 +48,7 @@ that check the lead gave the seeded merchant 1 (Zain Mobile Hub, `ops@zainmobile
 3. Done by the lead: the portal specs of 8, B161 (KYC), B162 (payment methods), B163 (invoices and receipts). B numbers are
    positions in `lead-decisions.json` `extra`: an entry 6 adds goes after them at the merge (7a is told to add none).
 4. Wave 4: **8** billing in parallel with **9** health and dashboard. Wave 5: **11** commissions and reports, **12a**
-   notifications (lead prerequisites at the top of its brief: decision 033 mail, Mailpit in compose), then **12b**. Waves 6
+   notifications (its prerequisites are done: decision 033, Mailpit in compose), then **12b**. Waves 6
    and 7: **14a**, **14b**, **15**, **16**, **17**, **18**, **19**. Every remaining feature has its brief in `docs/briefs/`;
    the portal specs B160-B165 are written.
 5. After every merge: restart the API and worker, `bun run db:migrate && bun run db:seed`, `npm run mocks:live` in the
@@ -189,7 +189,7 @@ re-review), max 2 review rounds.
 016 repo layout · 017 API docs exposure · 018 auth, sessions, CSRF, pipeline · 019 encryption and token hashing ·
 020 outbox and queues · 021 rate limiting · 022 caching · 023 outbound HTTP · 024 ledger · 025 order state machine ·
 026 Dhru compatibility · 027 database conventions · 028 error format · 029 FX provider · 030 PDF rendering · 031 clock ·
-032 module import cycles (identity exports its principal layer first; `test/unit/module-load.test.ts`). 033 mail delivery (to write before 12a: SMTP through nodemailer, Mailpit locally). 034 Turnstile (`X-Turnstile-Token`, one guard, `turnstile: true` on the six store routes, a dummy verifier without a secret).
+032 module import cycles (identity exports its principal layer first; `test/unit/module-load.test.ts`). 033 mail delivery (SMTP through nodemailer 10.2.1, Telegram Bot API over OutboundHttp, Mailpit locally on 1025/8025). 034 Turnstile (`X-Turnstile-Token`, one guard, `turnstile: true` on the six store routes, a dummy verifier without a secret).
 
 ## Blockers
 

@@ -1,11 +1,8 @@
 # 12a notifications
 
-> **Lead, before launching the implementer:** (1) write decision 033, mail delivery: SMTP through `nodemailer` (works with
-> any provider, SES or Postmark or Mailgun SMTP, no vendor lock-in; the version pinned at least two weeks old), config
-> `MAIL_SMTP_URL` and `MAIL_FROM` (decision 013), Telegram through its Bot API over `OutboundHttp` (no SDK), config
-> `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET`; (2) add Mailpit to `compose.yaml` (SMTP 1025, web
-> UI 8025, image pinned by digest like MinIO) and start it, since implementers never run `docker compose`. Portal specs:
-> done, MISMATCHES **B165** (preferences, Telegram link, the Telegram webhook).
+> Lead prerequisites: done. Decision **033** (mail over SMTP through `nodemailer` 10.2.1, Telegram Bot API over
+> `OutboundHttp`, the config keys) and Mailpit in `compose.yaml` (SMTP 1025, UI 8025, running). Portal specs: MISMATCHES
+> **B165** (preferences, Telegram link, the Telegram webhook).
 
 Phase 3, map stage 12 (admin surface, merchant portal, incoming Telegram webhook). Read `_common.md` and `_feature.md` first:
 this brief only names the scope. Module: platform (notifications, templates, delivery), with identity's merchant columns

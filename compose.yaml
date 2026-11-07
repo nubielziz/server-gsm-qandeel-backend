@@ -1,4 +1,4 @@
-# Local infrastructure for the GSM backend: Postgres, the two Redis roles, S3-compatible storage and Prometheus.
+# Local infrastructure for the GSM backend: Postgres, the two Redis roles, S3-compatible storage, Prometheus and a mail catcher.
 # Start with `docker compose up -d`; host ports can be overridden through the GSM_*_PORT variables.
 # Decision records: docs/decisions/004-local-s3-minio.md (MinIO image), 006-redis-topology.md (two Redis roles),
 # 015-observability.md (Prometheus).
@@ -114,6 +114,21 @@ services:
       - prometheus-data:/prometheus
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # Local mail catcher (decision 033): the API and the worker send through SMTP on 1025 (MAIL_SMTP_URL in development), and the
+  # web UI on 8025 shows every message. Nothing leaves the machine.
+  mailpit:
+    image: axllent/mailpit:v1.32.0@sha256:0790692be935ea4420d085694f7985b1f692ca6a8771ab0e0bd8ba75ac180498
+    environment:
+      MP_MAX_MESSAGES: 5000
+    ports:
+      - "${GSM_MAIL_SMTP_PORT:-1025}:1025"
+      - "${GSM_MAIL_UI_PORT:-8025}:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
       interval: 5s
       timeout: 3s
       retries: 12
