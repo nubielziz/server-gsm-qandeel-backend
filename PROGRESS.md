@@ -44,9 +44,10 @@ decision 025 amended for decision 031; `bun run check` green, 2883 pass) and B16
    `POST /client/files` (still pending; the same upload path as `POST /v1/files`).
 3. Done by the lead: the portal specs of 8, B161 (KYC), B162 (payment methods), B163 (invoices and receipts). B numbers are
    positions in `lead-decisions.json` `extra`: an entry 6 adds goes after them at the merge (7a is told to add none).
-4. Wave 4: **8** billing (`8-billing.md`) in parallel with **9** health and dashboard (`9-health-dashboard.md`). Wave 5:
-   **12b** (`12b-alerts-integrity.md`). Every remaining feature has its brief (`docs/briefs/`): 11, 12a (lead prerequisites at its top: decision 033 mail,
-   Mailpit in compose), 12b, 14a, 14b, 15, 16, 17, 18, 19; portal specs B160-B165 are written.
+4. Wave 4: **8** billing in parallel with **9** health and dashboard. Wave 5: **11** commissions and reports, **12a**
+   notifications (lead prerequisites at the top of its brief: decision 033 mail, Mailpit in compose), then **12b**. Waves 6
+   and 7: **14a**, **14b**, **15**, **16**, **17**, **18**, **19**. Every remaining feature has its brief in `docs/briefs/`;
+   the portal specs B160-B165 are written.
 5. After every merge: restart the API and worker, `bun run db:migrate && bun run db:seed`, `npm run mocks:live` in the
    frontend, walk the pages the new routes feed.
 
