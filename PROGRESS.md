@@ -4,44 +4,47 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
-**State on 2026-11-07, afternoon.** Phase 3 waves 1 and 2 are merged on `main` except feature 5, and wave 3 has started:
-**3** money (`c332201`), **2b** merchant portal (`446fd46`), **2a** staff access (`ed74e0b`), **4a** catalog structure
-(`7c012d2`), **4b** catalog pricing (`3838d27`), the 4 tax rate routes of 14b built early by the lead (`23dc5d5`), and **7b**
-merchant API keys and webhooks (`e9322de`, seed fix `2193b45`). **128 of 382** map endpoints are built (events included);
-the console calls 269, of which **92** are built (`docs/COVERAGE.md`, generated and checked by `bun run check`). `bun run
-check` is green on the merged 7b tree (2682 pass, 1 skip, 0 fail; shape parity compares 92 of 125 built routes). Scenario
-e2e tests: 2 of 13 (admin-team, ip-rules).
+**State on 2026-11-07, afternoon.** Phase 3 waves 1 and 2 are merged on `main`, and wave 3 has started: **3** money
+(`c332201`), **2b** merchant portal (`446fd46`), **2a** staff access (`ed74e0b`), **4a** catalog structure (`7c012d2`),
+**4b** catalog pricing (`3838d27`), the 4 tax rate routes of 14b built early by the lead (`23dc5d5`), **7b** merchant API
+keys and webhooks (`e9322de`, fixes `2193b45`, `68a3fb5`) and **5** orders engine (`e6de28a`). **150 of 382** map
+endpoints are built (events included); the console calls 269, of which **106** are built (`docs/COVERAGE.md`, generated
+and checked by `bun run check`). `bun run check` is green on the merged 5 tree (2876 pass, 1 skip, 0 fail; shape parity
+compares 106 of 147 built routes). Scenario e2e tests: 3 of 13 (admin-team, ip-rules, manual without its Dhru steps).
 
 **Phase 4 (frontend integration) is running alongside.** The console has a partial mock mode (`VITE_API_MOCKS=unbuilt`,
 frontend decision 018): built routes go to this API through the Vite dev proxy, the rest stays mocked; `npm run mocks:live`
-in the frontend regenerates the list after each merge (92 routes, committed). Runtime walks with Playwright and a real
+in the frontend regenerates the list after each merge (106 routes, committed). Runtime walks with Playwright and a real
 sign-in (password + TOTP) after each merge: access, merchants, wallets, ledger, trial balance, currencies, tax rates, audit,
 settings, services, categories, inventory, client groups, the price resolver, rules and a merchant's pricing tab, all
 answered by the real API with no error; real writes through the UI (reconciliation, merchant approval, wallet adjustment,
 service disable/enable); a Support member sees the forbidden pages hidden and the API refuses them (403). With no mocks at
 all the unbuilt pages show their error state with the server's 404 detail. 7b walk: a merchant's API access tab (keys
 listed, the Staging key revoked: 204) and Settings > Webhook deliveries (list, a failed delivery in the drawer, Retry: 200,
-a second retry within the minute: the server's 429 shown in the drawer). Fixes found at runtime: audit phrases (money,
-catalog), the role member count (2a), a default merchant group on a fresh database (4a migration 0005), the seeded webhook
-payloads (7b), and in the console the mid-session sign-out keeps the page (`?to=`).
+a second retry within the minute: the server's 429 shown in the drawer). 5 walk: the seven Orders tabs with their counts
+(70 real answers), Complete, Reopen and Reject on one order and Accept on a manual one (all 204), the drawer's timeline and
+money, and the ledger's settle, reversal and release journals. Fixes found at runtime: audit phrases (money, catalog), the
+role member count (2a), a default merchant group on a fresh database (4a migration 0005), the seeded webhook payloads (7b),
+and in the console the mid-session sign-out keeps the page (`?to=`).
 
-**Running now (second agent budget approved by the user: 4 calls, 2 at once; 7b done):** feature **5** in `../backend-5`
-(test DB `gsm_5_test`, Redis DB 6). Ownership set by the lead: 5 registers the outbox routes `order.status_changed` (→
-`merchant-webhooks`) and `order.dispatch_requested` (→ `supplier-dispatch`). **When merging 5:** (a) its migration
-`0007_orders_imei_squashed` becomes `0008` (7b took 0007; keep its `when`, re-point its snapshot's `prevId` at 7b's 0007,
-then `bun run db:check`); (b) `test/support/webhooks.ts` `WebhookTestModule` must stop registering `order.status_changed`
-(the registry throws on a second route; it keeps `invoice.paid` until feature 8); (c) 5 should publish its order reader so
-the webhook event data stops using 7b's foreign read of `orders`.
+**Running now (second agent budget approved by the user: 4 calls, 2 at once; 5 and 7b done):** feature **6** in
+`../backend-6` (test DB `gsm_6_test`, Redis DB 10, from `e6de28a`). **The lead, on `main`, in parallel:** inventory-backed
+placement (RULES orders 10, orders-suppliers-11: a service with available codes delivers them at placement, the order
+completes at once; reserved codes become sold on completion and available on rejection). File ownership for the parallel
+run: 6 does not edit `orders/application/order-{placement,transitions,ledger}.ts` or the catalog inventory files.
 
 **Next, in order:**
-1. Merge **5** (above), walk the Orders page and the order drawer.
-2. **6** suppliers (`6-suppliers.md`), then **7a** Dhru and REST v1 (`7a-dhru-and-rest-v1.md`, spec B157): 7a extends 6's
-   scenario files and runs against 6's fake supplier, so they are sequential. These are the last two calls of the budget.
-3. Wave 4: **8** billing (`8-billing.md`; the lead writes the portal specs it lists first, as B160 onwards, after 5 merges:
-   B numbers are positions in `lead-decisions.json` `extra`) in parallel with **9** health and dashboard
-   (`9-health-dashboard.md`). Wave 5: **12b** (`12b-alerts-integrity.md`). Briefs still to write: 11, 12a, 14a, 14b without
-   tax rates, 15, 16, 17, 18, 19.
-4. After every merge: restart the API and worker, `bun run db:migrate && bun run db:seed`, `npm run mocks:live` in the
+1. Merge **6** (its migration starts at 0009), walk Suppliers, the order drawer's dispatch/fetch/change-supplier and the
+   supplier logs.
+2. **7a** Dhru and REST v1 (`7a-dhru-and-rest-v1.md`, spec B157): the last call of this budget. Add to its prompt: accept the
+   optional service flags `allowCancel`, `allowVerify`, `verifyWindowH` on `POST|PATCH /admin/services` (the columns exist,
+   no route sets them, the console's service form lacks them: merchant cancel and verify are refused until then), and
+   `POST /client/files` (still pending; the same upload path as `POST /v1/files`).
+3. Lead: a B-entry for the 7 `/client` order routes' shapes (written in `src/modules/orders/README.md`), then the portal
+   specs of 8 (B161 onwards: B numbers are positions in `lead-decisions.json` `extra`).
+4. Wave 4: **8** billing (`8-billing.md`) in parallel with **9** health and dashboard (`9-health-dashboard.md`). Wave 5:
+   **12b** (`12b-alerts-integrity.md`). Briefs still to write: 11, 12a, 14a, 14b without tax rates, 15, 16, 17, 18, 19.
+5. After every merge: restart the API and worker, `bun run db:migrate && bun run db:seed`, `npm run mocks:live` in the
    frontend, walk the pages the new routes feed.
 
 **Local run:** `docker compose up -d`; `bun run db:migrate && bun run db:seed`; `bun src/main.ts` and `bun src/worker.ts`; in
@@ -128,7 +131,7 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 | 3 | money-wallets-ledger | postTransaction, money events, wallets, statement, adjust, credit limit (user rule 2), ledger, reconcile, currencies (st3, 14) (brief `docs/briefs/3-money-wallets-ledger.md`) | | done (`c332201`) |
 | 4a | catalog-structure | client groups + nightly promotion job (user rule 1), categories, services, fields, options, inventory (st4/5) (brief `docs/briefs/4a-catalog-structure.md`) | | done (`7c012d2`) |
 | 4b | catalog-pricing | group/client prices, pricing rules (user rule 8: the demo's resolver), price protection (user rule 9: effective-cost floor, listed-price memory, PRICE_CHANGED guard, raise in the snapshot), bulk price, resolve, merchant catalog and price export (brief `docs/briefs/4b-catalog-pricing.md`) | | done (`3838d27`) |
-| 5 | orders-engine | state machine, placement + hold, admin order actions, bulk reply, export, merchant orders, files (st5) | manual | |
+| 5 | orders-engine | state machine, placement + hold, admin order actions, bulk reply, export, merchant orders, files (st5) | manual | done (`e6de28a`) |
 | 6 | suppliers | suppliers admin, Dhru supplier client, dispatch/poll jobs, dispatch/fetch/change-supplier, sync (user rule 9: recompute the effective cost, bump the price version, no failover above the charged price), import (st6) | success, reject, timeout | |
 | 7a | dhru-and-rest-v1 | Dhru surface (8 actions), REST v1 (12), idempotency, PRICE_CHANGED message and listed-price memory on the list actions (user rule 9) (st7) | | |
 | 7b | merchant-api-webhooks | API keys, webhook endpoints, deliveries, outgoing events incl. `service.price_changed` (user rule 9, route-parity allowance B117), public docs (st7) | | done (`e9322de`) |
@@ -167,7 +170,7 @@ re-review), max 2 review rounds.
 | P2.8 clock | 4 (implementer, review: 1 blocking, fix, re-review: pass) |
 | Wave 1, first run (2026-11-01) | 3 (Sonnet implementers 2a, 2b, 3; cut off before finishing, no review) |
 | Session 2026-11-07 | limit set by the user: 4 calls in all, 2 at once. All 4 used: 2a finish (Sonnet), frontend partial mocks (Sonnet), 4a (Sonnet), 4b (Sonnet). Reviews, fixes and merges of 3, 2b and 2a by the lead (Opus). |
-| Session 2026-11-07, second budget | approved by the user: 4 more calls, 2 at once. 7b (Sonnet) done and merged; 5 (Sonnet) running; 6 and 7a next. |
+| Session 2026-11-07, second budget | approved by the user: 4 more calls, 2 at once. 7b and 5 (Sonnet) done and merged; 6 (Sonnet) running; 7a next. |
 | **Total** | **47** |
 
 ## Decisions
@@ -193,6 +196,15 @@ None.
   events have one owner, `MerchantMailOutbox` (2a's duplicate registration of `merchant.invited` would have stopped the API
   and the worker at boot). The dev default of `CORS_ORIGINS` has no merchant-portal origin (`PORTAL_BASE_URL` defaults to
   `http://localhost:5174`): add it when the portal frontend exists.
+- 5 merge notes (2026-11-07): ledger keys `order:<id>:hold`, `order:<id>:settle` (`:settle:2` after a reopen),
+  `order:<id>:release`, `order:<id>:refund` (B2C) and `reverse:<settlement id>` for a reopen or a B2B refund (the brief
+  said `order:<id>:refund` for B2B; `MerchantSpend` reads `reverse:`). `accept` on a non-manual order answers
+  `NOT_MANUAL`. Not built: merchant cancel and verify in practice (the service flags, 7a), `POST /client/files` (7a),
+  stock delivery (the lead), the B2C refunds row and gateway job (16). File downloads log but write no audit row. The
+  seed's order timelines name suppliers that 6 seeds (supplier fields stay null until then). 7b's webhook event data and
+  price change scan still read `orders` through their documented foreign read: switch them to `OrderReadService` when
+  someone touches them. Migration 0008 was regenerated with drizzle-kit after 7b's 0007 (a worktree DB that applied the
+  old 0007 must be recreated: the migrator compares timestamps only).
 - 7b merge notes (2026-11-07): the portal webhook controller lives in identity (`merchant-webhook-routes.module.ts`)
   because platform imports no module; the engine stays in `platform/webhooks`. The merchant low-balance threshold is
   `clients.notification_prefs.lowBalanceThreshold` (a money string; none = no alert): 12a should expose it. B155 gained the
@@ -200,8 +212,8 @@ None.
   delivery whose job was lost with the queue Redis, and auto-disabling an endpoint after many failures (9 or 12b). The
   admin delivery list rows carry `payload`, `responseBody` and `error` (the console fixtures need them); the portal says
   `succeeded` where the console says `delivered` (B156). A worktree has no `.env`, so `bun run db:migrate` / `db:seed`
-  there use the dev database (`gsm`, the config default): 7b migrated and seeded it before its merge (harmless here: it
-  matched); briefs should say to migrate only the feature's test database. The schema tests that create a database get
+  there use the dev database (`gsm`, the config default): 7b seeded it before its merge (harmless here: it matched);
+  briefs say to touch only the feature's test database. (`db:migrate` prints "Migrations are up to date." after applying.) The schema tests that create a database get
   180 s (checkpoints under load: they timed out at 60 s at the end of full runs while another worktree tested).
 - Wave 1 merge notes (2026-11-07): money's `infra/foreign-directory.repository.ts` reads `clients`, `client_groups`,
   `suppliers`, `customers` and `staff_users` with plain selects (documented deviation from decision 016): replace its bodies
