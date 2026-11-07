@@ -1,5 +1,9 @@
 # 5 orders-engine
 
+> Start from branch `feat/backend-5` (worktree `../backend-5`, test DB `gsm_5_test`, Redis DB 6): the lead's groundwork
+> `src/modules/orders/domain/order-machine.ts` (decision 025's whole transition table, queue derivation, placement rule;
+> 16 unit tests) is there; build the use cases on `decideOrderAction`, do not write a second set of rules.
+>
 > Portal spec prerequisite (resolution identity-platform-16): done. `GET /client/files/:id` is specified in
 > `docs/contract/MISMATCHES.md` **B154** (lead, 2026-11-07); `/client/kyc` (feature 8) still needs its spec.
 

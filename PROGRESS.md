@@ -25,7 +25,9 @@ without a default merchant group (4a adds a data migration).
   in `../backend-4a` (branch `feat/backend-4a`, test DB `gsm_4a_test`, Redis DB 5).
 - **Next:** review and merge 4a (merge `main` into it first; check its audit actions use the demo's verb phrases, ANSWERS
   audit Q3), run the walk on the Services & pricing page, then **4b** (brief ready: `docs/briefs/4b-catalog-pricing.md`),
-  then **5** orders-engine (brief to write). After each merge: `npm run mocks:live` in the frontend and commit the list.
+  then **5** orders-engine (brief ready: `docs/briefs/5-orders-engine.md`; the lead's state machine groundwork is on
+  `feat/backend-5`, `48bf381`, worktree `../backend-5`). Briefs also ready for wave 3: `6-suppliers.md`,
+  `7b-merchant-api-webhooks.md` (7b still needs the lead's `/client/api-keys` and `/client/webhooks` specs, identity-platform-16). After each merge: `npm run mocks:live` in the frontend and commit the list.
 - **Local run:** `docker compose up -d`; `bun run db:migrate && bun run db:seed`; `bun src/main.ts` and `bun src/worker.ts`;
   in the frontend `VITE_API_MOCKS=unbuilt VITE_DEV_PROXY_TARGET=http://localhost:3000 VITE_API_BASE_URL= npx vite`; sign in
   as in README "Local sign-in".
