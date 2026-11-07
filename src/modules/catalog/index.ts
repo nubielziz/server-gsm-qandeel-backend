@@ -50,6 +50,8 @@ export {
   marginPercent,
 } from './domain/service-figures';
 export { INVENTORY_CODE_AAD, inventoryCodeHashInput, lastFour } from './domain/inventory-codes';
+export { InventoryStock } from './application/inventory-stock';
+export type { StockClaim } from './application/inventory-stock';
 export { SERVICE_DUPLICATE_RULES, SERVICE_PRICE_MODES, SERVICE_TYPES } from './db/schema';
 export type { ServiceDuplicateRule, ServicePriceMode, ServiceType } from './db/schema';
 export { CatalogModule } from './catalog.module';

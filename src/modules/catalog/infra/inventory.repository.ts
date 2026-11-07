@@ -111,3 +111,47 @@ export async function voidAvailableCodes(db: DbExecutor, ids: readonly number[])
     .returning({ id: inventoryCodes.id });
   return rows.map((row) => row.id).sort((a, b) => a - b);
 }
+
+/**
+ * Locks the oldest available codes of a service for an order being placed.
+ *
+ * Why: RULES orders 10: an order of a stocked service takes its codes at placement. `FOR UPDATE SKIP LOCKED` lets two placements
+ * at the same moment take different codes (each skips the rows the other holds) instead of waiting or taking one code twice; the
+ * rows stay locked until the placement commits or rolls back.
+ *
+ * @param db the placement transaction
+ * @param serviceId the service ordered
+ * @param count how many codes the order needs
+ * @returns the locked rows (id and ciphertext), oldest first; fewer than `count` when the stock is short
+ */
+export async function lockAvailableCodes(
+  db: DbExecutor,
+  serviceId: number,
+  count: number,
+): Promise<Array<Pick<InventoryCode, 'id' | 'codeEnc'>>> {
+  return db
+    .select({ id: inventoryCodes.id, codeEnc: inventoryCodes.codeEnc })
+    .from(inventoryCodes)
+    .where(and(eq(inventoryCodes.serviceId, serviceId), eq(inventoryCodes.status, 'available')))
+    .orderBy(inventoryCodes.id)
+    .limit(count)
+    .for('update', { skipLocked: true });
+}
+
+/**
+ * Marks codes this transaction locked as sold to an order.
+ *
+ * @param db the placement transaction (the one that locked the rows)
+ * @param ids the locked code ids
+ * @param orderId the order they were delivered to
+ * @returns how many codes became sold
+ */
+export async function sellLockedCodes(db: DbExecutor, ids: readonly number[], orderId: number): Promise<number> {
+  if (ids.length === 0) return 0;
+  const rows = await db
+    .update(inventoryCodes)
+    .set({ status: 'sold', orderId })
+    .where(and(inArray(inventoryCodes.id, [...ids]), eq(inventoryCodes.status, 'available')))
+    .returning({ id: inventoryCodes.id });
+  return rows.length;
+}

@@ -15,12 +15,14 @@ frontend Order contract (`docs/contract/endpoints/orders.md`).
 - `queue` on the wire is derived: `review` = held; `manual` = pending + manual; `needs_attention` = needs_attention
   (status stays pending until a REFERENCEID exists); `verification` = completed + `verification_status` requested;
   `pending` = pending + dispatch pending; otherwise null. `reviewReason` = text stored on the event that opened the
-  queue. `pastSla` = `status IN ('pending','processing') AND placed_at < now() - make_interval(mins => services.sla_minutes)`: age
-  only, no queue exclusion (B92), one exported query fragment of the orders read model shared by `GET /admin/orders`, the
-  dashboard and System health. The clock is `placed_at`, which the partial index `orders_open_idx (dispatch_state, placed_at)
-  WHERE status open` covers; placement never sets `placed_at` or `created_at` explicitly, so both take the same transaction
-  `now()` and the wire `createdAt` (= `created_at`, used by the console's SlaCell) is the same instant (a contract test checks
-  it on every placement path). A service with a null or 0 SLA is never past SLA.
+  queue. `pastSla` = `status IN ('pending','processing') AND placed_at < $now - make_interval(mins => services.sla_minutes)`
+  (`$now` from the injected clock, decision 031): age only, no queue exclusion (B92), one exported query fragment of the
+  orders read model shared by `GET /admin/orders`, the dashboard and System health. The clock is `placed_at`, which the
+  partial index `orders_open_idx (dispatch_state, placed_at) WHERE status open` covers; placement writes `placed_at` and
+  `created_at` from one injected-clock `now` per request (amended 2026-11-07 for decision 031: the first wording, "never set
+  explicitly, both take the transaction `now()`", put the SLA age on the database's clock while the predicate reads the
+  injected one), so the wire `createdAt` (= `created_at`, used by the console's SlaCell) is the same instant (a contract test
+  checks it on every placement path). A service with a null or 0 SLA is never past SLA.
 - **`dispatch_state` transitions** (lead resolution orders-suppliers-11; every action has a test of its resulting queue):
 
   | Event | From | To (status) |

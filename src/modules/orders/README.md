@@ -30,8 +30,16 @@ Dhru and REST v1 order routes 7a, the outgoing webhook 7b, storefront orders 14a
   `review` for a manual order) lines, the hold in the ledger (`order` event, key `order:<id>:hold`: `INSUFFICIENT_FUNDS` undoes
   everything) and, for an automatic order with an active supplier link, the `order.dispatch_requested` outbox row. The first
   dispatch state is the machine's `placementDispatchState` (`manual` for a manual service or one without an active link). Total
-  price and total cost are unit x quantity; the unit cost is the service's effective cost. Delivering a stock code at placement
-  (`deliveredFromInventory`) is not wired: no service is marked as stock-backed yet.
+  price and total cost are unit x quantity; the unit cost is the service's effective cost. `placed_at` and `created_at` are one
+  injected-clock instant per request (decisions 025, 031).
+- **Stock delivery** (RULES orders 10, orders-suppliers-11): a service with at least `quantity` available codes delivers them at
+  placement, whatever its fulfilment mode: catalog's `InventoryStock.claim` locks the oldest codes (`FOR UPDATE SKIP LOCKED`:
+  two placements at the same moment never share a code), the order is written `completed` / `done` with the codes as its
+  result (one per line), the codes become `sold` with the order id, the hold settles at once (`order:<id>:settle`, revenue only:
+  no supplier, B17), the timeline gets `completed` and `settle` (system) and `order.status_changed` (`pending → completed`) goes
+  to the outbox; no dispatch row. A short stock takes nothing and the order goes the usual way. A delivered code stays sold
+  after a reopen or a refund. Not built yet: reserving codes for a held storefront order (sold on completion, back to stock on
+  a rejection before delivery), with 14a and 18.
 - **Main input** (`domain/main-input.ts`, orders-suppliers-2): `orders.imei` holds the IMEI (type `imei`), the first required
   custom field by sort (server, remote) or the first field's value or the file name (file). The wire sends `''` for none.
 - **Money** (`application/order-ledger.ts`): placement holds (`order`: wallet to hold); a reply settles (`complete`: hold to

@@ -40,7 +40,9 @@ is 14b.
   the later duplicate's dotted path.
 - **Inventory** (`inventory-admin.service.ts`, `domain/inventory-codes.ts`): codes AES-GCM encrypted (`inventory_codes.code_enc`)
   with `code_hash` (`TokenService.hash` of `inventory-code:<code>`) and `code_last4`; import counts imported, duplicates and
-  rejected, never logs a clear code; void only `available` codes, idempotent.
+  rejected, never logs a clear code; void only `available` codes, idempotent. `InventoryStock` (`application/inventory-stock.ts`,
+  public, in `CatalogModule`) hands codes to an order at placement: `claim` locks the oldest available codes of a service
+  (`FOR UPDATE SKIP LOCKED`) and decrypts them as the order's result, `sell` marks them sold with the order id (RULES orders 10).
 - **`recomputeEffectiveCost(tx, serviceIds)`** (`application/effective-cost.ts`): the one writer of `services.effective_cost`.
 
 ### Pricing (feature 4b)

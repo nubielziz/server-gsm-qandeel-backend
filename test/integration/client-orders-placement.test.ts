@@ -79,7 +79,7 @@ describe('POST /client/orders: one automatic order', () => {
       type: 'imei',
       source: 'portal',
     });
-    // placed_at and created_at are the same instant (never set explicitly: decision 025).
+    // placed_at and created_at are the same instant, from the injected clock (decisions 025 and 031).
     expect(row.placedAt.getTime()).toBe(row.createdAt.getTime());
     expect(row.pricingSnapshot).toMatchObject({ source: 'base', price: '17.2800', floor: '14.3100', clamped: false });
     expect(row.fingerprint).toMatch(/^[0-9a-f]{64}$/);

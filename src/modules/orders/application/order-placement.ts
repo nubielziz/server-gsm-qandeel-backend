@@ -1,25 +1,34 @@
 // OrderPlacement: the one shared path that creates an order (portal now, Dhru, REST v1 and the storefront later). It prices the order
 // with the catalog's resolver, applies the price-change guard and the duplicate rule, writes the order with its first timeline lines,
 // holds the price and writes the dispatch row, all in the caller's transaction (decision 025, user rule 9).
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError, type FieldError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { TokenService } from '../../../infra/crypto';
 import type { DbExecutor } from '../../../infra/db';
 import {
   DEFAULT_PRICE_CHANGE_TOLERANCE_PERCENT,
+  InventoryStock,
   ListedPrices,
   MerchantCatalog,
   PRICE_CHANGE_TOLERANCE_BOUNDS,
   PRICE_CHANGE_TOLERANCE_KEY,
   PriceResolver,
+  type StockClaim,
   checkPriceChange,
 } from '../../catalog';
 import { SettingsReader } from '../../platform';
 import type { Order, OrderSource } from '../db/schema';
 import { mainInputOf } from '../domain/main-input';
 import { placementDispatchState } from '../domain/order-machine';
-import { type TimelineActor, createdLine, holdLine, manualReviewLine } from '../domain/order-timeline';
+import {
+  type TimelineActor,
+  type TimelineLine,
+  createdLine,
+  holdLine,
+  manualReviewLine,
+} from '../domain/order-timeline';
 import {
   type PlacementField,
   inputProblems,
@@ -28,6 +37,7 @@ import {
   quantityProblem,
   totalOf,
 } from '../domain/placement-rules';
+import { STOCK_DELIVERY_FROM, stockDeliveryLines } from '../domain/stock-delivery';
 import {
   hasActiveSupplierLink,
   merchantFileOf,
@@ -102,6 +112,8 @@ export class OrderPlacement {
     private readonly ledger: OrderLedger,
     private readonly outbox: OrderOutbox,
     private readonly tokens: TokenService,
+    private readonly stock: InventoryStock,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   /**
@@ -172,6 +184,16 @@ export class OrderPlacement {
       manualService: service.fulfillment === 'manual',
       hasActiveSupplierLink: hasLink,
     });
+    // An order whose codes come from the stock completes at once (RULES orders 10, orders-suppliers-11).
+    const fromStock = placementDispatchState({
+      held: false,
+      deliveredFromInventory: true,
+      manualService: service.fulfillment === 'manual',
+      hasActiveSupplierLink: hasLink,
+    });
+    // One clock time for the whole request. `placed_at` starts the SLA age the pastSla rule reads, and `created_at` is the wire
+    // `createdAt` the console's SLA cell reads: both are written from the injected clock, the same instant (decisions 025, 031).
+    const now = this.clock.now();
 
     const placed: Order[] = [];
     for (const item of prepared) {
@@ -191,14 +213,21 @@ export class OrderPlacement {
           });
         }
       }
+      // Codes are claimed per order, after the duplicate check: a short stock sends the order the usual way.
+      const claim = await this.stock.claim(tx, service.id, quantity);
+      const begin = claim ? fromStock : start;
       const order = await insertOrder(tx, {
         clientId: merchant.id,
         serviceId: service.id,
         type: service.type,
         source: request.source,
         apiKeyId: request.apiKeyId ?? null,
-        status: start.status,
-        dispatchState: start.dispatchState,
+        status: begin.status,
+        dispatchState: begin.dispatchState,
+        placedAt: now,
+        createdAt: now,
+        // The delivered codes are the order's result, one per line: the merchant receives them like a supplier's reply.
+        ...(claim ? { resultCode: claim.codes.join('\n'), completedAt: now } : {}),
         imei: item.mainInput,
         quantity,
         inputs: item.inputs,
@@ -215,25 +244,35 @@ export class OrderPlacement {
       const lines = [
         createdLine(request.source, request.actor),
         holdLine(order.totalPrice, merchant.name),
-        ...(start.dispatchState === 'manual' ? [manualReviewLine()] : []),
+        ...(begin.dispatchState === 'manual' ? [manualReviewLine()] : []),
       ];
-      await insertEvents(
-        tx,
-        lines.map((line) => ({
-          orderId: order.id,
-          type: line.type,
-          fromStatus: line.fromStatus,
-          toStatus: line.toStatus,
-          actorType: line.actor.type,
-          actorId: line.actor.id,
-          data: line.data,
-        })),
-      );
+      await insertEvents(tx, eventRows(order.id, lines));
       await this.ledger.hold(tx, order, { type: 'client', id: merchant.id });
-      if (start.enqueueDispatch) await this.outbox.dispatchRequested(tx, order.id);
+      if (claim) await this.deliverFromStock(tx, order, claim);
+      if (begin.enqueueDispatch) await this.outbox.dispatchRequested(tx, order.id);
       placed.push(order);
     }
     return placed;
+  }
+
+  /**
+   * Completes an order whose codes came from the stock: the codes become sold, the hold settles to revenue (no supplier cost,
+   * B17), the timeline says so and the merchant's `order.status_changed` event goes out (`pending → completed`).
+   */
+  private async deliverFromStock(tx: DbExecutor, order: Order, claim: StockClaim): Promise<void> {
+    await this.stock.sell(tx, claim, order.id);
+    const moved = await this.ledger.move(tx, order, 'complete', {
+      actor: { type: 'system', id: null },
+      completedBefore: 0,
+      costBooked: false,
+    });
+    await insertEvents(tx, eventRows(order.id, stockDeliveryLines(claim.codes.length, moved)));
+    await this.outbox.statusChanged(tx, {
+      orderId: order.id,
+      clientId: order.clientId,
+      fromStatus: STOCK_DELIVERY_FROM,
+      toStatus: order.status,
+    });
   }
 
   /** Why a service cannot be ordered: disabled (`SERVICE_DISABLED`) or unknown, archived or hidden from the merchant (`NOT_FOUND`). */
@@ -312,4 +351,17 @@ export class OrderPlacement {
     if (problems.length > 0) throw new AppError('VALIDATION_FAILED', { detail: detailOf(problems), errors: problems });
     return prepared;
   }
+}
+
+/** The `order_events` rows of some timeline lines of one order. */
+function eventRows(orderId: number, lines: readonly TimelineLine[]) {
+  return lines.map((line) => ({
+    orderId,
+    type: line.type,
+    fromStatus: line.fromStatus,
+    toStatus: line.toStatus,
+    actorType: line.actor.type,
+    actorId: line.actor.id,
+    data: line.data,
+  }));
 }
