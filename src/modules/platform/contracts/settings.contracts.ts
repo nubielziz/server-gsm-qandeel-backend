@@ -45,7 +45,8 @@ export const updateSettings = defineRoute({
   key: 'PATCH /admin/settings',
   summary: 'Change system settings',
   description:
-    'Only keys of the settings registry are accepted (today `imeiRetentionDays`, a whole number from 0 to 3650). Any other ' +
+    'Only keys of the settings registry are accepted (today `imeiRetentionDays`, a whole number of days from 0 to 3650, and ' +
+    '`pricing.price_change_tolerance_percent`, a whole number of percent from 0 to 100, default 10). Any other ' +
     'key, including the keys that have their own guarded routes (`adminAllowlistOnly`, `maintenance`, the risk rules, the ' +
     'storefront policies), is `422` with `errors[].field` set to the key. Answers the whole settings object after the change.',
   tags: ['settings'],

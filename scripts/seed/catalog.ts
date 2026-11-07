@@ -1,5 +1,6 @@
 // Seeder of the catalog module: the demo's service categories, services (with their custom fields, option lists and the two
-// group prices) and, when a configuration is given, the code inventory of the two digital-code services. Mirrors the frontend
+// group prices), the three client prices and the Carrier unlock promo rule (feature 4b) and, when a configuration is given, the
+// code inventory of the two digital-code services. Mirrors the frontend
 // mocks (src/features/services/mocks/seed.ts): categories come from the services' category names in order of first appearance,
 // services keep the demo ids, codes and prices, and the made-up fields, options and codes are the mock's.
 import { sql } from 'drizzle-orm';
@@ -162,7 +163,51 @@ export async function seedCatalog(db: DbExecutor, demo: DemoSeed, config?: AppCo
   );
   await syncIdentity(db, s.serviceOptions);
 
-  const reports = [categoryReport, serviceReport, groupPrices, fields, options];
+  // The demo's three client prices (`S.clientPrices`, keys like `m1|IMEI-ICL-CHK`); ids and the age of 20 days are the mock's.
+  const clientPriceRows = Object.entries((demo.state.clientPrices ?? {}) as Record<string, number>).flatMap(
+    ([key, price], index) => {
+      const [merchant = '', code = ''] = key.split('|');
+      const serviceId = idOfCode.get(code);
+      return serviceId === undefined
+        ? []
+        : [
+            {
+              id: index + 1,
+              serviceId,
+              clientId: demoNumericId(merchant),
+              price: toMoney(price),
+              note: '',
+              createdAt: new Date(demo.now - 20 * DAY_MS),
+            },
+          ];
+    },
+  );
+  const clientPrices = await insertRows(db, s.serviceClientPrices, clientPriceRows);
+  await syncIdentity(db, s.serviceClientPrices);
+
+  // The demo's one category rule (`S.categoryRules`: Carrier unlock minus 2 %) as a pricing rule, a discount at priority 100.
+  const ruleRows = Object.entries((demo.state.categoryRules ?? {}) as Record<string, number>).flatMap(
+    ([category, adjustment], index) => {
+      const targetId = categoryIds.get(category);
+      return targetId === undefined
+        ? []
+        : [
+            {
+              id: index + 1,
+              scope: 'category' as const,
+              targetId,
+              kind: adjustment < 0 ? ('discount' as const) : ('margin' as const),
+              percent: String(Math.abs(adjustment) * 100),
+              priority: 100,
+              createdAt,
+            },
+          ];
+    },
+  );
+  const rules = await insertRows(db, s.pricingRules, ruleRows);
+  await syncIdentity(db, s.pricingRules);
+
+  const reports = [categoryReport, serviceReport, groupPrices, clientPrices, rules, fields, options];
   if (config) reports.push(await seedInventory(db, demo, config, idOfCode));
   return reports;
 }

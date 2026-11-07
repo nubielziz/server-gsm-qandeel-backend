@@ -88,7 +88,7 @@ describe.skipIf(!frontendPresent)('the catalog seed', () => {
       basePrice: '19.5000',
     });
 
-    const admin = await adminWith(t, ['catalog:*', 'inventory:*', 'groups:*'], { name: 'Rami K.' });
+    const admin = await adminWith(t, ['catalog:*', 'inventory:*', 'groups:*', 'pricing:*'], { name: 'Rami K.' });
     const list = await admin.get('/admin/services?_start=0&_end=200&_sort=name&_order=asc');
     expect(list.total).toBe(27);
     // The one service whose price is under its floor is the Chrome licence (19.50 against 19.80 + 1.19).
@@ -109,6 +109,38 @@ describe.skipIf(!frontendPresent)('the catalog seed', () => {
         supplierKey: 'user',
       },
     ]);
+    // The demo's pricing (feature 4b): three client prices, the Carrier unlock promo and the resolver on top of them.
+    const clientPrices = await admin.get('/admin/client-prices?_start=0&_end=200&_sort=id&_order=asc');
+    expect(
+      clientPrices.body.map((row: { id: number; clientId: number; service: { name: string }; price: string }) => [
+        row.id,
+        row.clientId,
+        row.service.name,
+        row.price,
+      ]),
+    ).toEqual([
+      [1, 1, 'iCloud Clean / Lost Check', '0.1000'],
+      [2, 3, 'Samsung FRP Remote (USB)', '5.5000'],
+      [3, 5, 'AT&T USA Premier Unlock', '15.2000'],
+    ]);
+    const rules = await admin.get('/admin/pricing-rules?_start=0&_end=200');
+    expect(rules.body).toEqual([
+      expect.objectContaining({
+        id: 1,
+        scope: 'category',
+        target: { id: 4, name: 'Carrier unlock' },
+        kind: 'discount',
+        percent: '2.0000',
+        priority: 100,
+        isActive: true,
+      }),
+    ]);
+    // Standard pays 17.28 x 0.98 = 16.9344, so 16.93; the VIP group price and the client price beat the rule.
+    const resolved = async (serviceId: number, clientId: number) =>
+      (await admin.get(`/admin/pricing/resolve?serviceId=${serviceId}&clientId=${clientId}`)).body;
+    expect((await resolved(5, 6)).price).toBe('16.9300');
+    expect((await resolved(5, 5)).price).toBe('15.2000');
+    expect((await resolved(1, 1)).price).toBe('0.1000');
     const categoriesList = await admin.get('/admin/service-categories?_start=0&_end=200&_sort=sort&_order=asc');
     expect(categoriesList.body.find((c: { name: string }) => c.name === 'Apple').serviceCount).toBe(4);
 

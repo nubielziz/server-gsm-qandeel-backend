@@ -1,17 +1,26 @@
 // Catalog & pricing module (map domain B): groups, categories, services, fields, prices, pricing rules, inventory, TAC.
-// It provides the read-only ClientGroupDirectory; the admin routes of the catalog's structure are CatalogAdminModule
+// It provides the read-only ClientGroupDirectory and the price resolver, the listed-price memory and the merchant catalog (none
+// of them holds a connection: they take the caller's database handle); the admin routes of the catalog are CatalogAdminModule
 // (docs/ARCHITECTURE.md § 2).
 import { Global, Module } from '@nestjs/common';
 import { ClientGroupDirectory } from './application/client-group-directory';
+import { ListedPrices } from './application/listed-prices';
+import { MerchantCatalog } from './application/merchant-catalog';
+import { PriceResolver } from './application/price-resolver';
 
 /**
  * Nest module for Catalog & pricing (map domain B).
  *
  * Why: one module per map domain, each owning its tables and exposing a public service through `index.ts`
- * (decision 016). It is global so identity (merchant creation, group moves, the promotion job) can inject the directory without
- * importing the module. It imports nothing that leads back into identity (the admin routes are `CatalogAdminModule`, which the
- * root module imports next to this one), so identity can import `CatalogModule` while it is still loading (decision 032).
+ * (decision 016). It is global so identity (merchant creation, group moves, the promotion job) can inject the directory, and
+ * orders, the Dhru and REST v1 lists and the storefront can inject the resolver, the listed prices and the merchant catalog,
+ * without importing the module. Everything here needs only the clock (global) and a database handle passed by the caller, so
+ * the module imports nothing that leads back into identity (the admin routes are `CatalogAdminModule`, which the root module
+ * imports next to this one), and identity can import `CatalogModule` while it is still loading (decision 032).
  */
 @Global()
-@Module({ providers: [ClientGroupDirectory], exports: [ClientGroupDirectory] })
+@Module({
+  providers: [ClientGroupDirectory, PriceResolver, ListedPrices, MerchantCatalog],
+  exports: [ClientGroupDirectory, PriceResolver, ListedPrices, MerchantCatalog],
+})
 export class CatalogModule {}

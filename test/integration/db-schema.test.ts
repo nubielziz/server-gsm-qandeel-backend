@@ -1,4 +1,4 @@
-// The migrations and the schema (decision 027): they apply on an empty database, create the 66 tables of the map, match
+// The migrations and the schema (decision 027): they apply on an empty database, create the 66 tables of the map and the backend's additions, match
 // the Drizzle definitions, keep an index behind every foreign key, and `db:check` sees no drift.
 import { afterAll, describe, expect, it } from 'bun:test';
 import { readdir } from 'node:fs/promises';
@@ -16,21 +16,23 @@ afterAll(closeTestDb);
 /** The tables the map assigns to modules (scripts/module-map.mjs), loaded at run time because it is plain JavaScript. */
 async function mappedTables(): Promise<string[]> {
   const path = '../../scripts/module-map.mjs';
-  const { modules } = (await import(path)) as { modules: Array<{ id: string; tables: string[] }> };
-  return modules.flatMap((module) => module.tables).sort();
+  const { modules } = (await import(path)) as {
+    modules: Array<{ id: string; tables: string[]; additionalTables?: string[] }>;
+  };
+  return modules.flatMap((module) => [...module.tables, ...(module.additionalTables ?? [])]).sort();
 }
 
 const drizzleTables = (): PgTable[] =>
   (Object.values(schema) as unknown[]).filter((value): value is PgTable => is(value, PgTableClass));
 
 describe('migrations', () => {
-  it('create exactly the 66 tables of the map', async () => {
+  it('create exactly the 66 tables of the map and the 1 the backend adds (listed_prices)', async () => {
     const { pool } = await testDb();
     const { rows } = await pool.query<{ tablename: string }>(
       `select tablename from pg_tables where schemaname = 'public' order by tablename`,
     );
     const names = rows.map((row) => row.tablename);
-    expect(names).toHaveLength(66);
+    expect(names).toHaveLength(67);
     expect(names).toEqual(await mappedTables());
     expect(
       drizzleTables()
@@ -58,7 +60,7 @@ describe('migrations', () => {
       const scratch = new Pool({ connectionString: url.toString(), max: 1 });
       try {
         const tables = await scratch.query(`select 1 from pg_tables where schemaname = 'public'`);
-        expect(tables.rowCount).toBe(66);
+        expect(tables.rowCount).toBe(67);
         const triggers = await scratch.query(`select tgname from pg_trigger where not tgisinternal order by tgname`);
         expect(triggers.rows.map((row) => row.tgname)).toEqual([
           'audit_logs_append_only',

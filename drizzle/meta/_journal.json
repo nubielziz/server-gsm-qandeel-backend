@@ -43,6 +43,13 @@
       "when": 1794033745478,
       "tag": "0005_default_client_groups",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794036739104,
+      "tag": "0006_listed_prices",
+      "breakpoints": true
     }
   ]
 }

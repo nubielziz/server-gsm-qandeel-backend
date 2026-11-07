@@ -16,7 +16,7 @@ import type {
   ServiceStatus,
   ServiceType,
 } from '../db/schema';
-import { deliveryTimeText, dollars, effectiveMinProfit, floorPrice } from '../domain/service-figures';
+import { deliveryTimeText, dollars } from '../domain/service-figures';
 import { lockCategoryRow } from '../infra/category.repository';
 import {
   type SupplierChain,
@@ -39,7 +39,9 @@ import {
   lockLiveService,
   updateServiceRow,
 } from '../infra/service.repository';
+import { CatalogPriceVersion } from './catalog-price-version';
 import { recomputeEffectiveCost } from './effective-cost';
+import { PriceResolver } from './price-resolver';
 
 /** A service as the console reads it. */
 export interface ServiceView {
@@ -219,6 +221,8 @@ export class ServiceAdminService {
   constructor(
     private readonly db: DbService,
     private readonly audit: AuditService,
+    private readonly resolver: PriceResolver,
+    private readonly priceVersion: CatalogPriceVersion,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -231,7 +235,7 @@ export class ServiceAdminService {
   async list(
     query: ParsedListQuery<'name' | 'type' | 'cost' | 'basePrice' | 'id'>,
   ): Promise<{ rows: ServiceView[]; total: number }> {
-    const { rows, total } = await listServiceRows(this.db.db, query);
+    const { rows, total } = await listServiceRows(this.db.db, query, this.clock.now());
     const chains = await supplierChainsOf(
       this.db.db,
       rows.map((row) => row.service.id),
@@ -248,7 +252,7 @@ export class ServiceAdminService {
    */
   async show(id: number): Promise<ServiceDetailView> {
     const db = this.db.db;
-    const row = await findServiceRow(db, id);
+    const row = await findServiceRow(db, id, this.clock.now());
     if (!row) throw notFound();
     const [chains, fields, options, groupPrices] = await Promise.all([
       supplierChainsOf(db, [id]),
@@ -273,7 +277,8 @@ export class ServiceAdminService {
    *   (409 on `code`)
    */
   async create(input: CreateServiceInput): Promise<ServiceView> {
-    return this.db.runInTransaction(async ({ tx }) => {
+    return this.db.runInTransaction(async (work) => {
+      const { tx } = work;
       const category = await lockCategoryRow(tx, input.categoryId, 'share');
       if (!category) throw invalid('categoryId', 'This category does not exist.', 'unknown');
       if (category.type !== input.type) {
@@ -304,6 +309,7 @@ export class ServiceAdminService {
         throw this.translateWriteError(error, input.code);
       }
       await recomputeEffectiveCost(tx, [service.id]);
+      this.priceVersion.bumpAfterCommit(work);
       await this.audit.record(tx, {
         action: 'created service',
         entityType: 'service',
@@ -325,12 +331,13 @@ export class ServiceAdminService {
    *   `categoryId` or `type` when they disagree); `CODE_TAKEN` (409)
    */
   async update(id: number, changes: UpdateServiceInput): Promise<ServiceView> {
-    return this.db.runInTransaction(async ({ tx }) => {
+    return this.db.runInTransaction(async (work) => {
+      const { tx } = work;
       const before = await lockLiveService(tx, id);
       if (!before) throw notFound();
       // Work from the cost the suppliers set now, so the floor check and the figures never use a stale effective cost.
       await recomputeEffectiveCost(tx, [id]);
-      const current = (await findServiceRow(tx, id))!.service;
+      const current = (await findServiceRow(tx, id, this.clock.now()))!.service;
 
       if (changes.categoryId !== undefined || changes.type !== undefined) {
         const categoryId = changes.categoryId ?? current.categoryId;
@@ -349,7 +356,7 @@ export class ServiceAdminService {
         const owner = await findServiceByCode(tx, changes.code, id);
         if (owner) throw codeTaken(changes.code, owner.name);
       }
-      if (changes.basePrice !== undefined) this.assertAboveFloor(current, changes);
+      if (changes.basePrice !== undefined) await this.assertAboveFloor(tx, current, changes);
 
       let after: Service | undefined;
       try {
@@ -370,6 +377,8 @@ export class ServiceAdminService {
       } catch (error) {
         throw this.translateWriteError(error, changes.code);
       }
+      // Any change can move what merchants see (the price, the status, the category), so cached price lists start over.
+      this.priceVersion.bumpAfterCommit(work);
       await this.audit.record(tx, {
         action: 'edited service',
         entityType: 'service',
@@ -394,9 +403,11 @@ export class ServiceAdminService {
    * @throws {AppError} `NOT_FOUND` (404: unknown or already archived)
    */
   async remove(id: number): Promise<void> {
-    await this.db.runInTransaction(async ({ tx }) => {
+    await this.db.runInTransaction(async (work) => {
+      const { tx } = work;
       const service = await lockLiveService(tx, id);
       if (!service) throw notFound();
+      this.priceVersion.bumpAfterCommit(work);
       if (await isServiceReferenced(tx, id)) {
         const deactivated = await deactivateServiceRules(tx, id);
         const archivedAt = this.clock.now();
@@ -423,16 +434,18 @@ export class ServiceAdminService {
     });
   }
 
-  /** Refuses a base price under the floor of the effective cost plus the minimum profit being saved. */
-  private assertAboveFloor(current: Service, changes: UpdateServiceInput): void {
-    const effective = Money.of(current.effectiveCost);
+  /**
+   * Refuses a base price under the floor: the effective cost plus the minimum profit being saved, or, when the service has none
+   * of its own, the one the first matching rule for every group asks for (RESOLUTIONS catalog-1: no merchant here).
+   */
+  private async assertAboveFloor(tx: DbExecutor, current: Service, changes: UpdateServiceInput): Promise<void> {
     const own = changes.minProfit === undefined ? current.minProfit : changes.minProfit;
-    const minProfit = effectiveMinProfit(own === null ? null : Money.of(own), effective);
-    const floor = floorPrice(effective, minProfit);
+    const context = await this.resolver.context(tx, { serviceIds: [current.id], at: this.clock.now() });
+    const { cost, minProfit, floor } = context.floor(current.id, null, own === null ? null : Money.of(own))!;
     if (Money.of(changes.basePrice!).cmp(floor) < 0) {
       throw invalid(
         'basePrice',
-        `Below the floor. Cost ${dollars(effective)} plus minimum profit ${dollars(minProfit)} is ${dollars(floor)}.`,
+        `Below the floor. Cost ${dollars(cost)} plus minimum profit ${dollars(minProfit)} is ${dollars(floor)}.`,
         'below_floor',
       );
     }
@@ -451,7 +464,7 @@ export class ServiceAdminService {
   }
 
   private async viewOf(db: DbExecutor, id: number): Promise<ServiceView> {
-    const row = (await findServiceRow(db, id))!;
+    const row = (await findServiceRow(db, id, this.clock.now()))!;
     const chains = await supplierChainsOf(db, [id]);
     return toView(row, chains.get(id));
   }

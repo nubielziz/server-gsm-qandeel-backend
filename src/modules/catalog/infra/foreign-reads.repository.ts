@@ -1,13 +1,14 @@
-// Read-only lookups into tables other modules own, kept in this one file: the supplier chain of a service and whether anything
-// refers to a service. The catalog screens show who supplies a service, and deleting a service archives it when orders, supplier
-// links, listings or other records refer to it (RESOLUTIONS catalog-3).
+// Read-only lookups into tables other modules own, kept in this one file: the supplier chain of a service, whether anything
+// refers to a service, and the merchants the price routes name. The catalog screens show who supplies a service, deleting a
+// service archives it when orders, supplier links, listings or other records refer to it (RESOLUTIONS catalog-3), and a client
+// price or a merchant's catalog needs the merchant's name and group.
 //
 // DEVIATION to resolve when those features land: decision 016 wants these reads through the owning module's public service.
 // Orders (5), suppliers (6), storefront (14a/15), customers, risk (18) and support export nothing yet, so this file reads
 // `service_supplier_links`, `supplier_services`, `suppliers`, `orders`, `service_listings`, `checkout_sessions`,
-// `help_articles` and `imei_checks` with plain selects, like money's foreign-directory repository. Replace the bodies with calls
-// to their services; nothing outside this file knows.
-import { sql } from 'drizzle-orm';
+// `help_articles` and `imei_checks`, and identity's `clients`, with plain selects, like money's foreign-directory repository.
+// Replace the bodies with calls to their services; nothing outside this file knows.
+import { eq, inArray, sql } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
 
 /** An id and a name, as a service row joins a supplier. */
@@ -92,4 +93,48 @@ export async function isServiceReferenced(db: DbExecutor, serviceId: number): Pr
       or exists (select 1 from ${s.imeiChecks} where service_id = ${serviceId})
     ) as referenced`);
   return result.rows[0]?.referenced === true;
+}
+
+/** A merchant as the price routes need it. */
+export interface MerchantRef {
+  readonly id: number;
+  readonly name: string;
+  readonly groupId: number;
+  readonly status: string;
+}
+
+/**
+ * Reads one merchant: its name, group and status.
+ *
+ * Why: a client price is checked against the floor of the merchant's group, the resolver prices for that group, and the
+ * merchant catalog lists what the group may see (RESOLUTIONS catalog-1, catalog-4, catalog-16).
+ *
+ * @param db the database or a transaction
+ * @param id the merchant id
+ * @returns the merchant, or `undefined` when there is none
+ */
+export async function merchantOf(db: DbExecutor, id: number): Promise<MerchantRef | undefined> {
+  const [row] = await db
+    .select({ id: s.clients.id, name: s.clients.name, groupId: s.clients.groupId, status: s.clients.status })
+    .from(s.clients)
+    .where(eq(s.clients.id, id))
+    .limit(1);
+  return row;
+}
+
+/**
+ * Reads several merchants in one query (a page of client prices).
+ *
+ * @param db the database or a transaction
+ * @param ids the merchant ids; duplicates are fine
+ * @returns the merchants that exist, by id
+ */
+export async function merchantsOf(db: DbExecutor, ids: readonly number[]): Promise<Map<number, MerchantRef>> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return new Map();
+  const rows = await db
+    .select({ id: s.clients.id, name: s.clients.name, groupId: s.clients.groupId, status: s.clients.status })
+    .from(s.clients)
+    .where(inArray(s.clients.id, unique));
+  return new Map(rows.map((row) => [row.id, row]));
 }

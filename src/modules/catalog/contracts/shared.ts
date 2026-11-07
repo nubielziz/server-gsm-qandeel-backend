@@ -23,3 +23,11 @@ export const PercentField = zDecimal
 
 /** An id and a name, the join shape of a service row. */
 export const NamedRef = z.object({ id: z.number().int().positive(), name: z.string() });
+
+/**
+ * A percent for a pricing rule: plain decimal text, 0 or more, at most four decimals (`"2"`, `"2.5"`, `"2.0000"`).
+ *
+ * Why: the console sends `percent` as the form's number with four decimals (`"2.0000"`); the range per kind (a discount cannot
+ * take more than 100 %) is judged with the rest of the rule, so the message names the field.
+ */
+export const RulePercent = zDecimal.regex(/^\d{1,5}(\.\d{1,4})?$/, 'Enter a percent such as 2 or 0.5, 0 or more.');

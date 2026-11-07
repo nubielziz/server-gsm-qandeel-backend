@@ -128,8 +128,9 @@ Keep this list in step with the contracts (`permission` of each `defineRoute`).
 `SettingsService` is the only code outside the settings routes that reads the `settings` table: other modules call it
 (identity reads `adminAllowlistOnly`). The routes that write settings call the `invalidate()` of whatever cache holds a value
 after their commit. `PATCH /admin/settings` is an allow-list (lead resolution identity-platform-13):
-it accepts only the keys of a settings registry in this module, each with its validator (today only `imeiRetentionDays`, a JSON
-integer 0 to 3650, shared with `PATCH /admin/storefront/settings`); any other key, including the keys owned by stricter routes
+it accepts only the keys of a settings registry in this module, each with its validator (today `imeiRetentionDays`, a JSON
+integer 0 to 3650, shared with `PATCH /admin/storefront/settings`, and `pricing.price_change_tolerance_percent`, a JSON integer 0 to 100,
+default 10 when never saved, read by the catalog's price guard, user rule 9); any other key, including the keys owned by stricter routes
 (`adminAllowlistOnly`, `maintenance`, risk rules, storefront policies), is `422 VALIDATION_FAILED` with `errors[].field` = the key.
 A feature that needs another key editable there adds it to the registry with its validator.
 
@@ -177,7 +178,7 @@ Four admin routes (`contracts/`, `controllers/`, `application/`, `infra/`), wire
 - **The audit list is read-only** (the table is append-only). `actorName` and `entityLabel` are snapshots written with the entry; the wire
   sends `null` for `''` (a system row has no actor name, id or address). `before` and `after` were masked when the entry was written.
 - **`PATCH /admin/settings` is an allow-list** (`settings/settings-registry.ts`, resolution `identity-platform-13`): the registry holds
-  `imeiRetentionDays` (a JSON integer 0 to 3650). Every key of the patch is judged first; any other key (the keys of the stricter routes
+  `imeiRetentionDays` (a JSON integer 0 to 3650) and `pricing.price_change_tolerance_percent` (a JSON integer 0 to 100; feature 4b). Every key of the patch is judged first; any other key (the keys of the stricter routes
   `adminAllowlistOnly`, `maintenance`, the risk rules, the storefront policies included) or a value the validator refuses is `422
   VALIDATION_FAILED` with one `errors[]` item per refused key (`field` = the key), and nothing is written. An empty body is `422` on
   `body`. A valid patch upserts the rows and writes one audit row (`action: changed settings`, `entityType: setting`, `entityLabel` the keys,
@@ -260,7 +261,7 @@ actor is `system`. The row is written on the caller's transaction, so a rolled-b
   is `''`. `actor_type` is `staff | client | customer | system` (exported `AUDIT_ACTOR_TYPES`, CHECK `audit_logs_actor_type_check`).
 - `entityType` must come from the exported `AUDIT_ENTITY_TYPES` (the console's 19 words plus `role`, `client_group`, `category`,
   `currency`, `payment_gateway`, `invoice`, `api_key`, `webhook_endpoint`, `kyc_submission`, `notification_template`,
-  `alert_rule`, `alert`, `incident`, `tax_rate`, `help_article`, `content_page`, `ledger_transaction`, `inventory_code`); `record` throws a
+  `alert_rule`, `alert`, `incident`, `tax_rate`, `help_article`, `content_page`, `ledger_transaction`, `inventory_code`, `pricing_rule`); `record` throws a
   `RangeError` (a programming error that rolls the transaction back) on any other value. The list is enforced in code with no
   DB CHECK, so the append-only table never needs a migration for it; a feature that needs a new type adds it in its own commit.
   Table to word: `clients` is `merchant`, `staff_users` `staff`, `checkout_sessions` `checkout`, `legal_documents` `legal`,

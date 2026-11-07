@@ -485,6 +485,42 @@ export type PricingRule = typeof pricingRules.$inferSelect;
 export type NewPricingRule = typeof pricingRules.$inferInsert;
 
 /**
+ * The last price listed to a merchant for a service (the price-protection memory of user rule 9).
+ *
+ * Why: MISMATCHES B117 (4), a backend addition to the map's tables: every list a merchant reads (the portal catalog and price
+ * export, Dhru and REST v1 lists) records the price it showed; an order more than `pricing.price_change_tolerance_percent`
+ * above it is refused with `409 PRICE_CHANGED`. A row is written only when the price changes, so `listed_at` is the time the
+ * merchant was first shown the current price.
+ */
+export const listedPrices = pgTable(
+  'listed_prices',
+  {
+    id: pk(),
+    clientId: fk((): AnyPgColumn => clients.id, 'cascade').notNull(),
+    serviceId: fk((): AnyPgColumn => services.id, 'cascade').notNull(),
+    price: money().notNull(),
+    /** the currency the price was listed in; USD today */
+    currency: text().notNull().default('USD'),
+    /** when this price was first listed to the merchant */
+    listedAt: timestampTz().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique('listed_prices_uq').on(t.clientId, t.serviceId),
+    index('listed_prices_service_id_idx').on(t.serviceId),
+    check('listed_prices_price_check', sql`${t.price} >= 0`),
+    check('listed_prices_currency_check', sql`${t.currency} ~ '^[A-Z]{3}$'`),
+  ],
+);
+
+/** A row read from `listed_prices`. */
+export type ListedPriceRow = typeof listedPrices.$inferSelect;
+
+/** A row to insert into `listed_prices`. */
+export type NewListedPriceRow = typeof listedPrices.$inferInsert;
+
+/**
  * Numbers the import batches of inventory codes: `B-0001`, `B-0002`, ...
  *
  * Why: RESOLUTIONS catalog-15: every imported code carries the reference of its batch, drawn from one sequence so

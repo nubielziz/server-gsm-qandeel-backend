@@ -5,6 +5,8 @@
 /**
  * Modules of the modular monolith, in build order of their first stage.
  * `tables`: tables the module owns (only it reads/writes them; others call its public service).
+ * `additionalTables`: tables the backend adds beyond the map's 66 (MISMATCHES B116 note); owned like the others, but no map row
+ * describes them, so slices and route checks ignore them.
  * `rows`: matchers on the row key "<surface> <m> <p>" (string = exact key, RegExp = pattern).
  * Every row must match exactly one module: scripts/build-route-slices.mjs fails on a gap or an overlap.
  */
@@ -63,6 +65,7 @@ export const modules = [
       'client_groups', 'service_categories', 'services', 'service_fields', 'service_options', 'service_group_prices',
       'service_client_prices', 'pricing_rules', 'inventory_codes', 'tac_catalog',
     ],
+    additionalTables: ['listed_prices'],
     rows: [
       /^admin \S+ \/admin\/(client-groups|service-categories|client-prices|pricing-rules|pricing|inventory-codes|tac-catalog)(\/|$)/,
       'admin CRUD /admin/services',

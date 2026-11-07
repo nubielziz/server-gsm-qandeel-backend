@@ -39,6 +39,15 @@ The queue Redis holds BullMQ data only and has no keys in this list (see `docs/q
 | `gsm:{env}:platform:maintenance:state` | platform | 60 s (+-15 %), then the old state is served for up to 5 minutes while one refresh runs | `MaintenanceService.invalidate()` after the commit of a maintenance change | `maintenance` |
 | `gsm:{env}:{module}:{entity}:{idPrefix}` | infra/cache | n/a (a `SCAN` pattern, never stored) | n/a; `CacheService.delByPrefix` deletes every key that starts with it | `prefix` |
 
+Version counters in use (all under the `gsm:{env}:cache:version:{name}` family above):
+
+- **catalog** (owner: catalog module): moves after the commit of any write that can change a resolved price or what a merchant
+  sees: a service create, change, archive or delete, a group price, client price or pricing rule write, a merchant group's
+  discount change or delete, a category change or delete, and (feature 6) an effective cost that changed. A cached price list
+  (Dhru, REST v1, merchant catalog) must build its key through `CatalogPriceVersion.versioned(key)`; a list cached per merchant
+  also carries the merchant's group id in its key, so a move to another group needs no bump. Feature 4b caches nothing itself: its
+  routes read Postgres on every request.
+
 Versioned keys are the base key plus `:v{n}`, where `{n}` is the current number of the version counter
 (`gsm:{env}:cache:version:{name}`). The counter is the larger of "previous + 1" and the current time in milliseconds, so a
 counter that the cache evicted and re-created can never reuse a number that old entries still carry.

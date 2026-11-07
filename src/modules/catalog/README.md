@@ -8,9 +8,10 @@ Decisions that shape this module: 011 money, 026 Dhru compatibility. Common to a
 
 ## Status
 
-Built (feature 4a, catalog-structure, 20 routes): merchant groups, service categories, services with their custom fields and
-option lists, and the code inventory. Pricing (group and client prices, pricing rules, bulk price, resolve, the merchant catalog)
-is feature 4b; supplier links and import are feature 6; the TAC catalog is 14b.
+Built: feature 4a (catalog-structure, 20 routes): merchant groups, service categories, services with their custom fields and
+option lists, and the code inventory; feature 4b (catalog-pricing, 16 routes): group prices, client prices, pricing rules, the
+bulk price change, the price resolver and the merchant catalog (below). Supplier links and import are feature 6; the TAC catalog
+is 14b.
 
 - **Merchant groups** (`application/client-group-admin.service.ts`, `infra/group.repository.ts`): list with `merchantCount`
   (not for the retail group), show, create (`b2b`, last in the order), change, delete. One default group at all times: making a
@@ -42,6 +43,52 @@ is feature 4b; supplier links and import are feature 6; the TAC catalog is 14b.
   rejected, never logs a clear code; void only `available` codes, idempotent.
 - **`recomputeEffectiveCost(tx, serviceIds)`** (`application/effective-cost.ts`): the one writer of `services.effective_cost`.
 
+### Pricing (feature 4b)
+
+- **The resolver** (`domain/price-resolution.ts` pure, `application/price-resolver.ts` loader, `infra/pricing-data.repository.ts`):
+  user rule 8, RESOLUTIONS catalog-4, step by step: a client price wins, else a group price, else the base price; then ONE pricing
+  rule (active, inside its window on the clock's time, for every group or the merchant's group, scope service > category > global,
+  then priority ascending, then group-specific first, then id) applies margin (+) or discount and promo (-) as
+  `p x (1 + s x percent / 100) + s x fixed`; then the group discount; then round half-up to cents; then the winning rule's
+  `rounding` (`nearest_0.05`, `nearest_0.10`, `ends_99`); then the floor clamp `max(rawPrice, effective cost + minProfit)`. Fixed
+  (client or group) prices skip the rule, the discount and both roundings and are never rounded. The minimum profit is the
+  service's own, else the first matching rule's above zero (rules for every group only without a merchant group), else
+  `max(round(6 % x cost, 2), 0.02)`. Steps carry the ids and labels the console's trace draws (`category` is labelled "Service
+  rule", "Category rule" or "Global rule"; `rounding` carries the rounded price; money values are 4-decimal text, `category` and
+  `discount` values are signed fractions as numbers). `PricingContext` answers many questions after one load (the price for a
+  merchant and for every group, the floors of a group-price save); `PriceResolver.floor` is the one floor function checkout and the
+  storefront listings use, with `storefrontFloor(base, floor)` = `max(round(base x 1.10, 2), floor)` (catalog-12, b2c-7). The SQL of
+  the service list (`infra/service-figures.sql.ts`) is the same minimum-profit rule for merchant-less contexts; a test keeps the two
+  equal.
+- **Group prices** (`group-price-admin.service.ts`, `domain/group-prices.ts`): replace-all under a lock on the service row and a
+  shared lock on the groups; every submitted row is held to its floor (a merchant group at the effective cost plus the minimum
+  profit for that group; `b2c_retail` at the storefront floor), rows kept unchanged included; repeated groups are `422
+  prices.N.groupId` "Listed twice".
+- **Client prices** (`client-price-admin.service.ts`): one per merchant and service (`409 PRICE_EXISTS`), above zero and at or above
+  the floor of the merchant's group; `groupPrice` on each row is the resolver result for the merchant's group without the client
+  price (catalog-16). Audit like the demo: `set client price for` and `removed client price for` on the `merchant`.
+- **Pricing rules** (`pricing-rule-admin.service.ts`, `domain/pricing-rule-input.ts`): CRUD with the target and group checked under
+  share locks, amounts never negative, one of percent and fixed above zero, a discount or promo at most 100 %, a margin at most
+  1000 %, a window that runs forwards; a rule being turned off is never refused for its target. Audit entity `pricing_rule`
+  (`added`, `edited`, `removed pricing rule for`).
+- **Bulk price** (`bulk-price-admin.service.ts`, `domain/bulk-price.ts`): preview saves nothing (a POST with `audit: false`); apply
+  recomputes from the locked current prices, saves every new price (under the floor too, counted), clears `cost_was` and writes one
+  `changed prices of` entry.
+- **Merchant catalog** (`merchant-catalog.ts`, `client-catalog.service.ts`, `infra/merchant-catalog.repository.ts`): the live,
+  `active` services in an active category open to the merchant's group, at the merchant's price; cost, floor and supplier names are
+  never sent. `MerchantCatalog` (`page`, `find`, `all`) is the public piece the Dhru and REST v1 lists (7a) reuse. Shapes: B159.
+- **Price protection** (user rule 9, MISMATCHES B117): `ListedPrices.record(db, clientId, entries, at)` remembers the last price
+  listed to a merchant (table `listed_prices`, written only when the price changes); the three portal routes call it, and 7a's lists
+  must. `checkPriceChange(listed, current, tolerance, { floorRaised? })` is the pure guard feature 5 calls at placement: above the
+  tolerance `refuse` (`409 PRICE_CHANGED` with `listedPrice` and `currentPrice`), within it `raised` (charge it, record
+  `raised = true` and the reason `floor` or `price_change` in `pricing_snapshot`), nothing on record `ok`. The tolerance is the
+  setting `pricing.price_change_tolerance_percent` (platform settings registry, integer 0 to 100, default 10; read with
+  `SettingsReader.integer(PRICE_CHANGE_TOLERANCE_KEY, DEFAULT_PRICE_CHANGE_TOLERANCE_PERCENT, PRICE_CHANGE_TOLERANCE_BOUNDS)`).
+- **Price version** (`catalog-price-version.ts`, `catalog-prices.module.ts`): `CatalogPriceVersion.bumpAfterCommit(work)` moves the
+  `catalog` version counter after the commit of every write that can change a resolved price (services, group prices, client
+  prices, rules, a group's discount or delete, categories); feature 6 calls it when `recomputeEffectiveCost` reports a change.
+  Cached price lists read through `CatalogPriceVersion.versioned(key)`. This feature caches nothing itself.
+
 Known deviation (tech debt): `infra/foreign-reads.repository.ts` reads supplier links, `orders`, `service_listings`,
 `checkout_sessions`, `help_articles` and `imei_checks` with plain selects, because those modules export no service yet (the
 supplier chain of a service row and the archive-or-delete decision); replace its bodies with their public services as they
@@ -59,12 +106,16 @@ calls it from sync, import and link changes), the figure rules (`defaultMinProfi
 `gsm/module-boundaries`). The export order matters (decision 032): the leaves identity injects come first, `CatalogAdminModule`
 (whose controllers use identity's decorators) last.
 
-Planned exports (audit resolutions): the `PriceResolver` (one resolver for resolve, orders, price lists and the group/client price
-checks, plus the b2c_retail floor for the storefront listings: catalog-4, b2c-7; algorithm in `RULES.md` services 3), feature 4b.
+Feature 4b adds, all global through `CatalogModule` (they take the caller's database handle, so they need only the clock) except
+the price version: `PriceResolver` (`context`, `resolveMany`, `resolve`, `floor`) and `PricingContext`, `ListedPrices` (`record`,
+`find`, `findMany`), `MerchantCatalog` (`page`, `find`, `all`), the pure `resolveServicePrice`, `floorFor`, `orderedRules`,
+`ruleMatches`, `ruleMinProfit`, `storefrontFloor`, `belowFloorMessage`, `applyRounding`, the price guard `checkPriceChange` with
+`PRICE_CHANGE_TOLERANCE_KEY`, `DEFAULT_PRICE_CHANGE_TOLERANCE_PERCENT` and `PRICE_CHANGE_TOLERANCE_BOUNDS`, and `CatalogPriceVersion`
+(`CatalogPricesModule`, global, needs the cache; a test app without the infrastructure leaves it out like `CatalogAdminModule`).
 
 ## Owned tables
 
-Only this module reads and writes these 10 tables (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts`.
+Only this module reads and writes these 10 tables and `listed_prices` (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts`.
 
 | Table | What it holds |
 |---|---|
@@ -78,10 +129,11 @@ Only this module reads and writes these 10 tables (`scripts/module-map.mjs`); ot
 | `pricing_rules` | Margin and discount rules for automatic pricing. |
 | `inventory_codes` | Stock of digital codes. |
 | `tac_catalog` | The first 8 digits of an IMEI (TAC) with brand and model; used for automatic recognition, IMEI checks and SEO pages. |
+| `listed_prices` | The last price listed to a merchant for a service (price protection, user rule 9). A backend addition to the map's tables (B158), migration `0006_listed_prices.sql`. |
 
 ## Routes
 
-43 endpoints (admin 37, client 3, v1 2, dhru 1). Source: `docs/slices/catalog.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built: the 20 routes of feature 4a are in `contracts/{client-groups,categories,services,inventory}.contracts.ts`, the rest are pending (`test/contract/pending.ts`).
+43 endpoints (admin 37, client 3, v1 2, dhru 1). Source: `docs/slices/catalog.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built: the 20 routes of feature 4a are in `contracts/{client-groups,categories,services,inventory}.contracts.ts`, the 16 of feature 4b in `contracts/{pricing,client-prices,pricing-rules,merchant-catalog}.contracts.ts`, the rest are pending (`test/contract/pending.ts`).
 
 ### Admin console (37)
 
@@ -158,7 +210,7 @@ Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touc
 
 ## Permissions
 
-Staff permissions the map requires on this module's admin routes: `catalog:*`, `catalog:update`, `groups:*`, `inventory:read`, `inventory:write`, `pricing:*`, `pricing:read`, `pricing:update`. A `*` row means the action of the method: `groups:read|create|update|delete` (client groups), `catalog:read|create|update|delete` (categories, services); fields and options need `catalog:update`; the inventory routes `inventory:read` and `inventory:write`. Audit entity types written: `client_group`, `category`, `service` and `inventory_code` (a void; the import is audited on the `service`).
+Staff permissions the map requires on this module's admin routes: `catalog:*`, `catalog:update`, `groups:*`, `inventory:read`, `inventory:write`, `pricing:*`, `pricing:read`, `pricing:update`. A `*` row means the action of the method: `groups:read|create|update|delete` (client groups), `catalog:read|create|update|delete` (categories, services), `pricing:read|create|update|delete` (client prices, pricing rules); fields and options need `catalog:update`; group prices and the bulk price change `pricing:update`; the resolver `pricing:read`; the inventory routes `inventory:read` and `inventory:write`. Audit entity types written: `client_group`, `category`, `service` (also the group prices and the bulk change), `merchant` (client prices), `pricing_rule` and `inventory_code` (a void; the import is audited on the `service`).
 
 API key scopes on its REST v1 routes: `services:read`.
 
@@ -184,8 +236,9 @@ replace these rows (`scripts/seed/identity.ts`).
 
 ## Cache keys
 
-None: the structure of the catalog is read from Postgres on every request. The merchant catalog and price lists (feature 4b)
-add their cache keys with the price version.
+No key of its own: the catalog and the prices are read from Postgres on every request. The module owns the `catalog` version
+counter (`gsm:{env}:cache:version:catalog`, `CatalogPriceVersion`), moved after the commit of every write that can change a resolved
+price; price lists cached by feature 7a read through it (`docs/cache-keys.md`).
 
 ## Audit resolutions
 

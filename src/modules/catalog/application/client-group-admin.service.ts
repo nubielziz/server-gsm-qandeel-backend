@@ -10,6 +10,7 @@ import { DbService, type DbExecutor, isUniqueViolation, isForeignKeyViolation } 
 import { MerchantGroupMembers } from '../../identity';
 import { MerchantWallets } from '../../money';
 import { AuditService } from '../../platform';
+import { CatalogPriceVersion } from './catalog-price-version';
 import type { ClientGroup } from '../db/schema';
 import {
   clearDefaultMark,
@@ -112,6 +113,7 @@ export class ClientGroupAdminService {
     private readonly audit: AuditService,
     private readonly members: MerchantGroupMembers,
     private readonly wallets: MerchantWallets,
+    private readonly priceVersion: CatalogPriceVersion,
   ) {}
 
   /**
@@ -194,7 +196,8 @@ export class ClientGroupAdminService {
    *   on the default group)
    */
   async update(id: number, changes: UpdateGroupInput): Promise<GroupView> {
-    return this.db.runInTransaction(async ({ tx }) => {
+    return this.db.runInTransaction(async (work) => {
+      const { tx } = work;
       // The advisory lock comes first, then the row lock: every change of the default mark takes them in this order.
       if (changes.isDefault !== undefined) await this.lockDefaultMark(tx);
       const before = await lockGroupRow(tx, id);
@@ -232,6 +235,8 @@ export class ClientGroupAdminService {
         throw error;
       }
       const group = after!;
+      // A new discount changes the resolved price of every merchant in the group.
+      if (changes.discountPercent !== undefined) this.priceVersion.bumpAfterCommit(work);
       await this.audit.record(tx, {
         action: 'edited client group',
         entityType: 'client_group',
@@ -254,7 +259,8 @@ export class ClientGroupAdminService {
    * @throws {AppError} `NOT_FOUND` (404); `GROUP_IN_USE` (409: the default group, the storefront group, or merchants in it)
    */
   async remove(id: number): Promise<void> {
-    await this.db.runInTransaction(async ({ tx }) => {
+    await this.db.runInTransaction(async (work) => {
+      const { tx } = work;
       const group = await lockGroupRow(tx, id);
       if (!group) throw new AppError('NOT_FOUND', { detail: 'No group has this id.' });
       if (group.kind === RETAIL_GROUP_KIND) {
@@ -270,6 +276,8 @@ export class ClientGroupAdminService {
       const merchants = (await this.members.countByGroup(tx, [id])).get(id) ?? 0;
       if (merchants > 0) throw groupInUse(group.name, merchants);
 
+      // The group's prices and rules go with it: cached price lists start over.
+      this.priceVersion.bumpAfterCommit(work);
       const removedPrices = await deleteGroupPrices(tx, id);
       const removedRuleIds = await deletePricingRulesOfGroup(tx, id);
       const categoryIds = await dropGroupFromCategories(tx, id);

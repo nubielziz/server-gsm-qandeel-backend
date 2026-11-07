@@ -17,7 +17,7 @@ import { QueuesModule } from '../../src/infra/queues';
 import { PublicIpLimitModule, RateLimitModule } from '../../src/infra/rate-limit';
 import { RedisModule } from '../../src/infra/redis';
 import { StorageModule } from '../../src/infra/storage';
-import { CatalogAdminModule } from '../../src/modules/catalog';
+import { CatalogAdminModule, CatalogPricesModule } from '../../src/modules/catalog';
 import { AccessAdminModule } from '../../src/modules/identity/access-admin.module';
 import { MerchantAdminModule } from '../../src/modules/identity/merchant-admin.module';
 import { MerchantAuthModule } from '../../src/modules/identity/merchant-auth.module';
@@ -84,6 +84,7 @@ const NEEDS_DATABASE_AND_CACHE = [
   PlatformAdminModule,
   MerchantAuthModule,
   MoneyAdminModule,
+  CatalogPricesModule,
   CatalogAdminModule,
 ];
 /** The pipeline module that only uses the cache Redis and the rate limiter: replaced when the infrastructure is. */

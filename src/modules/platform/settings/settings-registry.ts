@@ -27,6 +27,25 @@ export function imeiRetentionDaysProblem(value: unknown): string | undefined {
   return undefined;
 }
 
+/** The key of the price-change tolerance (user rule 9, MISMATCHES B117); the catalog module reads it under the same name. */
+export const PRICE_CHANGE_TOLERANCE_KEY = 'pricing.price_change_tolerance_percent';
+
+/**
+ * Checks the value of `pricing.price_change_tolerance_percent`: a JSON integer from 0 to 100.
+ *
+ * Why: user rule 9: an order that costs more than this many percent above the price the merchant was last listed is refused
+ * with `409 PRICE_CHANGED`; `0` refuses every rise, the default (setting never saved) is 10. The catalog module's price
+ * guard reads it.
+ *
+ * @param value the value as sent
+ * @returns the problem, or `undefined` when the value is acceptable
+ */
+export function priceChangeTolerancePercentProblem(value: unknown): string | undefined {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return 'Use a whole number of percent.';
+  if (value < 0 || value > 100) return 'Use a number from 0 to 100.';
+  return undefined;
+}
+
 /**
  * The settings `PATCH /admin/settings` accepts. A later feature that needs another key editable here adds it with its
  * validator; the keys with their own guarded routes (`adminAllowlistOnly`, `maintenance`, the risk rules, the storefront
@@ -34,6 +53,7 @@ export function imeiRetentionDaysProblem(value: unknown): string | undefined {
  */
 export const EDITABLE_SETTINGS: readonly EditableSetting[] = [
   { key: 'imeiRetentionDays', validate: imeiRetentionDaysProblem },
+  { key: PRICE_CHANGE_TOLERANCE_KEY, validate: priceChangeTolerancePercentProblem },
 ];
 
 /** A refused key of a settings patch. */

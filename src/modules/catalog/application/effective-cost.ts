@@ -11,7 +11,8 @@ import { type DbExecutor, schema as s } from '../../../infra/db';
  * `greatest(services.cost, credit x credit_rate of the first active supplier link by priority then id, 0 with no link)`
  * rounded half-up to four decimals. When the effective cost rises, `cost_was` keeps the first previous value
  * (`coalesce(cost_was, old effective cost)`), which is what the console shows as `costChangedFrom` until a base price is saved.
- * A service whose effective cost did not change is not touched.
+ * A service whose effective cost did not change is not touched. A change moves the price a merchant pays, so the caller moves the
+ * catalog price version after its commit when the result is not empty (`CatalogPriceVersion.bumpAfterCommit`, decision 022).
  *
  * Side effects: updates `services.effective_cost`, and `cost_was` and `updated_at` of the services that change. The caller's
  * transaction should hold the service rows (or accept the row lock this update takes).

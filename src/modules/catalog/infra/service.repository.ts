@@ -1,7 +1,7 @@
 // Drizzle queries of the service routes on `services` and the parts of a service (`service_fields`, `service_options`,
 // `service_group_prices`): the list and the single row with the figures worked out in SQL, the locks and writes, and the
 // pricing-rule switches of the archive and delete paths.
-import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../infra/db';
 import {
@@ -12,6 +12,7 @@ import {
   type ServiceField,
   type ServiceGroupPrice,
   type ServiceOption,
+  clientGroups,
   pricingRules,
   serviceCategories,
   serviceFields,
@@ -32,7 +33,8 @@ export interface ServiceRow {
   readonly belowFloor: boolean;
 }
 
-const COLUMNS: ListColumns = {
+/** The wire fields of the list and the columns they map to; `belowFloor` depends on the moment (rule windows). */
+const columnsAt = (at: Date): ListColumns => ({
   id: services.id,
   name: services.name,
   type: services.type,
@@ -43,20 +45,20 @@ const COLUMNS: ListColumns = {
   cost: services.effectiveCost,
   code: services.code,
   'category.name': serviceCategories.name,
-  belowFloor: belowFloorSql,
-};
+  belowFloor: belowFloorSql(at),
+});
 
 const live = isNull(services.archivedAt);
 
-function selectRows(db: DbExecutor) {
+function selectRows(db: DbExecutor, at: Date) {
   return db
     .select({
       service: services,
       categoryName: serviceCategories.name,
-      minProfit: minProfitSql,
-      floorPrice: floorPriceSql,
+      minProfit: minProfitSql(at),
+      floorPrice: floorPriceSql(at),
       marginPct: marginPctSql,
-      belowFloor: belowFloorSql,
+      belowFloor: belowFloorSql(at),
     })
     .from(services)
     .innerJoin(serviceCategories, eq(serviceCategories.id, services.categoryId));
@@ -67,17 +69,20 @@ function selectRows(db: DbExecutor) {
  *
  * @param db the database or a transaction
  * @param query the parsed list request (filters, search, sort, range)
+ * @param at the clock's now: the pricing rules in force at it set the minimum profit
  * @returns the page of services with their figures, and the exact total
  */
 export async function listServiceRows(
   db: DbExecutor,
   query: ParsedListQuery<'name' | 'type' | 'cost' | 'basePrice' | 'id'>,
+  at: Date,
 ): Promise<{ rows: ServiceRow[]; total: number }> {
-  const where = listWhere(query, COLUMNS, live);
+  const columns = columnsAt(at);
+  const where = listWhere(query, columns, live);
   const [rows, [count]] = await Promise.all([
-    selectRows(db)
+    selectRows(db, at)
       .where(where)
-      .orderBy(...listOrderBy(query.sort, COLUMNS, services.id))
+      .orderBy(...listOrderBy(query.sort, columns, services.id))
       .limit(query.range.limit)
       .offset(query.range.start),
     db
@@ -94,13 +99,61 @@ export async function listServiceRows(
  *
  * @param db the database or a transaction
  * @param id the service id
+ * @param at the clock's now: the pricing rules in force at it set the minimum profit
  * @returns the service, or `undefined` when it is unknown or archived
  */
-export async function findServiceRow(db: DbExecutor, id: number): Promise<ServiceRow | undefined> {
-  const [row] = await selectRows(db)
+export async function findServiceRow(db: DbExecutor, id: number, at: Date): Promise<ServiceRow | undefined> {
+  const [row] = await selectRows(db, at)
     .where(and(eq(services.id, id), live))
     .limit(1);
   return row;
+}
+
+/**
+ * Finds live services by id or by category, with their figures, in id order.
+ *
+ * Why: the bulk price change reads the services it will touch (a category, or the ticked ones) with the floor of each.
+ *
+ * @param db the database or a transaction
+ * @param scope `{ serviceIds }` or `{ categoryId }`
+ * @param at the clock's now: the pricing rules in force at it set the minimum profit
+ * @returns the live services of the scope that exist
+ */
+export async function findServiceRowsInScope(
+  db: DbExecutor,
+  scope: { readonly serviceIds: readonly number[] } | { readonly categoryId: number },
+  at: Date,
+): Promise<ServiceRow[]> {
+  if ('serviceIds' in scope && scope.serviceIds.length === 0) return [];
+  const target =
+    'serviceIds' in scope ? inArray(services.id, [...scope.serviceIds]) : eq(services.categoryId, scope.categoryId);
+  return selectRows(db, at).where(and(target, live)).orderBy(asc(services.id));
+}
+
+/**
+ * Locks the live services of a scope for the rest of the transaction, in id order.
+ *
+ * Why: a bulk price apply recomputes from the current prices and writes them back; locking in id order keeps two applies (or a
+ * price edit) from interleaving or deadlocking.
+ *
+ * @param db the transaction
+ * @param scope `{ serviceIds }` or `{ categoryId }`
+ * @returns the ids that were locked
+ */
+export async function lockLiveServicesInScope(
+  db: DbExecutor,
+  scope: { readonly serviceIds: readonly number[] } | { readonly categoryId: number },
+): Promise<number[]> {
+  if ('serviceIds' in scope && scope.serviceIds.length === 0) return [];
+  const target =
+    'serviceIds' in scope ? inArray(services.id, [...scope.serviceIds]) : eq(services.categoryId, scope.categoryId);
+  const rows = await db
+    .select({ id: services.id })
+    .from(services)
+    .where(and(target, live))
+    .orderBy(asc(services.id))
+    .for('update');
+  return rows.map((row) => row.id);
 }
 
 /**
@@ -316,4 +369,51 @@ export async function replaceOptionRows(
     saved.push(...(await db.insert(serviceOptions).values(chunk).returning()));
   }
   return saved.sort((a, b) => a.id - b.id);
+}
+
+/**
+ * Locks merchant groups against a delete or a rename for the rest of the transaction (`FOR SHARE`, in id order) and reads them.
+ *
+ * Why: a group-price save names groups; the group delete takes the row `FOR UPDATE` and then removes the group's prices, so a
+ * save that holds the shared lock either finishes first or sees the group gone (`422`), never a foreign key error.
+ *
+ * @param db the transaction
+ * @param ids the group ids; duplicates are fine
+ * @returns the groups that exist, by id
+ */
+export async function lockGroupsShared(
+  db: DbExecutor,
+  ids: readonly number[],
+): Promise<Map<number, { id: number; name: string; kind: string }>> {
+  const unique = [...new Set(ids)].sort((a, b) => a - b);
+  if (unique.length === 0) return new Map();
+  const rows = await db
+    .select({ id: clientGroups.id, name: clientGroups.name, kind: clientGroups.kind })
+    .from(clientGroups)
+    .where(inArray(clientGroups.id, unique))
+    .orderBy(asc(clientGroups.id))
+    .for('share');
+  return new Map(rows.map((row) => [row.id, row]));
+}
+
+/**
+ * Replaces all group prices of a service: deletes the old ones and inserts the new set.
+ *
+ * @param db the transaction (the service row is locked)
+ * @param serviceId the service
+ * @param rows the new prices, one per group
+ * @returns the saved prices by group id
+ */
+export async function replaceGroupPriceRows(
+  db: DbExecutor,
+  serviceId: number,
+  rows: ReadonlyArray<{ groupId: number; price: string }>,
+): Promise<ServiceGroupPrice[]> {
+  await db.delete(serviceGroupPrices).where(eq(serviceGroupPrices.serviceId, serviceId));
+  if (rows.length === 0) return [];
+  const saved = await db
+    .insert(serviceGroupPrices)
+    .values(rows.map((row) => ({ ...row, serviceId })))
+    .returning();
+  return saved.sort((a, b) => a.groupId - b.groupId);
 }

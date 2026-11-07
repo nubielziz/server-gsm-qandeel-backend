@@ -107,18 +107,20 @@ const slice = (module: string): Slice => JSON.parse(readFileSync(join(ROOT, `doc
 describe('module ownership', () => {
   it('each module schema exports exactly the tables the map assigns to it', async () => {
     const path = '../../scripts/module-map.mjs';
-    const { modules } = (await import(path)) as { modules: Array<{ id: string; tables: string[] }> };
+    const { modules } = (await import(path)) as {
+      modules: Array<{ id: string; tables: string[]; additionalTables?: string[] }>;
+    };
     expect(modules).toHaveLength(12);
     for (const module of modules) {
       const owned = tablesOf(moduleSchemas[module.id]!).map(nameOf);
-      expect(owned.sort(), module.id).toEqual([...module.tables].sort());
+      expect(owned.sort(), module.id).toEqual([...module.tables, ...(module.additionalTables ?? [])].sort());
     }
   });
 
-  it('the infra barrel re-exports all 66 tables once', () => {
+  it("the infra barrel re-exports all 67 tables once (the map's 66 and the backend's listed_prices)", () => {
     const names = tablesOf(barrel).map(nameOf);
-    expect(names).toHaveLength(66);
-    expect(new Set(names).size).toBe(66);
+    expect(names).toHaveLength(67);
+    expect(new Set(names).size).toBe(67);
   });
 });
 
