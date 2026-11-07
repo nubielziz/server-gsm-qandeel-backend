@@ -1,5 +1,9 @@
 # 5 orders-engine
 
+> **Lead, before launching the implementer (resolution identity-platform-16):** write the per-route spec of
+> `GET /client/files/:id` (request, response with status, errors) as a B-entry in `docs/contract/lead-decisions.json` and
+> regenerate the contract docs (`bun scripts/build-contract-docs.mjs`), as B121-B136 did for 2b.
+
 Phase 3, map stage 5 (admin and client surfaces). Read `_common.md` and `_feature.md` first: this brief only names the
 scope. Module: orders (plus `GET /admin/files/:id` and `GET /client/files/:id` of the platform module). Wave 2, after 4a and
 4b (it prices with 4b's `PriceResolver` and checks 4b's price guard). Scenario completed: **manual** (write

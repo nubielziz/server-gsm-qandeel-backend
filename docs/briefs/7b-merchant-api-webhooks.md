@@ -1,5 +1,10 @@
 # 7b merchant-api-webhooks
 
+> **Lead, before launching the implementer (resolution identity-platform-16):** write the per-route specs of
+> `/client/api-keys` and `/client/webhooks` (request, response with status, errors, list query) as B-entries in
+> `docs/contract/lead-decisions.json` and regenerate the contract docs (`bun scripts/build-contract-docs.mjs`), as
+> B121-B136 did for 2b; 7a needs the `/v1/files` specs the same way.
+
 Phase 3, map stage 7 (admin, client and outgoing-event surfaces). Read `_common.md` and `_feature.md` first: this brief only
 names the scope. Modules: identity (API keys) and platform (webhook endpoints, deliveries, outgoing events). Wave 3, in
 parallel with 6 (it needs 5's order transitions to emit `order.status_changed`). Decisions 019 (key hashing, HMAC), 020
