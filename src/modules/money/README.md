@@ -9,7 +9,7 @@ Decisions that shape this module: 011 money, 024 ledger. Common to all modules: 
 ## Status
 
 Stage 3 is built (feature 3): the ledger core, merchant wallets, the ledger screens, reconciliation and currencies (14
-routes). Invoices, gateways and payments arrive with feature 8, FX refresh and tax rates with 14b, refunds and disputes with
+routes). Invoices, gateways and payments arrive with feature 8, FX refresh with 14b, refunds and disputes with
 16, the money reports with 11 and 16.
 
 - **Ledger writer.** `postTransaction(tx, input, now)` (and the injectable `LedgerPoster.post(tx, input)`, which reads the
@@ -34,6 +34,11 @@ routes). Invoices, gateways and payments arrive with feature 8, FX refresh and t
   synchronous (ANSWERS finance Q4) and never corrects anything.
 - **Currencies.** `CurrencyService`: CRUD with `decimals` 0 to 4 and `isStale` for a non-base rate older than 24 h
   (money-13).
+- **Tax rates** (stage 14, built ahead of feature 14b by the lead): `TaxRateService` lists, reads, adds and changes the
+  windows of `tax_rates` (`/admin/tax-rates`, permissions `tax:read|create|update`): country two capital letters, rate 0 to
+  100 with four decimals, `taxType` vat | gst | sales_tax | none, `validTo` after `validFrom` (exclusive end), and one window
+  at a time per country and region (422 on `validFrom`; changes of one pair serialised by an advisory lock). No delete
+  (M163): a rate that stops applying gets an end. The seed loads the demo's 12 rates as the console's mock maps them.
 - **Spend and credit reads for the groups (feature 4a).** `MerchantSpend.completedSpend(db, clientIds)` is the cumulative
   completed-order spend in USD (the `order_settle` debits on each merchant's `client_hold` minus the settlements that were
   reversed: a transaction with the idempotency key `reverse:<settlement id>` exists, decision 024); the nightly group promotion

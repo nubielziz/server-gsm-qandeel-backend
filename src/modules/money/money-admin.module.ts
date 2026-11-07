@@ -6,14 +6,16 @@ import { JobRunsModule } from '../health';
 import { CurrencyService } from './application/currency.service';
 import { LedgerReadService } from './application/ledger-read.service';
 import { ReconcileService } from './application/reconcile.service';
+import { TaxRateService } from './application/tax-rate.service';
 import { WalletService } from './application/wallet.service';
 import { CurrenciesController } from './controllers/currencies.controller';
 import { LedgerController } from './controllers/ledger.controller';
+import { TaxRatesController } from './controllers/tax-rates.controller';
 import { WalletController } from './controllers/wallet.controller';
 
 /**
- * Provides `/admin/clients/:id/wallet|statement|wallet/adjust|credit-limit`, `/admin/ledger/*`, `/admin/currencies` and the
- * merchant's own `/client/wallet` routes.
+ * Provides `/admin/clients/:id/wallet|statement|wallet/adjust|credit-limit`, `/admin/ledger/*`, `/admin/currencies`,
+ * `/admin/tax-rates` and the merchant's own `/client/wallet` routes.
  *
  * Why: these use cases need the global database, audit, settings and clock providers (and `job_runs` for reconciliation),
  * which a database-less test app does not have; `MerchantAccounts` and `LedgerPoster` (the global `MoneyModule`) need none
@@ -21,8 +23,8 @@ import { WalletController } from './controllers/wallet.controller';
  */
 @Module({
   imports: [JobRunsModule],
-  controllers: [WalletController, LedgerController, CurrenciesController],
-  providers: [WalletService, LedgerReadService, ReconcileService, CurrencyService],
+  controllers: [WalletController, LedgerController, CurrenciesController, TaxRatesController],
+  providers: [WalletService, LedgerReadService, ReconcileService, CurrencyService, TaxRateService],
   exports: [WalletService],
 })
 export class MoneyAdminModule {}

@@ -1,5 +1,6 @@
 // Seeder of the money module: the demo currencies, the system ledger accounts of decision 024, the wallets of the demo
-// merchants and the demo's whole ledger history, replayed through postTransaction so the zero-sum and balance rules hold.
+// merchants and the demo's whole ledger history, replayed through postTransaction so the zero-sum and balance rules hold, and
+// the demo's tax rates.
 // Currencies mirror the frontend's settings mocks (src/features/settings/mocks/seedPayments.ts `currencyRows`); the journals
 // are `journals` of the demo state (the console's mock ledger, src/mocks/ledger.ts).
 import { and, eq, inArray, like, sql } from 'drizzle-orm';
@@ -29,6 +30,40 @@ const CURRENCY_NAMES: Record<string, string> = {
   AED: 'UAE dirham',
   SAR: 'Saudi riyal',
 };
+
+/** A tax rate of the demo seed (`settings.taxes`): country code and name, percent, scheme and start date. */
+interface DemoTax {
+  readonly cc: string;
+  readonly name: string;
+  readonly rate: number;
+  readonly scheme: string;
+  readonly since: number;
+}
+
+/**
+ * The demo's tax rates as rows, mapped exactly as the frontend mock maps them (`taxRows` of
+ * src/features/settings/mocks/seedPayments.ts): one open window per country from its `since` date.
+ *
+ * @param demo the demo state
+ * @returns the rows, ids 1 to n in demo order
+ */
+function demoTaxRates(demo: DemoSeed) {
+  const taxes = (demo.state.settings as { taxes?: DemoTax[] } | undefined)?.taxes ?? [];
+  return taxes.map((tax, index) => ({
+    id: index + 1,
+    country: tax.cc,
+    region: '',
+    ratePercent: toMoney(tax.rate),
+    taxType: tax.rate ? 'vat' : 'none',
+    appliesTo: 'digital_services',
+    validFrom: toDate(tax.since)!,
+    validTo: null,
+    label: tax.rate ? `${tax.name} VAT` : `${tax.name}: no tax collected`,
+    ossScheme: tax.scheme === 'Not collected' ? '' : tax.scheme,
+    createdAt: toDate(tax.since)!,
+    updatedAt: toDate(tax.since)!,
+  }));
+}
 
 /** A currency of the demo seed (`settings.currencies`). */
 interface DemoCurrency {
@@ -89,9 +124,11 @@ export async function seedMoney(db: DbExecutor, demo: DemoSeed): Promise<SeedRep
 
   const opened = await openMerchantWallets(db, demo);
   const history = await replayJournals(db, demo, opened);
-  for (const table of [s.currencies, s.ledgerAccounts, s.ledgerTransactions, s.ledgerEntries])
+  // Tax rates come last so the reports above keep their order (the seed test reads them by position).
+  const taxes = await insertRows(db, s.taxRates, demoTaxRates(demo));
+  for (const table of [s.currencies, s.ledgerAccounts, s.ledgerTransactions, s.ledgerEntries, s.taxRates])
     await syncIdentity(db, table);
-  return [currencies, { ...accounts, inserted: accounts.inserted + opened.created }, history];
+  return [currencies, { ...accounts, inserted: accounts.inserted + opened.created }, history, taxes];
 }
 
 /** A merchant of the demo state (`merchants`). */

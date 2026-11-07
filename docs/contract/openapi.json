@@ -37,6 +37,9 @@
       "name": "ip-rules"
     },
     {
+      "name": "refunds"
+    },
+    {
       "name": "roles"
     },
     {
@@ -78,6 +81,7 @@
         "clients",
         "inventory",
         "ip-rules",
+        "refunds",
         "roles",
         "service-categories",
         "services",
@@ -36048,6 +36052,2206 @@
         "x-gsm-audit": true,
         "x-gsm-key": "POST /admin/staff/:id/suspend",
         "x-gsm-permission": "staff:suspend",
+        "x-gsm-session-stages": [
+          "active"
+        ],
+        "x-gsm-surface": "admin"
+      }
+    },
+    "/admin/tax-rates": {
+      "get": {
+        "description": "Tax rates by country, every window (history included). A window runs from `validFrom` (a calendar date at midnight UTC) to `validTo` (exclusive; null = open). One window at a time per country and region: an overlap is 422 on `validFrom`. There is no delete; a rate that stops applying gets a `validTo`.",
+        "operationId": "getAdminTaxRates",
+        "parameters": [
+          {
+            "name": "_start",
+            "required": false,
+            "in": "query",
+            "description": "First row to return (0-based, inclusive). Default 0.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000000
+            }
+          },
+          {
+            "name": "_end",
+            "required": false,
+            "in": "query",
+            "description": "Row after the last one to return (exclusive). Default _start + 25; a page holds at most 1000 rows.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "_sort",
+            "required": false,
+            "in": "query",
+            "description": "Comma-separated sort fields. Allowed: country, validFrom, ratePercent, createdAt. Default: country asc.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "_order",
+            "required": false,
+            "in": "query",
+            "description": "Comma-separated directions (asc or desc), one per sort field in the same order.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Case-insensitive text search over: country, label.",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "x-gsm-alias": "Id",
+                        "description": "Numeric record id.",
+                        "examples": [
+                          42
+                        ]
+                      },
+                      "country": {
+                        "type": "string",
+                        "description": "ISO 3166 alpha-2 code."
+                      },
+                      "region": {
+                        "type": "string",
+                        "description": "A region inside the country, '' for the whole country."
+                      },
+                      "ratePercent": {
+                        "type": "string",
+                        "maxLength": 40,
+                        "pattern": "^-?\\d+(\\.\\d+)?$",
+                        "x-gsm-alias": "Decimal",
+                        "description": "Percent, 4 decimal places (`20.0000`).",
+                        "examples": [
+                          "19.0000"
+                        ]
+                      },
+                      "taxType": {
+                        "type": "string",
+                        "description": "vat | gst | sales_tax | none (older rows may hold other words, shown as they are)."
+                      },
+                      "appliesTo": {
+                        "type": "string"
+                      },
+                      "validFrom": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "date-time",
+                            "x-gsm-alias": "IsoDateTime",
+                            "description": "ISO 8601 UTC time with milliseconds.",
+                            "examples": [
+                              "2026-03-01T09:30:00.000Z"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "Start of the window (a calendar date at midnight UTC); never null in practice."
+                      },
+                      "validTo": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "date-time",
+                            "x-gsm-alias": "IsoDateTime",
+                            "description": "ISO 8601 UTC time with milliseconds.",
+                            "examples": [
+                              "2026-03-01T09:30:00.000Z"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "End of the window (exclusive); null = until further notice."
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "ossScheme": {
+                        "type": "string",
+                        "description": "The reporting scheme (`EU OSS`, `UK VAT`); '' when no tax is collected."
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "x-gsm-alias": "IsoDateTime",
+                        "description": "ISO 8601 UTC time with milliseconds.",
+                        "examples": [
+                          "2026-03-01T09:30:00.000Z"
+                        ]
+                      },
+                      "updatedAt": {
+                        "description": "When the row last changed; always sent.",
+                        "type": "string",
+                        "format": "date-time",
+                        "x-gsm-alias": "IsoDateTime",
+                        "examples": [
+                          "2026-03-01T09:30:00.000Z"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "country",
+                      "region",
+                      "ratePercent",
+                      "taxType",
+                      "appliesTo",
+                      "validFrom",
+                      "validTo",
+                      "label",
+                      "ossScheme",
+                      "createdAt"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "example": [
+                  {
+                    "id": 4,
+                    "country": "FR",
+                    "region": "",
+                    "ratePercent": "20.0000",
+                    "taxType": "vat",
+                    "appliesTo": "digital_services",
+                    "validFrom": "2026-04-15T00:00:00.000Z",
+                    "validTo": null,
+                    "label": "France VAT",
+                    "ossScheme": "EU OSS",
+                    "createdAt": "2026-04-15T00:00:00.000Z",
+                    "updatedAt": "2026-04-15T00:00:00.000Z"
+                  }
+                ]
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "x-total-count": {
+                "description": "Rows that match the filters, before the range is applied.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to do this.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FORBIDDEN"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "staffSession": []
+          }
+        ],
+        "summary": "Tax rates",
+        "tags": [
+          "refunds"
+        ],
+        "x-gsm-access": "staff-permission",
+        "x-gsm-key": "GET /admin/tax-rates",
+        "x-gsm-permission": "tax:read",
+        "x-gsm-session-stages": [
+          "active"
+        ],
+        "x-gsm-surface": "admin"
+      },
+      "post": {
+        "description": "Adds a window for a country: `country` is two capital letters, `ratePercent` 0 to 100 with up to four decimals, `taxType` vat | gst | sales_tax | none, `validFrom` required. A window runs from `validFrom` (a calendar date at midnight UTC) to `validTo` (exclusive; null = open). One window at a time per country and region: an overlap is 422 on `validFrom`. There is no delete; a rate that stops applying gets a `validTo`. Audited.",
+        "operationId": "postAdminTaxRates",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "country": {
+                    "type": "string"
+                  },
+                  "region": {
+                    "default": "",
+                    "type": "string"
+                  },
+                  "ratePercent": {
+                    "type": "string"
+                  },
+                  "taxType": {
+                    "type": "string"
+                  },
+                  "appliesTo": {
+                    "default": "digital_services",
+                    "type": "string"
+                  },
+                  "validFrom": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "x-gsm-alias": "IsoDateTime",
+                        "description": "ISO 8601 UTC time with milliseconds.",
+                        "examples": [
+                          "2026-03-01T09:30:00.000Z"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "validTo": {
+                    "default": null,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "x-gsm-alias": "IsoDateTime",
+                        "description": "ISO 8601 UTC time with milliseconds.",
+                        "examples": [
+                          "2026-03-01T09:30:00.000Z"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "label": {
+                    "default": "",
+                    "type": "string"
+                  },
+                  "ossScheme": {
+                    "default": "",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "country",
+                  "ratePercent",
+                  "taxType",
+                  "validFrom"
+                ]
+              },
+              "examples": {
+                "example": {
+                  "value": {
+                    "country": "FR",
+                    "region": "",
+                    "ratePercent": "20",
+                    "taxType": "vat",
+                    "appliesTo": "digital_services",
+                    "validFrom": "2026-04-15T00:00:00.000Z",
+                    "validTo": null,
+                    "label": "France VAT",
+                    "ossScheme": "EU OSS"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "x-gsm-alias": "Id",
+                      "description": "Numeric record id.",
+                      "examples": [
+                        42
+                      ]
+                    },
+                    "country": {
+                      "type": "string",
+                      "description": "ISO 3166 alpha-2 code."
+                    },
+                    "region": {
+                      "type": "string",
+                      "description": "A region inside the country, '' for the whole country."
+                    },
+                    "ratePercent": {
+                      "type": "string",
+                      "maxLength": 40,
+                      "pattern": "^-?\\d+(\\.\\d+)?$",
+                      "x-gsm-alias": "Decimal",
+                      "description": "Percent, 4 decimal places (`20.0000`).",
+                      "examples": [
+                        "19.0000"
+                      ]
+                    },
+                    "taxType": {
+                      "type": "string",
+                      "description": "vat | gst | sales_tax | none (older rows may hold other words, shown as they are)."
+                    },
+                    "appliesTo": {
+                      "type": "string"
+                    },
+                    "validFrom": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "x-gsm-alias": "IsoDateTime",
+                          "description": "ISO 8601 UTC time with milliseconds.",
+                          "examples": [
+                            "2026-03-01T09:30:00.000Z"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Start of the window (a calendar date at midnight UTC); never null in practice."
+                    },
+                    "validTo": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "x-gsm-alias": "IsoDateTime",
+                          "description": "ISO 8601 UTC time with milliseconds.",
+                          "examples": [
+                            "2026-03-01T09:30:00.000Z"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "End of the window (exclusive); null = until further notice."
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "ossScheme": {
+                      "type": "string",
+                      "description": "The reporting scheme (`EU OSS`, `UK VAT`); '' when no tax is collected."
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "x-gsm-alias": "IsoDateTime",
+                      "description": "ISO 8601 UTC time with milliseconds.",
+                      "examples": [
+                        "2026-03-01T09:30:00.000Z"
+                      ]
+                    },
+                    "updatedAt": {
+                      "description": "When the row last changed; always sent.",
+                      "type": "string",
+                      "format": "date-time",
+                      "x-gsm-alias": "IsoDateTime",
+                      "examples": [
+                        "2026-03-01T09:30:00.000Z"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "country",
+                    "region",
+                    "ratePercent",
+                    "taxType",
+                    "appliesTo",
+                    "validFrom",
+                    "validTo",
+                    "label",
+                    "ossScheme",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "id": 4,
+                  "country": "FR",
+                  "region": "",
+                  "ratePercent": "20.0000",
+                  "taxType": "vat",
+                  "appliesTo": "digital_services",
+                  "validFrom": "2026-04-15T00:00:00.000Z",
+                  "validTo": null,
+                  "label": "France VAT",
+                  "ossScheme": "EU OSS",
+                  "createdAt": "2026-04-15T00:00:00.000Z",
+                  "updatedAt": "2026-04-15T00:00:00.000Z"
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to do this.\nCSRF_FAILED: The security check for this request failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FORBIDDEN",
+                        "CSRF_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CSRF_FAILED": {
+                    "summary": "The security check for this request failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/csrf-failed",
+                      "title": "The security check for this request failed.",
+                      "status": 403,
+                      "code": "CSRF_FAILED",
+                      "detail": "The security check for this request failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "staffSession": []
+          }
+        ],
+        "summary": "Add a tax rate",
+        "tags": [
+          "refunds"
+        ],
+        "x-gsm-access": "staff-permission",
+        "x-gsm-audit": true,
+        "x-gsm-key": "POST /admin/tax-rates",
+        "x-gsm-permission": "tax:create",
+        "x-gsm-session-stages": [
+          "active"
+        ],
+        "x-gsm-surface": "admin"
+      }
+    },
+    "/admin/tax-rates/{id}": {
+      "get": {
+        "operationId": "getAdminTaxRatesById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Numeric record id.",
+            "schema": {
+              "x-gsm-alias": "Id",
+              "description": "Numeric record id.",
+              "type": "string",
+              "pattern": "^[1-9]\\d{0,15}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "x-gsm-alias": "Id",
+                      "description": "Numeric record id.",
+                      "examples": [
+                        42
+                      ]
+                    },
+                    "country": {
+                      "type": "string",
+                      "description": "ISO 3166 alpha-2 code."
+                    },
+                    "region": {
+                      "type": "string",
+                      "description": "A region inside the country, '' for the whole country."
+                    },
+                    "ratePercent": {
+                      "type": "string",
+                      "maxLength": 40,
+                      "pattern": "^-?\\d+(\\.\\d+)?$",
+                      "x-gsm-alias": "Decimal",
+                      "description": "Percent, 4 decimal places (`20.0000`).",
+                      "examples": [
+                        "19.0000"
+                      ]
+                    },
+                    "taxType": {
+                      "type": "string",
+                      "description": "vat | gst | sales_tax | none (older rows may hold other words, shown as they are)."
+                    },
+                    "appliesTo": {
+                      "type": "string"
+                    },
+                    "validFrom": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "x-gsm-alias": "IsoDateTime",
+                          "description": "ISO 8601 UTC time with milliseconds.",
+                          "examples": [
+                            "2026-03-01T09:30:00.000Z"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Start of the window (a calendar date at midnight UTC); never null in practice."
+                    },
+                    "validTo": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "x-gsm-alias": "IsoDateTime",
+                          "description": "ISO 8601 UTC time with milliseconds.",
+                          "examples": [
+                            "2026-03-01T09:30:00.000Z"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "End of the window (exclusive); null = until further notice."
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "ossScheme": {
+                      "type": "string",
+                      "description": "The reporting scheme (`EU OSS`, `UK VAT`); '' when no tax is collected."
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "x-gsm-alias": "IsoDateTime",
+                      "description": "ISO 8601 UTC time with milliseconds.",
+                      "examples": [
+                        "2026-03-01T09:30:00.000Z"
+                      ]
+                    },
+                    "updatedAt": {
+                      "description": "When the row last changed; always sent.",
+                      "type": "string",
+                      "format": "date-time",
+                      "x-gsm-alias": "IsoDateTime",
+                      "examples": [
+                        "2026-03-01T09:30:00.000Z"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "country",
+                    "region",
+                    "ratePercent",
+                    "taxType",
+                    "appliesTo",
+                    "validFrom",
+                    "validTo",
+                    "label",
+                    "ossScheme",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "id": 4,
+                  "country": "FR",
+                  "region": "",
+                  "ratePercent": "20.0000",
+                  "taxType": "vat",
+                  "appliesTo": "digital_services",
+                  "validFrom": "2026-04-15T00:00:00.000Z",
+                  "validTo": null,
+                  "label": "France VAT",
+                  "ossScheme": "EU OSS",
+                  "createdAt": "2026-04-15T00:00:00.000Z",
+                  "updatedAt": "2026-04-15T00:00:00.000Z"
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to do this.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FORBIDDEN"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: The requested item was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 404
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_FOUND"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "NOT_FOUND": {
+                    "summary": "The requested item was not found.",
+                    "value": {
+                      "type": "https://errors.gsm.example/not-found",
+                      "title": "The requested item was not found.",
+                      "status": 404,
+                      "code": "NOT_FOUND",
+                      "detail": "The requested item was not found.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "staffSession": []
+          }
+        ],
+        "summary": "One tax rate",
+        "tags": [
+          "refunds"
+        ],
+        "x-gsm-access": "staff-permission",
+        "x-gsm-key": "GET /admin/tax-rates/:id",
+        "x-gsm-permission": "tax:read",
+        "x-gsm-session-stages": [
+          "active"
+        ],
+        "x-gsm-surface": "admin"
+      },
+      "patch": {
+        "description": "Changes the fields sent; `validTo: null` clears the end. The country never changes. A window runs from `validFrom` (a calendar date at midnight UTC) to `validTo` (exclusive; null = open). One window at a time per country and region: an overlap is 422 on `validFrom`. There is no delete; a rate that stops applying gets a `validTo`. Audited.",
+        "operationId": "patchAdminTaxRatesById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Numeric record id.",
+            "schema": {
+              "x-gsm-alias": "Id",
+              "description": "Numeric record id.",
+              "type": "string",
+              "pattern": "^[1-9]\\d{0,15}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "country": {
+                    "type": "string"
+                  },
+                  "region": {
+                    "type": "string"
+                  },
+                  "ratePercent": {
+                    "type": "string"
+                  },
+                  "taxType": {
+                    "type": "string"
+                  },
+                  "appliesTo": {
+                    "type": "string"
+                  },
+                  "validFrom": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "x-gsm-alias": "IsoDateTime",
+                        "description": "ISO 8601 UTC time with milliseconds.",
+                        "examples": [
+                          "2026-03-01T09:30:00.000Z"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "validTo": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "x-gsm-alias": "IsoDateTime",
+                        "description": "ISO 8601 UTC time with milliseconds.",
+                        "examples": [
+                          "2026-03-01T09:30:00.000Z"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "ossScheme": {
+                    "type": "string"
+                  }
+                }
+              },
+              "examples": {
+                "example": {
+                  "value": {
+                    "validTo": "2027-01-01T00:00:00.000Z"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "x-gsm-alias": "Id",
+                      "description": "Numeric record id.",
+                      "examples": [
+                        42
+                      ]
+                    },
+                    "country": {
+                      "type": "string",
+                      "description": "ISO 3166 alpha-2 code."
+                    },
+                    "region": {
+                      "type": "string",
+                      "description": "A region inside the country, '' for the whole country."
+                    },
+                    "ratePercent": {
+                      "type": "string",
+                      "maxLength": 40,
+                      "pattern": "^-?\\d+(\\.\\d+)?$",
+                      "x-gsm-alias": "Decimal",
+                      "description": "Percent, 4 decimal places (`20.0000`).",
+                      "examples": [
+                        "19.0000"
+                      ]
+                    },
+                    "taxType": {
+                      "type": "string",
+                      "description": "vat | gst | sales_tax | none (older rows may hold other words, shown as they are)."
+                    },
+                    "appliesTo": {
+                      "type": "string"
+                    },
+                    "validFrom": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "x-gsm-alias": "IsoDateTime",
+                          "description": "ISO 8601 UTC time with milliseconds.",
+                          "examples": [
+                            "2026-03-01T09:30:00.000Z"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Start of the window (a calendar date at midnight UTC); never null in practice."
+                    },
+                    "validTo": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "x-gsm-alias": "IsoDateTime",
+                          "description": "ISO 8601 UTC time with milliseconds.",
+                          "examples": [
+                            "2026-03-01T09:30:00.000Z"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "End of the window (exclusive); null = until further notice."
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "ossScheme": {
+                      "type": "string",
+                      "description": "The reporting scheme (`EU OSS`, `UK VAT`); '' when no tax is collected."
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "x-gsm-alias": "IsoDateTime",
+                      "description": "ISO 8601 UTC time with milliseconds.",
+                      "examples": [
+                        "2026-03-01T09:30:00.000Z"
+                      ]
+                    },
+                    "updatedAt": {
+                      "description": "When the row last changed; always sent.",
+                      "type": "string",
+                      "format": "date-time",
+                      "x-gsm-alias": "IsoDateTime",
+                      "examples": [
+                        "2026-03-01T09:30:00.000Z"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "country",
+                    "region",
+                    "ratePercent",
+                    "taxType",
+                    "appliesTo",
+                    "validFrom",
+                    "validTo",
+                    "label",
+                    "ossScheme",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "id": 4,
+                  "country": "FR",
+                  "region": "",
+                  "ratePercent": "20.0000",
+                  "taxType": "vat",
+                  "appliesTo": "digital_services",
+                  "validFrom": "2026-04-15T00:00:00.000Z",
+                  "validTo": "2027-01-01T00:00:00.000Z",
+                  "label": "France VAT",
+                  "ossScheme": "EU OSS",
+                  "createdAt": "2026-04-15T00:00:00.000Z",
+                  "updatedAt": "2026-04-15T00:00:00.000Z"
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to do this.\nCSRF_FAILED: The security check for this request failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FORBIDDEN",
+                        "CSRF_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CSRF_FAILED": {
+                    "summary": "The security check for this request failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/csrf-failed",
+                      "title": "The security check for this request failed.",
+                      "status": 403,
+                      "code": "CSRF_FAILED",
+                      "detail": "The security check for this request failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: The requested item was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 404
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_FOUND"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "NOT_FOUND": {
+                    "summary": "The requested item was not found.",
+                    "value": {
+                      "type": "https://errors.gsm.example/not-found",
+                      "title": "The requested item was not found.",
+                      "status": 404,
+                      "code": "NOT_FOUND",
+                      "detail": "The requested item was not found.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "staffSession": []
+          }
+        ],
+        "summary": "Change a tax rate",
+        "tags": [
+          "refunds"
+        ],
+        "x-gsm-access": "staff-permission",
+        "x-gsm-audit": true,
+        "x-gsm-key": "PATCH /admin/tax-rates/:id",
+        "x-gsm-permission": "tax:update",
         "x-gsm-session-stages": [
           "active"
         ],
