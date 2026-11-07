@@ -56,6 +56,13 @@ lists embedded in the dashboard, merchants and customers pages.
   feature) so `GET /admin/clients` shows 30-day spend, orders and success rate; feed `MerchantSpend` of 4a from the ledger as
   it already does (no change needed when settle postings exist).
 - **Portal routes** follow ALIGNMENT § 7, B153 (pending merchants refused) and the specs in `docs/contract/endpoints/orders.md`.
+- **Seed order (lead decision, 2026-11-07).** The demo orders point at suppliers and storefront customers, whose tables are
+  seeded by features 6 and 14b (foreign keys). `scripts/seed/orders.ts` seeds the B2B demo orders now, mapped exactly as the
+  frontend mock maps them (`FRONTEND_DIR/src/mocks/orders.ts`: ids, statuses, queues, dispatch states, review reasons,
+  pricing snapshots, events, the two verification requests and the manual order of `enrich`), with `supplier_id`,
+  `supplier_service_id` and `supplier_ref` left null; feature 6's seed fills them for these orders, and 14b/16 add the B2C
+  orders with their customers. `attempts` on the wire is the number of `dispatch` events; `reviewReason` is the reason of the
+  event that opened the current queue (decision 025), null outside a queue.
 - Admin actions write `audit_logs` with the demo's verb phrases (`completed order`, `rejected order`, ...: ANSWERS audit Q3;
   the console prints `<actor> <action> <entityLabel>`). Seed: `scripts/seed/orders.ts` with the demo's 48 orders (ids, statuses,
   queues, events, prices as the frontend mocks) whose holds and settlements the money seed already posted: link them, do not
