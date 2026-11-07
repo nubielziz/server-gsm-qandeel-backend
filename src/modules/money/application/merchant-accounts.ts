@@ -2,10 +2,10 @@
 // before Phase 3 wave 1 because features 2a (POST /admin/clients) and 2b (POST /client/auth/register) call it while
 // feature 3, which owns the money module, is built in parallel.
 import { Injectable } from '@nestjs/common';
-import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
 import { ledgerAccounts } from '../db/schema';
+import { checkCreditLimit } from '../domain/wallet-rules';
 
 /** What {@link MerchantAccounts.open} needs. */
 export interface OpenMerchantAccountsInput {
@@ -48,17 +48,8 @@ export class MerchantAccounts {
    *   overdraft (user rule 2)
    */
   async open(tx: DbExecutor, input: OpenMerchantAccountsInput): Promise<OpenedWallet> {
-    const limit = Money.fromWire(input.creditLimit);
-    if (limit.isNegative()) {
-      throw new AppError('VALIDATION_FAILED', {
-        errors: [{ field: 'creditLimit', code: 'min', message: 'The credit limit cannot be negative.' }],
-      });
-    }
-    if (limit.isPositive() && !input.overdraftAllowed) {
-      throw new AppError('VALIDATION_FAILED', {
-        errors: [{ field: 'creditLimit', code: 'not_allowed', message: 'This group does not allow credit.' }],
-      });
-    }
+    // User rule 2 lives in one function, shared with PATCH /admin/clients/:id/credit-limit (resolution ip-3).
+    const limit = checkCreditLimit(input.creditLimit, input.overdraftAllowed);
     const owner = { ownerType: 'client' as const, ownerId: input.clientId, currency: input.currency };
     await tx
       .insert(ledgerAccounts)

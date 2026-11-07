@@ -19,6 +19,7 @@ import { RedisModule } from '../../src/infra/redis';
 import { StorageModule } from '../../src/infra/storage';
 import { StaffAuthModule } from '../../src/modules/identity/staff-auth.module';
 import { IpRulesModule } from '../../src/modules/identity/security/ip-rules/ip-rules.module';
+import { MoneyAdminModule } from '../../src/modules/money/money-admin.module';
 import { MaintenanceModule, SettingsModule } from '../../src/modules/platform';
 import { logSink } from './log-sink';
 import { testInstanceEnv } from './env';
@@ -59,14 +60,22 @@ class NoInfrastructureModule {}
 
 /**
  * Stands in for the modules that read Postgres and the cache on every request: the security stack (sessions, CSRF,
- * permissions, the guard dispatcher), the staff sign-in routes, the settings readers, and the IP rules and maintenance stages
- * of the pipeline. An app built without the database or the infrastructure has no guards, and those stages do nothing.
+ * permissions, the guard dispatcher), the staff sign-in routes, the money routes, the settings readers, and the IP rules and
+ * maintenance stages of the pipeline. An app built without the database or the infrastructure has no guards, and those
+ * stages do nothing.
  */
 @Module({})
 class NoSecurityModule {}
 
 /** The modules that read Postgres and the cache on every request: replaced when either is left out. */
-const NEEDS_DATABASE_AND_CACHE = [SecurityModule, SettingsModule, MaintenanceModule, IpRulesModule, StaffAuthModule];
+const NEEDS_DATABASE_AND_CACHE = [
+  SecurityModule,
+  SettingsModule,
+  MaintenanceModule,
+  IpRulesModule,
+  StaffAuthModule,
+  MoneyAdminModule,
+];
 /** The pipeline module that only uses the cache Redis and the rate limiter: replaced when the infrastructure is. */
 const NEEDS_INFRASTRUCTURE = [PublicIpLimitModule];
 

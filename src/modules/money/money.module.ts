@@ -1,14 +1,22 @@
-// Money module (map domain E): ledger, wallets, currencies, invoices, payments, refunds, disputes and tax rates.
-// Empty shell in P2.1; its feature adds controllers, services and the owned tables (docs/ARCHITECTURE.md § 2).
+// Money module (map domain E): the ledger writer, merchant wallets, the ledger screens and currencies (stage 3). Invoices,
+// gateways, payments, refunds, disputes and tax rates arrive with their own features (docs/ARCHITECTURE.md § 2).
 import { Global, Module } from '@nestjs/common';
 import { MerchantAccounts } from './application/merchant-accounts';
+import { LedgerPoster } from './application/post-transaction';
+import { MoneyAdminModule } from './money-admin.module';
 
 /**
  * Nest module for Money (map domain E).
  *
  * Why: one module per map domain, each owning its tables and exposing a public service through `index.ts`
- * (decision 016).
+ * (decision 016). It is global so that identity (merchant creation) and the later order, billing and refund features reach
+ * `MerchantAccounts` and `LedgerPoster` without importing it; both work inside the caller's transaction and need no
+ * database provider of their own. The routes and the services that read the database live in `MoneyAdminModule`.
  */
 @Global()
-@Module({ providers: [MerchantAccounts], exports: [MerchantAccounts] })
+@Module({
+  imports: [MoneyAdminModule],
+  providers: [MerchantAccounts, LedgerPoster],
+  exports: [MerchantAccounts, LedgerPoster],
+})
 export class MoneyModule {}

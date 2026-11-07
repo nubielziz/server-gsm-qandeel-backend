@@ -223,7 +223,8 @@ describe('GET /reference/openapi.json (internal document)', () => {
     expect(groups['REST API v1']).toEqual(['v1: orders']);
     // The real sign-in routes (map group `auth`) are in the group too; only the tags of this test's routes are checked.
     expect(groups['Admin console']).toEqual(expect.arrayContaining(['admin: orders', 'admin: test']));
-    expect(groups['Merchant portal']).toEqual(['wallet']);
+    // The real portal routes are in the group too (the wallet routes are map group `catalog`, the sign-in ones `auth`).
+    expect(groups['Merchant portal']).toEqual(expect.arrayContaining(['wallet']));
   });
 
   it('describes GET /openapi.json as JSON and GET /docs as HTML', async () => {

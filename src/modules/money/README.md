@@ -8,13 +8,46 @@ Decisions that shape this module: 011 money, 024 ledger. Common to all modules: 
 
 ## Status
 
-Not built yet: the module is an empty shell (`money.module.ts`, `index.ts`). Its feature adds controllers, services, repositories and the owned tables.
+Stage 3 is built (feature 3): the ledger core, merchant wallets, the ledger screens, reconciliation and currencies (14
+routes). Invoices, gateways and payments arrive with feature 8, FX refresh and tax rates with 14b, refunds and disputes with
+16, the money reports with 11 and 16.
+
+- **Ledger writer.** `postTransaction(tx, input, now)` (and the injectable `LedgerPoster.post(tx, input)`, which reads the
+  Clock) is the only writer of `ledger_transactions`, `ledger_entries` and account balances (decision 024): at least two
+  positive lines in one currency that balance (`LEDGER_UNBALANCED`), the header first so a repeated `idempotency_key` returns
+  the first transaction and posts nothing, every account locked `FOR UPDATE` in id order (missing accounts are opened, then
+  all are locked again in one statement), a `client_wallet` debit refused below `-overdraft_limit` (`INSUFFICIENT_FUNDS`;
+  credits always pass, user rule 2), entries with `balance_after`, balances and versions updated. `ref_id 0` is only for
+  `system` (`LedgerRefRequiredError`, a programming error).
+- **Money events.** `domain/money-events.ts` has a pure builder for each of the 13 map money events (`deposit`, `topup`,
+  `order`, `complete`, `reject`, `adjust`, `commission`, `payout`, `b2cPay`, `b2cDeliver`, `b2cFee`, `b2cRefund`,
+  `b2cChargeback`); each returns the map's lines and is unit-tested with the map's numbers. Later features spread one into
+  `LedgerPoster.post`.
+- **Wallets.** `MerchantAccounts.open` opens `client_wallet` and `client_hold` with the merchant (resolution ip-1; user rule
+  2 checked there and by the credit-limit route); `WalletService` serves the wallet view, the statement (JSON or CSV), manual
+  adjustments (`adjust` event, ref type `client`, reason in the memo, `APPROVAL_REQUIRED` above the single-approver setting,
+  `CREDIT_LIMIT_EXCEEDED`, `IDEMPOTENCY_KEY_REUSED`) and the credit limit.
+- **Ledger screens.** `LedgerReadService` lists journals (wire `refType` through `toWireRefType`: stored `client` goes out as
+  `system`, resolutions money-1/6; numeric and text `q`, money-15) and accounts with their owners' names.
+- **Reconciliation.** `ReconcileService.run` compares every stored balance with the sum of its entries in one repeatable-read
+  snapshot, records a `job_runs` row of job `ledger_reconcile` (`RECONCILE_RUNNING` while one runs) and audits the run. It is
+  synchronous (ANSWERS finance Q4) and never corrects anything.
+- **Currencies.** `CurrencyService`: CRUD with `decimals` 0 to 4 and `isStale` for a non-base rate older than 24 h
+  (money-13).
+- **Seed.** `scripts/seed/money.ts` opens the accounts of every demo merchant and posts the demo's ledger history through
+  `postTransaction`, skipping merchants the identity seed has not created.
+
+Known deviation (tech debt, PROGRESS): `infra/foreign-directory.repository.ts` reads merchant, group, supplier, customer
+and staff names with plain selects because those modules export no directory yet; replace its bodies with their public
+services as they appear (identity, catalog 4a, suppliers 6, customers 14b). Nothing outside that file knows.
 
 ## Public API (`index.ts`)
 
-Exports `MoneyModule` only. Add the services other modules may call here, and nothing else: other modules import only `src/modules/money/index.ts` (lint rule `gsm/module-boundaries`).
-
-Planned first export (feature 3, signature written by the lead before wave 1; resolution identity-platform-1): `MerchantAccounts.open(tx, { clientId, currency: 'USD', creditLimit, overdraftAllowed })`, called by `POST /admin/clients` (2a) and `POST /client/auth/register` (2b) in the transaction that creates the merchant. It inserts `client_wallet` (`overdraft_limit` = `creditLimit`, default `'0.0000'`) and `client_hold` with `ON CONFLICT (ledger_accounts_identity_uq) DO NOTHING` (no `postTransaction`, no money event), refuses `creditLimit > 0` for a group without `overdraft_allowed` (`422` on `creditLimit`, user rule 2; the same check as `PATCH /admin/clients/:id/credit-limit`) and returns the wallet view `{ balance, reserved, creditLimit, available }`.
+`MoneyModule` (global: `MerchantAccounts`, `LedgerPoster`), `postTransaction`, the 13 money event builders and their ids,
+the account helpers (`walletViewOf`, `balanceDelta`, `normalSideOf`, `toDebitPositive`, `BASE_CURRENCY`), the ledger line
+helpers and the wire ref types (`toWireRefType`, `storedRefTypesOf`). `WalletService` is exported by `MoneyAdminModule`
+(the routes and the services that read the database; a database-less test app leaves it out). Other modules import only
+`src/modules/money/index.ts` (lint rule `gsm/module-boundaries`).
 
 ## Owned tables
 
@@ -154,11 +187,13 @@ Outgoing webhook events from the map (documented as OpenAPI `webhooks` once defi
 
 ## Jobs and schedules
 
-None yet. List each queue, job, schedule, idempotency key and retry policy here and in `docs/queues.md` (see `CONTRIBUTING.md` → "Add a job").
+No queue job yet. `POST /admin/ledger/reconcile` runs in the request and records a `job_runs` row of job `ledger_reconcile`
+(trigger `manual`, overlap refused: `RECONCILE_RUNNING`); the nightly integrity job of feature 12b can reuse
+`ReconcileService.compare`.
 
 ## Cache keys
 
-None yet. Register each key family (owner, TTL, invalidation after commit) in `docs/cache-keys.md` (see `CONTRIBUTING.md` → "Add a cache key").
+None, on purpose: balances, statements and ledger lists are never cached (decision 022).
 
 ## Audit resolutions
 

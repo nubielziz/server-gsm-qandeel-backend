@@ -8,6 +8,7 @@ import { parseEnv } from '../../src/config';
 import { EncryptionService, PasswordHasher } from '../../src/infra/crypto';
 import { STAFF_TOTP_AAD } from '../../src/modules/identity';
 import { schema as s } from '../../src/infra/db';
+import { findBalanceDifferences } from '../../src/modules/money/infra/ledger-read.repository';
 import { demoStatePath, loadDemoState } from '../../scripts/seed/demo-state';
 import { ROLES, permissionsOf } from '../../scripts/seed/identity';
 import { DEV_PASSWORD, DEV_TOTP_SECRETS, seedDevCredentials } from '../../scripts/seed/dev-credentials';
@@ -42,14 +43,23 @@ describe.skipIf(!frontendPresent)('runSeed', () => {
   it('writes the demo roles, staff, IP rules, settings, currencies and system accounts', async () => {
     const { db } = await testDb();
     const reports = await runSeed(db, await loadDemoState());
-    expect(reports.map((r) => `${r.table}:${r.inserted}`)).toEqual([
+    // The ledger history is replayed through postTransaction: how many journals post depends on which demo merchants the
+    // identity seed created (those journals are skipped otherwise), so the count is checked against the table.
+    const journals = reports.find((r) => r.table === 'ledger_transactions')!;
+    expect(journals.inserted).toBeGreaterThan(0);
+    expect(journals.inserted).toBe(
+      (await db.select({ n: sql<number>`count(*)::int` }).from(s.ledgerTransactions))[0]!.n,
+    );
+    expect(
+      reports.map((r) => (r.table === 'ledger_transactions' ? r.table : `${r.table}:${r.inserted}`)).slice(0, 7),
+    ).toEqual([
       'roles:6',
       'staff_users:6',
       'ip_rules:7',
       'ip_rules:2',
       'settings:1',
       'currencies:7',
-      'ledger_accounts:12',
+      expect.stringMatching(/^ledger_accounts:\d+$/),
     ]);
 
     const staff = await db.select().from(s.staffUsers).orderBy(s.staffUsers.id);
@@ -87,15 +97,28 @@ describe.skipIf(!frontendPresent)('runSeed', () => {
     ]);
 
     const accounts = await db.select().from(s.ledgerAccounts);
-    expect(accounts.map((row) => row.kind).sort()).toEqual(
+    const systemAccounts = accounts.filter((row) => row.ownerId === null);
+    expect(systemAccounts.map((row) => row.kind).sort()).toEqual(
       s.LEDGER_ACCOUNT_KINDS.filter(
         (kind) => !['client_wallet', 'client_hold', 'supplier_prepaid'].includes(kind),
       ).sort(),
     );
-    expect(accounts.every((row) => row.currency === 'USD' && row.balance === '0.0000' && row.ownerId === null)).toBe(
-      true,
-    );
+    expect(accounts.every((row) => row.currency === 'USD')).toBe(true);
     expect(accounts.map((row) => row.kind)).toContain('owner_capital');
+    // The replayed history keeps the books: every journal sums to zero, and every balance is the sum of its entries.
+    const [totals] = await db
+      .select({ sum: sql<string>`coalesce(sum(${s.ledgerEntries.amount}), 0)::numeric(18,4)::text` })
+      .from(s.ledgerEntries);
+    expect(totals!.sum).toBe('0.0000');
+    expect(await findBalanceDifferences(db)).toEqual([]);
+    // The opening balance of the demo (25 000 in the bank against owner capital) is the first journal.
+    const [opening] = await db.select().from(s.ledgerTransactions).orderBy(s.ledgerTransactions.id).limit(1);
+    expect(opening).toMatchObject({
+      kind: 'opening',
+      refType: 'system',
+      refId: 0,
+      memo: 'Opening balance (owner capital)',
+    });
 
     const currencies = await db.select().from(s.currencies).orderBy(s.currencies.id);
     expect(currencies.map((row) => [row.id, row.code, row.rateToBase, row.markupPercent])).toEqual([
