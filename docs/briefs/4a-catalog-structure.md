@@ -63,6 +63,12 @@ with their `types/` and `mocks/` (the mocks are the reference behaviour where th
   re-run promotes nobody twice), audit row per promoted merchant (actor `system`), `SessionService.invalidateSubject` for the
   merchant; documented in `docs/queues.md`. Integration test seeds settled postings with `postTransaction` and the `complete`
   money event builder.
+- **A default group always exists.** A fresh database has no `client_groups` row, so `POST /client/auth/register` and
+  `POST /admin/clients` answer `500` ("No default merchant group is configured.", seen at runtime on 2026-11-07). Add a data
+  migration that inserts the default b2b group (`is_default`, threshold 0, no overdraft) and the `b2c_retail` group when
+  none exists (the seed's demo groups then reuse or replace them by name), and keep the invariant in the group routes:
+  the default group cannot be deleted, and making another group the default unsets the old one in the same transaction
+  (`DEFAULT_GROUP_REQUIRED` where the endpoints doc names it).
 - Every mutation writes `audit_logs` (entity types from `AUDIT_ENTITY_TYPES`). Lists follow ALIGNMENT (simple-rest
   `_start/_end/_sort/_order`, `x-total-count`, whitelisted filters and search of the endpoints doc).
 - Seed: `scripts/seed/catalog.ts` with the demo's groups (if 2a's seed has not created them: reuse, never duplicate),
