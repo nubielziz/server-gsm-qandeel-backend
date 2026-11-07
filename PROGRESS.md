@@ -49,9 +49,9 @@ feature for the `gsm-backend-continue` workflow), `merge-prep.sh` (start / finis
 reboot only Postgres, the two Redis servers and MinIO were started (Prometheus and Mailpit were already stopped; start them
 for a walk that needs them); Postgres replayed its data directory for about 7 minutes before accepting connections.
 **The user asked for 3 agents at a time** (to keep the machine free): the features run as one sequential workflow each, three
-at once, the next starting when one ends. Running: **9** (`wf_30b0252e-790`), **7a** (`wf_09a93204-572`), **8**
-(`wf_118f4b79-e23`). Queue: 14a, 14b, 12a, 11, 15, then 16 (after 8 and 14a), 12b (after 9), 17 (after 12a and 14b), 18,
-19. To resume a stopped run: the script `workflows/scripts/gsm-backend-continue-*.js` with `resumeFromRunId` and the same
+at once, the next starting when one ends. Done: **7a** (merged), **8** (reviewed, fixed; being merged). Running: **9** (`wf_30b0252e-790`), **14a**
+(`wf_3a5177e0-444`), **14b** (`wf_169264a1-f10`). Queue: 12a, 11, 15, then 16 (after 8 and 14a), 12b (after 9), 17
+(after 12a and 14b), 18, 19. To resume a stopped run: the script `workflows/scripts/gsm-backend-continue-*.js` with `resumeFromRunId` and the same
 args from `.lead/continue-args.json`.
 
 **Next, in order:**
@@ -156,7 +156,7 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 | 4b | catalog-pricing | group/client prices, pricing rules (user rule 8: the demo's resolver), price protection (user rule 9: effective-cost floor, listed-price memory, PRICE_CHANGED guard, raise in the snapshot), bulk price, resolve, merchant catalog and price export (brief `docs/briefs/4b-catalog-pricing.md`) | | done (`3838d27`) |
 | 5 | orders-engine | state machine, placement + hold, admin order actions, bulk reply, export, merchant orders, files (st5) | manual | done (`e6de28a`) |
 | 6 | suppliers | suppliers admin, Dhru supplier client, dispatch/poll jobs, dispatch/fetch/change-supplier, sync (user rule 9: recompute the effective cost, bump the price version, no failover above the charged price), import (st6) | success, reject, timeout | done (`bbf84f4`) |
-| 7a | dhru-and-rest-v1 | Dhru surface (8 actions), REST v1 (12), idempotency, PRICE_CHANGED message and listed-price memory on the list actions (user rule 9) (st7) | | |
+| 7a | dhru-and-rest-v1 | Dhru surface (8 actions), REST v1 (12), idempotency, PRICE_CHANGED message and listed-price memory on the list actions (user rule 9) (st7) | | done (`13cdb12`, B166 `c73a0b8`) |
 | 7b | merchant-api-webhooks | API keys, webhook endpoints, deliveries, outgoing events incl. `service.price_changed` (user rule 9, route-parity allowance B117), public docs (st7) | | done (`e9322de`) |
 | 8 | billing | gateways, invoices (user rule 3), payments, approve/reject (user rule 4), automatic credit after the verification delay (user rule 6), KYC, payment webhook (B2B), invoice.paid (st8) | | |
 | 9 | health-dashboard | system health routes, dashboard (services_below_floor on the effective cost, user rule 9), queues board (st9) | | |
@@ -229,6 +229,12 @@ None.
   price change scan still read `orders` through their documented foreign read: switch them to `OrderReadService` when
   someone touches them. Migration 0008 was regenerated with drizzle-kit after 7b's 0007 (a worktree DB that applied the
   old 0007 must be recreated: the migrator compares timestamps only).
+- 7a merge notes (2026-11-07): the Opus review passed; the lead fixed three security minors before the merge (a per-IP
+  `upload` limiter for large bodies read before the credentials, decision 021 amended; a hidden service answered like an
+  unknown one in the Dhru actions; upload names lose control, bidi and zero-width characters) and gave the tests that seed
+  the whole demo a minute. Open (B166): `idempotency_keys` rows never expire and keep the answer (delivered codes too: an
+  expiry job must also clear `orders.idempotency_key`); a refused file order leaves its stored file; Dhru `FILEDATA` in a
+  form body is bound by the 1 MiB form limit; bulk items run in key order (integer-like ids first).
 - 6 merge notes (2026-11-07): the three order moves live in the suppliers module (they read the supplier tables) and move
   orders through orders' `OrderSupplierMoves` (guarded updates) or `OrderTransitions.apply`; a supplier completion or
   rejection goes through `apply` and then sets `result_code` / `completed_at`, so the state machine's `columnsFor` still has no
