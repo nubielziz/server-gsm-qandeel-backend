@@ -80,9 +80,10 @@ Dhru and REST v1 order routes 7a, the outgoing webhook 7b, storefront orders 14a
   feature 6's seeder must run before this one and then fills them (the seeder already links a supplier by name when the table has
   rows). The 104 storefront orders wait for customers (14b).
 
-### Merchant portal contract (no console screen; ALIGNMENT § 7, B121, B153)
+### Merchant portal contract (no console screen; ALIGNMENT § 7, B121, B153, recorded as B160)
 
-The shapes of the seven `/client` routes are written here because the map rows are one-liners. Money is a 4-decimal string, times
+The shapes of the seven `/client` routes are written here because the map rows are one-liners (MISMATCHES B160 holds the same
+spec). Money is a 4-decimal string, times
 are ISO with milliseconds, ids are numbers, lists are simple-rest with `x-total-count`.
 
 - `GET /client/dashboard`: `{ wallet: {balance, reserved, creditLimit, available}, counts: {pending, processing, completed,
