@@ -76,6 +76,13 @@ class SessionAccessHandler implements AccessHandler {
     const { view, principal } = await this.authenticator.authenticate(this.subjectType, request, {
       stages: contract.sessionStages,
     });
+    // B153: a merchant that staff have not approved yet reaches only the routes that opt in. It is not a session-ending
+    // code (`403 ACCOUNT_PENDING_APPROVAL` never signs the caller out), and it follows the suspension and stage checks.
+    if (view.subjectType === 'client' && view.subject.approved !== true && contract.pendingMerchant !== 'allow') {
+      throw new AppError('ACCOUNT_PENDING_APPROVAL', {
+        detail: 'Your account is waiting for approval. This is available once our team has approved it.',
+      });
+    }
     return { principal, session: view };
   }
 }

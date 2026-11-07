@@ -409,14 +409,28 @@ describe('Origin check of session-less mutations', () => {
 });
 
 describe('merchant session guard', () => {
-  it('accepts an active merchant, including one that is still pending approval', async () => {
+  it('accepts an active merchant, and refuses one that is still pending approval unless the route opts in (B153)', async () => {
     const { db } = await testDb();
-    for (const status of ['active', 'pending'] as const) {
-      const id = await insertMerchant(db, { status });
-      const res = await get('/client/t/sec/session', (await openSession(t, { type: 'client', id })).headers);
-      expect(res.statusCode, status).toBe(200);
-      expect(res.json()).toEqual({ ok: true, kind: 'merchant', id, stage: 'active' });
-    }
+    const active = await insertMerchant(db, { status: 'active' });
+    const res = await get('/client/t/sec/session', (await openSession(t, { type: 'client', id: active })).headers);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, kind: 'merchant', id: active, stage: 'active' });
+
+    // Default deny: 403 ACCOUNT_PENDING_APPROVAL, which never signs the merchant out.
+    const pending = await insertMerchant(db, { status: 'pending' });
+    const session = await openSession(t, { type: 'client', id: pending });
+    const refused = await get('/client/t/sec/session', session.headers);
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json().code).toBe('ACCOUNT_PENDING_APPROVAL');
+    const write = await t.app.inject({ method: 'POST', url: '/client/t/sec/write', headers: session.mutationHeaders });
+    expect(write.json().code).toBe('ACCOUNT_PENDING_APPROVAL');
+    const rows = await db.select().from(s.sessions).where(eq(s.sessions.id, session.sessionId));
+    expect(rows[0]!.revokedAt).toBeNull();
+
+    // Approval applies once the cached view of the session is dropped.
+    await db.update(s.clients).set({ status: 'active' }).where(eq(s.clients.id, pending));
+    await t.app.get(SessionService).invalidateSubject('client', pending);
+    expect((await get('/client/t/sec/session', session.headers)).statusCode).toBe(200);
   });
 
   it('refuses a suspended merchant with 403 ACCOUNT_SUSPENDED and revokes their sessions', async () => {

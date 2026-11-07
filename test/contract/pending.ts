@@ -10,21 +10,6 @@
  */
 export const PENDING: readonly string[] = [
   // identity
-  'POST /client/auth/register',
-  'POST /client/auth/verify-email',
-  'POST /client/auth/login',
-  'POST /client/auth/2fa',
-  'POST /client/auth/logout',
-  'POST /client/auth/password/forgot',
-  'POST /client/auth/password/reset',
-  'GET /client/auth/me',
-  'PATCH /client/profile',
-  'POST /client/security/password',
-  'POST /client/security/2fa/setup',
-  'POST /client/security/2fa/enable',
-  'POST /client/security/2fa/disable',
-  'GET /client/sessions',
-  'DELETE /client/sessions/:id',
   'GET /client/kyc',
   'POST /client/kyc',
   'GET /client/api-keys',

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'bun:test';
 import { generate } from 'otplib';
 import { parseEnv } from '../../../config';
 import { DecryptionError, EncryptionService } from '../../../infra/crypto';
-import { TOTP_ISSUER, TotpService } from './totp.service';
+import { CLIENT_TOTP_AAD, STAFF_TOTP_AAD, TOTP_ISSUER, TotpService } from './totp.service';
 
 const service = new TotpService(new EncryptionService(parseEnv({ NODE_ENV: 'test' })));
 // A fixed moment in the middle of a time step, so the neighbouring steps are exactly 30 seconds apart.
@@ -26,6 +26,16 @@ describe('secrets', () => {
     expect(service.open(stored)).toBe(secret);
     const encryption = new EncryptionService(parseEnv({ NODE_ENV: 'test' }));
     expect(() => encryption.decrypt(stored, 'staff_users.password_hash')).toThrow(DecryptionError);
+  });
+});
+
+describe('merchant secrets (feature 2b)', () => {
+  it('are stored for the clients column and do not open as a staff secret, or the other way round', () => {
+    const secret = service.newSecret();
+    const stored = service.seal(secret, CLIENT_TOTP_AAD);
+    expect(service.open(stored, CLIENT_TOTP_AAD)).toBe(secret);
+    expect(() => service.open(stored)).toThrow(DecryptionError);
+    expect(() => service.open(service.seal(secret, STAFF_TOTP_AAD), CLIENT_TOTP_AAD)).toThrow(DecryptionError);
   });
 });
 

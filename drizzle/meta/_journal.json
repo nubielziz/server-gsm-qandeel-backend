@@ -29,6 +29,13 @@
       "when": 1793520661318,
       "tag": "0003_audit_resolutions",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793529142936,
+      "tag": "0004_merchant_totp_and_password_columns",
+      "breakpoints": true
     }
   ]
 }

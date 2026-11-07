@@ -2,6 +2,7 @@
 export {
   ACCESS_KINDS,
   ContractRegistry,
+  DEFAULT_PENDING_MERCHANT_POLICY,
   DEFAULT_SESSION_STAGES,
   SESSION_ACCESS_KINDS,
   SESSION_STAGES,
@@ -18,6 +19,7 @@ export type {
   HeadersOf,
   HttpMethod,
   ParamsOf,
+  PendingMerchantPolicy,
   QueryOf,
   ResultOf,
   RouteContract,

@@ -8,7 +8,7 @@ Decisions that shape this module: 007 password hashing, 010 ids and tokens, 018 
 
 ## Status
 
-Built (P2.5a, P2.5c and the P2.6 sign-in routes, code in `security/`): the session service, cookies and CSRF token, the guard dispatcher with the staff, merchant and customer session guards, the CSRF guard, the permission guard with the permissions catalog and the Owner helpers, the staff gate of the internal API reference, and the machine guards (`security/machine/`): capability tokens, URL secrets, merchant API keys (REST v1 Bearer and Dhru credentials) and gateway webhook signatures. The sign-in routes (P2.6), the staff, role and IP-rule routes (feature 2a) and the IP rules, maintenance and rate-limit hooks (P2.5b) come with their own features.
+Built: the 15 merchant portal routes of feature 2b (`/client/auth/*`, `/client/profile`, `/client/security/*`, `/client/sessions`, see "Merchant portal sign-in (2b)" below) and the pending-merchant rule of B153. Built earlier (P2.5a, P2.5c and the P2.6 sign-in routes, code in `security/`): the session service, cookies and CSRF token, the guard dispatcher with the staff, merchant and customer session guards, the CSRF guard, the permission guard with the permissions catalog and the Owner helpers, the staff gate of the internal API reference, and the machine guards (`security/machine/`): capability tokens, URL secrets, merchant API keys (REST v1 Bearer and Dhru credentials) and gateway webhook signatures. The sign-in routes (P2.6), the staff, role and IP-rule routes (feature 2a) and the IP rules, maintenance and rate-limit hooks (P2.5b) come with their own features.
 
 ## Public API (`index.ts`)
 
@@ -34,7 +34,11 @@ Exports `IdentityModule` and the security stack (`SecurityModule`, global). Othe
 | `SessionPolicy`, `SESSION_SETTING_KEYS` | the lifetimes and their settings keys |
 | `StaffAuthTokens` | `issue(work, { staffId, purpose: 'invite' \| 'reset', createdBy?, ip? })`: the one-hour, single-use link token of `POST /admin/auth/password/set` (feature 2a calls it when it adds a member by invitation or sends a reset; it voids the account's older links) |
 | `checkPasswordPolicy`, `MIN_PASSWORD_LENGTH` | the staff password policy (also for a temporary password the server generates) |
-| `STAFF_TOTP_AAD`, `TOTP_ISSUER` | the encryption context of `staff_users.totp_secret_enc` and the name authenticator apps show |
+| `STAFF_TOTP_AAD`, `CLIENT_TOTP_AAD`, `TOTP_ISSUER` | the encryption contexts of `staff_users.totp_secret_enc` and `clients.totp_secret_enc`, and the name authenticator apps show |
+| `MerchantAuthTokens` | `issue(work, { clientId, purpose: 'verify_email' \| 'reset' \| 'invite', createdBy?, ip? })`: the one-hour, single-use link token of a merchant (feature 2a calls it with `invite` for `POST /admin/clients`); it voids the merchant's older unused links of the same family and returns `{ token, id, expiresAt }` |
+| `MerchantMailOutbox`, `MERCHANT_MAIL_EVENTS` | `enqueue(work, { kind: 'email_verification' \| 'password_reset' \| 'invited', clientId, tokenId, token })`: writes the outbox event of a merchant mail (ids only) in the caller's transaction; feature 2a writes `invited` with it |
+| `MAIL_SENDER`, `MailSender`, `MerchantMail` | the seam between the mail jobs and a mail transport; feature 12a provides the real sender under the `MAIL_SENDER` token |
+| `CurrentMerchant` | parameter decorator: the signed-in merchant (`MerchantPrincipal`) of a `merchant-session` route |
 
 ## The security stack (decision 018)
 
@@ -57,7 +61,17 @@ interceptors. A route without a contract is refused (`500`), except `DOCUMENTATI
 **Session checks**, in this order: cookie present, the session is known and belongs to the subject (`401`); absolute expiry and idle
 expiry (`401`); the account is not suspended (`403 ACCOUNT_SUSPENDED`, and every session of the account is revoked); the stage is one
 the contract accepts (`sessionStages`, default `['active']`; `401`); `last_seen_at` is written at most once a minute. A pending
-sign-in session has a principal without permissions. `403 FORBIDDEN` and `403 CSRF_FAILED` never sign the caller out.
+sign-in session has a principal without permissions. `403 FORBIDDEN`, `403 CSRF_FAILED` and `403 ACCOUNT_PENDING_APPROVAL` never sign the caller out.
+
+**Merchants waiting for approval (user decision B153).** A merchant with `clients.status = 'pending'` may sign in, but a
+`merchant-session` route answers it `403 ACCOUNT_PENDING_APPROVAL` unless its contract says `pendingMerchant: 'allow'` (default
+`deny`, like `sessionStages`; the OpenAPI operation carries `x-gsm-pending-merchant`). The routes of feature 2b all allow it (a
+pending merchant reads its approval status with `GET /client/auth/me` and manages its own profile, password, 2FA and sessions);
+the KYC routes (feature 8) will too. The check runs in the session access handler, after the suspension and stage checks, from the
+`approved` flag of the cached session view (`SubjectSnapshot.approved`, true when the status is `active`; a view cached without
+the flag counts as not approved). **A route that changes a merchant's status calls `SessionService.invalidateSubject('client', id,
+work)` and `ApiKeyDirectory.invalidateClient(id, work)` after its commit**, or the old view is served for up to a minute. API-key
+and Dhru calls of a pending merchant answer `403 ACCOUNT_PENDING_APPROVAL` as well (Dhru: its message in the envelope).
 
 **Cookies.** `gsm_admin_session`, `gsm_client_session`, `gsm_store_session` (httpOnly, `Secure` from `COOKIE_SECURE`, `SameSite=Lax`,
 `Path=/`, `__Host-` prefix when secure) and the readable CSRF cookies `csrf_token` (staff), `csrf_token_client`, `csrf_token_store`
@@ -115,7 +129,7 @@ order, with the answer of each:
 | no key, unknown key, malformed, wrong Dhru username | `401 UNAUTHORIZED` | `Authentication Failed` |
 | revoked or expired (`revoked_at`, `expires_at <= now`) | `401 UNAUTHORIZED` ("revoked or has expired") | `Authentication Failed` |
 | merchant `suspended` | `403 ACCOUNT_SUSPENDED` | the message |
-| merchant `pending` (not approved) | `403 FORBIDDEN` | the message |
+| merchant `pending` (not approved, B153) | `403 ACCOUNT_PENDING_APPROVAL` | the message |
 | `allowed_ips` non-empty and the client address (`request.ip`, `TRUST_PROXY`) is outside every CIDR, IPv4 or IPv6 (empty = any) | `403 IP_NOT_ALLOWED` | the message |
 | the key's `scopes` do not cover the contract's `permission` by the permission grammar (decision 018): the permission itself, its `area:*`, or `*`; Dhru needs `dhru` listed exactly (`*` does not open it) | `403 FORBIDDEN` naming it | the message |
 | more than `rate_limit_per_min` accepted calls in a minute (limiter `api-key`, key = key id) | `429 RATE_LIMITED` + `Retry-After` | the message |
@@ -203,6 +217,74 @@ pure rules in `domain/`), wired by `StaffAuthModule`. Contract: `docs/contract/A
   logged without the email and rate-limited, never audited. No password, token or secret reaches a log or an audit row.
 - **Development credentials** (`bun run db:seed`, development only): see the root `README.md`, "Local sign-in".
 
+## Merchant portal sign-in (2b): `/client/*`
+
+Fifteen routes (`contracts/merchant-auth.contracts.ts`, `contracts/merchant-account.contracts.ts`, controllers `merchant-auth.controller.ts`
+and `merchant-account.controller.ts`; use cases in `application/merchant-*.ts`, queries in `infra/merchant-*.repository.ts`, pure rules in
+`domain/merchant-*.ts`), wired by `MerchantAuthModule`. No console screen calls them (the portal is another frontend): the specs are
+MISMATCHES B121 to B136 and ALIGNMENT § 7. Session cookie `gsm_client_session`, CSRF cookie `csrf_token_client` and the
+`X-CSRF-Token` header, like the staff routes.
+
+| Route | Access | What it does |
+|---|---|---|
+| `POST /client/auth/register` | public (Origin check) | the form → `204`, the same for a new and a known email. A new email creates a `pending` merchant in the `is_default` group, opens its wallet and hold (`MerchantAccounts.open`, credit limit 0), a `verify_email` link and the event `merchant.email_verification`, in one transaction |
+| `POST /client/auth/verify-email` | public | `{ token }` → `204`; sets `email_verified_at`, uses the link; the status stays `pending`; signs nobody in |
+| `POST /client/auth/login` | public | email + password → `{ next: 'totp' \| 'done' }`; a `pending_totp` session (10 min) when 2FA is on, an `active` one otherwise; a pending merchant signs in |
+| `POST /client/auth/2fa` | session, `pending_totp` | six digits → `204`; rotates the session to `active` |
+| `POST /client/auth/logout` | session, `pending_totp` or `active` | revokes the session, clears both cookies, `204` |
+| `POST /client/auth/password/forgot` | public | `{ email }` → `204` for any email; a merchant that is not suspended (also one waiting for approval without a password) gets a `reset` link and the event `merchant.password_reset` |
+| `POST /client/auth/password/reset` | public | `{ token, password }` with a `reset` or `invite` link → `204`; sets the password, uses the link, ends every session, signs nobody in; an invitation also sets `email_verified_at` and voids the merchant's verification link |
+| `GET /client/auth/me` | session, `active` | `Me`: id, username, email, name, company, phone, country, status, kycStatus, emailVerifiedAt, twofaEnabled, referralCode, group, createdAt; `no-store`; repeats `X-CSRF-Token` |
+| `PATCH /client/profile` | session | name, company, phone, country (partial) → `Me` |
+| `POST /client/security/password` | session | `{ currentPassword, newPassword }` → `204`; ends the other sessions |
+| `POST /client/security/2fa/setup` | session | a pending secret (encrypted, `twofa_enabled` stays false) → `{ secret, otpauthUrl, qrSvg }`; `409 TWOFA_ALREADY_ENABLED` once on |
+| `POST /client/security/2fa/enable` | session | `{ code }` confirms the pending secret → `204`; ends the other sessions |
+| `POST /client/security/2fa/disable` | session | `{ code }` → `204`; forgets the secret, ends the other sessions; `409 TWOFA_NOT_ENABLED` |
+| `GET /client/sessions` | session | the caller's live `active` sessions, newest first, `current` marked, simple-rest range and `x-total-count` |
+| `DELETE /client/sessions/:id` | session | `204`; `404 NOT_FOUND` for a session that is not the caller's, unknown or no longer live; ending the current one clears the cookies |
+
+**Rules worth knowing**
+
+- **No enumeration.** `register` and `password/forgot` answer `204` whatever the email; `register` always hashes the password
+  (the same work for a known email), and both are counted per address (`register`) or email + address (`forgot`) by the `sign-in`
+  limiter, known email or not. `login` is one `401` for an unknown email, a wrong password and a merchant with no password yet
+  (each verifies one argon2 hash); `403 ACCOUNT_SUSPENDED` only follows a correct password.
+- **A wrong current password or code is `422` on its field (`currentPassword`, `code`), never `401`**, which would sign the caller
+  out (B121). `WEAK_PASSWORD` names `password` (register, reset) or `newPassword` (change).
+- **Rate limits** (`MerchantSignInLimiter`, keys are `HMAC(TOKEN_PEPPER, ...)` hashes under the prefix `merchant-sign-in`, so
+  counters do not mix with the staff ones): login per email + address; registration per address; forgot per email + address;
+  codes (sign-in, enable, disable), 2FA setups and password changes **per account**; emailed links (`verify-email`, `password/reset`)
+  by the `token` limiter per address. The per-IP limit of the pipeline covers the public routes first.
+- **Links** (`auth_tokens`, purposes `verify_email`, `reset`, `invite`; `MerchantAuthTokens`): 256 random bits, only the keyed hash
+  stored, one hour, one use. A newer `reset` or `invite` voids the older ones; a newer `verify_email` voids the older one. Unknown,
+  used, expired, superseded and suspended-merchant links are all `410 TOKEN_INVALID`. A weak password does not use the link up.
+  Changing the password voids open `reset` and `invite` links.
+- **TOTP.** The same `TotpService` as staff (SHA-1, 6 digits, 30 s, ±1 step) with the encryption context `CLIENT_TOTP_AAD`. A code
+  is accepted only if its time step is newer than `clients.totp_last_step`, written by a guarded `UPDATE` (so a code works once
+  even in parallel). Migration `0004` adds `clients.twofa_enabled`, `totp_last_step` and `password_changed_at` (MISMATCHES B116).
+  Enabling or disabling 2FA, changing the password and resetting it end the merchant's other sessions; `ApiKeyDirectory` is not
+  affected.
+- **The database decides.** The code, password, 2FA, `me` and profile steps read the merchant from `clients`, not from the cached
+  session view: a suspension applies at once (`403`, every session of the merchant revoked).
+- **Live sessions.** `GET /client/sessions` and `DELETE /client/sessions/:id` use the live rule of identity-platform-6 (not revoked,
+  not past `expires_at`, used within `sessions.client_idle_minutes`), implemented in `infra/merchant-sessions.repository.ts`
+  (feature 2a builds the staff version in the shared sessions repository; the lead merges the two into one predicate).
+- **Audit.** Merchant routes write no `audit_logs` rows (the audit log records staff writes, and `AUDIT_ENTITY_TYPES` has no
+  merchant security type yet); failed attempts are logged without the email.
+
+### Merchant mail
+
+An email is outbox work (decision 020): the use case writes `merchant.email_verification`, `merchant.password_reset` (and feature 2a
+`merchant.invited`) in its transaction with `MerchantMailOutbox.enqueue`; the payload is `{ tokenId }` and the aggregate the
+merchant, never the token or the address. The events map to the `notifications` queue; `MerchantMailModule` (loaded by the API
+and by the worker) registers them and provides one named processor per type (`jobs/merchant-mail.processors.ts`) that re-reads the
+merchant and the link, skips what is no longer worth sending and hands the rest to the `MailSender` bound to `MAIL_SENDER`. The
+development sender (`LogMailSender`) writes one redacted log line per mail; **feature 12a replaces it with templates and real
+delivery.** Open point for 12a: the token exists in clear text only in the request that created it and the outbox carries ids only,
+so the worker cannot build the link `<PORTAL_BASE_URL>/set-password?token=<token>` or `/verify-email?token=<token>` yet. Outside
+production `MerchantMailOutbox.enqueue` writes the link to the log after the commit (`DEVELOPMENT ONLY: ...`), which is how a
+developer finishes a flow. 12a must decide how the token reaches the mailer (for example a sealed copy that the job wipes).
+
 ## Owned tables
 
 Only this module reads and writes these 8 tables (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts` once the data layer exists.
@@ -220,7 +302,7 @@ Only this module reads and writes these 8 tables (`scripts/module-map.mjs`); oth
 
 ## Routes
 
-59 endpoints (admin 38, client 21). Source: `docs/slices/identity.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built.
+59 endpoints (admin 38, client 21). Source: `docs/slices/identity.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built; the staff sign-in (6) and the 15 merchant portal routes of stage 2 (2b) are built.
 
 ### Admin console (38)
 
@@ -346,12 +428,14 @@ except `/health` and `/metrics`, and refuses with **`403 IP_NOT_ALLOWED`** (prob
 
 ## Events
 
-Outbox events produced (types, payload ids): none yet. Planned (features 2a and 2b, ids only, never a token):
-`merchant.invited` (`POST /admin/clients`, invite token purpose `invite`), `merchant.email_verification` (register, purpose
-`verify_email`) and `merchant.password_reset` (forgot password, purpose `reset`); until feature 12a adds the templates, the
-`MailSender` development implementation logs a redacted line. The links are built from the config key `PORTAL_BASE_URL`
+Outbox events produced (types, payload ids; all on the `notifications` queue, registered by `MerchantMailOutbox`):
+`merchant.email_verification` (`POST /client/auth/register`, token purpose `verify_email`) and `merchant.password_reset`
+(`POST /client/auth/password/forgot`, purpose `reset`), both built by feature 2b; `merchant.invited` (`POST /admin/clients`, purpose
+`invite`), written by feature 2a with `MerchantMailOutbox`. The payload is `{ tokenId }` (the `auth_tokens` row), the aggregate is
+the merchant: ids only, never a token. Until feature 12a adds the templates, the `MailSender` development implementation logs a
+redacted line. The links are built from the config key `PORTAL_BASE_URL`
 (`<PORTAL_BASE_URL>/set-password?token=<token>`). `auth_tokens.purpose` is closed to `invite | reset | verify_email |
-magic_link` (exported `AUTH_TOKEN_PURPOSES`); `POST /client/auth/password/reset` accepts `reset` and `invite`. Consumed: none yet. Record each outbox type and the queue it maps to here and in `docs/queues.md`.
+magic_link` (exported `AUTH_TOKEN_PURPOSES`); `POST /client/auth/password/reset` accepts `reset` and `invite`. Consumed: the three types above, by `jobs/merchant-mail.processors.ts` (worker). Record each outbox type and the queue it maps to here and in `docs/queues.md`.
 
 ## Jobs and schedules
 
@@ -359,6 +443,12 @@ magic_link` (exported `AUTH_TOKEN_PURPOSES`); `POST /client/auth/password/reset`
   by `src/worker.module.ts` only; processor `IpRuleHitsFlushProcessor`). Not recorded in `job_runs` (decision 020); metrics
   `ip_rule_hits_flush_last_success_timestamp_seconds`, `ip_rule_hits_flush_failures_total`, `ip_rule_hits_flushed_total`.
   Listed in `docs/queues.md`.
+
+- `merchant.email_verification`, `merchant.password_reset`, `merchant.invited` on the `notifications` queue (processors `EmailVerificationMailProcessor`,
+  `PasswordResetMailProcessor`, `MerchantInvitedMailProcessor` in `MerchantMailModule`, imported by the API and by `src/worker.module.ts`). Event-driven, no
+  schedule, no `job_runs`; safe to run twice (the job re-reads the merchant and the link and skips what is no longer worth
+  sending). Retry: the queue's 5 attempts with backoff from 30 s for a failing sender, `UnrecoverableError` for a job without a
+  token id. Listed in `docs/queues.md`.
 
 Add the next job here and in `docs/queues.md` (see `CONTRIBUTING.md` → "Add a job").
 
@@ -390,4 +480,4 @@ The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, 
 - `identity-platform-6` · GET /admin/sessions
 - `identity-platform-7` · GET /admin/audit-logs
 - `identity-platform-14` · POST /admin/staff/:id/password
-- `identity-platform-16` · POST /client/* , /v1/files, /webhooks/telegram/:secret
+- `identity-platform-16` · POST /client/* , /v1/files, /webhooks/telegram/:secret (the 15 sign-in routes are specified by B121 to B136 and built by feature 2b)

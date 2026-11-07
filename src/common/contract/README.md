@@ -76,11 +76,12 @@ no other; `surface` matches the path prefix; the success shape is a `schema` or 
 ## Access, sessions, audit and CSRF (decision 018)
 
 `access` says how a route authenticates; the guard dispatcher in the identity module (`src/modules/identity/security`) reads
-it from the contract (`getContract(handler)`) and runs the guard of that kind. Three optional fields refine it:
+it from the contract (`getContract(handler)`) and runs the guard of that kind. Four optional fields refine it:
 
 | Field | Default | Meaning |
 |---|---|---|
 | `sessionStages` | `['active']` | The `sessions.stage` values a **session** route accepts (`staff-session`, `staff-permission`, `merchant-session`, `customer-session`). A pending session is refused with `401` everywhere else, so the sign-in routes name theirs: `2fa` accepts `['pending_totp', 'pending_totp_setup']`, `2fa/setup` `['pending_totp_setup']`, the forced password change `['pending_password']`, `logout` all four. A `staff-permission` route can only be `['active']`. |
+| `pendingMerchant` | `'deny'` | Only for `merchant-session` routes. A merchant whose status is `pending` (waiting for staff approval) may sign in, but every merchant route refuses it with `403 ACCOUNT_PENDING_APPROVAL` (which never signs out) unless the contract says `pendingMerchant: 'allow'`. The routes that manage the merchant's own account (profile, password, 2FA, sessions, logout, `GET /client/auth/me`) and the KYC routes allow it (user decision B153). API-key and Dhru calls of a pending merchant are always refused. |
 | `audit` | `true` | Every staff mutation (an admin route that is not a GET) must write an `audit_logs` row with `AuditService.record(tx, ...)`; otherwise the request fails with a `500` in development and tests (and logs an error in production). `audit: false` opts out for routes that write none (the sign-in steps); the description must say why. |
 | `csrf` | `true` | A mutation that authenticates with a session cookie always needs a matching `X-CSRF-Token` (`403 CSRF_FAILED`, never signs out). `csrf: false` is for routes that have no session to bind a token to (sign-in, password set by emailed token): they are refused unless the `Origin` header is in `CORS_ORIGINS` (on `/admin` and `/client`). It is refused on session routes. The field is declarative: the CSRF guard picks the token check or the Origin check by whether a session authenticated the request, so a session-less mutation gets the Origin check with or without it; set it anyway so the contract says what the route expects. |
 
@@ -101,7 +102,7 @@ export const verifyTwoFactor = defineRoute({
 ```
 
 A route without a contract is refused by the dispatcher (`DOCUMENTATION_ROUTES` keep their own guard). The OpenAPI operation of a
-session route carries `x-gsm-session-stages`, and that of a staff mutation `x-gsm-audit`.
+session route carries `x-gsm-session-stages`, that of a merchant route `x-gsm-pending-merchant`, and that of a staff mutation `x-gsm-audit`.
 
 ## What happens to a request
 
@@ -149,7 +150,7 @@ never with numbers.
   included), request body with example, the success response, one `application/problem+json` response per error status
   listing its codes with an example each, `x-total-count`, `x-request-id`, security by `access`
   (`SECURITY_SCHEME`), and `x-gsm-key`, `x-gsm-access`, `x-gsm-surface`, `x-gsm-permission`, `x-gsm-session-stages` (session
-  routes) and `x-gsm-audit` (staff mutations).
+  routes), `x-gsm-pending-merchant` (merchant routes) and `x-gsm-audit` (staff mutations).
 - The platform module turns that metadata into two documents (`src/modules/platform/docs`, decision 017):
   `docs/contract/openapi.json` (every route) and `openapi.public.json` (surfaces `v1` and `dhru`, plus the outgoing
   events as `webhooks`). It passes `autoTagControllers: false`, so a route's `tags` are the ones in its contract (use

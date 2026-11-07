@@ -188,6 +188,30 @@ describe('defineRoute', () => {
     });
   });
 
+  describe('pendingMerchant', () => {
+    const portal = { surface: 'client', access: 'merchant-session' };
+
+    it('defaults to deny, so a merchant waiting for approval is refused unless the route opts in (B153)', () => {
+      expect(define({ key: 'GET /client/spec/pm1', ...portal }).pendingMerchant).toBe('deny');
+      expect(define({ key: 'GET /client/spec/pm2', ...portal, pendingMerchant: 'allow' }).pendingMerchant).toBe(
+        'allow',
+      );
+      expect(define({ key: 'GET /client/spec/pm3', ...portal, pendingMerchant: 'deny' }).pendingMerchant).toBe('deny');
+    });
+
+    it('is refused on routes that are not merchant-session routes, and for a value that is neither allow nor deny', () => {
+      expect(() =>
+        define({ key: 'GET /admin/spec/pm4', surface: 'admin', access: 'staff-session', pendingMerchant: 'allow' }),
+      ).toThrow(/only applies to merchant-session routes/);
+      expect(() =>
+        define({ key: 'POST /client/spec/pm5', surface: 'client', access: 'public', pendingMerchant: 'allow' }),
+      ).toThrow(/only applies to merchant-session routes/);
+      expect(() => define({ key: 'GET /client/spec/pm6', ...portal, pendingMerchant: 'maybe' })).toThrow(
+        /must be "allow" or "deny"/,
+      );
+    });
+  });
+
   describe('audit', () => {
     const write = {
       key: 'POST /admin/spec/au1',

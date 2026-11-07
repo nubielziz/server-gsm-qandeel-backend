@@ -156,8 +156,14 @@ describe('refusalFor', () => {
     );
   });
 
-  it('uses ACCOUNT_SUSPENDED for a suspended merchant and FORBIDDEN for one that is not approved', () => {
+  it('uses ACCOUNT_SUSPENDED for a suspended merchant and ACCOUNT_PENDING_APPROVAL for one that is not approved (B153)', () => {
     expect(refusalFor('suspended', 'v1', address, 'x')).toMatchObject({ code: 'ACCOUNT_SUSPENDED', status: 403 });
-    expect(refusalFor('not_active', 'v1', address, 'x')).toMatchObject({ code: 'FORBIDDEN', status: 403 });
+    for (const surface of ['v1', 'dhru'] as const) {
+      expect(refusalFor('not_active', surface, address, 'x')).toMatchObject({
+        code: 'ACCOUNT_PENDING_APPROVAL',
+        status: 403,
+        detail: 'This merchant account has not been approved yet.',
+      });
+    }
   });
 });

@@ -54,7 +54,8 @@ export class ApiKeyAuthenticator {
    * @param credentials the key, the Dhru username if any, the scope the route needs and the surface
    * @returns the principal: merchant id, key id and scopes
    * @throws {AppError} `UNAUTHORIZED` (401: no, unknown, revoked or expired key, or a username that is not the key's),
-   *   `ACCOUNT_SUSPENDED` (403), `FORBIDDEN` (403: merchant not approved, or the scope is missing), `IP_NOT_ALLOWED` (403),
+   *   `ACCOUNT_SUSPENDED` (403), `ACCOUNT_PENDING_APPROVAL` (403: merchant not approved, B153), `FORBIDDEN` (403: the scope is missing),
+   *   `IP_NOT_ALLOWED` (403),
    *   `RATE_LIMITED` (429 with `Retry-After`: the key's limit, or too many unknown keys from one address)
    */
   async authenticate(request: FastifyRequest, credentials: ApiKeyCredentials): Promise<ApiKeyPrincipal> {

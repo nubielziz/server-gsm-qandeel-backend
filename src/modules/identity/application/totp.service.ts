@@ -7,6 +7,8 @@ import { EncryptionService } from '../../../infra/crypto';
 
 /** The additional authenticated data of the encrypted column: a copy in another column does not decrypt (decision 019). */
 export const STAFF_TOTP_AAD = 'staff_users.totp_secret_enc';
+/** The additional authenticated data of `clients.totp_secret_enc` (merchant 2FA, feature 2b): a staff secret does not decrypt there. */
+export const CLIENT_TOTP_AAD = 'clients.totp_secret_enc';
 /** The name an authenticator app shows for the account. */
 export const TOTP_ISSUER = 'GSM Supply';
 /** Seconds a code is valid: a time step (RFC 6238 default). */
@@ -34,24 +36,26 @@ export class TotpService {
   }
 
   /**
-   * Encrypts a secret for `staff_users.totp_secret_enc`.
+   * Encrypts a secret for a `*.totp_secret_enc` column.
    *
    * @param secret the base32 secret
+   * @param aad the encryption context of the column: {@link STAFF_TOTP_AAD} (default) or {@link CLIENT_TOTP_AAD}
    * @returns the encrypted text (`v1:<kid>:...`)
    */
-  seal(secret: string): string {
-    return this.encryption.encrypt(secret, STAFF_TOTP_AAD);
+  seal(secret: string, aad: string = STAFF_TOTP_AAD): string {
+    return this.encryption.encrypt(secret, aad);
   }
 
   /**
    * Decrypts a stored secret.
    *
-   * @param stored the text from `staff_users.totp_secret_enc`
+   * @param stored the text from `staff_users.totp_secret_enc` or `clients.totp_secret_enc`
+   * @param aad the encryption context of the column it came from (default {@link STAFF_TOTP_AAD})
    * @returns the base32 secret
-   * @throws {DecryptionError} when the text is damaged or its key is gone
+   * @throws {DecryptionError} when the text is damaged, its key is gone or it belongs to another column
    */
-  open(stored: string): string {
-    return this.encryption.decrypt(stored, STAFF_TOTP_AAD);
+  open(stored: string, aad: string = STAFF_TOTP_AAD): string {
+    return this.encryption.decrypt(stored, aad);
   }
 
   /**

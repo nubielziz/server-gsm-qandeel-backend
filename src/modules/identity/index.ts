@@ -2,26 +2,39 @@
 // security building blocks other modules and features use (sessions, cookies, CSRF, the principal and permission helpers,
 // the access guards and the permissions catalog), the registries of the machine guards (capability token resolvers, URL
 // secrets, gateway webhook adapters, the API key cache) and the IP rules building blocks (the worker's hit flush job).
+// Order matters: the request-principal layer (param decorators, principal helpers, the permission grammar) comes first.
+// Modules whose controllers use `CurrentStaff` and whose services identity calls (money, catalog) form an import cycle with
+// this file; ES modules evaluate these re-exports in source order, so these leaves are initialised before the services that
+// lead into that cycle (decision 032; test/unit/module-load.test.ts loads every module index on its own).
+export { CurrentMerchant, CurrentPrincipal, CurrentStaff, accessStateOf, principalOf } from './security/access-state';
+export type { AccessState } from './security/access-state';
+export { ALL_PERMISSIONS, grants, grantsEverything, isValidPermission } from './security/permission-grammar';
+export { assertOwnerTargetAllowed, isOwner } from './security/principal';
 export { IdentityModule } from './identity.module';
 export { SecurityModule } from './security/security.module';
 export { StaffAuthModule } from './staff-auth.module';
+export { MerchantAuthModule } from './merchant-auth.module';
+export { MerchantMailModule } from './merchant-mail.module';
 export { STAFF_TOKEN_TTL_MS, StaffAuthTokens } from './application/staff-auth-tokens';
 export type { IssueStaffTokenInput, IssuedStaffToken } from './application/staff-auth-tokens';
 export { STAFF_TOKEN_PURPOSES } from './infra/auth-token.repository';
 export type { StaffTokenPurpose } from './infra/auth-token.repository';
+export { MERCHANT_TOKEN_TTL_MS, MerchantAuthTokens } from './application/merchant-auth-tokens';
+export type { IssueMerchantTokenInput, IssuedMerchantToken } from './application/merchant-auth-tokens';
+export { CLIENT_TOKEN_PURPOSES } from './infra/merchant-token.repository';
+export type { ClientTokenPurpose } from './infra/merchant-token.repository';
+export { MAIL_SENDER } from './application/mail/mail-sender';
+export type { MailSender, MerchantMail, MerchantMailKind } from './application/mail/mail-sender';
+export { MERCHANT_MAIL_EVENTS, MerchantMailOutbox } from './application/mail/merchant-mail-outbox';
 export { checkPasswordPolicy, MIN_PASSWORD_LENGTH } from './domain/password-policy';
-export { STAFF_TOTP_AAD, TOTP_ISSUER } from './application/totp.service';
+export { CLIENT_TOTP_AAD, STAFF_TOTP_AAD, TOTP_ISSUER } from './application/totp.service';
 export { AccessGuard } from './security/access.guard';
 export { AccessHandlers, PLACEHOLDER_ACCESS_KINDS } from './security/access-handlers';
 export type { AccessHandler } from './security/access-handlers';
-export { CurrentPrincipal, CurrentStaff, accessStateOf, principalOf } from './security/access-state';
-export type { AccessState } from './security/access-state';
 export { CSRF_HEADER, CsrfService, csrfTokenFor } from './security/csrf';
 export { CsrfGuard } from './security/csrf.guard';
-export { ALL_PERMISSIONS, grants, grantsEverything, isValidPermission } from './security/permission-grammar';
 export { PermissionGuard } from './security/permission.guard';
 export { PermissionsCatalog } from './security/permissions-catalog';
-export { assertOwnerTargetAllowed, isOwner } from './security/principal';
 export type {
   ApiKeyPrincipal,
   CapabilityPrincipal,

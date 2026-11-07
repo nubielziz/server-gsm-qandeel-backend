@@ -231,8 +231,18 @@ export const clients = pgTable(
     kycStatus: text().$type<KycStatus>().notNull().default('none'),
     referredById: fk((): AnyPgColumn => clients.id),
     referralCode: text().notNull(),
-    /** optional TOTP for merchants (decision 018) */
+    /** optional TOTP for merchants (decision 018); while `twofa_enabled` is false it is the pending secret of a setup */
     totpSecretEnc: text(),
+    /** false while the secret is only pending, or when the merchant has none; schema addition B116 (feature 2b) */
+    twofaEnabled: boolean().notNull().default(false),
+    /**
+     * the last TOTP time step accepted for this merchant (RFC 6238 replay rule: a step is never accepted twice); null until
+     * the first accepted code and after a new secret. Schema addition B116 (feature 2b), same rule as
+     * `staff_users.totp_last_step`.
+     */
+    totpLastStep: bigId(),
+    /** when the merchant last chose or changed the password; null until the first one; schema addition B116 (feature 2b) */
+    passwordChangedAt: timestampTz(),
     emailVerifiedAt: timestampTz(),
     /** external id from Telegram, kept as text */
     telegramChatId: text(),

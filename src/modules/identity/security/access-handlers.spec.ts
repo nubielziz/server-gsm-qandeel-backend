@@ -154,3 +154,65 @@ describe('AccessHandlers', () => {
     }
   });
 });
+
+describe('a merchant session of a merchant waiting for approval (B153)', () => {
+  /** A table whose authenticator finds a session of the given subject type and account state. */
+  function tableFor(subjectType: 'client' | 'staff' | 'customer', subject: { state: string; approved?: boolean }) {
+    const authenticator = {
+      authenticate: () =>
+        Promise.resolve({ view: { id: 1, subjectType, subject }, principal: { kind: 'merchant', clientId: 5 } }),
+    } as unknown as SessionAuthenticator;
+    const metrics = { canActivate: () => true } as unknown as MetricsAccessGuard;
+    return new AccessHandlers(authenticator, metrics);
+  }
+  const portal = (pendingMerchant?: 'allow' | 'deny') => fakeContract({ surface: 'client', pendingMerchant });
+  /** What a handler threw, synchronously or as a rejection (a handler may answer either way). */
+  async function refusalOf(run: () => unknown): Promise<unknown> {
+    try {
+      await run();
+    } catch (error) {
+      return error;
+    }
+    return undefined;
+  }
+
+  it('is refused with 403 ACCOUNT_PENDING_APPROVAL on a route that does not opt in', async () => {
+    const handlers = tableFor('client', { state: 'ok', approved: false });
+    for (const contract of [portal(), portal('deny')]) {
+      const error = await refusalOf(() =>
+        handlers.handlerFor('merchant-session').authenticate(request, contract, context),
+      );
+      expect(error).toBeInstanceOf(AppError);
+      expect(error).toMatchObject({ code: 'ACCOUNT_PENDING_APPROVAL', status: 403 });
+    }
+  });
+
+  it('passes on a route that opts in, and an approved merchant passes everywhere', async () => {
+    const waiting = tableFor('client', { state: 'ok', approved: false });
+    expect(await waiting.handlerFor('merchant-session').authenticate(request, portal('allow'), context)).toMatchObject({
+      session: { id: 1 },
+    });
+    const approved = tableFor('client', { state: 'ok', approved: true });
+    expect(await approved.handlerFor('merchant-session').authenticate(request, portal(), context)).toMatchObject({
+      session: { id: 1 },
+    });
+  });
+
+  it('fails closed for a cached view that has no approval flag', async () => {
+    const stale = tableFor('client', { state: 'ok' });
+    const error = await refusalOf(() => stale.handlerFor('merchant-session').authenticate(request, portal(), context));
+    expect(error).toMatchObject({ code: 'ACCOUNT_PENDING_APPROVAL' });
+  });
+
+  it('is a rule about merchants only: staff and customer sessions never meet it', async () => {
+    for (const [kind, subjectType] of [
+      ['staff-session', 'staff'],
+      ['customer-session', 'customer'],
+    ] as const) {
+      const handlers = tableFor(subjectType, { state: 'ok' });
+      expect(await handlers.handlerFor(kind).authenticate(request, portal(), context), kind).toMatchObject({
+        session: { id: 1 },
+      });
+    }
+  });
+});

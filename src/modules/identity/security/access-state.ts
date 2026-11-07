@@ -4,7 +4,7 @@ import { createParamDecorator, type ExecutionContext } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { AppError } from '../../../common/errors';
 import type { RequestActor } from '../../../common/request-context';
-import type { Principal, SessionPrincipal, StaffPrincipal } from './principal';
+import type { MerchantPrincipal, Principal, SessionPrincipal, StaffPrincipal } from './principal';
 import type { SessionView } from './session.types';
 
 /**
@@ -100,5 +100,18 @@ export const CurrentPrincipal = createParamDecorator(
 export const CurrentStaff = createParamDecorator((_data: unknown, context: ExecutionContext): StaffPrincipal => {
   const principal = principalOf(context.switchToHttp().getRequest<FastifyRequest>());
   if (principal?.kind !== 'staff') throw new AppError('UNAUTHORIZED');
+  return principal;
+});
+
+/**
+ * Parameter decorator: the signed-in merchant of a merchant-portal route.
+ *
+ * Why: portal handlers act on the merchant's own records only, by this id; this fails loudly if the route is not a merchant route.
+ *
+ * @throws {AppError} `UNAUTHORIZED` (401) when the request was not authenticated as a merchant
+ */
+export const CurrentMerchant = createParamDecorator((_data: unknown, context: ExecutionContext): MerchantPrincipal => {
+  const principal = principalOf(context.switchToHttp().getRequest<FastifyRequest>());
+  if (principal?.kind !== 'merchant') throw new AppError('UNAUTHORIZED');
   return principal;
 });

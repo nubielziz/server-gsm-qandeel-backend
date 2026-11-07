@@ -43,7 +43,10 @@ class StaffSubjectResolver implements SessionSubjectResolver {
   }
 }
 
-/** Merchants: `suspended` stops everything; `pending` merchants may sign in to see their approval state. */
+/**
+ * Merchants: `suspended` stops everything; `pending` merchants may sign in and manage their own account, and the access
+ * handler refuses every other merchant route for them with `403 ACCOUNT_PENDING_APPROVAL` (B153).
+ */
 class ClientSubjectResolver implements SessionSubjectResolver {
   readonly subjectType = 'client';
 
@@ -56,7 +59,7 @@ class ClientSubjectResolver implements SessionSubjectResolver {
       .where(eq(clients.id, subjectId))
       .limit(1);
     if (!row) return { state: 'gone' };
-    return { state: row.status === 'suspended' ? 'suspended' : 'ok' };
+    return { state: row.status === 'suspended' ? 'suspended' : 'ok', approved: row.status === 'active' };
   }
 }
 

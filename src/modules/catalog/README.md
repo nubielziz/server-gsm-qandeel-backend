@@ -8,13 +8,13 @@ Decisions that shape this module: 011 money, 026 Dhru compatibility. Common to a
 
 ## Status
 
-Not built yet: the module is an empty shell (`catalog.module.ts`, `index.ts`). Its feature adds controllers, services, repositories and the owned tables.
+Not built yet: the module has no routes. It provides the read-only `ClientGroupDirectory` (`application/client-group-directory.ts`, added by feature 2b); its features add controllers, services, repositories and the owned tables.
 
 ## Public API (`index.ts`)
 
-Exports `CatalogModule` only. Add the services other modules may call here, and nothing else: other modules import only `src/modules/catalog/index.ts` (lint rule `gsm/module-boundaries`).
+Exports `CatalogModule` and `ClientGroupDirectory` (`find(db, id)` and `defaultGroup(db)`, each answering a `ClientGroupView`: id, name, kind, discountPercent, isDefault, overdraftAllowed; identity uses it for the group a new merchant joins and the group `GET /client/auth/me` shows). Add the services other modules may call here, and nothing else: other modules import only `src/modules/catalog/index.ts` (lint rule `gsm/module-boundaries`).
 
-Planned exports (audit resolutions): a read-only `ClientGroupDirectory` (group exists, kind not `b2c_retail`, `overdraft_allowed`) for `POST/PATCH /admin/clients` (identity-platform-3, extended by 4a); the `PriceResolver` (one resolver for resolve, orders, price lists and the group/client price checks, plus the b2c_retail floor for the storefront listings: catalog-4, b2c-7; algorithm in `RULES.md` services 3); and `recomputeEffectiveCost(serviceIds, tx)`, called by supplier import and cost writes, sync, link changes and supplier `credit_rate` changes (catalog-1, B117).
+Planned exports (audit resolutions): the `ClientGroupDirectory` also answers "group exists, kind not `b2c_retail`, `overdraft_allowed`" for `POST/PATCH /admin/clients` (identity-platform-3, feature 2a adds it; extended by 4a); the `PriceResolver` (one resolver for resolve, orders, price lists and the group/client price checks, plus the b2c_retail floor for the storefront listings: catalog-4, b2c-7; algorithm in `RULES.md` services 3); and `recomputeEffectiveCost(serviceIds, tx)`, called by supplier import and cost writes, sync, link changes and supplier `credit_rate` changes (catalog-1, B117).
 
 ## Owned tables
 

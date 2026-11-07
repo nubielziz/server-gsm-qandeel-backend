@@ -150,7 +150,10 @@ export function refusalFor(
     case 'suspended':
       return new AppError('ACCOUNT_SUSPENDED', { detail: 'This merchant account is suspended.' });
     case 'not_active':
-      return new AppError('FORBIDDEN', { detail: 'This merchant account has not been approved yet.' });
+      // B153: a merchant waiting for approval gets its own code (Dhru shows the detail in the envelope); it never signs out.
+      return new AppError('ACCOUNT_PENDING_APPROVAL', {
+        detail: 'This merchant account has not been approved yet.',
+      });
     case 'ip_not_allowed': {
       const who = address ? `Your network address (${formatIpAddress(address)})` : 'Your network address';
       return new AppError('IP_NOT_ALLOWED', {

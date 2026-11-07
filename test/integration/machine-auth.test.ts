@@ -382,13 +382,13 @@ describe('API keys on REST v1', () => {
     expect((await write(key)).statusCode).toBe(201);
   });
 
-  it('refuses the keys of a suspended merchant with 403 ACCOUNT_SUSPENDED and of one not approved yet with 403 FORBIDDEN', async () => {
+  it('refuses the keys of a suspended merchant with 403 ACCOUNT_SUSPENDED and of one not approved yet with 403 ACCOUNT_PENDING_APPROVAL (B153)', async () => {
     const suspended = await insertMerchant(db, { status: 'suspended' });
     const pending = await insertMerchant(db, { status: 'pending' });
     const a = await insertApiKey(t, db, suspended);
     const b = await insertApiKey(t, db, pending);
     refusedAs(await get(a.key), 403, 'ACCOUNT_SUSPENDED');
-    refusedAs(await get(b.key), 403, 'FORBIDDEN');
+    refusedAs(await get(b.key), 403, 'ACCOUNT_PENDING_APPROVAL');
   });
 
   it("applies a merchant status change once the merchant's cached key views are dropped", async () => {
@@ -574,6 +574,14 @@ describe('Dhru credentials', () => {
     const account = await call({ action: 'accountinfo', username: 'frozen', apiaccesskey: frozen.key });
     expect(account.statusCode).toBe(200);
     expect(message(account)).toBe('This merchant account is suspended.');
+  });
+
+  it('tells a merchant that waits for approval so in the envelope (B153)', async () => {
+    const waiting = await insertMerchant(db, { username: 'waiting', status: 'pending' });
+    const { key } = await insertApiKey(t, db, waiting, { scopes: ['dhru'] });
+    const res = await call({ action: 'accountinfo', username: 'waiting', apiaccesskey: key });
+    expect(res.statusCode).toBe(200);
+    expect(message(res)).toBe('This merchant account has not been approved yet.');
   });
 
   it('answers the per-key limit in the envelope too', async () => {

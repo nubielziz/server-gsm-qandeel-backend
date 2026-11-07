@@ -116,9 +116,17 @@ Delivers signed events to the webhook endpoints of merchants.
 Sends emails and Telegram messages.
 
 - **Concurrency:** 10 per worker process.
-- **Jobs:** none yet. Built by the notifications feature (12a): `send` per `notifications` row.
-- **Payload:** none yet (notification id).
-- **Idempotency:** none yet. Rule: job id `notification-<id>`; a sent row is not sent again.
+- **Jobs:** the merchant mails of the identity module (feature 2b), one named job per outbox event type:
+  `merchant.email_verification`, `merchant.password_reset` and `merchant.invited` (processors in
+  `src/modules/identity/jobs/merchant-mail.processors.ts`). The queue has named processors only, so feature 12a adds its
+  `send` job under its own name (a catch-all next to named processors stops the worker). Still to build by 12a: `send` per
+  `notifications` row.
+- **Payload:** `OutboxJobData` of the event: `aggregateId` is the merchant (`clients.id`), `payload.tokenId` the
+  `auth_tokens` row of the link; never the token or the email address. 12a's `send` job: the notification id.
+- **Idempotency:** a merchant mail job re-reads the merchant and the link row and sends nothing when the merchant is gone or
+  suspended, or the link was used, voided or has expired (`skipped` in the job result); the job id is `outbox-<event id>`, so
+  the relay never adds a second job for one event. A job that runs twice sends twice (a mail is not exactly-once). 12a's
+  rule: job id `notification-<id>`; a sent row is not sent again.
 - **Retry policy:** 5 attempts, exponential backoff from 30 s (jitter 50 %); a provider's "retry after" is honoured by the
   processor.
 - **Schedule:** none (event-driven).
@@ -220,7 +228,9 @@ none); the job id is `outbox-<event id>`.
 
 | Event type | Queue | Job name | Payload (ids only) | Registered by |
 |---|---|---|---|---|
-| _none yet_ | | | | |
+| `merchant.email_verification` | `notifications` | `merchant.email_verification` | `tokenId` (aggregate: `clients`, the merchant) | identity (`MerchantMailOutbox`), written by `POST /client/auth/register` |
+| `merchant.password_reset` | `notifications` | `merchant.password_reset` | `tokenId` (aggregate: `clients`) | identity (`MerchantMailOutbox`), written by `POST /client/auth/password/forgot` |
+| `merchant.invited` | `notifications` | `merchant.invited` | `tokenId` (aggregate: `clients`) | identity (`MerchantMailOutbox`), written by `POST /admin/clients` (feature 2a) |
 
 The map's outgoing events (`order.status_changed`, `wallet.low_balance`, `invoice.paid`) are registered by the features
 that produce them.

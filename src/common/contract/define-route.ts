@@ -93,6 +93,22 @@ export type SessionStage = (typeof SESSION_STAGES)[number];
 export const DEFAULT_SESSION_STAGES: readonly SessionStage[] = Object.freeze(['active'] as const);
 
 /**
+ * Whether a merchant whose account waits for staff approval (`clients.status = 'pending'`) may call a merchant route.
+ *
+ * Why: user decision B153: a pending merchant may sign in, read its approval status and manage its own account (profile,
+ * password, 2FA, sessions, logout); every other merchant route answers `403 ACCOUNT_PENDING_APPROVAL`, so the default is
+ * `deny` and a route opts in with `allow`.
+ */
+export type PendingMerchantPolicy = 'allow' | 'deny';
+
+/**
+ * The policy of a route that declares none: a pending merchant is refused.
+ *
+ * Why: B153 is default deny, so a new merchant route cannot be open to unapproved accounts by forgetting a field.
+ */
+export const DEFAULT_PENDING_MERCHANT_POLICY: PendingMerchantPolicy = 'deny';
+
+/**
  * Success statuses the API uses: 200, 201 (create), 202 (accepted) and 204 (no body).
  *
  * Why: ALIGNMENT § 1 fixes one success status per endpoint (201 for creates, 204 for deletes and bodiless actions) and
@@ -164,6 +180,12 @@ export interface RouteSpec<
    */
   readonly sessionStages?: readonly SessionStage[];
   /**
+   * `allow` lets a merchant that is still `pending` approval call this `merchant-session` route (default `deny`: the guard
+   * answers `403 ACCOUNT_PENDING_APPROVAL`, which never signs the caller out; B153). Only for `merchant-session` routes:
+   * API-key and Dhru calls of a pending merchant are always refused.
+   */
+  readonly pendingMerchant?: PendingMerchantPolicy;
+  /**
    * `false` marks an admin route that changes data but writes no audit row (the sign-in steps). The description must say
    * why. Every other staff mutation must call `AuditService.record` or the request fails in development and tests.
    */
@@ -216,6 +238,8 @@ export interface RouteContract<
   readonly examples: { readonly request: unknown; readonly response: unknown };
   /** Stages a session route accepts; `['active']` unless the spec says otherwise (meaningless for other access kinds). */
   readonly sessionStages: readonly SessionStage[];
+  /** `allow` when a pending merchant may call the route; `deny` unless the spec says otherwise (meaningless off `merchant-session`). */
+  readonly pendingMerchant: PendingMerchantPolicy;
   /** False when a staff mutation is exempt from the audit duty (`audit: false`). */
   readonly audit: boolean;
   /** False when the route declared that it has no session to bind a CSRF token to (`csrf: false`). */
@@ -445,6 +469,12 @@ export function defineRoute<
       problem('a staff-permission route needs a full session: sessionStages can only be ["active"]');
     sessionStages = Object.freeze([...spec.sessionStages]);
   }
+  if (spec.pendingMerchant !== undefined) {
+    if (!['allow', 'deny'].includes(spec.pendingMerchant))
+      problem(`pendingMerchant must be "allow" or "deny", got "${String(spec.pendingMerchant)}"`);
+    if (spec.access !== 'merchant-session')
+      problem(`pendingMerchant only applies to merchant-session routes (access is "${spec.access}")`);
+  }
   if (spec.audit === false) {
     if (spec.surface !== 'admin')
       problem('audit: false only applies to admin routes (the audit log records staff writes)');
@@ -550,6 +580,7 @@ export function defineRoute<
     errors: Object.freeze([...spec.errors]),
     examples: Object.freeze({ request: examples.request, response: examples.response }),
     sessionStages,
+    pendingMerchant: spec.pendingMerchant ?? DEFAULT_PENDING_MERCHANT_POLICY,
     audit: spec.audit ?? true,
     csrf: spec.csrf ?? true,
   });

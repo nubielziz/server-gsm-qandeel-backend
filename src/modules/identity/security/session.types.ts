@@ -19,6 +19,12 @@ export type SubjectState = 'ok' | 'suspended' | 'gone';
 export interface SubjectSnapshot {
   readonly state: SubjectState;
   readonly roleId?: number;
+  /**
+   * Merchants only: true when the merchant is approved (`clients.status = 'active'`). A merchant waiting for approval
+   * (`pending`) keeps a session but may call only the routes that declare `pendingMerchant: 'allow'` (B153). A view cached
+   * without the field counts as not approved, so the guard fails closed for at most the cache lifetime.
+   */
+  readonly approved?: boolean;
 }
 
 /**

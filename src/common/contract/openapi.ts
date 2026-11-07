@@ -322,6 +322,9 @@ export function openApiDecorators(contract: AnyRouteContract): MethodDecorator[]
   // Session routes say which sign-in steps they accept; staff writes say whether an audit row is part of the contract.
   if (isSessionAccess(contract.access))
     decorators.push(ApiExtension('x-gsm-session-stages', [...contract.sessionStages]));
+  // A merchant route says whether a merchant still waiting for approval may call it (B153).
+  if (contract.access === 'merchant-session')
+    decorators.push(ApiExtension('x-gsm-pending-merchant', contract.pendingMerchant));
   if (isStaffWrite(contract)) decorators.push(ApiExtension('x-gsm-audit', contract.audit));
   if (parts.security) decorators.push(ApiSecurity(parts.security));
   for (const parameter of parts.parameters) {
