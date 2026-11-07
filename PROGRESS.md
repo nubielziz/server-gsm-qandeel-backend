@@ -32,8 +32,11 @@ and in the console the mid-session sign-out keeps the page (`?to=`).
 `orders/application/order-{placement,transitions,ledger}.ts` or the catalog inventory files. **Done by the lead on `main`
 meanwhile:** stock delivery at placement (`5b291ad`: RULES orders 10, orders-suppliers-11; a service with enough available
 codes completes the order at once with the codes as its result; `placed_at` and `created_at` from the injected clock,
-decision 025 amended for decision 031; `bun run check` green, 2883 pass) and B160, the spec of the 7 `/client` order routes
-(`75ce982`).
+decision 025 amended for decision 031; `bun run check` green, 2883 pass; checked at runtime: staff imported a code
+through the real import route, the merchant's portal order came back completed with it, and the console's drawer shows
+"Delivered from stock: 1 code" and the settlement) and B160, the spec of the 7 `/client` order routes (`75ce982`). For
+that check the lead gave the seeded merchant 1 (Zain Mobile Hub, `ops@zainmobilehub.example`) the development password
+`demo-password` in the dev database only (the seed sets no merchant password: merchants set theirs through a link).
 
 **Next, in order:**
 1. Merge **6** (its migration starts at 0009), walk Suppliers, the order drawer's dispatch/fetch/change-supplier and the
@@ -209,6 +212,9 @@ None.
   price change scan still read `orders` through their documented foreign read: switch them to `OrderReadService` when
   someone touches them. Migration 0008 was regenerated with drizzle-kit after 7b's 0007 (a worktree DB that applied the
   old 0007 must be recreated: the migrator compares timestamps only).
+- Stock delivery notes (2026-11-07): a stocked order keeps the service's effective cost as its `total_cost` (the drawer
+  shows it as the supplier cost) while the settlement books no cost: codes carry no purchase cost (no column), so the
+  stock's cost stays outside the ledger until someone decides to track it.
 - 7b merge notes (2026-11-07): the portal webhook controller lives in identity (`merchant-webhook-routes.module.ts`)
   because platform imports no module; the engine stays in `platform/webhooks`. The merchant low-balance threshold is
   `clients.notification_prefs.lowBalanceThreshold` (a money string; none = no alert): 12a should expose it. B155 gained the
