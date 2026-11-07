@@ -7,8 +7,9 @@ Single source of truth for status. The lead updates it after every step. Read it
 **Session 2026-11-07.** Wave 1 of Phase 3 is **done and merged on `main`** (the branch `feat/backend` was renamed `main` on
 2026-11-01): feature **3** money-wallets-ledger (`c332201`), **2b** identity-merchant-auth (`446fd46`), **2a**
 identity-staff-access (`ed74e0b`), each reviewed, fixed and squash-merged by the lead; then `f66d74a` (audit phrasing).
-Wave 2 has started: **4a** catalog-structure is merged (`7c012d2`). 90 of 382 map endpoints are built; the console calls
-70 of them. `docs/COVERAGE.md` (generated, `bun run coverage:build`, checked by `bun run check`) has the counts per
+Wave 2 has started: **4a** catalog-structure is merged (`7c012d2`), and the lead built the 4 tax rate routes ahead of 14b
+(`23dc5d5`, no dependency; Settings > Tax and currency is all real). 94 of 382 map endpoints are built; the console calls
+74 of them. `docs/COVERAGE.md` (generated, `bun run coverage:build`, checked by `bun run check`) has the counts per
 module, surface and stage and the scenario tests (2 of 13). `bun run check` green on the merged 2a tree (2181 pass,
 1 skip, 0 fail; shape parity compares 50 of 70 built routes). `PROGRESS.md` had been moved to a stray file named `ظ`
 (identical content); it was put back.
@@ -132,7 +133,7 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 | 12a | notifications | templates, notifications, preferences, Telegram link + webhook, price-change digest (user rule 9) (st12) | | |
 | 12b | alerts-integrity | alert rules, alerts, incidents, integrity job (st12) | system-alert, system-integrity | |
 | 14a | storefront-checkout | store config, listings, IMEI check (checksum + TAC), checkout sessions, consents (st14) | | |
-| 14b | customers-accounts | store sign-in, account, admin customers, tax rates, TAC catalog, FX refresh (st14) | b2c-account | |
+| 14b | customers-accounts | store sign-in, account, admin customers, tax rates (done early: `23dc5d5`), TAC catalog, FX refresh (st14) | b2c-account | |
 | 15 | storefront-content | listings admin, content pages, help, legal documents (st15) | | |
 | 16 | b2c-payments-refunds | pay, receipt, B2C payment webhook, refunds (user rule 7: `processing`), disputes, VAT/payments reports, storefront settings (st16) | b2c-paid, b2c-refund, b2c-chargeback | |
 | 17 | support | tickets (store + admin), replies, notes, templates, CSAT (st17) | b2c-ticket | |
