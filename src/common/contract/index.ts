@@ -16,6 +16,7 @@ export type {
   AccessKind,
   AnyRouteContract,
   BodyOf,
+  BodyType,
   HeadersOf,
   HttpMethod,
   ParamsOf,
@@ -31,6 +32,16 @@ export type {
 } from './define-route';
 export { EventRegistry, defineEvent, eventRegistry } from './define-event';
 export type { EventContract, EventKey, EventSpec } from './define-event';
+export {
+  CURSOR_DEFAULT_LIMIT,
+  CURSOR_MAX_LIMIT,
+  cutPage,
+  decodeCursor,
+  encodeCursor,
+  zCursor,
+  zCursorLimit,
+  zCursorPage,
+} from './cursor';
 export { toJsonSchema } from './json-schema';
 export type { JsonSchema } from './json-schema';
 export {
@@ -65,5 +76,5 @@ export {
   validateInputs,
   validationFailed,
 } from './validation.pipe';
-export { MAX_ID, zDateOnly, zDecimal, zId, zIdParam, zIsoDateTime, zJsonObject, zMoney } from './zod';
+export { MAX_ID, zDateOnly, zDecimal, zId, zIdParam, zIsoDateTime, zJsonObject, zMoney, zUploadedFile } from './zod';
 export type { JsonObject, JsonValue } from './zod';

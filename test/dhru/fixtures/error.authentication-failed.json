@@ -1,0 +1,16 @@
+{
+  "action": "accountinfo",
+  "description": "Decision 026: the standard message for a wrong key.",
+  "request": {
+    "action": "accountinfo"
+  },
+  "credentials": "wrong-key",
+  "response": {
+    "ERROR": [
+      {
+        "MESSAGE": "Authentication Failed"
+      }
+    ],
+    "apiversion": "6.1"
+  }
+}

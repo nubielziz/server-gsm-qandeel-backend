@@ -1,6 +1,6 @@
 // The guards against the seed data of scripts/seed (the six demo roles and staff of the frontend mocks): the permission
 // grammar, including the required x:* rule, on the lists the console really grants. Needs the frontend checkout, like seed.test.ts.
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { demoStatePath, loadDemoState } from '../../scripts/seed/demo-state';
 import { ROLES, permissionsOf } from '../../scripts/seed/identity';
@@ -10,6 +10,9 @@ import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches, openSession } from '../support/auth';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 import { SecurityTestController } from '../support/security-routes';
+
+// Every test seeds the whole demo first (about 10 s alone, more when other suites share the database server).
+setDefaultTimeout(60_000);
 
 const frontendPresent = existsSync(demoStatePath());
 // Seed ids: staff 1 Rami (Owner), 2 Lina (Support), 3 Omar (Finance), 4 Dana (Admin), 5 Nadia (invited, Risk), 6 Yusuf (suspended).

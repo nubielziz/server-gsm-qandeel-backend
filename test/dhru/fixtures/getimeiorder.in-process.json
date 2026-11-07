@@ -1,0 +1,19 @@
+{
+  "action": "getimeiorder",
+  "description": "STATUS 1 in process.",
+  "request": {
+    "action": "getimeiorder",
+    "parameters": {
+      "ID": "{{processing}}"
+    }
+  },
+  "response": {
+    "SUCCESS": [
+      {
+        "STATUS": 1,
+        "CODE": ""
+      }
+    ],
+    "apiversion": "6.1"
+  }
+}

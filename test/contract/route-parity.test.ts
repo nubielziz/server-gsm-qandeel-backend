@@ -20,12 +20,18 @@ const keysOfKind = (kind: string): string[] =>
 const BACKEND_EVENTS: readonly string[] = ['EVENT service.price_changed'];
 
 /**
- * What is built, per kind of manifest key. Dhru actions and supplier calls have no registry yet: the feature that adds
- * one (7a Dhru, 6 suppliers) lists its keys here, otherwise removing them from pending.ts fails the first test below.
+ * The one HTTP route behind the eight Dhru actions (decision 026). The manifest lists the actions (`DHRU <action>`), not the
+ * transport, so the route has a contract and is served but is no `http` key of the manifest.
+ */
+const DHRU_TRANSPORT = 'POST /api/index.php';
+
+/**
+ * What is built, per kind of manifest key. Dhru actions come from the registry of `defineDhruAction`; supplier calls have no
+ * registry yet: the feature that adds one lists its keys here, otherwise removing them from pending.ts fails the first test below.
  */
 const built: Record<string, string[]> = {
-  http: snapshot.contracts.map((contract) => contract.key),
-  'dhru-action': [],
+  http: snapshot.contracts.map((contract) => contract.key).filter((key) => key !== DHRU_TRANSPORT),
+  'dhru-action': [...snapshot.dhruActions],
   'supplier-call': [],
   event: snapshot.events.map((event) => event.key),
 };
@@ -88,6 +94,12 @@ describe('the registry against the manifest', () => {
 });
 
 describe('the router against the registry', () => {
+  it('the Dhru transport is the one contract that is no manifest route, and it is served', () => {
+    expect(snapshot.contracts.map((contract) => contract.key)).toContain(DHRU_TRANSPORT);
+    expect(manifestKeys.has(DHRU_TRANSPORT)).toBe(false);
+    expect(snapshot.served).toContain(DHRU_TRANSPORT);
+  });
+
   it('Fastify serves exactly the contract routes plus the documentation routes', () => {
     const expected = [...snapshot.contracts.map((contract) => contract.key), ...snapshot.documentationRoutes];
     expect(difference('router', snapshot.served, expected)).toEqual([]);

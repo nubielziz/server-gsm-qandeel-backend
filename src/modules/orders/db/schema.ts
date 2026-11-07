@@ -1,7 +1,7 @@
 // Orders tables (map domain D): orders (one engine for B2B and B2C) and their append-only timeline.
 // Conventions: decisions 010, 025, 027; schema additions: MISMATCHES B116; ownership: scripts/module-map.mjs.
 import { sql } from 'drizzle-orm';
-import { check, index, integer, pgTable, text, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { check, index, integer, pgTable, text, unique, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { bigId, createdAt, fk, inList, jsonObject, money, pk, timestampTz, updatedAt } from '../../../infra/db/columns';
 import { SERVICE_TYPES, services, type ServiceType } from '../../catalog/db/schema';
 import { checkoutSessions, customers } from '../../customers/db/schema';
@@ -259,3 +259,49 @@ export type OrderEvent = typeof orderEvents.$inferSelect;
 
 /** A row to insert into `order_events`. */
 export type NewOrderEvent = typeof orderEvents.$inferInsert;
+
+/**
+ * What an `Idempotency-Key` was used for: one order, or a bulk of orders.
+ *
+ * Why: REST v1 (ALIGNMENT § 7, decision 026): `POST /v1/orders` and `POST /v1/orders/bulk` accept the header; the scope is part of what the key
+ * stands for, so the same key on the other route is a different request.
+ */
+export const IDEMPOTENCY_SCOPES = ['order', 'bulk'] as const;
+
+/** One value of {@link IDEMPOTENCY_SCOPES}. */
+export type IdempotencyScope = (typeof IDEMPOTENCY_SCOPES)[number];
+
+/**
+ * The first answer of each REST v1 order placement that came with an `Idempotency-Key`.
+ *
+ * Why: decision 026 and brief 7a: the first result is stored with the key in Postgres, in the placement's own transaction, and replayed
+ * for the same request; a different request with the same key is `409 IDEMPOTENCY_KEY_REUSED`. The row exists only when the placement
+ * committed, so a refused or rolled-back attempt leaves nothing and the same key may be tried again. The key is unique per merchant and
+ * remembered for as long as its row lives (the unique index of `orders.idempotency_key` says the same for a single order). Not one of
+ * the map's 66 tables: MISMATCHES B116 note (the backend's additions); the map's `idempotencyKey` rows describe only the header.
+ */
+export const idempotencyKeys = pgTable(
+  'idempotency_keys',
+  {
+    id: pk(),
+    clientId: fk((): AnyPgColumn => clients.id, 'cascade').notNull(),
+    scope: text().$type<IdempotencyScope>().notNull(),
+    /** the header as the merchant sent it (1 to 255 printable characters) */
+    key: text().notNull(),
+    /** keyed hash of the scope and the validated request body: the same key with another body is refused */
+    requestHash: text().notNull(),
+    /** the HTTP status to replay */
+    status: integer().notNull(),
+    /** the body to replay */
+    response: jsonObject(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique('idempotency_keys_client_key_uq').on(t.clientId, t.key),
+    check('idempotency_keys_scope_check', inList(t.scope, IDEMPOTENCY_SCOPES)),
+  ],
+);
+
+/** A row read from `idempotency_keys`. */
+export type IdempotencyRecord = typeof idempotencyKeys.$inferSelect;

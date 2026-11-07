@@ -23,7 +23,7 @@ export interface LimiterConfig {
  * Why: decision 021. The keys of the callers: `ip` the client IP; `api-key` the API key id (the points come from
  * `api_keys.rate_limit_per_min` through the `limit` option, this is the default); `sign-in` email + IP (build the key
  * with `RateLimitService.compositeKey`), counted per attempt and reset on success; `token` the client IP; `supplier` the
- * supplier id (the points come from `suppliers.rate_limit_per_min`); `webhook-retry` the delivery id.
+ * supplier id (the points come from `suppliers.rate_limit_per_min`); `webhook-retry` the delivery id; `upload` the client IP.
  *
  * @see docs/decisions/021-rate-limiting.md
  */
@@ -54,6 +54,12 @@ export const RATE_LIMITERS = {
     points: 60,
     windowSeconds: 60,
     description: 'Outbound calls to one supplier: requests per supplier; the supplier own limit replaces the points.',
+  },
+  upload: {
+    points: 20,
+    windowSeconds: 60,
+    description:
+      'Large bodies read before the credentials are known (multipart or over 1 MiB on Dhru, REST v1 and the portal upload): requests per client IP.',
   },
   'webhook-retry': {
     points: 1,

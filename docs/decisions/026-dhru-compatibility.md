@@ -31,9 +31,8 @@ format. The map lists 8 actions with their response keys (`AccoutInfo`, `LIST`, 
 - Tests: `test/dhru/` holds one request/response fixture per action, written from this record, checked byte for byte
   on keys and types.
 
-- Maintenance: the pipeline refuses JSON and form-encoded order placements in the Dhru envelope before the handler; a
-  multipart placement (file orders) is parsed only by the Dhru module, which must call `maintenanceRefusal` itself
-  (feature 7a).
+- Maintenance: the pipeline refuses order placements in the Dhru envelope before the handler, whatever the body: form,
+  JSON or multipart (feature 7a's multipart parser runs before the pipeline's validation stage reads `action`).
 
 **Consequences.** Existing Dhru client software works unchanged; the surface is isolated in the orders/catalog/money
 controllers that own the actions, behind one Dhru envelope adapter.

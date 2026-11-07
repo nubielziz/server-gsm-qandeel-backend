@@ -17,7 +17,6 @@ import {
   type WebhookVerifier,
 } from '../../src/modules/identity';
 import type { TestApp } from './app';
-import { dhruLike } from './routes';
 
 const Seen = z.object({
   ok: z.boolean(),
@@ -129,7 +128,7 @@ function seen(principal: Principal | undefined): z.infer<typeof Seen> {
   return empty;
 }
 
-/** Handlers of the machine-auth sample routes (and of the Dhru sample route of routes.ts, which the guard protects). */
+/** Handlers of the machine-auth sample routes. */
 @Controller()
 export class MachineTestController {
   @Route(v1Read)
@@ -140,11 +139,6 @@ export class MachineTestController {
   @Route(v1Write)
   v1Write(@CurrentPrincipal() principal: Principal | undefined): ResultOf<typeof v1Write> {
     return seen(principal);
-  }
-
-  @Route(dhruLike)
-  dhru(@CurrentPrincipal() principal: Principal | undefined): ResultOf<typeof dhruLike> {
-    return { SUCCESS: [seen(principal)] };
   }
 
   @Route(checkoutRoute)

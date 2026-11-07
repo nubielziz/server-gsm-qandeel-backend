@@ -1,0 +1,47 @@
+{
+  "action": "placeimeiorderbulk",
+  "description": "Decision 026: one SUCCESS or ERROR list per request id the caller sent, then apiversion.",
+  "request": {
+    "action": "placeimeiorderbulk",
+    "parameters": {
+      "first": {
+        "ID": "{{auto}}",
+        "IMEI": "352905112490861"
+      },
+      "second": {
+        "ID": "{{auto}}",
+        "IMEI": "123"
+      },
+      "third": {
+        "ID": "{{manual}}",
+        "IMEI": "354607111076240"
+      }
+    }
+  },
+  "response": {
+    "first": {
+      "SUCCESS": [
+        {
+          "MESSAGE": "Order received",
+          "REFERENCEID": "$idtext"
+        }
+      ]
+    },
+    "second": {
+      "ERROR": [
+        {
+          "MESSAGE": "$string"
+        }
+      ]
+    },
+    "third": {
+      "SUCCESS": [
+        {
+          "MESSAGE": "Order received",
+          "REFERENCEID": "$idtext"
+        }
+      ]
+    },
+    "apiversion": "6.1"
+  }
+}

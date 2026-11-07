@@ -157,11 +157,14 @@ already started must still be confirmed), `/health`, `/metrics`, `/docs`, `/open
 - **The answer** is problem+json `503 MAINTENANCE` with the staff member's message as `detail` (a default sentence when there is
   none), the extension member `expectedEndAt` (an ISO time or `null`; it only informs, only switching maintenance off ends it)
   and `Retry-After` (seconds to the expected end, kept between 30 and 300; 60 when unknown). On `/api/index.php` the error goes
-  through the formatter seam (`ErrorFormatterRegistry`, decision 026): the Dhru module registers the formatter that turns it into
-  the `{ERROR: [{MESSAGE}], apiversion}` envelope; until it exists the Dhru route answers problem+json.
+  through the formatter seam (`ErrorFormatterRegistry`, decision 026): `DhruErrorFormatter` turns it into the
+  `{ERROR: [{MESSAGE}], apiversion}` envelope (HTTP 200).
 - **Dhru:** all actions share one path, so a Dhru order placement is decided in the pipeline's `preValidation` phase, once the
-  body is parsed and the `action` field is known (`dhruActionOf`). A body the pipeline cannot read (multipart) is not refused
-  there; the Dhru handlers can call `maintenanceRefusal(await maintenance.state(), { method, path, dhruAction }, clock.nowMs())` themselves.
+  body is parsed and the `action` field is known (`dhruActionOf`). A multipart body is parsed before the guards too
+  (`registerMultipartBodies`, `src/common/multipart.ts`, feature 7a: text fields and file parts as one object), so Dhru credentials and the
+  `action` of a multipart call are read like those of a form body and the maintenance stage refuses a multipart placement as it refuses a
+  form one; the file orders need no handler-side call. The upload of a File service's input (`POST /v1/files`) is part of placing the
+  order: scope `api_orders` refuses it too (`POST /client/files` is not: a merchant uploads its KYC documents and receipts in any mode).
 - **Failure policy:** if the state cannot be read at all, requests go through (maintenance is a courtesy to customers, not a
   security rule).
 
@@ -199,8 +202,29 @@ refuses a 302 without it; OpenAPI documents the `Location` header). Staff may op
 (`owner_type client`, `owner_id` the merchant) or the input or result file of one of its own orders (`ownsOrderFile`, a documented
 foreign read of `orders` in `infra/file.repository.ts`); anything else, an unknown id included, is `404`, never `403`. The access is
 logged at info without the file name and writes no audit row. The routes read the caller from the request context
-(`getRequestContext().actor`), not from identity's decorators, because identity imports this module (decision 032). `POST
-/client/files` (the upload of a File service order) is not built yet.
+(`getRequestContext().actor`), not from identity's decorators, because identity imports this module (decision 032).
+
+## File uploads (feature 7a, MISMATCHES B157)
+
+`POST /v1/files` (REST v1, key scope `orders:write`) and `POST /client/files` (merchant session and CSRF, `pendingMerchant: 'allow'` so a
+merchant waiting for approval can upload its KYC documents) are one code path, `FileUploadService.upload` (`application/file-upload.service.ts`,
+provided to every module by the global `FilesModule`, which the Dhru file order of the orders module uses too). The body is
+`multipart/form-data` with one part named `file`, parsed before the guards by `registerMultipartBodies` (a multipart body on any route but
+`/api/index.php`, `/v1/files` and `/client/files` is `415 UNSUPPORTED_MEDIA_TYPE`, and the buffer is bounded at 25 MiB plus the form
+fields). Limits: 1 byte to 25 MiB (`422` on `file` when missing or empty, `413 PAYLOAD_TOO_LARGE` above), any media type (a value that is not a
+`type/subtype` is stored as `application/octet-stream`), the name reduced to its base name without control characters and cut to 200
+characters. The object goes to the files bucket under a key built here (`files/<year>/<month>/<uuid>`: never from the name), then a `files`
+row owned by the merchant (`owner_type client`) is written with the size and SHA-256; an object whose row could not be written is deleted
+again. The answer is `201 { id, filename, size, mime, sha256, createdAt }`; the id is what a File service order takes as `fileId`, or a KYC
+submission or a receipt (features 8 and 17, B161, B163). `GET /v1/files/:id` (scope `orders:read`) redirects like the other downloads and
+is the merchant's own files only (`404` for anything else). No audit row for a merchant's upload (B121).
+
+## OpenAPI: the Dhru reference (feature 7a, decision 017)
+
+`describeDhruActions` (`docs/dhru-reference.ts`) writes the eight action contracts of the Dhru registry (`src/common/dhru`) into the Dhru
+operation of both documents: the form body becomes a `oneOf` by `action` (each branch with `x-gsm-decoded`, the shape of the decoded
+`parameters`, and `x-gsm-success-entry`) with one request and one response example per action; the operation documents HTTP 200 only
+(every refusal is an `ERROR` list in a 200 body). Every REST v1 operation documents the `RateLimit-*` response headers.
 
 ## Events
 

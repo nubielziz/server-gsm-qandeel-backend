@@ -1,0 +1,20 @@
+{
+  "action": "placeimeiorder",
+  "description": "User rule 9: the exact text a merchant's software matches on to reload the service list.",
+  "request": {
+    "action": "placeimeiorder",
+    "parameters": {
+      "ID": "{{auto}}",
+      "IMEI": "352905112490861"
+    }
+  },
+  "given": ["priceRaised"],
+  "response": {
+    "ERROR": [
+      {
+        "MESSAGE": "Price changed. Please refresh the service list and order again."
+      }
+    ],
+    "apiversion": "6.1"
+  }
+}

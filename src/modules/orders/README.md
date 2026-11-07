@@ -10,7 +10,9 @@ Decisions that shape this module: 024 ledger, 025 order state machine, 026 Dhru 
 
 Built (feature 5, orders-engine): 20 routes of this module (13 admin, 7 merchant portal) plus the two file downloads of the platform
 module, the lead's state machine, and the demo seed. Dispatch, fetch and change-supplier (and the supplier jobs) are built by feature 6 in
-the suppliers module, through `OrderSupplierMoves`; the Dhru and REST v1 order routes are 7a, the outgoing webhook 7b, storefront orders 14a and 16, the top-clients report 11.
+the suppliers module, through `OrderSupplierMoves`; the outgoing webhook is 7b, storefront orders 14a and 16, the top-clients report 11.
+Built (feature 7a, dhru-and-rest-v1): the six REST v1 order routes and the six Dhru order actions (below), the Idempotency-Key store and
+the one `POST /api/index.php` transport route.
 
 - **State machine** (`domain/order-machine.ts`, decision 025): `decideOrderAction` is the only place the rules live; every use case
   asks it and applies its answer through `application/order-transitions.ts` (`OrderTransitions.apply`): the order is read, the
@@ -106,15 +108,52 @@ are ISO with milliseconds, ids are numbers, lists are simple-rest with `x-total-
   `verify_window_h` hours of completion (0 hours means no window); `INVALID_TRANSITION` otherwise.
 - `GET /client/orders/export`: CSV `id,created,service,input,quantity,status,price,currency`, same filters; 100,000 rows at most.
 - `GET /client/files/:id` and `GET /admin/files/:id` (platform module, B154): `302` to a presigned link that lives 5 minutes.
+- **REST v1 orders** (`application/api-orders.service.ts`, `controllers/v1-orders.controller.ts`, feature 7a): `POST /v1/orders`,
+  `POST /v1/orders/bulk`, `GET /v1/orders`, `GET /v1/orders/:id`, `POST /v1/orders/:id/cancel` and `POST /v1/orders/:id/verify` act for
+  the merchant behind the API key (principal `api-key`; scopes `orders:write` and `orders:read`). Placement is `OrderPlacement.place` on
+  the service's own transaction (source `v1`, the key's id on the order), so the price, the user rule 9 guard (`409 PRICE_CHANGED` with
+  `listedPrice` and `currentPrice`), the duplicate rule, the hold and the dispatch row are the portal's. The answer is the portal's
+  merchant order plus `canCancel` and `canVerify`. Cancel and verify are the portal's use cases (`ClientOrdersService`) and answer the
+  order. Lists are cursor pages (`?limit=` 1 to 100, default 50, `?cursor=`: `{ data, nextCursor }`, newest first, the cursor is the id of
+  the last order sent) with the filters `status` (comma list), `ids` (up to 100), `imei` (exact, whitespace ignored) and `updatedSince`.
+  Another merchant's order is `404`. No audit row (B121); the timeline names the merchant as the actor.
+- **Idempotency** (`application/idempotency-store.ts`, `infra/idempotency.repository.ts`, table `idempotency_keys`, migration 0009):
+  `Idempotency-Key` (1 to 255 printable characters) on `POST /v1/orders` and `/v1/orders/bulk`. Inside the placement's transaction the
+  key is locked without waiting (`pg_try_advisory_xact_lock` on merchant and key: a second request that arrives while the first runs is
+  `409 IDEMPOTENCY_IN_PROGRESS`, `Retry-After: 1`), the stored answer is read, and when there is none the placement runs and its status
+  and body are inserted before the commit, so the orders and the answer exist together or not at all. The same key with the same
+  scope and request hash (keyed hash of the canonical body: key order does not matter) replays the stored status and body with
+  `Idempotency-Replayed: true` and posts nothing (not even when the wallet is empty or the service is off by then); another body or the
+  other route is `409 IDEMPOTENCY_KEY_REUSED`. A refusal stores nothing, so the key may be tried again. Keys are per merchant and are
+  kept for as long as the row lives (no expiry job yet). A single placement also keeps the key on `orders.idempotency_key`.
+- **Bulk over REST v1**: each item is placed inside a savepoint of one transaction, in the order sent, drawing on one wallet: a refused
+  item (`INSUFFICIENT_FUNDS`, `PRICE_CHANGED`, `DUPLICATE_ORDER`, `INVALID_IMEI`, ...) undoes only itself and is answered in its place as
+  `{ index, ok: false, error: { code, status, title, detail, errors?, listedPrice?, currentPrice?, orderId? } }`; the answer is `200` even
+  when every item was refused. A body that is not valid (no orders, more than 100, an item without `serviceId`) is `422` as a whole.
+- **Dhru** (`application/dhru-orders.ts`, `controllers/dhru.controller.ts`, `contracts/dhru.contracts.ts`, decision 026):
+  `POST /api/index.php` is the one transport route (access `dhru-credentials`: `username` + `apiaccesskey` with the `dhru` scope; form,
+  multipart or JSON). It reads `action` and the base64 `parameters` and asks the shared `DhruGateway` (`src/common/dhru`), which runs
+  the handler the owning module bound to the action and answers `{ SUCCESS: [...], apiversion }` or `{ ERROR: [{ MESSAGE }], apiversion }`
+  (HTTP 200 always; the error formatter words each refusal: `Authentication Failed`, `Invalid Action`, `Not enough credits`,
+  `Price changed. Please refresh the service list and order again.`). This module owns `placeimeiorder` (`{ MESSAGE: 'Order received',
+  REFERENCEID }`, our order id as text), `placeimeiorderbulk` (one entry per caller request id, items placed one after the other, each
+  in its own transaction), `getimeiorder` and `getimeiorderbulk` (`STATUS` 0 new, 1 in process, 3 rejected, 4 completed, `CODE` the result
+  or reason, `""` while it runs; another merchant's order is `Order not found`), `placefileorder` (`FILENAME` + base64 `FILEDATA`, or a file
+  part of a multipart call; stored through platform's `FileUploadService`; an IMEI service in `placefileorder` and a File service in
+  `placeimeiorder` are refused naming the right action) and `getfileorder` (adds `FILEID` when staff attached a result file). Dhru has
+  no idempotency field: a repeated placement is stopped by the duplicate rule. Money's `accountinfo` and catalog's `imeiservicelist` are
+  bound to the same gateway by their modules.
+- A multipart placement during maintenance is refused by the pipeline too: `registerMultipartBodies` (`src/common/multipart.ts`) parses
+  the three multipart routes before the guards, so the maintenance stage sees the Dhru `action`.
 
-Open point: the admin service routes (feature 4a) do not expose `allow_cancel`, `allow_verify` and `verify_window_h`, so until staff
-can set them a merchant can neither cancel nor ask for a verification (the routes answer `409` with the reason).
+Open point: none for the merchant's cancel and verify any more: staff set `allowCancel`, `allowVerify` and `verifyWindowH` (0 to 720
+hours, 0 = no window) through `POST|PATCH /admin/services` (feature 7a, catalog module); they start off.
 
 ## Public API (`index.ts`)
 
 Exports `OrdersModule` (with `OrdersOutboxModule`, which the worker loads, and `OrdersAdminModule`, the routes and use cases), the pure
 rules (`decideOrderAction`, `deriveQueue`, `isOpen`, `placementDispatchState`, `mainInputOf`), the SQL fragments (`pastSlaPredicate`,
-`queueSql`, `channelSql`), the services other features call (`OrderPlacement` for Dhru, REST v1 and the storefront; `OrderTransitions`
+`queueSql`, `channelSql`), the services other features call (`OrderPlacement` for Dhru, REST v1 (7a) and the storefront; `OrderTransitions`
 for the risk actions; `OrderSupplierMoves`, the door of the supplier flows, and `OrdersEngineModule`, which provides both without routes for
 the worker; `OrderReadService`), the outbox event names (`ORDER_OUTBOX_EVENTS`, `OrderOutbox`) and the
 vocabularies and row types of the two tables. Other modules import only `src/modules/orders/index.ts` (lint rule
@@ -261,10 +300,12 @@ A bulk apply also writes `applied bulk reply to` (label `N of M orders`) and an 
 
 ## Tests
 
-Unit: the machine, main input, placement rules, bulk reply, CSV, timeline lines, views, outbox. Integration (`test/integration/`):
-`client-orders-placement`, `client-orders`, `orders-read`, `orders-actions`, `orders-b2c-actions`, `orders-bulk-reply`,
-`orders-export`, `orders-client-stats`, `orders-seed`, `files`. Scenario `manual`: `test/scenarios/manual.e2e.test.ts` (steps 3 to 8;
-the Dhru steps 1, 2 and 10 are added by feature 7a).
+Unit: the machine, main input, placement rules, bulk reply, CSV, timeline lines, views, outbox, the Dhru contracts, the idempotency
+hash. Integration (`test/integration/`): `client-orders-placement`, `client-orders`, `orders-read`, `orders-actions`, `orders-b2c-actions`,
+`orders-bulk-reply`, `orders-export`, `orders-client-stats`, `orders-seed`, `files`, and (7a) `dhru-surface`, `rest-v1`,
+`rest-v1-idempotency`, `files-upload`. The Dhru fixtures (one request/response record per action, checked on keys and types):
+`test/dhru/`. Scenarios `success`, `reject`, `timeout` and `manual` (`test/scenarios/`) include the merchant's Dhru calls
+(`placeimeiorder`, `getimeiorder`).
 
 ## Audit resolutions
 

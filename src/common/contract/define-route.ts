@@ -137,6 +137,14 @@ export interface SuccessSpec<S extends MaybeSchema> {
 }
 
 /**
+ * How a request body is sent.
+ *
+ * Why: the documentation names the media type of the body (`application/json`, `application/x-www-form-urlencoded` or
+ * `multipart/form-data`); the Dhru endpoint takes forms and the upload routes take multipart (decision 026, B157).
+ */
+export type BodyType = 'json' | 'form' | 'multipart';
+
+/**
  * The input of {@link defineRoute}.
  *
  * Why: everything about an endpoint is written once, here, and feeds validation, handler types, serialisation and
@@ -167,6 +175,11 @@ export interface RouteSpec<
   /** Query string; use `listQuery()` for lists. */
   readonly query?: Q;
   readonly body?: B;
+  /**
+   * The media type of the request body, for the documentation and the parser check: `json` (default), `form` (form-encoded or
+   * JSON, the Dhru surface) or `multipart` (`multipart/form-data`: the upload routes, B157).
+   */
+  readonly bodyType?: BodyType;
   /** Headers the route reads (object schema with lower-case names). */
   readonly headers?: H;
   readonly success: SuccessSpec<S>;
@@ -226,6 +239,8 @@ export interface RouteContract<
   readonly params: P;
   readonly query: Q;
   readonly body: B;
+  /** The media type of the request body (`json` unless the spec says otherwise). */
+  readonly bodyType: BodyType;
   readonly headers: H;
   readonly success: {
     readonly status: SuccessStatus;
@@ -505,6 +520,7 @@ export function defineRoute<
     }
   }
   if (spec.body && method === 'GET') problem('a GET route cannot have a body');
+  if (spec.bodyType !== undefined && !spec.body) problem('bodyType needs a body schema');
 
   // Success.
   const { status, schema, contentType } = spec.success;
@@ -572,6 +588,7 @@ export function defineRoute<
     params: spec.params as P,
     query: spec.query as Q,
     body: spec.body as B,
+    bodyType: spec.bodyType ?? 'json',
     headers: spec.headers as H,
     success: Object.freeze({
       status,

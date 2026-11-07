@@ -305,7 +305,7 @@ export const placeholderTracking = placeholderRoute('tracking-token');
 export const placeholderLink = placeholderRoute('link-token');
 export const placeholderTicket = placeholderRoute('ticket-token');
 
-/** The access kinds the placeholder routes above cover, with their URL (the Dhru one is `dhruLike` in routes.ts). */
+/** The access kinds the placeholder routes above cover, with their URL (the Dhru one is the real `POST /api/index.php`). */
 export const PLACEHOLDER_URLS: Readonly<Record<string, string>> = {
   'api-key': '/store/v1/t/sec/kind/api-key',
   'gateway-signature': '/store/v1/t/sec/kind/gateway-signature',

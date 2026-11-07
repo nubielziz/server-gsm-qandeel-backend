@@ -1,6 +1,6 @@
 // End-to-end walk of the map scenario `reject` (the supplier rejects the order, docs/slices/suppliers.json and orders.json), step by step
 // on the real application and a fake Dhru supplier. The steps share one story, so the tests of this file run in order.
-// Steps 1, 2 and 12 are the merchant's Dhru calls: feature 7a adds them to this file; the merchant reads the result through the portal here.
+// Steps 1, 2 and 12 are the merchant's Dhru calls (placeimeiorder, getimeiorder: decision 026, feature 7a); the portal reading stays next to them.
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { EncryptionService } from '../../src/infra/crypto';
 import { RedisService } from '../../src/infra/redis';
@@ -9,6 +9,7 @@ import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches } from '../support/auth';
 import { MINUTE, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
+import { clearApiKeyCaches, credentialsFor, dhruClient } from '../support/machine-orders';
 import { ledgerTotals } from '../support/money';
 import {
   IMEIS,
@@ -35,12 +36,15 @@ let supplierId = 0;
 let serviceId = 0;
 let orderId = 0;
 let reference = '';
+let dhru: ReturnType<typeof dhruClient>;
 
 beforeAll(async () => {
   t = await createTestApp({ clock, imports: [SupplierTestModule], env: { BULL_PREFIX: prefix } });
   await resetDb();
   await clearIdentityCaches(t);
   world = await ordersWorld((await testDb()).db);
+  await clearApiKeyCaches(t);
+  dhru = dhruClient(t, await credentialsFor(t, world.db, world.merchant.id));
   ({ supplierId, serviceId } = await automaticRoute(
     world.db,
     t.app.get(EncryptionService, { strict: false }),
@@ -58,12 +62,13 @@ afterAll(async () => {
 });
 
 describe('scenario reject: the supplier rejects the order', () => {
-  it('orders steps 3 and 4: the order is placed with its hold, the answer is immediate, status pending (STATUS 0)', async () => {
+  it('steps 1 and 2 (placeimeiorder), orders steps 3 and 4: the order is placed with its hold, the answer is immediate, status pending (STATUS 0)', async () => {
     const { db, merchant } = world;
-    const res = await (await portalFor(t, merchant.id)).post('/client/orders', { serviceId, imei: IMEIS[1] });
-    expect(res.statusCode).toBe(201);
-    orderId = json(res).orders[0].id;
-    expect(await orderRow(db, orderId)).toMatchObject({ status: 'pending', dispatchState: 'pending' });
+    const answer = await dhru.call('placeimeiorder', { ID: serviceId, IMEI: IMEIS[1] });
+    expect(answer.SUCCESS).toEqual([{ MESSAGE: 'Order received', REFERENCEID: expect.any(String) }]);
+    orderId = Number(answer.SUCCESS[0].REFERENCEID);
+    expect(await orderRow(db, orderId)).toMatchObject({ status: 'pending', dispatchState: 'pending', source: 'dhru' });
+    expect((await dhru.call('getimeiorder', { ID: String(orderId) })).SUCCESS).toEqual([{ STATUS: 0, CODE: '' }]);
     expect(await walletOf(db, merchant.id)).toEqual({ wallet: '82.7200', hold: '17.2800' });
     expect(await outboxOf(db, 'order.dispatch_requested', orderId)).toHaveLength(1);
   });
@@ -134,7 +139,12 @@ describe('scenario reject: the supplier rejects the order', () => {
     ).toEqual(['processing', 'rejected']);
   });
 
-  it('orders step 12 (portal reading): the merchant reads STATUS 3 and gets the amount back', async () => {
+  it('step 12 (getimeiorder): the merchant reads STATUS 3 with the reason and gets the amount back', async () => {
+    expect(await dhru.call('getimeiorder', { ID: String(orderId) })).toEqual({
+      SUCCESS: [{ STATUS: 3, CODE: 'IMEI not supported' }],
+      apiversion: '6.1',
+    });
+    expect((await dhru.call('accountinfo')).SUCCESS[0].AccoutInfo.credit).toBe('100.0000');
     const portal = await portalFor(t, world.merchant.id);
     const shown = json(await portal.get(`/client/orders/${orderId}`));
     expect(shown).toMatchObject({ status: 'rejected', result: { code: 'IMEI not supported' } });

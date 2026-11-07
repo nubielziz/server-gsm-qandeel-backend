@@ -1,0 +1,20 @@
+{
+  "action": "getfileorder",
+  "description": "Like getimeiorder; FILEID is the result file, left out while there is none.",
+  "request": {
+    "action": "getfileorder",
+    "parameters": {
+      "ID": "{{fileOrder}}"
+    }
+  },
+  "response": {
+    "SUCCESS": [
+      {
+        "STATUS": 4,
+        "CODE": "Done",
+        "FILEID": "$integer"
+      }
+    ],
+    "apiversion": "6.1"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "action": "nope",
+  "description": "Decision 026: the standard message for an unknown action.",
+  "request": {
+    "action": "nope"
+  },
+  "response": {
+    "ERROR": [
+      {
+        "MESSAGE": "Invalid Action"
+      }
+    ],
+    "apiversion": "6.1"
+  }
+}

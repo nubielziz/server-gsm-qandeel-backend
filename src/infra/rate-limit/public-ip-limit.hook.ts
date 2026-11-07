@@ -5,14 +5,14 @@ import type { FastifyRequest } from 'fastify';
 import { contractRegistry } from '../../common/contract';
 import { ipRateLimitKey, parseIpAddress } from '../../common/ip-address';
 import { RequestPipeline, requestPath } from '../../common/pipeline';
-import { publicLimiterFor } from './public-ip-limit';
+import { isLargeBody, publicLimiterFor } from './public-ip-limit';
 import { RateLimitService } from './rate-limit.service';
 
 /**
  * Registers the per-IP rate limit stage with the pipeline.
  *
  * Why: the third check before authentication (decision 018): after the IP rules and maintenance, the public surfaces are
- * counted per client address with the `ip` and `token` limiters of `limiters.ts` (the numbers live there, nowhere
+ * counted per client address with the `ip`, `token` and `upload` limiters of `limiters.ts` (the numbers live there, nowhere
  * else). The key is the IPv4 address or the /64 network of an IPv6 address, so rotating addresses inside one subscriber's
  * network does not dodge the limit. If the cache Redis is down, the limiter counts in memory per process (decision 021).
  *
@@ -43,7 +43,8 @@ export class PublicIpLimitHook implements OnModuleInit {
     // Fastify answers HEAD from the GET route: it has the access of the GET contract (a HEAD flood must not dodge `token`).
     const method = request.method === 'HEAD' ? 'GET' : request.method;
     const access = template ? contractRegistry.get(`${method} ${template}`)?.access : undefined;
-    const limiter = publicLimiterFor(requestPath(request), access);
+    const largeBody = isLargeBody(request.headers['content-type'], request.headers['content-length']);
+    const limiter = publicLimiterFor(requestPath(request), access, largeBody);
     if (!limiter) return;
     await this.limits.enforce(limiter, ipRateLimitKey(parseIpAddress(request.ip)));
   }

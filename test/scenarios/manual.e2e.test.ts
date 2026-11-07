@@ -1,8 +1,8 @@
 // End-to-end walk of the map scenario `manual` (manual fulfilment by staff, docs/slices/orders.json), step by step through HTTP on the
 // real application: the tables and statuses each step names are read back from Postgres. The steps share one story, so the tests of
 // this file run in order and keep their state in the variables below.
-// Steps 1, 2 and 10 are the merchant's Dhru calls (placeimeiorder, getimeiorder): feature 7a adds them to this file. Here the
-// merchant places the same order through the portal, which uses the same placement path (steps 3 and 4 do not depend on the surface).
+// Steps 1, 2 and 10 are the merchant's Dhru calls (placeimeiorder, getimeiorder: decision 026, feature 7a): the merchant lists the
+// services, places the order and reads STATUS 0, 1 and 4 through its Dhru endpoint; the portal reading stays next to them.
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { schema as s } from '../../src/infra/db';
@@ -11,6 +11,7 @@ import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches } from '../support/auth';
 import { MINUTE, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
+import { clearApiKeyCaches, credentialsFor, dhruClient } from '../support/machine-orders';
 import { accountFigures, ledgerTotals } from '../support/money';
 import {
   IMEIS,
@@ -32,12 +33,15 @@ let t: TestApp;
 let world: OrdersWorld;
 let staff: AdminApi;
 let orderId = 0;
+let dhru: ReturnType<typeof dhruClient>;
 
 beforeAll(async () => {
   t = await createTestApp({ clock });
   await resetDb();
   await clearIdentityCaches(t);
   world = await ordersWorld((await testDb()).db);
+  await clearApiKeyCaches(t);
+  dhru = dhruClient(t, await credentialsFor(t, world.db, world.merchant.id));
   staff = await adminWith(t, ['orders:*'], { name: 'Lina S.' });
 });
 afterAll(async () => {
@@ -48,22 +52,23 @@ afterAll(async () => {
 });
 
 describe('scenario manual: manual fulfilment by staff', () => {
-  it("step 3: the price is the merchant's, then in one transaction: the order, its event, the hold entry and the outbox job", async () => {
+  it("steps 1 and 2 (imeiservicelist, placeimeiorder), step 3: the price is the merchant's, then in one transaction: the order, its event, the hold entry and the outbox job", async () => {
     const { db, merchant, manual } = world;
-    const portal = await portalFor(t, merchant.id);
-    // The merchant sees its price on the catalog before ordering (the price protection memory of user rule 9).
-    const catalog = json(await portal.get(`/client/services/${manual.serviceId}`));
-    expect(catalog.price).toBe('5.0000');
-    const res = await portal.post('/client/orders', { serviceId: manual.serviceId, imei: IMEIS[0] });
-    expect(res.statusCode).toBe(201);
-    orderId = json(res).orders[0].id;
+    // The merchant sees its price in the service list before ordering (the price protection memory of user rule 9).
+    const list = (await dhru.call('imeiservicelist')).SUCCESS[0].LIST['Carrier unlock'].SERVICES[
+      String(manual.serviceId)
+    ];
+    expect(list.CREDIT).toBe('5.0000');
+    const answer = await dhru.call('placeimeiorder', { ID: manual.serviceId, IMEI: IMEIS[0] });
+    expect(answer.SUCCESS).toEqual([{ MESSAGE: 'Order received', REFERENCEID: expect.any(String) }]);
+    orderId = Number(answer.SUCCESS[0].REFERENCEID);
 
     const row = await orderRow(db, orderId);
     expect(row).toMatchObject({
       clientId: merchant.id,
       serviceId: manual.serviceId,
       totalPrice: '5.0000',
-      source: 'portal',
+      source: 'dhru',
     });
     expect(row.pricingSnapshot).toMatchObject({ source: 'base', price: '5.0000' });
     expect((await eventsOf(db, orderId)).map((event) => event.type)).toEqual(['created', 'hold', 'review']);
@@ -78,6 +83,7 @@ describe('scenario manual: manual fulfilment by staff', () => {
 
   it('step 4: the answer is immediate: the order number (REFERENCEID) and status pending (STATUS 0)', async () => {
     const { merchant } = world;
+    expect((await dhru.call('getimeiorder', { ID: String(orderId) })).SUCCESS).toEqual([{ STATUS: 0, CODE: '' }]);
     const shown = json(await (await portalFor(t, merchant.id)).get(`/client/orders/${orderId}`));
     expect(shown).toMatchObject({ id: orderId, status: 'pending', result: { code: null }, completedAt: null });
   });
@@ -102,6 +108,7 @@ describe('scenario manual: manual fulfilment by staff', () => {
     expect(await orderRow(db, orderId)).toMatchObject({ status: 'processing', dispatchState: 'operator' });
     expect((await eventsOf(db, orderId)).at(-1)).toMatchObject({ type: 'accepted', actorType: 'staff' });
     expect(await walletOf(db, merchant.id)).toEqual({ wallet: '95.0000', hold: '5.0000' });
+    expect((await dhru.call('getimeiorder', { ID: String(orderId) })).SUCCESS).toEqual([{ STATUS: 1, CODE: '' }]);
     expect((await staff.get(`/admin/orders/${orderId}`)).body).toMatchObject({ status: 'processing', queue: null });
     expect((await outboxOf(db, 'order.status_changed', orderId))[0]!.payload).toMatchObject({
       fromStatus: 'pending',
@@ -151,8 +158,11 @@ describe('scenario manual: manual fulfilment by staff', () => {
     expect((await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id }))?.balance).toBe('95.0000');
   });
 
-  // Step 10 (getimeiorder: STATUS 4 and CODE) is the Dhru call of feature 7a. Through the portal the merchant reads the same facts:
-  it('step 10 (portal reading): the merchant reads the finished order with its result', async () => {
+  it('step 10 (getimeiorder): the merchant reads STATUS 4 and the CODE, and the portal shows the same facts', async () => {
+    expect(await dhru.call('getimeiorder', { ID: String(orderId) })).toEqual({
+      SUCCESS: [{ STATUS: 4, CODE: 'Unlocked: code 8842 1113' }],
+      apiversion: '6.1',
+    });
     const shown = json(await (await portalFor(t, world.merchant.id)).get(`/client/orders/${orderId}`));
     expect(shown).toMatchObject({ status: 'completed', result: { code: 'Unlocked: code 8842 1113' } });
     expect(shown.completedAt).not.toBeNull();

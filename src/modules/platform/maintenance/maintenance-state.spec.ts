@@ -84,6 +84,8 @@ describe('scopesCovering', () => {
   it('puts order placement over REST v1 and Dhru in the api_orders scope, and nothing else of the API', () => {
     expect(covers('POST', '/v1/orders')).toEqual(['api_orders', 'all']);
     expect(covers('POST', '/v1/orders/bulk')).toEqual(['api_orders', 'all']);
+    // The upload of a File service's input is part of placing the order (B157).
+    expect(covers('POST', '/v1/files')).toEqual(['api_orders', 'all']);
     expect(covers('POST', '/api/index.php', 'placeimeiorder')).toEqual(['api_orders', 'all']);
     expect(covers('POST', '/api/index.php', 'placeimeiorderbulk')).toEqual(['api_orders', 'all']);
     expect(covers('POST', '/api/index.php', 'placefileorder')).toEqual(['api_orders', 'all']);
@@ -93,7 +95,7 @@ describe('scopesCovering', () => {
       ['POST', '/v1/orders/:id/cancel'],
       ['POST', '/v1/orders/:id/verify'],
       ['GET', '/v1/services'],
-      ['POST', '/v1/files'],
+      ['GET', '/v1/files/:id'],
       ['POST', '/api/index.php', 'getimeiorder'],
       ['POST', '/api/index.php', 'getimeiorderbulk'],
       ['POST', '/api/index.php', 'accountinfo'],

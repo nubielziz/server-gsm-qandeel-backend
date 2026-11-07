@@ -1,0 +1,20 @@
+{
+  "action": "accountinfo",
+  "description": "Decision 026: { message: 'Your Accout Info', AccoutInfo: { credit, mail, currency } }, spelling included.",
+  "request": {
+    "action": "accountinfo"
+  },
+  "response": {
+    "SUCCESS": [
+      {
+        "message": "Your Accout Info",
+        "AccoutInfo": {
+          "credit": "$money",
+          "mail": "$string",
+          "currency": "USD"
+        }
+      }
+    ],
+    "apiversion": "6.1"
+  }
+}

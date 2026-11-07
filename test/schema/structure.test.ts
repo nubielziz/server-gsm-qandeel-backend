@@ -117,10 +117,10 @@ describe('module ownership', () => {
     }
   });
 
-  it("the infra barrel re-exports all 67 tables once (the map's 66 and the backend's listed_prices)", () => {
+  it("the infra barrel re-exports all 68 tables once (the map's 66 and the backend's listed_prices and idempotency_keys)", () => {
     const names = tablesOf(barrel).map(nameOf);
-    expect(names).toHaveLength(67);
-    expect(new Set(names).size).toBe(67);
+    expect(names).toHaveLength(68);
+    expect(new Set(names).size).toBe(68);
   });
 });
 

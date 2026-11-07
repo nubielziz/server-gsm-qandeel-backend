@@ -33,7 +33,10 @@ interface Setup {
   readonly touches: string[];
 }
 
-function setup(found: ApiKeyView | undefined, options: { failureAllowed?: boolean; touchFails?: boolean } = {}): Setup {
+function setup(
+  found: ApiKeyView | undefined,
+  options: { failureAllowed?: boolean; keyAllowed?: boolean; touchFails?: boolean } = {},
+): Setup {
   const lookups: string[] = [];
   const consumed: Setup['consumed'] = [];
   const enforced: Setup['enforced'] = [];
@@ -49,18 +52,26 @@ function setup(found: ApiKeyView | undefined, options: { failureAllowed?: boolea
     },
   } as unknown as ApiKeyDirectory;
   const limits = {
-    consume: (name: string, key: string, points = 1) => {
+    consume: (name: string, key: string, points = 1, opts?: unknown) => {
+      // The key's own limit (`api-key`) is counted after every check passed; the `ip` limiter counts unknown keys.
+      if (name === 'api-key') {
+        enforced.push({ name, key, options: opts });
+        return Promise.resolve({
+          allowed: options.keyAllowed ?? true,
+          remaining: 1,
+          limit: 25,
+          retryAfterSeconds: options.keyAllowed === false ? 17 : 0,
+          resetSeconds: 17,
+        });
+      }
       consumed.push({ name, key, points });
       return Promise.resolve({
         allowed: options.failureAllowed ?? true,
         remaining: 0,
         limit: 300,
         retryAfterSeconds: 42,
+        resetSeconds: 42,
       });
-    },
-    enforce: (name: string, key: string, _points: number, opts: unknown) => {
-      enforced.push({ name, key, options: opts });
-      return Promise.resolve({ allowed: true, remaining: 1, limit: 25, retryAfterSeconds: 0 });
     },
   } as unknown as RateLimitService;
   return {
@@ -75,6 +86,38 @@ function setup(found: ApiKeyView | undefined, options: { failureAllowed?: boolea
 const asking = { scope: 'orders:read', surface: 'v1' } as const;
 
 describe('ApiKeyAuthenticator', () => {
+  it("tells the caller the key's limit figures after counting the call, for the RateLimit headers", async () => {
+    const s = setup(view());
+    const seen: unknown[] = [];
+    await s.authenticator.authenticate(request(), { ...asking, key: 'the-key', onRateLimit: (r) => seen.push(r) });
+    expect(seen).toEqual([{ allowed: true, remaining: 1, limit: 25, retryAfterSeconds: 0, resetSeconds: 17 }]);
+  });
+
+  it('tells the caller the figures of a refused call too, then answers 429 with Retry-After', async () => {
+    const s = setup(view(), { keyAllowed: false });
+    const seen: Array<{ allowed: boolean }> = [];
+    const error = await rejectionOf(
+      s.authenticator.authenticate(request(), { ...asking, key: 'the-key', onRateLimit: (r) => seen.push(r) }),
+    );
+    expect(error).toMatchObject({ code: 'RATE_LIMITED', status: 429, retryAfterSeconds: 17 });
+    expect(seen).toMatchObject([{ allowed: false }]);
+    // A call the limit refused is not recorded as a use of the key.
+    expect(s.touches).toEqual([]);
+  });
+
+  it('never reports a limit for a call refused before it was counted (unknown key, wrong scope)', async () => {
+    const unknown = setup(undefined);
+    const seen: unknown[] = [];
+    await rejectionOf(
+      unknown.authenticator.authenticate(request(), { ...asking, key: 'nope', onRateLimit: (r) => seen.push(r) }),
+    );
+    const wrongScope = setup(view({ scopes: [] }));
+    await rejectionOf(
+      wrongScope.authenticator.authenticate(request(), { ...asking, key: 'k', onRateLimit: (r) => seen.push(r) }),
+    );
+    expect(seen).toEqual([]);
+  });
+
   it("returns the principal and counts the call against the key's own limit", async () => {
     const s = setup(view());
     const principal = await s.authenticator.authenticate(request(), { ...asking, key: 'the-key' });

@@ -4,6 +4,7 @@ import { Module } from '@nestjs/common';
 import { AuditLogAdminService } from './application/audit-log-admin.service';
 import { FileAccessService } from './application/file-access.service';
 import { SettingsAdminService } from './application/settings-admin.service';
+import { FilesModule } from './files.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
 import { AuditLogsController } from './controllers/audit-logs.controller';
 import { FilesController } from './controllers/files.controller';
@@ -17,7 +18,7 @@ import { SettingsController } from './controllers/settings.controller';
  * only through `index.ts`.
  */
 @Module({
-  imports: [MaintenanceModule],
+  imports: [MaintenanceModule, FilesModule],
   controllers: [AuditLogsController, SettingsController, FilesController],
   providers: [AuditLogAdminService, SettingsAdminService, FileAccessService],
 })

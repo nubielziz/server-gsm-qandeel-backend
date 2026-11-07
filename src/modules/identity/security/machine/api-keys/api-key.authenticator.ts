@@ -6,7 +6,7 @@ import { CLOCK, type Clock } from '../../../../../common/clock';
 import { constantTimeEqual } from '../../../../../infra/crypto';
 import { type IpAddress, formatIpAddress, ipRateLimitKey, parseIpAddress } from '../../../../../common/ip-address';
 import type { Surface } from '../../../../../common/surface';
-import { RateLimitService, rateLimitedError } from '../../../../../infra/rate-limit';
+import { type RateLimitResult, RateLimitService, rateLimitedError } from '../../../../../infra/rate-limit';
 import type { ApiKeyPrincipal } from '../../principal';
 import { ApiKeyDirectory } from './api-key.directory';
 import { type ApiKeyRefusalReason, type ApiKeyView, checkApiKey, refusalFor } from './api-key.rules';
@@ -21,6 +21,11 @@ export interface ApiKeyCredentials {
   readonly scope: string;
   /** The surface, which words the refusals (problem+json, or the Dhru envelope). */
   readonly surface: Surface;
+  /**
+   * Called with the key's own limit after the call was counted, whether it was allowed or not (REST v1 turns it into the
+   * `RateLimit-*` headers). Not called for a refusal before the count (unknown key, wrong scope, address not allowed).
+   */
+  readonly onRateLimit?: ((result: RateLimitResult) => void) | undefined;
 }
 
 /**
@@ -33,7 +38,8 @@ export interface ApiKeyCredentials {
  * REST v1 and Dhru have no per-IP stage in the pipeline and an unknown key has no per-key limit to hit.
  *
  * Side effects: reads the key cache and, on a miss, `api_keys` and `clients`; counts points in the cache Redis; writes
- * `api_keys.last_used_at` at most once a minute.
+ * `api_keys.last_used_at` at most once a minute; tells the caller the key's limit figures through `onRateLimit` (REST v1 sends
+ * them as `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset`).
  *
  * @see docs/decisions/018-auth-sessions-csrf.md
  */
@@ -59,7 +65,7 @@ export class ApiKeyAuthenticator {
    *   `RATE_LIMITED` (429 with `Retry-After`: the key's limit, or too many unknown keys from one address)
    */
   async authenticate(request: FastifyRequest, credentials: ApiKeyCredentials): Promise<ApiKeyPrincipal> {
-    const { key, username, scope, surface } = credentials;
+    const { key, username, scope, surface, onRateLimit } = credentials;
     const address = parseIpAddress(request.ip);
     const refuse = (reason: ApiKeyRefusalReason) => refusalFor(reason, surface, address, scope);
 
@@ -78,7 +84,9 @@ export class ApiKeyAuthenticator {
     // A stored limit below 1 is a data error (the limiter would throw): the limiter's default applies instead.
     const options =
       Number.isInteger(view.rateLimitPerMin) && view.rateLimitPerMin >= 1 ? { limit: view.rateLimitPerMin } : {};
-    await this.limits.enforce('api-key', String(view.id), 1, options);
+    const limit = await this.limits.consume('api-key', String(view.id), 1, options);
+    onRateLimit?.(limit);
+    if (!limit.allowed) throw rateLimitedError(limit.retryAfterSeconds);
 
     await this.touchQuietly(view, address ? formatIpAddress(address) : request.ip, nowMs);
     return {

@@ -1,7 +1,7 @@
 // End-to-end walk of the map scenario `timeout` (the supplier does not answer, the order needs attention, docs/slices/suppliers.json and
 // orders.json), step by step on the real application and a fake Dhru supplier that takes the order and never answers. The steps share
 // one story, so the tests of this file run in order.
-// Steps 1 and 2 are the merchant's Dhru call: feature 7a adds them to this file; the merchant places the order through the portal here.
+// Steps 1 and 2 are the merchant's Dhru call (placeimeiorder, getimeiorder: decision 026, feature 7a): the merchant places the orders and reads their status.
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { EncryptionService } from '../../src/infra/crypto';
@@ -13,16 +13,15 @@ import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches } from '../support/auth';
 import { HOUR, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
+import { clearApiKeyCaches, credentialsFor, dhruClient } from '../support/machine-orders';
 import { ledgerTotals } from '../support/money';
 import {
   IMEIS,
   auditOf,
   eventsOf,
-  json,
   orderRow,
   ordersWorld,
   outboxOf,
-  portalFor,
   systemBalance,
   walletOf,
   type OrdersWorld,
@@ -40,12 +39,15 @@ let dispatch: SupplierDispatch;
 let supplierId = 0;
 let serviceId = 0;
 let orderId = 0;
+let dhru: ReturnType<typeof dhruClient>;
 
 beforeAll(async () => {
   t = await createTestApp({ clock, imports: [SupplierTestModule], env: { BULL_PREFIX: prefix } });
   await resetDb();
   await clearIdentityCaches(t);
   world = await ordersWorld((await testDb()).db);
+  await clearApiKeyCaches(t);
+  dhru = dhruClient(t, await credentialsFor(t, world.db, world.merchant.id));
   staff = await adminWith(t, ['orders:*', 'suppliers:*'], { name: 'Lina S.' });
   dispatch = t.app.get(SupplierDispatch, { strict: false });
   ({ supplierId, serviceId } = await automaticRoute(
@@ -66,12 +68,12 @@ afterAll(async () => {
 });
 
 describe('scenario timeout: the supplier does not answer', () => {
-  it('orders steps 3 and 4: the order is placed with its hold and the answer is immediate (status pending)', async () => {
+  it('steps 1 and 2 (placeimeiorder), orders steps 3 and 4: the order is placed with its hold and the answer is immediate (status pending)', async () => {
     const { db, merchant } = world;
-    const res = await (await portalFor(t, merchant.id)).post('/client/orders', { serviceId, imei: IMEIS[2] });
-    expect(res.statusCode).toBe(201);
-    orderId = json(res).orders[0].id;
-    expect(await orderRow(db, orderId)).toMatchObject({ status: 'pending', dispatchState: 'pending' });
+    const answer = await dhru.call('placeimeiorder', { ID: serviceId, IMEI: IMEIS[2] });
+    expect(answer.SUCCESS).toEqual([{ MESSAGE: 'Order received', REFERENCEID: expect.any(String) }]);
+    orderId = Number(answer.SUCCESS[0].REFERENCEID);
+    expect(await orderRow(db, orderId)).toMatchObject({ status: 'pending', dispatchState: 'pending', source: 'dhru' });
     expect(await walletOf(db, merchant.id)).toEqual({ wallet: '82.7200', hold: '17.2800' });
   });
 
@@ -118,6 +120,8 @@ describe('scenario timeout: the supplier does not answer', () => {
     const review = (await eventsOf(db, orderId)).at(-1)!;
     expect(review).toMatchObject({ type: 'review', actorType: 'system' });
     expect(await outboxOf(db, 'order.status_changed', orderId)).toHaveLength(0);
+    // The merchant sees nothing of it: the order is still new (STATUS 0) and nothing was sent to it.
+    expect((await dhru.call('getimeiorder', { ID: String(orderId) })).SUCCESS).toEqual([{ STATUS: 0, CODE: '' }]);
   });
 
   it('orders step 10: with no supplier reference there is nothing to fetch; the member checks with the supplier and sends it again by hand', async () => {
@@ -138,13 +142,14 @@ describe('scenario timeout: the supplier does not answer', () => {
     expect(fake.callsOf('placeimeiorder')).toHaveLength(2);
     expect(await orderRow(db, orderId)).toMatchObject({ status: 'processing', dispatchState: 'sent' });
     expect((await staff.get(`/admin/orders/${orderId}`)).body).toMatchObject({ queue: null, attempts: 2 });
+    expect((await dhru.call('getimeiorder', { ID: String(orderId) })).SUCCESS).toEqual([{ STATUS: 1, CODE: '' }]);
   });
 
   it('orders step 10 (a reference exists): the member fetches the result and the order completes with the money settled', async () => {
-    const { db, merchant } = world;
+    const { db } = world;
     // A second order that timed out after the supplier had accepted it: it has a reference and waits for attention.
-    const res = await (await portalFor(t, merchant.id)).post('/client/orders', { serviceId, imei: IMEIS[3] });
-    const secondId = json(res).orders[0].id as number;
+    const second = await dhru.call('placeimeiorder', { ID: serviceId, IMEI: IMEIS[3] });
+    const secondId = Number(second.SUCCESS[0].REFERENCEID);
     fake.place('accept');
     expect((await dispatch.run(secondId, { lastAttempt: false })).status).toBe('sent');
     const reference = (await orderRow(db, secondId)).supplierRef!;
@@ -166,5 +171,10 @@ describe('scenario timeout: the supplier does not answer', () => {
     expect(await systemBalance(db, 'revenue')).toBe('17.2800');
     expect(await systemBalance(db, 'cogs')).toBe('13.5000');
     expect((await ledgerTotals(db)).sum).toBe('0.0000');
+    // The merchant reads the result of the second order with getimeiorder, and the first is still in process.
+    expect((await dhru.call('getimeiorder', { ID: String(secondId) })).SUCCESS).toEqual([
+      { STATUS: 4, CODE: 'Unlocked' },
+    ]);
+    expect((await dhru.call('getimeiorder', { ID: String(orderId) })).SUCCESS).toEqual([{ STATUS: 1, CODE: '' }]);
   });
 });

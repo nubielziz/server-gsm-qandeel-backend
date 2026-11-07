@@ -103,6 +103,8 @@ export async function hasActiveSupplierLink(db: DbExecutor, serviceId: number): 
 export interface ServiceAvailability {
   readonly status: string;
   readonly archived: boolean;
+  /** `imei`, `server`, `remote` or `file`: Dhru places a File service with another action. */
+  readonly type: 'imei' | 'server' | 'remote' | 'file';
 }
 
 /**
@@ -120,11 +122,11 @@ export async function serviceAvailabilityOf(
   serviceId: number,
 ): Promise<ServiceAvailability | undefined> {
   const [row] = await db
-    .select({ status: s.services.status, archivedAt: s.services.archivedAt })
+    .select({ status: s.services.status, archivedAt: s.services.archivedAt, type: s.services.type })
     .from(s.services)
     .where(eq(s.services.id, serviceId))
     .limit(1);
-  return row ? { status: row.status, archived: row.archivedAt !== null } : undefined;
+  return row ? { status: row.status, archived: row.archivedAt !== null, type: row.type } : undefined;
 }
 
 /** A stored file as placement and the file routes need it. */

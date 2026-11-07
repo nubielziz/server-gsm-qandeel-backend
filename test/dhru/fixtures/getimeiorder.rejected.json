@@ -1,0 +1,19 @@
+{
+  "action": "getimeiorder",
+  "description": "STATUS 3 rejected (refunded), CODE is the reason.",
+  "request": {
+    "action": "getimeiorder",
+    "parameters": {
+      "ID": "{{rejected}}"
+    }
+  },
+  "response": {
+    "SUCCESS": [
+      {
+        "STATUS": 3,
+        "CODE": "Carrier refused the IMEI"
+      }
+    ],
+    "apiversion": "6.1"
+  }
+}

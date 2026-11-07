@@ -49,6 +49,12 @@ routes). Invoices, gateways and payments arrive with feature 8, FX refresh with 
   of identity reads it. `MerchantWallets.idsWithCreditLimit(db)` lists the merchants whose credit limit is above zero (the
   catalog's `overdraftAllowed: false` guard). `findMerchant` takes `FOR SHARE` on the merchant's group row, so a credit limit
   change and a change of the group's overdraft flag never interleave.
+- **Merchant machine surfaces (feature 7a).** `MerchantApiAccount` (`application/merchant-api-account.ts`) serves `GET /v1/account`
+  (`balance`, `reserved`, `creditLimit` and `available` from the same wallet view as the portal, the currency and the client group),
+  `GET /v1/transactions` (the wallet's statement by cursor: `?limit=` 1 to 100, `?cursor=` the entry id of the last line sent; newest
+  first, from the merchant side, so a deposit is positive and an order hold negative; the hold-only lines never appear) and binds Dhru's
+  `accountinfo` to the `DhruGateway`: `{ message: 'Your Accout Info', AccoutInfo: { credit, mail, currency } }` where `credit` is the
+  available balance (balance plus credit limit, what an order may spend now). Never cached (decision 022). Scope `account:read`.
 - **Seed.** `scripts/seed/money.ts` opens the accounts of every demo merchant and posts the demo's ledger history through
   `postTransaction`, skipping merchants the identity seed has not created.
 

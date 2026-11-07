@@ -26,13 +26,13 @@ const drizzleTables = (): PgTable[] =>
   (Object.values(schema) as unknown[]).filter((value): value is PgTable => is(value, PgTableClass));
 
 describe('migrations', () => {
-  it('create exactly the 66 tables of the map and the 1 the backend adds (listed_prices)', async () => {
+  it('create exactly the 66 tables of the map and the 2 the backend adds (listed_prices, idempotency_keys)', async () => {
     const { pool } = await testDb();
     const { rows } = await pool.query<{ tablename: string }>(
       `select tablename from pg_tables where schemaname = 'public' order by tablename`,
     );
     const names = rows.map((row) => row.tablename);
-    expect(names).toHaveLength(67);
+    expect(names).toHaveLength(68);
     expect(names).toEqual(await mappedTables());
     expect(
       drizzleTables()
@@ -60,7 +60,7 @@ describe('migrations', () => {
       const scratch = new Pool({ connectionString: url.toString(), max: 1 });
       try {
         const tables = await scratch.query(`select 1 from pg_tables where schemaname = 'public'`);
-        expect(tables.rowCount).toBe(67);
+        expect(tables.rowCount).toBe(68);
         const triggers = await scratch.query(`select tgname from pg_trigger where not tgisinternal order by tgname`);
         expect(triggers.rows.map((row) => row.tgname)).toEqual([
           'audit_logs_append_only',

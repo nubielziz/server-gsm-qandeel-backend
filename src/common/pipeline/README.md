@@ -25,7 +25,9 @@ Authentication, CSRF and permissions are Nest guards and run after these.
 - A refusal is answered by `ProblemExceptionFilter.handle` (problem+json, `api_errors_total`, the access log, and the surface's
   own envelope through `ErrorFormatterRegistry`: Dhru, decision 026). The registry then returns the reply so Fastify stops.
 - Two phases exist: `onRequest` (before the body is read; almost everything) and `preValidation` (after the body is parsed,
-  still before any guard). Only maintenance uses the second, to see the Dhru `action` field.
+  still before any guard). Only maintenance uses the second, to see the Dhru `action` field. A `multipart/form-data` body is parsed
+  before both (`registerMultipartBodies`, `src/common/multipart.ts`, feature 7a) on the three routes that take one (`/api/index.php`,
+  `/v1/files`, `/client/files`; `415` elsewhere), so the `action` of a multipart Dhru call is visible to maintenance too.
 - A stage without a handler is skipped; `onApplicationBootstrap` logs a warning naming it (a test app without Redis has none).
   The real application has all three, which `test/integration/pipeline-hooks.test.ts` checks.
 

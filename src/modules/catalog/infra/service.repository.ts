@@ -293,6 +293,30 @@ export async function listFieldRows(db: DbExecutor, serviceId: number): Promise<
 }
 
 /**
+ * Reads the custom fields of several services at once, by `sort`.
+ *
+ * Why: the Dhru service list shows the fields of every service (`Requires.Custom`); one query for the whole list, not one per service.
+ *
+ * @param db the database or a transaction
+ * @param serviceIds the services
+ * @returns the fields grouped by service, each list in `sort` order (a service without fields has no entry)
+ */
+export async function listFieldRowsOf(
+  db: DbExecutor,
+  serviceIds: readonly number[],
+): Promise<Map<number, ServiceField[]>> {
+  const byService = new Map<number, ServiceField[]>();
+  if (serviceIds.length === 0) return byService;
+  const rows = await db
+    .select()
+    .from(serviceFields)
+    .where(inArray(serviceFields.serviceId, [...serviceIds]))
+    .orderBy(asc(serviceFields.sort), asc(serviceFields.id));
+  for (const row of rows) byService.set(row.serviceId, [...(byService.get(row.serviceId) ?? []), row]);
+  return byService;
+}
+
+/**
  * Reads the option lists of a service in the order they were saved.
  *
  * @param db the database or a transaction

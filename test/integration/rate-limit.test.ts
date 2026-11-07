@@ -52,7 +52,14 @@ describe('consume', () => {
     const limit = RATE_LIMITERS.token.points; // 30 per minute
     for (let used = 1; used <= limit; used++) {
       const result = await limiter.consume('token', key);
-      expect(result, `call ${used}`).toEqual({ allowed: true, remaining: limit - used, limit, retryAfterSeconds: 0 });
+      expect(result, `call ${used}`).toEqual({
+        allowed: true,
+        remaining: limit - used,
+        limit,
+        retryAfterSeconds: 0,
+        // Seconds until the window ends: the `RateLimit-Reset` header of REST v1.
+        resetSeconds: expect.any(Number),
+      });
     }
     const refused = await limiter.consume('token', key);
     expect(refused.allowed).toBe(false);
@@ -138,6 +145,7 @@ describe('per-key limits (API keys, suppliers)', () => {
         remaining: 3 - used,
         limit: 3,
         retryAfterSeconds: 0,
+        resetSeconds: expect.any(Number),
       });
     }
     const refused = await limiter.consume('api-key', key, 1, { limit: 3 });

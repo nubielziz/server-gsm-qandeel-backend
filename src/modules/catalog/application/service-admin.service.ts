@@ -63,6 +63,9 @@ export interface ServiceView {
   readonly slaMinutes: number;
   readonly supplier: SupplierRef | null;
   readonly fallbackSupplier: SupplierRef | null;
+  readonly allowCancel: boolean;
+  readonly allowVerify: boolean;
+  readonly verifyWindowH: number;
 }
 
 /** A custom field as the console reads it. */
@@ -99,6 +102,10 @@ export interface CreateServiceInput {
   readonly type: ServiceType;
   readonly slaMinutes: number;
   readonly basePrice: string;
+  /** What a merchant may do with the orders of the service (all off when left out). */
+  readonly allowCancel?: boolean | undefined;
+  readonly allowVerify?: boolean | undefined;
+  readonly verifyWindowH?: number | undefined;
 }
 
 /** The fields `PATCH /admin/services/:id` may change; `minProfit: null` goes back to the default policy. */
@@ -112,6 +119,9 @@ export interface UpdateServiceInput {
   readonly minProfit?: string | null | undefined;
   readonly status?: ServiceStatus | undefined;
   readonly executionMode?: FulfillmentMode | undefined;
+  readonly allowCancel?: boolean | undefined;
+  readonly allowVerify?: boolean | undefined;
+  readonly verifyWindowH?: number | undefined;
 }
 
 /**
@@ -176,6 +186,9 @@ const snapshot = (service: Service) => ({
   basePrice: service.basePrice,
   minProfit: service.minProfit,
   slaMinutes: service.slaMinutes,
+  allowCancel: service.allowCancel,
+  allowVerify: service.allowVerify,
+  verifyWindowH: service.verifyWindowH,
 });
 
 function toView(row: ServiceRow, chain: SupplierChain | undefined): ServiceView {
@@ -199,6 +212,9 @@ function toView(row: ServiceRow, chain: SupplierChain | undefined): ServiceView 
     slaMinutes: service.slaMinutes,
     supplier: chain?.supplier ?? null,
     fallbackSupplier: chain?.fallbackSupplier ?? null,
+    allowCancel: service.allowCancel,
+    allowVerify: service.allowVerify,
+    verifyWindowH: service.verifyWindowH,
   };
 }
 
@@ -304,6 +320,10 @@ export class ServiceAdminService {
           effectiveCost: '0.0000',
           code: input.code,
           slaMinutes: input.slaMinutes,
+          // The merchant's cancel and verification stay off until staff switch them on (the columns default to false, false, 0).
+          ...(input.allowCancel === undefined ? {} : { allowCancel: input.allowCancel }),
+          ...(input.allowVerify === undefined ? {} : { allowVerify: input.allowVerify }),
+          ...(input.verifyWindowH === undefined ? {} : { verifyWindowH: input.verifyWindowH }),
         });
       } catch (error) {
         throw this.translateWriteError(error, input.code);
@@ -373,6 +393,9 @@ export class ServiceAdminService {
           ...(changes.minProfit === undefined ? {} : { minProfit: changes.minProfit }),
           ...(changes.status === undefined ? {} : { status: changes.status }),
           ...(changes.executionMode === undefined ? {} : { fulfillment: changes.executionMode }),
+          ...(changes.allowCancel === undefined ? {} : { allowCancel: changes.allowCancel }),
+          ...(changes.allowVerify === undefined ? {} : { allowVerify: changes.allowVerify }),
+          ...(changes.verifyWindowH === undefined ? {} : { verifyWindowH: changes.verifyWindowH }),
         });
       } catch (error) {
         throw this.translateWriteError(error, changes.code);

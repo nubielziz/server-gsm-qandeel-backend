@@ -103,11 +103,31 @@ describe('GET /openapi.json (public document)', () => {
     expect(res.body.endsWith('}\n')).toBe(true);
   });
 
-  it('keeps only the REST v1 and Dhru operations of the fixture API', async () => {
+  it('keeps only the REST v1 and Dhru operations: the real ones (feature 7a) and the fixture API', async () => {
     const t = await appWith();
     const doc = (await get(t, '/openapi.json')).json();
     expect(doc.openapi).toBe('3.1.0');
-    expect(Object.keys(doc.paths)).toEqual(['/api/index.php', '/v1/t/orders']);
+    const paths = Object.keys(doc.paths);
+    // The Dhru transport and the fixture's v1 route are there, and nothing else that is not REST v1.
+    expect(paths).toContain('/api/index.php');
+    expect(paths).toContain('/v1/t/orders');
+    expect(paths.filter((path) => path !== '/api/index.php' && !path.startsWith('/v1/'))).toEqual([]);
+    // The twelve real v1 routes are documented on the public document (decision 017).
+    for (const path of [
+      '/v1/services',
+      '/v1/services/{id}',
+      '/v1/account',
+      '/v1/transactions',
+      '/v1/orders',
+      '/v1/orders/bulk',
+      '/v1/orders/{id}',
+      '/v1/orders/{id}/cancel',
+      '/v1/orders/{id}/verify',
+      '/v1/files',
+      '/v1/files/{id}',
+    ]) {
+      expect(paths, path).toContain(path);
+    }
     expect(Object.keys(doc.paths['/v1/t/orders'])).toEqual(['get', 'post']);
     expect(doc.paths['/v1/t/orders'].post['x-gsm-surface']).toBe('v1');
     expect(doc.paths['/api/index.php'].post['x-gsm-surface']).toBe('dhru');
@@ -147,19 +167,24 @@ describe('GET /openapi.json (public document)', () => {
     const t = await appWith();
     const doc = (await get(t, '/openapi.json')).json();
     expectConsistent(doc);
+    // The fixture's `orders` tag is shared with the real v1 orders routes; the real account, files and services tags come with them.
     expect(doc['x-tagGroups']).toEqual([
-      { name: 'REST API v1', tags: ['orders'] },
-      { name: 'Dhru Fusion API', tags: ['test'] },
+      { name: 'REST API v1', tags: ['account', 'files', 'orders', 'services'] },
+      { name: 'Dhru Fusion API', tags: ['dhru'] },
     ]);
   });
 
-  it('answers the same on the app without the fixture API: a valid, empty public document', async () => {
+  it('answers the same on the app without the fixture API: a valid public document with the real v1 and Dhru routes only', async () => {
     const t = await createTestApp();
     apps.push(t);
     t.app.get(OpenApiService).publish(t.app, { events: [] });
     const doc = (await get(t, '/openapi.json')).json();
-    expect(doc.paths).toEqual({});
-    expect(Object.keys(doc.components.securitySchemes)).toEqual(['apiKey']);
+    expectConsistent(doc);
+    const paths = Object.keys(doc.paths);
+    expect(paths).toContain('/api/index.php');
+    expect(paths).not.toContain('/v1/t/orders');
+    expect(paths.filter((path) => path !== '/api/index.php' && !path.startsWith('/v1/'))).toEqual([]);
+    expect(Object.keys(doc.components.securitySchemes)).toEqual(['apiKey', 'dhruCredentials']);
   });
 
   it('lists the events of the registry as webhooks when they exist', async () => {
@@ -238,7 +263,8 @@ describe('GET /reference/openapi.json (internal document)', () => {
     expect(doc.paths['/v1/t/orders'].get.tags).toEqual(['v1: orders']);
     expect(doc.paths['/admin/t/orders'].get.tags).toEqual(['admin: orders']);
     const groups = Object.fromEntries(doc['x-tagGroups'].map((group: Json) => [group.name, group.tags]));
-    expect(groups['REST API v1']).toEqual(['v1: orders']);
+    // The real v1 routes (feature 7a) are in the group too: `v1: files` and `v1: services` share their tags with the portal's files and services.
+    expect(groups['REST API v1']).toEqual(expect.arrayContaining(['v1: orders']));
     // The real sign-in routes (map group `auth`) are in the group too; only the tags of this test's routes are checked.
     expect(groups['Admin console']).toEqual(expect.arrayContaining(['admin: orders', 'admin: test']));
     // The real portal routes are in the group too (the wallet routes are map group `catalog`, the sign-in ones `auth`).

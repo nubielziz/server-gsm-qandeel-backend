@@ -512,6 +512,7 @@ describe('hit counters and their flush', () => {
 });
 
 describe.skipIf(!existsSync(demoStatePath()))('the demo seed (roles, staff, IP rules, restriction on)', () => {
+  // Seeds the whole demo (about 10 s alone): a minute, so a busy database server does not fail it.
   it('decides as the console shows it: offices on the allowlist, blocks by audience', async () => {
     const { db } = await testDb();
     await runSeed(db, await loadDemoState());
@@ -530,7 +531,7 @@ describe.skipIf(!existsSync(demoStatePath()))('the demo seed (roles, staff, IP r
     for (const url of ['/store/v1/t/ping', '/v1/t/ping', '/admin/t/session', '/client/t/ping']) {
       expect(isIpRefusal(await get(url, '198.51.100.231', AUTH)), url).toBe(true);
     }
-  });
+  }, 60_000);
 });
 
 describe('the flush job in a worker', () => {

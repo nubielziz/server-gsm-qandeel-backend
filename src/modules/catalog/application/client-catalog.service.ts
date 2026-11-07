@@ -45,7 +45,13 @@ export interface ClientServiceDetailView extends ClientServiceView {
   readonly options: Array<{ list: ServiceOptionList; value: string; label: string }>;
 }
 
-function toView(entry: CatalogEntry): ClientServiceView {
+/**
+ * Turns a catalog entry into the row the merchant reads.
+ *
+ * @param entry a visible service with the merchant's price
+ * @returns the row (never the cost, the floor or the supplier)
+ */
+export function toClientServiceView(entry: CatalogEntry): ClientServiceView {
   const { service } = entry;
   return {
     id: service.id,
@@ -100,7 +106,7 @@ export class ClientCatalogService {
     const merchant = await this.merchantFor(clientId);
     const { entries, total } = await this.catalog.page(this.db.db, merchant, query);
     await this.remember(clientId, entries);
-    return { rows: entries.map(toView), total };
+    return { rows: entries.map(toClientServiceView), total };
   }
 
   /**
@@ -121,7 +127,7 @@ export class ClientCatalogService {
     ]);
     await this.remember(clientId, [entry]);
     return {
-      ...toView(entry),
+      ...toClientServiceView(entry),
       // The supplier's field names and values are internal: the merchant sees what its own order form needs.
       fields: fields.map((field) => ({
         key: field.key,

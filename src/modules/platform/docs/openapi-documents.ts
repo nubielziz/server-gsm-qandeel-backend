@@ -4,6 +4,8 @@
 import type { INestApplication } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { type EventContract, eventRegistry, toJsonSchema, zIsoDateTime } from '../../../common/contract';
+import { type AnyDhruAction, dhruActionRegistry } from '../../../common/dhru';
+import { describeDhruActions } from './dhru-reference';
 import type {
   OpenApiDocument,
   OpenApiOperation,
@@ -102,6 +104,8 @@ export interface OpenApiDocuments {
 export interface BuildOptions {
   /** Outgoing events to publish as `webhooks`; defaults to the process-wide registry. */
   readonly events?: readonly EventContract[];
+  /** Dhru actions to describe in the Dhru operation; defaults to the process-wide registry. */
+  readonly dhruActions?: readonly AnyDhruAction[];
 }
 
 function clone<T>(value: T): T {
@@ -453,6 +457,8 @@ export function buildOpenApiDocuments(app: INestApplication, options: BuildOptio
   // autoTagControllers: false keeps the contract's own tags (the default adds a tag per controller).
   const raw = clone(SwaggerModule.createDocument(app, base, { autoTagControllers: false })) as OpenApiDocument;
   stripSchemaKeyword(raw);
+  // Decision 017: the Dhru operation lists its eight actions (a `oneOf` by `action`, an example each) in both documents.
+  describeDhruActions(raw, options.dhruActions ?? dhruActionRegistry.all());
   return {
     internal: buildInternalDocument(raw),
     public: buildPublicDocument(raw, options.events ?? eventRegistry.all()),

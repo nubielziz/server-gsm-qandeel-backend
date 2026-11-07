@@ -104,7 +104,8 @@ const CHECKOUT_START: readonly RegExp[] = [
   /^\/store\/v1\/checkout-sessions$/,
   /^\/store\/v1\/checkout-sessions\/[^/]+\/pay$/,
 ];
-const ORDER_PLACEMENT: ReadonlySet<string> = new Set(['/v1/orders', '/v1/orders/bulk']);
+// The upload of a File service's input is part of placing the order (B157), so scope `api_orders` refuses it too.
+const ORDER_PLACEMENT: ReadonlySet<string> = new Set(['/v1/orders', '/v1/orders/bulk', '/v1/files']);
 
 /**
  * A request, as far as maintenance cares.
@@ -124,7 +125,7 @@ export interface MaintenanceRequest {
  *
  * Why: `store` is the whole storefront API; `checkout` is only starting a checkout (opening a session and starting the
  * payment of one, so nothing is created and nothing is held); `api_orders` is placing an order over REST v1 or Dhru;
- * `all` is the three. Everything else (admin, merchant portal, webhooks, health, metrics, docs, reads and cancellations of
+ * `all` is the three; the upload of a File service's input (`POST /v1/files`, B157) counts as placing. Everything else (admin, merchant portal, webhooks, health, metrics, docs, reads and cancellations of
  * running orders) is in no scope. A Dhru request counts only once its action is known and is a placement.
  *
  * @param request method and path (and the Dhru action when known)
@@ -147,9 +148,9 @@ export function scopesCovering(request: MaintenanceRequest): readonly Maintenanc
 /**
  * Reads the Dhru `action` of a parsed request body.
  *
- * Why: Dhru sends form fields (`username`, `apiaccesskey`, `action`, `parameters`); the pipeline looks only at `action`,
- * and a body it cannot read (multipart not yet parsed, a stream) means "unknown", which maintenance does not refuse
- * here (the Dhru handlers check the state themselves).
+ * Why: Dhru sends form fields (`username`, `apiaccesskey`, `action`, `parameters`), as a form, JSON or multipart body
+ * (all three are parsed before the pipeline's validation stage); the pipeline looks only at `action`, and a body it
+ * cannot read means "unknown", which maintenance does not refuse here.
  *
  * @param body the parsed body
  * @returns the action, trimmed and lower-cased; `undefined` when the body has none

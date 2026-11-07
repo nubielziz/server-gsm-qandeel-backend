@@ -89,6 +89,10 @@ describe('GET /admin/services', () => {
       slaMinutes: 1440,
       supplier: null,
       fallbackSupplier: null,
+      // The merchant's cancel and verification are off until staff switch them on.
+      allowCancel: false,
+      allowVerify: false,
+      verifyWindowH: 0,
     });
     // No own minimum profit: max(round(6 % of 19.80, 2), 0.02) = 1.19, so the floor is 20.99 and the price 19.50 is under it.
     expect(res.body[1]).toMatchObject({
@@ -326,6 +330,42 @@ describe('POST /admin/services', () => {
     });
   });
 
+  it('accepts the merchant switches (cancel, verify and its window), stores them and audits them', async () => {
+    const { db } = await testDb();
+    const category = await insertCategory(db, { name: 'Apple' });
+    const res = await admin.post('/admin/services', {
+      ...body(category),
+      allowCancel: true,
+      allowVerify: true,
+      verifyWindowH: 48,
+    });
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ allowCancel: true, allowVerify: true, verifyWindowH: 48 });
+    expect(await serviceRow(res.body.id)).toMatchObject({ allowCancel: true, allowVerify: true, verifyWindowH: 48 });
+    const [audit] = await auditRows();
+    expect(audit).toMatchObject({ action: 'created service', entityType: 'service', entityId: res.body.id });
+    expect(audit!.after).toMatchObject({ allowCancel: true, allowVerify: true, verifyWindowH: 48 });
+  });
+
+  it('keeps the switches off when the body leaves them out (the console never sends them)', async () => {
+    const { db } = await testDb();
+    const category = await insertCategory(db, { name: 'Apple' });
+    const res = await admin.post('/admin/services', body(category));
+    expect(res.body).toMatchObject({ allowCancel: false, allowVerify: false, verifyWindowH: 0 });
+    expect(await serviceRow(res.body.id)).toMatchObject({ allowCancel: false, allowVerify: false, verifyWindowH: 0 });
+  });
+
+  it('refuses a verification window outside 0 to 720 hours, on the field', async () => {
+    const { db } = await testDb();
+    const category = await insertCategory(db, { name: 'Apple' });
+    for (const verifyWindowH of [-1, 721, 1.5]) {
+      const res = await admin.post('/admin/services', { ...body(category), verifyWindowH });
+      expect(res.status, String(verifyWindowH)).toBe(422);
+      expect(res.body.errors[0].field).toBe('verifyWindowH');
+    }
+    expect((await admin.post('/admin/services', { ...body(category), verifyWindowH: 720 })).status).toBe(201);
+  });
+
   it('refuses a code another live service has, in any case, with the owner in the message (409 CODE_TAKEN)', async () => {
     const { db } = await testDb();
     const category = await insertCategory(db);
@@ -411,6 +451,40 @@ describe('PATCH /admin/services/:id', () => {
     expect(audits[0]).toMatchObject({ action: 'edited service', entityType: 'service', entityId: id });
     expect(audits[0]!.before).toMatchObject({ status: 'active' });
     expect(audits[0]!.after).toMatchObject({ status: 'disabled' });
+  });
+
+  it('sets the merchant switches, changes them one by one and audits the change', async () => {
+    const { db } = await testDb();
+    const category = await insertCategory(db);
+    const id = await insertAtt(category);
+    const on = await admin.patch(`/admin/services/${id}`, { allowCancel: true, allowVerify: true, verifyWindowH: 24 });
+    expect(on.status).toBe(200);
+    expect(on.body).toMatchObject({ allowCancel: true, allowVerify: true, verifyWindowH: 24 });
+    // Only the key sent changes; a window of 0 means no window.
+    const window = await admin.patch(`/admin/services/${id}`, { verifyWindowH: 0 });
+    expect(window.body).toMatchObject({ allowCancel: true, allowVerify: true, verifyWindowH: 0 });
+    expect(await serviceRow(id)).toMatchObject({ allowCancel: true, allowVerify: true, verifyWindowH: 0 });
+    const off = await admin.patch(`/admin/services/${id}`, { allowCancel: false });
+    expect(off.body).toMatchObject({ allowCancel: false, allowVerify: true });
+    const audits = await auditRows();
+    expect(audits.map((row) => row.action)).toEqual(['edited service', 'edited service', 'edited service']);
+    expect(audits[0]!.before).toMatchObject({ allowCancel: false, allowVerify: false, verifyWindowH: 0 });
+    expect(audits[0]!.after).toMatchObject({ allowCancel: true, allowVerify: true, verifyWindowH: 24 });
+    // The switches are part of the reads: the list and the detail say them too.
+    const list = await admin.get('/admin/services?_start=0&_end=25');
+    expect(list.body[0]).toMatchObject({ allowCancel: false, allowVerify: true, verifyWindowH: 0 });
+    expect((await admin.get(`/admin/services/${id}`)).body).toMatchObject({ allowCancel: false, allowVerify: true });
+  });
+
+  it('refuses a verification window outside 0 to 720 hours, on the field', async () => {
+    const { db } = await testDb();
+    const id = await insertAtt(await insertCategory(db));
+    for (const verifyWindowH of [-1, 721]) {
+      const res = await admin.patch(`/admin/services/${id}`, { verifyWindowH });
+      expect(res.status, String(verifyWindowH)).toBe(422);
+      expect(res.body.errors[0].field).toBe('verifyWindowH');
+    }
+    expect((await admin.patch(`/admin/services/${id}`, { verifyWindowH: 720 })).status).toBe(200);
   });
 
   it('returns the floor and margin after a price change, and refuses a price under the floor on basePrice', async () => {

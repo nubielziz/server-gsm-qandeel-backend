@@ -78,10 +78,24 @@ is 14b.
   `changed prices of` entry.
 - **Merchant catalog** (`merchant-catalog.ts`, `client-catalog.service.ts`, `infra/merchant-catalog.repository.ts`): the live,
   `active` services in an active category open to the merchant's group, at the merchant's price; cost, floor and supplier names are
-  never sent. `MerchantCatalog` (`page`, `find`, `all`) is the public piece the Dhru and REST v1 lists (7a) reuse. Shapes: B159.
+  never sent. `MerchantCatalog` (`page`, `pageAfter`, `find`, `all`) is the public piece the Dhru and REST v1 lists (7a) reuse. Shapes: B159.
+- **Merchant machine surfaces** (`merchant-api-catalog.ts`, `controllers/v1-services.controller.ts`, feature 7a): `GET /v1/services` (cursor
+  pages in id order: `?limit=` 1 to 100, default 50, `?cursor=`; filters `type`, `categoryId` and `q`), `GET /v1/services/:id` (adds the
+  custom `fields` and the model, network and MEP `options`) and the Dhru `imeiservicelist`, which the service binds to the `DhruGateway` at
+  start. Visibility, prices and the quantity rules are the portal's (B159); each row also says `allowCancel`, `allowVerify` and
+  `verifyWindowH`. The Dhru `LIST` is grouped by category (`GROUPNAME`, `GROUPTYPE` IMEI, SERVER or REMOTE; two categories with one name
+  keep unique group keys by adding the type), `SERVICES` by service id with the keys of decision 026 (`SERVICEID`, `SERVICETYPE`,
+  `SERVICENAME`, `CREDIT`, `INFO`, `TIME`, `QNT`, `QNTOPTIONS`, `MINQNT`, `MAXQNT`, the twelve `Requires.*` flags and `Requires.Custom`
+  built from the service's fields; an IMEI service's own `imei` field is not repeated there). File services are not in the Dhru list.
+  Every list records the prices it showed (`ListedPrices.record`, user rule 9). Nothing is cached: a price list is never the truth for a
+  charge (the order path prices again) and staleness would show an old price after a change.
+- **Merchant switches** (feature 7a): `POST /admin/services` and `PATCH /admin/services/:id` accept the optional `allowCancel`,
+  `allowVerify` (booleans) and `verifyWindowH` (integer 0 to 720, `0` = no window); the three start off, the reads return them, and
+  the change is audited with the service's own verb phrases (`created service`, `edited service`, the switches in `before`/`after`).
+  The console does not send them, so its writes keep the stored values.
 - **Price protection** (user rule 9, MISMATCHES B117): `ListedPrices.record(db, clientId, entries, at)` remembers the last price
-  listed to a merchant (table `listed_prices`, written only when the price changes); the three portal routes call it, and 7a's lists
-  must. `checkPriceChange(listed, current, tolerance, { floorRaised? })` is the pure guard feature 5 calls at placement: above the
+  listed to a merchant (table `listed_prices`, written only when the price changes); the three portal routes call it, and so do 7a's
+  lists (`GET /v1/services[/:id]`, `imeiservicelist`). `checkPriceChange(listed, current, tolerance, { floorRaised? })` is the pure guard feature 5 calls at placement: above the
   tolerance `refuse` (`409 PRICE_CHANGED` with `listedPrice` and `currentPrice`), within it `raised` (charge it, record
   `raised = true` and the reason `floor` or `price_change` in `pricing_snapshot`), nothing on record `ok`. The tolerance is the
   setting `pricing.price_change_tolerance_percent` (platform settings registry, integer 0 to 100, default 10; read with
@@ -248,7 +262,7 @@ replace these rows (`scripts/seed/identity.ts`).
 
 No key of its own: the catalog and the prices are read from Postgres on every request. The module owns the `catalog` version
 counter (`gsm:{env}:cache:version:catalog`, `CatalogPriceVersion`), moved after the commit of every write that can change a resolved
-price; price lists cached by feature 7a read through it (`docs/cache-keys.md`).
+price; a price list that is cached later reads through it (`docs/cache-keys.md`). Feature 7a caches no list.
 
 ## Audit resolutions
 

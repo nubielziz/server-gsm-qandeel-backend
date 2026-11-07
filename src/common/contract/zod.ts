@@ -1,6 +1,7 @@
 // Shared zod schemas for the wire types of ALIGNMENT § 1 (Money, Decimal, IsoDateTime, Id, DateOnly, JsonObject).
 // Each carries the JSON Schema extension `x-gsm-alias`, so the OpenAPI/contract tests know the shared type name.
 import { z } from 'zod';
+import { UploadedFile } from '../multipart';
 
 /**
  * Largest id a JSON number carries exactly (2^53 - 1); ids are positive integers below it (decision 010).
@@ -116,3 +117,13 @@ export const zJsonObject = z
     additionalProperties: true,
     description: 'Free-form JSON object.',
   });
+
+/**
+ * A file part of a `multipart/form-data` body.
+ * Why: B157: the upload routes (`POST /v1/files`, `POST /client/files`) read one part named `file`; the multipart parser
+ * (`src/common/multipart.ts`) turns it into an {@link UploadedFile} before the contract validates the body. In OpenAPI it is a
+ * binary string.
+ */
+export const zUploadedFile = z
+  .custom<UploadedFile>((value) => value instanceof UploadedFile, 'Send the file as a multipart form part.')
+  .meta({ type: 'string', format: 'binary', description: 'The file to upload (one multipart form part).' });

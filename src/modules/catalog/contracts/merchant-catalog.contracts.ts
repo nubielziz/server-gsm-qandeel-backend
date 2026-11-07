@@ -8,7 +8,7 @@ import { SERVICE_FIELD_TYPES, SERVICE_OPTION_LISTS, SERVICE_TYPES } from '../db/
 import { NamedRef } from './shared';
 
 /** A service at the merchant's price. Cost, floor, margin and supplier details are never sent to a merchant. */
-const CatalogRow = z.object({
+export const CatalogRow = z.object({
   id: zId,
   name: z.string(),
   code: z.string(),
@@ -29,7 +29,7 @@ const CatalogRow = z.object({
 });
 
 /** One custom input of the order form. The name the supplier expects is not sent. */
-const CatalogField = z.object({
+export const CatalogField = z.object({
   key: z.string(),
   label: z.string(),
   fieldType: z.enum(SERVICE_FIELD_TYPES),
@@ -39,7 +39,7 @@ const CatalogField = z.object({
 });
 
 /** One model, network or MEP choice. The supplier's own value is not sent. */
-const CatalogOption = z.object({ list: z.enum(SERVICE_OPTION_LISTS), value: z.string(), label: z.string() });
+export const CatalogOption = z.object({ list: z.enum(SERVICE_OPTION_LISTS), value: z.string(), label: z.string() });
 
 const ROW_EXAMPLE = {
   id: 5,

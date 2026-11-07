@@ -1,0 +1,19 @@
+{
+  "action": "getimeiorder",
+  "description": "STATUS 0 new with an empty CODE.",
+  "request": {
+    "action": "getimeiorder",
+    "parameters": {
+      "ID": "{{order}}"
+    }
+  },
+  "response": {
+    "SUCCESS": [
+      {
+        "STATUS": 0,
+        "CODE": ""
+      }
+    ],
+    "apiversion": "6.1"
+  }
+}

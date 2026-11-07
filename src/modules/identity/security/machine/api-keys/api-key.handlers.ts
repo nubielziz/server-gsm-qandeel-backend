@@ -1,7 +1,9 @@
 // The two access handlers that authenticate with a merchant API key: REST v1 (`Authorization: Bearer <key>`, scope = the
 // contract's permission) and the Dhru surface (`username` + `apiaccesskey` in the body, scope `dhru`).
-import type { FastifyRequest } from 'fastify';
+import type { ExecutionContext } from '@nestjs/common';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { AnyRouteContract } from '../../../../../common/contract';
+import type { RateLimitResult } from '../../../../../infra/rate-limit';
 import type { AccessHandler } from '../../access-handlers';
 import type { AccessState } from '../../access-state';
 import type { ApiKeyAuthenticator } from './api-key.authenticator';
@@ -19,6 +21,23 @@ import { DHRU_SCOPE } from './api-key.rules';
 export function bearerKeyOf(header: string | undefined): string | undefined {
   const match = header === undefined ? null : /^bearer +(\S+)$/i.exec(header.trim());
   return match?.[1];
+}
+
+/**
+ * Puts the key's limit figures on a REST v1 answer.
+ *
+ * Why: ALIGNMENT § 7 and B157: every v1 answer after the key was counted says `RateLimit-Limit` (calls per window),
+ * `RateLimit-Remaining` (calls left) and `RateLimit-Reset` (seconds until the window starts over), so an integration can pace
+ * itself without waiting for a `429`. The headers stay on the answer when a later guard or the handler refuses the request.
+ *
+ * @param reply the Fastify reply of the request
+ * @param result the figures of the call that was just counted
+ */
+export function setRateLimitHeaders(reply: FastifyReply, result: RateLimitResult): void {
+  void reply
+    .header('ratelimit-limit', String(result.limit))
+    .header('ratelimit-remaining', String(result.remaining))
+    .header('ratelimit-reset', String(result.resetSeconds));
 }
 
 /** The credentials of a Dhru request. */
@@ -58,15 +77,22 @@ export class ApiKeyAccessHandler implements AccessHandler {
    *
    * @param request the Fastify request
    * @param contract the route contract (its `permission` is the scope)
+   * @param context the Nest execution context, to reach the reply for the `RateLimit-*` headers
    * @returns the API-key principal
    * @throws {AppError} see {@link ApiKeyAuthenticator.authenticate}
    */
-  async authenticate(request: FastifyRequest, contract: AnyRouteContract): Promise<AccessState> {
+  async authenticate(
+    request: FastifyRequest,
+    contract: AnyRouteContract,
+    context?: ExecutionContext,
+  ): Promise<AccessState> {
+    const reply = context?.switchToHttp().getResponse<FastifyReply>();
     const principal = await this.authenticator.authenticate(request, {
       key: bearerKeyOf(request.headers.authorization),
       // A v1 route without a scope cannot exist (defineRoute refuses it); the empty scope is refused for every key, `*` included.
       scope: contract.permission ?? '',
       surface: contract.surface,
+      onRateLimit: reply ? (result) => setRateLimitHeaders(reply, result) : undefined,
     });
     return { principal };
   }

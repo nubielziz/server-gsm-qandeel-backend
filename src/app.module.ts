@@ -4,6 +4,7 @@
 // register with the pipeline; sessions, guards and CSRF are added by their own feature.
 import { Module } from '@nestjs/common';
 import { ClockModule } from './common/clock.module';
+import { DhruModule } from './common/dhru';
 import { ErrorsModule } from './common/errors';
 import { PipelineModule } from './common/pipeline';
 import { ConfigModule } from './config';
@@ -51,6 +52,7 @@ import { SupportModule } from './modules/support';
     OutboundHttpModule,
     QueuesModule,
     ErrorsModule,
+    DhruModule,
     PipelineModule,
     PublicIpLimitModule,
     IdentityModule,

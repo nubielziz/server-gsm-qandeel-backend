@@ -942,6 +942,7 @@ describe('sessions of another subject', () => {
 
 // The development seed (README "Local sign-in"): the demo staff, the loopback allow rules and the documented credentials let
 // the console sign in from 127.0.0.1 with `demo-password` and the documented TOTP secret. Needs the frontend checkout.
+// Each test seeds the whole demo (about 10 s alone): they get a minute, so a busy database server does not fail them.
 describe.skipIf(!existsSync(demoStatePath()))('the development seed', () => {
   async function seed(): Promise<void> {
     const { db } = await testDb();
@@ -964,14 +965,14 @@ describe.skipIf(!existsSync(demoStatePath()))('the development seed', () => {
       expect((await c.code(await codeNow(DEV_TOTP_SECRETS[id]!))).statusCode, email).toBe(204);
       expect((await c.me()).json<{ email: string }>().email).toBe(email);
     }
-  });
+  }, 60_000);
 
   it('refuses the same sign-in from an address outside the allowlist', async () => {
     await seed();
     const res = await consoleOf('203.0.113.99').login('rami@gsm-supply.example', DEV_PASSWORD);
     expect(res.statusCode).toBe(403);
     expect(problem(res).code).toBe('IP_NOT_ALLOWED');
-  });
+  }, 60_000);
 
   it('shows the invited member the authenticator setup and the suspended one a 403, with the same password', async () => {
     await seed();
@@ -982,5 +983,5 @@ describe.skipIf(!existsSync(demoStatePath()))('the development seed', () => {
     const yusuf = await consoleOf().login('yusuf@gsm-supply.example', DEV_PASSWORD);
     expect(yusuf.statusCode).toBe(403);
     expect(problem(yusuf).code).toBe('ACCOUNT_SUSPENDED');
-  });
+  }, 60_000);
 });

@@ -12,7 +12,7 @@ import type { ErrorFormatContext, ErrorFormatter, ErrorResponse } from './format
 export const DHRU_API_VERSION = '6.1';
 
 /**
- * Messages Dhru clients know by heart, per catalog code.
+ * Messages Dhru clients know by heart, per catalog code, used when the occurrence has no detail of its own.
  *
  * Why: decision 026 uses the standard messages where one exists (`Authentication Failed`, `Not enough credits`) because
  * merchants' Dhru software shows them to their own customers; every other error uses the detail of the occurrence.
@@ -23,13 +23,25 @@ const STANDARD_MESSAGES: Readonly<Partial<Record<ErrorCode, string>>> = {
 };
 
 /**
+ * Messages that replace the detail of the occurrence on the Dhru surface.
+ *
+ * Why: user rule 9 words the refusal of a changed price for Dhru exactly (a merchant's software matches on it to reload the service
+ * list), and `Not enough credits` is the standard text whatever balance the ledger's own detail names. REST v1 keeps the details.
+ */
+const FIXED_MESSAGES: Readonly<Partial<Record<ErrorCode, string>>> = {
+  PRICE_CHANGED: 'Price changed. Please refresh the service list and order again.',
+  INSUFFICIENT_FUNDS: 'Not enough credits',
+};
+
+/**
  * The text a Dhru client shows for an error.
  *
  * @param error the application error
- * @returns the occurrence's detail, or the standard Dhru message of the code, or the catalog title
+ * @returns the fixed Dhru message of the code (a changed price, not enough credits), else the occurrence's detail, else the
+ *   standard Dhru message of the code, else the catalog title
  */
 export function dhruMessageOf(error: AppError): string {
-  return error.detail ?? STANDARD_MESSAGES[error.code] ?? error.title;
+  return FIXED_MESSAGES[error.code] ?? error.detail ?? STANDARD_MESSAGES[error.code] ?? error.title;
 }
 
 /**

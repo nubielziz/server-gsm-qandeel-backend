@@ -1,0 +1,44 @@
+{
+  "action": "imeiservicelist",
+  "description": "A server service describes its custom field in Requires.Custom with the keys of decision 026.",
+  "request": {
+    "action": "imeiservicelist"
+  },
+  "pick": {
+    "service": "server"
+  },
+  "response": {
+    "SERVICEID": "$idtext",
+    "SERVICETYPE": "SERVER",
+    "SERVICENAME": "Server credits x10",
+    "CREDIT": "8.0000",
+    "INFO": "$string",
+    "TIME": "$string",
+    "QNT": "0",
+    "QNTOPTIONS": "",
+    "MINQNT": "1",
+    "MAXQNT": "1",
+    "Requires.Network": "None",
+    "Requires.Mobile": "None",
+    "Requires.Provider": "None",
+    "Requires.PIN": "None",
+    "Requires.KBH": "None",
+    "Requires.MEP": "None",
+    "Requires.PRD": "None",
+    "Requires.Type": "None",
+    "Requires.Locks": "None",
+    "Requires.SN": "None",
+    "Requires.SecRO": "None",
+    "Requires.Reference": "None",
+    "Requires.Custom": [
+      {
+        "type": "serviceserver",
+        "fieldname": "username",
+        "fieldtype": "text",
+        "description": "Username",
+        "fieldoptions": "",
+        "required": 1
+      }
+    ]
+  }
+}

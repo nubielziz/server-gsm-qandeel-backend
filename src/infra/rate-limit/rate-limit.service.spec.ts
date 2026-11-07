@@ -23,6 +23,7 @@ describe('RATE_LIMITERS', () => {
       'sign-in',
       'supplier',
       'token',
+      'upload',
       'webhook-retry',
     ]);
   });

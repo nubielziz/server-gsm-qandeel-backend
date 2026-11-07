@@ -1,0 +1,48 @@
+{
+  "action": "imeiservicelist",
+  "description": "Decision 026: LIST by group, GROUPNAME, GROUPTYPE, SERVICES by id, the Requires.* flags and Requires.Custom.",
+  "request": {
+    "action": "imeiservicelist"
+  },
+  "response": {
+    "SUCCESS": [
+      {
+        "MESSAGE": "IMEI Service List",
+        "LIST": {
+          "*": {
+            "GROUPNAME": "$string",
+            "GROUPTYPE": "$string",
+            "SERVICES": {
+              "*": {
+                "SERVICEID": "$idtext",
+                "SERVICETYPE": "$string",
+                "SERVICENAME": "$string",
+                "CREDIT": "$money",
+                "INFO": "$string",
+                "TIME": "$string",
+                "QNT": "$flag",
+                "QNTOPTIONS": "$string",
+                "MINQNT": "$digits",
+                "MAXQNT": "$digits",
+                "Requires.Network": "$string",
+                "Requires.Mobile": "$string",
+                "Requires.Provider": "$string",
+                "Requires.PIN": "$string",
+                "Requires.KBH": "$string",
+                "Requires.MEP": "$string",
+                "Requires.PRD": "$string",
+                "Requires.Type": "$string",
+                "Requires.Locks": "$string",
+                "Requires.SN": "$string",
+                "Requires.SecRO": "$string",
+                "Requires.Reference": "$string",
+                "Requires.Custom": "$list"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "apiversion": "6.1"
+  }
+}

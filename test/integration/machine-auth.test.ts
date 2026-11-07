@@ -497,10 +497,11 @@ describe('Dhru credentials', () => {
 
   it('accepts username and apiaccesskey from a JSON body and from a form body', async () => {
     const clientId = await insertMerchant(db, { username: 'acme-gsm' });
-    const { id, key } = await insertApiKey(t, db, clientId, { scopes: ['dhru'] });
+    const { key } = await insertApiKey(t, db, clientId, { scopes: ['dhru'] });
+    // The real `POST /api/index.php` (feature 7a) answers: `accountinfo` is the cheapest action that needs the credentials.
     const json = await call({ action: 'accountinfo', username: 'acme-gsm', apiaccesskey: key });
     expect(json.statusCode).toBe(200);
-    expect(json.json().SUCCESS[0]).toMatchObject({ kind: 'api-key', clientId, keyId: id, scopes: ['dhru'] });
+    expect(json.json().SUCCESS[0].AccoutInfo).toBeDefined();
     const form = await t.app.inject({
       method: 'POST',
       url: '/api/index.php',
@@ -509,7 +510,7 @@ describe('Dhru credentials', () => {
       payload: new URLSearchParams({ action: 'accountinfo', username: 'acme-gsm', apiaccesskey: key }).toString(),
     });
     expect(form.statusCode).toBe(200);
-    expect(form.json().SUCCESS[0]).toMatchObject({ kind: 'api-key', clientId });
+    expect(form.json().SUCCESS[0].AccoutInfo).toBeDefined();
   });
 
   it('matches the username case-insensitively, like the Dhru username column', async () => {

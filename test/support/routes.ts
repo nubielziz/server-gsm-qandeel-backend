@@ -188,17 +188,6 @@ export const anyBody = defineRoute({
   errors: ['VALIDATION_FAILED'],
 });
 
-export const dhruLike = defineRoute({
-  key: 'POST /api/index.php',
-  summary: 'A route on the Dhru surface',
-  tags: ['test'],
-  surface: 'dhru',
-  access: 'dhru-credentials',
-  body: z.object({ action: z.string() }),
-  success: { status: 200, schema: z.object({ SUCCESS: z.array(z.unknown()) }) },
-  errors: ['FORBIDDEN'],
-});
-
 export const staffOnly = defineRoute({
   key: 'GET /admin/t/secure',
   summary: 'A staff route (the guard dispatcher enforces its permission)',
@@ -315,11 +304,6 @@ export class TestController {
   @Route(anyBody)
   anyBody(@Body() body: BodyOf<typeof anyBody>): ResultOf<typeof anyBody> {
     return { keys: Object.keys(body).length };
-  }
-
-  @Route(dhruLike)
-  dhru(): never {
-    throw new AppError('FORBIDDEN', { detail: 'Authentication Failed' });
   }
 
   @Route(staffOnly)

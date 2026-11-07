@@ -9,6 +9,8 @@ import {
   findVisibleService,
   listVisibleServices,
   pageVisibleServices,
+  pageVisibleServicesAfter,
+  type ServiceCursorFilter,
   type VisibleServiceRow,
 } from '../infra/merchant-catalog.repository';
 import { PriceResolver } from './price-resolver';
@@ -60,6 +62,27 @@ export class MerchantCatalog {
   ): Promise<{ entries: CatalogEntry[]; total: number }> {
     const { rows, total } = await pageVisibleServices(db, merchant.groupId, query);
     return { entries: await this.priced(db, merchant, rows), total };
+  }
+
+  /**
+   * Reads one page of the catalog by cursor, in id order (REST v1).
+   *
+   * @param db the database or a transaction
+   * @param merchant the merchant and its group
+   * @param options the page size (the page holds at most `limit` entries; one more is read to know whether another page follows),
+   *   where to continue and the filters
+   * @returns up to `limit + 1` entries; the extra one only says there is a next page
+   */
+  async pageAfter(
+    db: DbExecutor,
+    merchant: CatalogMerchant,
+    options: { readonly limit: number; readonly afterId?: number } & ServiceCursorFilter,
+  ): Promise<CatalogEntry[]> {
+    return this.priced(
+      db,
+      merchant,
+      await pageVisibleServicesAfter(db, merchant.groupId, { ...options, limit: options.limit + 1 }),
+    );
   }
 
   /**

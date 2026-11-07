@@ -11,6 +11,7 @@ import {
   parseRouteKey,
   toJsonSchema,
 } from '../../../src/common/contract';
+import { dhruActionRegistry } from '../../../src/common/dhru';
 import { DOCUMENTATION_ROUTES } from '../../../src/modules/platform';
 import { createTestApp } from '../../support/app';
 import type { AppSnapshot, RouteSnapshot } from './snapshot';
@@ -58,6 +59,7 @@ const snapshot: AppSnapshot = {
     name: event.name,
     payload: toJsonSchema(event.payload, 'output'),
   })),
+  dhruActions: dhruActionRegistry.all().map((action) => action.key),
   served: [...served].sort(),
   documentationRoutes: [...DOCUMENTATION_ROUTES],
 };

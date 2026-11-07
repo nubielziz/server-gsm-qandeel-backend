@@ -3,6 +3,7 @@
 // into the documents (src/modules/platform/docs).
 import {
   ApiBody,
+  ApiConsumes,
   ApiExtension,
   ApiHeader,
   ApiOperation,
@@ -14,7 +15,7 @@ import {
 } from '@nestjs/swagger';
 import type { z } from 'zod';
 import { ERROR_CATALOG, problemSlug, type ErrorCode } from '../errors/catalog';
-import { type AccessKind, type AnyRouteContract, isSessionAccess } from './define-route';
+import { type AccessKind, type AnyRouteContract, type BodyType, isSessionAccess } from './define-route';
 import { toJsonSchema, type JsonSchema } from './json-schema';
 import { isListQuerySchema, listQueryParameters } from './list-query';
 
@@ -80,10 +81,40 @@ export interface OperationResponse {
 export interface OperationParts {
   readonly operationId: string;
   readonly parameters: readonly OperationParameter[];
-  readonly requestBody: { readonly schema: JsonSchema; readonly example: unknown } | undefined;
+  readonly requestBody:
+    { readonly schema: JsonSchema; readonly example: unknown; readonly mediaType: string } | undefined;
   readonly responses: Readonly<Record<string, OperationResponse>>;
   readonly security: string | undefined;
 }
+
+/** The media type documented for each way a request body is sent. */
+const REQUEST_MEDIA_TYPES: Readonly<Record<BodyType, string>> = {
+  json: 'application/json',
+  form: 'application/x-www-form-urlencoded',
+  multipart: 'multipart/form-data',
+};
+
+/**
+ * The headers of the per-key rate limit on a REST v1 answer.
+ *
+ * Why: ALIGNMENT § 7 and decision 021: after the key's call was counted every v1 answer says how many calls the window allows, how many
+ * are left and in how many seconds it starts over, so an integration paces itself before it meets a `429`.
+ */
+const RATE_LIMIT_HEADERS: Record<string, { description: string; schema: JsonSchema }> = {
+  'ratelimit-limit': {
+    description:
+      "Calls the API key may make per minute (the key's own limit). Absent when the key was refused before it was counted.",
+    schema: { type: 'integer', minimum: 1 },
+  },
+  'ratelimit-remaining': {
+    description: 'Calls left in the current window.',
+    schema: { type: 'integer', minimum: 0 },
+  },
+  'ratelimit-reset': {
+    description: 'Seconds until the window starts over.',
+    schema: { type: 'integer', minimum: 1 },
+  },
+};
 
 const REQUEST_ID_HEADER = {
   'x-request-id': {
@@ -290,13 +321,25 @@ export function buildOperation(contract: AnyRouteContract): OperationParts {
     const status = ERROR_CATALOG[code].status;
     byStatus.set(status, [...(byStatus.get(status) ?? []), code]);
   }
-  for (const [status, codes] of [...byStatus].sort((a, b) => a[0] - b[0]))
-    responses[String(status)] = problemResponse(status, codes);
+  // The Dhru surface answers HTTP 200 with an `ERROR` list for every refusal (decision 026): it has no problem+json to document.
+  if (contract.surface !== 'dhru') {
+    for (const [status, codes] of [...byStatus].sort((a, b) => a[0] - b[0]))
+      responses[String(status)] = problemResponse(status, codes);
+  }
+  if (contract.surface === 'v1' && contract.access === 'api-key') {
+    for (const [status, response] of Object.entries(responses)) {
+      responses[status] = { ...response, headers: { ...response.headers, ...RATE_LIMIT_HEADERS } };
+    }
+  }
   return {
     operationId: operationIdOf(contract.key),
     parameters,
     requestBody: contract.body
-      ? { schema: toJsonSchema(contract.body, 'input'), example: contract.examples.request }
+      ? {
+          schema: toJsonSchema(contract.body, 'input'),
+          example: contract.examples.request,
+          mediaType: REQUEST_MEDIA_TYPES[contract.bodyType],
+        }
       : undefined,
     responses,
     security: SECURITY_SCHEME[contract.access],
@@ -360,6 +403,8 @@ export function openApiDecorators(contract: AnyRouteContract): MethodDecorator[]
       );
   }
   if (parts.requestBody) {
+    // JSON is Nest's default; any other media type has to be said.
+    if (parts.requestBody.mediaType !== 'application/json') decorators.push(ApiConsumes(parts.requestBody.mediaType));
     decorators.push(
       ApiBody({
         required: true,

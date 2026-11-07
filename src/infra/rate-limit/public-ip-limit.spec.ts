@@ -1,7 +1,7 @@
 // Unit tests of the per-IP limiter classification: which public requests are counted, and against which limiter.
 import { describe, expect, it } from 'bun:test';
 import type { AccessKind } from '../../common/contract';
-import { publicLimiterFor } from './public-ip-limit';
+import { LARGE_BODY_BYTES, isLargeBody, publicLimiterFor } from './public-ip-limit';
 
 describe('publicLimiterFor', () => {
   it('counts every storefront request against the ip limiter, matched or not', () => {
@@ -27,6 +27,25 @@ describe('publicLimiterFor', () => {
     expect(publicLimiterFor('/client/auth/password/set', 'public')).toBe('ip');
     expect(publicLimiterFor('/client/orders', 'merchant-session')).toBeUndefined();
     expect(publicLimiterFor('/admin/nope', undefined)).toBeUndefined();
+  });
+
+  it('counts a large body on Dhru, REST v1 and the merchant portal per IP, before the credentials are read', () => {
+    expect(publicLimiterFor('/api/index.php', 'dhru-credentials', true)).toBe('upload');
+    expect(publicLimiterFor('/v1/files', 'api-key', true)).toBe('upload');
+    expect(publicLimiterFor('/client/files', 'merchant-session', true)).toBe('upload');
+    // The public routes keep their own limiter; webhooks and probes are never counted per IP.
+    expect(publicLimiterFor('/client/auth/login', 'public', true)).toBe('ip');
+    expect(publicLimiterFor('/webhooks/payments/:gateway', 'gateway-signature', true)).toBeUndefined();
+    expect(publicLimiterFor('/admin/staff', 'staff-permission', true)).toBeUndefined();
+  });
+
+  it('calls a body large when it is multipart, longer than 1 MiB, or of an unreadable length', () => {
+    expect(isLargeBody('multipart/form-data; boundary=x', '100')).toBe(true);
+    expect(isLargeBody('application/x-www-form-urlencoded', String(LARGE_BODY_BYTES + 1))).toBe(true);
+    expect(isLargeBody('application/x-www-form-urlencoded', String(LARGE_BODY_BYTES))).toBe(false);
+    expect(isLargeBody('application/json', 'abc')).toBe(true);
+    expect(isLargeBody('application/json', undefined)).toBe(false);
+    expect(isLargeBody(undefined, undefined)).toBe(false);
   });
 
   it('leaves REST v1, Dhru, webhooks and the system routes to their own limits', () => {

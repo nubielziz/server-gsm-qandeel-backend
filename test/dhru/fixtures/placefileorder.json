@@ -1,0 +1,21 @@
+{
+  "action": "placefileorder",
+  "description": "A File service order: FILENAME and FILEDATA (base64); the answer is the same as placeimeiorder.",
+  "request": {
+    "action": "placefileorder",
+    "parameters": {
+      "ID": "{{file}}",
+      "FILENAME": "firmware.bin",
+      "FILEDATA": "AAECAw=="
+    }
+  },
+  "response": {
+    "SUCCESS": [
+      {
+        "MESSAGE": "Order received",
+        "REFERENCEID": "$idtext"
+      }
+    ],
+    "apiversion": "6.1"
+  }
+}

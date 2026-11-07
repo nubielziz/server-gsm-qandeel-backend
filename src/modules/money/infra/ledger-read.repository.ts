@@ -321,6 +321,41 @@ export async function listAccountEntries(
   return { rows, total: counted?.total ?? 0 };
 }
 
+/**
+ * Reads a page of an account's lines by cursor, newest first.
+ *
+ * Why: REST v1's `GET /v1/transactions` pages by cursor (ALIGNMENT § 7): each page continues after the entry id of the last line of the
+ * previous one, so lines that arrive meanwhile never repeat or skip a line. Entry ids grow with time, so the id is the order.
+ *
+ * @param db the database or a transaction
+ * @param accountId the wallet account
+ * @param limit how many lines to read (the caller asks for one more than it sends)
+ * @param before only lines with an id lower than this; leave out for the newest
+ * @returns the lines, newest first
+ */
+export async function listAccountEntriesBefore(
+  db: DbExecutor,
+  accountId: number,
+  limit: number,
+  before?: number,
+): Promise<StatementEntryRow[]> {
+  return db
+    .select({
+      id: ledgerEntries.id,
+      transactionId: ledgerEntries.transactionId,
+      kind: ledgerTransactions.kind,
+      memo: ledgerTransactions.memo,
+      amount: ledgerEntries.amount,
+      balanceAfter: ledgerEntries.balanceAfter,
+      createdAt: ledgerTransactions.createdAt,
+    })
+    .from(ledgerEntries)
+    .innerJoin(ledgerTransactions, eq(ledgerTransactions.id, ledgerEntries.transactionId))
+    .where(and(eq(ledgerEntries.accountId, accountId), before === undefined ? undefined : lt(ledgerEntries.id, before)))
+    .orderBy(desc(ledgerEntries.id))
+    .limit(limit);
+}
+
 /** One row of the trial balance as stored. */
 export interface TrialBalanceRow {
   readonly kind: LedgerAccountKind;

@@ -81,6 +81,12 @@ describe.skipIf(!frontendPresent)('the catalog seed', () => {
       fulfillment: 'auto',
     });
     expect(services[13]).toMatchObject({ code: 'IMEI-XIA-MI', status: 'disabled' });
+    // The merchant switches (feature 7a): cancel on every service but a File service, verification (72 h) on IMEI services.
+    expect(services[4]).toMatchObject({ allowCancel: true, allowVerify: true, verifyWindowH: 72 });
+    const fileServices = services.filter((service) => service.type === 'file');
+    expect(fileServices.length).toBeGreaterThan(0);
+    expect(fileServices.some((service) => service.allowCancel)).toBe(false);
+    expect(services.filter((service) => service.type !== 'imei').some((service) => service.allowVerify)).toBe(false);
     expect(services[16]).toMatchObject({
       code: 'SRV-CHM-1M',
       cost: '19.8000',

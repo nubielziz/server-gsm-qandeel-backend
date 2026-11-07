@@ -1,0 +1,20 @@
+{
+  "action": "placeimeiorder",
+  "description": "Decision 026: the standard message for a balance that cannot cover the order.",
+  "request": {
+    "action": "placeimeiorder",
+    "parameters": {
+      "ID": "{{auto}}",
+      "IMEI": "352905112490861"
+    }
+  },
+  "credentials": "poor",
+  "response": {
+    "ERROR": [
+      {
+        "MESSAGE": "Not enough credits"
+      }
+    ],
+    "apiversion": "6.1"
+  }
+}

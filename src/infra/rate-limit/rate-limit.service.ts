@@ -25,6 +25,8 @@ export interface RateLimitResult {
   readonly limit: number;
   /** Seconds until the key may try again; 0 when allowed, at least 1 when refused. */
   readonly retryAfterSeconds: number;
+  /** Seconds until the window ends and the counter starts over (the `RateLimit-Reset` header of REST v1); at least 1. */
+  readonly resetSeconds: number;
 }
 
 /** Options of a rate-limit call. */
@@ -119,17 +121,19 @@ export class RateLimitService {
     const limit = options.limit ?? RATE_LIMITERS[name].points;
     try {
       const result = await this.limiterFor(name, limit).consume(key, points);
-      return { allowed: true, remaining: result.remainingPoints, limit, retryAfterSeconds: 0 };
+      return {
+        allowed: true,
+        remaining: result.remainingPoints,
+        limit,
+        retryAfterSeconds: 0,
+        resetSeconds: Math.max(1, Math.ceil(result.msBeforeNext / 1000)),
+      };
     } catch (rejection) {
       // The library rejects with a RateLimiterRes when the budget is used up, and with an Error for anything else.
       if (!(rejection instanceof RateLimiterRes)) throw rejection;
       this.denied.inc({ limiter: name });
-      return {
-        allowed: false,
-        remaining: 0,
-        limit,
-        retryAfterSeconds: Math.max(1, Math.ceil(rejection.msBeforeNext / 1000)),
-      };
+      const seconds = Math.max(1, Math.ceil(rejection.msBeforeNext / 1000));
+      return { allowed: false, remaining: 0, limit, retryAfterSeconds: seconds, resetSeconds: seconds };
     }
   }
 

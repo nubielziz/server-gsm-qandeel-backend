@@ -6,6 +6,9 @@ import { defineRoute, listQuery, zDecimal, zId, zIdParam, zMoney } from '../../.
 import { SERVICE_FIELD_TYPES, SERVICE_OPTION_LISTS, SERVICE_TYPES } from '../db/schema';
 import { NamedRef, NonNegativeMoney, PositiveMoney } from './shared';
 
+/** The longest verification window a service may offer: 30 days. */
+const MAX_VERIFY_WINDOW_H = 720;
+
 const ServiceTypeField = z.enum(SERVICE_TYPES);
 const StatusField = z.enum(['active', 'disabled']);
 const ExecutionModeField = z.enum(['auto', 'manual']);
@@ -38,6 +41,30 @@ const ServiceRow = z.object({
   slaMinutes: z.number().int().min(1),
   supplier: NamedRef.nullable().describe('The first active supplier link by priority.'),
   fallbackSupplier: NamedRef.nullable().describe('The second active supplier link by priority.'),
+  allowCancel: z
+    .boolean()
+    .optional()
+    .describe(
+      'Whether a merchant may cancel an order of this service that was never sent. Always sent; optional in the schema only ' +
+        'because the console does not read it yet.',
+    ),
+  allowVerify: z
+    .boolean()
+    .optional()
+    .describe(
+      'Whether a merchant may ask for the verification of a completed order. Always sent; optional in the schema only ' +
+        'because the console does not read it yet.',
+    ),
+  verifyWindowH: z
+    .number()
+    .int()
+    .min(0)
+    .max(MAX_VERIFY_WINDOW_H)
+    .optional()
+    .describe(
+      'How many hours after completion the merchant may ask for verification; `0` means no window. Always sent; optional in ' +
+        'the schema only because the console does not read it yet.',
+    ),
 });
 
 /** One custom field of a service (Dhru `Requires.Custom`). */
@@ -84,6 +111,9 @@ const SERVICE_EXAMPLE = {
   slaMinutes: 1440,
   supplier: { id: 3, name: 'DHRU Pro' },
   fallbackSupplier: null,
+  allowCancel: false,
+  allowVerify: false,
+  verifyWindowH: 0,
 } as const;
 const FIELD_EXAMPLE = {
   key: 'imei',
@@ -99,6 +129,18 @@ const OPTION_EXAMPLE = { list: 'model', value: 'iphone15', label: 'iPhone 15', s
 const ServiceName = z.string().trim().min(1, 'Enter a name.').max(120, 'Use at most 120 characters.');
 const ServiceCode = z.string().trim().min(1, 'Enter a code.').max(40, 'Use at most 40 characters.');
 const SlaMinutes = z.number().int('Enter whole minutes.').min(1, 'Enter minutes, 1 or more.').max(2_147_483_647);
+const AllowCancel = z
+  .boolean()
+  .describe('Lets a merchant cancel an order of this service that was never sent (default `false`).');
+const AllowVerify = z
+  .boolean()
+  .describe('Lets a merchant ask for the verification of a completed order (default `false`).');
+const VerifyWindowH = z
+  .number()
+  .int('Enter whole hours.')
+  .min(0, 'Enter 0 or more hours.')
+  .max(MAX_VERIFY_WINDOW_H, `Use at most ${MAX_VERIFY_WINDOW_H} hours.`)
+  .describe('Hours after completion in which a merchant may ask for verification; `0` means no window (default `0`).');
 
 /** `GET /admin/services`: the catalog with its worked-out figures. */
 export const listServices = defineRoute({
@@ -161,7 +203,8 @@ export const createService = defineRoute({
     'Starts `active`, `auto`, with a fixed price mode, the `block_open` duplicate rule, no minimum profit of its own and a cost ' +
     'of 0 until a supplier is linked or imported. The type must be the type of the category: `422` on `categoryId` ' +
     'otherwise. A code that another live service has (ignoring case) is `409 CODE_TAKEN` on `code`. `basePrice` must be above ' +
-    'zero.',
+    'zero. The optional `allowCancel`, `allowVerify` and `verifyWindowH` (0 to 720 hours, `0` = no window) switch on the ' +
+    "merchant's cancel and verification of this service's orders; all three start off.",
   tags: ['services'],
   surface: 'admin',
   access: 'staff-permission',
@@ -173,6 +216,9 @@ export const createService = defineRoute({
     type: ServiceTypeField,
     slaMinutes: SlaMinutes,
     basePrice: PositiveMoney,
+    allowCancel: AllowCancel.optional(),
+    allowVerify: AllowVerify.optional(),
+    verifyWindowH: VerifyWindowH.optional(),
   }),
   success: { status: 201, schema: ServiceRow },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'VALIDATION_FAILED', 'CODE_TAKEN'],
@@ -197,7 +243,8 @@ export const updateService = defineRoute({
     'Only the keys sent change. Saving `basePrice` clears `costChangedFrom`; a `minProfit`-only change does not; `minProfit: ' +
     'null` goes back to the default policy. A `basePrice` under the floor (effective cost plus the minimum profit being ' +
     'saved) or not above zero is `422` on `basePrice`. The category and type must agree (`422` on `categoryId`, or on `type` ' +
-    'when only the type was sent). A code another live service has is `409 CODE_TAKEN`.',
+    'when only the type was sent). A code another live service has is `409 CODE_TAKEN`. `allowCancel`, `allowVerify` and ' +
+    "`verifyWindowH` (0 to 720 hours, `0` = no window) set what a merchant may do with this service's orders.",
   tags: ['services'],
   surface: 'admin',
   access: 'staff-permission',
@@ -214,6 +261,9 @@ export const updateService = defineRoute({
       minProfit: NonNegativeMoney.nullable().optional(),
       status: StatusField.optional(),
       executionMode: ExecutionModeField.optional(),
+      allowCancel: AllowCancel.optional(),
+      allowVerify: AllowVerify.optional(),
+      verifyWindowH: VerifyWindowH.optional(),
     })
     .refine((body) => Object.values(body).some((value) => value !== undefined), 'Send at least one field to change.'),
   success: { status: 200, schema: ServiceRow },

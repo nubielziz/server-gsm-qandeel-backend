@@ -43,4 +43,14 @@ describe('DhruErrorFormatter', () => {
     expect(dhruMessageOf(new AppError('INSUFFICIENT_FUNDS'))).toBe('Not enough credits');
     expect(dhruMessageOf(new AppError('NOT_FOUND'))).toBe('The requested item was not found.');
   });
+
+  it('words a changed price and a short balance the same way whatever the detail says (user rule 9, decision 026)', () => {
+    const changed = new AppError('PRICE_CHANGED', {
+      detail: 'The price changed since you last listed it.',
+      extensions: { listedPrice: '10.0000', currentPrice: '12.0000' },
+    });
+    expect(dhruMessageOf(changed)).toBe('Price changed. Please refresh the service list and order again.');
+    const short = new AppError('INSUFFICIENT_FUNDS', { detail: 'Your balance would go to -3.0000 of a 0.0000 limit.' });
+    expect(dhruMessageOf(short)).toBe('Not enough credits');
+  });
 });

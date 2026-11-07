@@ -5,7 +5,7 @@
 // service. The orders module has none yet, so `ownsOrderFile` reads `orders` with a plain select, like catalog's and money's foreign-read files.
 import { and, eq, or } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
-import { type StoredFile, files } from '../db/schema';
+import { type NewStoredFile, type StoredFile, files } from '../db/schema';
 
 /**
  * Finds a file by id.
@@ -17,6 +17,18 @@ import { type StoredFile, files } from '../db/schema';
 export async function findFile(db: DbExecutor, id: number): Promise<StoredFile | undefined> {
   const [row] = await db.select().from(files).where(eq(files.id, id)).limit(1);
   return row;
+}
+
+/**
+ * Records an uploaded file.
+ *
+ * @param db the database or a transaction
+ * @param row the file: where the object is, its name, type, size, SHA-256 and owner
+ * @returns the stored row
+ */
+export async function insertFile(db: DbExecutor, row: NewStoredFile): Promise<StoredFile> {
+  const [created] = await db.insert(files).values(row).returning();
+  return created!;
 }
 
 /**

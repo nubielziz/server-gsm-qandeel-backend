@@ -1,0 +1,20 @@
+{
+  "action": "placeimeiorder",
+  "description": "Decision 026: { MESSAGE: 'Order received', REFERENCEID } with our order id as text.",
+  "request": {
+    "action": "placeimeiorder",
+    "parameters": {
+      "ID": "{{auto}}",
+      "IMEI": "352905112490861"
+    }
+  },
+  "response": {
+    "SUCCESS": [
+      {
+        "MESSAGE": "Order received",
+        "REFERENCEID": "$idtext"
+      }
+    ],
+    "apiversion": "6.1"
+  }
+}

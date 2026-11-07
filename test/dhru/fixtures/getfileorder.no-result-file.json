@@ -1,0 +1,19 @@
+{
+  "action": "getfileorder",
+  "description": "A file order without a result file has no FILEID key.",
+  "request": {
+    "action": "getfileorder",
+    "parameters": {
+      "ID": "{{order}}"
+    }
+  },
+  "response": {
+    "SUCCESS": [
+      {
+        "STATUS": 0,
+        "CODE": ""
+      }
+    ],
+    "apiversion": "6.1"
+  }
+}

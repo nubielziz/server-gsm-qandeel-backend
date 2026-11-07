@@ -3,6 +3,14 @@
 // them), the settings readers, maintenance mode and the merchant webhooks (the event contracts and outbox routes of 7b, the
 // delivery engine, the processor of the `merchant-webhooks` queue).
 export { PlatformModule } from './platform.module';
+export { FilesModule } from './files.module';
+export {
+  FileUploadService,
+  MAX_UPLOAD_BYTES,
+  cleanMediaType,
+  cleanUploadName,
+} from './application/file-upload.service';
+export type { StoredFileView, UploadInput } from './application/file-upload.service';
 export { AuditModule } from './audit/audit.module';
 export { AuditService } from './audit/audit.service';
 export { AUDIT_ENTITY_TYPES, CONSOLE_AUDIT_ENTITY_TYPES, isAuditEntityType } from './audit/audit-entity-types';

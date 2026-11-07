@@ -80,6 +80,7 @@ export const modules = [
     name: 'Orders (one engine for B2B and B2C)',
     domain: 'D',
     tables: ['orders', 'order_events'],
+    additionalTables: ['idempotency_keys'],
     rows: [
       /^admin \S+ \/admin\/orders(\/|$)/,
       'admin GET /admin/reports/top-clients',

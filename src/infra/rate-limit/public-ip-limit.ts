@@ -22,24 +22,54 @@ const AUTH_PATH = /^\/(admin|client)\/auth\/(login|2fa|password)(\/|$)/;
  * store surface is limited as a whole, matched or not, so a scanner probing unknown paths is counted too. Admin and
  * merchant-portal routes are limited only when they are public (sign-in, password and registration routes); their
  * session-authenticated routes have per-principal limits after authentication. REST v1 and Dhru have a limit per API key,
- * webhooks are signed, and `/health` and `/metrics` are probes: none of them is limited per IP here.
+ * webhooks are signed, and `/health` and `/metrics` are probes: none of them is limited per IP here, except for a large body
+ * (`upload`, 20 a minute): a multipart body or one over 1 MiB on Dhru, REST v1 or the merchant portal is buffered and parsed
+ * (up to 25 MiB, B157) before the credentials are known, so an anonymous caller could otherwise make the server read one after
+ * another (the per-key limit comes too late for that).
  *
  * @param path the route template or decoded path of the request (`requestPath`)
  * @param access the `access` of the matched route's contract; `undefined` for an unknown route
+ * @param largeBody true for a multipart body or a declared `Content-Length` over {@link LARGE_BODY_BYTES}
  * @returns the limiter to charge one point to, or `undefined` when the request is not counted
  */
-export function publicLimiterFor(path: string, access: AccessKind | undefined): LimiterName | undefined {
+export function publicLimiterFor(
+  path: string,
+  access: AccessKind | undefined,
+  largeBody = false,
+): LimiterName | undefined {
   switch (surfaceOfPath(path)) {
     case 'store':
       return access !== undefined && TOKEN_ACCESS.has(access) ? 'token' : 'ip';
     case 'admin':
-    case 'client':
       // The sign-in routes count per IP whatever their access: the 2FA steps run on a pending session (P2.6).
       return access === 'public' || AUTH_PATH.test(path) ? 'ip' : undefined;
+    case 'client':
+      if (access === 'public' || AUTH_PATH.test(path)) return 'ip';
+      // A session route still reads its body before the session is checked: a large one (the file upload) is counted.
+      return largeBody ? 'upload' : undefined;
     case 'v1':
     case 'dhru':
+      return largeBody ? 'upload' : undefined;
     case 'hooks':
     case 'system':
       return undefined;
   }
+}
+
+/** A body above this many bytes is a large body for {@link publicLimiterFor} (the JSON and form limit is 1 MiB). */
+export const LARGE_BODY_BYTES = 1024 * 1024;
+
+/**
+ * Tells a large body from its headers, before it is read.
+ *
+ * @param contentType the `Content-Type` header
+ * @param contentLength the `Content-Length` header
+ * @returns true for `multipart/form-data` or a declared length over {@link LARGE_BODY_BYTES} (or one that is not a number); a
+ *   body without a length is read under the 1 MiB JSON and form limit, so it is not large
+ */
+export function isLargeBody(contentType: string | undefined, contentLength: string | undefined): boolean {
+  if ((contentType ?? '').toLowerCase().startsWith('multipart/form-data')) return true;
+  if (contentLength === undefined) return false;
+  const length = Number(contentLength);
+  return !Number.isFinite(length) || length > LARGE_BODY_BYTES;
 }

@@ -1,8 +1,8 @@
 // Drizzle queries of the merchant catalog: the live, active services in an active category that a merchant group may see,
 // ordered by category then name. Archived and disabled services are never listed (RESOLUTIONS catalog-3, RULES services 10).
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, ilike, isNull, or, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
-import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../infra/db';
+import { type DbExecutor, type ListColumns, escapeLike, listOrderBy, listWhere } from '../../../infra/db';
 import { type Service, serviceCategories, services } from '../db/schema';
 
 /** A visible service with its category. */
@@ -82,6 +82,47 @@ export async function pageVisibleServices(
       .where(where),
   ]);
   return { rows, total: count?.total ?? 0 };
+}
+
+/** What REST v1 filters its service list by. */
+export interface ServiceCursorFilter {
+  readonly type?: Service['type'];
+  readonly categoryId?: number;
+  /** Case-insensitive contains over the service name and code and the category name. */
+  readonly search?: string;
+}
+
+/**
+ * Reads one page of the services a merchant group may see, by cursor.
+ *
+ * Why: `GET /v1/services` pages by cursor (ALIGNMENT § 7): each page continues after the id of the last service of the previous one,
+ * in id order, so a service added or switched off meanwhile never repeats or skips one.
+ *
+ * @param db the database or a transaction
+ * @param groupId the merchant's group
+ * @param options how many rows to read (one more than the page), where to continue and the filters
+ * @returns the services with their category, in id order
+ */
+export async function pageVisibleServicesAfter(
+  db: DbExecutor,
+  groupId: number,
+  options: { readonly limit: number; readonly afterId?: number } & ServiceCursorFilter,
+): Promise<VisibleServiceRow[]> {
+  const pattern = options.search === undefined ? undefined : `%${escapeLike(options.search)}%`;
+  return select(db)
+    .where(
+      and(
+        visibleTo(groupId),
+        options.afterId === undefined ? undefined : gt(services.id, options.afterId),
+        options.type === undefined ? undefined : eq(services.type, options.type),
+        options.categoryId === undefined ? undefined : eq(services.categoryId, options.categoryId),
+        pattern === undefined
+          ? undefined
+          : or(ilike(services.name, pattern), ilike(services.code, pattern), ilike(serviceCategories.name, pattern)),
+      ),
+    )
+    .orderBy(asc(services.id))
+    .limit(options.limit);
 }
 
 /**

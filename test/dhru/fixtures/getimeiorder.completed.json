@@ -1,0 +1,19 @@
+{
+  "action": "getimeiorder",
+  "description": "STATUS 4 completed, CODE is the result.",
+  "request": {
+    "action": "getimeiorder",
+    "parameters": {
+      "ID": "{{completed}}"
+    }
+  },
+  "response": {
+    "SUCCESS": [
+      {
+        "STATUS": 4,
+        "CODE": "Unlocked: code 8842 1113"
+      }
+    ],
+    "apiversion": "6.1"
+  }
+}

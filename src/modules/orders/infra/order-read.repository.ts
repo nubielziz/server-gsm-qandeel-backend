@@ -1,9 +1,9 @@
 // The order read model (map domain D, routes GET /admin/orders*, GET /client/orders*, the exports and the bulk reply match): one
 // select with the joins the console's row needs, translated from the simple-rest query, with an exact count and no N+1.
-import { type SQL, and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { type SQL, and, asc, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, escapeLike, listOrderBy, listWhere } from '../../../infra/db';
-import { type Order, orders } from '../db/schema';
+import { type Order, type OrderStatus, orders } from '../db/schema';
 import { foreignTables as f } from './foreign-reads.repository';
 import { channelSql, pastSlaPredicate, queueSql } from './order-sql';
 
@@ -258,4 +258,47 @@ export async function findOrdersByInputs(
     .from(orders)
     .where(and(sql`${orders.imei} is not null and ${orders.imei} <> ''`, inArray(squashed, [...squashedInputs])))
     .orderBy(asc(orders.id));
+}
+
+/** What REST v1's `GET /v1/orders` filters by. */
+export interface ApiOrderFilter {
+  readonly statuses?: readonly OrderStatus[] | undefined;
+  readonly ids?: readonly number[] | undefined;
+  /** The main input without whitespace (`orders.imei` is compared with its whitespace removed, like the bulk reply). */
+  readonly input?: string | undefined;
+  /** Only orders changed at or after this time (`orders.updated_at`). */
+  readonly updatedSince?: Date | undefined;
+}
+
+/**
+ * Reads one page of a merchant's orders by cursor, newest first.
+ *
+ * Why: `GET /v1/orders` pages by cursor (ALIGNMENT § 7): each page continues after the id of the last order of the previous one, so an
+ * order placed meanwhile never repeats or skips one. Order ids grow with time, so the id is the order.
+ *
+ * @param db the database or a transaction
+ * @param clientId the merchant (another merchant's orders are never read)
+ * @param filter status, ids, input and `updatedSince`
+ * @param options how many rows to read (the caller asks for one more than it sends) and where to continue
+ * @returns the rows, newest first
+ */
+export async function pageMerchantOrderRows(
+  db: DbExecutor,
+  clientId: number,
+  filter: ApiOrderFilter,
+  options: { readonly limit: number; readonly beforeId?: number | undefined },
+): Promise<OrderRow[]> {
+  return selectRows(db)
+    .where(
+      and(
+        eq(orders.clientId, clientId),
+        options.beforeId === undefined ? undefined : lt(orders.id, options.beforeId),
+        filter.statuses === undefined ? undefined : inArray(orders.status, [...filter.statuses]),
+        filter.ids === undefined ? undefined : inArray(orders.id, [...filter.ids]),
+        filter.input === undefined ? undefined : sql`regexp_replace(${orders.imei}, '\\s', '', 'g') = ${filter.input}`,
+        filter.updatedSince === undefined ? undefined : gte(orders.updatedAt, filter.updatedSince),
+      ),
+    )
+    .orderBy(desc(orders.id))
+    .limit(options.limit);
 }

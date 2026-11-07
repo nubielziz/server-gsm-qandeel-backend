@@ -1,0 +1,44 @@
+{
+  "action": "getimeiorderbulk",
+  "description": "One STATUS and CODE (or ERROR) per request id.",
+  "request": {
+    "action": "getimeiorderbulk",
+    "parameters": {
+      "a": {
+        "ID": "{{order}}"
+      },
+      "b": {
+        "ID": "{{completed}}"
+      },
+      "c": {
+        "ID": "999999"
+      }
+    }
+  },
+  "response": {
+    "a": {
+      "SUCCESS": [
+        {
+          "STATUS": 0,
+          "CODE": ""
+        }
+      ]
+    },
+    "b": {
+      "SUCCESS": [
+        {
+          "STATUS": 4,
+          "CODE": "Unlocked: code 8842 1113"
+        }
+      ]
+    },
+    "c": {
+      "ERROR": [
+        {
+          "MESSAGE": "Order not found"
+        }
+      ]
+    },
+    "apiversion": "6.1"
+  }
+}

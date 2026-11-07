@@ -10,6 +10,10 @@ Status: accepted, 2026-10-31.
   Redis semaphore; a limited dispatch job is delayed, not failed.
 - Manual retries of a webhook delivery by staff (`POST /admin/webhook-deliveries/:id/retry`): one a minute per delivery
   (limiter `webhook-retry`, feature 7b).
+- Large bodies before authentication (amended 2026-11-07, feature 7a review): a multipart body or one declaring more than
+  1 MiB on Dhru, REST v1 or the merchant portal is buffered and parsed (up to 25 MiB, B157) before its credentials are read,
+  so it is also counted per client IP in the pipeline's limit stage (limiter `upload`, 20 a minute) before the body is read;
+  other Dhru and REST v1 calls stay on their per-key limit only.
 - A refusal is `429 RATE_LIMITED` problem+json with `Retry-After` (seconds), which the frontend reads.
 - Counters live on the cache instance: an evicted counter only loosens a limit briefly; nothing here is a source of
   truth.

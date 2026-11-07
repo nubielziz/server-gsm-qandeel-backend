@@ -73,6 +73,14 @@ no other; `surface` matches the path prefix; the success shape is a `schema` or 
 `contentType` (never both, neither for 204 and 302: a 302 is a bodiless GET whose handler sets `Location`, as the file downloads do); every `errors` entry is a catalog code (`docs/contract/error-codes.md`);
 `examples` satisfy their schemas.
 
+**Body media type and uploads (feature 7a).** `bodyType` says how a body is sent, for the parser check and the documentation: `'json'`
+(default), `'form'` (the Dhru endpoint: form-encoded, multipart or JSON) or `'multipart'` (`POST /v1/files`, `POST /client/files`); it needs a
+`body` schema. A file part is `zUploadedFile` (an `UploadedFile` from `src/common/multipart.ts`; a binary string in OpenAPI).
+
+**Cursor lists of REST v1 (`cursor.ts`, ALIGNMENT § 7).** `zCursorLimit` (1 to 100, default 50) and `zCursor` are the two query fields,
+`zCursorPage(row)` the answer `{ data, nextCursor }`; a repository reads `limit + 1` rows and `cutPage` cuts the page and writes the cursor
+(`encodeCursor` / `decodeCursor`: an opaque base64url JSON array of the last row's sort key, `422` on `cursor` when it is not the list's).
+
 ## Access, sessions, audit and CSRF (decision 018)
 
 `access` says how a route authenticates; the guard dispatcher in the identity module (`src/modules/identity/security`) reads
@@ -148,7 +156,8 @@ never with numbers.
 - `getContract(handler)` returns the contract of a handler, for guards that need `access`/`permission`/`surface`.
 - `@Route` adds the `@nestjs/swagger` metadata: operation id (`getAdminStaffById`), tags, parameters (list dialect
   included), request body with example, the success response, one `application/problem+json` response per error status
-  listing its codes with an example each, `x-total-count`, `x-request-id`, security by `access`
+  listing its codes with an example each (none for the Dhru surface, which answers every refusal in a `200` envelope), `x-total-count`,
+  `x-request-id`, the `RateLimit-Limit|Remaining|Reset` headers of REST v1 answers, security by `access`
   (`SECURITY_SCHEME`), and `x-gsm-key`, `x-gsm-access`, `x-gsm-surface`, `x-gsm-permission`, `x-gsm-session-stages` (session
   routes), `x-gsm-pending-merchant` (merchant routes) and `x-gsm-audit` (staff mutations).
 - The platform module turns that metadata into two documents (`src/modules/platform/docs`, decision 017):
