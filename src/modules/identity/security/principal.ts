@@ -71,6 +71,8 @@ export type SessionPrincipal = StaffPrincipal | MerchantPrincipal | CustomerPrin
 export interface ApiKeyPrincipal {
   readonly kind: 'api-key';
   readonly clientId: number;
+  /** The merchant's name, the audit log's actor snapshot (RESOLUTIONS identity-platform-7). */
+  readonly clientName: string;
   readonly keyId: number;
   readonly scopes: readonly string[];
   readonly ip: string;

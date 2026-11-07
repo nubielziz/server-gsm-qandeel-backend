@@ -16,7 +16,7 @@ const view = (over: Partial<ApiKeyView> = {}, status: 'active' | 'suspended' | '
   lastUsedAtMs: null,
   expiresAtMs: null,
   revokedAtMs: null,
-  client: { username: 'acme', status },
+  client: { username: 'acme', name: 'Acme Trading', status },
   ...over,
 });
 const check = (v: ApiKeyView, scope = 'orders:read') => checkApiKey(v, { nowMs: NOW, address, scope });

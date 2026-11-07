@@ -1,9 +1,10 @@
 // Drizzle queries on `sessions` for the merchant portal's "my devices" routes (identity module): the live sessions of one
-// merchant. The live rule is the one of resolution identity-platform-6; feature 2a builds the shared predicate for staff, and
-// the lead merges the two into one (see the README of this module).
-import { type SQL, and, asc, count, desc, eq, gt, isNull } from 'drizzle-orm';
+// merchant. The live rule is the one predicate of resolution identity-platform-6 (`liveSessionCondition`), shared with the staff
+// routes.
+import { type SQL, and, asc, count, desc, eq } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
 import { type Session, sessions } from '../db/schema';
+import { liveSessionCondition } from '../security/session.repository';
 
 /** The columns the list may be sorted by (wire names `createdAt`, `lastSeenAt`). */
 export type ClientSessionSortField = 'createdAt' | 'lastSeenAt';
@@ -31,10 +32,8 @@ function liveActiveSessionOf(clientId: number, now: Date, idleMs: number): SQL {
     eq(sessions.subjectType, 'client'),
     eq(sessions.subjectId, clientId),
     eq(sessions.stage, 'active'),
-    isNull(sessions.revokedAt),
-    gt(sessions.expiresAt, now),
-    // A full session is also dead after too long without use.
-    gt(sessions.lastSeenAt, new Date(now.getTime() - idleMs)),
+    // The shared live rule; the row is a merchant's, so only the merchant idle limit can apply.
+    liveSessionCondition(now, { staff: idleMs, client: idleMs, customer: idleMs }),
   )!;
 }
 

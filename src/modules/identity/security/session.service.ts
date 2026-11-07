@@ -277,6 +277,8 @@ export class SessionService {
       userAgent: (input.userAgent ?? '').slice(0, MAX_USER_AGENT),
       lastSeenAt: now,
       expiresAt: new Date(now.getTime() + ttlMs),
+      // The sessions list shows it: written from the clock like the two times above, not from the column default (decision 031).
+      createdAt: now,
     });
     return { token, session };
   }

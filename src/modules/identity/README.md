@@ -8,7 +8,7 @@ Decisions that shape this module: 007 password hashing, 010 ids and tokens, 018 
 
 ## Status
 
-Built: the 15 merchant portal routes of feature 2b (`/client/auth/*`, `/client/profile`, `/client/security/*`, `/client/sessions`, see "Merchant portal sign-in (2b)" below) and the pending-merchant rule of B153. Built earlier (P2.5a, P2.5c and the P2.6 sign-in routes, code in `security/`): the session service, cookies and CSRF token, the guard dispatcher with the staff, merchant and customer session guards, the CSRF guard, the permission guard with the permissions catalog and the Owner helpers, the staff gate of the internal API reference, and the machine guards (`security/machine/`): capability tokens, URL secrets, merchant API keys (REST v1 Bearer and Dhru credentials) and gateway webhook signatures. The sign-in routes (P2.6), the staff, role and IP-rule routes (feature 2a) and the IP rules, maintenance and rate-limit hooks (P2.5b) come with their own features.
+Built: the staff, role, permission, session, IP-rule and merchant routes of feature 2a (27 of its 31 routes; the other 4 are the platform's audit log and settings), the daily purge of ended sessions and the demo merchants of the seed (see "Staff access, merchants and sessions (feature 2a)" below); the 15 merchant portal routes of feature 2b (`/client/auth/*`, `/client/profile`, `/client/security/*`, `/client/sessions`, see "Merchant portal sign-in (2b)" below) and the pending-merchant rule of B153. Built earlier (P2.5a, P2.5c and the P2.6 sign-in routes, code in `security/`): the session service, cookies and CSRF token, the guard dispatcher with the staff, merchant and customer session guards, the CSRF guard, the permission guard with the permissions catalog and the Owner helpers, the staff gate of the internal API reference, and the machine guards (`security/machine/`): capability tokens, URL secrets, merchant API keys (REST v1 Bearer and Dhru credentials) and gateway webhook signatures. The sign-in routes (P2.6) and the IP rules, maintenance and rate-limit hooks (P2.5b) are built too.
 
 ## Public API (`index.ts`)
 
@@ -217,6 +217,71 @@ pure rules in `domain/`), wired by `StaffAuthModule`. Contract: `docs/contract/A
   logged without the email and rate-limited, never audited. No password, token or secret reaches a log or an audit row.
 - **Development credentials** (`bun run db:seed`, development only): see the root `README.md`, "Local sign-in".
 
+## Staff access, merchants and sessions (feature 2a)
+
+Scenarios `admin-team` and `ip-rules` (tests: `test/scenarios/admin-team.e2e.test.ts` and `ip-rules.e2e.test.ts`). 27 routes, each a
+contract under `contracts/`, a thin controller under `controllers/`, a use case under `application/` (one transaction, an audit row
+for every write), queries under `infra/`, pure rules under `domain/`. Wired by `AccessAdminModule` (staff, roles, sessions, IP rules)
+and `MerchantAdminModule` (merchants), both imported by `IdentityModule`. The detail of each route is `docs/contract/endpoints/identity.md`;
+the lead's resolutions (`identity-platform-1` to `-7`, `-14`, `-15`) win over it.
+
+| Routes | Permission | Use case |
+|---|---|---|
+| `GET /admin/staff`, `GET /admin/staff/:id` | `staff:read` | `StaffAdminService` |
+| `POST /admin/staff` | `staff:create` | invite (link token) or temporary password; `201` |
+| `PATCH /admin/staff/:id` | `staff:update` | name, email, role |
+| `POST /admin/staff/:id/password` | `staff:update` | `{mode: reset_link \| temporary_password, revokeSessions}`; always `200`, `Cache-Control: no-store`, `{}` or `{temporaryPassword}` |
+| `POST /admin/staff/:id/sessions/revoke`, `POST /admin/staff/:id/reset-2fa` | `staff:update` | `204` |
+| `POST /admin/staff/:id/suspend`, `POST /admin/staff/:id/reactivate` | `staff:suspend` | `204` |
+| `GET /admin/roles`, `GET /admin/roles/:id`, `GET /admin/permissions` | `roles:read` | `RoleAdminService`, `PermissionsCatalog` |
+| `POST /admin/roles`, `PATCH /admin/roles/:id`, `DELETE /admin/roles/:id` | `roles:create`, `roles:update`, `roles:delete` | `409 ROLE_IN_USE` while any member holds the role |
+| `GET /admin/sessions`, `DELETE /admin/sessions/:id` | `sessions:read`, `sessions:revoke` | `SessionAdminService` |
+| `GET /admin/ip-rules`, `GET /admin/ip-rules/:id`, `POST /admin/ip-rules/check` | `access:read` | `IpRuleAdminService` |
+| `POST /admin/ip-rules`, `DELETE /admin/ip-rules/:id`, `PUT /admin/access/restriction` | `access:create`, `access:delete`, `access:update` | |
+| `GET /admin/clients`, `GET /admin/clients/:id` | `clients:read` (`wallet` and `stats` only with `wallet:read`) | `ClientAdminService` |
+| `POST /admin/clients`, `PATCH /admin/clients/:id` | `clients:create`, `clients:update` | |
+
+**Rules worth knowing**
+
+- **Owner rules** (`assertOwnerTargetAllowed`, `owner.repository.ts`): an action on an account whose role grants `*`, or handing out such a role,
+  needs `*`; nobody changes their own role (`409 CANNOT_CHANGE_OWN_ROLE` on `roleId`) or suspends themselves (`409 CANNOT_SUSPEND_SELF`); the
+  last active Owner is never demoted, suspended or stripped of `*` (`409 LAST_OWNER`). The count of Owners runs under one advisory lock
+  (`lockOwnerChanges`), so two Owners demoting or suspending each other at the same moment cannot both win. Every staff write re-reads the
+  caller's account from `staff_users` (`ACCOUNT_SUSPENDED` at once), not the 60-second cached session view.
+- **What a change does to sessions and caches:** a suspension, "end all sessions", a password reset with `revokeSessions` and a 2FA reset
+  call `SessionService.revokeAllOf` (the caller keeps their own session when they reset their own 2FA); a rename or role change, and a
+  reactivation, call `invalidateSubject`; a role change calls `RolePermissions.invalidate`; a merchant status change calls
+  `ApiKeyDirectory.invalidateClient`. All after the commit.
+- **Staff links** (`StaffAuthTokens`): `POST /admin/staff` (invite) and `reset_link` issue an `auth_tokens` row (purpose `invite` while the member
+  is `invited`, `reset` otherwise; hash only, one hour, only the newest link works). The link itself is built and mailed by the
+  notifications feature (12a): until then the raw token is not delivered anywhere. A temporary password stores only its argon2id hash,
+  forces a change, voids unused links and is shown once (never in the audit log).
+- **One live-session rule** (`liveSessionCondition`, `security/session.repository.ts`, resolution `identity-platform-6`): not revoked, not past
+  `expires_at`, and (for a full session) used within the idle limit of its subject type. `GET /admin/sessions` (staff and merchant sessions at
+  stage `active` only), `StaffMember.activeSessions` and the `404` of `DELETE /admin/sessions/:id` all use it, with the clock's time as a
+  parameter (decision 031).
+- **IP rules:** `cidr` is normalised on write (a single address is stored as `/32` or `/128`, a range with bits after the prefix is `422`, a
+  range wider than /16 or /48 is `422`) and read back without `/32` and `/128`. An allow rule is always for the `admin` scope. A block needs a
+  `reason`. A live rule with the same network and kind (and scope, for blocks) is refused. `409 SELF_LOCKOUT` when a block of `admin` or `all`
+  covers the caller's request address, or when a removal would take away the only live allow rule that lets the caller in while the restriction
+  is on; `409 IP_NOT_IN_ALLOWLIST` when turning the restriction on without a live allow rule for the caller. Every change runs under one advisory
+  lock and calls `IpRuleCache.invalidate()` after the commit. `POST /admin/ip-rules/check` calls `decideIpAccess`, counts no hit and writes no audit row.
+- **Merchants:** `POST /admin/clients` inserts the merchant as `pending` with a generated Dhru username and referral code, opens the wallet and
+  hold accounts through `MerchantAccounts.open` (`overdraft_limit` = credit limit; user rule 2: credit above zero on a group without
+  `overdraft_allowed` is `422` on `creditLimit`), issues the one-hour invite token (`auth_tokens`, purpose `invite`, subject type `client`, hash only)
+  and writes the outbox event `merchant.invited` (`{ tokenId }`, through `MerchantMailOutbox`, see "Merchant mail"), all in one
+  transaction. `PATCH` does one action per call: approve
+  (`pending → active`), suspend (`active → suspended`, a reason of 3 to 140 characters, sessions ended), reactivate (`suspended → active`), or a
+  group move (`422` on `groupId` for an unknown group, the storefront retail group, the same group, or a group without credit while the
+  wallet's limit is above zero). Any other status change is `409 INVALID_TRANSITION`.
+- **Times the API returns or decides on come from the clock** (decision 031): `createdAt` of staff, IP rules, merchants, sessions and
+  invite/reset tokens is written by the service, not by the column default.
+
+**Seed** (`scripts/seed/identity.ts`): the 6 roles, 6 staff, the IP rules, the 4 demo client groups (ids 1 to 4 as the frontend mock; the
+catalog feature's seeder takes them over) and the 20 demo merchants (`m3` is id 3, referral code `GSM0003`, username the name's slug,
+group, status and referrer as the mock, no password). Their wallets are feature 3's seed. Open point for that seed: the frontend mock gives
+the Standard group `overdraft_allowed = false` but its merchants a credit limit above zero, which user rule 2 forbids.
+
 ## Merchant portal sign-in (2b): `/client/*`
 
 Fifteen routes (`contracts/merchant-auth.contracts.ts`, `contracts/merchant-account.contracts.ts`, controllers `merchant-auth.controller.ts`
@@ -268,7 +333,7 @@ MISMATCHES B121 to B136 and ALIGNMENT § 7. Session cookie `gsm_client_session`,
   session view: a suspension applies at once (`403`, every session of the merchant revoked).
 - **Live sessions.** `GET /client/sessions` and `DELETE /client/sessions/:id` use the live rule of identity-platform-6 (not revoked,
   not past `expires_at`, used within `sessions.client_idle_minutes`), implemented in `infra/merchant-sessions.repository.ts`
-  (feature 2a builds the staff version in the shared sessions repository; the lead merges the two into one predicate).
+  (the same rule as 2a's `liveSessionCondition` in `security/session.repository.ts`).
 - **Audit.** Merchant routes write no `audit_logs` rows (the audit log records staff writes, and `AUDIT_ENTITY_TYPES` has no
   merchant security type yet); failed attempts are logged without the email.
 
@@ -385,9 +450,13 @@ Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touc
 - `admin-team`: Adding and suspending a staff member (tables: `auth_tokens`, `ip_rules`, `roles`, `sessions`, `staff_users`)
 - `ip-rules`: IP block list and allowlist (tables: `ip_rules`, `sessions`)
 
+End-to-end tests: `test/scenarios/admin-team.e2e.test.ts` (steps 1 to 9) and `test/scenarios/ip-rules.e2e.test.ts` (steps 1 to 9; step 7, the risk engine's automatic block, is a row written the way feature 18 will write it). Route tests: `test/integration/{staff-admin,roles-admin,sessions-admin,ip-rules-admin,clients-admin}.test.ts`.
+
 ## Permissions
 
 Staff permissions the map requires on this module's admin routes: `access:*`, `access:read`, `access:update`, `api_keys:read`, `api_keys:revoke`, `clients:*`, `kyc:decide`, `kyc:read`, `roles:*`, `roles:read`, `sessions:read`, `sessions:revoke`, `staff:*`, `staff:suspend`, `staff:update`.
+
+The contracts of feature 2a name the concrete permissions: `access:read|create|update|delete`, `clients:read|create|update`, `roles:read|create|update|delete`, `sessions:read|revoke`, `staff:read|create|update|suspend` (a role may hold `area:*` for each area).
 
 Keep this list in step with the contracts (`permission` of each `defineRoute`).
 
@@ -443,6 +512,10 @@ magic_link` (exported `AUTH_TOKEN_PURPOSES`); `POST /client/auth/password/reset`
   by `src/worker.module.ts` only; processor `IpRuleHitsFlushProcessor`). Not recorded in `job_runs` (decision 020); metrics
   `ip_rule_hits_flush_last_success_timestamp_seconds`, `ip_rule_hits_flush_failures_total`, `ip_rule_hits_flushed_total`.
   Listed in `docs/queues.md`.
+- `session_purge` on the `maintenance` queue, scheduler `session-purge`, daily at 03:15 UTC (`SessionPurgeModule`, imported by
+  `src/worker.module.ts` only; processor `SessionPurgeProcessor`, use case `SessionPurge`). Deletes `sessions` rows that ended (revoked, or
+  past `expires_at`) more than 30 days ago, in batches of 1000; safe to repeat or run in parallel; every run writes a `job_runs` row
+  (`JobRunsService.run`). Listed in `docs/queues.md`.
 
 - `merchant.email_verification`, `merchant.password_reset`, `merchant.invited` on the `notifications` queue (processors `EmailVerificationMailProcessor`,
   `PasswordResetMailProcessor`, `MerchantInvitedMailProcessor` in `MerchantMailModule`, imported by the API and by `src/worker.module.ts`). Event-driven, no
@@ -457,7 +530,7 @@ Add the next job here and in `docs/queues.md` (see `CONTRIBUTING.md` → "Add a 
 - `gsm:{env}:identity:session:{tokenHash}` (`CacheKeys.session`): the cached view of a session and the state of its account, 60 s (an unknown token 10 s). `SessionService` deletes it after the commit of a revoke or rotation; `invalidateSubject` does after a suspension, password change or role change.
 - `gsm:{env}:identity:role:{roleId}` (`CacheKeys.rolePermissions`): the permissions of a role, 300 s. `RolePermissions.invalidate(roleId)` after the commit of a role change.
 
-Both are listed in `docs/cache-keys.md`. The sign-in rate limits use the existing `gsm:{env}:ratelimit:sign-in:{hash}` and `...:token:{address}` families. Register every other key family there too (see `CONTRIBUTING.md` → "Add a cache key").
+Both are listed in `docs/cache-keys.md`. Feature 2a added no key family: its routes clear the existing ones after their commit (`RolePermissions.invalidate`, `SessionService.invalidateSubject` / `revokeAllOf`, `IpRuleCache.invalidate`, `ApiKeyDirectory.invalidateClient`). The sign-in rate limits use the existing `gsm:{env}:ratelimit:sign-in:{hash}` and `...:token:{address}` families. Register every other key family there too (see `CONTRIBUTING.md` → "Add a cache key").
 
 | Key | What | TTL | Invalidation |
 |---|---|---|---|

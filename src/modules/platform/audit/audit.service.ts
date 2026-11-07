@@ -4,6 +4,7 @@ import { Injectable } from '@nestjs/common';
 import { countAuditRecord, getRequestContext } from '../../../common/request-context';
 import type { DbExecutor } from '../../../infra/db';
 import { type AuditLog, auditLogs } from '../db/schema';
+import { type AuditEntityType, isAuditEntityType } from './audit-entity-types';
 import { redactForAudit } from './audit-redaction';
 
 /**
@@ -15,8 +16,8 @@ import { redactForAudit } from './audit-redaction';
 export interface AuditEntry {
   /** A readable English verb phrase, as the console shows it: `Suspended staff member`, `Turned the allowlist on`. */
   readonly action: string;
-  /** The kind of record, from the console's fixed list: `staff`, `session`, `ip_rule`, `setting`, `order`, ... */
-  readonly entityType: string;
+  /** The kind of record, from the closed list `AUDIT_ENTITY_TYPES`: `staff`, `session`, `ip_rule`, `setting`, `order`, ... */
+  readonly entityType: AuditEntityType;
   /**
    * The id of the record. Leave it out for an action without a numeric record (a settings change, a queue pause): the
    * row then stores `0`, and `entityLabel` names the target.
@@ -32,7 +33,6 @@ export interface AuditEntry {
 
 const MAX_ACTION_LENGTH = 200;
 const MAX_LABEL_LENGTH = 200;
-const ENTITY_TYPE = /^[a-z][a-z0-9_]{0,63}$/;
 
 /**
  * Writes the audit log.
@@ -53,16 +53,17 @@ export class AuditService {
    * @param tx the transaction of the use case (pass `tx` from `runInTransaction`)
    * @param entry what happened
    * @returns the stored row
-   * @throws {RangeError} when the entry is malformed (an empty or oversize action, an entity type that is not
-   *   snake_case, an entity id that is not a whole number from 0): a programming error that rolls the transaction back
+   * @throws {RangeError} when the entry is malformed (an empty or oversize action, an entity type outside
+   *   `AUDIT_ENTITY_TYPES`, an entity id that is not a whole number from 0): a programming error that rolls the transaction
+   *   back
    */
   async record(tx: DbExecutor, entry: AuditEntry): Promise<AuditLog> {
     const entityId = entry.entityId ?? 0;
     if (entry.action.trim() === '' || entry.action.length > MAX_ACTION_LENGTH) {
       throw new RangeError(`An audit action must be 1-${MAX_ACTION_LENGTH} characters`);
     }
-    if (!ENTITY_TYPE.test(entry.entityType)) {
-      throw new RangeError(`An audit entity type must be snake_case (letters, digits, "_"), got "${entry.entityType}"`);
+    if (!isAuditEntityType(entry.entityType)) {
+      throw new RangeError(`An audit entity type must be one of AUDIT_ENTITY_TYPES, got "${String(entry.entityType)}"`);
     }
     if (!Number.isSafeInteger(entityId) || entityId < 0) {
       throw new RangeError(`An audit entity id must be a whole number from 0, got ${entityId}`);
@@ -75,6 +76,8 @@ export class AuditService {
         // No actor means the system acted (a job, a scheduled check).
         actorType: context?.actor?.type ?? 'system',
         actorId: context?.actor?.id ?? null,
+        // A snapshot, like entity_label: renamed or deleted accounts still read correctly (identity-platform-7).
+        actorName: (context?.actor?.name ?? '').slice(0, MAX_LABEL_LENGTH),
         action: entry.action,
         entityType: entry.entityType,
         entityId,

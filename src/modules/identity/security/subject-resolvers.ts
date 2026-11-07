@@ -34,12 +34,12 @@ class StaffSubjectResolver implements SessionSubjectResolver {
 
   async resolve(subjectId: number): Promise<SubjectSnapshot> {
     const [row] = await this.db.db
-      .select({ status: staffUsers.status, roleId: staffUsers.roleId })
+      .select({ status: staffUsers.status, roleId: staffUsers.roleId, name: staffUsers.name })
       .from(staffUsers)
       .where(eq(staffUsers.id, subjectId))
       .limit(1);
     if (!row) return { state: 'gone' };
-    return { state: row.status === 'suspended' ? 'suspended' : 'ok', roleId: row.roleId };
+    return { state: row.status === 'suspended' ? 'suspended' : 'ok', roleId: row.roleId, name: row.name };
   }
 }
 
@@ -54,12 +54,16 @@ class ClientSubjectResolver implements SessionSubjectResolver {
 
   async resolve(subjectId: number): Promise<SubjectSnapshot> {
     const [row] = await this.db.db
-      .select({ status: clients.status })
+      .select({ status: clients.status, name: clients.name })
       .from(clients)
       .where(eq(clients.id, subjectId))
       .limit(1);
     if (!row) return { state: 'gone' };
-    return { state: row.status === 'suspended' ? 'suspended' : 'ok', approved: row.status === 'active' };
+    return {
+      state: row.status === 'suspended' ? 'suspended' : 'ok',
+      name: row.name,
+      approved: row.status === 'active',
+    };
   }
 }
 

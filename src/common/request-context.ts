@@ -12,6 +12,11 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 export interface RequestActor {
   readonly type: 'staff' | 'client' | 'customer';
   readonly id: number;
+  /**
+   * The account's name when the request started: the audit log snapshots it (`audit_logs.actor_name`), so a later rename or
+   * delete does not change history (RESOLUTIONS identity-platform-7). `''` when the name is unknown.
+   */
+  readonly name: string;
 }
 
 /**

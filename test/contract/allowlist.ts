@@ -13,4 +13,15 @@ import type { AllowlistEntry } from './lib/allowlist-check';
  * { route: 'GET /admin/orders', part: 'response', path: 'data[].status', rule: 'enum', mismatch: 'B16',
  *   reason: 'The backend adds needs_attention until the console learns the status.' }
  */
-export const ALLOWLIST: readonly AllowlistEntry[] = [];
+export const ALLOWLIST: readonly AllowlistEntry[] = [
+  {
+    route: 'GET /admin/permissions',
+    part: 'fixture',
+    path: '[]',
+    rule: 'fixture',
+    mismatch: 'B8',
+    reason:
+      "The backend answers [{key, label, group}] (ANSWERS access Q4, the console's Permission type); the console's mock answers " +
+      'plain strings, which the console normalises. Roles and permissions come from the server; the mock is only a seed (B8).',
+  },
+];

@@ -1,6 +1,6 @@
 // Drizzle queries on `sessions` (identity module). Every function takes a DbExecutor, so a sign-in step can run several of
 // them in one transaction; times come from the caller, so the application and the tests share one clock.
-import { and, eq, gt, isNull, lte, ne } from 'drizzle-orm';
+import { type SQL, and, eq, gt, isNull, lte, ne, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
 import { type NewSession, type Session, type SubjectType, sessions } from '../db/schema';
 
@@ -136,4 +136,32 @@ export async function touchSession(db: DbExecutor, id: number, now: Date, minGap
     )
     .returning({ id: sessions.id });
   return rows.length > 0;
+}
+
+/** How long a full session of each subject type may sit unused, in milliseconds (`SessionPolicy.limits(...).idleMs`). */
+export type IdleLimits = Readonly<Record<SubjectType, number>>;
+
+/**
+ * The one "live session" predicate (RESOLUTIONS identity-platform-6): not revoked, not past its absolute end, and, for a full
+ * session, used within the idle limit of its subject type. A pending sign-in step has no idle limit, only its short lifetime.
+ *
+ * Why: `GET /admin/sessions`, `StaffMember.activeSessions` (which enables "Sign out all devices"), the
+ * `DELETE /admin/sessions/:id` 404 and the merchant `GET /client/sessions` must agree on what "active" means, so the rule is
+ * written once. `now` is the injected clock's time (decision 031), never the database's `now()`. `revokeAllOf` is not
+ * limited by it: it still revokes every non-revoked row, idle-dead ones included.
+ *
+ * @param now the current time
+ * @param idle the idle limit of each subject type in milliseconds
+ * @returns the condition on `sessions` to use in a `WHERE`
+ */
+export function liveSessionCondition(now: Date, idle: IdleLimits): SQL {
+  const cutoff = (ms: number): string => new Date(now.getTime() - ms).toISOString();
+  return sql`(${sessions.revokedAt} is null
+    and ${sessions.expiresAt} > ${now.toISOString()}::timestamptz
+    and (${sessions.stage} <> 'active'
+      or ${sessions.lastSeenAt} > case ${sessions.subjectType}
+        when 'staff' then ${cutoff(idle.staff)}::timestamptz
+        when 'client' then ${cutoff(idle.client)}::timestamptz
+        else ${cutoff(idle.customer)}::timestamptz
+      end))`;
 }

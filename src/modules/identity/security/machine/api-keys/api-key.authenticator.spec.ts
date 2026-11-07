@@ -20,7 +20,7 @@ const view = (over: Partial<ApiKeyView> = {}): ApiKeyView => ({
   lastUsedAtMs: null,
   expiresAtMs: null,
   revokedAtMs: null,
-  client: { username: 'Acme', status: 'active' },
+  client: { username: 'Acme', name: 'Acme Trading', status: 'active' },
   ...over,
 });
 const request = (ip = '203.0.113.9') => ({ ip }) as unknown as FastifyRequest;
@@ -81,6 +81,7 @@ describe('ApiKeyAuthenticator', () => {
     expect(principal).toEqual({
       kind: 'api-key',
       clientId: 3,
+      clientName: 'Acme Trading',
       keyId: 7,
       scopes: ['orders:read', 'dhru'],
       ip: '203.0.113.9',
@@ -147,7 +148,7 @@ describe('ApiKeyAuthenticator', () => {
       [view({ revokedAtMs: 1 }), 'UNAUTHORIZED'],
       [view({ scopes: [] }), 'FORBIDDEN'],
       [view({ allowedIps: ['10.0.0.0/8'] }), 'IP_NOT_ALLOWED'],
-      [view({ client: { username: 'Acme', status: 'suspended' } }), 'ACCOUNT_SUSPENDED'],
+      [view({ client: { username: 'Acme', name: 'Acme Trading', status: 'suspended' } }), 'ACCOUNT_SUSPENDED'],
     ] as const) {
       const s = setup(found);
       expect(await rejectionOf(s.authenticator.authenticate(request(), { ...asking, key: 'k' }))).toMatchObject({

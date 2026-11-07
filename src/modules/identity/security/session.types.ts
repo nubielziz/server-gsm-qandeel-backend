@@ -14,11 +14,14 @@ export type SubjectState = 'ok' | 'suspended' | 'gone';
 /**
  * The account state a session depends on, read when the session is loaded.
  *
- * Why: it is cached with the session for 60 seconds, so a request costs one cache read. `roleId` is set for staff.
+ * Why: it is cached with the session for 60 seconds, so a request costs one cache read. `roleId` is set for staff. `name`
+ * is the account's display name: the audit log snapshots it as the actor (RESOLUTIONS identity-platform-7), so a rename must
+ * call `SessionService.invalidateSubject`.
  */
 export interface SubjectSnapshot {
   readonly state: SubjectState;
   readonly roleId?: number;
+  readonly name?: string;
   /**
    * Merchants only: true when the merchant is approved (`clients.status = 'active'`). A merchant waiting for approval
    * (`pending`) keeps a session but may call only the routes that declare `pendingMerchant: 'allow'` (B153). A view cached

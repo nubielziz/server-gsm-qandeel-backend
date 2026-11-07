@@ -5,7 +5,7 @@ import { countAuditRecord, getRequestContext, runInRequestContext, setRequestAct
 describe('request context', () => {
   it('is empty outside a request, and the helpers do nothing there', () => {
     expect(getRequestContext()).toBeUndefined();
-    setRequestActor({ type: 'staff', id: 1 }, '10.0.0.1');
+    setRequestActor({ type: 'staff', id: 1, name: 'Rami K.' }, '10.0.0.1');
     countAuditRecord();
     expect(getRequestContext()).toBeUndefined();
   });
@@ -18,13 +18,13 @@ describe('request context', () => {
 
   it('keeps what a guard recorded for everything the request starts afterwards', async () => {
     await runInRequestContext('r2', async () => {
-      setRequestActor({ type: 'client', id: 12 }, '203.0.113.5');
+      setRequestActor({ type: 'client', id: 12, name: 'Zain Mobile Hub' }, '203.0.113.5');
       await new Promise((resolve) => setImmediate(resolve));
       countAuditRecord();
       countAuditRecord();
       expect(getRequestContext()).toMatchObject({
         requestId: 'r2',
-        actor: { type: 'client', id: 12 },
+        actor: { type: 'client', id: 12, name: 'Zain Mobile Hub' },
         ip: '203.0.113.5',
         auditRecords: 2,
       });
@@ -37,7 +37,7 @@ describe('request context', () => {
     const seen = await Promise.all(
       [1, 2, 3].map((id) =>
         runInRequestContext(`r${id}`, async () => {
-          setRequestActor({ type: 'staff', id }, `10.0.0.${id}`);
+          setRequestActor({ type: 'staff', id, name: `Staff ${id}` }, `10.0.0.${id}`);
           for (let hop = 0; hop < 4 - id; hop++) await new Promise((resolve) => setImmediate(resolve));
           finished.push(id);
           return getRequestContext()?.actor?.id;
@@ -50,7 +50,7 @@ describe('request context', () => {
 
   it('gives a nested context its own actor', () => {
     runInRequestContext('outer', () => {
-      setRequestActor({ type: 'staff', id: 1 }, '10.0.0.1');
+      setRequestActor({ type: 'staff', id: 1, name: 'Rami K.' }, '10.0.0.1');
       runInRequestContext('inner', () => {
         expect(getRequestContext()?.actor).toBeUndefined();
       });

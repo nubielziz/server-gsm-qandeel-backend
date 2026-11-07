@@ -54,7 +54,7 @@ function recorder() {
   const authenticator = {
     authenticate(_request: FastifyRequest, credentials: ApiKeyCredentials) {
       calls.push(credentials);
-      return Promise.resolve({ kind: 'api-key', clientId: 1, keyId: 2, scopes: [], ip: '1.2.3.4' });
+      return Promise.resolve({ kind: 'api-key', clientId: 1, clientName: 'Acme', keyId: 2, scopes: [], ip: '1.2.3.4' });
     },
   } as unknown as ApiKeyAuthenticator;
   return { authenticator, calls };

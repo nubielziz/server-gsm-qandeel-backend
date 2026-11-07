@@ -68,6 +68,9 @@ export class StaffAuthTokens {
       subjectId: input.staffId,
       tokenHash: this.tokens.hash(token),
       expiresAt: new Date(now.getTime() + STAFF_TOKEN_TTL_MS),
+      // Written from the clock, not the column default: the console shows it as "link sent at" (resetSentAt) and the expiry
+      // above is measured from it (decision 031).
+      createdAt: now,
       ip: input.ip ?? null,
       createdBy: input.createdBy ?? null,
     });

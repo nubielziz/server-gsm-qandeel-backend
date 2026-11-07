@@ -1,7 +1,8 @@
 // Platform module (map domain G): settings, audit logs, files, notifications, webhooks and the outbox.
 // Today it serves the API documentation (src/modules/platform/docs), writes the outbox (src/modules/platform/outbox) and
-// the audit log (src/modules/platform/audit), reads settings for other modules (settings/) and runs maintenance mode
-// (maintenance/); the other parts arrive with their features (docs/ARCHITECTURE.md § 2).
+// the audit log (src/modules/platform/audit), reads and writes settings for other modules (settings/), runs maintenance mode
+// (maintenance/) and serves the audit log and settings routes (platform-admin.module.ts); the other parts arrive with their
+// features (docs/ARCHITECTURE.md § 2).
 import { Module } from '@nestjs/common';
 import { DocsController, ReferenceController } from './docs/docs.controller';
 import { OpenApiService } from './docs/openapi.service';
@@ -9,6 +10,7 @@ import { ReferenceAccessGuard } from './docs/reference-access.guard';
 import { AuditModule } from './audit/audit.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
 import { OutboxModule } from './outbox/outbox.module';
+import { PlatformAdminModule } from './platform-admin.module';
 import { SettingsModule } from './settings/settings.module';
 
 /**
@@ -22,7 +24,7 @@ import { SettingsModule } from './settings/settings.module';
  * `SettingsService` uncached); `MaintenanceModule` puts maintenance mode into the request pipeline.
  */
 @Module({
-  imports: [OutboxModule, AuditModule, SettingsModule, MaintenanceModule],
+  imports: [OutboxModule, AuditModule, SettingsModule, MaintenanceModule, PlatformAdminModule],
   controllers: [DocsController, ReferenceController],
   providers: [OpenApiService, ReferenceAccessGuard],
 })

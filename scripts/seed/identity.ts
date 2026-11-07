@@ -1,8 +1,9 @@
-// Seeder of the identity module: the 6 roles, the 6 staff members and the IP rules of the frontend demo.
-// Mirrors the frontend mocks (src/mocks/roles.ts, staff.ts, ipRules.ts); the development sign-in credentials are
-// dev-credentials.ts (P2.6).
+// Seeder of the identity module: the 6 roles, the 6 staff members, the IP rules, and the 20 merchants (with the demo client
+// groups they sit in) of the frontend demo. Mirrors the frontend mocks (src/mocks/roles.ts, staff.ts, ipRules.ts and
+// src/features/merchants/mocks/seed.ts); the development sign-in credentials are dev-credentials.ts (P2.6). The wallets of the
+// merchants are feature 3's seed (money.ts).
 import { schema as s, type DbExecutor } from '../../src/infra/db';
-import { type DemoSeed, demoNumericId, demoRows, toDate } from './demo-state';
+import { type DemoSeed, demoNumericId, demoRows, toDate, toMoney } from './demo-state';
 import { type SeedReport, insertRows, syncIdentity } from './helpers';
 
 /** The demo's role keys, in id order. */
@@ -96,11 +97,150 @@ interface DemoIpRule {
   lastHit: number | null;
 }
 
+/** A merchant of the demo seed, as the demo stores it (the fields the seed uses). */
+interface DemoMerchant {
+  id: string;
+  name: string;
+  cc: string;
+  group: 'std' | 'whl' | 'vip';
+  status: 'active' | 'pending' | 'suspended';
+  /** days since the merchant joined */
+  joined: number;
+  referredBy: string | null;
+  email: string;
+  kyc: string;
+}
+
+const DAY_MS = 86_400_000;
+
 /**
- * Seeds roles, staff and IP rules.
+ * The demo's client groups with the ids and values the frontend mock gives them (`GROUPS` in
+ * src/features/merchants/mocks/seed.ts): three merchant groups and the storefront's retail group (`b2c_retail`).
  *
- * Why: the console needs six roles to pick from, the six demo staff members to show in the admin-team pages, and the
- * demo IP rules (scenario ip-rules). Passwords and TOTP secrets stay empty here: `seedDevCredentials` sets them in development.
+ * Why: `clients.group_id` needs a group, and no other seeder creates them yet (the catalog feature's seeder takes this list
+ * over). Note: the frontend mock gives Standard `overdraft_allowed = false` while its merchants have a credit limit above
+ * zero; user rule 2 forbids that pair, so the wallet seed (feature 3) must settle it.
+ */
+export const CLIENT_GROUPS = [
+  { id: 1, name: 'Standard', discount: 0, threshold: 0, deposit: 5000, isDefault: true, overdraft: false, kind: 'b2b' },
+  {
+    id: 2,
+    name: 'Wholesale',
+    discount: 4,
+    threshold: 5000,
+    deposit: 20000,
+    isDefault: false,
+    overdraft: true,
+    kind: 'b2b',
+  },
+  {
+    id: 3,
+    name: 'VIP',
+    discount: 8,
+    threshold: 25000,
+    deposit: 100000,
+    isDefault: false,
+    overdraft: true,
+    kind: 'b2b',
+  },
+  {
+    id: 4,
+    name: 'Storefront retail',
+    discount: 0,
+    threshold: 0,
+    deposit: 1000,
+    isDefault: false,
+    overdraft: false,
+    kind: 'b2c_retail',
+  },
+] as const;
+
+/** The demo's group keys and the ids of the groups they name. */
+const GROUP_IDS = { std: 1, whl: 2, vip: 3 } as const;
+
+/**
+ * Seeds the demo client groups.
+ *
+ * @param db the transaction to write with
+ * @param now the rebased "now" of the demo; the groups are dated 400 days before it
+ * @returns the report of `client_groups`
+ */
+export async function seedClientGroups(db: DbExecutor, now: number): Promise<SeedReport> {
+  const report = await insertRows(
+    db,
+    s.clientGroups,
+    CLIENT_GROUPS.map((group) => ({
+      id: group.id,
+      name: group.name,
+      kind: group.kind,
+      discountPercent: toMoney(group.discount),
+      isDefault: group.isDefault,
+      earnThreshold: toMoney(group.threshold),
+      depositLimit: toMoney(group.deposit),
+      overdraftAllowed: group.overdraft,
+      sort: group.id,
+      createdAt: new Date(now - 400 * DAY_MS),
+    })),
+  );
+  await syncIdentity(db, s.clientGroups);
+  return report;
+}
+
+/** The Dhru username of a demo merchant: its name as a slug (the frontend mock's `slug`). */
+function usernameOf(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+/**
+ * Seeds the demo merchants.
+ *
+ * Why: the console's merchant pages and every later feature (orders, wallets, prices) start from the same 20 merchants, with
+ * the ids, names, groups, statuses and referrers the frontend mock gives them (`m3` is 3, `GSM0003` its referral code). No
+ * password is stored: a merchant sets one through the invitation or forgot-password link. The wallet (ledger accounts, credit
+ * limit, balance) is feature 3's seed; the credit limits of the demo are not written here.
+ *
+ * @param db the transaction to write with
+ * @param demo the loaded frontend demo state
+ * @returns the report of `clients`
+ */
+export async function seedMerchants(db: DbExecutor, demo: DemoSeed): Promise<SeedReport> {
+  const report = await insertRows(
+    db,
+    s.clients,
+    demoRows<DemoMerchant>(demo, 'merchants').map((merchant) => {
+      const id = demoNumericId(merchant.id);
+      const created = demo.now - merchant.joined * DAY_MS;
+      return {
+        id,
+        username: usernameOf(merchant.name),
+        email: merchant.email,
+        name: merchant.name,
+        company: merchant.name,
+        phone: '',
+        country: merchant.cc,
+        groupId: GROUP_IDS[merchant.group],
+        status: merchant.status,
+        kycStatus: merchant.kyc === 'Verified' ? ('approved' as const) : ('pending' as const),
+        referredById: merchant.referredBy === null ? null : demoNumericId(merchant.referredBy),
+        referralCode: `GSM${String(id).padStart(4, '0')}`,
+        // A merchant who accepted the invitation has proven the email; pending ones have not yet.
+        emailVerifiedAt: merchant.status === 'pending' ? null : new Date(created + 3_600_000),
+        createdAt: new Date(created),
+      };
+    }),
+  );
+  await syncIdentity(db, s.clients);
+  return report;
+}
+
+/**
+ * Seeds roles, staff, IP rules, client groups and merchants.
+ *
+ * Why: the console needs six roles to pick from, the six demo staff members to show in the admin-team pages, the
+ * demo IP rules (scenario ip-rules) and the demo merchants with their groups. Passwords and TOTP secrets stay empty here: `seedDevCredentials` sets them in development.
  *
  * @param db the transaction to write with
  * @param demo the loaded frontend demo state
@@ -183,5 +323,7 @@ export async function seedIdentity(db: DbExecutor, demo: DemoSeed): Promise<Seed
   );
 
   for (const table of [s.roles, s.staffUsers, s.ipRules]) await syncIdentity(db, table);
-  return [roles, staff, ipRules, loopback];
+  const clientGroups = await seedClientGroups(db, demo.now);
+  const clients = await seedMerchants(db, demo);
+  return [roles, staff, ipRules, loopback, clientGroups, clients];
 }

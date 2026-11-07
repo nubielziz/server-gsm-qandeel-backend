@@ -81,7 +81,14 @@ export class ApiKeyAuthenticator {
     await this.limits.enforce('api-key', String(view.id), 1, options);
 
     await this.touchQuietly(view, address ? formatIpAddress(address) : request.ip, nowMs);
-    return { kind: 'api-key', clientId: view.clientId, keyId: view.id, scopes: view.scopes, ip: request.ip };
+    return {
+      kind: 'api-key',
+      clientId: view.clientId,
+      clientName: view.client.name,
+      keyId: view.id,
+      scopes: view.scopes,
+      ip: request.ip,
+    };
   }
 
   /** Counts one point against the address that presented an unknown key; the budget used up is a `429`. */

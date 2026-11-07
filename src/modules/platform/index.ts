@@ -4,6 +4,8 @@
 export { PlatformModule } from './platform.module';
 export { AuditModule } from './audit/audit.module';
 export { AuditService } from './audit/audit.service';
+export { AUDIT_ENTITY_TYPES, CONSOLE_AUDIT_ENTITY_TYPES, isAuditEntityType } from './audit/audit-entity-types';
+export type { AuditEntityType } from './audit/audit-entity-types';
 export type { AuditEntry } from './audit/audit.service';
 export { REDACTED, isSecretKey, redactForAudit } from './audit/audit-redaction';
 export { SettingsModule } from './settings/settings.module';

@@ -56,20 +56,21 @@ export function principalOf(request: FastifyRequest): Principal | undefined {
  * Describes a principal for the request context (the audit log reads it).
  *
  * @param principal the authenticated caller
- * @returns the actor type (`staff`, `client` for a merchant or one of their API keys, `customer`) and id; `undefined` for the
- *   holder of a capability token or a gateway webhook, who are not accounts
+ * @returns the actor type (`staff`, `client` for a merchant or one of their API keys, `customer`), id and name (the audit
+ *   log's snapshot); `undefined` for the holder of a capability token or a gateway webhook, who are not accounts
  */
 export function actorOf(principal: SessionPrincipal): RequestActor;
 export function actorOf(principal: Principal): RequestActor | undefined;
 export function actorOf(principal: Principal): RequestActor | undefined {
   switch (principal.kind) {
     case 'staff':
-      return { type: 'staff', id: principal.staffId };
+      return { type: 'staff', id: principal.staffId, name: principal.session.subject.name ?? '' };
     case 'merchant':
+      return { type: 'client', id: principal.clientId, name: principal.session.subject.name ?? '' };
     case 'api-key':
-      return { type: 'client', id: principal.clientId };
+      return { type: 'client', id: principal.clientId, name: principal.clientName };
     case 'customer':
-      return { type: 'customer', id: principal.customerId };
+      return { type: 'customer', id: principal.customerId, name: principal.session.subject.name ?? '' };
     case 'capability':
     case 'webhook':
       return undefined;

@@ -41,6 +41,7 @@ describe('AuditService through a staff mutation', () => {
     expect(row).toMatchObject({
       actorType: 'staff',
       actorId: staffId,
+      actorName: 'Test Staff',
       action: 'Changed a test record',
       entityType: 'staff',
       entityId: 7,
@@ -116,15 +117,26 @@ describe('AuditService outside a request', () => {
   it('records the system as the actor when nobody is signed in', async () => {
     const { db } = await testDb();
     const audit = t.app.get(AuditService);
-    const row = await audit.record(db, { action: 'Ran the nightly check', entityType: 'job', entityLabel: 'nightly' });
-    expect(row).toMatchObject({ actorType: 'system', actorId: null, ip: null, entityId: 0, entityLabel: 'nightly' });
+    const row = await audit.record(db, {
+      action: 'Ran the nightly check',
+      entityType: 'setting',
+      entityLabel: 'nightly',
+    });
+    expect(row).toMatchObject({
+      actorType: 'system',
+      actorId: null,
+      actorName: '',
+      ip: null,
+      entityId: 0,
+      entityLabel: 'nightly',
+    });
   });
 
   it('reads the actor and the IP from the request context and counts the row', async () => {
     const { db } = await testDb();
     const audit = t.app.get(AuditService);
     const counted = await runWithRequestId('req-audit-1', async () => {
-      setRequestActor({ type: 'staff', id: 41 }, '198.51.100.8');
+      setRequestActor({ type: 'staff', id: 41, name: 'Lina S.' }, '198.51.100.8');
       expect(getRequestContext()?.auditRecords).toBe(0);
       const row = await audit.record(db, {
         action: 'Did something',
@@ -135,6 +147,7 @@ describe('AuditService outside a request', () => {
       expect(row).toMatchObject({
         actorType: 'staff',
         actorId: 41,
+        actorName: 'Lina S.',
         ip: '198.51.100.8',
         entityId: 9,
         before: { a: 1 },
@@ -166,10 +179,11 @@ describe('AuditService outside a request', () => {
       { action: '', entityType: 'staff' },
       { action: 'x'.repeat(201), entityType: 'staff' },
       { action: 'Did it', entityType: 'Staff' },
+      { action: 'Did it', entityType: 'job' },
       { action: 'Did it', entityType: 'staff', entityId: -1 },
       { action: 'Did it', entityType: 'staff', entityId: 1.5 },
     ]) {
-      await expectRejection(audit.record(db, entry), RangeError, JSON.stringify(entry));
+      await expectRejection(audit.record(db, entry as never), RangeError, JSON.stringify(entry));
     }
     expect(await rows()).toHaveLength(0);
   });

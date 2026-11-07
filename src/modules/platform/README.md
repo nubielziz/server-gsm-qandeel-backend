@@ -8,7 +8,7 @@ Decisions that shape this module: 004 file storage, 017 API documentation, 020 o
 
 ## Status
 
-Built: `GET /openapi.json` and `GET /docs` (the public documentation), plus the internal `GET /reference` and `GET /reference/openapi.json` (no contracts: they are documentation routes, gated by `REFERENCE_DOCS`). Code: `docs/`. The transactional outbox (`outbox_events`): writing events and the worker's relay. Code: `outbox/`. The audit log (`audit_logs`): `AuditService.record` and the check that staff writes are audited. Code: `audit/`. Cached read access to `settings` for other modules. Code: `settings/`.
+Built: `GET /openapi.json` and `GET /docs` (the public documentation), plus the internal `GET /reference` and `GET /reference/openapi.json` (no contracts: they are documentation routes, gated by `REFERENCE_DOCS`). Code: `docs/`. The transactional outbox (`outbox_events`): writing events and the worker's relay. Code: `outbox/`. The audit log (`audit_logs`): `AuditService.record` and the check that staff writes are audited. Code: `audit/`. Cached read access to `settings` for other modules. Code: `settings/`. Feature 2a built the four admin routes of the audit log and the settings (`GET /admin/audit-logs[/:id]`, `GET` and `PATCH /admin/settings`): see "Audit log and settings routes (feature 2a)" below. Code: `contracts/`, `controllers/`, `application/`, `infra/`, wired by `PlatformAdminModule`.
 
 ## Public API (`index.ts`)
 
@@ -125,9 +125,9 @@ Keep this list in step with the contracts (`permission` of each `defineRoute`).
 
 ## Settings and maintenance mode (`settings/`, `maintenance/`)
 
-`SettingsService` is the only code outside the (future) settings routes that reads the `settings` table: other modules call it
-(identity reads `adminAllowlistOnly`). The routes that write settings arrive with their features and call the `invalidate()` of
-whatever cache holds a value after their commit. `PATCH /admin/settings` is an allow-list (lead resolution identity-platform-13):
+`SettingsService` is the only code outside the settings routes that reads the `settings` table: other modules call it
+(identity reads `adminAllowlistOnly`). The routes that write settings call the `invalidate()` of whatever cache holds a value
+after their commit. `PATCH /admin/settings` is an allow-list (lead resolution identity-platform-13):
 it accepts only the keys of a settings registry in this module, each with its validator (today only `imeiRetentionDays`, a JSON
 integer 0 to 3650, shared with `PATCH /admin/storefront/settings`); any other key, including the keys owned by stricter routes
 (`adminAllowlistOnly`, `maintenance`, risk rules, storefront policies), is `422 VALIDATION_FAILED` with `errors[].field` = the key.
@@ -161,6 +161,30 @@ already started must still be confirmed), `/health`, `/metrics`, `/docs`, `/open
   there; the Dhru handlers can call `maintenanceRefusal(await maintenance.state(), { method, path, dhruAction }, clock.nowMs())` themselves.
 - **Failure policy:** if the state cannot be read at all, requests go through (maintenance is a courtesy to customers, not a
   security rule).
+
+## Audit log and settings routes (feature 2a)
+
+Four admin routes (`contracts/`, `controllers/`, `application/`, `infra/`), wired by `PlatformAdminModule`. Scenarios `admin-team` and
+`ip-rules` read and write them (`test/scenarios/`); route tests: `test/integration/audit-logs.test.ts` and `settings-admin.test.ts`.
+
+| Route | Permission | What it does |
+|---|---|---|
+| `GET /admin/audit-logs` | `audit:read` | the log newest first. Filters (equality): `actorType` (`staff \| client \| customer \| system`), `actorId`, `entityType`, `entityId`; `q` is a case-insensitive contains over `actorName`, `action` and `entityLabel`; `from` and `to` are UTC days, both included; sorts `createdAt` and `id`; `x-total-count` is exact for the filter |
+| `GET /admin/audit-logs/:id` | `audit:read` | one entry; `404 NOT_FOUND` |
+| `GET /admin/settings` | `settings:read` | one flat object `{ key: value }` of every settings row with its JSON type; keys whose names mark a secret (`password`, `token`, `secret`, `hash`, `apiKey`, ...: `isSecretKey`) are never sent; a key that was never set is absent |
+| `PATCH /admin/settings` | `settings:update` | the allow-list below; answers the whole object after the change |
+
+- **The audit list is read-only** (the table is append-only). `actorName` and `entityLabel` are snapshots written with the entry; the wire
+  sends `null` for `''` (a system row has no actor name, id or address). `before` and `after` were masked when the entry was written.
+- **`PATCH /admin/settings` is an allow-list** (`settings/settings-registry.ts`, resolution `identity-platform-13`): the registry holds
+  `imeiRetentionDays` (a JSON integer 0 to 3650). Every key of the patch is judged first; any other key (the keys of the stricter routes
+  `adminAllowlistOnly`, `maintenance`, the risk rules, the storefront policies included) or a value the validator refuses is `422
+  VALIDATION_FAILED` with one `errors[]` item per refused key (`field` = the key), and nothing is written. An empty body is `422` on
+  `body`. A valid patch upserts the rows and writes one audit row (`action: changed settings`, `entityType: setting`, `entityLabel` the keys,
+  `before` and `after` of the changed keys, secrets masked) in the same transaction. After the commit it calls `SettingsReader.invalidate()`
+  and `MaintenanceService.invalidate()`. No registry key feeds the IP rule cache; a key added later that does must also clear
+  `IpRuleCache` (identity module, by a seam, since this module may not import identity).
+- **Adding an editable setting:** add `{ key, validate }` to `EDITABLE_SETTINGS` with a unit test, name the cache it feeds and clear it after the commit.
 
 ## Events
 
@@ -197,7 +221,7 @@ in `docs/queues.md`. Other jobs of this module (notifications, webhook deliverie
 
 ## Cache keys
 
-- `gsm:{env}:platform:settings:all` (`CacheKeys.settings()`): the whole `settings` table as one flat object, 60 s. The settings write routes (feature 2a) call `SettingsReader.invalidate()` inside `afterCommit`. Listed in `docs/cache-keys.md`.
+- `gsm:{env}:platform:settings:all` (`CacheKeys.settings()`): the whole `settings` table as one flat object, 60 s. `PATCH /admin/settings` and `PUT /admin/access/restriction` call `SettingsReader.invalidate()` inside `afterCommit`. Listed in `docs/cache-keys.md`. Feature 2a added no key family.
 
 | Key | What | TTL | Invalidation |
 |---|---|---|---|

@@ -24,7 +24,7 @@ export interface ApiKeyView {
   readonly lastUsedAtMs: number | null;
   readonly expiresAtMs: number | null;
   readonly revokedAtMs: number | null;
-  readonly client: { readonly username: string; readonly status: ClientStatus };
+  readonly client: { readonly username: string; readonly name: string; readonly status: ClientStatus };
 }
 
 /**

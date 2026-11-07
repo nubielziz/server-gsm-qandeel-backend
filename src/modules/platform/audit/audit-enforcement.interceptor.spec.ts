@@ -49,7 +49,7 @@ async function run(options: {
   const interceptor = new AuditEnforcementInterceptor(config(options.env ?? 'test'));
   Object.assign(interceptor, { logger: { error: (message: string) => logged.push(message) } });
   return runInRequestContext('req-enforce', async () => {
-    if (options.actor) setRequestActor({ type: options.actor, id: 3 }, '10.0.0.1');
+    if (options.actor) setRequestActor({ type: options.actor, id: 3, name: 'Test Actor' }, '10.0.0.1');
     for (let i = 0; i < (options.rows ?? 0); i++) countAuditRecord();
     return lastValueFrom(interceptor.intercept(contextOf(options.contract), options.next ?? handle({ ok: true })));
   });

@@ -15,6 +15,8 @@ export interface DemoSeed {
   readonly state: DemoState;
   /** Milliseconds added to each timestamp: the time since the demo was captured. */
   readonly shift: number;
+  /** The "now" the demo was rebased to (the `now` option, default the real time): demo values given in days ago count back from it. */
+  readonly now: number;
 }
 
 /**
@@ -76,8 +78,9 @@ export async function loadDemoState(options: { dir?: string; now?: number } = {}
     );
   }
   const { capturedAt, state } = (await file.json()) as { capturedAt: number; state: unknown };
-  const shift = (options.now ?? Date.now()) - capturedAt;
-  return { state: decodeDemoValue(state, shift, capturedAt) as DemoState, shift };
+  const now = options.now ?? Date.now();
+  const shift = now - capturedAt;
+  return { state: decodeDemoValue(state, shift, capturedAt) as DemoState, shift, now };
 }
 
 /**

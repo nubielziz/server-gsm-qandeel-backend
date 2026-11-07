@@ -137,7 +137,7 @@ export class MerchantRegistrationService {
     meta: RequestMeta,
   ): Promise<void> {
     await this.db.runInTransaction(async (work) => {
-      const group = await this.groups.defaultGroup(work.tx);
+      const group = await this.groups.findDefault(work.tx);
       if (!group) throw new AppError('INTERNAL_ERROR', { detail: 'No default merchant group is configured.' });
       const client = await insertClient(work.tx, {
         username: usernameFor(input.email, randomInt),

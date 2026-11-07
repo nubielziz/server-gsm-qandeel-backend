@@ -28,6 +28,7 @@ export async function findApiKeyByHash(db: DbExecutor, keyHash: string): Promise
       expiresAt: apiKeys.expiresAt,
       revokedAt: apiKeys.revokedAt,
       username: clients.username,
+      name: clients.name,
       status: clients.status,
     })
     .from(apiKeys)
@@ -45,7 +46,7 @@ export async function findApiKeyByHash(db: DbExecutor, keyHash: string): Promise
     lastUsedAtMs: row.lastUsedAt?.getTime() ?? null,
     expiresAtMs: row.expiresAt?.getTime() ?? null,
     revokedAtMs: row.revokedAt?.getTime() ?? null,
-    client: { username: row.username, status: row.status },
+    client: { username: row.username, name: row.name, status: row.status },
   };
 }
 

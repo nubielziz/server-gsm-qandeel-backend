@@ -13,6 +13,15 @@ export { assertOwnerTargetAllowed, isOwner } from './security/principal';
 export { IdentityModule } from './identity.module';
 export { SecurityModule } from './security/security.module';
 export { StaffAuthModule } from './staff-auth.module';
+export { AccessAdminModule } from './access-admin.module';
+export { MerchantAdminModule } from './merchant-admin.module';
+export { ClientStatsDirectory, NO_ORDERS } from './application/client-stats';
+export type { ClientStats, ClientStatsSource } from './application/client-stats';
+export { MERCHANT_INVITED_EVENT } from './application/client-admin.service';
+export { cidrToWire } from './domain/ip-rule-input';
+export { SessionPurgeModule, SESSION_PURGE_SCHEDULER } from './jobs/session-purge.module';
+export { SESSION_PURGE_JOB } from './jobs/session-purge.processor';
+export { PURGE_BATCH_SIZE, SESSION_RETENTION_DAYS, SessionPurge } from './jobs/session-purge';
 export { MerchantAuthModule } from './merchant-auth.module';
 export { MerchantMailModule } from './merchant-mail.module';
 export { STAFF_TOKEN_TTL_MS, StaffAuthTokens } from './application/staff-auth-tokens';
@@ -90,6 +99,8 @@ export type {
   SubjectSnapshot,
   SubjectState,
 } from './security/session.types';
+export { liveSessionCondition } from './security/session.repository';
+export type { IdleLimits } from './security/session.repository';
 export { SessionSubjects } from './security/subject-resolvers';
 export type { SessionSubjectResolver } from './security/subject-resolvers';
 export { ipAudienceOf } from './security/ip-rules/ip-audience';

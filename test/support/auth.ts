@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { parseEnv } from '../../src/config';
 import { CacheKeys, CacheService } from '../../src/infra/cache';
+import { RedisService } from '../../src/infra/redis';
 import { TokenService } from '../../src/infra/crypto';
 import { type Database, schema as s } from '../../src/infra/db';
 import { CsrfService, SessionCookies, SessionService } from '../../src/modules/identity';
@@ -132,6 +133,23 @@ export async function clearIdentityCaches(t: TestApp): Promise<void> {
   await cache.delByPrefix(keys.prefix('identity', 'session'));
   await cache.delByPrefix(keys.prefix('identity', 'role'));
   await cache.del(keys.settings());
+}
+
+/**
+ * Deletes the counters of the three limiters a sign-in touches (per address, per email and address, per link).
+ *
+ * Why: the counters live 15 minutes in the cache Redis, which outlives a test run; a test that signs the same account in from the
+ * same address on every run would meet the lock of the run before.
+ *
+ * @param t the running test app
+ */
+export async function clearRateLimits(t: TestApp): Promise<void> {
+  const redis = t.app.get(RedisService).cache;
+  const keys = t.app.get(CacheKeys);
+  for (const limiter of ['ip', 'sign-in', 'token'] as const) {
+    const found = await redis.keys(`${keys.rateLimit(limiter)}:*`);
+    if (found.length > 0) await redis.del(...found);
+  }
 }
 
 /**

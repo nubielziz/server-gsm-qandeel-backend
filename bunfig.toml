@@ -1,4 +1,4 @@
-# bun test settings (decision 014): preload sets NODE_ENV=test; 15 s per test (integration tests boot Nest apps).
+# bun test settings (decision 014): preload sets NODE_ENV=test. The 15 s per-test timeout (integration tests boot Nest apps)
+# is the `--timeout 15000` of the test scripts in package.json: bunfig has no timeout key (a `timeout` here is ignored).
 [test]
 preload = ["./test/setup.ts"]
-timeout = 15000

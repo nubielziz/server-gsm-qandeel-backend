@@ -140,7 +140,7 @@ export class StaffPasswordService {
     // Every session of the account ends, the pending one that made this request included.
     await this.sessions.revokeAllOf('staff', staff.id, {}, work);
     // The link route has no signed-in caller: the audit row names the account owner as the actor.
-    setRequestActor({ type: 'staff', id: staff.id }, meta.ip);
+    setRequestActor({ type: 'staff', id: staff.id, name: staff.name }, meta.ip);
     await this.audit.record(work.tx, {
       action: 'set a new password',
       entityType: 'staff',

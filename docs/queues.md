@@ -174,22 +174,24 @@ Processes uploaded and generated files (exports, result files).
 Scheduled housekeeping: group promotion, data retention, integrity checks, FX refresh.
 
 - **Concurrency:** 2 per worker process.
-- **Jobs:** `ip_rule_hits_flush`, every minute (identity module, below). The others are built by their features, each
+- **Jobs:** `ip_rule_hits_flush`, every minute, and `session_purge`, daily at 03:15 UTC (identity module, below). The others are built by their features, each
   registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
   `client_group_promotion` (feature 4a, nightly), `ledger_integrity` (12b, nightly 02:30 UTC), `data_retention` (nightly
   03:00 UTC), `fx_refresh` (hourly), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). The names are the
   console's job names (`GET /admin/system/jobs`). `data_retention` erases `imei_checks` older than `imeiRetentionDays` by
   setting `imei_enc`, `imei_hash` and `cached_until` to NULL together (no marker column; the wire then shows the TAC followed
   by bullets up to 15 characters), the same erasure `POST /admin/customers/:id/anonymize` applies to the customer's checks.
-- **Payload:** none for `ip_rule_hits_flush`. A manual run of the others carries `{ runId }` of the `job_runs` row that
+- **Payload:** none for `ip_rule_hits_flush` and `session_purge` (a manual run of `session_purge` carries `{ runId }` like the others). A manual run of the others carries `{ runId }` of the `job_runs` row that
   `POST /admin/system/jobs/:name/run` inserted; the job id is `manual-<run id>`.
 - **Idempotency:** `ip_rule_hits_flush` takes the whole Redis hash of counters and deletes it in one Lua step, so a second or
-  parallel run finds nothing and no hit is written twice. For the others: each run is safe to repeat; `JobRunsService.run`
+  parallel run finds nothing and no hit is written twice. `session_purge` deletes by a cutoff computed from the clock, so a
+  repeat or a parallel run only finds fewer rows (a deleted row cannot be deleted twice, live sessions are never touched). For the others: each run is safe to repeat; `JobRunsService.run`
   skips a run while another run of the same job is going on.
 - **Retry policy:** 3 attempts, exponential backoff from 1 min (jitter 50 %); each attempt of a scheduled run is its own
   `job_runs` row. A manual run is one row: a retry after it failed ends the job as failed (`UnrecoverableError`), a retry
   after it succeeded returns it unchanged.
-- **Schedule:** `ip-rule-hits-flush` every minute (`src/modules/identity/security/ip-rules/ip-rule-hits-flush.module.ts`); the
+- **Schedule:** `ip-rule-hits-flush` every minute (`src/modules/identity/security/ip-rules/ip-rule-hits-flush.module.ts`);
+  `session-purge` at 03:15 UTC (`src/modules/identity/jobs/session-purge.module.ts`); the
   others are registered with `JobSchedulerRegistry` by the owning features.
 
 ### `ip_rule_hits_flush` (identity module)
@@ -205,6 +207,20 @@ The API counts the requests an IP rule decided in the cache Redis hash `gsm:{env
   in Redis, added to hits that arrived meanwhile, and fails the job. A crash between taking the counters and writing them, or
   Redis evicting the hash, loses at most a minute of counts: they are statistics, not truth.
 - **Retention:** 10 completed and 100 failed jobs (24 hours) are kept, so a job a minute does not fill the Redis.
+
+### `session_purge` (identity module)
+
+Deletes `sessions` rows that ended more than 30 days ago: revoked (`revoked_at`) or past their absolute end (`expires_at`). An
+ended session stays readable for 30 days (an incident review, the sessions list's 404), then only costs space; a session that is merely
+idle-dead but not yet past `expires_at` is not "ended" for the purge and goes when its absolute end passes. No other table references
+`sessions`.
+
+- **Recorded in `job_runs`** (`JobRunsService.run`, trigger `schedule`, or `manual` with `{ runId }`): `processed` and `result.deleted`
+  are the number of rows deleted. 03:15 UTC sits between the nightly 02:30 integrity check and 03:00 retention job runs.
+- **Batches:** 1000 rows per statement (`DELETE ... WHERE id IN (SELECT id ... ORDER BY id LIMIT 1000)`), repeated until a batch is short,
+  so no statement holds a long lock and the job can be interrupted at any point.
+- **Attempts and retry:** the queue's policy (3 attempts, exponential backoff from 1 min, jitter 50 %); a retry deletes what is left.
+- **Cutoff:** `clock.now() - 30 days` (decision 031): exactly 30 days is kept, one millisecond older is deleted.
 
 ## alerts
 
@@ -243,6 +259,7 @@ Registered with `JobSchedulerRegistry.register` in `onModuleInit`; the worker up
 |---|---|---|---|---|
 | `outbox-relay-tick` | `outbox-relay` | `tick` | every second | platform (`src/modules/platform/outbox/`) |
 | `ip-rule-hits-flush` | `maintenance` | `ip_rule_hits_flush` | every minute | identity (`src/modules/identity/security/ip-rules/`) |
+| `session-purge` | `maintenance` | `session_purge` | daily 03:15 UTC | identity (`src/modules/identity/jobs/`) |
 
 ## Adding a queue or a job
 

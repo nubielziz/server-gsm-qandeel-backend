@@ -10,7 +10,19 @@
 | `test/schema/`      | structure of the Drizzle schema (ownership, columns, indexes, enum CHECKs)                 | no                                    |
 | `test/integration/` | real Postgres (`gsm_test`), Redis (database 1), MinIO (`gsm-files-test`), the Nest app on Fastify `inject`, child processes | yes (Postgres, Redis, MinIO)          |
 | `test/contract/`    | the backend against the map and the console: route, shape and error parity (decision 009)  | yes (a child process boots the app)   |
-| `test/support/`     | shared helpers: `app.ts` (test app), `db.ts` (test database), `infra.ts` (Redis, cache, storage, HTTP modules on the test instances), `rejection.ts` (typed `expectRejection`), `fixtures.ts` (minimal rows), `auth.ts` (roles, staff, merchants and signed-in sessions), `clock.ts` (`TestClock`, `ManualTimers`), `security-routes.ts` (one sample route per access kind) |                                       |
+| `test/scenarios/`   | end-to-end walks of the map's scenarios, `<id>.e2e.test.ts` (see below)                   | yes (Postgres, Redis)                 |
+| `test/support/`     | shared helpers: `app.ts` (test app), `db.ts` (test database), `infra.ts` (Redis, cache, storage, HTTP modules on the test instances), `rejection.ts` (typed `expectRejection`), `fixtures.ts` (minimal rows), `auth.ts` (roles, staff, merchants and signed-in sessions), `admin-api.ts` (`AdminApi`: a signed-in staff member with get/post/patch/put/delete, `withoutCsrf`, `anonymous`), `staff-console.ts` (a browser-like sign-in client and TOTP codes), `clock.ts` (`TestClock`, `ManualTimers`), `security-routes.ts` (one sample route per access kind) |                                       |
+
+## Scenario tests (`test/scenarios/`)
+
+One file per map scenario, named `<scenario id>.e2e.test.ts` (`admin-team.e2e.test.ts`, `ip-rules.e2e.test.ts`). Bun only runs files
+that end in `.test.ts` (or `.spec.ts`), so the suffix `.e2e.test.ts` is what makes `bun test ./test` pick them up: a file named
+`<id>.e2e.ts` would silently never run. The steps of a scenario share one story, so the `it` blocks of a file run in order, name
+their step (`step 3: ...`) and keep their state in module variables; the database is reset once in `beforeAll`, not between steps. They
+need the Docker services like every integration test. Each step asserts the tables and statuses the scenario's step names
+(`docs/slices/<module>.json`, `scenarios`), read back from Postgres (and Redis for caches). A step that belongs to a feature that is
+not built yet (the mail of an invitation, the risk engine's automatic block) says so in a comment and writes the row the way that
+feature will.
 
 ## Controlled time (decision 031)
 
