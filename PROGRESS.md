@@ -27,16 +27,17 @@ money, and the ledger's settle, reversal and release journals. Fixes found at ru
 role member count (2a), a default merchant group on a fresh database (4a migration 0005), the seeded webhook payloads (7b),
 and in the console the mid-session sign-out keeps the page (`?to=`).
 
-**Running now (second agent budget approved by the user: 4 calls, 2 at once; 5 and 7b done):** feature **6** in
-`../backend-6` (test DB `gsm_6_test`, Redis DB 10, from `e6de28a`). File ownership for the parallel run: 6 does not edit
-`orders/application/order-{placement,transitions,ledger}.ts` or the catalog inventory files. **Done by the lead on `main`
-meanwhile:** stock delivery at placement (`5b291ad`: RULES orders 10, orders-suppliers-11; a service with enough available
-codes completes the order at once with the codes as its result; `placed_at` and `created_at` from the injected clock,
-decision 025 amended for decision 031; `bun run check` green, 2883 pass; checked at runtime: staff imported a code
-through the real import route, the merchant's portal order came back completed with it, and the console's drawer shows
-"Delivered from stock: 1 code" and the settlement) and B160, the spec of the 7 `/client` order routes (`75ce982`). For
-that check the lead gave the seeded merchant 1 (Zain Mobile Hub, `ops@zainmobilehub.example`) the development password
-`demo-password` in the dev database only (the seed sets no merchant password: merchants set theirs through a link).
+**Running now (third budget, 2026-11-07 afternoon):** one workflow per feature (`gsm-backend-feature`: Sonnet implementer,
+Opus read-only review, Sonnet fix of blocking findings, Opus re-review), each in `../backend-<feature>` on
+`feat/backend-<feature>` with its own test database `gsm_<feature>_test` and Redis DB: **8** (Redis 14), **14a** (3),
+**14b** (4), **7a** (12), **9** (2), **15** (5), **11** (7), **12a** (9). 7a, 9 and 11 start from feature 6's merged branch
+(`6d12792`); the others from `main`. **6** suppliers is built and its merged tree is being checked before the squash merge.
+Ownership for the parallel run: 14a builds decision 034 (Turnstile) and 14b only sends the header (the lead sets the flag on
+14b's three routes at the merge); 11 alone edits `order-placement.ts` / `order-transitions.ts` (the completion listener);
+7a builds the service flags and `POST /client/files`; 11 leaves the client statement PDF for after 8 (`PdfRenderer`); 12a
+adds the `notifications` routes of 8's events only after 8 merges; nobody edits `lead-decisions.json` (the lead writes the
+B-entries from the reports). Waiting by dependency: **12b** (after 9), **16** (after 8 and 14a), **17** (after 12a and
+14b), **18** (after 16), **19** (after 9, 12a, 14a and 15).
 
 **Next, in order:**
 1. Merge **6** (its migration starts at 0009), walk Suppliers, the order drawer's dispatch/fetch/change-supplier and the
