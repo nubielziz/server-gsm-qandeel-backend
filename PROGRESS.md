@@ -49,7 +49,7 @@ feature for the `gsm-backend-continue` workflow), `merge-prep.sh` (start / finis
 reboot only Postgres, the two Redis servers and MinIO were started (Prometheus and Mailpit were already stopped; start them
 for a walk that needs them); Postgres replayed its data directory for about 7 minutes before accepting connections.
 **The user asked for 3 agents at a time** (to keep the machine free): the features run as one sequential workflow each, three
-at once, the next starting when one ends. Done: **7a** (merged), **8** (reviewed, fixed; being merged). Running: **9** (`wf_30b0252e-790`), **14a**
+at once, the next starting when one ends. Done: **7a** and **8** (merged and walked). Running: **9** (`wf_30b0252e-790`), **14a**
 (`wf_3a5177e0-444`), **14b** (`wf_169264a1-f10`). Queue: 12a, 11, 15, then 16 (after 8 and 14a), 12b (after 9), 17
 (after 12a and 14b), 18, 19. To resume a stopped run: the script `workflows/scripts/gsm-backend-continue-*.js` with `resumeFromRunId` and the same
 args from `.lead/continue-args.json`.
@@ -158,7 +158,7 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 | 6 | suppliers | suppliers admin, Dhru supplier client, dispatch/poll jobs, dispatch/fetch/change-supplier, sync (user rule 9: recompute the effective cost, bump the price version, no failover above the charged price), import (st6) | success, reject, timeout | done (`bbf84f4`) |
 | 7a | dhru-and-rest-v1 | Dhru surface (8 actions), REST v1 (12), idempotency, PRICE_CHANGED message and listed-price memory on the list actions (user rule 9) (st7) | | done (`13cdb12`, B166 `c73a0b8`) |
 | 7b | merchant-api-webhooks | API keys, webhook endpoints, deliveries, outgoing events incl. `service.price_changed` (user rule 9, route-parity allowance B117), public docs (st7) | | done (`e9322de`) |
-| 8 | billing | gateways, invoices (user rule 3), payments, approve/reject (user rule 4), automatic credit after the verification delay (user rule 6), KYC, payment webhook (B2B), invoice.paid (st8) | | |
+| 8 | billing | gateways, invoices (user rule 3), payments, approve/reject (user rule 4), automatic credit after the verification delay (user rule 6), KYC, payment webhook (B2B), invoice.paid (st8) | | done (`8f8f4b0`, B167 `56f48f7`) |
 | 9 | health-dashboard | system health routes, dashboard (services_below_floor on the effective cost, user rule 9), queues board (st9) | | |
 | 11 | commissions-reports | plans, assignments, accruals (user rule 5 on refunds), approve, reports (st11) | | |
 | 12a | notifications | templates, notifications, preferences, Telegram link + webhook, price-change digest (user rule 9) (st12) | | |
@@ -229,6 +229,15 @@ None.
   price change scan still read `orders` through their documented foreign read: switch them to `OrderReadService` when
   someone touches them. Migration 0008 was regenerated with drizzle-kit after 7b's 0007 (a worktree DB that applied the
   old 0007 must be recreated: the migrator compares timestamps only).
+- 8 merge notes (2026-11-07): the Opus review found three blocking issues (a gateway confirming another amount or
+  currency was credited the invoice's amount; the gateway on/off audit phrases; the deleted group left in the gateways),
+  fixed and re-reviewed. Lead fixes at the merge: a gateway only the deleted group could use is turned off instead of
+  opening to every group (B167), `webhookSecret` redacted in logs, approve documents its 409s; migration renumbered to 0010
+  after 7a's 0009 (8's test database recreated). Open: the invoice PDF still renders inside the request (a job would be
+  better); a mismatched payment rejected and adjusted by hand never passes through `gateway_clearing` (gateway payouts will
+  not reconcile for it); the merchant notifications of approve, reject and KYC decisions come with 12a. Walked: a bank
+  deposit approved from the console, an invoice, the payment methods, a KYC request approved. The dev servers are stopped
+  after each walk (the user's machine is busy).
 - 7a merge notes (2026-11-07): the Opus review passed; the lead fixed three security minors before the merge (a per-IP
   `upload` limiter for large bodies read before the credentials, decision 021 amended; a hidden service answered like an
   unknown one in the Dhru actions; upload names lose control, bidi and zero-width characters) and gave the tests that seed
