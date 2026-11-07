@@ -8,7 +8,8 @@ Single source of truth for status. The lead updates it after every step. Read it
 2026-11-01): feature **3** money-wallets-ledger (`c332201`), **2b** identity-merchant-auth (`446fd46`), **2a**
 identity-staff-access (`ed74e0b`), each reviewed, fixed and squash-merged by the lead; then `f66d74a` (audit phrasing).
 Wave 2 has started: **4a** catalog-structure is merged (`7c012d2`). 90 of 382 map endpoints are built; the console calls
-70 of them. `bun run check` green on the merged 2a tree (2181 pass,
+70 of them. `docs/COVERAGE.md` (generated, `bun run coverage:build`, checked by `bun run check`) has the counts per
+module, surface and stage and the scenario tests (2 of 13). `bun run check` green on the merged 2a tree (2181 pass,
 1 skip, 0 fail; shape parity compares 50 of 70 built routes). `PROGRESS.md` had been moved to a stray file named `ظ`
 (identical content); it was put back.
 
