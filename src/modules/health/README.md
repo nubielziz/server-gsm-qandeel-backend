@@ -8,14 +8,38 @@ Decisions that shape this module: 015 observability. Common to all modules: 008 
 
 ## Status
 
-Built: `GET /health` (health check) and `GET /metrics` (Prometheus), both in `controllers/` with their contracts in `contracts/health.contracts.ts`. The run log of jobs (`job_runs`): `JobRunsService`, in `job-runs/`.
+Built: `GET /health` (health check), `GET /metrics` (Prometheus), the run log of jobs (`job_runs`, `JobRunsService`, in `job-runs/`) and,
+with feature 9, the 16 `/admin/system/*` routes of the System health page, `GET /admin/queues` (Bull Board) and `GET /admin/dashboard`
+(the Dashboard page; it lives here because it reads the same checks, queues and counts, and platform stays free of the cycle). Not yet:
+alert rules, alerts, incidents and the integrity job (feature 12b), the `gateway:<id>` checks (feature 8).
+
+Layout of the admin part (`HealthAdminModule`, API process; `HealthJobsModule`, worker process):
+
+| Folder | What it holds |
+|---|---|
+| `contracts/` | one `defineRoute` per System health route (`system-health`, `system-ops`, `system-pipeline`, `system-traffic`) |
+| `controllers/` | thin controllers (`system-overview`, `system-ops`, `system-traffic`) |
+| `application/` | the read models: `HealthSnapshotService` (overview, cached 10 s), `ChecksHistoryService`, `PipelineHealthService` (orders, suppliers), `StoresHealthService` (database, cache, webhooks), `QueueAdminService`, `JobsAdminService`, `TrafficService` + `PrometheusClient` (metrics, errors), `MaintenanceAdminService`, `ComponentChecker` (writes `service_checks`), `WebhookIntakeCounter`, `ApiHeartbeat`, `database-guard` (`503 DATABASE_UNAVAILABLE`) |
+| `dashboard/` | `GET /admin/dashboard`: contract, controller, service, the read queries (`dashboard-reads.ts`) and the attention rules (`attention.ts`: the fixed severity of each kind, RULES dashboard 3, and the ranking) |
+| `domain/` | pure rules: `checks` (status words, uptime, overall verdict), `measure` (the metric specs and thresholds), `queue-verdict`, `cron-text` |
+| `infra/` | Drizzle queries on the module's own tables (`service-checks`, `job-runs-admin`, `alerts-read`) and `foreign-reads.repository.ts` (the documented reads of other modules' tables), `sibling-modules.ts` (late-bound imports of the other modules' public API, decision 032) |
+| `jobs/` | the four worker jobs and their schedules |
+| `queues-board/` | the read-only Bull Board mount behind the staff gate |
 
 ## Public API (`index.ts`)
 
-Exports `HealthModule` and the `HealthReport` type, and the run log for the processors of other modules: `JobRunsModule`,
-`JobRunsService` (`run`, `start`, `finish`, `findRunning`, `failStuck`) and the types `JobRunReport`, `RunJobOptions`,
-`RunOverlap`, `StartJobRunInput`, `JobRunOutcome`, `JobRun`, `JobStatus`, `JobTrigger`. `JobRunsModule` is separate from
+Exports `HealthModule`, `HealthAdminModule`, `HealthJobsModule` and the `HealthReport` type, and the run log for the processors of
+other modules: `JobRunsModule`, `JobRunsService` (`run`, `start`, `finish`, `findRunning`, `failStuck`) and the types `JobRunReport`,
+`RunJobOptions`, `RunOverlap`, `StartJobRunInput`, `JobRunOutcome`, `JobRun`, `JobStatus`, `JobTrigger`. `JobRunsModule` is separate from
 `HealthModule` so that the worker loads the service without the health controllers.
+
+For the billing (8), mail (12a) and alerts (12b) features:
+
+- `WebhookIntakeCounter.record(outcome)`: billing's gateway callback handler counts each incoming callback (`delivered`, `failed`,
+  `retrying`), which `GET /admin/system/webhooks` reports.
+- `MAIL_PROBE` and `HealthProbe`: 12a provides a probe under this token and the checker records the `mail` component.
+- 12b's metric sources: `METRIC_SPECS`, `measure`, `stateOf`, `worst` (thresholds and units, one place), `PrometheusClient`,
+  `OLDEST_WAITING_GAUGE`, `ALERT_EVALUATION_JOB`, `CORE_COMPONENTS`, `TIME_RANGES`, and the job names and retention of the health jobs.
 
 ## Owned tables
 
@@ -91,11 +115,14 @@ Keep this list in step with the contracts (`permission` of each `defineRoute`).
 
 ## Events
 
-Outbox events produced (types, payload ids): none yet. Consumed: none yet. Record each outbox type and the queue it maps to here and in `docs/queues.md`.
+Outbox events produced (types, payload ids): none. Consumed: none. Record each outbox type and the queue it maps to here and in `docs/queues.md`.
 
 ## Jobs and schedules
 
-None of this module's own jobs exist yet (the checks, alerts and integrity features add them). The run log is built:
+The health jobs (queue `maintenance`, worker process, `jobs/health-jobs.module.ts`): `service_checks` every minute (writes `service_checks`
+for the core components and every active supplier), `service_checks_purge` at 03:30 UTC (90 days of checks and finished runs),
+`job_runs_reaper` every 5 minutes (`failStuck`, runs left `running` over 2 hours) and `db_size_sample` at 03:45 UTC. Details and retry
+policy: `docs/queues.md`. Alerts and integrity add theirs in 12b. The run log:
 
 - **`JobRunsService.run({ job, trigger, runId?, triggeredBy?, overlap? }, work)`** is the wrapper processors use around their
   scheduled or manual work. It inserts a `running` row, runs `work(run)`, and closes the row as `succeeded` (or `skipped`
@@ -111,14 +138,30 @@ None of this module's own jobs exist yet (the checks, alerts and integrity featu
   overlap: 'refuse' })`, adds the job with `{ runId }` and the job id `manual-<run id>`, and the processor adopts the row with
   `run({ ..., runId })`. A row that is no longer `running` (closed by the reaper) is not run again.
 - **`failStuck(maxAgeMs)`** closes runs that stayed `running` too long (a worker that was killed), so the guard cannot block
-  a job for ever. The health feature schedules it.
-- Event-driven jobs (dispatch, webhooks) are not recorded here, and neither is the outbox relay tick (one run per second).
+  a job for ever. The `job_runs_reaper` job schedules it.
+- Event-driven jobs (dispatch, webhooks) are not recorded here, and neither are three high-frequency ticks: the outbox relay `tick`
+  (every second), `ip_rule_hits_flush` and `supplier_poll_tick` (every minute). Their processors ignore `data.runId`, so
+  `domain/unrecorded-jobs.ts` (`UNRECORDED_JOBS`) keeps them out of `GET /admin/system/jobs` and a manual run of one is 404: a
+  manual run would insert a `running` row that nothing closes. A new scheduler whose processor does not use `JobRunsService.run`
+  is added to that list.
 
 Queues, jobs and schedules: `docs/queues.md`.
 
 ## Cache keys
 
-None yet. Register each key family (owner, TTL, invalidation after commit) in `docs/cache-keys.md` (see `CONTRIBUTING.md` → "Add a cache key").
+All in `docs/cache-keys.md`, built by `CacheKeys`: `heartbeat` (the API's 30 s heartbeat, TTL 120 s), `healthSnapshot` (`current` 10 s and
+`last` 1 day: the copy served while Postgres is down), `healthChecks` (check history, 30 s), `dashboard` (the dashboard payload, 15 s) and
+`webhookIntake` (hourly counters of incoming gateway callbacks, 48 h). Nothing that decides is cached: they are display read models, and the
+maintenance state is read live on top of the cached snapshot.
+
+## Seed
+
+`scripts/seed/health.ts` (run last by `scripts/seed/run.ts`, after the suppliers): a week of `service_checks` at one sample per half hour for
+the six core components and every active demo supplier (calm, with two blips: a supplier slow for an hour two days ago and the queue Redis
+down for one sample four days ago; the newest sample of each is `ok`), and the run history of the scheduled jobs (`price_sync`,
+`balance_check`, `session_purge`, `client_group_promotion`, `service_checks_purge`, `db_size_sample`; one old failed price sync, and
+`db_size_sample` rows that show 4.3 MB of growth a day). It writes only into empty tables, because the worker's own rows are the real
+data; the alert rules, alerts and incidents are seeded by 12b. Test: `test/integration/health-seed.test.ts`.
 
 ## Audit resolutions
 

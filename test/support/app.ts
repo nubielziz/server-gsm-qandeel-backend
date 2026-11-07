@@ -26,6 +26,7 @@ import { MerchantAdminModule } from '../../src/modules/identity/merchant-admin.m
 import { MerchantAuthModule } from '../../src/modules/identity/merchant-auth.module';
 import { StaffAuthModule } from '../../src/modules/identity/staff-auth.module';
 import { IpRulesModule } from '../../src/modules/identity/security/ip-rules/ip-rules.module';
+import { HealthAdminModule } from '../../src/modules/health';
 import { MoneyAdminModule } from '../../src/modules/money/money-admin.module';
 import { OrdersAdminModule } from '../../src/modules/orders';
 import { SuppliersAdminModule } from '../../src/modules/suppliers';
@@ -103,6 +104,7 @@ const NEEDS_DATABASE_AND_CACHE = [
   SuppliersAdminModule,
   MerchantWebhooksModule,
   WebhookDeliveryModule,
+  HealthAdminModule,
 ];
 /** The pipeline module that only uses the cache Redis and the rate limiter: replaced when the infrastructure is. */
 const NEEDS_INFRASTRUCTURE = [PublicIpLimitModule];

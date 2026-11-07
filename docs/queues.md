@@ -210,11 +210,11 @@ Processes uploaded and generated files (exports, result files).
 Scheduled housekeeping: group promotion, data retention, integrity checks, FX refresh.
 
 - **Concurrency:** 2 per worker process.
-- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute (money module, below), and `service_price_scan`, event-driven (catalog module, below). The others are built by their features, each
+- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute (money module, below), `service_price_scan`, event-driven (catalog module, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below). The others are built by their features, each
   registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
   `ledger_integrity` (12b, nightly 02:30 UTC), `data_retention` (nightly
   03:00 UTC), `fx_refresh` (hourly), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). The names are the
-  console's job names (`GET /admin/system/jobs`). `data_retention` erases `imei_checks` older than `imeiRetentionDays` by
+  console's job names (`GET /admin/system/jobs`, which lists only the jobs that write `job_runs`: `ip_rule_hits_flush` does not, so it is not listed and a manual run of it is 404). `data_retention` erases `imei_checks` older than `imeiRetentionDays` by
   setting `imei_enc`, `imei_hash` and `cached_until` to NULL together (no marker column; the wire then shows the TAC followed
   by bullets up to 15 characters), the same erasure `POST /admin/customers/:id/anonymize` applies to the customer's checks.
 - **Payload:** none for `ip_rule_hits_flush`, `session_purge` and `client_group_promotion` (a manual run of the last two carries `{ runId }` like the others). A manual run of the others carries `{ runId }` of the `job_runs` row that
@@ -229,8 +229,28 @@ Scheduled housekeeping: group promotion, data retention, integrity checks, FX re
 - **Schedule:** `ip-rule-hits-flush` every minute (`src/modules/identity/security/ip-rules/ip-rule-hits-flush.module.ts`);
   `session-purge` at 03:15 UTC (`src/modules/identity/jobs/session-purge.module.ts`);
   `client-group-promotion` at 03:30 UTC (`src/modules/identity/jobs/group-promotion.module.ts`);
-  `payment-auto-credit` every minute (`src/modules/money/jobs/payment-auto-credit.module.ts`); the
-  others are registered with `JobSchedulerRegistry` by the owning features.
+  `payment-auto-credit` every minute (`src/modules/money/jobs/payment-auto-credit.module.ts`); the health jobs in
+  `src/modules/health/jobs/health-jobs.module.ts`; the others are registered with `JobSchedulerRegistry` by the owning
+  features.
+
+### Health jobs (health module, `src/modules/health/jobs/`)
+
+Four jobs of the worker's `maintenance` queue keep the System health page truthful. Each is wrapped with `JobRunsService.run`
+(one `job_runs` row per run; a manual run carries `{ runId }` and the job id `manual-<run id>`). Jobs carry no other payload.
+
+- **`service_checks`** (every minute, `ComponentChecker`): writes one `service_checks` row for each core component (`api`,
+  `postgres`, `redis`, `redis_queue`, `storage`, `workers`, `mail`) and for each active supplier (`supplier:<id>`, through the
+  suppliers module's health computation). `detail` is null when ok and a short English text when degraded or down; a disabled
+  supplier gets no row (the page says "checks are off"). `gateway:<id>` checks are added by the billing feature (8) at the merge.
+  The API proves it is alive by a 30 s heartbeat in the cache Redis. Idempotent: a repeat only adds another sample (a row per
+  component per run). The scheduler sets `removeOnComplete` to one hour so a job a minute does not fill the noeviction Redis.
+  Retry: the queue's policy; the next tick is the real retry.
+- **`service_checks_purge`** (03:30 UTC, `RETENTION_DAYS` = 90): deletes `service_checks` and finished `job_runs` older than 90
+  days, by a cutoff computed from the clock, so a repeat finds fewer rows.
+- **`job_runs_reaper`** (every 5 minutes): `JobRunsService.failStuck(STUCK_RUN_MS)` closes runs left `running` for more than 2 hours
+  (their worker died), so the one-run-at-a-time guard cannot block a job for ever. A closed run is never run again.
+- **`db_size_sample`** (03:45 UTC): records `pg_database_size` in the run's `result.bytes`; `GET /admin/system/database` reads these
+  samples for the growth per day.
 
 ### `payment_auto_credit` (money module)
 
@@ -349,6 +369,10 @@ Registered with `JobSchedulerRegistry.register` in `onModuleInit`; the worker up
 | `session-purge` | `maintenance` | `session_purge` | daily 03:15 UTC | identity (`src/modules/identity/jobs/`) |
 | `client-group-promotion` | `maintenance` | `client_group_promotion` | daily 03:30 UTC | identity (`src/modules/identity/jobs/`) |
 | `payment-auto-credit` | `maintenance` | `payment_auto_credit` | every minute | money (`src/modules/money/jobs/`) |
+| `service-checks` | `maintenance` | `service_checks` | every minute | health (`src/modules/health/jobs/`) |
+| `service-checks-purge` | `maintenance` | `service_checks_purge` | daily 03:30 UTC | health (`src/modules/health/jobs/`) |
+| `job-runs-reaper` | `maintenance` | `job_runs_reaper` | every 5 minutes | health (`src/modules/health/jobs/`) |
+| `db-size-sample` | `maintenance` | `db_size_sample` | daily 03:45 UTC | health (`src/modules/health/jobs/`) |
 
 ## Adding a queue or a job
 

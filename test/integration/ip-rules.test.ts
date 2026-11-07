@@ -597,7 +597,13 @@ describe('the flush job in a worker', () => {
         .from(s.ipRules)
         .where(sql`${s.ipRules.id} = ${id}`);
       expect(after!.hitCount).toBe(4);
-      expect(await db.select().from(s.jobRuns)).toHaveLength(0);
+      // The flush is not recorded in job_runs (the seed above leaves other jobs' history behind, so look for this job only).
+      expect(
+        await db
+          .select()
+          .from(s.jobRuns)
+          .where(sql`${s.jobRuns.job} = ${IP_RULE_HITS_FLUSH_JOB}`),
+      ).toHaveLength(0);
     } finally {
       await harness.close();
     }

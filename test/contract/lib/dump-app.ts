@@ -24,7 +24,9 @@ const t = await createTestApp({
   onRoute: (route) => {
     for (const method of [route.method].flat()) {
       // Fastify adds HEAD for every GET and the CORS plugin answers OPTIONS: neither is a route of ours.
-      if (method !== 'HEAD' && method !== 'OPTIONS') served.add(`${method} ${route.url}`);
+      // Bull Board serves its own page assets and read calls under /admin/queues/ (no contract); `GET /admin/queues` itself has one.
+      if (method !== 'HEAD' && method !== 'OPTIONS' && !route.url.startsWith('/admin/queues/'))
+        served.add(`${method} ${route.url}`);
     }
   },
 });

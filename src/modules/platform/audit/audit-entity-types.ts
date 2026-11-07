@@ -58,6 +58,8 @@ export const AUDIT_ENTITY_TYPES = [
   'ledger_transaction',
   'inventory_code',
   'pricing_rule',
+  'queue',
+  'job',
 ] as const;
 
 /** One value of {@link AUDIT_ENTITY_TYPES}. */

@@ -143,7 +143,9 @@ describe('exposition', () => {
   it('labels latency with the route template, the method and the status only', async () => {
     const text = (await scrape(open)).body;
     const line = text.split('\n').find((candidate) => candidate.startsWith('http_request_duration_seconds_count{'));
-    expect(line).toMatch(/^http_request_duration_seconds_count\{method="[A-Z]+",route="[^"]+",status="\d{3}"\} \d+$/);
+    expect(line).toMatch(
+      /^http_request_duration_seconds_count\{surface="[a-z0-9]+",method="[A-Z]+",route="[^"]+",status="\d{3}"\} \d+$/,
+    );
   });
 
   it('is registered as a contract with a text/plain success', () => {

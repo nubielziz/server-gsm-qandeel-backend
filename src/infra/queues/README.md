@@ -12,7 +12,7 @@ listed in `docs/queues.md`; a test fails when that document and `QUEUES` disagre
 | `@QueueProcessor(queue, jobName?)` and how processors are found | `queue-processor.ts`                                                              |
 | Workers: start, run, drain                                      | `queue-workers.service.ts`, `queue-workers.module.ts` (**worker process only**)   |
 | Schedulers: registry and the boot-time upsert                   | `job-schedulers.ts`, `job-scheduler-runner.ts`                                    |
-| Gauges `bullmq_queue_jobs`, `bullmq_queue_paused`               | `queue-metrics.ts`                                                                |
+| Gauges `bullmq_queue_jobs`, `bullmq_queue_paused`, `bullmq_queue_oldest_waiting_age_seconds` | `queue-metrics.ts`                                                    |
 
 ## Rules
 

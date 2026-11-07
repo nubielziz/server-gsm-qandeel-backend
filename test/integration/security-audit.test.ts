@@ -179,7 +179,7 @@ describe('AuditService outside a request', () => {
       { action: '', entityType: 'staff' },
       { action: 'x'.repeat(201), entityType: 'staff' },
       { action: 'Did it', entityType: 'Staff' },
-      { action: 'Did it', entityType: 'job' },
+      { action: 'Did it', entityType: 'not_an_entity' },
       { action: 'Did it', entityType: 'staff', entityId: -1 },
       { action: 'Did it', entityType: 'staff', entityId: 1.5 },
     ]) {

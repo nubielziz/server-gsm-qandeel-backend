@@ -89,7 +89,7 @@ services as they appear (identity, catalog 4a, suppliers 6, customers 14b). Noth
 
 `MoneyModule` (global: `MerchantAccounts`, `LedgerPoster`, `MerchantWallets`, `MerchantSpend`, `OrderSettlements`, `PaymentGateways`), `MoneyOutboxModule`, `PaymentAutoCreditModule` (worker), `INVOICE_PAID_EVENT`, `GATEWAY_HTTP_POLICY`, `topupMethodOf`, `postTransaction`, the 13 money event builders and their ids, the reversal builders `reopen`, `reopenB2c` and `refund`,
 the account helpers (`walletViewOf`, `balanceDelta`, `normalSideOf`, `toDebitPositive`, `BASE_CURRENCY`), the ledger line
-helpers and the wire ref types (`toWireRefType`, `storedRefTypesOf`). `WalletService` is exported by `MoneyAdminModule`
+helpers, the wire ref types (`toWireRefType`, `storedRefTypesOf`) and the stale-rate rule `isRateStale` (the System health dashboard's `fx_stale` item reads it, so it agrees with the currencies page). `WalletService` is exported by `MoneyAdminModule`
 (the routes and the services that read the database; a database-less test app leaves it out). Other modules import only
 `src/modules/money/index.ts` (lint rule `gsm/module-boundaries`).
 

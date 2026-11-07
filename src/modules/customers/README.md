@@ -12,7 +12,9 @@ Not built yet: the module is an empty shell (`customers.module.ts`, `index.ts`).
 
 ## Public API (`index.ts`)
 
-Exports `CustomersModule` only. Add the services other modules may call here, and nothing else: other modules import only `src/modules/customers/index.ts` (lint rule `gsm/module-boundaries`).
+Exports `CustomersModule` and `storefrontFunnel(db, now, days)` (`storefront-funnel.ts`, resolution b2c-10): a read-only function that counts
+the storefront funnel (IMEI checks, checkouts started, paid, delivered) over the last `days` days. The dashboard's storefront block (feature 9,
+30 days) and the funnel report (feature 19) share it; every number is zero until checkouts exist (14a, 16). Add the services other modules may call here, and nothing else: other modules import only `src/modules/customers/index.ts` (lint rule `gsm/module-boundaries`).
 
 ## Owned tables
 

@@ -10,6 +10,8 @@ import { Counter, Histogram, Registry, collectDefaultMetrics } from 'prom-client
  * templates, not URLs).
  */
 export interface HttpMetricLabels {
+  /** The API surface of the route (`admin`, `client`, `v1`, `store`, `dhru`, `hooks`, `system`): the System health traffic page groups by it. */
+  readonly surface: string;
   readonly method: string;
   /** The route template (`/admin/staff/:id`) or `unmatched`; never the raw path, so cardinality stays small. */
   readonly route: string;
@@ -47,8 +49,8 @@ export class MetricsService implements OnApplicationShutdown {
     collectDefaultMetrics({ register: this.registry });
     this.httpDuration = new Histogram({
       name: 'http_request_duration_seconds',
-      help: 'HTTP request duration in seconds, by method, route template and status.',
-      labelNames: ['method', 'route', 'status'],
+      help: 'HTTP request duration in seconds, by surface, method, route template and status.',
+      labelNames: ['surface', 'method', 'route', 'status'],
       buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
       registers: [this.registry],
     });

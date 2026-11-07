@@ -4,7 +4,8 @@ Status: accepted, 2026-10-31.
 
 **Decision.**
 - Metrics: prom-client, one registry per process. Default process metrics; `http_request_duration_seconds`
-  (labels: method, route template, status); BullMQ gauges per queue and state, read on scrape; business counters
+  (labels: method, route template, status, and the surface since feature 9, so System health can read the latency of one
+  surface); BullMQ gauges per queue and state, read on scrape; business counters
   (orders placed/completed/rejected by channel, ledger transactions by kind, supplier calls by supplier, action and
   outcome with a duration histogram, webhook deliveries by outcome, cache hits/misses by key family). The API serves
   `GET /metrics`; the worker serves its own `/metrics` on `WORKER_METRICS_PORT`. Access (map rule "internal network

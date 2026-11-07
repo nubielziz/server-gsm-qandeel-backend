@@ -1,6 +1,7 @@
 // Fastify onResponse hook that records http_request_duration_seconds (decision 015) for every request,
 // including unknown routes (labelled `unmatched`) and errors.
 import type { FastifyInstance } from 'fastify';
+import { surfaceOfPath } from '../../common/surface';
 import type { MetricsService } from './metrics.service';
 
 /**
@@ -14,8 +15,15 @@ import type { MetricsService } from './metrics.service';
  */
 export function registerHttpMetrics(fastify: FastifyInstance, metrics: MetricsService): void {
   fastify.addHook('onResponse', (request, reply, done) => {
+    const template = request.routeOptions?.url;
     metrics.observeHttpRequest(
-      { method: request.method, route: request.routeOptions?.url ?? 'unmatched', status: String(reply.statusCode) },
+      {
+        // The surface comes from the route template, or from the path of a request no route matched.
+        surface: surfaceOfPath(template ?? request.url),
+        method: request.method,
+        route: template ?? 'unmatched',
+        status: String(reply.statusCode),
+      },
       reply.elapsedTime / 1000,
     );
     done();

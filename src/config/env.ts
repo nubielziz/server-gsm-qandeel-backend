@@ -106,6 +106,14 @@ export interface AppConfig {
     readonly prometheusUrl: string | undefined;
     readonly sentryDsn: string | undefined;
   };
+  /** The running build, shown on the System health Overview (`APP_VERSION`, `GIT_SHA`, `DEPLOYED_AT`). */
+  readonly build: {
+    readonly version: string;
+    /** The first 7 characters of the commit; `unknown` when the deploy did not set it. */
+    readonly commit: string;
+    /** When this build went live (ISO time), or `undefined` when the deploy did not say. */
+    readonly deployedAt: string | undefined;
+  };
 }
 
 /**
@@ -218,6 +226,9 @@ const rawSchema = z.object({
   WORKER_METRICS_PORT: int(1, 65535).optional(),
   PROMETHEUS_URL: httpUrl.optional(),
   SENTRY_DSN: httpUrl.optional(),
+  APP_VERSION: z.string().trim().min(1).max(40).optional(),
+  GIT_SHA: z.string().trim().min(1).max(64).optional(),
+  DEPLOYED_AT: z.iso.datetime({ offset: true }).optional(),
   REFERENCE_DOCS: z.enum(['open', 'staff', 'off']).optional(),
 });
 
@@ -485,6 +496,11 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
       prometheusUrl: raw.PROMETHEUS_URL,
       sentryDsn: raw.SENTRY_DSN,
     },
+    build: {
+      version: raw.APP_VERSION ?? '0.0.0-dev',
+      commit: (raw.GIT_SHA ?? 'unknown').slice(0, 7),
+      deployedAt: raw.DEPLOYED_AT,
+    },
   };
 }
 
@@ -638,5 +654,6 @@ export function summarizeConfig(config: AppConfig): Record<string, unknown> {
       prometheusUrl: redactUrl(config.observability.prometheusUrl),
       sentryDsn: flag(config.observability.sentryDsn),
     },
+    build: config.build,
   };
 }

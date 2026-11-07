@@ -37,6 +37,11 @@ The queue Redis holds BullMQ data only and has no keys in this list (see `docs/q
 | `gsm:{env}:identity:ip-rules:active` | identity | 60 s (+-15 %), then the old snapshot is served for up to 5 minutes while one refresh runs | `IpRuleCache.invalidate()` after the commit of any IP rule or access restriction change | `ipRules` |
 | `gsm:{env}:identity:ip-rule-hits:pending` | identity | 24 h, renewed by every hit; statistics only, so an evicted counter is just lost | emptied by the `ip_rule_hits_flush` job every minute; never deleted otherwise | `ipRuleHits` |
 | `gsm:{env}:platform:maintenance:state` | platform | 60 s (+-15 %), then the old state is served for up to 5 minutes while one refresh runs | `MaintenanceService.invalidate()` after the commit of a maintenance change | `maintenance` |
+| `gsm:{env}:health:heartbeat:{name}` | health | 120 s; written by the API every 30 s | none; a missing heartbeat means the process is not running | `heartbeat` |
+| `gsm:{env}:health:snapshot:{current-or-last}` | health | current 10 s; last 1 day (the copy served when Postgres is down) | PUT /admin/system/maintenance deletes current after its commit; otherwise expiry | `healthSnapshot` |
+| `gsm:{env}:health:checks:{range}:{component}` | health | 30 s (+-15 %) | expiry only (history, not a decision) | `healthChecks` |
+| `gsm:{env}:dashboard:payload:{scope}-{days}` | health (dashboard read model) | 15 s (+-15 %) | expiry only (a read model for display; nothing decides on it) | `dashboard` |
+| `gsm:{env}:health:webhooks-in:{YYYYMMDDHH}` | health | 48 h | none; one hash per UTC hour (delivered, failed, retrying counters) | `webhookIntake` |
 | `gsm:{env}:{module}:{entity}:{idPrefix}` | infra/cache | n/a (a `SCAN` pattern, never stored) | n/a; `CacheService.delByPrefix` deletes every key that starts with it | `prefix` |
 
 Version counters in use (all under the `gsm:{env}:cache:version:{name}` family above):

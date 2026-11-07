@@ -1,6 +1,7 @@
 // Prometheus gauges of every BullMQ queue (jobs per state, paused flag), read from the queue Redis when the registry is scraped.
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { Gauge } from 'prom-client';
+import { CLOCK, type Clock } from '../../common/clock';
 import { withTimeout } from '../../common/timeout';
 import { MetricsService } from '../metrics';
 import type { QueueName } from './queue-definitions';
@@ -24,6 +25,8 @@ interface QueueReading {
   readonly queue: QueueName;
   readonly counts: Readonly<Record<string, number>>;
   readonly paused: boolean;
+  /** When the oldest waiting job was added (ms since the epoch), or `null` when nothing waits. */
+  readonly oldestWaitingAt: number | null;
 }
 
 /**
@@ -44,6 +47,7 @@ export class QueueMetrics {
   constructor(
     metrics: MetricsService,
     private readonly queues: QueuesService,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {
     const jobs: Gauge<'queue' | 'state'> = new Gauge({
       name: 'bullmq_queue_jobs',
@@ -69,6 +73,21 @@ export class QueueMetrics {
         for (const reading of readings) paused.set({ queue: reading.queue }, reading.paused ? 1 : 0);
       },
     });
+    const oldest: Gauge<'queue'> = new Gauge({
+      name: 'bullmq_queue_oldest_waiting_age_seconds',
+      help: 'Seconds since the oldest waiting job of a BullMQ queue was added; 0 when nothing waits.',
+      labelNames: ['queue'],
+      registers: [metrics.registry],
+      collect: async () => {
+        const readings = await this.read();
+        oldest.reset();
+        for (const reading of readings) {
+          const age =
+            reading.oldestWaitingAt === null ? 0 : Math.max(0, (this.clock.nowMs() - reading.oldestWaitingAt) / 1000);
+          oldest.set({ queue: reading.queue }, age);
+        }
+      },
+    });
   }
 
   /**
@@ -89,12 +108,16 @@ export class QueueMetrics {
     const readings = await Promise.all(
       this.queues.list().map(async ([queue, producer]): Promise<QueueReading | undefined> => {
         try {
-          const [counts, paused] = await withTimeout(
-            Promise.all([producer.getJobCounts(...QUEUE_JOB_STATES), producer.isPaused()]),
+          const [counts, paused, oldest] = await withTimeout(
+            Promise.all([
+              producer.getJobCounts(...QUEUE_JOB_STATES),
+              producer.isPaused(),
+              producer.getJobs(['waiting'], 0, 0, true),
+            ]),
             SCRAPE_WAIT_MS,
             `Reading queue ${queue}`,
           );
-          return { queue, counts, paused };
+          return { queue, counts, paused, oldestWaitingAt: oldest[0]?.timestamp ?? null };
         } catch {
           // Unreachable queue Redis: this queue has no series in the scrape.
           return undefined;

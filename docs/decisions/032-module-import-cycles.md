@@ -34,3 +34,9 @@ every app boot). Whether it fails depends on which file is imported first.
 
 **Consequences.** New exports of `identity/index.ts` that controllers of other modules use at class-definition time go into
 the first block. Other modules follow the same rule if they become part of a cycle; the load test tells.
+
+**Amendment (feature 9, 2026-11-07): late reads.** A module that only needs another module's pure functions or SQL
+fragments at request or job time, and would close a cycle by importing them statically, may load that module's public
+index with a dynamic `import()` behind one small file of accessors (`src/modules/health/infra/sibling-modules.ts`): the
+import still goes through `index.ts` (the boundary lint holds), it runs long after every module is initialised, and the
+loader caches it. It is never used for providers, decorators or anything needed while the module graph loads.

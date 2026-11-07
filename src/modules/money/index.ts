@@ -47,6 +47,7 @@ export {
   topup,
 } from './domain/money-events';
 export type { MoneyEventId, MoneyEventPosting, ReversalEventId, ReversalPosting } from './domain/money-events';
+export { isRateStale } from './domain/currency-rules';
 export { WIRE_REF_TYPES, storedRefTypesOf, toWireRefType } from './domain/ref-types';
 export type { WireRefType } from './domain/ref-types';
 export { PaymentGateways } from './application/payment-gateways';

@@ -183,6 +183,58 @@ export class CacheKeys {
   }
 
   /**
+   * The heartbeat a process leaves for the health checker (health module).
+   *
+   * @param name the process (`api`)
+   * @returns `gsm:{env}:health:heartbeat:{name}`
+   */
+  heartbeat(name: string): CacheKey {
+    return `${this.keyspace}health:heartbeat:${segment('heartbeat name', name)}` as CacheKey;
+  }
+
+  /**
+   * The cached System health snapshot (health module).
+   *
+   * @param last `true` for the copy that outlives the short one (served while Postgres is down)
+   * @returns `gsm:{env}:health:snapshot:current` or `gsm:{env}:health:snapshot:last`
+   */
+  healthSnapshot(last = false): CacheKey {
+    return `${this.keyspace}health:snapshot:${last ? 'last' : 'current'}` as CacheKey;
+  }
+
+  /**
+   * The cached check history of a range and component (health module).
+   *
+   * @param range the range (`24h`)
+   * @param component a component key, or `all`
+   * @returns `gsm:{env}:health:checks:{range}:{component}`
+   */
+  healthChecks(range: string, component: string): CacheKey {
+    return `${this.keyspace}health:checks:${segment('range', range)}:${segment('component', component.replace(':', '_'))}` as CacheKey;
+  }
+
+  /**
+   * The cached dashboard payload (platform dashboard, built by the health module).
+   *
+   * @param scope `all`, `b2b` or `b2c`
+   * @param days `1`, `7` or `14`
+   * @returns `gsm:{env}:dashboard:payload:{scope}-{days}`
+   */
+  dashboard(scope: string, days: number): CacheKey {
+    return `${this.keyspace}dashboard:payload:${segment('scope', scope)}-${segment('days', days)}` as CacheKey;
+  }
+
+  /**
+   * The hourly counters of incoming gateway callbacks (health module).
+   *
+   * @param hour the UTC hour, `YYYYMMDDHH`
+   * @returns `gsm:{env}:health:webhooks-in:{hour}`
+   */
+  webhookIntake(hour: string): CacheKey {
+    return `${this.keyspace}health:webhooks-in:${segment('hour', hour)}` as CacheKey;
+  }
+
+  /**
    * A group of keys, for `CacheService.delByPrefix`.
    *
    * @param module the owning module, for example `catalog`
@@ -289,6 +341,41 @@ export const CACHE_KEY_FAMILIES: readonly CacheKeyFamily[] = [
     owner: 'platform',
     ttl: '60 s (+-15 %), then the old state is served for up to 5 minutes while one refresh runs',
     invalidation: 'MaintenanceService.invalidate() after the commit of a maintenance change',
+  },
+  {
+    builder: 'heartbeat',
+    pattern: 'gsm:{env}:health:heartbeat:{name}',
+    owner: 'health',
+    ttl: '120 s; written by the API every 30 s',
+    invalidation: 'none; a missing heartbeat means the process is not running',
+  },
+  {
+    builder: 'healthSnapshot',
+    pattern: 'gsm:{env}:health:snapshot:{current-or-last}',
+    owner: 'health',
+    ttl: 'current 10 s; last 1 day (the copy served when Postgres is down)',
+    invalidation: 'PUT /admin/system/maintenance deletes current after its commit; otherwise expiry',
+  },
+  {
+    builder: 'healthChecks',
+    pattern: 'gsm:{env}:health:checks:{range}:{component}',
+    owner: 'health',
+    ttl: '30 s (+-15 %)',
+    invalidation: 'expiry only (history, not a decision)',
+  },
+  {
+    builder: 'dashboard',
+    pattern: 'gsm:{env}:dashboard:payload:{scope}-{days}',
+    owner: 'health (dashboard read model)',
+    ttl: '15 s (+-15 %)',
+    invalidation: 'expiry only (a read model for display; nothing decides on it)',
+  },
+  {
+    builder: 'webhookIntake',
+    pattern: 'gsm:{env}:health:webhooks-in:{YYYYMMDDHH}',
+    owner: 'health',
+    ttl: '48 h',
+    invalidation: 'none; one hash per UTC hour (delivered, failed, retrying counters)',
   },
   {
     builder: 'prefix',

@@ -1,10 +1,11 @@
 // System health module (map domain G, surface system): GET /health and GET /metrics, plus the indicator registry.
-// Alert rules, incidents, job runs and the /admin/system/* routes arrive with the health features (stage 9).
+// The /admin/system/* routes and the dashboard are in HealthAdminModule (stage 9); alert rules and incidents arrive with 12b.
 import { Module } from '@nestjs/common';
 import { HealthRegistryModule } from '../../infra/health';
 import { HealthService } from './application/health.service';
 import { HealthController } from './controllers/health.controller';
 import { MetricsController } from './controllers/metrics.controller';
+import { HealthAdminModule } from './health-admin.module';
 
 /**
  * Nest module for system health.
@@ -14,7 +15,7 @@ import { MetricsController } from './controllers/metrics.controller';
  */
 @Module({
   controllers: [HealthController, MetricsController],
-  imports: [HealthRegistryModule],
+  imports: [HealthRegistryModule, HealthAdminModule],
   providers: [HealthService],
 })
 export class HealthModule {}

@@ -50,7 +50,7 @@ Only this module reads and writes these 8 tables (`scripts/module-map.mjs`); oth
 | `DELETE /admin/notification-templates/:id` | staff-permission · `notifications:*` | Email and Telegram templates for each event. | 12 |
 | `GET /admin/audit-logs` | staff-permission · `audit:read` | Audit log. | 2 |
 | `GET /admin/audit-logs/:id` | staff-permission · `audit:read` | Audit log. | 2 |
-| `GET /admin/dashboard` | staff-permission · `dashboard:read` | KPIs for today: sales, profit, queues and supplier balances; scope=all\|b2b\|b2c separates merchants from the storefront. | 9 |
+| `GET /admin/dashboard` | staff-permission · `dashboard:read` | KPIs for today: sales, profit, queues and supplier balances; scope=all\|b2b\|b2c separates merchants from the storefront. Built in feature 9 but served by the health module (`src/modules/health/dashboard/`): it reads orders, suppliers, catalog and customers, and platform is imported by all of them (decision 032). | 9 |
 | `GET /admin/files/:id` | staff-permission · `files:read` | Download a file through a signed link. | 5 |
 | `GET /admin/notification-templates` | staff-permission · `notifications:*` | Email and Telegram templates for each event. | 12 |
 | `GET /admin/notification-templates/:id` | staff-permission · `notifications:*` | Email and Telegram templates for each event. | 12 |
