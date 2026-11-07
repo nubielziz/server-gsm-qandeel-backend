@@ -4,18 +4,32 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
-**Phase 2 (foundation) is done** (P2.1-P2.7). **Phase 3 is planned, not started** (the user starts it): read
-`docs/PHASE3-PLAN.md`. Before it, the 262 console endpoints still to build were audited against the plan (102
-findings, `docs/contract/AUDIT-PHASE3.md`) and every finding is resolved (`docs/contract/RESOLUTIONS.md`, migration
-0003, corrected docs and briefs). P2.8 added an injectable Clock (decision 031): no code decides on the wall clock and no
-test waits on it. **Wave 1 (2a, 2b, 3) is running.** Each feature needs a brief in `docs/briefs/` written from `_feature.md` (routes from `docs/slices/<module>.json`,
-user rules from the table below). Briefs: `docs/briefs/` (`_common.md` first; `_feature.md` is the
-Phase 3 recipe). Parallel implementers work in sibling worktrees of this repo (`git worktree add
-../backend-p2-<name> -b feat/backend-p2-<name>`, then `bun install` there; a sibling path keeps the relative
-`reference` symlink working; the workflow tool's worktree isolation targets the frontend repo, not this one). Each
-worktree gets its own test database through an untracked `.env.test` (`DATABASE_URL_TEST=.../gsm_<name>_test`,
-created with `CREATE DATABASE`), so parallel test runs never truncate each other's tables. The lead
-merges each finished branch into `feat/backend` (squash) after review and green checks.
+**Session 2026-11-07 (in progress).** Wave 1 of Phase 3 is being finished and merged; the console gained a partial mock
+mode so it can run against this API (frontend decision 018). `PROGRESS.md` had been moved to a stray file named `ظ` in the
+working tree (identical content); it was put back.
+
+- **Merged on `main`** (the branch `feat/backend` was renamed `main` on 2026-11-01): feature **3** money-wallets-ledger
+  (`c332201`) and feature **2b** identity-merchant-auth (`446fd46`), each squash-merged after the lead's review and fixes.
+  `bun run check` green on the merged 2b tree (1959 pass, 1 skip, 0 fail).
+- **In progress:** feature **2a** identity-staff-access in `../backend-f2a` (branch `feat/backend-f2a`): all 31 routes were
+  built by the first implementer (cut off on 2026-11-01); a second Sonnet implementer is writing the missing tests, scenarios,
+  seed and docs. Then the lead merges main into it (conflicts expected: `ClientGroupDirectory` exists in 2a and 2b with other
+  method names, keep 2a's superset `find/findDefault/refsOf` and adapt 2b's callers; `merchant.invited` is registered by 2b's
+  `MerchantMailOutbox` and by 2a's invite events module, keep one; `MerchantWallets` stays in money's global module) and
+  squash-merges it.
+- **Next:** wave 2 starts with **4a** catalog-structure (brief written: `docs/briefs/4a-catalog-structure.md`) once 2a is on
+  `main`; then 4b and 5. Phase 4 integration has started early: run the console with `VITE_API_MOCKS=unbuilt` against this
+  API (frontend README, "Against the real backend").
+
+How a feature runs: a brief in `docs/briefs/` written from `_feature.md` (routes from `docs/slices/<module>.json`, user
+rules from the table below; `_common.md` first). Parallel implementers work in sibling worktrees of this repo (`git worktree
+add ../backend-<name> -b feat/backend-<name>`, then `bun install` there; a sibling path keeps the relative `reference`
+symlink working; the workflow tool's worktree isolation targets the frontend repo, not this one). Each worktree gets its own
+test database through an untracked `.env.test` (`DATABASE_URL_TEST=.../gsm_<name>_test`, created with `CREATE DATABASE`,
+plus its own Redis DB numbers), so parallel test runs never truncate each other's tables. The lead commits the
+implementer's output on the feature branch, merges `main` into it, fixes, runs `bun run check`, and squash-merges into
+`main`. Under load (several suites at once) the migrations test in `test/integration/db-schema.test.ts` can pass its 60 s
+timeout; it passes alone in about 5 s.
 
 Read before briefing any implementer: `docs/contract/ALIGNMENT.md`, the feature's `docs/contract/endpoints/<module>.md`
 and `docs/slices/<module>.json`, `docs/contract/RULES.md` for its frontend features, decisions 008-028.
@@ -82,9 +96,9 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 | P2.5c | machine-auth | capability-token guard registry, API key guard, Dhru credentials guard, webhook signature registry (brief P2.5 split; after P2.5a, parallel with P2.6) | | done (`feat(machine-auth)` commit) |
 | P2.6 | staff-sign-in | `POST /admin/auth/login`, `/2fa`, `/2fa/setup`, `/logout`, `/password/set`, `GET /admin/auth/me` (6) | | done (`feat(staff-sign-in)` commit) |
 | P2.7 | contract-tests | route/shape/error parity tests, fixture harvest from the frontend mocks, allowlist, `pending.ts` | | done (`test(contract)` commit) |
-| 2a | identity-staff-access | staff, roles, permissions, sessions, IP rules, access restriction, merchants, audit logs, settings (st2 admin, 31; brief `docs/briefs/2a-identity-staff-access.md`) | admin-team, ip-rules | brief ready |
-| 2b | identity-merchant-auth | merchant portal sign-in, security, sessions (st2 client, 15; brief `docs/briefs/2b-identity-merchant-auth.md`) | | brief ready |
-| 3 | money-wallets-ledger | postTransaction, money events, wallets, statement, adjust, credit limit (user rule 2), ledger, reconcile, currencies (st3, 14) (brief `docs/briefs/3-money-wallets-ledger.md`) | | brief ready |
+| 2a | identity-staff-access | staff, roles, permissions, sessions, IP rules, access restriction, merchants, audit logs, settings (st2 admin, 31; brief `docs/briefs/2a-identity-staff-access.md`) | admin-team, ip-rules | in progress (`../backend-f2a`) |
+| 2b | identity-merchant-auth | merchant portal sign-in, security, sessions (st2 client, 15; brief `docs/briefs/2b-identity-merchant-auth.md`) | | done (`446fd46`) |
+| 3 | money-wallets-ledger | postTransaction, money events, wallets, statement, adjust, credit limit (user rule 2), ledger, reconcile, currencies (st3, 14) (brief `docs/briefs/3-money-wallets-ledger.md`) | | done (`c332201`) |
 | 4a | catalog-structure | client groups + nightly promotion job (user rule 1), categories, services, fields, options, inventory (st4/5) | | |
 | 4b | catalog-pricing | group/client prices, pricing rules (user rule 8: the demo's resolver), price protection (user rule 9: effective-cost floor, listed-price memory, PRICE_CHANGED guard, raise in the snapshot), bulk price, resolve, merchant catalog and price export | | |
 | 5 | orders-engine | state machine, placement + hold, admin order actions, bulk reply, export, merchant orders, files (st5) | manual | |
@@ -124,7 +138,9 @@ re-review), max 2 review rounds.
 | P2.5c machine-auth | 4 (implementer, review: 1 blocking, fix, re-review: pass) |
 | P2.6 staff-sign-in | 2 (implementer, review: pass, no blocking) |
 | P2.8 clock | 4 (implementer, review: 1 blocking, fix, re-review: pass) |
-| **Total** | **38** |
+| Wave 1, first run (2026-11-01) | 3 (Sonnet implementers 2a, 2b, 3; cut off before finishing, no review) |
+| Session 2026-11-07 | limit set by the user: 4 calls in all, 2 at once. 2a finish (Sonnet), frontend partial mocks (Sonnet). Reviews, fixes and merges of 3 and 2b by the lead. |
+| **Total** | **43** |
 
 ## Decisions
 
@@ -133,13 +149,22 @@ re-review), max 2 review rounds.
 010 ids and tokens · 011 money · 012 logging · 013 config · 014 testing · 015 observability (+ Prometheus) ·
 016 repo layout · 017 API docs exposure · 018 auth, sessions, CSRF, pipeline · 019 encryption and token hashing ·
 020 outbox and queues · 021 rate limiting · 022 caching · 023 outbound HTTP · 024 ledger · 025 order state machine ·
-026 Dhru compatibility · 027 database conventions · 028 error format.
+026 Dhru compatibility · 027 database conventions · 028 error format · 029 FX provider · 030 PDF rendering · 031 clock ·
+032 module import cycles (identity exports its principal layer first; `test/unit/module-load.test.ts`).
 
 ## Blockers
 
 None.
 
 ## Notes for later phases
+
+- Wave 1 merge notes (2026-11-07): money's `infra/foreign-directory.repository.ts` reads `clients`, `client_groups`,
+  `suppliers`, `customers` and `staff_users` with plain selects (documented deviation from decision 016): replace its bodies
+  with the owners' public reads as they appear (identity after 2a, catalog 4a, suppliers 6, customers 14b). Merchant mail
+  (2b) for 12a: the outbox row carries only `tokenId` and `auth_tokens` stores only the hash, so real delivery cannot rebuild
+  the link: store the clear token AES-GCM-encrypted next to the row (short TTL, wiped when sent) or issue the token inside the
+  mail job. Money routes live in `MoneyAdminModule` (database-less test apps leave it out); the global `MoneyModule` keeps
+  `MerchantAccounts` and `LedgerPoster`.
 
 - Phase 2 tests still to write for the Redis rules: Redis down at startup, Redis restart during processing (shutdown
   with an active job is proven by the spike).
