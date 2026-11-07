@@ -29,6 +29,7 @@ const SECRET_FIELDS = [
   'secret',
   'apiaccesskey',
   'apiKey',
+  'webhookSecret',
   'totpSecret',
   'otpauthUrl',
 ] as const;

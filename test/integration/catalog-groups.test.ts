@@ -7,6 +7,7 @@ import { MerchantAccounts } from '../../src/modules/money';
 import { type AdminApi, adminWith } from '../support/admin-api';
 import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches, insertMerchant } from '../support/auth';
+import { insertGateway } from '../support/billing';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 import { insertUsd } from '../support/fixtures';
 
@@ -423,6 +424,36 @@ describe('DELETE /admin/client-groups/:id', () => {
       removedFromCategoryIds: [category!.id],
     });
     expect(audit!.after).toBeNull();
+  });
+
+  it('takes the deleted group out of every payment method that listed it, in the same transaction', async () => {
+    const groups = await demoGroups();
+    const { db } = await testDb();
+    const listed = await insertGateway(t, db, { code: 'card', allowedGroupIds: [groups.vip, groups.wholesale] });
+    const other = await insertGateway(t, db, { code: 'wise', allowedGroupIds: [groups.wholesale] });
+    const open = await insertGateway(t, db, { code: 'bank', allowedGroupIds: [] });
+
+    expect((await admin.delete(`/admin/client-groups/${groups.vip}`)).status).toBe(204);
+
+    const rows = await db.select().from(s.paymentGateways);
+    const idsOf = (id: number) => rows.find((row) => row.id === id)!.allowedGroupIds;
+    expect(idsOf(listed)).toEqual([groups.wholesale]);
+    expect(idsOf(other)).toEqual([groups.wholesale]);
+    expect(idsOf(open)).toEqual([]);
+    const [audit] = (await auditRows()).slice(-1);
+    expect(audit!.before).toMatchObject({ removedFromPaymentGatewayCount: 1 });
+  });
+
+  it('leaves the payment methods alone when the delete is refused', async () => {
+    const groups = await demoGroups();
+    const { db } = await testDb();
+    await insertMerchant(db, { groupId: groups.vip });
+    const gateway = await insertGateway(t, db, { code: 'card', allowedGroupIds: [groups.vip] });
+
+    expect((await admin.delete(`/admin/client-groups/${groups.vip}`)).status).toBe(409);
+
+    const [row] = await db.select().from(s.paymentGateways).where(eq(s.paymentGateways.id, gateway));
+    expect(row!.allowedGroupIds).toEqual([groups.vip]);
   });
 
   it('needs groups:delete', async () => {

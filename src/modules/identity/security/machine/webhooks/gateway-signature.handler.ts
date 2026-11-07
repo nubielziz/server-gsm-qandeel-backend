@@ -71,7 +71,7 @@ export class GatewaySignatureAccessHandler implements AccessHandler {
     context: ExecutionContext,
   ): Promise<AccessState> {
     const gateway = gatewayOf(request);
-    const verifier = gateway === undefined ? undefined : this.verifiers.get(gateway);
+    const verifier = gateway === undefined ? undefined : await this.verifiers.resolve(gateway);
     if (gateway === undefined || !verifier) {
       throw new AppError('WEBHOOK_SIGNATURE_INVALID', { detail: 'No webhook is set up for this gateway.' });
     }

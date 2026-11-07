@@ -49,3 +49,13 @@ export {
 export type { MoneyEventId, MoneyEventPosting, ReversalEventId, ReversalPosting } from './domain/money-events';
 export { WIRE_REF_TYPES, storedRefTypesOf, toWireRefType } from './domain/ref-types';
 export type { WireRefType } from './domain/ref-types';
+export { PaymentGateways } from './application/payment-gateways';
+export { INVOICE_PAID_EVENT, InvoiceOutbox } from './application/invoice-outbox';
+export { MoneyOutboxModule } from './money-outbox.module';
+export { PaymentAutoCreditModule, PAYMENT_AUTO_CREDIT_SCHEDULER } from './jobs/payment-auto-credit.module';
+export { PAYMENT_AUTO_CREDIT_JOB } from './jobs/payment-auto-credit.processor';
+export { AUTO_CREDIT_BATCH, PaymentAutoCredit } from './jobs/payment-auto-credit';
+export type { AutoCreditSummary } from './jobs/payment-auto-credit';
+export { GATEWAY_HTTP_POLICY } from './infra/gateway-drivers/driver';
+export type { GatewayHttpPolicy } from './infra/gateway-drivers/driver';
+export { topupMethodOf } from './domain/gateway-rules';

@@ -20,6 +20,8 @@ Settings and maintenance: `SettingsModule` (global) and `SettingsService.get(key
 
 The outbox: `OutboxModule` (global: `OutboxService`, `OutboxRouteRegistry`), `OutboxService.add(tx, event)` and `backlog(db)`, `OutboxRouteRegistry.register({ type, queue, jobName? })`, the types `OutboxEventInput`, `OutboxPayload`, `OutboxJobData`, `OutboxRoute`, `OutboxBacklog`, and, for the worker only, `OutboxRelayModule` with `OutboxRelay`.
 
+Documents and stored files (feature 8): `PdfModule` (global) provides `PdfRenderer.render(document)` (`PdfDocument`, `PdfBlock`, `PdfColumn`), and `StoredFiles` (`store`, `metaOf`, `findOwned`, with `StoreFileInput`, `FileMeta` and `PROOF_MIME_TYPES`) is the public side of the `files` table for the money and identity modules.
+
 The merchant webhooks (7b): `WebhookEventsModule` (event contracts and the outbox routes of `wallet.low_balance` and `service.price_changed`, loaded by the API and the worker), `WebhookDeliveryModule` (sender, fan-out, the processor of `merchant-webhooks`; API and worker), `MerchantWebhooksModule` (the staff log routes and `MerchantWebhookService`), the four `defineEvent` contracts (`orderStatusChanged`, `walletLowBalance`, `invoicePaid`, `servicePriceChanged`), `WEBHOOK_EVENT_NAMES`, `PING_EVENT`, `WebhookDeliveries`, `WebhookFanOut`, `MerchantWebhooksProcessor`, the event type constants and the `WEBHOOK_TARGET_POLICY` token. The portal's controller for `/client/webhooks*` (`MerchantWebhooksController`) lives in the identity module (`controllers/merchant-webhooks.controller.ts`, `MerchantWebhookRoutesModule`): it needs identity's `CurrentMerchant`, and platform imports no module, so a platform file that imported identity would make a cycle for every identity file that imports platform (decision 032). Platform exports `MerchantWebhookService` and the six portal contracts for it.
 
 ## Owned tables
@@ -254,6 +256,20 @@ types is in `docs/queues.md` ("Outbox event types"). Consumed: none yet. The map
 - **Not here yet:** deleting processed rows (data retention, a maintenance job of a later feature).
 - **Metrics** (worker `/metrics`): `outbox_events_relayed_total{queue}`, `outbox_relay_lag_seconds`,
   `outbox_relay_failures_total{reason}`, `outbox_pending_events`, `outbox_oldest_pending_age_seconds`.
+
+## PDF documents and stored files (feature 8, decision 030)
+
+`PdfRenderer` (`pdf/pdf-renderer.ts`, provided globally by `PdfModule`, no database or storage needed) draws a small A4 document with `pdf-lib` 1.17.1 (pure TypeScript, runs on Bun): a title and
+subtitle, then blocks (`heading`, `text`, `facts` label/value rows, `table` with relative column widths and left or right alignment, `space`), a footer with `Page n of m` on every page, automatic page breaks
+(a table repeats its header) and word wrapping. The text is English in embedded Helvetica: a character the font cannot draw (Arabic, emoji) prints as `?` instead of failing the document, and the document
+properties carry the caller's time (`createdAt`, from the injected clock: decision 031), never the wall clock. Billing renders merchant invoices with it; the client
+statement of feature 11 reuses it.
+
+`StoredFiles` (`files/stored-files.ts`, a plain provider: it needs `StorageService` and a database executor, so the money and identity modules list it themselves) is what other modules use instead of touching `files`:
+`store(db, { ownerType, ownerId, filename, mime, bytes, area })` puts the object in the files bucket (key `<area>/<owner>/<uuid>`, never built from the file name) and inserts the row (the object goes first: a rolled-back
+caller leaves an unreferenced object, never a row without an object), `metaOf(db, ids)` reads the metadata of files by id, and `findOwned(db, id, owner)` returns a file only if it belongs to that owner (B161 and B163: a
+merchant attaches only its own uploads; another owner's id answers like an unknown one). `PROOF_MIME_TYPES` (PDF, JPEG, PNG) are the types a merchant may attach as a KYC document or a transfer receipt. The merchants'
+upload routes are feature 7a's; invoice PDFs are written here as the merchant's file, so `GET /client/files/:id` serves them.
 
 ## Jobs and schedules
 

@@ -8,7 +8,7 @@ import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { DbService, type DbExecutor, isUniqueViolation, isForeignKeyViolation } from '../../../infra/db';
 import { MerchantGroupMembers } from '../../identity';
-import { MerchantWallets } from '../../money';
+import { MerchantWallets, PaymentGateways } from '../../money';
 import { AuditService } from '../../platform';
 import { CatalogPriceVersion } from './catalog-price-version';
 import type { ClientGroup } from '../db/schema';
@@ -101,8 +101,8 @@ const toView = (group: ClientGroup, merchants: number | undefined): GroupView =>
  * default group cannot be deleted or unmarked. Group rows are locked `FOR UPDATE` while they change; the code that moves a
  * merchant into a group or sets a credit limit takes `FOR SHARE` on the same row, so user rule 2 holds under concurrency.
  *
- * Side effects: writes `client_groups` (and, on delete, `service_group_prices`, `pricing_rules` and
- * `service_categories.allowed_group_ids`) and `audit_logs` (entity `client_group`).
+ * Side effects: writes `client_groups` (and, on delete, `service_group_prices`, `pricing_rules`,
+ * `service_categories.allowed_group_ids` and, through money's `PaymentGateways`, `payment_gateways.allowed_group_ids`) and `audit_logs` (entity `client_group`).
  *
  * @see docs/contract/endpoints/catalog.md (the `/admin/client-groups` sections)
  */
@@ -113,6 +113,7 @@ export class ClientGroupAdminService {
     private readonly audit: AuditService,
     private readonly members: MerchantGroupMembers,
     private readonly wallets: MerchantWallets,
+    private readonly gateways: PaymentGateways,
     private readonly priceVersion: CatalogPriceVersion,
   ) {}
 
@@ -253,7 +254,7 @@ export class ClientGroupAdminService {
    * Deletes a group that no merchant is in, with what hangs on it.
    *
    * Why: RESOLUTIONS catalog-5: the group prices, the pricing rules of the group and the group id inside the allowed groups of
-   * categories go in the same transaction (the foreign keys would otherwise answer 500); orders keep their pricing snapshot.
+   * categories and payment methods go in the same transaction (the foreign keys would otherwise answer 500); orders keep their pricing snapshot.
    *
    * @param id the group id
    * @throws {AppError} `NOT_FOUND` (404); `GROUP_IN_USE` (409: the default group, the storefront group, or merchants in it)
@@ -281,8 +282,8 @@ export class ClientGroupAdminService {
       const removedPrices = await deleteGroupPrices(tx, id);
       const removedRuleIds = await deletePricingRulesOfGroup(tx, id);
       const categoryIds = await dropGroupFromCategories(tx, id);
-      // TODO(feature 8, billing): drop this group id from `payment_gateways.allowed_group_ids` through money's public gateway
-      // service in this same transaction (RESOLUTIONS catalog-5). Gateways cannot exist before that feature builds their routes.
+      // Payment methods that listed the group stop listing it, in this same transaction (money owns that table).
+      const gateways = await this.gateways.dropGroup(tx, id);
       try {
         await deleteGroupRow(tx, id);
       } catch (error) {
@@ -300,6 +301,8 @@ export class ClientGroupAdminService {
           removedGroupPrices: removedPrices,
           removedPricingRuleIds: removedRuleIds,
           removedFromCategoryIds: categoryIds,
+          removedFromPaymentGatewayCount: gateways.changed,
+          turnedOffPaymentGatewayIds: gateways.turnedOffIds,
         },
       });
     });

@@ -1,5 +1,5 @@
-// Money module (map domain E): the ledger writer, merchant wallets, the ledger screens and currencies (stage 3). Invoices,
-// gateways, payments, refunds, disputes and tax rates arrive with their own features (docs/ARCHITECTURE.md § 2).
+// Money module (map domain E): the ledger writer, merchant wallets, the ledger screens and currencies (stage 3), and billing (stage 8:
+// gateways, invoices, top-up payments, the payment webhook). Refunds and disputes arrive with their own features (docs/ARCHITECTURE.md § 2).
 import { Global, Module } from '@nestjs/common';
 import { MerchantAccounts } from './application/merchant-accounts';
 import { MerchantSpend } from './application/merchant-spend';
@@ -7,7 +7,9 @@ import { OrderSettlements } from './application/order-settlements';
 import { MerchantWallets } from './application/merchant-wallets';
 import { WalletLowBalanceWatch } from './application/wallet-low-balance-watch';
 import { LedgerPoster } from './application/post-transaction';
+import { PaymentGateways } from './application/payment-gateways';
 import { MoneyAdminModule } from './money-admin.module';
+import { MoneyOutboxModule } from './money-outbox.module';
 
 /**
  * Nest module for Money (map domain E).
@@ -19,8 +21,16 @@ import { MoneyAdminModule } from './money-admin.module';
  */
 @Global()
 @Module({
-  imports: [MoneyAdminModule],
-  providers: [MerchantAccounts, WalletLowBalanceWatch, LedgerPoster, MerchantWallets, MerchantSpend, OrderSettlements],
-  exports: [MerchantAccounts, LedgerPoster, MerchantWallets, MerchantSpend, OrderSettlements],
+  imports: [MoneyAdminModule, MoneyOutboxModule],
+  providers: [
+    MerchantAccounts,
+    WalletLowBalanceWatch,
+    LedgerPoster,
+    MerchantWallets,
+    MerchantSpend,
+    OrderSettlements,
+    PaymentGateways,
+  ],
+  exports: [MerchantAccounts, LedgerPoster, MerchantWallets, MerchantSpend, OrderSettlements, PaymentGateways],
 })
 export class MoneyModule {}

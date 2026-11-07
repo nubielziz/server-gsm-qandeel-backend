@@ -407,12 +407,19 @@ export const kycSubmissions = pgTable(
     fileIds: bigintList(),
     reviewedBy: fk((): AnyPgColumn => staffUsers.id),
     reviewedAt: timestampTz(),
+    /** the reviewer's note or the rejection reason */
     note: text().notNull().default(''),
+    /** what the merchant wrote when it submitted (B161); never shown to the console */
+    submittedNote: text().notNull().default(''),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     check('kyc_submissions_status_check', inList(t.status, KYC_SUBMISSION_STATUSES)),
+    // One request under review per merchant (B161: a second submit while one is pending is refused).
+    uniqueIndex('kyc_submissions_one_pending_uq')
+      .on(t.clientId)
+      .where(sql`${t.status} = 'pending'`),
     index('kyc_submissions_status_created_idx').on(t.status, t.createdAt.desc()),
     index('kyc_submissions_client_id_idx').on(t.clientId),
     index('kyc_submissions_reviewed_by_idx').on(t.reviewedBy),

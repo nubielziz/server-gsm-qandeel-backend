@@ -20,6 +20,7 @@ import { StorageModule } from '../../src/infra/storage';
 import { CatalogAdminModule, CatalogPricesModule } from '../../src/modules/catalog';
 import { AccessAdminModule } from '../../src/modules/identity/access-admin.module';
 import { ApiKeysModule } from '../../src/modules/identity/api-keys.module';
+import { KycModule } from '../../src/modules/identity/kyc.module';
 import { MerchantWebhookRoutesModule } from '../../src/modules/identity/merchant-webhook-routes.module';
 import { MerchantAdminModule } from '../../src/modules/identity/merchant-admin.module';
 import { MerchantAuthModule } from '../../src/modules/identity/merchant-auth.module';
@@ -94,6 +95,7 @@ const NEEDS_DATABASE_AND_CACHE = [
   MerchantAuthModule,
   ApiKeysModule,
   MerchantWebhookRoutesModule,
+  KycModule,
   MoneyAdminModule,
   CatalogPricesModule,
   CatalogAdminModule,

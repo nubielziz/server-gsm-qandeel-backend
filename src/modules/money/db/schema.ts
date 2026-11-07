@@ -427,6 +427,8 @@ export const invoices = pgTable(
     paidAt: timestampTz(),
     /** schema addition B116 */
     description: text().notNull().default(''),
+    /** where the merchant pays an open top-up invoice of an automatic gateway (the hosted checkout); null otherwise (feature 8, B163) */
+    checkoutUrl: text(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

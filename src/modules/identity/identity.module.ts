@@ -6,6 +6,7 @@
 import { Module } from '@nestjs/common';
 import { AccessAdminModule } from './access-admin.module';
 import { ApiKeysModule } from './api-keys.module';
+import { KycModule } from './kyc.module';
 import { MerchantAdminModule } from './merchant-admin.module';
 import { MerchantAuthModule } from './merchant-auth.module';
 import { MerchantWebhookRoutesModule } from './merchant-webhook-routes.module';
@@ -21,7 +22,7 @@ import { StaffAuthModule } from './staff-auth.module';
  * stage of the request pipeline (`IpRulesModule`, scenario ip-rules), the staff sign-in routes (`StaffAuthModule`), the staff
  * access routes (`AccessAdminModule`), the merchant management routes (`MerchantAdminModule`), the merchant portal's
  * sign-in (`MerchantAuthModule`), the API key routes (`ApiKeysModule`) and the controller of the merchant portal's webhook routes
- * (`MerchantWebhookRoutesModule`; the use cases are the platform's).
+ * (`MerchantWebhookRoutesModule`; the use cases are the platform's) and the verification routes (`KycModule`, stage 8).
  */
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { StaffAuthModule } from './staff-auth.module';
     MerchantAuthModule,
     ApiKeysModule,
     MerchantWebhookRoutesModule,
+    KycModule,
   ],
 })
 export class IdentityModule {}

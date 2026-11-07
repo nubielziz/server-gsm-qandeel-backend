@@ -1,11 +1,10 @@
 // Helpers for the webhook tests (feature 7b): a local server that stands in for a merchant's endpoint and records what it gets,
-// the test policy that lets the sender reach it, the outbox route of `invoice.paid` (feature 8 owns it), and rows for the foreign tables
-// an event reads (orders, invoices).
-import { Global, Injectable, Module, type OnModuleInit } from '@nestjs/common';
+// the test policy that lets the sender reach it, and rows for the foreign tables an event reads (orders, invoices).
+import { Global, Module } from '@nestjs/common';
 import type { LightMyRequestResponse } from 'fastify';
 import { type Database, schema as s } from '../../src/infra/db';
 import { EncryptionService } from '../../src/infra/crypto';
-import { OutboxRouteRegistry, WEBHOOK_TARGET_POLICY, type WebhookTargetPolicy } from '../../src/modules/platform';
+import { WEBHOOK_TARGET_POLICY, type WebhookTargetPolicy } from '../../src/modules/platform';
 import { WEBHOOK_SECRET_AAD } from '../../src/modules/platform/webhooks/webhook-deliveries';
 import type { TestApp } from './app';
 import { openSession } from './auth';
@@ -94,26 +93,12 @@ export function resetWebhookPolicy(): void {
 }
 
 /**
- * Registers the outbox route that feature 8 will register in production: `invoice.paid`. (`order.status_changed` is registered
- * by the orders module itself, `OrderOutbox`, which every test app loads: registering it twice stops the app at boot.) Remove
- * this class when feature 8 registers its event.
- */
-@Injectable()
-class WebhookTestRoutes implements OnModuleInit {
-  constructor(private readonly routes: OutboxRouteRegistry) {}
-
-  onModuleInit(): void {
-    this.routes.register({ type: 'invoice.paid', queue: 'merchant-webhooks' });
-  }
-}
-
-/**
- * Provides the test policy to the app and registers the outbox route of the event feature 8 will own. Import it with
- * `createTestApp({ imports: [WebhookTestModule] })`.
+ * Provides the test policy to the app. Import it with `createTestApp({ imports: [WebhookTestModule] })`. (`invoice.paid` is
+ * registered in production by the money module, feature 8: it needs no test route.)
  */
 @Global()
 @Module({
-  providers: [{ provide: WEBHOOK_TARGET_POLICY, useValue: testWebhookPolicy }, WebhookTestRoutes],
+  providers: [{ provide: WEBHOOK_TARGET_POLICY, useValue: testWebhookPolicy }],
   exports: [WEBHOOK_TARGET_POLICY],
 })
 export class WebhookTestModule {}

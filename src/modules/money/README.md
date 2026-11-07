@@ -9,8 +9,8 @@ Decisions that shape this module: 011 money, 024 ledger. Common to all modules: 
 ## Status
 
 Stage 3 is built (feature 3): the ledger core, merchant wallets, the ledger screens, reconciliation and currencies (14
-routes). Invoices, gateways and payments arrive with feature 8, FX refresh with 14b, refunds and disputes with
-16, the money reports with 11 and 16.
+routes). Stage 8 billing is built (feature 8, below): gateways, invoices, top-up payments, the payment webhook and the
+automatic credit. FX refresh arrives with 14b, refunds and disputes with 16, the money reports with 11 and 16.
 
 - **Ledger writer.** `postTransaction(tx, input, now)` (and the injectable `LedgerPoster.post(tx, input)`, which reads the
   Clock) is the only writer of `ledger_transactions`, `ledger_entries` and account balances (decision 024): at least two
@@ -58,13 +58,36 @@ routes). Invoices, gateways and payments arrive with feature 8, FX refresh with 
 - **Seed.** `scripts/seed/money.ts` opens the accounts of every demo merchant and posts the demo's ledger history through
   `postTransaction`, skipping merchants the identity seed has not created.
 
-Known deviation (tech debt, PROGRESS): `infra/foreign-directory.repository.ts` reads merchant, group, supplier, customer
-and staff names with plain selects because those modules export no directory yet; replace its bodies with their public
+- **Billing (feature 8).** 18 routes (the 5 KYC routes are identity's). Contracts `contracts/{gateways,invoices,payments,billing-portal,payment-webhook}.contracts.ts`; use cases
+  `application/`: `PaymentGatewayService` (CRUD, secrets encrypted by `GatewayCredentialsVault`, audit `added|changed|removed payment method`, and `turned on|turned off payment method` when a change only moves the switch, the demo's phrases), `InvoiceAdminService` (list, read, issue a manual invoice, audit `issued invoice for`),
+  `PaymentReviewService` (list, read, approve, reject; audit `approved|rejected deposit of`) with `PaymentViews` (the wire around a page: merchant, group, wallet, gateway, reviewer, hints) and `PaymentCrediting` (the one place that credits a top-up),
+  `MerchantBillingService` (the portal: payment methods, invoices, a new top-up invoice, the receipt), `PaymentWebhookService` and `PaymentWebhookVerifier` (the incoming confirmation), `InvoiceDocuments` (PDF) and `InvoiceOutbox` (`invoice.paid`).
+  - **Money rules.** A deposit posts the map event `deposit` (Dr `bank` for a manual gateway or `gateway_clearing` for an automatic one, Cr `client_wallet` net, Cr `fee_income` fee) with ref `payment`, key `deposit:payment:<id>`, memo
+    `Deposit PAY-<id> (<method>)`. Lock order everywhere: the payment row, then its invoice, then the ledger accounts. Approve and reject re-check under the lock: not pending → `409 PAYMENT_ALREADY_REVIEWED`; an automatic gateway
+    whose payment was not sent to review → `409 PAYMENT_AUTO_CREDIT_PENDING` (user rule 6). Reject voids a top-up invoice and leaves a staff-issued manual invoice open.
+  - **Invoices.** `INV-<year>-<id padded to 4>` (the id is reserved first, so a gateway checkout can carry the number; a failed checkout leaves a gap), due in 14 days (setting `billing.invoice_due_days`), tax at the B2B VAT rate
+    (setting `billing.b2b_vat_rate_percent`, default 0, a bad value reads as 0), base currency, `kind` manual or topup. A top-up invoice: `fee = amount × percent + fixed`, `net = amount − fee`, `total = amount`; a manual one: no fee, `total = net + tax`.
+    The PDF (decision 030, the platform's `PdfRenderer`) is rendered after the commit of an issue and again after the payment, stored through `StoredFiles` as the merchant's file, and a failure only logs (the money never waits for a document).
+  - **Drivers** (`infra/gateway-drivers/`): `payment_gateways.driver` names the code behind a gateway: `card` / `stripe` (Stripe Checkout protocol: form-encoded calls with a bearer key, webhooks `t=<unix>,v1=<hmac>` in `stripe-signature`, signed with
+    the webhook secret) and `crypto` / `usdt` (a JSON invoice API; header `x-gsm-signature`; confirmed only at the required confirmations); `bank` and `wise` are manual (staff review the receipt). A driver verifies, reads an event, opens a checkout and
+    asks the gateway about a payment (`checkStatus`) for the job. API calls go through `OutboundHttp` (`target: gateway`, 10 s, SSRF guard); the gateway's API address is `config_enc.apiBase` (default of the card driver: `https://api.stripe.com`);
+    tests provide `GATEWAY_HTTP_POLICY` to reach a local server.
+  - **Webhook** `POST /webhooks/payments/:gateway`: the guard verifies the signature through the driver, the 5-minute window and the event-id replay filter; the handler records a confirmed payment of an open invoice of that gateway once (unique
+    `(gateway_id, gateway_txn_id)`; two racing deliveries create one) as `pending`, `captured_at` = now, `auto_credit_at` = now + max(setting `payments.auto_credit_delay_minutes` (10), `hold_hours`); an amount or currency that differs from the invoice
+    goes to review (`review_required`, the reason in `review_note`) and can never be credited: the row keeps the invoice's amount and fee, `PaymentCrediting` re-reads the stored gateway event (`raw`) with the driver and refuses
+    a different amount or currency (and an event it can no longer read) with `409 CONFLICT`, for staff approval and for the job alike; staff reject it and adjust the wallet by hand. Everything else is acknowledged with `200`.
+  - **Automatic credit job** `payment_auto_credit` (queue `maintenance`, every minute; `docs/queues.md`): asks the gateway again, then credits, sends to staff or asks again later. Risk (feature 18) sends a payment to review by setting `review_required`.
+  - **Group cleanup.** `PaymentGateways.dropGroup(tx, groupId)` (exported, global) takes a deleted merchant group out of `payment_gateways.allowed_group_ids`; the catalog's group delete calls it in its own transaction (a leaf file, `application/payment-gateways.ts`, so that it loads before the catalog import cycle, decision 032).
+  - **Seed.** `scripts/seed/billing.ts`: the demo's 4 gateways (ids 1-4, codes card, crypto, bank, wise), its 54 top-ups with an invoice each (`PAY-1000` is payment 1000, invoice 1), linked to the deposit journals the money seed replayed, 3 manual invoices
+    and one verification request per merchant. No receipt files or PDFs (no objects to download).
+
+Known deviation (tech debt, PROGRESS): `infra/foreign-directory.repository.ts` reads merchant (name, email, country, group), group, supplier, customer
+and staff names, and the fx rate of a storefront payment's checkout (`orders`, `checkout_sessions`), with plain selects because those modules export no directory yet; replace its bodies with their public
 services as they appear (identity, catalog 4a, suppliers 6, customers 14b). Nothing outside that file knows.
 
 ## Public API (`index.ts`)
 
-`MoneyModule` (global: `MerchantAccounts`, `LedgerPoster`, `MerchantWallets`, `MerchantSpend`, `OrderSettlements`), `postTransaction`, the 13 money event builders and their ids, the reversal builders `reopen`, `reopenB2c` and `refund`,
+`MoneyModule` (global: `MerchantAccounts`, `LedgerPoster`, `MerchantWallets`, `MerchantSpend`, `OrderSettlements`, `PaymentGateways`), `MoneyOutboxModule`, `PaymentAutoCreditModule` (worker), `INVOICE_PAID_EVENT`, `GATEWAY_HTTP_POLICY`, `topupMethodOf`, `postTransaction`, the 13 money event builders and their ids, the reversal builders `reopen`, `reopenB2c` and `refund`,
 the account helpers (`walletViewOf`, `balanceDelta`, `normalSideOf`, `toDebitPositive`, `BASE_CURRENCY`), the ledger line
 helpers and the wire ref types (`toWireRefType`, `storedRefTypesOf`). `WalletService` is exported by `MoneyAdminModule`
 (the routes and the services that read the database; a database-less test app leaves it out). Other modules import only
@@ -194,7 +217,7 @@ Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touc
 
 ## Permissions
 
-Staff permissions the map requires on this module's admin routes: `currencies:update`, `disputes:manage`, `disputes:read`, `invoices:*`, `ledger:read`, `ledger:reconcile`, `payments:approve`, `payments:gateways`, `payments:read`, `refunds:approve`, `refunds:read`, `reports:finance`, `reports:read`, `settings:update`, `tax:*`, `wallet:adjust`, `wallet:credit_limit`, `wallet:read`.
+Staff permissions the map requires on this module's admin routes: `currencies:update`, `disputes:manage`, `disputes:read`, `invoices:create`, `invoices:read`, `ledger:read`, `ledger:reconcile`, `payments:approve`, `payments:gateways`, `payments:read`, `refunds:approve`, `refunds:read`, `reports:finance`, `reports:read`, `settings:update`, `tax:*`, `wallet:adjust`, `wallet:credit_limit`, `wallet:read`.
 
 API key scopes on its REST v1 routes: `account:read`.
 
@@ -208,11 +231,14 @@ plus credit limit) at or above the merchant's threshold to below it, once per cr
 (the map names no field; feature 12a's notification preferences are where a merchant sets it; no threshold, no alert). The route is registered by the platform module.
 `postTransaction` itself writes no alert: only the injectable `LedgerPoster` does. Consumed: none yet. Record each outbox type and the queue it maps to here and in `docs/queues.md`.
 
+`invoice.paid` (queue `merchant-webhooks`, aggregate `invoices`, payload `{ invoiceId, clientId }`), written by `InvoiceOutbox.paid` in the transaction that credits a top-up (a staff approval and the automatic credit
+job); the type is registered by `InvoiceOutbox` (module `MoneyOutboxModule`, loaded by the API and the worker). The webhook fan-out (7b) re-reads the invoice.
+
 Outgoing webhook events from the map (documented as OpenAPI `webhooks` once defined with `defineEvent`): `wallet.low_balance`, `invoice.paid`.
 
 ## Jobs and schedules
 
-No queue job yet. `POST /admin/ledger/reconcile` runs in the request and records a `job_runs` row of job `ledger_reconcile`
+`payment_auto_credit` (queue `maintenance`, every minute; see `docs/queues.md`): credits the confirmed top-ups of automatic gateways after the delay. `POST /admin/ledger/reconcile` runs in the request and records a `job_runs` row of job `ledger_reconcile`
 (trigger `manual`, overlap refused: `RECONCILE_RUNNING`); the nightly integrity job of feature 12b can reuse
 `ReconcileService.compare`.
 

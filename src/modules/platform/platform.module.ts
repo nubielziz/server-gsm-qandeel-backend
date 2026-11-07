@@ -10,6 +10,7 @@ import { ReferenceAccessGuard } from './docs/reference-access.guard';
 import { AuditModule } from './audit/audit.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
 import { OutboxModule } from './outbox/outbox.module';
+import { PdfModule } from './pdf/pdf.module';
 import { PlatformAdminModule } from './platform-admin.module';
 import { SettingsModule } from './settings/settings.module';
 import { MerchantWebhooksModule } from './webhooks/merchant-webhooks.module';
@@ -36,6 +37,7 @@ import { WebhookEventsModule } from './webhooks/webhook-events.module';
     PlatformAdminModule,
     WebhookEventsModule,
     MerchantWebhooksModule,
+    PdfModule,
   ],
   controllers: [DocsController, ReferenceController],
   providers: [OpenApiService, ReferenceAccessGuard],

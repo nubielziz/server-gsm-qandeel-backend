@@ -31,3 +31,25 @@ describe('WebhookVerifiers', () => {
     expect(GATEWAY_SLUG.test('stripe')).toBe(true);
   });
 });
+
+describe('WebhookVerifiers resolver', () => {
+  it('asks the resolver only for a valid slug that has no registered adapter, and sets it once', async () => {
+    const registry = new WebhookVerifiers();
+    registry.register(adapter('wise'));
+    const asked: string[] = [];
+    registry.setResolver((slug) => {
+      asked.push(slug);
+      return slug === 'card' ? adapter('card') : undefined;
+    });
+    expect((await registry.resolve('wise'))?.gateway).toBe('wise');
+    expect((await registry.resolve('card'))?.gateway).toBe('card');
+    expect(await registry.resolve('nope')).toBeUndefined();
+    expect(await registry.resolve('Bad Slug')).toBeUndefined();
+    expect(asked).toEqual(['card', 'nope']);
+    expect(() => registry.setResolver(() => undefined)).toThrow(/already set/);
+  });
+
+  it('answers nothing for an unknown slug when no resolver is set', async () => {
+    expect(await new WebhookVerifiers().resolve('card')).toBeUndefined();
+  });
+});

@@ -126,7 +126,7 @@ Delivers signed events to the webhook endpoints of merchants.
 - **Jobs:** one catch-all processor, `MerchantWebhooksProcessor` (`src/modules/platform/webhooks/`), for two kinds of job (a queue cannot have a catch-all next to named processors, and the
   event types are registered by several features, so no other processor may be added to this queue):
   - an outbox event of a merchant, named by its type (`order.status_changed`, registered and written by feature 5 with `{ orderId, clientId, fromStatus, toStatus }`; `wallet.low_balance`, written by the money module's `WalletLowBalanceWatch`;
-    `invoice.paid`, registered by feature 8; `service.price_changed`, written by the catalog's price change scan). The processor fans it out (`WebhookFanOut`): one
+    `invoice.paid`, registered by the money module (feature 8, `InvoiceOutbox`); `service.price_changed`, written by the catalog's price change scan). The processor fans it out (`WebhookFanOut`): one
     `webhook_deliveries` row per active endpoint of `payload.clientId` that subscribed to the type, then one `webhook.deliver` job per row;
   - `webhook.deliver`, one attempt of one delivery (`WebhookDeliveries.deliver`).
 - **Payload:** the outbox jobs carry `OutboxJobData` (`payload.clientId` is required: `null` says the event has no merchant, a storefront order, and is skipped; a missing one fails the job for good; the money strings of
@@ -210,7 +210,7 @@ Processes uploaded and generated files (exports, result files).
 Scheduled housekeeping: group promotion, data retention, integrity checks, FX refresh.
 
 - **Concurrency:** 2 per worker process.
-- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), and `service_price_scan`, event-driven (catalog module, below). The others are built by their features, each
+- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute (money module, below), and `service_price_scan`, event-driven (catalog module, below). The others are built by their features, each
   registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
   `ledger_integrity` (12b, nightly 02:30 UTC), `data_retention` (nightly
   03:00 UTC), `fx_refresh` (hourly), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). The names are the
@@ -228,8 +228,19 @@ Scheduled housekeeping: group promotion, data retention, integrity checks, FX re
   after it succeeded returns it unchanged.
 - **Schedule:** `ip-rule-hits-flush` every minute (`src/modules/identity/security/ip-rules/ip-rule-hits-flush.module.ts`);
   `session-purge` at 03:15 UTC (`src/modules/identity/jobs/session-purge.module.ts`);
-  `client-group-promotion` at 03:30 UTC (`src/modules/identity/jobs/group-promotion.module.ts`); the
+  `client-group-promotion` at 03:30 UTC (`src/modules/identity/jobs/group-promotion.module.ts`);
+  `payment-auto-credit` every minute (`src/modules/money/jobs/payment-auto-credit.module.ts`); the
   others are registered with `JobSchedulerRegistry` by the owning features.
+
+### `payment_auto_credit` (money module)
+
+Credits the wallet of confirmed top-ups of automatic gateways by themselves (user rule 6, RESOLUTIONS money-3).
+
+- **Trigger:** the scheduler `payment-auto-credit` every minute. A tick lists the pending top-ups whose `auto_credit_at` has come and that are not `review_required` (at most 50, oldest due first; the partial index `payments_auto_credit_idx` covers it). `auto_credit_at` is the confirmation time plus the larger of the setting `payments.auto_credit_delay_minutes` (default 10) and the gateway's `hold_hours`.
+- **Payload:** none (a manual run carries `{ runId }`). The job reads everything it needs from Postgres.
+- **What it does, per payment:** asks the gateway's API again through the driver (no row lock is held across the call); then, under `SELECT ... FOR UPDATE` on the payment, re-checks that it is still pending and not flagged and (a) credits it (`deposit` from `gateway_clearing`, key `deposit:payment:<id>`, invoice paid, `invoice.paid` outbox row, audit `credited deposit of` by the system) when the gateway still says confirmed (a crypto gateway only after its required confirmations), (b) sets `review_required` with the reason (audit `sent deposit to review`) when the gateway no longer confirms, the invoice is no longer payable or the payment stayed unconfirmed for 24 hours, or (c) moves `auto_credit_at` 5 minutes ahead while the gateway has not confirmed yet or cannot be reached.
+- **Idempotency:** the payment row lock plus the unique ledger key make a double credit impossible, whether two ticks overlap or a staff decision races the job (the loser changes nothing; staff get `PAYMENT_ALREADY_REVIEWED`). A failure of one payment never stops the others; it stays due for the next tick.
+- **Recorded in `job_runs`** (job `payment_auto_credit`, `processed` = payments credited, `result` = the counts) only for a tick that had payments due and for every manual run: a run every minute with nothing due would bury the jobs list (like the outbox tick, decision 020). Retry policy: the queue's (3 attempts, backoff from 1 min); the next minute's tick is the real retry.
 
 ### `service_price_scan` (catalog module)
 
@@ -323,8 +334,9 @@ none); the job id is `outbox-<event id>`.
 | `merchant.invited` | `notifications` | `merchant.invited` | `tokenId` (aggregate: `clients`) | identity (`MerchantMailOutbox`), written by `POST /admin/clients` (feature 2a) |
 | `order.status_changed` | `merchant-webhooks` | `order.status_changed` | `orderId`, `clientId` (null for a storefront order), `fromStatus`, `toStatus` (aggregate: `orders`) | orders (`OrderOutbox`, loaded by the API and the worker), written by every transition that changes the status: accept, reply, reject, cancel, reopen, refund, verification refund. No processor yet: the webhook fan-out is feature 7b |
 | `order.dispatch_requested` | `supplier-dispatch` | `order.dispatch_requested` | `orderId` (aggregate: `orders`) | orders (`OrderOutbox`), written by placement of an automatic order with an active supplier link (and by a staff dispatch, feature 6). No processor yet: the dispatch job is feature 6 |
+| `invoice.paid` | `merchant-webhooks` | `invoice.paid` | `invoiceId`, `clientId` (aggregate: `invoices`) | money (`InvoiceOutbox`, loaded by the API and the worker), written by every credit of a top-up: a staff approval (`POST /admin/payments/:id/approve`) and the automatic credit job. The fan-out re-reads the invoice (7b) |
 
-The map's other outgoing events (`wallet.low_balance`, `invoice.paid`) are registered by the features that produce them.
+The map's other outgoing event `wallet.low_balance` is written by the money module's posting hook (feature 7b registers it).
 
 ## Schedulers
 
@@ -336,6 +348,7 @@ Registered with `JobSchedulerRegistry.register` in `onModuleInit`; the worker up
 | `ip-rule-hits-flush` | `maintenance` | `ip_rule_hits_flush` | every minute | identity (`src/modules/identity/security/ip-rules/`) |
 | `session-purge` | `maintenance` | `session_purge` | daily 03:15 UTC | identity (`src/modules/identity/jobs/`) |
 | `client-group-promotion` | `maintenance` | `client_group_promotion` | daily 03:30 UTC | identity (`src/modules/identity/jobs/`) |
+| `payment-auto-credit` | `maintenance` | `payment_auto_credit` | every minute | money (`src/modules/money/jobs/`) |
 
 ## Adding a queue or a job
 

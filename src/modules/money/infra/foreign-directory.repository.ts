@@ -5,7 +5,7 @@
 // catalog and suppliers export no directory yet (features 2a and 4a add `ClientGroupDirectory`; suppliers arrive in 6),
 // so this file reads `clients`, `client_groups`, `suppliers`, `customers` and `staff_users` with plain selects. Replace its
 // bodies with calls to those services once they exist; nothing outside this file knows.
-import { eq, ilike, inArray } from 'drizzle-orm';
+import { eq, ilike, inArray, sql } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
 import type { LedgerOwnerType } from '../db/schema';
 
@@ -200,4 +200,143 @@ export async function notificationPrefsOf(
     .where(eq(s.clients.id, clientId))
     .limit(1);
   return row?.prefs;
+}
+
+/** A merchant as billing shows and checks it: who it is, where it is billed and which group it is in. */
+export interface BillingMerchant {
+  readonly id: number;
+  readonly name: string;
+  readonly email: string;
+  /** The billing country (ISO code); empty when the merchant has none (a manual invoice is refused then). */
+  readonly country: string;
+  readonly groupId: number;
+  /** `pending`, `active` or `suspended`. */
+  readonly status: string;
+}
+
+/**
+ * Reads merchants for the invoice and payment screens.
+ *
+ * Why: invoices and top-ups name the merchant (`client {id, name}`), the portal checks the merchant's group for the payment
+ * methods and the deposit limit, and a manual invoice needs the billing country (RESOLUTIONS money-7). Identity owns `clients`
+ * and exports no reader for these fields yet (same deviation as the rest of this file).
+ *
+ * @param db the database or a transaction
+ * @param ids the merchant ids
+ * @returns the merchants that exist, by id
+ */
+export async function loadBillingMerchants(
+  db: DbExecutor,
+  ids: readonly number[],
+): Promise<Map<number, BillingMerchant>> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return new Map();
+  const rows = await db
+    .select({
+      id: s.clients.id,
+      name: s.clients.name,
+      email: s.clients.email,
+      country: s.clients.country,
+      groupId: s.clients.groupId,
+      status: s.clients.status,
+    })
+    .from(s.clients)
+    .where(inArray(s.clients.id, unique));
+  return new Map(rows.map((row) => [row.id, row]));
+}
+
+/** A storefront customer as a receipt invoice names it. */
+export interface BillingCustomer {
+  readonly id: number;
+  readonly name: string;
+  readonly email: string;
+}
+
+/**
+ * Reads storefront customers for the receipt invoices of the admin list.
+ *
+ * @param db the database or a transaction
+ * @param ids the customer ids
+ * @returns the customers that exist, by id
+ */
+export async function loadBillingCustomers(
+  db: DbExecutor,
+  ids: readonly number[],
+): Promise<Map<number, BillingCustomer>> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return new Map();
+  const rows = await db
+    .select({ id: s.customers.id, name: s.customers.name, email: s.customers.email })
+    .from(s.customers)
+    .where(inArray(s.customers.id, unique));
+  return new Map(rows.map((row) => [row.id, row]));
+}
+
+/**
+ * The merchants whose name matches a search text.
+ *
+ * Why: the invoice and payment lists search by merchant name (money.md `q`); the repositories then look for rows of those merchants.
+ *
+ * @param db the database or a transaction
+ * @param pattern a `LIKE` pattern (already escaped, with the wildcards)
+ * @returns up to 200 merchant ids
+ */
+export async function findMerchantIdsByName(db: DbExecutor, pattern: string): Promise<number[]> {
+  const rows = await db
+    .select({ id: s.clients.id })
+    .from(s.clients)
+    .where(ilike(s.clients.name, pattern))
+    .limit(MATCH_LIMIT);
+  return rows.map((row) => row.id);
+}
+
+/**
+ * The customers whose name matches a search text (for the receipt invoices of the admin list).
+ *
+ * @param db the database or a transaction
+ * @param pattern a `LIKE` pattern (already escaped, with the wildcards)
+ * @returns up to 200 customer ids
+ */
+export async function findCustomerIdsByName(db: DbExecutor, pattern: string): Promise<number[]> {
+  const rows = await db
+    .select({ id: s.customers.id })
+    .from(s.customers)
+    .where(ilike(s.customers.name, pattern))
+    .limit(MATCH_LIMIT);
+  return rows.map((row) => row.id);
+}
+
+/**
+ * The base-currency amount of each storefront payment taken through some gateways in a window.
+ *
+ * Why: RESOLUTIONS money-5: `volume30d` converts an order payment with the fx rate locked in its checkout session (B111). The
+ * rate is the checkout's units of the payment currency per unit of base currency, as `currencies.rate_to_base`, so the base amount
+ * is the payment amount divided by it. The orders and checkout tables belong to the orders and customers modules (same deviation as
+ * the rest of this file).
+ *
+ * @param db the database or a transaction
+ * @param gatewayIds the gateways
+ * @param since the start of the window (`captured_at >=`)
+ * @returns one row per payment: its gateway and its amount in the base currency
+ */
+export async function orderPaymentBaseAmounts(
+  db: DbExecutor,
+  gatewayIds: readonly number[],
+  since: Date,
+): Promise<Array<{ gatewayId: number; base: string }>> {
+  if (gatewayIds.length === 0) return [];
+  const result = await db.execute<{ gateway_id: number; base: string }>(sql`
+    select p.gateway_id, round(p.amount / coalesce(cs.fx_rate, 1), 4)::text as base
+    from ${s.payments} p
+    left join ${s.orders} o on o.id = p.order_id
+    left join ${s.checkoutSessions} cs on cs.id = o.checkout_session_id
+    where p.purpose = 'order'
+      and p.gateway_id in (${sql.join(
+        gatewayIds.map((id) => sql`${id}`),
+        sql`, `,
+      )})
+      and p.captured_at >= ${since}
+      and p.status not in ('pending', 'failed', 'rejected')
+  `);
+  return result.rows.map((row) => ({ gatewayId: Number(row.gateway_id), base: row.base }));
 }

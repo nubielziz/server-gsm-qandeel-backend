@@ -12,6 +12,8 @@ export { ALL_PERMISSIONS, grants, grantsEverything, isValidPermission } from './
 export { assertOwnerTargetAllowed, isOwner } from './security/principal';
 // Leaf services other modules inject (the catalog's group routes): no dependencies, so they load before anything that leads back.
 export { MerchantGroupMembers } from './application/merchant-group-members';
+// The gateway webhook adapter registry (no dependencies): billing's verifier injects it, so it loads before the cycle through money.
+export { GATEWAY_SLUG, WebhookVerifiers } from './security/machine/webhooks/webhook-verifiers';
 export { IdentityModule } from './identity.module';
 export { SecurityModule } from './security/security.module';
 export { StaffAuthModule } from './staff-auth.module';
@@ -33,6 +35,7 @@ export { PURGE_BATCH_SIZE, SESSION_RETENTION_DAYS, SessionPurge } from './jobs/s
 export { MerchantAuthModule } from './merchant-auth.module';
 export { ApiKeysModule } from './api-keys.module';
 export { MerchantWebhookRoutesModule } from './merchant-webhook-routes.module';
+export { KycModule } from './kyc.module';
 export { MerchantMailModule } from './merchant-mail.module';
 export { STAFF_TOKEN_TTL_MS, StaffAuthTokens } from './application/staff-auth-tokens';
 export type { IssueStaffTokenInput, IssuedStaffToken } from './application/staff-auth-tokens';
@@ -83,8 +86,12 @@ export type {
 export { UrlSecretVerifiers } from './security/machine/url-secrets';
 export type { StoredUrlSecret, UrlSecretSource } from './security/machine/url-secrets';
 export { WEBHOOK_EVENT_TTL_MS, WebhookEventLedger } from './security/machine/webhooks/webhook-event-ledger';
-export { GATEWAY_SLUG, WebhookVerifiers } from './security/machine/webhooks/webhook-verifiers';
-export type { VerifiedDelivery, WebhookDelivery, WebhookVerifier } from './security/machine/webhooks/webhook-verifiers';
+export type {
+  VerifiedDelivery,
+  WebhookDelivery,
+  WebhookVerifier,
+  WebhookVerifierResolver,
+} from './security/machine/webhooks/webhook-verifiers';
 export { REFERENCE_DOCS_PERMISSION, StaffSystemReadGuard } from './security/reference-docs.guard';
 export { RolePermissions } from './security/role-permissions';
 export { SessionAuthenticator } from './security/session-authenticator';

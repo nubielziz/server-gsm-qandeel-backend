@@ -96,3 +96,8 @@ export type { FanOutResult } from './webhooks/webhook-fan-out';
 export { MerchantWebhooksProcessor } from './webhooks/merchant-webhooks.processor';
 export { WEBHOOK_TARGET_POLICY } from './webhooks/webhook-target-policy';
 export type { WebhookTargetPolicy } from './webhooks/webhook-target-policy';
+export { PdfModule } from './pdf/pdf.module';
+export { PdfRenderer } from './pdf/pdf-renderer';
+export type { PdfBlock, PdfColumn, PdfDocument } from './pdf/pdf-renderer';
+export { PROOF_MIME_TYPES, StoredFiles } from './files/stored-files';
+export type { FileMeta, StoreFileInput } from './files/stored-files';

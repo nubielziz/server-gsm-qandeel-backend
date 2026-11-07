@@ -59,6 +59,17 @@ export interface WebhookVerifier {
 }
 
 /**
+ * Finds the adapter of a gateway that is not registered at boot.
+ *
+ * Why: payment gateways are rows that staff add and remove at run time (`payment_gateways.code` is the `:gateway` of the URL),
+ * so billing cannot register one adapter per gateway when the app starts; it registers this resolver, which reads the gateway
+ * row and returns the adapter of its driver. A resolver answers `undefined` for a gateway it does not serve.
+ */
+export type WebhookVerifierResolver = (
+  gateway: string,
+) => Promise<WebhookVerifier | undefined> | WebhookVerifier | undefined;
+
+/**
  * The webhook verifiers, by gateway.
  *
  * Why: P2.5c builds the guard and this registry; billing registers one adapter per gateway in `onModuleInit` (feature 8). A
@@ -67,6 +78,7 @@ export interface WebhookVerifier {
 @Injectable()
 export class WebhookVerifiers {
   private readonly verifiers = new Map<string, WebhookVerifier>();
+  private resolver: WebhookVerifierResolver | undefined;
 
   /**
    * Adds the adapter of a gateway.
@@ -92,6 +104,29 @@ export class WebhookVerifiers {
    */
   get(gateway: string): WebhookVerifier | undefined {
     return GATEWAY_SLUG.test(gateway) ? this.verifiers.get(gateway) : undefined;
+  }
+
+  /**
+   * Sets the resolver of gateways that are not registered at boot (billing's configured payment gateways).
+   *
+   * @param resolver the lookup
+   * @throws {Error} when a resolver was already set (a boot-time programming error)
+   */
+  setResolver(resolver: WebhookVerifierResolver): void {
+    if (this.resolver) throw new Error('A webhook verifier resolver is already set');
+    this.resolver = resolver;
+  }
+
+  /**
+   * Finds the adapter of a gateway: a registered one first, then the resolver's.
+   *
+   * @param gateway the slug from the URL
+   * @returns the adapter, or `undefined` for an unknown gateway or a slug that is not valid
+   */
+  async resolve(gateway: string): Promise<WebhookVerifier | undefined> {
+    const registered = this.get(gateway);
+    if (registered) return registered;
+    return GATEWAY_SLUG.test(gateway) ? this.resolver?.(gateway) : undefined;
   }
 
   /**

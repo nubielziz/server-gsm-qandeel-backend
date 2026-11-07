@@ -2,6 +2,7 @@
 // Each Phase 3 feature adds its module's seeder to SEEDERS (mind foreign keys: parents first).
 import type { AppConfig } from '../../src/config';
 import type { Database } from '../../src/infra/db';
+import { seedBilling } from './billing';
 import { seedCatalog } from './catalog';
 import type { DemoSeed } from './demo-state';
 import type { SeedReport } from './helpers';
@@ -22,13 +23,16 @@ export interface Seeder {
 }
 
 /**
- * The seeders, in the order they run: identity first (staff are referenced by almost everything), then platform, money and
- * catalog (which needs the merchant groups), the suppliers with their links (they need the services), then the orders, which need the merchants, the services, the suppliers and the ledger the others seed, and last the supplier call log, whose rows point at orders.
+ * The seeders, in the order they run: identity first (staff are referenced by almost everything), then platform, money, billing
+ * (gateways, top-ups and invoices: after the money seed, whose deposit journals they link to) and catalog (which needs the
+ * merchant groups), the suppliers with their links (they need the services), then the orders, which need the merchants, the
+ * services, the suppliers and the ledger the others seed, and last the supplier call log, whose rows point at orders.
  */
 export const SEEDERS: readonly Seeder[] = [
   { module: 'identity', run: seedIdentity },
   { module: 'platform', run: seedPlatform },
   { module: 'money', run: seedMoney },
+  { module: 'billing', run: seedBilling },
   { module: 'catalog', run: seedCatalog },
   { module: 'suppliers', run: seedSuppliers },
   { module: 'orders', run: seedOrders },

@@ -584,3 +584,27 @@ Scopes a merchant may give: `dhru`, `account:read`, `orders:read`, `orders:write
 (`*` is never offered). B155 lists the first four; `services:read` is added because `GET /v1/services` needs it. `allowedIps` entries are an address or a CIDR range checked like the
 IP rules (`normaliseCidr`: host bits and ranges wider than /16 are refused, a bare address is stored as `/32` or `/128`); the wire drops the host prefix (`cidrToWire`);
 `lastUsedIp` is `''` for a key never used.
+
+## Verification, KYC (feature 8)
+
+Five routes (contracts `contracts/kyc.contracts.ts`, controllers `controllers/kyc.controller.ts`, use cases `application/kyc.service.ts`, queries
+`infra/kyc.repository.ts`, pure rules `domain/kyc-rules.ts`), wired by `KycModule`. Spec: MISMATCHES B161 (portal) and identity.md (staff).
+
+| Route | Access | What it does |
+|---|---|---|
+| `GET /client/kyc` | merchant, a pending merchant too (B153) | `{ status, submission }`: `clients.kyc_status` and the latest request (`documents`, `note` only for a rejection, `submittedAt`, `reviewedAt`) or `null` |
+| `POST /client/kyc` | merchant, a pending merchant too | `{ fileIds 1-5, note? ≤ 500 }` → `201` the same view; the files must be the merchant's own uploads of type PDF, JPEG or PNG (`422 fileIds.<n>`); one request under review at a time (`409 CONFLICT`, a partial unique index backs it), `409 ALREADY_DECIDED` once approved; a rejected merchant may submit again; sets `kyc_status` to `pending`; no audit row (B121) |
+| `GET /admin/kyc-submissions`, `GET /admin/kyc-submissions/:id` | `kyc:read` | the console's `KycSubmission` with the merchant, the reviewer and the documents joined from `files`; filters `status`, `clientId`; sort `createdAt` |
+| `POST /admin/kyc-submissions/:id/decide` | `kyc:decide` | `{ decision: approve \| reject, note? ≤ 300 }`, a note required for a rejection; locks the request, sets it and `clients.kyc_status` to the same word (never `clients.status`); `409 ALREADY_DECIDED`; audited `approved verification of` / `rejected verification of` (entity `kyc_submission`) |
+
+Schema addition (migration `0009`): `kyc_submissions.submitted_note` (what the merchant wrote; B161 has a `note` the console column does not hold) and the unique index
+`kyc_submissions_one_pending_uq` on `client_id` where `status = 'pending'`. The files are read through the platform's `StoredFiles` (`findOwned`, `metaOf`).
+The merchant is not notified of a decision yet (the mail event of the decision arrives with feature 12a); the rejection note reaches it through `GET /client/kyc`.
+
+## Gateway webhook adapters (feature 8)
+
+`WebhookVerifiers` (P2.5c) keeps adapters by gateway slug and now also takes one **resolver** (`setResolver`, `resolve`): a registered adapter wins, then the resolver is asked
+for a valid slug nobody registered. Payment gateways are rows staff add at run time, so money's `PaymentWebhookVerifier` registers a resolver that reads the gateway row by
+`code`, decrypts its signing key and hands the delivery to the driver. The guard (`GatewaySignatureAccessHandler`) calls `await verifiers.resolve(gateway)`; an unknown slug,
+a manual gateway and a gateway without a key all answer `400 WEBHOOK_SIGNATURE_INVALID`.
+

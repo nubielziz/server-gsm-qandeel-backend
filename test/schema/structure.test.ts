@@ -67,7 +67,8 @@ const IMMUTABLE = new Set([
 
 /**
  * Columns MISMATCHES B116 adds to the map's tables, and later additions: staff_users.totp_last_step (P2.6) and the
- * pre-Phase-3 audit resolutions (docs/contract/RESOLUTIONS.md, migration 0003).
+ * pre-Phase-3 audit resolutions (docs/contract/RESOLUTIONS.md, migration 0003), and the billing feature's invoices.checkout_url and
+ * kyc_submissions.submitted_note (migration 0009).
  */
 const ADDITIONS: Record<string, string[]> = {
   sessions: ['stage'],
@@ -85,7 +86,8 @@ const ADDITIONS: Record<string, string[]> = {
   ],
   staff_users: ['totp_last_step'],
   payments: ['reviewed_at', 'review_note', 'review_required', 'auto_credit_at', 'brand', 'card_fingerprint'],
-  invoices: ['description'],
+  invoices: ['description', 'checkout_url'],
+  kyc_submissions: ['submitted_note'],
   refunds: ['note'],
   data_requests: ['note'],
   notifications: ['error'],
