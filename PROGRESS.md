@@ -7,10 +7,11 @@ Single source of truth for status. The lead updates it after every step. Read it
 **State on 2026-11-07, afternoon.** Phase 3 waves 1 and 2 are merged on `main`, and wave 3 has started: **3** money
 (`c332201`), **2b** merchant portal (`446fd46`), **2a** staff access (`ed74e0b`), **4a** catalog structure (`7c012d2`),
 **4b** catalog pricing (`3838d27`), the 4 tax rate routes of 14b built early by the lead (`23dc5d5`), **7b** merchant API
-keys and webhooks (`e9322de`, fixes `2193b45`, `68a3fb5`) and **5** orders engine (`e6de28a`). **150 of 382** map
-endpoints are built (events included); the console calls 269, of which **106** are built (`docs/COVERAGE.md`, generated
-and checked by `bun run check`). `bun run check` is green on the merged 5 tree (2876 pass, 1 skip, 0 fail; shape parity
-compares 106 of 147 built routes). Scenario e2e tests: 3 of 13 (admin-team, ip-rules, manual without its Dhru steps).
+keys and webhooks (`e9322de`, fixes `2193b45`, `68a3fb5`), **5** orders engine (`e6de28a`) and **6** suppliers
+(`bbf84f4`). **166 of 382** map endpoints are built (events included); the console calls 269, of which **122** are built
+(`docs/COVERAGE.md`, generated and checked by `bun run check`). `bun run check` is green on the merged 6 tree (3067 pass, 1
+skip, 0 fail; shape parity compares 122 of 163 built routes). Scenario e2e tests: 6 of 13 (admin-team, ip-rules, manual,
+success, reject, timeout; the merchant-side Dhru steps come with 7a).
 
 **Phase 4 (frontend integration) is running alongside.** The console has a partial mock mode (`VITE_API_MOCKS=unbuilt`,
 frontend decision 018): built routes go to this API through the Vite dev proxy, the rest stays mocked; `npm run mocks:live`
@@ -31,7 +32,9 @@ and in the console the mid-session sign-out keeps the page (`?to=`).
 Opus read-only review, Sonnet fix of blocking findings, Opus re-review), each in `../backend-<feature>` on
 `feat/backend-<feature>` with its own test database `gsm_<feature>_test` and Redis DB: **8** (Redis 14), **14a** (3),
 **14b** (4), **7a** (12), **9** (2), **15** (5), **11** (7), **12a** (9). 7a, 9 and 11 start from feature 6's merged branch
-(`6d12792`); the others from `main`. **6** suppliers is built and its merged tree is being checked before the squash merge.
+(`6d12792`); the others from `main`. **6** suppliers is merged (`bbf84f4`) and walked: the Suppliers page from the real API, and a portal order sent by the real
+dispatch job to the placeholder supplier, refused, moved to Needs review with the reason, then retried from the drawer
+(204).
 Ownership for the parallel run: 14a builds decision 034 (Turnstile) and 14b only sends the header (the lead sets the flag on
 14b's three routes at the merge); 11 alone edits `order-placement.ts` / `order-transitions.ts` (the completion listener);
 7a builds the service flags and `POST /client/files`; 11 leaves the client statement PDF for after 8 (`PdfRenderer`); 12a
@@ -140,7 +143,7 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 | 4a | catalog-structure | client groups + nightly promotion job (user rule 1), categories, services, fields, options, inventory (st4/5) (brief `docs/briefs/4a-catalog-structure.md`) | | done (`7c012d2`) |
 | 4b | catalog-pricing | group/client prices, pricing rules (user rule 8: the demo's resolver), price protection (user rule 9: effective-cost floor, listed-price memory, PRICE_CHANGED guard, raise in the snapshot), bulk price, resolve, merchant catalog and price export (brief `docs/briefs/4b-catalog-pricing.md`) | | done (`3838d27`) |
 | 5 | orders-engine | state machine, placement + hold, admin order actions, bulk reply, export, merchant orders, files (st5) | manual | done (`e6de28a`) |
-| 6 | suppliers | suppliers admin, Dhru supplier client, dispatch/poll jobs, dispatch/fetch/change-supplier, sync (user rule 9: recompute the effective cost, bump the price version, no failover above the charged price), import (st6) | success, reject, timeout | |
+| 6 | suppliers | suppliers admin, Dhru supplier client, dispatch/poll jobs, dispatch/fetch/change-supplier, sync (user rule 9: recompute the effective cost, bump the price version, no failover above the charged price), import (st6) | success, reject, timeout | done (`bbf84f4`) |
 | 7a | dhru-and-rest-v1 | Dhru surface (8 actions), REST v1 (12), idempotency, PRICE_CHANGED message and listed-price memory on the list actions (user rule 9) (st7) | | |
 | 7b | merchant-api-webhooks | API keys, webhook endpoints, deliveries, outgoing events incl. `service.price_changed` (user rule 9, route-parity allowance B117), public docs (st7) | | done (`e9322de`) |
 | 8 | billing | gateways, invoices (user rule 3), payments, approve/reject (user rule 4), automatic credit after the verification delay (user rule 6), KYC, payment webhook (B2B), invoice.paid (st8) | | |
@@ -214,6 +217,14 @@ None.
   price change scan still read `orders` through their documented foreign read: switch them to `OrderReadService` when
   someone touches them. Migration 0008 was regenerated with drizzle-kit after 7b's 0007 (a worktree DB that applied the
   old 0007 must be recreated: the migrator compares timestamps only).
+- 6 merge notes (2026-11-07): the three order moves live in the suppliers module (they read the supplier tables) and move
+  orders through orders' `OrderSupplierMoves` (guarded updates) or `OrderTransitions.apply`; a supplier completion or
+  rejection goes through `apply` and then sets `result_code` / `completed_at`, so the state machine's `columnsFor` still has no
+  hook for supplier results (folding it in would remove that split). Money's `foreign-directory.repository.ts` still reads
+  `suppliers` directly: switching it to `SupplierDirectory` would close an import cycle (money, suppliers, orders, money).
+  A new supplier with balance 0 reads `lowBalance: true`. The seeded suppliers point at placeholder hosts, so a dispatch in
+  development ends in Needs review ("Connection failed"); the dev database's 760 older orders keep no supplier (the orders
+  seed only inserts).
 - Stock delivery notes (2026-11-07): a stocked order keeps the service's effective cost as its `total_cost` (the drawer
   shows it as the supplier cost) while the settlement books no cost: codes carry no purchase cost (no column), so the
   stock's cost stays outside the ledger until someone decides to track it.
