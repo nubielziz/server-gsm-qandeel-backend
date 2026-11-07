@@ -57,7 +57,20 @@ MinIO run; the API, worker and Vite start only for a walk and stop after it.
 **Stopping for the night (the user's instruction, 2026-11-07, 23:50).** No new feature tonight; 17, 18 and 19 start the next
 day. State of the six runs at 23:48 (each worktree keeps its files whatever happens to the run):
 - **14b** (`wf_4b060a2c-6a7`, continue): finished, reviewed (blocking findings), the fix agent was running.
-- **12a** (`wf_4cd665ad-733`, continue): finished, the Opus review was running.
+- **12a** notifications (`wf_4cd665ad-733`): **pass after fix, ready to merge** (12 routes; the review's two blocking findings
+  fixed and re-reviewed: a queued or digest row re-checks suspension and the merchant's current choice when it is sent, and
+  the log detail masks `payload.chatId`; its check: 3050 pass, 0 fail). At the merge: renumber
+  `0009_notifications_delivery` after main's migrations; route `invoice.paid` (main's `InvoiceOutbox` sends `{invoiceId,
+  clientId}`, which its planner expects) to `notifications` as well as `merchant-webhooks`; `deposit.approved` has no producer
+  on main yet (decide: emit it from 8's deposit approval); point feature 9's `mail` health check at `MailTransport.verify()`;
+  add `x-telegram-bot-api-secret-token` to the redacted log headers; mask a `chatId` nested in `variables` too; the review
+  minors (the log's `q` search matches the unmasked address: use an exact match or drop `recipient` from it; a merchant-mail
+  row stays `queued` when a retry ends skipped: mark it failed; give the digest send job a minimum delay of about 10 s;
+  the audit phrases 'turned on/off notification template' vs the demo's 'turned on/off notification'; a stale comment at
+  client-admin.service.ts:234). B-entry: `notification.send` is an outbox event; the `url-secret` access kind gained
+  `header` and `refusal: 'not_found'`; the digest day runs 06:00 to 06:00 UTC; a suspended merchant (and a suspended staff
+  member, for 12b's alerts) gets only transactional messages; customer events are registered for the Customer emails tab;
+  Telegram's `retry_after` is not read (the queue's backoff applies); the send-time re-check (B165) and the `chatId` mask.
 - **15** storefront content (`wf_c039bfd4-270`): **pass, ready to merge** (20 routes, 144 tests). At the merge: re-run the
   full check on a quiet machine (its last run had 3 `db-schema` timeouts under load; the file passes alone) and drop the
   leftover `gsm_mig_*` scratch databases; **make 14a's checkout and listings take the floor from 15's new
