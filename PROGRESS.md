@@ -4,15 +4,14 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
-**State on 2026-11-07, night.** Phase 3 waves 1 to 3 are merged on `main`, and wave 4 has started: **3** money
-(`c332201`), **2b** merchant portal (`446fd46`), **2a** staff access (`ed74e0b`), **4a** catalog structure (`7c012d2`),
-**4b** catalog pricing (`3838d27`), the 4 tax rate routes of 14b built early by the lead (`23dc5d5`), **7b** merchant API
-keys and webhooks (`e9322de`, fixes `2193b45`, `68a3fb5`), **5** orders engine (`e6de28a`), **6** suppliers (`bbf84f4`),
-**7a** Dhru and REST v1 (`13cdb12`), **8** billing (`8f8f4b0`) and **9** dashboard and System health (`6826959`). **228
-of 382** map endpoints are built (events included); the console calls 269, of which **154** are built (`docs/COVERAGE.md`,
-generated and checked by `bun run check`). `bun run check` is green on the merged 9 tree (3511 pass, 1 skip, 0 fail; shape
-parity compares 155 of 218 built routes). Scenario e2e tests: 6 of 13 (admin-team, ip-rules, manual, success, reject, timeout, the last four with the
-merchant's Dhru steps).
+**State on 2026-11-07, late night.** Phase 3 waves 1 to 3 are merged on `main`, plus: **3** money (`c332201`), **2b**
+merchant portal (`446fd46`), **2a** staff access (`ed74e0b`), **4a** catalog structure (`7c012d2`), **4b** catalog pricing
+(`3838d27`), the 4 tax rate routes of 14b built early by the lead (`23dc5d5`), **7b** merchant API keys and webhooks
+(`e9322de`), **5** orders engine (`e6de28a`), the lead's B2B stock delivery (`5b291ad`), **6** suppliers (`bbf84f4`), **7a**
+Dhru and REST v1 (`13cdb12`), **8** billing (`8f8f4b0`), **9** dashboard and System health (`6826959`) and **14a** storefront
+catalog, IMEI check, guest checkout and tracking (`ae1dc07`, spec decisions B169). **236 of 382** map endpoints are built;
+the console calls 269, of which **154** are built (14a's routes are storefront routes the console never calls). `bun run
+check` is green on the merged 14a tree (3646 pass, 1 skip, 0 fail). Scenario e2e tests: 6 of 13.
 
 **Phase 4 (frontend integration) is running alongside.** The console has a partial mock mode (`VITE_API_MOCKS=unbuilt`,
 frontend decision 018): built routes go to this API through the Vite dev proxy, the rest stays mocked; `npm run mocks:live`
@@ -29,52 +28,37 @@ money, and the ledger's settle, reversal and release journals. Fixes found at ru
 role member count (2a), a default merchant group on a fresh database (4a migration 0005), the seeded webhook payloads (7b),
 and in the console the mid-session sign-out keeps the page (`?to=`).
 
-**Running now (third budget, 2026-11-07 afternoon):** one workflow per feature (`gsm-backend-feature`: Sonnet implementer,
-Opus read-only review, Sonnet fix of blocking findings, Opus re-review), each in `../backend-<feature>` on
-`feat/backend-<feature>` with its own test database `gsm_<feature>_test` and Redis DB: **8** (Redis 14), **14a** (3),
-**14b** (4), **7a** (12), **9** (2), **15** (5), **11** (7), **12a** (9). 7a, 9 and 11 start from feature 6's merged branch
-(`6d12792`); the others from `main`. **6** suppliers is merged (`bbf84f4`) and walked: the Suppliers page from the real API, and a portal order sent by the real
-dispatch job to the placeholder supplier, refused, moved to Needs review with the reason, then retried from the drawer
-(204).
-Ownership for the parallel run: 14a builds decision 034 (Turnstile) and 14b only sends the header (the lead sets the flag on
-14b's three routes at the merge); 11 alone edits `order-placement.ts` / `order-transitions.ts` (the completion listener);
-7a builds the service flags and `POST /client/files`; 11 leaves the client statement PDF for after 8 (`PdfRenderer`); 12a
-adds the `notifications` routes of 8's events only after 8 merges; nobody edits `lead-decisions.json` (the lead writes the
-B-entries from the reports). Waiting by dependency: **12b** (after 9), **16** (after 8 and 14a), **17** (after 12a and
-14b), **18** (after 16), **19** (after 9, 12a, 14a and 15).
+**Running now (six agents at once, the user's request of 2026-11-07 night):** one workflow per feature, each in
+`../backend-<feature>` on `feat/backend-<feature>` with its own test database `gsm_<feature>_test` and Redis DB.
+`gsm-backend-continue` (finishing interrupted work, args in `.lead/continue-args.json`): **12a** notifications
+(`wf_4cd665ad-733`, Redis 9), **14b** customer accounts (`wf_4b060a2c-6a7`, 4), **15** storefront content (`wf_c039bfd4-270`,
+5), **11** commissions and reports (`wf_a50bf7cb-24e`, 7). `gsm-backend-feature` (new worktree from `main`, args in
+`.lead/feature-args.json`): **12b** alerts and integrity (`wf_31478c9a-770`, from `664f11c`, Redis 6), **16** B2C payments,
+refunds and disputes (`wf_73269427-02a`, from `ae1dc07`, Redis 10). Each run: Sonnet implementer, Opus read-only review,
+Sonnet fix of blocking findings, Opus re-review. Scripts: `workflows/scripts/gsm-backend-{feature,continue}-*.js` in the
+lead's session directory; a resumed run needs the same args. Lead tools in `.lead/` (ignored through `.git/info/exclude`):
+`merge-prep.sh start|finish <feature>`, `recreate-db.ts`, walk scripts, check logs. Only Postgres, the two Redis servers and
+MinIO run; the API, worker and Vite start only for a walk and stop after it.
 
-**Machine reboot (2026-11-07, 19:47):** the workflows stopped again before any step finished; every worktree kept its
-partial work (8: 82 files, 14a 79, 14b 64, 7a 98, 9 63, 15 28, 11 52, 12a 58). `/tmp` was wiped, so the lead's tools now
-live in `backend/.lead/` (ignored through `.git/info/exclude`, never committed): `continue-args.json` (the arguments of every
-feature for the `gsm-backend-continue` workflow), `merge-prep.sh` (start / finish of a merge), `recreate-db.ts`. After the
-reboot only Postgres, the two Redis servers and MinIO were started (Prometheus and Mailpit were already stopped; start them
-for a walk that needs them); Postgres replayed its data directory for about 7 minutes before accepting connections.
-**The user asked for 3 agents at a time** (to keep the machine free): the features run as one sequential workflow each, three
-at once, the next starting when one ends. **Stopped at the user's usage limit (2026-11-07, late):** **14a** is finished, reviewed and fixed (the review's one blocking
-finding, checkout selling unlisted services, is fixed; full check green in its worktree: 3016 pass) but NOT merged yet:
-merge it next (expect overlaps with 14b in customers.module.ts, index.ts, README, machine-auth.test.ts, test/support/app.ts;
-record its spec decisions as a B-entry; 14b's tests need the `withoutModules` option 14a added). **12a** and **14b** were
-stopped mid-run (their work is in their worktrees): relaunch both with the `gsm-backend-continue` script and the args in
-`.lead/continue-args.json`. Then the queue below. Done: **7a**, **8** and **9** (merged and walked). Was running: **12a** (`wf_70efd984-263`), **14a**
-(`wf_3a5177e0-444`), **14b** (`wf_169264a1-f10`). Queue: 15, 11, 12b (9 is merged: a new worktree from `main` with the
-`gsm-backend-feature` workflow), then 16 (after 14a; 8 is merged), 17 (after 12a and 14b), 18 (after 16), 19. To resume a stopped run: the script `workflows/scripts/gsm-backend-continue-*.js` with `resumeFromRunId` and the same
-args from `.lead/continue-args.json`.
+**Merge notes (the lead does these at each merge):**
+- **14b:** set `turnstile: true` on its three store auth routes (decision 034); link a signed-in customer in checkout (14a
+  opens guest sessions only); then let a signed-in account holder record `marketing` (14a's `ConsentService` skips it for any
+  `has_account` customer because a guest checkout must never change it); its link-token tests need 14a's
+  `createTestApp({ withoutModules })`; merge 14b's `findCustomerById` with 14a's `findCustomer` (customers infra).
+- **12a:** add the `notifications` routes of 8's `invoice.paid` and the deposit approval; then 12b's alert notifications and
+  16's refund decline email (both record where they must notify).
+- **11:** add `GET /admin/reports/client-statement/:clientId` (it waited for `PdfRenderer`, merged with 8).
+- **16:** 11 and 16 both touch `order-placement.ts` / `order-transitions.ts`; B169's open point (round the retail net up to
+  whole cents).
+- **Open from earlier merges:** gateway:<id> health checks (9), idempotency_keys expiry (7a), orphan files on refused file
+  orders, the FILEDATA 1 MiB form limit, invoice PDF inline rendering, mismatched payments not reconciling through
+  gateway_clearing, idle suppliers shown as degraded.
 
-**Next, in order:**
-1. Merge **6** (its migration starts at 0009), walk Suppliers, the order drawer's dispatch/fetch/change-supplier and the
-   supplier logs.
-2. **7a** Dhru and REST v1 (`7a-dhru-and-rest-v1.md`, spec B157): the last call of this budget. Add to its prompt: accept the
-   optional service flags `allowCancel`, `allowVerify`, `verifyWindowH` on `POST|PATCH /admin/services` (the columns exist,
-   no route sets them, the console's service form lacks them: merchant cancel and verify are refused until then), and
-   `POST /client/files` (still pending; the same upload path as `POST /v1/files`).
-3. Done by the lead: the portal specs of 8, B161 (KYC), B162 (payment methods), B163 (invoices and receipts). B numbers are
-   positions in `lead-decisions.json` `extra`: an entry 6 adds goes after them at the merge (7a is told to add none).
-4. Wave 4: **8** billing in parallel with **9** health and dashboard. Wave 5: **11** commissions and reports, **12a**
-   notifications (its prerequisites are done: decision 033, Mailpit in compose), then **12b**. Waves 6
-   and 7: **14a**, **14b**, **15**, **16**, **17**, **18**, **19**. Every remaining feature has its brief in `docs/briefs/`;
-   the portal specs B160-B165 are written.
-5. After every merge: restart the API and worker, `bun run db:migrate && bun run db:seed`, `npm run mocks:live` in the
-   frontend, walk the pages the new routes feed.
+**Next, in order:** merge each running feature as it finishes (commit its work, merge `main` in, resolve, regenerate, full
+check, squash-merge, B-entry, walk what the console can show, `npm run mocks:live` in the frontend); start **17** support
+(after 12a and 14b), **18** risk and privacy (after 16) and **19** content generation and reports (after 9, 12a, 14a and 15)
+as their dependencies merge, keeping six agents busy. After every merge: `bun run db:migrate && bun run db:seed` on the
+development database before a walk.
 
 **Local run:** `docker compose up -d`; `bun run db:migrate && bun run db:seed`; `bun src/main.ts` and `bun src/worker.ts`; in
 the frontend `VITE_API_MOCKS=unbuilt VITE_DEV_PROXY_TARGET=http://localhost:3000 VITE_API_BASE_URL= npx vite` (port 5173: the
@@ -200,7 +184,7 @@ re-review), max 2 review rounds.
 | Wave 1, first run (2026-11-01) | 3 (Sonnet implementers 2a, 2b, 3; cut off before finishing, no review) |
 | Session 2026-11-07 | limit set by the user: 4 calls in all, 2 at once. All 4 used: 2a finish (Sonnet), frontend partial mocks (Sonnet), 4a (Sonnet), 4b (Sonnet). Reviews, fixes and merges of 3, 2b and 2a by the lead (Opus). |
 | Session 2026-11-07, second budget | approved by the user: 4 more calls, 2 at once. 7b and 5 (Sonnet) done and merged; 6 (Sonnet) running; 7a next. |
-| Session 2026-11-07, third budget | approved by the user: a much larger budget and as much parallelism as is technically safe for waves 4-7 (it supersedes the "max 3 at once" of CLAUDE.md for this phase; inform the user before other significant spending). Plan: one workflow per feature (Sonnet implementer, Opus read-only review, Sonnet fix of blocking findings, Opus re-review), about 5 implementers at once (machine: 16 cores, 15 GB; Postgres raised to 300 connections, `cf06f09`). Running: 8. |
+| Session 2026-11-07, third budget | approved by the user: a much larger budget and as much parallelism as is technically safe for waves 4-7 (it supersedes the "max 3 at once" of CLAUDE.md for this phase; inform the user before other significant spending). Plan: one workflow per feature (Sonnet implementer, Opus read-only review, Sonnet fix of blocking findings, Opus re-review), about 5 implementers at once (machine: 16 cores, 15 GB; Postgres raised to 300 connections, `cf06f09`). Merged under it: 7a, 8, 9, 14a. After the reboot the user asked for 3 agents at once, then 6 (2026-11-07 night). Running: 12a, 14b, 15, 11, 12b, 16 (each run's agent calls are in its workflow journal). |
 | **Total** | **47** |
 
 ## Decisions
