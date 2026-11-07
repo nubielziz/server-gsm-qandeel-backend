@@ -57,8 +57,30 @@ MinIO run; the API, worker and Vite start only for a walk and stop after it.
 **Stopping for the night (the user's instruction, 2026-11-07, 23:50).** No new feature tonight; 17, 18 and 19 start the next
 day. State of the six runs at 23:48 (each worktree keeps its files whatever happens to the run):
 - **14b** (`wf_4b060a2c-6a7`, continue): finished, reviewed (blocking findings), the fix agent was running.
-- **12a** (`wf_4cd665ad-733`), **15** (`wf_c039bfd4-270`), **11** (`wf_a50bf7cb-24e`) (continue): finished, the Opus review
-  was running.
+- **12a** (`wf_4cd665ad-733`, continue): finished, the Opus review was running.
+- **15** storefront content (`wf_c039bfd4-270`): **pass, ready to merge** (20 routes, 144 tests). At the merge: re-run the
+  full check on a quiet machine (its last run had 3 `db-schema` timeouts under load; the file passes alone) and drop the
+  leftover `gsm_mig_*` scratch databases; **make 14a's checkout and listings take the floor from 15's new
+  `RetailPrices.quotes`** (catalog; `PriceResolver.floor` alone misses the x1.10 term of b2c-7) and resolve the catalog
+  overlap with 14a (module providers, index); fix the review minors (listing-admin.service.ts:239 audit `before` from the
+  locked row; :265 skip a row without a quote instead of a 500; reuse catalog's `dollars()` in listing-rules.ts; the
+  foreign-reads header; two test names); decide `canonicalUrl` on admin page rows (ANSWERS storefront Q8 asks for it, the
+  implementer dropped it for shape parity: allowlist it with Q8 as the reason or amend Q8). B-entry: legal slugs `terms`,
+  `privacy`, `refund`, `cookies` reserved and served at `/store/v1/pages/:slug` in their version in force; help slug
+  `<id>-<words>` (only the id counts); `SERVICE_DISABLED` checked before `LISTING_LOCKED`; `NOT_A_DRAFT` for a replaced
+  version; `publishedAt` kept when a live page is published again (the doc says now: decide); `RetailPrices` provider in
+  catalog; storefront's foreign-reads file (decision 016 deviation).
+- **11** commissions and reports (`wf_a50bf7cb-24e`): **pass, ready to merge** (19 of 20 routes, about 161 tests). At the
+  merge: renumber its migration `0009_commission_accrual_reversed_at` after main's 0010; re-run the full check (4 timeouts
+  under load, each passes alone); add `GET /admin/reports/client-statement/:clientId` with `PdfRenderer`; merge 11 before 16
+  (both edit `order-placement.ts` / `order-transitions.ts`); consider the review minors (a rare deadlock between a refund or
+  reopen and an approval: lock the order's live accruals before `ledger.move` in `OrderTransitions.apply` or retry on
+  40P01; `CHECK (amount > 0)` on `commission_accruals`; the reports' "one consistent read" claim). B-entry: audit verbs
+  (`approved commissions for` is the demo's, the brief's "of" is a typo; plan verbs partly invented); business time zone
+  UTC; an accrual paid back after approval stays approved with `reversed_at`; approval key
+  `commission:<agent>:<lowest accrual id>`; amounts rounding to zero accrue nothing; a switched-off plan stops accruals for
+  agents still assigned (confirm); `clients.referral_code` is NOT NULL so B164's "generate on read" never happens; the portal
+  does not send `reversedAt`; `report.repository.ts` reads other modules' tables (decision 016 deviation, decide).
 - **12b** (`wf_31478c9a-770`) and **16** (`wf_73269427-02a`) (feature, new worktrees): the Sonnet implementer was running.
 
 **How to resume tomorrow.** Read the end of each run's `journal.jsonl` (lead session directory,
