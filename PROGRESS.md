@@ -7,7 +7,8 @@ Single source of truth for status. The lead updates it after every step. Read it
 **Session 2026-11-07.** Wave 1 of Phase 3 is **done and merged on `main`** (the branch `feat/backend` was renamed `main` on
 2026-11-01): feature **3** money-wallets-ledger (`c332201`), **2b** identity-merchant-auth (`446fd46`), **2a**
 identity-staff-access (`ed74e0b`), each reviewed, fixed and squash-merged by the lead; then `f66d74a` (audit phrasing).
-70 of 382 map endpoints are built; the console calls 50 of them. `bun run check` green on the merged 2a tree (2181 pass,
+Wave 2 has started: **4a** catalog-structure is merged (`7c012d2`). 90 of 382 map endpoints are built; the console calls
+70 of them. `bun run check` green on the merged 2a tree (2181 pass,
 1 skip, 0 fail; shape parity compares 50 of 70 built routes). `PROGRESS.md` had been moved to a stray file named `ظ`
 (identical content); it was put back.
 
@@ -21,8 +22,16 @@ wallet adjustment (`POST /admin/clients/3/wallet/adjust`, journal 1963), all vis
 at runtime: audit action phrases of the money module (`f66d74a`); `POST /client/auth/register` answers 500 on a database
 without a default merchant group (4a adds a data migration).
 
-- **In progress:** wave 2, feature **4a** catalog-structure (brief `docs/briefs/4a-catalog-structure.md`), Sonnet implementer
-  in `../backend-4a` (branch `feat/backend-4a`, test DB `gsm_4a_test`, Redis DB 5).
+- **4a merged** (`7c012d2`): `bun run check` green on the merged tree (2342 pass, 1 skip, 0 fail; shape parity 70 of 90).
+  Lead fixes at merge: the demo's audit phrases (`archived service`, `deleted service`, `changed group of`), and a 2a bug: the
+  role member count subquery counted `staff_users.id = role_id` (Drizzle prints a bare `"id"` in a one-table select;
+  regression test added). Runtime walk of Services & pricing (services, categories, inventory, rules), merchant groups and
+  a merchant page: 42 real answers, no error; a real service disable and enable through the UI (`PATCH /admin/services/9`).
+  The 4a implementer ran scratch scripts against `gsm_test` by mistake (truncated and re-seeded it; the next `resetDb` puts it
+  right); briefs now say to use only the worktree's own test database.
+- **In progress:** **4b** catalog-pricing (brief `docs/briefs/4b-catalog-pricing.md`), Sonnet implementer in `../backend-4b`
+  (branch `feat/backend-4b`, test DB `gsm_4b_test`, Redis DB 7). Review and merge it like 4a (merge `main` in first, check the
+  audit phrases), then walk the price resolver, rules and merchant pricing tabs.
 - **Next:** review and merge 4a (merge `main` into it first; check its audit actions use the demo's verb phrases, ANSWERS
   audit Q3), run the walk on the Services & pricing page, then **4b** (brief ready: `docs/briefs/4b-catalog-pricing.md`),
   then **5** orders-engine (brief ready: `docs/briefs/5-orders-engine.md`; the lead's state machine groundwork is on
@@ -110,8 +119,8 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 | 2a | identity-staff-access | staff, roles, permissions, sessions, IP rules, access restriction, merchants, audit logs, settings (st2 admin, 31; brief `docs/briefs/2a-identity-staff-access.md`) | admin-team, ip-rules | done (`ed74e0b`) |
 | 2b | identity-merchant-auth | merchant portal sign-in, security, sessions (st2 client, 15; brief `docs/briefs/2b-identity-merchant-auth.md`) | | done (`446fd46`) |
 | 3 | money-wallets-ledger | postTransaction, money events, wallets, statement, adjust, credit limit (user rule 2), ledger, reconcile, currencies (st3, 14) (brief `docs/briefs/3-money-wallets-ledger.md`) | | done (`c332201`) |
-| 4a | catalog-structure | client groups + nightly promotion job (user rule 1), categories, services, fields, options, inventory (st4/5) (brief `docs/briefs/4a-catalog-structure.md`) | | in progress (`../backend-4a`) |
-| 4b | catalog-pricing | group/client prices, pricing rules (user rule 8: the demo's resolver), price protection (user rule 9: effective-cost floor, listed-price memory, PRICE_CHANGED guard, raise in the snapshot), bulk price, resolve, merchant catalog and price export (brief `docs/briefs/4b-catalog-pricing.md`) | | brief ready |
+| 4a | catalog-structure | client groups + nightly promotion job (user rule 1), categories, services, fields, options, inventory (st4/5) (brief `docs/briefs/4a-catalog-structure.md`) | | done (`7c012d2`) |
+| 4b | catalog-pricing | group/client prices, pricing rules (user rule 8: the demo's resolver), price protection (user rule 9: effective-cost floor, listed-price memory, PRICE_CHANGED guard, raise in the snapshot), bulk price, resolve, merchant catalog and price export (brief `docs/briefs/4b-catalog-pricing.md`) | | in progress (`../backend-4b`) |
 | 5 | orders-engine | state machine, placement + hold, admin order actions, bulk reply, export, merchant orders, files (st5) | manual | |
 | 6 | suppliers | suppliers admin, Dhru supplier client, dispatch/poll jobs, dispatch/fetch/change-supplier, sync (user rule 9: recompute the effective cost, bump the price version, no failover above the charged price), import (st6) | success, reject, timeout | |
 | 7a | dhru-and-rest-v1 | Dhru surface (8 actions), REST v1 (12), idempotency, PRICE_CHANGED message and listed-price memory on the list actions (user rule 9) (st7) | | |
@@ -150,8 +159,8 @@ re-review), max 2 review rounds.
 | P2.6 staff-sign-in | 2 (implementer, review: pass, no blocking) |
 | P2.8 clock | 4 (implementer, review: 1 blocking, fix, re-review: pass) |
 | Wave 1, first run (2026-11-01) | 3 (Sonnet implementers 2a, 2b, 3; cut off before finishing, no review) |
-| Session 2026-11-07 | limit set by the user: 4 calls in all, 2 at once. Used 3: 2a finish (Sonnet), frontend partial mocks (Sonnet), 4a (Sonnet). Reviews, fixes and merges of 3, 2b and 2a by the lead (Opus). |
-| **Total** | **44** |
+| Session 2026-11-07 | limit set by the user: 4 calls in all, 2 at once. All 4 used: 2a finish (Sonnet), frontend partial mocks (Sonnet), 4a (Sonnet), 4b (Sonnet). Reviews, fixes and merges of 3, 2b and 2a by the lead (Opus). |
+| **Total** | **45** |
 
 ## Decisions
 
