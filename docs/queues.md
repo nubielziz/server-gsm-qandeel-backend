@@ -109,7 +109,7 @@ Delivers signed events to the webhook endpoints of merchants.
     `invoice.paid`, registered by feature 8; `service.price_changed`, written by the catalog's price change scan). The processor fans it out (`WebhookFanOut`): one
     `webhook_deliveries` row per active endpoint of `payload.clientId` that subscribed to the type, then one `webhook.deliver` job per row;
   - `webhook.deliver`, one attempt of one delivery (`WebhookDeliveries.deliver`).
-- **Payload:** the outbox jobs carry `OutboxJobData` (`payload.clientId` is required; the money strings of
+- **Payload:** the outbox jobs carry `OutboxJobData` (`payload.clientId` is required: `null` says the event has no merchant, a storefront order, and is skipped; a missing one fails the job for good; the money strings of
   `wallet.low_balance` and `service.price_changed` are the merchant's own public figures); `webhook.deliver` carries `{ deliveryId, attempt }` and nothing else: the body, the address and the encrypted secret are read from
   Postgres at send time.
 - **Idempotency:** the outbox job id is `outbox-<event id>`. A fan-out run twice inserts nothing the second time (unique `(endpoint_id, event_id)`, the event id is a keyed hash of the event, or of the change for a price

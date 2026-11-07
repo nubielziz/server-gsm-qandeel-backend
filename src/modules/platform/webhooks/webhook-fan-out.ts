@@ -19,7 +19,7 @@ export interface FanOutResult {
   /** Deliveries created now (the others existed from an earlier run of the same job). */
   readonly created: number;
   /** Why nothing was sent. */
-  readonly skipped?: 'unknown_event' | 'no_subscriber' | 'source_gone';
+  readonly skipped?: 'unknown_event' | 'no_merchant' | 'no_subscriber' | 'source_gone';
 }
 
 /**
@@ -52,13 +52,15 @@ export class WebhookFanOut {
    *
    * @param job the outbox job (`type`, `aggregateId`, ids in `payload`; the merchant is `payload.clientId`)
    * @returns what was done
-   * @throws {UnrecoverableError} when the event has no merchant, or the data built for it breaks its contract (a programming
-   *   error: retrying cannot help)
+   * @throws {UnrecoverableError} when the event carries no `clientId` at all, or the data built for it breaks its contract (a
+   *   programming error: retrying cannot help)
    * @throws {Error} when Postgres or the queue Redis fails (the job is retried; the unique key makes that safe)
    */
   async run(job: OutboxJobData): Promise<FanOutResult> {
     if (!isWebhookEvent(job.type)) return { endpoints: 0, created: 0, skipped: 'unknown_event' };
     const clientId = job.payload['clientId'];
+    // A storefront order has no merchant (`clientId: null`): nobody subscribes to it, so it is skipped, not failed.
+    if (clientId === null) return { endpoints: 0, created: 0, skipped: 'no_merchant' };
     if (typeof clientId !== 'number') {
       throw new UnrecoverableError(
         `The ${job.type} event ${job.eventId} carries no clientId, so no merchant can be found.`,

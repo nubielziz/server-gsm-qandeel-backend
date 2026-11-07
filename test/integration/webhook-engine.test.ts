@@ -287,10 +287,21 @@ describe('fan-out of order.status_changed', () => {
     expect(await rows()).toEqual([]);
   });
 
-  it('fails for good when an event carries no merchant', async () => {
+  it('fails for good when an event carries no clientId at all', async () => {
     const job = await emit('order.status_changed', 'orders', 5, { orderId: 5 });
     const error = await expectRejection(fanOut().run(job), Error);
     expect(error).toBeInstanceOf(UnrecoverableError);
+  });
+
+  it('skips a storefront order, whose event says it has no merchant (clientId null)', async () => {
+    const job = await emit('order.status_changed', 'orders', 5, {
+      orderId: 5,
+      clientId: null,
+      fromStatus: 'pending',
+      toStatus: 'processing',
+    });
+    expect(await fanOut().run(job)).toEqual({ endpoints: 0, created: 0, skipped: 'no_merchant' });
+    expect(await rows()).toEqual([]);
   });
 });
 
