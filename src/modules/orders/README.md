@@ -8,11 +8,107 @@ Decisions that shape this module: 024 ledger, 025 order state machine, 026 Dhru 
 
 ## Status
 
-Not built yet: the module is an empty shell (`orders.module.ts`, `index.ts`). Its feature adds controllers, services, repositories and the owned tables.
+Built (feature 5, orders-engine): 20 routes of this module (13 admin, 7 merchant portal) plus the two file downloads of the platform
+module, the lead's state machine, and the demo seed. Dispatch, fetch and change-supplier with the supplier jobs are feature 6, the
+Dhru and REST v1 order routes 7a, the outgoing webhook 7b, storefront orders 14a and 16, the top-clients report 11.
+
+- **State machine** (`domain/order-machine.ts`, decision 025): `decideOrderAction` is the only place the rules live; every use case
+  asks it and applies its answer through `application/order-transitions.ts` (`OrderTransitions.apply`): the order is read, the
+  machine decides, the order changes with a guarded `UPDATE ... WHERE status = $from AND dispatch_state = $from AND
+  verification_status IS NOT DISTINCT FROM $from` (zero rows: another request won, `409 INVALID_TRANSITION`, nothing else written),
+  the money posts, the timeline lines and the audit row are written and `order.status_changed` goes to the outbox, all in one
+  transaction. `accept` on an order that is not in the manual queue answers `NOT_MANUAL` (the endpoint doc's code).
+- **Placement** (`application/order-placement.ts`, `OrderPlacement.place`): the one shared path (portal now; Dhru, REST v1 and the
+  storefront call it later). Steps in the caller's transaction: the merchant and the service it may see (`MerchantCatalog.find`:
+  archived, disabled or hidden is not orderable: `NOT_FOUND`, or `SERVICE_DISABLED` for a disabled one), validation (IMEI 15 digits
+  with Luhn: `INVALID_IMEI`; custom field values against the service's fields; quantity against `min_qty`, `max_qty` and
+  `qty_options`: `422` with the field path), the price from `PriceResolver` for this merchant, the price guard (`checkPriceChange`
+  against `ListedPrices`, tolerance setting `pricing.price_change_tolerance_percent`: `409 PRICE_CHANGED` with `listedPrice` and
+  `currentPrice`, or charge and record `raised` in `pricing_snapshot`), the duplicate rule (`services.duplicate_rule = block_open`:
+  a keyed hash of merchant, service and main input, taken under an advisory lock so two parallel requests cannot both pass:
+  `409 DUPLICATE_ORDER` with `orderId`), then insert (`placed_at` and `created_at` never set, so equal), the `created`, `hold` (and
+  `review` for a manual order) lines, the hold in the ledger (`order` event, key `order:<id>:hold`: `INSUFFICIENT_FUNDS` undoes
+  everything) and, for an automatic order with an active supplier link, the `order.dispatch_requested` outbox row. The first
+  dispatch state is the machine's `placementDispatchState` (`manual` for a manual service or one without an active link). Total
+  price and total cost are unit x quantity; the unit cost is the service's effective cost. Delivering a stock code at placement
+  (`deliveredFromInventory`) is not wired: no service is marked as stock-backed yet.
+- **Main input** (`domain/main-input.ts`, orders-suppliers-2): `orders.imei` holds the IMEI (type `imei`), the first required
+  custom field by sort (server, remote) or the first field's value or the file name (file). The wire sends `''` for none.
+- **Money** (`application/order-ledger.ts`): placement holds (`order`: wallet to hold); a reply settles (`complete`: hold to
+  revenue, plus supplier prepaid to cost of goods only when the order has a supplier **and** a supplier reference, and only if no
+  earlier settlement booked the cost: B17); a reject or a cancel releases (`reject`); a reopen moves the revenue back to the hold and a
+  B2B refund moves it straight to the wallet (`reopen` and `refund` builders in money's `domain/money-events.ts`, kinds `adjustment`
+  and `refund`, the console's words), both keeping the cost. Keys: `order:<id>:hold`, `order:<id>:settle` (a second completion after
+  a reopen is `order:<id>:settle:2`, and so on), `order:<id>:release`, `order:<id>:refund` (B2C), and `reverse:<settlement id>` for a
+  reopen or a B2B refund: decision 024's key, which `MerchantSpend` reads to stop counting a reversed settlement (the brief's
+  `order:<id>:refund` for the B2B refund is replaced by it for that reason). The settlement to reverse is found by
+  `OrderSettlements.liveOf` (money module) by the order reference, so it works for the demo seed's settlements too. A free order
+  (price 0) posts nothing. B2C orders: the same builders (`b2c_deliver`, `b2c_refund`, reopen to customer funds) post the ledger
+  side; the refunds row and the gateway refund job of `b2c_refund` arrive with feature 16 (B16).
+- **Reads** (`application/order-read.service.ts`, `infra/order-read.repository.ts`): one select with the joins the console's row
+  needs (service, category, merchant, customer, supplier), the exact `COUNT`, no N+1: `attempts` (the number of `dispatch` events)
+  and `reviewReason` (the newest `review`, `risk` or `verification` event that has a `reason`, sent only while the order waits in
+  the manual, needs-attention, verification or review queue) are read for the whole page in two queries. The queue and the channel
+  are SQL expressions equal to `deriveQueue` (a test compares them for every state combination). **`pastSlaPredicate(now)`**
+  (`infra/order-sql.ts`, exported from the index for the dashboard and System health, feature 9) is the one age-only predicate of B92:
+  `status IN ('pending','processing') AND services.sla_minutes > 0 AND placed_at < now - sla_minutes`; the caller's query joins
+  `services` on `orders.service_id`. `q` searches the input, supplier reference, service, merchant and customer names, and the id
+  exactly when it is all digits.
+- **Bulk reply** (`application/bulk-reply.service.ts`, `domain/bulk-reply.ts`): preview matches pasted lines (first token is the
+  input, the rest the code; whitespace-insensitive, non-empty inputs only, index `orders_imei_squashed_idx`) and refuses a paste of
+  more than 500 lines; apply runs each item as its own `reply` transaction and reports refusals in `failed`, plus one summary audit row
+  for the request (so an apply where every item failed is still audited).
+- **Export** (`application/order-export.service.ts`): counts first (more than 100,000 rows: `422`), writes one `audit_logs` row
+  (staff), then streams the CSV in batches of 1,000 by keyset paging on `(sort value, id)`, so rows never repeat or get skipped while
+  orders arrive. Cells that start with `=`, `+`, `-`, `@`, tab or CR are written as text. Only the first `_sort` key is used.
+- **Merchant stats** (`application/order-client-stats.ts`): the orders source of identity's `ClientStatsDirectory` (30 days of
+  `created_at` with no end): orders, spend of the orders not rejected, profit of the completed ones, margin, success rate, last order.
+- **Outbox** (`application/order-outbox.ts`, `orders-outbox.module.ts`, also loaded by the worker): see "Events".
+- **Seed** (`scripts/seed/orders.ts`): the demo's 760 merchant orders by their demo ids, mapped as the frontend mock maps them
+  (completed and rejected are `done`; processing `sent`; a supplier problem is `processing` + `needs_attention`; the first queued
+  order becomes the manual order and the two newest completed ones wait for a verification decision), with their 4,491 timeline
+  lines. The money seed already posted their holds and settlements: every merchant's `client_hold` equals the sum of its open
+  orders (a test proves it) and this seeder posts nothing. `supplier_id`, `supplier_service_id` and `supplier_ref` stay null:
+  feature 6's seeder must run before this one and then fills them (the seeder already links a supplier by name when the table has
+  rows). The 104 storefront orders wait for customers (14b).
+
+### Merchant portal contract (no console screen; ALIGNMENT § 7, B121, B153)
+
+The shapes of the seven `/client` routes are written here because the map rows are one-liners. Money is a 4-decimal string, times
+are ISO with milliseconds, ids are numbers, lists are simple-rest with `x-total-count`.
+
+- `GET /client/dashboard`: `{ wallet: {balance, reserved, creditLimit, available}, counts: {pending, processing, completed,
+  rejected}, openOrders, latestOrders: [order x 5] }`.
+- The merchant's order: `{ id, status, imei, quantity, inputs, unitPrice, totalPrice, currency, service: {id, name, type}, source,
+  result: {code, comment, fileId}, verificationStatus, clientNote, inputFileId, canCancel, canVerify, createdAt, completedAt }`.
+  Never cost, supplier, supplier reference, notes, queue, dispatch state, pricing snapshot or risk. `GET /client/orders/:id` adds
+  `events: [{id, type, message, createdAt}]`, only the types `created`, `hold`, `accepted`, `completed`, `rejected`, `release`,
+  `refund`, `reopened` and `verification` (never a note, a supplier line or the settlement, which shows the cost).
+- `POST /client/orders` (`201 { orders: [order] }`): body `{ serviceId, imei? | imeis? (1-100), quantity?, inputs?, fileId? }`.
+  `imeis` places one order per IMEI of the same service, **all or none** in one transaction (the first refusal, including
+  `INSUFFICIENT_FUNDS` or a duplicate inside the list, undoes the request). Problems are named by field: `imei`, `imeis.2`,
+  `quantity`, `inputs.<key>`, `fileId`.
+- `GET /client/orders`: filters `status` (and `status_ne`), `type`, `serviceId`, `createdAt_gte`/`createdAt_lte`; `q` over the input,
+  the service name and the id; sorts `createdAt` (default, newest first), `totalPrice`, `status`. Another merchant's order is `404`.
+- `POST /client/orders/:id/cancel` (`204`): only while the order was never sent (`pending`, `manual`, `held`) and the service has
+  `allow_cancel`: rejected as "Cancelled by the merchant", the hold released. `ALREADY_SENT` once sent; `INVALID_TRANSITION` when
+  the service forbids it or staff already work on the order.
+- `POST /client/orders/:id/verify` (`204`): a completed order, once, when the service has `allow_verify` and inside
+  `verify_window_h` hours of completion (0 hours means no window); `INVALID_TRANSITION` otherwise.
+- `GET /client/orders/export`: CSV `id,created,service,input,quantity,status,price,currency`, same filters; 100,000 rows at most.
+- `GET /client/files/:id` and `GET /admin/files/:id` (platform module, B154): `302` to a presigned link that lives 5 minutes.
+
+Open point: the admin service routes (feature 4a) do not expose `allow_cancel`, `allow_verify` and `verify_window_h`, so until staff
+can set them a merchant can neither cancel nor ask for a verification (the routes answer `409` with the reason).
 
 ## Public API (`index.ts`)
 
-Exports `OrdersModule` only. Add the services other modules may call here, and nothing else: other modules import only `src/modules/orders/index.ts` (lint rule `gsm/module-boundaries`).
+Exports `OrdersModule` (with `OrdersOutboxModule`, which the worker loads, and `OrdersAdminModule`, the routes and use cases), the pure
+rules (`decideOrderAction`, `deriveQueue`, `isOpen`, `placementDispatchState`, `mainInputOf`), the SQL fragments (`pastSlaPredicate`,
+`queueSql`, `channelSql`), the services other features call (`OrderPlacement` for Dhru, REST v1 and the storefront; `OrderTransitions`
+for the supplier jobs and the risk actions; `OrderReadService`), the outbox event names (`ORDER_OUTBOX_EVENTS`, `OrderOutbox`) and the
+vocabularies and row types of the two tables. Other modules import only `src/modules/orders/index.ts` (lint rule
+`gsm/module-boundaries`).
 
 ## Owned tables
 
@@ -25,7 +121,7 @@ Only this module reads and writes these 2 tables (`scripts/module-map.mjs`); oth
 
 ## Routes
 
-40 endpoints (admin 17, client 7, store 3, v1 6, dhru 6, events 1). Source: `docs/slices/orders.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built.
+40 endpoints (admin 17, client 7, store 3, v1 6, dhru 6, events 1). Source: `docs/slices/orders.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built. **Built by feature 5:** the 13 admin routes with stage 5 and the 7 `/client` routes (contracts in `contracts/orders.contracts.ts`, `order-actions.contracts.ts`, `client-orders.contracts.ts`; controllers in `controllers/`). The rows with stage 6, 7, 11, 14 and 16 are built by those features.
 
 ### Admin console (17)
 
@@ -121,17 +217,44 @@ Keep this list in step with the contracts (`permission` of each `defineRoute`).
 
 ## Events
 
-Outbox events produced (types, payload ids): none yet. Consumed: none yet. Record each outbox type and the queue it maps to here and in `docs/queues.md`.
+Outbox events produced (ids and status words only, written in the transition's own transaction):
 
-Outgoing webhook events from the map (documented as OpenAPI `webhooks` once defined with `defineEvent`): `order.status_changed`.
+| Type | Queue | Payload | Written when | Consumer |
+|---|---|---|---|---|
+| `order.status_changed` | `merchant-webhooks` | `{ orderId, clientId (null for a storefront order), fromStatus, toStatus }` | the status of an order changed (accept, reply, reject, cancel, reopen, refund, a verification refund) | the webhook fan-out of feature 7b |
+| `order.dispatch_requested` | `supplier-dispatch` | `{ orderId }` | placement of an automatic order with an active supplier link; later a staff dispatch (feature 6) | the dispatch job of feature 6 |
+
+Feature 5 registers both routes (`OrderOutbox.onModuleInit`, loaded by the API and the worker) and adds no processor for either queue,
+so their jobs wait until 7b and 6 build them. The creation of an order is not a status change and writes no `order.status_changed`.
+A dispatch row for an order that is rejected or completed before the job runs is harmless: the job re-reads the order and moves it
+only through the guarded transition (decision 025). Consumed: none.
+
+Outgoing webhook events from the map (documented as OpenAPI `webhooks` once defined with `defineEvent`): `order.status_changed` (7b).
 
 ## Jobs and schedules
 
-None yet. List each queue, job, schedule, idempotency key and retry policy here and in `docs/queues.md` (see `CONTRIBUTING.md` → "Add a job").
+None in this feature. The dispatch job (`supplier-dispatch`) and the poll jobs are feature 6; the webhook deliveries (`merchant-webhooks`)
+are 7b. See `docs/queues.md`.
 
 ## Cache keys
 
-None yet. Register each key family (owner, TTL, invalidation after commit) in `docs/cache-keys.md` (see `CONTRIBUTING.md` → "Add a cache key").
+None. The order status, the holds and the ledger are decision state and are never cached (decision 022); every read goes to Postgres.
+The price tolerance setting is read through the platform's cached settings snapshot (`SettingsReader`, 60 s).
+
+## Audit
+
+Staff actions write `audit_logs` with the demo's verb phrases (ANSWERS audit Q3; the console prints `<actor> <action> <entityLabel>`),
+entity type `order`, label `ORD-<id> for <merchant>` and the status before and after: `accepted order`, `completed order`,
+`rejected order`, `reopened order`, `refunded order`, `accepted verification of`, `refunded after verification of`, `added a note to`.
+A bulk apply also writes `applied bulk reply to` (label `N of M orders`) and an export `exported` (label `N orders`).
+`POST /admin/orders/bulk-reply/preview` changes nothing and is declared `audit: false`. Merchant routes write no audit row (B121).
+
+## Tests
+
+Unit: the machine, main input, placement rules, bulk reply, CSV, timeline lines, views, outbox. Integration (`test/integration/`):
+`client-orders-placement`, `client-orders`, `orders-read`, `orders-actions`, `orders-b2c-actions`, `orders-bulk-reply`,
+`orders-export`, `orders-client-stats`, `orders-seed`, `files`. Scenario `manual`: `test/scenarios/manual.e2e.test.ts` (steps 3 to 8;
+the Dhru steps 1, 2 and 10 are added by feature 7a).
 
 ## Audit resolutions
 

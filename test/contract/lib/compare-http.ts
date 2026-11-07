@@ -75,6 +75,9 @@ export function compareResponse(
   const diffs: Difference[] = [...compareStatus(expectedStatus, backend.status)];
   const returns = frontend.returns;
   if (!returns || returns.type === 'undefined') return diffs;
+  // A redirect (the file routes, B154) has no body: the console renders a plain link and the browser follows it, so its
+  // `string` return type is the link, not a body to compare.
+  if (backend.status === 302) return diffs;
 
   const rows = listRows(frontend);
   if (rows) {

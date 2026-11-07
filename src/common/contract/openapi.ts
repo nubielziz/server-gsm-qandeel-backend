@@ -224,6 +224,20 @@ function successResponses(contract: AnyRouteContract): Record<string, OperationR
     out['204'] = { description: 'Done. No body.', headers: { ...REQUEST_ID_HEADER } };
     return out;
   }
+  if (status === 302) {
+    out['302'] = {
+      description: 'Redirect to a short-lived download link. No body.',
+      headers: {
+        ...REQUEST_ID_HEADER,
+        location: {
+          description: 'The presigned download URL; it expires after 5 minutes.',
+          schema: { type: 'string' },
+        },
+        'cache-control': { description: 'Always `no-store`.', schema: { type: 'string' } },
+      },
+    };
+    return out;
+  }
   if (!schema) {
     const type = contentType ?? 'application/octet-stream';
     out[String(status)] = {

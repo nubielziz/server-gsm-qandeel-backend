@@ -1,5 +1,5 @@
 // Helpers for the webhook tests (feature 7b): a local server that stands in for a merchant's endpoint and records what it gets,
-// the test policy that lets the sender reach it, the outbox routes of the events other features own, and rows for the foreign tables
+// the test policy that lets the sender reach it, the outbox route of `invoice.paid` (feature 8 owns it), and rows for the foreign tables
 // an event reads (orders, invoices).
 import { Global, Injectable, Module, type OnModuleInit } from '@nestjs/common';
 import type { LightMyRequestResponse } from 'fastify';
@@ -93,20 +93,22 @@ export function resetWebhookPolicy(): void {
   testWebhookPolicy.httpsOnly = false;
 }
 
-/** Registers the outbox routes that features 5 and 8 register in production: `order.status_changed` and `invoice.paid`. */
+/**
+ * Registers the outbox route that feature 8 will register in production: `invoice.paid`. (`order.status_changed` is registered
+ * by the orders module itself, `OrderOutbox`, which every test app loads: registering it twice stops the app at boot.) Remove
+ * this class when feature 8 registers its event.
+ */
 @Injectable()
 class WebhookTestRoutes implements OnModuleInit {
   constructor(private readonly routes: OutboxRouteRegistry) {}
 
   onModuleInit(): void {
-    for (const type of ['order.status_changed', 'invoice.paid']) {
-      this.routes.register({ type, queue: 'merchant-webhooks' });
-    }
+    this.routes.register({ type: 'invoice.paid', queue: 'merchant-webhooks' });
   }
 }
 
 /**
- * Provides the test policy to the app and registers the outbox routes of the events other features own. Import it with
+ * Provides the test policy to the app and registers the outbox route of the event feature 8 will own. Import it with
  * `createTestApp({ imports: [WebhookTestModule] })`.
  */
 @Global()

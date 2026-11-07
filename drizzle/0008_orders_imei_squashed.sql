@@ -1,0 +1,1 @@
+CREATE INDEX "orders_imei_squashed_idx" ON "orders" USING btree (regexp_replace("imei", '\s', '', 'g')) WHERE "orders"."imei" is not null and "orders"."imei" <> '';

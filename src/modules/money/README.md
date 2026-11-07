@@ -22,7 +22,11 @@ routes). Invoices, gateways and payments arrive with feature 8, FX refresh with 
 - **Money events.** `domain/money-events.ts` has a pure builder for each of the 13 map money events (`deposit`, `topup`,
   `order`, `complete`, `reject`, `adjust`, `commission`, `payout`, `b2cPay`, `b2cDeliver`, `b2cFee`, `b2cRefund`,
   `b2cChargeback`); each returns the map's lines and is unit-tested with the map's numbers. Later features spread one into
-  `LedgerPoster.post`.
+  `LedgerPoster.post`. Beyond the 13 (decision 024, "rules beyond the 13 map events"; feature 5): `reopen` (B2B: revenue back to
+  the merchant hold, kind `adjustment`), `reopenB2c` (revenue back to customer funds) and `refund` (B2B: revenue to the wallet, kind
+  `refund`), all keeping the cost booked, with their own id type (`REVERSAL_EVENT_IDS`) so the map-parity test of the 13 stays
+  exact; unit tests in `domain/order-reversals.spec.ts`. `OrderSettlements.liveOf(db, orderId)` finds the settlement of an order
+  that no `reverse:<id>` transaction has reversed, so the orders module posts a reversal under that key.
 - **Wallets.** `MerchantAccounts.open` opens `client_wallet` and `client_hold` with the merchant (resolution ip-1; user rule
   2 checked there and by the credit-limit route); `WalletService` serves the wallet view, the statement (JSON or CSV), manual
   adjustments (`adjust` event, ref type `client`, reason in the memo, `APPROVAL_REQUIRED` above the single-approver setting,
@@ -54,7 +58,7 @@ services as they appear (identity, catalog 4a, suppliers 6, customers 14b). Noth
 
 ## Public API (`index.ts`)
 
-`MoneyModule` (global: `MerchantAccounts`, `LedgerPoster`, `MerchantWallets`, `MerchantSpend`), `postTransaction`, the 13 money event builders and their ids,
+`MoneyModule` (global: `MerchantAccounts`, `LedgerPoster`, `MerchantWallets`, `MerchantSpend`, `OrderSettlements`), `postTransaction`, the 13 money event builders and their ids, the reversal builders `reopen`, `reopenB2c` and `refund`,
 the account helpers (`walletViewOf`, `balanceDelta`, `normalSideOf`, `toDebitPositive`, `BASE_CURRENCY`), the ledger line
 helpers and the wire ref types (`toWireRefType`, `storedRefTypesOf`). `WalletService` is exported by `MoneyAdminModule`
 (the routes and the services that read the database; a database-less test app leaves it out). Other modules import only

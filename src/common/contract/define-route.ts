@@ -109,12 +109,13 @@ export type PendingMerchantPolicy = 'allow' | 'deny';
 export const DEFAULT_PENDING_MERCHANT_POLICY: PendingMerchantPolicy = 'deny';
 
 /**
- * Success statuses the API uses: 200, 201 (create), 202 (accepted) and 204 (no body).
+ * Success statuses the API uses: 200, 201 (create), 202 (accepted), 204 (no body) and 302 (redirect to a short-lived link).
  *
  * Why: ALIGNMENT § 1 fixes one success status per endpoint (201 for creates, 204 for deletes and bodiless actions) and
- * `defineRoute` refuses any other.
+ * `defineRoute` refuses any other. The file routes (`GET /admin/files/:id`, B154) answer `302` with a `Location` header: the
+ * console renders a plain link to them, so the browser follows the redirect to the presigned object-storage URL.
  */
-export type SuccessStatus = 200 | 201 | 202 | 204;
+export type SuccessStatus = 200 | 201 | 202 | 204 | 302;
 
 type MaybeSchema = z.ZodType | undefined;
 type MaybeObject = z.ZodObject | undefined;
@@ -301,7 +302,7 @@ export type ResultOf<C extends AnyRouteContract> = C['query'] extends ListQueryB
 const KEY_PATTERN = /^(GET|POST|PUT|PATCH|DELETE) (\/\S*)$/;
 const SEGMENT_PATTERN = /^(?::([A-Za-z_][A-Za-z0-9_]*)|[A-Za-z0-9._~-]+)$/;
 const PERMISSION_PATTERN = /^[a-z][a-z0-9_]*:(?:\*|[a-z][a-z0-9_]*)$/;
-const ALLOWED_STATUSES: readonly number[] = [200, 201, 202, 204];
+const ALLOWED_STATUSES: readonly number[] = [200, 201, 202, 204, 302];
 
 /**
  * Splits a manifest key into method, path and path parameter names.
@@ -507,10 +508,12 @@ export function defineRoute<
 
   // Success.
   const { status, schema, contentType } = spec.success;
-  if (!ALLOWED_STATUSES.includes(status)) problem(`success status ${String(status)} is not one of 200, 201, 202, 204`);
+  if (!ALLOWED_STATUSES.includes(status))
+    problem(`success status ${String(status)} is not one of 200, 201, 202, 204, 302`);
   const list = spec.query !== undefined && isListQuerySchema(spec.query);
-  if (status === 204) {
-    if (schema || contentType) problem('a 204 route has no body: remove success.schema and success.contentType');
+  if (status === 204 || status === 302) {
+    if (schema || contentType) problem(`a ${status} route has no body: remove success.schema and success.contentType`);
+    if (status === 302 && method !== 'GET') problem('a 302 route is a GET: the browser follows it as a link');
   } else if (!schema && !contentType) {
     problem('declare success.schema (JSON body) or success.contentType (file, text)');
   } else if (schema && contentType) {

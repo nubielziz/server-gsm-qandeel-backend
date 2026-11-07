@@ -334,12 +334,21 @@ describe('defineRoute', () => {
   });
 
   describe('success', () => {
-    it('accepts 200, 201, 202 and 204 only', () => {
+    it('accepts 200, 201, 202, 204 and 302 only', () => {
       for (const status of [200, 201, 202] as const)
         expect(define({ success: { status, schema: Dto } }).success.status).toBe(status);
       expect(define({ success: { status: 204 } }).success.status).toBe(204);
+      expect(define({ key: 'GET /spec/redirect', success: { status: 302 } }).success.status).toBe(302);
       expect(() => define({ success: { status: 301, schema: Dto } })).toThrow(/success status/);
       expect(() => define({ success: { status: 500, schema: Dto } })).toThrow(/success status/);
+    });
+
+    it('302 is a bodiless GET: the browser follows it as a link (the file routes, B154)', () => {
+      expect(() => define({ key: 'GET /spec/redirect-body', success: { status: 302, schema: Dto } })).toThrow(/302/);
+      expect(() =>
+        define({ key: 'GET /spec/redirect-type', success: { status: 302, contentType: 'text/csv' } }),
+      ).toThrow(/302/);
+      expect(() => define({ key: 'POST /spec/redirect-post', success: { status: 302 } })).toThrow(/302 route is a GET/);
     });
 
     it('204 has no body', () => {

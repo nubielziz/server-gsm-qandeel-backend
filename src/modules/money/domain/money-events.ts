@@ -340,3 +340,81 @@ export function payout(input: { amount: Money }): MoneyEventPosting {
     creditLine(SYSTEM('gateway_clearing'), input.amount),
   );
 }
+
+/** The reversals the order engine posts beyond the map's 13 events (decision 024, decision 025). */
+export const REVERSAL_EVENT_IDS = ['reopen', 'refund'] as const;
+
+/** One value of {@link REVERSAL_EVENT_IDS}. */
+export type ReversalEventId = (typeof REVERSAL_EVENT_IDS)[number];
+
+/**
+ * The ledger `kind` each reversal posts with, in the console's vocabulary.
+ *
+ * Why: the console labels entries by kind (`LEDGER_KIND_LABEL`) and has no word for a reopen: its own mock posts it as
+ * `adjustment`, a B2B refund as `refund`, so the ledger filters keep working.
+ */
+export const REVERSAL_KINDS: Readonly<Record<ReversalEventId, string>> = { reopen: 'adjustment', refund: 'refund' };
+
+/**
+ * What a reversal builder returns: spread it into the input of `postTransaction` like a {@link MoneyEventPosting}.
+ *
+ * Why: reopen and the B2B refund are not among the map's 13 events (decision 024 lists them as "rules beyond the 13"), so they
+ * have their own id type; the posting still carries the reference type of the record it reverses (resolution money-1).
+ */
+export interface ReversalPosting {
+  readonly event: ReversalEventId;
+  readonly kind: string;
+  readonly refType: LedgerRefType;
+  readonly lines: readonly LedgerLine[];
+}
+
+/**
+ * Event `reopen` (B2B): a completed order goes back to processing; the revenue returns to the hold, the cost stays booked.
+ *
+ * Why: decision 024 and MISMATCHES B17: "reopen reverses revenue only; cogs stays". A later completion books the revenue again
+ * and books the cost again only for a new supplier charge.
+ *
+ * @param input merchant and the order price that was recognised
+ * @returns Dr revenue / Cr client_hold; reference type `order`
+ */
+export function reopen(input: { clientId: number; amount: Money }): ReversalPosting {
+  return {
+    event: 'reopen',
+    kind: REVERSAL_KINDS.reopen,
+    refType: 'order',
+    lines: [...debitLine(SYSTEM('revenue'), input.amount), ...creditLine(hold(input.clientId), input.amount)],
+  };
+}
+
+/**
+ * Event `reopen` (B2C): a delivered storefront order goes back to processing; the revenue returns to customer funds.
+ *
+ * @param input the net amount that was recognised
+ * @returns Dr revenue / Cr customer_funds; reference type `order`
+ */
+export function reopenB2c(input: { net: Money }): ReversalPosting {
+  return {
+    event: 'reopen',
+    kind: REVERSAL_KINDS.reopen,
+    refType: 'order',
+    lines: [...debitLine(SYSTEM('revenue'), input.net), ...creditLine(SYSTEM('customer_funds'), input.net)],
+  };
+}
+
+/**
+ * Event `refund` (B2B): a completed merchant order is refunded; the revenue goes straight back to the wallet, the cost stays.
+ *
+ * Why: the map's refund is "reopen, then reject" in one step (decision 024): the hold is not touched because the order price is
+ * no longer on it. "A refund after delivery loses the supplier cost" (the console's own words, OrderFooter).
+ *
+ * @param input merchant and the order price that was recognised
+ * @returns Dr revenue / Cr client_wallet; reference type `order`
+ */
+export function refund(input: { clientId: number; amount: Money }): ReversalPosting {
+  return {
+    event: 'refund',
+    kind: REVERSAL_KINDS.refund,
+    refType: 'order',
+    lines: [...debitLine(SYSTEM('revenue'), input.amount), ...creditLine(wallet(input.clientId), input.amount)],
+  };
+}

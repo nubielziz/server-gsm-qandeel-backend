@@ -194,6 +194,10 @@ export const orders = pgTable(
     index('orders_fingerprint_open_idx')
       .on(t.fingerprint)
       .where(sql`${t.fingerprint} is not null and ${t.status} in ('pending', 'processing')`),
+    // The bulk reply preview matches pasted inputs with the whitespace removed on both sides (orders-suppliers-2).
+    index('orders_imei_squashed_idx')
+      .on(sql`regexp_replace(${t.imei}, '\\s', '', 'g')`)
+      .where(sql`${t.imei} is not null and ${t.imei} <> ''`),
     index('orders_verification_idx')
       .on(t.completedAt)
       .where(sql`${t.verificationStatus} is not null`),

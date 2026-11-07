@@ -89,8 +89,9 @@ bun run contract:harvest      # needs `npm ci` once in ../frontend-admin (FRONTE
 - `GET /admin/permissions`: the console accepts `string[]` or `Permission[]` and normalises, so the extracted return type is
   `Permission[]` while ALIGNMENT § 4 fixes the wire form as `string[]`. The feature that builds the route needs an
   allowlist entry with a B-id (or an extraction fix).
-- `GET /admin/files/:id` is documented as `302`; `defineRoute` allows 200, 201, 202 and 204 only, so that feature needs a
-  decision (and an allowlist entry for `status`) or a different contract.
+- `GET /admin/files/:id` is documented as `302`: `defineRoute` takes `success: { status: 302 }` (a bodiless GET; the handler sets
+  `Location`, the response interceptor refuses a 302 without it) and `compareResponse` skips the body of a redirect, so the route needs
+  no allowlist entry (built by feature 5, MISMATCHES B154).
 - `GET /admin/reports/payments`: the console function takes `{ start, end, sort, order }` and sends them as `_start`,
   `_end`, `_sort`, `_order`; the comparator sees the function's names, so a correct list contract reports
   `missing-field@query.start` etc. until the feature maps those names (or allowlists them with a B-id).

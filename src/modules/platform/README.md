@@ -189,9 +189,23 @@ Four admin routes (`contracts/`, `controllers/`, `application/`, `infra/`), wire
   `IpRuleCache` (identity module, by a seam, since this module may not import identity).
 - **Adding an editable setting:** add `{ key, validate }` to `EDITABLE_SETTINGS` with a unit test, name the cache it feeds and clear it after the commit.
 
+## File downloads (feature 5, MISMATCHES B154)
+
+`GET /admin/files/:id` (`files:read`) and `GET /client/files/:id` (merchant session, `pendingMerchant: 'allow'`) answer `302` to a
+presigned object-storage link that lives 5 minutes (`StorageService.presignGet` with the stored file name as the download name),
+with `Cache-Control: no-store` on the redirect (`FileAccessService`, `controllers/files.controller.ts`, `contracts/files.contracts.ts`).
+`defineRoute` takes `success: { status: 302 }` for them (a bodiless GET: the handler sets `Location` and the response interceptor
+refuses a 302 without it; OpenAPI documents the `Location` header). Staff may open any file; a merchant only its own upload
+(`owner_type client`, `owner_id` the merchant) or the input or result file of one of its own orders (`ownsOrderFile`, a documented
+foreign read of `orders` in `infra/file.repository.ts`); anything else, an unknown id included, is `404`, never `403`. The access is
+logged at info without the file name and writes no audit row. The routes read the caller from the request context
+(`getRequestContext().actor`), not from identity's decorators, because identity imports this module (decision 032). `POST
+/client/files` (the upload of a File service order) is not built yet.
+
 ## Events
 
-Outbox events produced (types, payload ids): none yet. A module registers an event type with its queue in `onModuleInit`
+Outbox events produced (types, payload ids): the orders module registers `order.status_changed` and `order.dispatch_requested`
+(`docs/queues.md`); this module registers none itself. A module registers an event type with its queue in `onModuleInit`
 (`OutboxRouteRegistry.register`) and writes it with `OutboxService.add(tx, ...)` inside its transaction; the table of event
 types is in `docs/queues.md` ("Outbox event types"). Consumed: none yet. The map's outgoing events (`order.status_changed`,
 `wallet.low_balance`, `invoice.paid`) are registered by the features that produce them.

@@ -5,6 +5,8 @@ export { MerchantAccounts } from './application/merchant-accounts';
 export type { OpenMerchantAccountsInput, OpenedWallet } from './application/merchant-accounts';
 export { MerchantWallets } from './application/merchant-wallets';
 export { MerchantSpend } from './application/merchant-spend';
+export { OrderSettlements } from './application/order-settlements';
+export type { Settlement } from './application/order-settlements';
 export { WalletLowBalanceWatch } from './application/wallet-low-balance-watch';
 export { LOW_BALANCE_THRESHOLD_KEY, availableOf, crossedBelow, thresholdFrom } from './domain/low-balance';
 export { LedgerPoster, LedgerRefRequiredError, postTransaction } from './application/post-transaction';
@@ -36,9 +38,14 @@ export {
   deposit,
   order,
   payout,
+  REVERSAL_EVENT_IDS,
+  REVERSAL_KINDS,
+  refund,
   reject,
+  reopen,
+  reopenB2c,
   topup,
 } from './domain/money-events';
-export type { MoneyEventId, MoneyEventPosting } from './domain/money-events';
+export type { MoneyEventId, MoneyEventPosting, ReversalEventId, ReversalPosting } from './domain/money-events';
 export { WIRE_REF_TYPES, storedRefTypesOf, toWireRefType } from './domain/ref-types';
 export type { WireRefType } from './domain/ref-types';

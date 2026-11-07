@@ -70,7 +70,7 @@ Rules the layer enforces at boot (`defineRoute` throws): the key is `METHOD /pat
 declares exactly the path parameters; header names are lower case; a GET has no body; `permission` exists for
 `staff-permission` routes (the permission the role needs) and `api-key` routes (the scope the key must list, one action, no `area:*`) and for
 no other; `surface` matches the path prefix; the success shape is a `schema` or a
-`contentType` (never both, neither for 204); every `errors` entry is a catalog code (`docs/contract/error-codes.md`);
+`contentType` (never both, neither for 204 and 302: a 302 is a bodiless GET whose handler sets `Location`, as the file downloads do); every `errors` entry is a catalog code (`docs/contract/error-codes.md`);
 `examples` satisfy their schemas.
 
 ## Access, sessions, audit and CSRF (decision 018)
@@ -113,7 +113,7 @@ session route carries `x-gsm-session-stages`, that of a merchant route `x-gsm-pe
    `@ContractHeaders()` **without a key**; the handler receives the parsed value (path ids become numbers).
 2. **Handler** returns the data; throw `new AppError('CODE', { detail, errors })` for business refusals.
 3. **Response interceptor**: the result is parsed with `success.schema` (unknown keys are stripped, so nothing leaks
-   by accident). A mismatch is logged and answered `500 RESPONSE_CONTRACT_VIOLATION`. `204` sends no body. A
+   by accident). A mismatch is logged and answered `500 RESPONSE_CONTRACT_VIOLATION`. `204` sends no body; a `302` route sends no body either, and the interceptor refuses it when the handler did not set `Location`. A
    `contentType` route (CSV, PDF, HTML, text) is sent as the handler produced it with that media type.
 4. **Lists**: a `listQuery()` route returns `{ rows, total }`; the answer is the array of rows plus `x-total-count`
    (rows matching the filters before the range). Repositories append the primary key last so the order is stable.

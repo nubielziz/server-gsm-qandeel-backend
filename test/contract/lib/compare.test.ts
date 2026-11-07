@@ -443,6 +443,12 @@ describe('responses without a JSON body', () => {
     ]);
   });
 
+  it('a redirect (302) has no body to compare: the console renders a link to it', () => {
+    const link = { returns: str, returnsText: 'string' };
+    expect(compareResponse(link, { status: 302, list: false }, 302)).toEqual([]);
+    expect(brief(compareResponse(link, { status: 302, list: false }, 200))).toEqual(['error:status@status']);
+  });
+
   it('a string answer is a file or text: it needs a media type or a string schema', () => {
     const text = { returns: str, returnsText: 'string' };
     expect(compareResponse(text, { status: 200, contentType: 'text/csv', list: false }, 200)).toEqual([]);

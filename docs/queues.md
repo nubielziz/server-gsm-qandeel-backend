@@ -78,7 +78,7 @@ Sends accepted orders to their supplier.
 
 - **Concurrency:** 10 per worker process (the per-supplier limit is the semaphore of `RateLimitService`, decision 021).
 - **Jobs:** none yet. Built by the suppliers feature (6): `dispatch` for an order that is ready to send.
-- **Payload:** none yet (an `OutboxJobData` of the event that starts a dispatch: order id).
+- **Payload:** none yet. The jobs come from `order.dispatch_requested` (an `OutboxJobData`, payload `{ orderId }`), written by the orders feature (5); the processor is feature 6.
 - **Idempotency:** none yet. Rule: re-read the order, move `dispatch_state` with a guarded update before the call; a
   timeout is never re-sent (the order goes to `needs_attention`, decision 025).
 - **Retry policy:** 3 attempts, exponential backoff from 5 s (jitter 50 %); a processor throws `UnrecoverableError` for a
@@ -105,7 +105,7 @@ Delivers signed events to the webhook endpoints of merchants.
 - **Concurrency:** 20 per worker process.
 - **Jobs:** one catch-all processor, `MerchantWebhooksProcessor` (`src/modules/platform/webhooks/`), for two kinds of job (a queue cannot have a catch-all next to named processors, and the
   event types are registered by several features, so no other processor may be added to this queue):
-  - an outbox event of a merchant, named by its type (`order.status_changed`, registered by feature 5; `wallet.low_balance`, written by the money module's `WalletLowBalanceWatch`;
+  - an outbox event of a merchant, named by its type (`order.status_changed`, registered and written by feature 5 with `{ orderId, clientId, fromStatus, toStatus }`; `wallet.low_balance`, written by the money module's `WalletLowBalanceWatch`;
     `invoice.paid`, registered by feature 8; `service.price_changed`, written by the catalog's price change scan). The processor fans it out (`WebhookFanOut`): one
     `webhook_deliveries` row per active endpoint of `payload.clientId` that subscribed to the type, then one `webhook.deliver` job per row;
   - `webhook.deliver`, one attempt of one delivery (`WebhookDeliveries.deliver`).
@@ -293,9 +293,10 @@ none); the job id is `outbox-<event id>`.
 | `merchant.email_verification` | `notifications` | `merchant.email_verification` | `tokenId` (aggregate: `clients`, the merchant) | identity (`MerchantMailOutbox`), written by `POST /client/auth/register` |
 | `merchant.password_reset` | `notifications` | `merchant.password_reset` | `tokenId` (aggregate: `clients`) | identity (`MerchantMailOutbox`), written by `POST /client/auth/password/forgot` |
 | `merchant.invited` | `notifications` | `merchant.invited` | `tokenId` (aggregate: `clients`) | identity (`MerchantMailOutbox`), written by `POST /admin/clients` (feature 2a) |
+| `order.status_changed` | `merchant-webhooks` | `order.status_changed` | `orderId`, `clientId` (null for a storefront order), `fromStatus`, `toStatus` (aggregate: `orders`) | orders (`OrderOutbox`, loaded by the API and the worker), written by every transition that changes the status: accept, reply, reject, cancel, reopen, refund, verification refund. No processor yet: the webhook fan-out is feature 7b |
+| `order.dispatch_requested` | `supplier-dispatch` | `order.dispatch_requested` | `orderId` (aggregate: `orders`) | orders (`OrderOutbox`), written by placement of an automatic order with an active supplier link (and by a staff dispatch, feature 6). No processor yet: the dispatch job is feature 6 |
 
-The map's outgoing events (`order.status_changed`, `wallet.low_balance`, `invoice.paid`) are registered by the features
-that produce them.
+The map's other outgoing events (`wallet.low_balance`, `invoice.paid`) are registered by the features that produce them.
 
 ## Schedulers
 

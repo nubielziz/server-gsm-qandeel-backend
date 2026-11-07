@@ -32,12 +32,20 @@ const violation = (cause: unknown) => new AppError('RESPONSE_CONTRACT_VIOLATION'
  * @param contract the route contract
  * @param result what the handler returned (`{ rows, total }` for a list route)
  * @param reply used to set `x-total-count` and the content type
- * @returns the body to send (`undefined` for 204)
- * @throws {AppError} `RESPONSE_CONTRACT_VIOLATION` (500) when the result does not satisfy the success schema
+ * @returns the body to send (`undefined` for 204 and 302)
+ * @throws {AppError} `RESPONSE_CONTRACT_VIOLATION` (500) when the result does not satisfy the success schema, or when a 302
+ *   handler did not set `Location`
  */
 export function shapeResponse(contract: AnyRouteContract, result: unknown, reply: HeaderSink): unknown {
   const { status, schema, contentType, list } = contract.success;
   if (status === 204) return undefined;
+  if (status === 302) {
+    // A redirect has no body; the handler sets `Location` (and `Cache-Control: no-store`) and the contract only checks it did.
+    if (typeof reply.getHeader('location') !== 'string') {
+      throw violation(new Error('A 302 handler must set the Location header'));
+    }
+    return undefined;
+  }
   if (!schema) {
     // A file or text answer: the handler produced the bytes; only the media type is the contract's job.
     if (contentType && reply.getHeader('content-type') === undefined) reply.header('content-type', contentType);

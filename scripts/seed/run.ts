@@ -7,6 +7,7 @@ import type { DemoSeed } from './demo-state';
 import type { SeedReport } from './helpers';
 import { seedIdentity } from './identity';
 import { seedMoney } from './money';
+import { seedOrders } from './orders';
 import { seedPlatform } from './platform';
 
 /** One module's seeder. */
@@ -21,13 +22,14 @@ export interface Seeder {
 
 /**
  * The seeders, in the order they run: identity first (staff are referenced by almost everything), then platform, money and
- * catalog (which needs the merchant groups).
+ * catalog (which needs the merchant groups), then the orders, which need the merchants, the services and the ledger the others seed.
  */
 export const SEEDERS: readonly Seeder[] = [
   { module: 'identity', run: seedIdentity },
   { module: 'platform', run: seedPlatform },
   { module: 'money', run: seedMoney },
   { module: 'catalog', run: seedCatalog },
+  { module: 'orders', run: seedOrders },
 ];
 
 /**
