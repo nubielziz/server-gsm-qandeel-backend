@@ -32,8 +32,9 @@ and B153 (a pending merchant is refused, the default of `pendingMerchant`).
 - **Webhook endpoints.** HTTPS URLs only (SSRF guard of decision 023 at save time and at send time); a per-endpoint signing
   secret, AES-GCM at rest, shown once; the event list a subset of the four events; `test` sends a signed `ping` delivery.
 - **Deliveries (decision 020).** Each event is an outbox row turned into one delivery per subscribed endpoint, sent by a
-  worker queue with `X-GSM-Signature` (HMAC-SHA256 over timestamp and body, the format P2.5c verifies for incoming hooks),
-  a delivery id header for the receiver's de-duplication, backoff with jitter, a fixed number of attempts, then `failed`.
+  worker queue in the format of ALIGNMENT § 7: `POST` JSON `{ id, type, createdAt, data }` with
+  `X-GSM-Signature: t=<unix>,v1=<hex HMAC-SHA256 of "<t>.<body>">` and `X-GSM-Event-Id` (the receiver's de-duplication),
+  exponential backoff with jitter, 8 attempts over about 24 h, then `failed`.
   `responseCode` 0 when there was no answer (identity-platform-12); `response_body` and `error` truncated and stored
   (B116). Manual retry re-sends the same payload as a new attempt. Idempotent jobs (deterministic job ids per delivery
   attempt); documented in `docs/queues.md`.
