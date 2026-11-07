@@ -54,6 +54,8 @@ MinIO run; the API, worker and Vite start only for a walk and stop after it.
   orders, the FILEDATA 1 MiB form limit, invoice PDF inline rendering, mismatched payments not reconciling through
   gateway_clearing, idle suppliers shown as degraded.
 
+**The user's instruction (2026-11-07, 23:45):** finish the six running workflows and merge them, then stop for the night; 17, 18 and 19 start the next day (do not launch them tonight).
+
 **Next, in order:** merge each running feature as it finishes (commit its work, merge `main` in, resolve, regenerate, full
 check, squash-merge, B-entry, walk what the console can show, `npm run mocks:live` in the frontend); start **17** support
 (after 12a and 14b), **18** risk and privacy (after 16) and **19** content generation and reports (after 9, 12a, 14a and 15)
