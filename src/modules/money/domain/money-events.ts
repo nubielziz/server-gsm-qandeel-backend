@@ -418,3 +418,39 @@ export function refund(input: { clientId: number; amount: Money }): ReversalPost
     lines: [...debitLine(SYSTEM('revenue'), input.amount), ...creditLine(wallet(input.clientId), input.amount)],
   };
 }
+
+/**
+ * What {@link commissionReversal} returns: spread it into the input of `postTransaction` and add the accrual id, key, memo and actor.
+ *
+ * Why: like the order reversals it is a rule beyond the map's 13 events (user rule 5), so it has its own event word and keeps the
+ * reference type of the record it reverses (`accrual`).
+ */
+export interface CommissionReversalPosting {
+  readonly event: 'commission_reversal';
+  readonly kind: string;
+  readonly refType: LedgerRefType;
+  readonly lines: readonly LedgerLine[];
+}
+
+/**
+ * Reversal of a paid commission: the agent's wallet gives the commission back.
+ *
+ * Why: user rule 5 (ANSWERS commissions Q8): an order refunded or reopened after its commission was approved keeps the accrual
+ * `approved` and posts the mirror of the `commission` event. It keeps the ledger kind `commission`, so the agent's statement shows
+ * the commission and its reversal as lines of the same kind; the memo and the key (`reverse:accrual:<id>`) say it is a reversal.
+ * The debit may take the wallet below its credit limit: the caller posts it with `allowBelowCreditLimit`.
+ *
+ * @param input the agent merchant and the commission that was paid
+ * @returns Dr client_wallet / Cr commission_expense; reference type `accrual`
+ */
+export function commissionReversal(input: { clientId: number; amount: Money }): CommissionReversalPosting {
+  return {
+    event: 'commission_reversal',
+    kind: MONEY_EVENT_KINDS.commission,
+    refType: 'accrual',
+    lines: [
+      ...debitLine(wallet(input.clientId), input.amount),
+      ...creditLine(SYSTEM('commission_expense'), input.amount),
+    ],
+  };
+}

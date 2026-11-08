@@ -92,6 +92,13 @@
       "when": 1794127151630,
       "tag": "0012_customer_mail_templates",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794134297128,
+      "tag": "0013_commission_accrual_reversed_at",
+      "breakpoints": true
     }
   ]
 }

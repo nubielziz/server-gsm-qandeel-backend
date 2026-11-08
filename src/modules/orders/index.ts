@@ -41,6 +41,10 @@ export { OrderPlacement } from './application/order-placement';
 export type { PlacementItem, PlacementRequest } from './application/order-placement';
 export { OrderTransitions, refusalError } from './application/order-transitions';
 export type { TransitionOutcome, TransitionRequest } from './application/order-transitions';
+export { OrderCompletionListeners } from './application/order-completion-listeners';
+export type { OrderCompletionListener, OrderReversalReason } from './application/order-completion-listeners';
+export type { LedgerActor } from './application/order-ledger';
+export { OrderCompletionModule } from './order-completion.module';
 export { OrderReadService } from './application/order-read.service';
 export { OrderSupplierMoves } from './application/order-supplier-moves';
 export type {

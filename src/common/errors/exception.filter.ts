@@ -38,7 +38,7 @@ function routeTemplateOf(request: FastifyRequest | IncomingMessage): string | un
  * every route must have the same shape (decision 028, ALIGNMENT § 5). The filter also feeds the System health errors
  * page (`api_errors_total`, decision 015) and logs server faults with the request id so support can find them.
  *
- * Side effects: increments `api_errors_total{surface,method,route,status,code}`; logs 5xx at error level; sets
+ * Side effects: increments `api_errors_total{surface,method,route,status,code}`; logs 5xx at error level and a Postgres deadlock or serialization failure (answered 409) at warn level; sets
  * `Retry-After` on 429 (default 1 s), `Cache-Control: no-store` and `X-Request-Id` (also added by the onSend hook).
  */
 @Catch()
@@ -86,7 +86,9 @@ export class ProblemExceptionFilter implements ExceptionFilter {
       return;
     }
 
-    const { error, logAsError } = normalizeException(exception, { exposeInternals: !this.config.isProduction });
+    const { error, logAsError, logAsWarning } = normalizeException(exception, {
+      exposeInternals: !this.config.isProduction,
+    });
     const method = String(raw.method ?? 'GET');
     const template = routeTemplateOf(request);
     const path = raw.url ?? '/';
@@ -105,6 +107,12 @@ export class ProblemExceptionFilter implements ExceptionFilter {
       this.logger.error(
         { err: exception, requestId, code: error.code, status: error.status, method, route: template ?? 'unmatched' },
         'Request failed with a server error',
+      );
+    } else if (logAsWarning) {
+      // A retryable clash (Postgres rolled the transaction back): a warning with the request id and the error.
+      this.logger.warn(
+        { err: exception, requestId, code: error.code, status: error.status, method, route: template ?? 'unmatched' },
+        'Request lost a database race and was answered with a retryable conflict',
       );
     }
 

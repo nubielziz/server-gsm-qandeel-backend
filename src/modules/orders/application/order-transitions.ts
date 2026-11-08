@@ -23,6 +23,7 @@ import {
   insertEvents,
   updateOrderGuarded,
 } from '../infra/order.repository';
+import { OrderCompletionListeners } from './order-completion-listeners';
 import { type LedgerActor, OrderLedger } from './order-ledger';
 import { OrderOutbox } from './order-outbox';
 
@@ -107,7 +108,8 @@ function stateOf(order: Order, completedBefore: boolean): OrderState {
  *
  * Side effects (all on the caller's transaction): updates `orders`; inserts `ledger_transactions` and entries; inserts
  * `order_events`; inserts one `outbox_events` row when the status changed and one more when the dispatch job must run; inserts an
- * `audit_logs` row when `audit` is given.
+ * `audit_logs` row when `audit` is given; whatever the registered completion listeners write (commission accruals) on a completion, a
+ * reopen or a refund.
  *
  * @see docs/decisions/025-order-state-machine.md
  */
@@ -117,6 +119,7 @@ export class OrderTransitions {
     private readonly ledger: OrderLedger,
     private readonly outbox: OrderOutbox,
     private readonly audit: AuditService,
+    private readonly completions: OrderCompletionListeners,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -158,6 +161,8 @@ export class OrderTransitions {
       });
     }
 
+    // Lock order (feature 11): a reversal locks the order's commission accruals before the ledger locks any wallet, as an approval does.
+    await this.completions.beforeMove(tx, updated, decision.money);
     // A settlement is numbered by how many completions came before it, and books the supplier cost only once (B17).
     const settling = decision.money === 'complete' || decision.money === 'b2c_deliver';
     const moved = await this.ledger.move(tx, updated, decision.money, {
@@ -165,6 +170,8 @@ export class OrderTransitions {
       completedBefore: settling ? await countEventsOfType(tx, order.id, 'completed') : 0,
       costBooked: settling ? await costAlreadyBooked(tx, order.id) : false,
     });
+    // Feature 11: commissions accrue on a completion and are reversed with a reopen or a refund, in this same transaction.
+    await this.completions.afterMove(tx, updated, decision.money, ledgerActorOf(request.actor));
 
     const lines = transitionLines(decision.event, decision.money, {
       actor: request.actor,

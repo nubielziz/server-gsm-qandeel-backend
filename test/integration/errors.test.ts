@@ -77,6 +77,28 @@ describe('AppError', () => {
   });
 });
 
+describe('Postgres deadlocks', () => {
+  it('answers a deadlock as a retryable 409 CONFLICT and logs a warning with the request id, not an error', async () => {
+    logSink.clear();
+    const res = await get(prod, '/t/deadlock');
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({
+      code: 'CONFLICT',
+      status: 409,
+      detail: 'This was changed by another request at the same moment. Try again.',
+    });
+    expect(res.body).not.toContain('ledger_accounts');
+    const requestId = res.headers['x-request-id'] as string;
+    const lines = logSink.forRequest(requestId);
+    const warning = lines.find(
+      (line) => line.msg === 'Request lost a database race and was answered with a retryable conflict',
+    );
+    expect(warning?.level).toBe(40);
+    expect(warning).toMatchObject({ code: 'CONFLICT', status: 409, route: '/t/deadlock' });
+    expect(lines.some((line) => line.level >= 50)).toBe(false);
+  });
+});
+
 describe('unexpected errors', () => {
   it('answers 500 INTERNAL_ERROR without leaking the message or stack in production', async () => {
     logSink.clear();

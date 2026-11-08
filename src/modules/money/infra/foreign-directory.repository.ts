@@ -50,6 +50,30 @@ export async function findMerchant(db: DbExecutor, id: number): Promise<Merchant
   return row;
 }
 
+/** A merchant as the client statement header shows it. */
+export interface StatementMerchantRecord {
+  readonly id: number;
+  readonly name: string;
+  readonly company: string;
+  readonly country: string;
+}
+
+/**
+ * Reads the header fields of a merchant for the client statement PDF.
+ *
+ * @param db the database or a transaction
+ * @param id the merchant id
+ * @returns the name, company and country, or `undefined` when there is no such merchant
+ */
+export async function findStatementMerchant(db: DbExecutor, id: number): Promise<StatementMerchantRecord | undefined> {
+  const [row] = await db
+    .select({ id: s.clients.id, name: s.clients.name, company: s.clients.company, country: s.clients.country })
+    .from(s.clients)
+    .where(eq(s.clients.id, id))
+    .limit(1);
+  return row;
+}
+
 /** What REST v1 and Dhru say about the merchant behind an API key. */
 export interface MerchantProfile {
   readonly email: string;

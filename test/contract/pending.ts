@@ -12,9 +12,6 @@ export const PENDING: readonly string[] = [
   // identity
   // platform
   // money
-  'GET /admin/reports/profit',
-  'GET /admin/reports/wallet-exposure',
-  'GET /admin/reports/client-statement/:clientId',
   'GET /admin/refunds',
   'GET /admin/refunds/:id',
   'POST /admin/refunds/:id/approve',
@@ -29,10 +26,8 @@ export const PENDING: readonly string[] = [
   'POST /webhooks/disputes/:gateway',
   // catalog
   // orders
-  'GET /admin/reports/top-clients',
   'GET /store/v1/orders/:token/receipt',
   // suppliers
-  'GET /admin/reports/suppliers',
   'SUPPLIER accountinfo',
   'SUPPLIER imeiservicelist',
   'SUPPLIER placeimeiorder+placeimeiorderbulk',
@@ -52,22 +47,6 @@ export const PENDING: readonly string[] = [
   'GET /admin/incidents/:id',
   'POST /admin/incidents',
   'PATCH /admin/incidents/:id',
-  // commissions
-  'GET /client/referrals',
-  'GET /client/commissions',
-  'GET /admin/commission-plans',
-  'GET /admin/commission-plans/:id',
-  'POST /admin/commission-plans',
-  'PATCH /admin/commission-plans/:id',
-  'DELETE /admin/commission-plans/:id',
-  'GET /admin/commission-assignments',
-  'GET /admin/commission-assignments/:id',
-  'POST /admin/commission-assignments',
-  'PATCH /admin/commission-assignments/:id',
-  'DELETE /admin/commission-assignments/:id',
-  'GET /admin/commission-accruals',
-  'GET /admin/commission-accruals/:id',
-  'POST /admin/commission-accruals/approve',
   // customers
   'POST /store/v1/checkout-sessions/:token/pay',
   'POST /admin/customers/:id/block',

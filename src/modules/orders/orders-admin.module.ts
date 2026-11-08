@@ -18,6 +18,7 @@ import { ClientOrdersController } from './controllers/client-orders.controller';
 import { DhruController } from './controllers/dhru.controller';
 import { OrderActionsController } from './controllers/order-actions.controller';
 import { OrdersController } from './controllers/orders.controller';
+import { OrderCompletionModule } from './order-completion.module';
 import { V1OrdersController } from './controllers/v1-orders.controller';
 import { OrdersOutboxModule } from './orders-outbox.module';
 
@@ -31,7 +32,7 @@ import { OrdersOutboxModule } from './orders-outbox.module';
  */
 @Global()
 @Module({
-  imports: [OrdersOutboxModule],
+  imports: [OrdersOutboxModule, OrderCompletionModule],
   controllers: [OrdersController, OrderActionsController, ClientOrdersController, V1OrdersController, DhruController],
   providers: [
     OrderLedger,

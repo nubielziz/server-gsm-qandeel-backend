@@ -105,6 +105,49 @@ describe('normalizeException', () => {
   });
 });
 
+describe('normalizeException with a Postgres deadlock or serialization failure', () => {
+  const retryDetail = 'This was changed by another request at the same moment. Try again.';
+  const driverError = (code: string) => Object.assign(new Error('driver error'), { code });
+
+  it.each([
+    ['40P01', 'deadlock detected'],
+    ['40001', 'serialization failure'],
+  ])('answers SQLSTATE %s (%s) as a retryable 409 CONFLICT, logged as a warning only', (code) => {
+    const exception = driverError(code);
+    for (const options of [prod, dev]) {
+      const result = normalizeException(exception, options);
+      expect(result.error.code).toBe('CONFLICT');
+      expect(result.error.status).toBe(409);
+      expect(result.error.detail).toBe(retryDetail);
+      expect(result.error.cause).toBe(exception);
+      expect(result.logAsError).toBe(false);
+      expect(result.logAsWarning).toBe(true);
+    }
+  });
+
+  it('finds the SQLSTATE in the cause of a wrapped error (the way Drizzle wraps the driver error)', () => {
+    const wrapped = new Error('Failed query: update "ledger_accounts" set "balance" = $1', {
+      cause: driverError('40P01'),
+    });
+    const result = normalizeException(wrapped, prod);
+    expect(result.error.code).toBe('CONFLICT');
+    expect(result.error.detail).toBe(retryDetail);
+    expect(result.error.detail).not.toContain('ledger_accounts');
+    expect(result.logAsWarning).toBe(true);
+    const twice = normalizeException(new Error('outer', { cause: wrapped }), prod);
+    expect(twice.error.code).toBe('CONFLICT');
+  });
+
+  it('keeps every other Postgres error a server fault', () => {
+    for (const code of ['23505', '57014', '40002']) {
+      const result = normalizeException(new Error('wrapped', { cause: driverError(code) }), prod);
+      expect(result.error.code).toBe('INTERNAL_ERROR');
+      expect(result.logAsError).toBe(true);
+      expect(result.logAsWarning).toBe(false);
+    }
+  });
+});
+
 describe('codeForStatus', () => {
   it('maps the statuses the framework produces', () => {
     expect(codeForStatus(409)).toBe('CONFLICT');

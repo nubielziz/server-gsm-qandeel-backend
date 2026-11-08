@@ -10,7 +10,7 @@ Decisions that shape this module: 024 ledger, 025 order state machine, 026 Dhru 
 
 Built (feature 5, orders-engine): 20 routes of this module (13 admin, 7 merchant portal) plus the two file downloads of the platform
 module, the lead's state machine, and the demo seed. Dispatch, fetch and change-supplier (and the supplier jobs) are built by feature 6 in
-the suppliers module, through `OrderSupplierMoves`; the outgoing webhook is 7b, storefront orders 14a and 16, the top-clients report 11.
+the suppliers module, through `OrderSupplierMoves`; the outgoing webhook is 7b, storefront orders 14a and 16, the top-clients report (built by feature 11 in the money module's `ReportService`).
 Built (feature 7a, dhru-and-rest-v1): the six REST v1 order routes and the six Dhru order actions (below), the Idempotency-Key store and
 the one `POST /api/index.php` transport route.
 
@@ -20,6 +20,11 @@ the one `POST /api/index.php` transport route.
   verification_status IS NOT DISTINCT FROM $from` (zero rows: another request won, `409 INVALID_TRANSITION`, nothing else written),
   the money posts, the timeline lines and the audit row are written and `order.status_changed` goes to the outbox, all in one
   transaction. `accept` on an order that is not in the manual queue answers `NOT_MANUAL` (the endpoint doc's code).
+- **Completion listeners** (feature 11, `application/order-completion-listeners.ts`, module `OrderCompletionModule`): a leaf list that
+  `OrderTransitions.apply` and the stock delivery in `OrderPlacement.deliverFromStock` call inside their transaction: `completed` after a
+  settlement (`complete`; a stock delivery), `reversed` after a `reopen` or a B2B `refund`; any other money move (hold release, B2C
+  refund) is not announced. A listener that throws fails the transition (it writes money-related rows). Commissions registers at boot,
+  in the API and in the worker (decision 032: orders imports nothing of commissions).
 - **Placement** (`application/order-placement.ts`, `OrderPlacement.place`): the one shared path (portal now; Dhru, REST v1 and the
   storefront call it later). Steps in the caller's transaction: the merchant and the service it may see (`MerchantCatalog.find`:
   archived, disabled or hidden is not orderable: `NOT_FOUND`, or `SERVICE_DISABLED` for a disabled one), validation (IMEI 15 digits
@@ -167,7 +172,7 @@ hours, 0 = no window) through `POST|PATCH /admin/services` (feature 7a, catalog 
 
 Exports `OrdersModule` (with `OrdersOutboxModule`, which the worker loads, and `OrdersAdminModule`, the routes and use cases), the pure
 rules (`decideOrderAction`, `deriveQueue`, `isOpen`, `placementDispatchState`, `mainInputOf`), the SQL fragments (`pastSlaPredicate`,
-`queueSql`, `channelSql`), the services other features call (`OrderPlacement` for Dhru, REST v1 (7a) and the storefront; `OrderTransitions`
+`queueSql`, `channelSql`), the services other features call (`OrderPlacement` for Dhru, REST v1 (7a) and the storefront; `OrderCompletionListeners` and `OrderCompletionModule` for the modules that react to a completion or a reversal; `OrderTransitions`
 for the risk actions; `OrderSupplierMoves`, the door of the supplier flows, and `OrdersEngineModule`, which provides both without routes for
 the worker; `OrderReadService`), the outbox event names (`ORDER_OUTBOX_EVENTS`, `OrderOutbox`) and the
 vocabularies and row types of the two tables. Other modules import only `src/modules/orders/index.ts` (lint rule

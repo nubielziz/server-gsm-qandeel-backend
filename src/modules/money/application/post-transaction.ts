@@ -33,6 +33,12 @@ export interface PostTransactionInput {
   readonly lines: readonly LedgerLine[];
   readonly memo?: string;
   readonly createdBy: { readonly type: LedgerActorType; readonly id: number | null };
+  /**
+   * Lets a debit take a `client_wallet` below `-overdraft_limit` instead of refusing with `INSUFFICIENT_FUNDS`. Used only by the
+   * reversal of a paid commission (user rule 5: the agent already received the money and may have spent it; the dashboard's
+   * `wallets_negative` item shows the result). Every other posting leaves it out.
+   */
+  readonly allowBelowCreditLimit?: boolean;
 }
 
 /** What a posting did to one account. */
@@ -149,7 +155,8 @@ async function lockPostingAccounts(
  * @param now the posting time, from the injected clock (the seed passes the demo's time)
  * @returns the transaction id and whether the key was a replay
  * @throws {AppError} `LEDGER_UNBALANCED` for lines that are not a balanced set of at least two positive sides in one
- *   currency; `INSUFFICIENT_FUNDS` when a debit would take a `client_wallet` below `-overdraft_limit`
+ *   currency; `INSUFFICIENT_FUNDS` when a debit would take a `client_wallet` below `-overdraft_limit` (unless the input says
+ *   `allowBelowCreditLimit`)
  * @throws {RangeError} `LEDGER_REF_REQUIRED` (a programming error) for `ref_id 0` on a non-system posting
  * @see docs/decisions/024-ledger.md
  */
@@ -197,9 +204,10 @@ export async function postTransaction(
     };
   });
 
-  // Decision 024 step 4: a wallet may end below zero only down to its credit limit; credits always pass.
+  // Decision 024 step 4: a wallet may end below zero only down to its credit limit; credits always pass. The one named exception is
+  // `allowBelowCreditLimit` (the reversal of a paid commission).
   for (const account of locked.values()) {
-    if (account.kind !== 'client_wallet') continue;
+    if (account.kind !== 'client_wallet' || input.allowBelowCreditLimit === true) continue;
     const before = Money.of(account.balance);
     const after = running.get(account.id)!;
     if (after.cmp(before) < 0 && after.cmp(Money.of(account.overdraftLimit).neg()) < 0) {

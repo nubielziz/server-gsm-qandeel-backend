@@ -46,6 +46,7 @@ import {
   serviceFieldsOf,
 } from '../infra/foreign-reads.repository';
 import { findOpenDuplicate, insertEvents, insertOrder, lockFingerprint } from '../infra/order.repository';
+import { OrderCompletionListeners } from './order-completion-listeners';
 import { OrderLedger } from './order-ledger';
 import { OrderOutbox } from './order-outbox';
 
@@ -113,6 +114,7 @@ export class OrderPlacement {
     private readonly outbox: OrderOutbox,
     private readonly tokens: TokenService,
     private readonly stock: InventoryStock,
+    private readonly completions: OrderCompletionListeners,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -266,6 +268,8 @@ export class OrderPlacement {
       completedBefore: 0,
       costBooked: false,
     });
+    // A stock delivery is a completion: the commission listeners accrue for it exactly as for a staff reply (feature 11).
+    await this.completions.completed(tx, order, { type: 'system', id: null });
     await insertEvents(tx, eventRows(order.id, stockDeliveryLines(claim.codes.length, moved)));
     await this.outbox.statusChanged(tx, {
       orderId: order.id,

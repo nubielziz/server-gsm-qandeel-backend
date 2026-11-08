@@ -5,6 +5,7 @@ import { Module } from '@nestjs/common';
 import { JobRunsModule } from '../health';
 import { ClientGroupDirectory } from '../catalog';
 import { StoredFiles } from '../platform';
+import { ClientStatementService } from './application/client-statement.service';
 import { CurrencyService } from './application/currency.service';
 import { FxRefreshService } from './application/fx-refresh.service';
 import { GatewayCredentialsVault } from './application/gateway-credentials';
@@ -20,6 +21,7 @@ import { PaymentWebhookVerifier } from './application/payment-webhook-verifier';
 import { LedgerReadService } from './application/ledger-read.service';
 import { MerchantApiAccount } from './application/merchant-api-account';
 import { ReconcileService } from './application/reconcile.service';
+import { ReportService } from './application/report.service';
 import { TaxRateService } from './application/tax-rate.service';
 import { WalletService } from './application/wallet.service';
 import { ClientBillingController } from './controllers/client-billing.controller';
@@ -28,6 +30,7 @@ import { GatewaysController } from './controllers/gateways.controller';
 import { InvoicesController } from './controllers/invoices.controller';
 import { FxController } from './controllers/fx.controller';
 import { LedgerController } from './controllers/ledger.controller';
+import { ReportsController } from './controllers/reports.controller';
 import { PaymentWebhookController } from './controllers/payment-webhook.controller';
 import { PaymentsController } from './controllers/payments.controller';
 import { TaxRatesController } from './controllers/tax-rates.controller';
@@ -38,10 +41,10 @@ import { MoneyOutboxModule } from './money-outbox.module';
 
 /**
  * Provides `/admin/clients/:id/wallet|statement|wallet/adjust|credit-limit`, `/admin/ledger/*`, `/admin/currencies`,
- * `/admin/tax-rates`, the merchant's own `/client/wallet` routes, the account reads of REST v1 and Dhru (`/v1/account`,
- * `/v1/transactions`, `accountinfo`) and the billing of stage 8: `/admin/payment-gateways`, `/admin/invoices`,
- * `/admin/payments`, the portal's `/client/payment-methods` and `/client/invoices`, and the incoming
- * `POST /webhooks/payments/:gateway` with the gateway signature adapters behind it.
+ * `/admin/tax-rates`, the reports `/admin/reports/profit|wallet-exposure|suppliers|top-clients|client-statement/:clientId`, the merchant's own `/client/wallet`
+ * routes, the account reads of REST v1 and Dhru (`/v1/account`, `/v1/transactions`, `accountinfo`) and the billing of stage 8:
+ * `/admin/payment-gateways`, `/admin/invoices`, `/admin/payments`, the portal's `/client/payment-methods` and `/client/invoices`,
+ * and the incoming `POST /webhooks/payments/:gateway` with the gateway signature adapters behind it.
  *
  * Why: these use cases need the global database, audit, settings and clock providers (and `job_runs` for reconciliation),
  * which a database-less test app does not have; `MerchantAccounts` and `LedgerPoster` (the global `MoneyModule`) need none
@@ -61,6 +64,7 @@ import { MoneyOutboxModule } from './money-outbox.module';
     PaymentsController,
     ClientBillingController,
     PaymentWebhookController,
+    ReportsController,
   ],
   providers: [
     WalletService,
@@ -84,6 +88,8 @@ import { MoneyOutboxModule } from './money-outbox.module';
     FxRefreshService,
     // Decision 029: the driver named by FX_PROVIDER; `openexchangerates` without a key behaves like `manual` (502 on refresh).
     FX_PROVIDER_FACTORY,
+    ReportService,
+    ClientStatementService,
   ],
   exports: [WalletService],
 })

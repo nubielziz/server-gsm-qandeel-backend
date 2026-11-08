@@ -10,6 +10,11 @@ export type IsolationLevel = 'read committed' | 'repeatable read' | 'serializabl
 export interface TransactionOptions {
   /** Isolation level of this transaction; omit for the Postgres default (`read committed`). */
   readonly isolation?: IsolationLevel;
+  /**
+   * Open the transaction `READ ONLY`: Postgres refuses any write in it. Use it with `repeatable read` for a report whose queries
+   * must see one snapshot of the data.
+   */
+  readonly readOnly?: boolean;
 }
 
 /** What a transaction callback receives. */
@@ -63,7 +68,12 @@ export async function runInTransaction<T>(
             callbacks.push(callback);
           },
         }),
-      options.isolation ? { isolationLevel: options.isolation } : undefined,
+      options.isolation || options.readOnly
+        ? {
+            ...(options.isolation ? { isolationLevel: options.isolation } : {}),
+            ...(options.readOnly ? { accessMode: 'read only' as const } : {}),
+          }
+        : undefined,
     );
   } finally {
     open = false;

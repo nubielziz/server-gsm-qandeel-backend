@@ -145,6 +145,7 @@ export const appError = plain('GET /t/app-error', 'Throws an AppError with field
 export const rateLimited = plain('GET /t/rate-limited', 'Throws RATE_LIMITED');
 export const httpException = plain('GET /t/http-exception', 'Throws a Nest ForbiddenException');
 export const dbDown = plain('GET /t/db-down', 'Throws DATABASE_UNAVAILABLE');
+export const deadlock = plain('GET /t/deadlock', 'Throws a Drizzle error that wraps a Postgres deadlock (40P01)');
 
 export const whoAmI = defineRoute({
   key: 'GET /t/request-id',
@@ -280,6 +281,13 @@ export class TestController {
   @Route(dbDown)
   dbDown(): never {
     throw new AppError('DATABASE_UNAVAILABLE', { detail: 'The database is not accepting connections.' });
+  }
+
+  @Route(deadlock)
+  deadlock(): never {
+    // Drizzle wraps the driver error as the `cause`, so the route throws it the same way.
+    const driverError = Object.assign(new Error('deadlock detected'), { code: '40P01' });
+    throw new Error('Failed query: update "ledger_accounts" set "balance" = $1', { cause: driverError });
   }
 
   @Route(whoAmI)

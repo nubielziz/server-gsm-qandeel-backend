@@ -18,6 +18,7 @@ import { PublicIpLimitModule, RateLimitModule } from '../../src/infra/rate-limit
 import { RedisModule } from '../../src/infra/redis';
 import { StorageModule } from '../../src/infra/storage';
 import { CatalogAdminModule, CatalogPricesModule } from '../../src/modules/catalog';
+import { CommissionsAdminModule } from '../../src/modules/commissions';
 import { CustomersAccountsModule } from '../../src/modules/customers';
 import { AccessAdminModule } from '../../src/modules/identity/access-admin.module';
 import { ApiKeysModule } from '../../src/modules/identity/api-keys.module';
@@ -118,6 +119,7 @@ const NEEDS_DATABASE_AND_CACHE = [
   StorefrontPublicModule,
   ImeiCheckModule,
   CheckoutModule,
+  CommissionsAdminModule,
   CustomersAccountsModule,
   StorefrontContentModule,
   MerchantWebhooksModule,

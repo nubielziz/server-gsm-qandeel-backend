@@ -1,0 +1,4 @@
+DROP INDEX "commission_accruals_order_beneficiary_uq";--> statement-breakpoint
+ALTER TABLE "commission_accruals" ADD COLUMN "reversed_at" timestamp (3) with time zone;--> statement-breakpoint
+CREATE UNIQUE INDEX "commission_accruals_order_beneficiary_uq" ON "commission_accruals" USING btree ("order_id","beneficiary_id") WHERE "commission_accruals"."status" <> 'reversed' and "commission_accruals"."reversed_at" is null;--> statement-breakpoint
+ALTER TABLE "commission_accruals" ADD CONSTRAINT "commission_accruals_reversed_at_check" CHECK ("commission_accruals"."status" <> 'accrued' or "commission_accruals"."reversed_at" is null);

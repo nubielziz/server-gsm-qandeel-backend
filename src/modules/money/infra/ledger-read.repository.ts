@@ -278,6 +278,22 @@ export interface StatementEntryRow {
 }
 
 /**
+ * The columns of a {@link StatementEntryRow}, joined from `ledger_entries` and `ledger_transactions`.
+ *
+ * Why: the wallet statement page, the merchant API's transaction cursor and the client statement PDF all show the same line, so
+ * they select it from one place. A query using it must join `ledger_transactions` on the entry's `transaction_id`.
+ */
+export const STATEMENT_LINE_COLUMNS = {
+  id: ledgerEntries.id,
+  transactionId: ledgerEntries.transactionId,
+  kind: ledgerTransactions.kind,
+  memo: ledgerTransactions.memo,
+  amount: ledgerEntries.amount,
+  balanceAfter: ledgerEntries.balanceAfter,
+  createdAt: ledgerTransactions.createdAt,
+};
+
+/**
  * Lists the lines of one account, newest first by default.
  *
  * Why: the merchant statement is the entries on the merchant's `client_wallet`; `order_settle` lines move `client_hold`
@@ -298,15 +314,7 @@ export async function listAccountEntries(
   const direction = order === 'asc' ? asc : desc;
   const [rows, [counted]] = await Promise.all([
     db
-      .select({
-        id: ledgerEntries.id,
-        transactionId: ledgerEntries.transactionId,
-        kind: ledgerTransactions.kind,
-        memo: ledgerTransactions.memo,
-        amount: ledgerEntries.amount,
-        balanceAfter: ledgerEntries.balanceAfter,
-        createdAt: ledgerTransactions.createdAt,
-      })
+      .select(STATEMENT_LINE_COLUMNS)
       .from(ledgerEntries)
       .innerJoin(ledgerTransactions, eq(ledgerTransactions.id, ledgerEntries.transactionId))
       .where(eq(ledgerEntries.accountId, accountId))
@@ -340,15 +348,7 @@ export async function listAccountEntriesBefore(
   before?: number,
 ): Promise<StatementEntryRow[]> {
   return db
-    .select({
-      id: ledgerEntries.id,
-      transactionId: ledgerEntries.transactionId,
-      kind: ledgerTransactions.kind,
-      memo: ledgerTransactions.memo,
-      amount: ledgerEntries.amount,
-      balanceAfter: ledgerEntries.balanceAfter,
-      createdAt: ledgerTransactions.createdAt,
-    })
+    .select(STATEMENT_LINE_COLUMNS)
     .from(ledgerEntries)
     .innerJoin(ledgerTransactions, eq(ledgerTransactions.id, ledgerEntries.transactionId))
     .where(and(eq(ledgerEntries.accountId, accountId), before === undefined ? undefined : lt(ledgerEntries.id, before)))

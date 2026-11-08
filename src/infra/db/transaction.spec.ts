@@ -117,4 +117,14 @@ describe('runInTransaction', () => {
     await runInTransaction(runner, () => Promise.resolve(), { isolation: 'serializable' });
     expect(configs).toEqual([undefined, { isolationLevel: 'serializable' }]);
   });
+
+  it('passes read only to the driver, alone or with an isolation level', async () => {
+    const { runner, configs } = fakeRunner();
+    await runInTransaction(runner, () => Promise.resolve(), { readOnly: true });
+    await runInTransaction(runner, () => Promise.resolve(), { isolation: 'repeatable read', readOnly: true });
+    expect(configs).toEqual([
+      { accessMode: 'read only' },
+      { isolationLevel: 'repeatable read', accessMode: 'read only' },
+    ]);
+  });
 });

@@ -94,7 +94,7 @@ const ADDITIONS: Record<string, string[]> = {
   webhook_deliveries: ['response_body', 'error', 'event_id'],
   alert_rules: ['deleted_at'],
   alert_events: ['rule_name', 'metric', 'comparator', 'threshold', 'window_seconds', 'unit'],
-  commission_accruals: ['approved_at'],
+  commission_accruals: ['approved_at', 'reversed_at'],
   suppliers: ['api_key_hint', 'prices_synced_at'],
   supplier_api_logs: ['outcome'],
   imei_checks: ['country'],

@@ -6,6 +6,7 @@ import { AuditService } from '../platform';
 import { OrderLedger } from './application/order-ledger';
 import { OrderSupplierMoves } from './application/order-supplier-moves';
 import { OrderTransitions } from './application/order-transitions';
+import { OrderCompletionModule } from './order-completion.module';
 import { OrdersOutboxModule } from './orders-outbox.module';
 
 /**
@@ -17,7 +18,7 @@ import { OrdersOutboxModule } from './orders-outbox.module';
  * and orders modules, simply gets a second copy.
  */
 @Module({
-  imports: [OrdersOutboxModule],
+  imports: [OrdersOutboxModule, OrderCompletionModule],
   providers: [
     LedgerPoster,
     WalletLowBalanceWatch,

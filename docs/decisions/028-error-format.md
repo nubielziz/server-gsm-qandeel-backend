@@ -30,3 +30,9 @@ Status: accepted, 2026-10-31.
 
 **Consequences.** One error type everywhere; the frontend's forms map `errors[]` onto fields without changes; the
 error catalog is reviewed like an API.
+
+**Amendment (2026-11-08, feature 11's merge).** A Postgres deadlock (`40P01`) or serialization failure (`40001`) is not a
+server bug: Postgres rolled the losing transaction back, so nothing was written. `normalizeException` answers it with
+`409 CONFLICT` and the detail 'This was changed by another request at the same moment. Try again.', and the filter logs it at
+warn level with the request id. Lock order still comes first (feature 11 locks a reversal's accruals before any wallet); the
+409 covers the rare paths lock order cannot remove.

@@ -129,6 +129,11 @@ export const commissionAccruals = pgTable(
     status: text().$type<CommissionAccrualStatus>().notNull(),
     /** set exactly when the status is `approved` (RESOLUTIONS health-commissions-4) */
     approvedAt: timestampTz(),
+    /**
+     * when the order was refunded or reopened: set with status `reversed` before approval, and on an `approved` accrual that was
+     * paid back with a reversing entry (user rule 5); it ends the accrual's hold on its order (feature 11 schema addition)
+     */
+    reversedAt: timestampTz(),
     ledgerTxId: fk((): AnyPgColumn => ledgerTransactions.id),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -140,10 +145,12 @@ export const commissionAccruals = pgTable(
     index('commission_accruals_plan_id_idx').on(t.planId),
     // The full order_id index stays: a partial one cannot serve the foreign key's restrict check.
     index('commission_accruals_order_id_idx').on(t.orderId),
-    // A completed order accrues once per beneficiary; a reversed accrual does not block a re-completion.
+    // A completed order accrues once per beneficiary; a reversed accrual does not block a re-completion, whether it was reversed
+    // before approval (status `reversed`) or after (still `approved`, paid back: `reversed_at` is set).
     uniqueIndex('commission_accruals_order_beneficiary_uq')
       .on(t.orderId, t.beneficiaryId)
-      .where(sql`${t.status} <> 'reversed'`),
+      .where(sql`${t.status} <> 'reversed' and ${t.reversedAt} is null`),
+    check('commission_accruals_reversed_at_check', sql`${t.status} <> 'accrued' or ${t.reversedAt} is null`),
     check('commission_accruals_status_check', inList(t.status, COMMISSION_ACCRUAL_STATUSES)),
     check('commission_accruals_approved_at_check', sql`(${t.status} = 'approved') = (${t.approvedAt} is not null)`),
     index('commission_accruals_approved_idx')

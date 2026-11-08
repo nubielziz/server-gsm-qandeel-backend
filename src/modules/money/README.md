@@ -10,8 +10,9 @@ Decisions that shape this module: 011 money, 024 ledger. Common to all modules: 
 
 Stage 3 is built (feature 3): the ledger core, merchant wallets, the ledger screens, reconciliation and currencies (14
 routes). Stage 8 billing is built (feature 8, below): gateways, invoices, top-up payments, the payment webhook and the
-automatic credit. The exchange-rate refresh (`POST /admin/currencies/refresh-fx`) is built (feature 14b, below). Refunds and
-disputes arrive with 16, the money reports with 11 and 16.
+automatic credit. The exchange-rate refresh (`POST /admin/currencies/refresh-fx`) is built (feature 14b, below). Feature 11
+adds the five stage-11 reports (below), the client statement PDF (`GET /admin/reports/client-statement/:clientId`) included.
+Refunds, disputes and the VAT and payments reports arrive with 16.
 
 - **Ledger writer.** `postTransaction(tx, input, now)` (and the injectable `LedgerPoster.post(tx, input)`, which reads the
   Clock) is the only writer of `ledger_transactions`, `ledger_entries` and account balances (decision 024): at least two
@@ -63,6 +64,35 @@ disputes arrive with 16, the money reports with 11 and 16.
   of identity reads it. `MerchantWallets.idsWithCreditLimit(db)` lists the merchants whose credit limit is above zero (the
   catalog's `overdraftAllowed: false` guard). `findMerchant` takes `FOR SHARE` on the merchant's group row, so a credit limit
   change and a change of the group's overdraft flag never interleave.
+- **Reports (feature 11).** `ReportService` (`application/report.service.ts`, SQL in `infra/report.repository.ts`, pure figures in
+  `domain/report-figures.ts`) answers four read-only reports, never cached (decision 022), every amount a 4-decimal USD string, days are
+  UTC days (no business time-zone setting exists yet) and every window ends at the injected clock (decision 031):
+  `GET /admin/reports/profit` (completed orders by completion day, split `day` oldest first, `service`, `supplier` or `client` by profit;
+  revenue is `orders.total_price`, cost `orders.total_cost`; key `0` is "No supplier" or "Storefront customers"; the dates used are echoed;
+  default the 30 days ending today), `GET /admin/reports/wallet-exposure` (`client_wallet` balance, `client_hold` reserved, credit limit,
+  `overdraftUsed = max(0, -balance)` not capped at the limit; totals over every merchant, the 50 largest wallets as rows),
+  `GET /admin/reports/suppliers` (one row per supplier, idle ones too: orders, completed, rejected, spend, rejection rate, mean seconds from
+  `coalesce(sent_at, created_at)` to completion, plus the extra figures `calls`, `errorCalls` and `timeoutCalls` from feature 6's
+  `supplier_api_logs.outcome`) and `GET /admin/reports/top-clients` (spend of the non-rejected orders created in the last `days x 24 h`,
+  profit of the completed ones, wallet balance; pending merchants and merchants without an order left out). Permission `reports:read`.
+  The reports that read more than once (exposure, suppliers, top merchants) run their queries in one read-only `REPEATABLE READ`
+  transaction (`runInTransaction(..., { isolation: 'repeatable read', readOnly: true })`), so their parts describe one moment; the
+  profit report is a single query.
+- **Client statement PDF (feature 11).** `ClientStatementService` (`application/client-statement.service.ts`, reads in
+  `infra/client-statement.repository.ts`, totals and layout in `domain/client-statement.ts`) answers
+  `GET /admin/reports/client-statement/:clientId?from&to` (`reports:read`) with `application/pdf` and
+  `Content-Disposition: attachment; filename="statement-<clientId>-<from>-<to>.pdf"`: merchant header, period, opening balance, the
+  wallet lines oldest first (date, `JRN-<id>`, kind, memo, debit, credit, balance after), totals, closing balance, credit limit and the
+  invoices issued in the period, drawn by the platform's `PdfRenderer` (decision 030). Everything is read in one read-only
+  `REPEATABLE READ` transaction, never cached, made on the spot and not stored. Days are UTC days, both included; the default period is the
+  whole history (the day of the first wallet line to today). Lines are ordered by ledger entry id (the order `balance_after` follows)
+  and the opening balance is the `balance_after` of the entry before the first line shown, so the closing balance is the wallet's. Without
+  `from`, a history of more than 10,000 lines is cut to the most recent 10,000 and the period starts on the day of the first of them, and
+  more than 10,000 invoices are cut to the newest 10,000. `404` for an unknown merchant; `422` on `from` for a reversed period, or for an
+  explicit period of more than 10,000 lines or more than 10,000 invoices (never without `from`); every download writes an audit row (`exported statement of`, entity `merchant`).
+- **Commission reversal (feature 11).** `commissionReversal` is a pure builder beyond the 13 map events (user rule 5): Dr `client_wallet` /
+  Cr `commission_expense`, kind `commission`, ref type `accrual`. `PostTransactionInput.allowBelowCreditLimit` lets that one debit pass
+  `INSUFFICIENT_FUNDS` (the agent already received and may have spent the commission); only the commissions module sets it.
 - **Merchant machine surfaces (feature 7a).** `MerchantApiAccount` (`application/merchant-api-account.ts`) serves `GET /v1/account`
   (`balance`, `reserved`, `creditLimit` and `available` from the same wallet view as the portal, the currency and the client group),
   `GET /v1/transactions` (the wallet's statement by cursor: `?limit=` 1 to 100, `?cursor=` the entry id of the last line sent; newest
@@ -95,13 +125,14 @@ disputes arrive with 16, the money reports with 11 and 16.
   - **Seed.** `scripts/seed/billing.ts`: the demo's 4 gateways (ids 1-4, codes card, crypto, bank, wise), its 54 top-ups with an invoice each (`PAY-1000` is payment 1000, invoice 1), linked to the deposit journals the money seed replayed, 3 manual invoices
     and one verification request per merchant. No receipt files or PDFs (no objects to download).
 
-Known deviation (tech debt, PROGRESS): `infra/foreign-directory.repository.ts` reads merchant (name, email, country, group), group, supplier, customer
+Known deviations (tech debt, PROGRESS): `infra/report.repository.ts` reads `orders`, `clients`, `services`, `suppliers` and
+`supplier_api_logs` with plain selects (no reader exists for these figures; nothing outside the file knows), and `infra/foreign-directory.repository.ts` reads merchant (name, email, country, group), group, supplier, customer
 and staff names, and the fx rate of a storefront payment's checkout (`orders`, `checkout_sessions`), with plain selects because those modules export no directory yet; replace its bodies with their public
 services as they appear (identity, catalog 4a, suppliers 6, customers 14b). Nothing outside that file knows.
 
 ## Public API (`index.ts`)
 
-`MoneyModule` (global: `MerchantAccounts`, `LedgerPoster`, `MerchantWallets`, `MerchantSpend`, `OrderSettlements`, `PaymentGateways`, `StorefrontMoney`), `MoneyOutboxModule`, `PaymentAutoCreditModule` (worker), `FxRefreshJobModule` (worker), `INVOICE_PAID_EVENT`, `GATEWAY_HTTP_POLICY`, `topupMethodOf`, `postTransaction`, the 13 money event builders and their ids, the reversal builders `reopen`, `reopenB2c` and `refund`,
+`MoneyModule` (global: `MerchantAccounts`, `LedgerPoster`, `MerchantWallets`, `MerchantSpend`, `OrderSettlements`, `PaymentGateways`, `StorefrontMoney`), `MoneyOutboxModule`, `PaymentAutoCreditModule` (worker), `FxRefreshJobModule` (worker), `INVOICE_PAID_EVENT`, `GATEWAY_HTTP_POLICY`, `topupMethodOf`, `postTransaction`, the 13 money event builders and their ids, the reversal builders `reopen`, `reopenB2c` and `refund`, `commissionReversal` (feature 11),
 the account helpers (`walletViewOf`, `balanceDelta`, `normalSideOf`, `toDebitPositive`, `BASE_CURRENCY`), the ledger line
 helpers, the wire ref types (`toWireRefType`, `storedRefTypesOf`) and the stale-rate rule `isRateStale` (the System health dashboard's `fx_stale` item reads it, so it agrees with the currencies page). `StorefrontMoney` (feature 14a, read only, takes the caller's
 database handle): `currencies` / `offered` / `defaultCurrency` / `byCode` (the currencies the shop offers, `is_storefront` and

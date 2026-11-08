@@ -1,6 +1,7 @@
 // Turns anything a handler, guard, pipe or Fastify can throw into an AppError (decision 028).
 // Pure and unit-tested; the exception filter only adds logging, metrics and the HTTP reply.
 import { HttpException } from '@nestjs/common';
+import { pgErrorInfo } from '../../infra/db/pg-errors';
 import { AppError } from './app-error';
 import type { ErrorCode } from './catalog';
 
@@ -14,10 +15,18 @@ export interface NormalizedException {
   readonly error: AppError;
   /** True for server faults: the original error is logged at error level with the request id. */
   readonly logAsError: boolean;
+  /** True for a retryable clash that is not a fault (a Postgres deadlock): logged at warn level with the request id. */
+  readonly logAsWarning: boolean;
 }
 
 const INTERNAL_DETAIL =
   'Something went wrong on our side. If it keeps happening, quote the request id when you report it.';
+
+/** Shown for a deadlock or serialization failure: Postgres rolled the transaction back, so nothing was written. */
+const RETRYABLE_CONFLICT_DETAIL = 'This was changed by another request at the same moment. Try again.';
+
+/** SQLSTATE `40P01` (deadlock detected) and `40001` (serialization failure): Postgres asks the caller to retry. */
+const RETRYABLE_SQLSTATES: ReadonlySet<string> = new Set(['40P01', '40001']);
 
 /** Curated sentences for the framework-level 4xx answers (their raw messages are technical). */
 const FRAMEWORK_DETAIL: Readonly<Record<number, string>> = {
@@ -98,7 +107,11 @@ function fromStatus(
       ? message.slice(0, 500)
       : INTERNAL_DETAIL
     : (FRAMEWORK_DETAIL[status] ?? message);
-  return { error: new AppError(code, { ...(detail ? { detail } : {}), cause }), logAsError: server };
+  return {
+    error: new AppError(code, { ...(detail ? { detail } : {}), cause }),
+    logAsError: server,
+    logAsWarning: false,
+  };
 }
 
 /**
@@ -107,7 +120,9 @@ function fromStatus(
  * Why: decision 028 maps `AppError`, Nest `HttpException` and Fastify errors (400 malformed JSON, 404 unknown route,
  * 413 body too large, 415 media type) to catalog codes and everything else to `500 INTERNAL_ERROR` with a generic
  * detail; the full error is logged by the filter. A raw ZodError is a bug (contract validation throws AppError
- * itself), so it is a 500 too.
+ * itself), so it is a 500 too. A Postgres deadlock (`40P01`) or serialization failure (`40001`), also when it is the
+ * `cause` of another error, is not a fault: Postgres rolled the transaction back, so the answer is a retryable
+ * `409 CONFLICT`, logged at warn level (a rare lock-order clash between two money paths cannot be removed by ordering alone).
  *
  * @param exception whatever was thrown
  * @param options `exposeInternals`: outside production the 500 detail may show the error message (never the stack)
@@ -116,13 +131,25 @@ function fromStatus(
 export function normalizeException(exception: unknown, options: { exposeInternals: boolean }): NormalizedException {
   // MAINTENANCE is a planned 503, not a fault: no error line with a stack for every refused request.
   if (exception instanceof AppError) {
-    return { error: exception, logAsError: exception.status >= 500 && exception.code !== 'MAINTENANCE' };
+    return {
+      error: exception,
+      logAsError: exception.status >= 500 && exception.code !== 'MAINTENANCE',
+      logAsWarning: false,
+    };
   }
   if (exception instanceof HttpException) {
     return fromStatus(exception.getStatus(), httpMessage(exception), exception, options.exposeInternals);
   }
   if (isFastifyError(exception)) {
     return fromStatus(exception.statusCode, exception.message, exception, options.exposeInternals);
+  }
+  const pg = pgErrorInfo(exception);
+  if (pg && RETRYABLE_SQLSTATES.has(pg.code)) {
+    return {
+      error: new AppError('CONFLICT', { detail: RETRYABLE_CONFLICT_DETAIL, cause: exception }),
+      logAsError: false,
+      logAsWarning: true,
+    };
   }
   const message = exception instanceof Error ? `${exception.name}: ${exception.message}` : String(exception);
   return {
@@ -131,5 +158,6 @@ export function normalizeException(exception: unknown, options: { exposeInternal
       cause: exception,
     }),
     logAsError: true,
+    logAsWarning: false,
   };
 }
