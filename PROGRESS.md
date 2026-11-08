@@ -77,6 +77,14 @@ worktree has it). The lead's watchdog `.lead/mem-watch.sh` (run as a Monitor) wa
 with under 1 GB swap left, stops the single largest test, lint or typecheck process. The user's instruction (13:20): full
 permission to finish the project, **at most 4 agents**, avoid crashes. Running: 16, 12b merge fixes, 17, 19 (all resumed).
 
+**18:00 state:** 16's merge-fix passed after its refix (refund double-pay guard with the send attempt, default templates of the four
+customer mails); 16 merged main (`f079f1f`: migrations now `0016_b2c_payments` and `0017_refund_declined_template`, to renumber
+once more after 17's `0016_support_tickets`); it waits for 18 (the risk screening is wired into its capture at the merge), then
+its B-entry and full check. 17's second merge-fix run `wf_8f8afa92-f08` adds `support_tickets.survey_sent_at` (one survey per
+ticket without matching message text). 19's merge fixes passed (claim released on a skipped mail, English fallback for every
+message, generator skips); its follow-up `wf_1190055c-492` fixes the template contract text, one transaction for abandon and
+release, unusable carriers and the 20 000 sentinel. 18 still building (`wf_13a23d14-575`).
+
 **17:10 state:** **12b merged** (`320404c`, B174; console live routes 225, frontend `7e37ac8`). 19 passed review, merged main
 (`b581211`) and its merge-fix run `wf_de932880-b27` handles the recovery mark on a skipped mail, the English template fallback,
 the page generator's skips and the funnel edge. 17 merged main (`5e8e38d`, migration now `0016_support_tickets`) and its
