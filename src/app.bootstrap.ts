@@ -9,6 +9,7 @@ import { ProblemExceptionFilter } from './common/errors';
 import { registerMultipartBodies } from './common/multipart';
 import { RequestPipeline } from './common/pipeline';
 import { registerRawBodyCapture } from './common/raw-body';
+import { registerRaisedBodyLimits } from './common/route-body-limits';
 import { REQUEST_ID_HEADER, resolveRequestId, runWithRequestId } from './common/request-id';
 import type { AppConfig, TrustProxy } from './config';
 import { registerAccessLog } from './infra/logging';
@@ -168,6 +169,8 @@ export async function configureApp(app: NestFastifyApplication, config: AppConfi
   registerRawBodyCapture(fastify);
   // Uploads and multipart Dhru calls (B157, decision 026): parsed before the guards on the three routes that take them.
   registerMultipartBodies(fastify);
+  // The Dhru endpoint reads a form body up to the upload size (a file order's FILEDATA, B166); every other route keeps the general limit.
+  registerRaisedBodyLimits(fastify, config.http.bodyLimitBytes);
   // After CORS, the request id, cookies and helmet (they are onRequest hooks too, and Fastify runs hooks in the order they were
   // added): a refusal then carries the CORS and security headers. The modules register their stage in onModuleInit.
   app.get(RequestPipeline).install(fastify);

@@ -248,7 +248,8 @@ Scheduled housekeeping: group promotion, data retention, integrity checks, FX re
 - **Concurrency:** 2 per worker process.
 - **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly, and `refund.process`, event-driven (money module, below), `checkout_recovery_sweep`, every 5 minutes (customers module, below), `service_price_scan`, event-driven (catalog module, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below). The others are built by their features, each
   registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
-  `ledger_integrity` (12b, nightly 02:30 UTC, below), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). `data_retention`
+  `ledger_integrity` (12b, nightly 02:30 UTC, below), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). `idempotency_purge` (daily 04:10 UTC,
+orders module, below) is built. `data_retention`
   (nightly 03:00 UTC, risk module, below) is built. The names are the
   console's job names (`GET /admin/system/jobs`, which lists only the jobs that write `job_runs`: `ip_rule_hits_flush` does not, so it is not listed and a manual run of it is 404). `data_retention` erases `imei_checks` older than `imeiRetentionDays` by
   setting `imei_enc`, `imei_hash` and `cached_until` to NULL together (no marker column; the wire then shows the TAC followed
@@ -262,7 +263,8 @@ Scheduled housekeeping: group promotion, data retention, integrity checks, FX re
 - **Retry policy:** 3 attempts, exponential backoff from 1 min (jitter 50 %); each attempt of a scheduled run is its own
   `job_runs` row. A manual run is one row: a retry after it failed ends the job as failed (`UnrecoverableError`), a retry
   after it succeeded returns it unchanged.
-- **Schedule:** `ip-rule-hits-flush` every minute (`src/modules/identity/security/ip-rules/ip-rule-hits-flush.module.ts`);
+- **Schedule:** `idempotency-purge` at 04:10 UTC (`src/modules/orders/jobs/idempotency-purge.module.ts`);
+  `ip-rule-hits-flush` every minute (`src/modules/identity/security/ip-rules/ip-rule-hits-flush.module.ts`);
   `session-purge` at 03:15 UTC (`src/modules/identity/jobs/session-purge.module.ts`);
   `client-group-promotion` at 03:30 UTC (`src/modules/identity/jobs/group-promotion.module.ts`);
   `payment-auto-credit` every minute (`src/modules/money/jobs/payment-auto-credit.module.ts`); `fx-refresh` every hour at minute 0
@@ -270,6 +272,18 @@ Scheduled housekeeping: group promotion, data retention, integrity checks, FX re
   (`src/modules/customers/checkout-recovery.module.ts`); the health jobs in
   `src/modules/health/jobs/health-jobs.module.ts`; the others are registered with `JobSchedulerRegistry` by the owning
   features.
+
+### Idempotency purge (orders module, `src/modules/orders/jobs/`)
+
+- **`idempotency_purge`** (daily 04:10 UTC, scheduler `idempotency-purge`, `IdempotencyPurge`; P4a, MISMATCHES B166): a REST v1 `Idempotency-Key` is remembered
+  for 7 days (`IDEMPOTENCY_WINDOW_DAYS`). The job takes the cutoff `clock now - 7 days` and (1) sets `orders.idempotency_key` to NULL on the orders
+  placed before it (`placed_at`), then (2) deletes the `idempotency_keys` rows created before it (`created_at`, written from the clock by the
+  placement), each in batches of 1000 rows per statement until a batch comes back short. The orders are cleared first so a request that arrives
+  between the steps still finds its stored answer (a replay) instead of meeting the old order's unique index; afterwards the key is free again for that
+  merchant (a new order, not a replay). The window does not wait for this job: `IdempotencyStore.run` forgets an expired key itself when a
+  request meets it (same cutoff, same strict `<`), so the job only cleans the keys nobody sends again. `updated_at` of the orders is left alone. Payload: none (a manual run carries `{ runId }`).
+  Idempotent: a cleared or deleted row is not matched again, a parallel run finds fewer rows. Recorded in `job_runs` (`processed` = answers deleted plus
+  order keys cleared, `result` = `{ answers, orderKeys }`). Indexes: `idempotency_keys_created_idx`, `orders_idempotency_placed_idx` (partial, keyed orders only).
 
 ### Data retention (risk module, `src/modules/risk/jobs/`)
 

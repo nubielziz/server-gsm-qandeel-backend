@@ -16,7 +16,9 @@ Status: accepted, 2026-10-31.
 - Large bodies before authentication (amended 2026-11-07, feature 7a review): a multipart body or one declaring more than
   1 MiB on Dhru, REST v1 or the merchant portal is buffered and parsed (up to 25 MiB, B157) before its credentials are read,
   so it is also counted per client IP in the pipeline's limit stage (limiter `upload`, 20 a minute) before the body is read;
-  other Dhru and REST v1 calls stay on their per-key limit only.
+  other Dhru and REST v1 calls stay on their per-key limit only. Amended 2026-11-08 (P4a, B166): the Dhru endpoint reads a form body
+  up to the upload size (`RAISED_BODY_LIMITS`, 25 MiB plus the form fields) so a file order's `FILEDATA` is not cut at 1 MiB; a chunked
+  form body without a length on that route is counted as large too. Every other route and the JSON body of the Dhru route keep 1 MiB.
 - A refusal is `429 RATE_LIMITED` problem+json with `Retry-After` (seconds), which the frontend reads.
 - Counters live on the cache instance: an evicted counter only loosens a limit briefly; nothing here is a source of
   truth.

@@ -4,9 +4,9 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
-import { DbService } from '../../../infra/db';
+import { DbService, isForeignKeyViolation } from '../../../infra/db';
 import { DEFAULT_MAX_OBJECT_BYTES, StorageService } from '../../../infra/storage';
-import { insertFile } from '../infra/file.repository';
+import { deleteUnreferencedClientFile, insertFile } from '../infra/file.repository';
 
 /** The largest file a merchant may upload: 25 MiB (B157). */
 export const MAX_UPLOAD_BYTES = DEFAULT_MAX_OBJECT_BYTES;
@@ -136,6 +136,38 @@ export class FileUploadService {
         this.logger.warn(`Could not remove the object of a file that was not recorded: ${String(cleanup)}`);
       });
       throw error;
+    }
+  }
+
+  /**
+   * Removes a file the caller stored a moment ago and no longer needs: its row and its object.
+   *
+   * Why: P4a (B166). The Dhru `placefileorder` stores the upload first and places the order second; when the placement is refused or rolled
+   * back (price changed, not enough credit, a duplicate) the file must not stay behind. Nothing is removed when anything still points at the
+   * file (an order, a KYC submission, a ticket message, a dispute: see {@link deleteUnreferencedClientFile}), when it is not the merchant's, or
+   * when it is already gone. It never throws: cleanup must not hide the refusal that caused it, and an object that could not be deleted is
+   * only logged (the row is gone, so the file can no longer be read or attached).
+   *
+   * Side effects: deletes one `files` row and its object.
+   *
+   * @param clientId the merchant who owns the file
+   * @param fileId the file's id
+   * @returns true when the file was removed
+   */
+  async discard(clientId: number, fileId: number): Promise<boolean> {
+    try {
+      const object = await deleteUnreferencedClientFile(this.db.db, clientId, fileId);
+      if (!object) return false;
+      await this.storage.delete(object.key).catch((cleanup: unknown) => {
+        this.logger.warn(`Could not remove the object of discarded file ${fileId}: ${String(cleanup)}`);
+      });
+      return true;
+    } catch (error) {
+      // A row with a foreign key still points at the file: it is in use, keep it.
+      if (!isForeignKeyViolation(error)) {
+        this.logger.warn(`Could not discard file ${fileId} of merchant ${clientId}: ${String(error)}`);
+      }
+      return false;
     }
   }
 }

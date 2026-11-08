@@ -37,8 +37,8 @@ const received = (orderId: number) => ({ MESSAGE: 'Order received' as const, REF
  * An IMEI service is placed with `placeimeiorder` and a File service with `placefileorder`: the wrong action is refused with a message that
  * names the right one.
  *
- * Side effects: the writes of `OrderPlacement.place` per placement; `placefileorder` stores the file first (object storage and `files`);
- * it binds its six actions to the Dhru gateway at start. No audit row (machine calls of a merchant write none, B121).
+ * Side effects: the writes of `OrderPlacement.place` per placement; `placefileorder` stores the file first (object storage and `files`) and
+ * removes it again when the placement fails; it binds its six actions to the Dhru gateway at start. No audit row (machine calls of a merchant write none, B121).
  *
  * @see docs/decisions/026-dhru-compatibility.md
  */
@@ -82,7 +82,8 @@ export class DhruOrders implements OnModuleInit {
   }
 
   /**
-   * Places a File service order: the file is stored first, then ordered like any other.
+   * Places a File service order: the file is stored first, then ordered like any other; when the order is refused or rolled back, the
+   * stored file (object and `files` row) is removed again, so a refusal leaves nothing (B166).
    *
    * @param call the merchant, the key, the parameters and the files of the request
    * @returns the success entry with the order id as `REFERENCEID`
@@ -107,7 +108,13 @@ export class DhruOrders implements OnModuleInit {
       throw new AppError('VALIDATION_FAILED', { detail: 'Send the file as FILEDATA (base64) or as a file part.' });
     }
     const file = await this.uploads.upload(call.caller.clientId, upload);
-    return received(await this.place(call, params.ID, params.QNT, { imei: undefined, inputs }, file.id));
+    try {
+      return received(await this.place(call, params.ID, params.QNT, { imei: undefined, inputs }, file.id));
+    } catch (error) {
+      // B166: a refused or rolled-back order leaves no file. The id has been returned to nobody; `discard` also keeps a file that anything points at.
+      await this.uploads.discard(call.caller.clientId, file.id);
+      throw error;
+    }
   }
 
   /** Places one order in its own transaction. */

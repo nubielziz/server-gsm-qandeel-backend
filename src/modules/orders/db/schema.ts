@@ -155,7 +155,7 @@ export const orders = pgTable(
     adminNote: text(),
     /** requested when the buyer asks for verification, then accepted or refunded by staff; null when none */
     verificationStatus: text().$type<OrderVerificationStatus>(),
-    /** REST v1 Idempotency-Key, unique per merchant (decision 026) */
+    /** REST v1 Idempotency-Key, unique per merchant (decision 026); cleared once the order is older than the 7-day window (by the placement that meets the key, or by `idempotency_purge`) */
     idempotencyKey: text(),
     /** keyed hash of merchant, service and IMEI for the open-duplicate rule */
     fingerprint: text(),
@@ -182,6 +182,10 @@ export const orders = pgTable(
       'orders_verification_status_check',
       sql`${t.verificationStatus} is null or ${inList(t.verificationStatus, ORDER_VERIFICATION_STATUSES)}`,
     ),
+    // The daily `idempotency_purge` finds the keyed orders older than the window without scanning the table (P4a, B166).
+    index('orders_idempotency_placed_idx')
+      .on(t.placedAt)
+      .where(sql`${t.idempotencyKey} is not null`),
     index('orders_client_created_idx').on(t.clientId, t.createdAt.desc()),
     index('orders_customer_created_idx').on(t.customerId, t.createdAt.desc()),
     index('orders_service_id_idx').on(t.serviceId),
@@ -277,7 +281,8 @@ export type IdempotencyScope = (typeof IDEMPOTENCY_SCOPES)[number];
  * Why: decision 026 and brief 7a: the first result is stored with the key in Postgres, in the placement's own transaction, and replayed
  * for the same request; a different request with the same key is `409 IDEMPOTENCY_KEY_REUSED`. The row exists only when the placement
  * committed, so a refused or rolled-back attempt leaves nothing and the same key may be tried again. The key is unique per merchant and
- * remembered for as long as its row lives (the unique index of `orders.idempotency_key` says the same for a single order). Not one of
+ * remembered for 7 days (`IDEMPOTENCY_WINDOW_DAYS`): a placement that meets an older row deletes it and clears the order's key, and the daily
+ * job `idempotency_purge` does the same for keys nobody sends again (B166, P4a), so the key is free again. Not one of
  * the map's 66 tables: MISMATCHES B116 note (the backend's additions); the map's `idempotencyKey` rows describe only the header.
  */
 export const idempotencyKeys = pgTable(
@@ -299,6 +304,8 @@ export const idempotencyKeys = pgTable(
   },
   (t) => [
     unique('idempotency_keys_client_key_uq').on(t.clientId, t.key),
+    // The daily `idempotency_purge` deletes the rows older than the window (P4a, B166).
+    index('idempotency_keys_created_idx').on(t.createdAt),
     check('idempotency_keys_scope_check', inList(t.scope, IDEMPOTENCY_SCOPES)),
   ],
 );

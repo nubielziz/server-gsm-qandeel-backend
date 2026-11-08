@@ -134,6 +134,13 @@
       "when": 1794149345807,
       "tag": "0018_refund_declined_template",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794156476979,
+      "tag": "0019_idempotency_purge_indexes",
+      "breakpoints": true
     }
   ]
 }

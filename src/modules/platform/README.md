@@ -223,6 +223,19 @@ again. The answer is `201 { id, filename, size, mime, sha256, createdAt }`; the 
 submission or a receipt (features 8 and 17, B161, B163). `GET /v1/files/:id` (scope `orders:read`) redirects like the other downloads and
 is the merchant's own files only (`404` for anything else). No audit row for a merchant's upload (B121).
 
+`FileUploadService.discard(clientId, fileId)` (P4a, MISMATCHES B166) takes a file back that the caller stored a moment ago and no longer
+needs. It deletes the merchant's `files` row (`owner_type client`, `owner_id` the merchant) and then its object, and answers `true` once
+the row is removed (an object that then fails to delete is only logged). It keeps a file that another record points at, and answers `false` for it, for another merchant's file and
+for a file that is already gone. It never throws: a cleanup must not hide the refusal that caused it, and an object that could not be
+deleted is only logged (the row is gone, so the file can no longer be read or attached). "Another record points at it" covers every kind
+of reference. The foreign keys (an order's input or result file, an invoice PDF, a payment receipt, a data request, a storefront image)
+make the delete fail with `23503`, which `discard` reads as "in use". The three tables that keep file ids in an array, which the
+database cannot enforce (`kyc_submissions.file_ids`, `ticket_messages.file_ids`, `disputes.evidence_file_ids`), are checked in the same
+`delete` statement. Only the Dhru `placefileorder` of the orders module calls it (see the orders README). DEVIATION of decision 016, the
+same kind as `ownsOrderFile`: `deleteUnreferencedClientFile` in `infra/file.repository.ts` reads tables of other modules (identity's
+`kyc_submissions`, support's `ticket_messages`, money's `disputes`) because platform imports no module (decision 032); this one statement is
+the only place that names them. Replace its body when those modules export a reader.
+
 ## OpenAPI: the Dhru reference (feature 7a, decision 017)
 
 `describeDhruActions` (`docs/dhru-reference.ts`) writes the eight action contracts of the Dhru registry (`src/common/dhru`) into the Dhru

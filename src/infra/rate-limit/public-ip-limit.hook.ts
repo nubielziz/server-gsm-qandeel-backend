@@ -5,6 +5,7 @@ import type { FastifyRequest } from 'fastify';
 import { contractRegistry } from '../../common/contract';
 import { ipRateLimitKey, parseIpAddress } from '../../common/ip-address';
 import { RequestPipeline, requestPath } from '../../common/pipeline';
+import { RAISED_BODY_LIMITS, isFormContentType } from '../../common/route-body-limits';
 import { isLargeBody, publicLimiterFor } from './public-ip-limit';
 import { RateLimitService } from './rate-limit.service';
 
@@ -43,7 +44,14 @@ export class PublicIpLimitHook implements OnModuleInit {
     // Fastify answers HEAD from the GET route: it has the access of the GET contract (a HEAD flood must not dodge `token`).
     const method = request.method === 'HEAD' ? 'GET' : request.method;
     const access = template ? contractRegistry.get(`${method} ${template}`)?.access : undefined;
-    const largeBody = isLargeBody(request.headers['content-type'], request.headers['content-length']);
+    const contentType = request.headers['content-type'];
+    // A chunked form body on a route with a raised limit (Dhru, B166) is read up to that limit although it declares no length.
+    const unboundedForm =
+      template !== undefined &&
+      RAISED_BODY_LIMITS.has(template) &&
+      request.headers['transfer-encoding'] !== undefined &&
+      isFormContentType(contentType);
+    const largeBody = isLargeBody(contentType, request.headers['content-length'], unboundedForm);
     const limiter = publicLimiterFor(requestPath(request), access, largeBody);
     if (!limiter) return;
     await this.limits.enforce(limiter, ipRateLimitKey(parseIpAddress(request.ip)));

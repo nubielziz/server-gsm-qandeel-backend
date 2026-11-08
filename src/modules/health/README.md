@@ -16,6 +16,14 @@ the 14 routes of the Alerts & incidents and Integrity tabs: `/admin/alert-rules*
 check (queue `maintenance`, nightly 02:30 UTC and on demand). The alert messages go through the platform's notifications (feature 12a): see "Alert messages"
 below. Not yet: the `gateway:<id>` checks (feature 8).
 
+An idle supplier (P4a, B168): a supplier with no calls in the last 15 minutes gets an `unknown` check from the component checker, and
+System health says `unknown` for it everywhere (component status, the overall status, `GET /admin/system/suppliers`, the check
+history), never degraded or down; its attention list raises `supplier_down` or `supplier_degraded` only from a real check. The
+Dashboard's supplier row reads `unknown` for it (B180, RESOLUTIONS identity-platform-9 amended): a supplier with no check yet or whose
+latest check is `unknown` is idle, neither healthy nor failing, and the console shows it as a neutral "No recent calls" badge (its
+M260); `up`, `degraded` and `down` come only from real results (`dashboardHealth` in `dashboard/attention.ts`). `GET /admin/suppliers`
+keeps its own mapping (RESOLUTIONS orders-suppliers-5).
+
 Layout of the admin part (`HealthAdminModule`, API process; `HealthJobsModule`, worker process):
 
 | Folder | What it holds |

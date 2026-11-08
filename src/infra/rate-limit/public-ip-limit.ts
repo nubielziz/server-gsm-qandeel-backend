@@ -56,7 +56,7 @@ export function publicLimiterFor(
   }
 }
 
-/** A body above this many bytes is a large body for {@link publicLimiterFor} (the JSON and form limit is 1 MiB). */
+/** A body above this many bytes is a large body for {@link publicLimiterFor} (the general JSON and form limit is 1 MiB). */
 export const LARGE_BODY_BYTES = 1024 * 1024;
 
 /**
@@ -64,12 +64,18 @@ export const LARGE_BODY_BYTES = 1024 * 1024;
  *
  * @param contentType the `Content-Type` header
  * @param contentLength the `Content-Length` header
- * @returns true for `multipart/form-data` or a declared length over {@link LARGE_BODY_BYTES} (or one that is not a number); a
- *   body without a length is read under the 1 MiB JSON and form limit, so it is not large
+ * @param unboundedForm true for a form body without a length (chunked) on a route whose form limit is raised above 1 MiB
+ *   (`RAISED_BODY_LIMITS`, the Dhru endpoint), which is read up to that limit although it declares nothing
+ * @returns true for `multipart/form-data`, a declared length over {@link LARGE_BODY_BYTES} (or one that is not a number) or an
+ *   `unboundedForm`; any other body without a length is read under the 1 MiB JSON and form limit, so it is not large
  */
-export function isLargeBody(contentType: string | undefined, contentLength: string | undefined): boolean {
+export function isLargeBody(
+  contentType: string | undefined,
+  contentLength: string | undefined,
+  unboundedForm = false,
+): boolean {
   if ((contentType ?? '').toLowerCase().startsWith('multipart/form-data')) return true;
-  if (contentLength === undefined) return false;
+  if (contentLength === undefined) return unboundedForm;
   const length = Number(contentLength);
   return !Number.isFinite(length) || length > LARGE_BODY_BYTES;
 }

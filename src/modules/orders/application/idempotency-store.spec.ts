@@ -1,11 +1,12 @@
 // Unit tests of what an Idempotency-Key stands for (ALIGNMENT § 7): the hash of the scope and the body is equal for two spellings of one
 // request and different for any other. The replay and the locking are integration tests (test/integration/rest-v1-idempotency.test.ts).
 import { describe, expect, it } from 'bun:test';
+import type { Clock } from '../../../common/clock';
 import type { TokenService } from '../../../infra/crypto';
 import { IdempotencyStore } from './idempotency-store';
 
 // The store hashes through the token service; an identity "hash" lets the tests read the canonical text.
-const store = new IdempotencyStore({ hash: (text: string) => text } as unknown as TokenService);
+const store = new IdempotencyStore({ hash: (text: string) => text } as unknown as TokenService, {} as Clock);
 
 describe('IdempotencyStore.hashOf', () => {
   it('is equal for two spellings of one body: the order of keys, at any depth, does not matter', () => {

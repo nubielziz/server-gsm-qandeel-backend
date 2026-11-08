@@ -48,6 +48,12 @@ describe('publicLimiterFor', () => {
     expect(isLargeBody(undefined, undefined)).toBe(false);
   });
 
+  it('calls a form body without a length large on a route with a raised form limit (the Dhru endpoint), and no other body', () => {
+    expect(isLargeBody('application/x-www-form-urlencoded', undefined, true)).toBe(true);
+    // A body that declares a small length is bounded by it, whatever the route.
+    expect(isLargeBody('application/x-www-form-urlencoded', '100', true)).toBe(false);
+  });
+
   it('leaves REST v1, Dhru, webhooks and the system routes to their own limits', () => {
     const accesses: Array<AccessKind | undefined> = [
       'public',

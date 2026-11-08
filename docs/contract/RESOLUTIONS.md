@@ -79,7 +79,7 @@ change or a user answer.
 
 ### identity-platform-9 · `GET /admin/dashboard` · features 9
 
-**Decision.** suppliers[].health is mapped from the supplier's latest service_checks row (component 'supplier', supplier_id): ok→'up', degraded→'degraded', down→'down', and unknown or no check yet→'degraded'. 'unknown' is never shown as healthy and is never sent as an unknown word. The attention items supplier_down and supplier_degraded fire only from a real down/degraded check result, never from unknown or no check, so a new supplier does not raise a false high alert. Feature 9 adds a contract test for the four mappings.
+**Decision.** suppliers[].health is mapped from the supplier's latest service_checks row (component 'supplier', supplier_id): ok→'up', degraded→'degraded', down→'down', and unknown or no check yet→'unknown' (an idle supplier). 'unknown' is never shown as healthy; the console shows it as a neutral "No recent calls" (amended by B180: 'degraded' flagged every idle supplier, B168). The attention items supplier_down and supplier_degraded fire only from a real down/degraded check result, never from unknown or no check, so a new supplier does not raise a false high alert. Feature 9 adds a contract test for the four mappings.
 
 **Basis.** Frontend wins the wire (health 'up'|'degraded'|'down'); health CHECK_STATUSES ok|degraded|down|unknown; the instruction to map rather than send an unknown word.
 

@@ -1,6 +1,7 @@
 // Unit tests of the dashboard attention rules: the four supplier health mappings, which checks raise an item, the fixed severity of
 // each kind (RULES dashboard 3) and the ranking.
 import { describe, expect, it } from 'bun:test';
+import { CHECK_STATUSES } from '../db/schema';
 import {
   ATTENTION_SEVERITY,
   DISPUTE_DUE_SOON_MS,
@@ -10,13 +11,21 @@ import {
   supplierAttentionKind,
 } from './attention';
 
-describe('dashboardHealth (identity-platform-8)', () => {
-  it('maps ok to up, degraded to degraded, down to down, and unknown or no check to degraded', () => {
+describe('dashboardHealth (B168, B180)', () => {
+  it('reads ok as up and an idle supplier as unknown: an unknown check (no calls in the window) and no check at all', () => {
     expect(dashboardHealth('ok')).toBe('up');
+    expect(dashboardHealth('unknown')).toBe('unknown');
+    expect(dashboardHealth(null)).toBe('unknown');
+  });
+
+  it('keeps degraded and down for a real check result', () => {
     expect(dashboardHealth('degraded')).toBe('degraded');
     expect(dashboardHealth('down')).toBe('down');
-    expect(dashboardHealth('unknown')).toBe('degraded');
-    expect(dashboardHealth(null)).toBe('degraded');
+  });
+
+  it('only ever sends a word the console knows (its SupplierHealth.health is up, degraded, down or unknown, M260)', () => {
+    const consoleWords = ['up', 'degraded', 'down', 'unknown'];
+    for (const status of [...CHECK_STATUSES, null]) expect(consoleWords).toContain(dashboardHealth(status));
   });
 });
 

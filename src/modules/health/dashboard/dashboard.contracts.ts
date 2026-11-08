@@ -138,7 +138,7 @@ const Dashboard = z.object({
       id: zId,
       name: z.string(),
       enabled: z.boolean(),
-      health: z.enum(['up', 'degraded', 'down']),
+      health: z.enum(['up', 'degraded', 'down', 'unknown']),
       successRate1h: z.number().nullable(),
       p50Ms: z.number().nullable(),
       balance: zMoney,
@@ -196,7 +196,7 @@ export const getDashboard = defineRoute({
     'One object, every section from one snapshot, cached about 15 seconds per (`scope`, `days`) (the sidebar reads it every minute for its counts). `scope` is `all`, `b2b` (merchants) or `b2c` (the storefront); `days` is 1, 7 or 14. ' +
     '`stats` covers orders created in the rolling window; `previous` is the window of the same length before it, or `null` when it had no order. `attention` is every item ranked critical, high, medium, low (stable): ' +
     '`supplier_down` and `supplier_degraded` come only from a real down or degraded check, never from an unknown or missing one, and supplier items only for active suppliers. Each kind has its own fixed severity (RULES dashboard 3): `disputes_due` counts every dispute that needs a response and is critical when the first is due within 3 days; `orders_review` counts merchant orders only (a held storefront order is `orders_held`); `fx_stale` uses the currencies page rule (older than 24 hours). `queues` has one row per service type; `pastSla` is the one age-only rule shared with `GET /admin/orders?pastSla=true`. ' +
-    '`suppliers` maps the latest check to `up`, `degraded`, `down`, and an unknown or missing check to `degraded`. `services_below_floor` is judged on the effective cost (user rule 9). Money is USD as a 4-decimal string; ' +
+    '`suppliers` maps the latest check to `up`, `degraded`, `down`; a supplier with no check or no recent calls (an `unknown` check) is idle, neither healthy nor failing, and reads `unknown` (B180; the console shows "No recent calls"). `services_below_floor` is judged on the effective cost (user rule 9). Money is USD as a 4-decimal string; ' +
     "payments, refunds and disputes convert per row at the checkout's locked rate or the current currency rate and the sum is rounded once. `storefront` and `topCustomers` are `null` for `b2b`, `revenueByChannel` is `null` unless `scope=all`; " +
     "`storefront` always covers the last 30 days and its funnel is the customers module's `storefrontFunnel(30)`.",
   tags: ['dashboard'],

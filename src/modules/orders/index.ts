@@ -59,6 +59,11 @@ export type {
 } from './application/order-supplier-moves';
 export type { PollCandidate, SupplierOrderCounts, SupplierOrderUsage } from './infra/order-supplier.repository';
 export { OrdersOutboxModule } from './orders-outbox.module';
+export { IdempotencyPurge, IDEMPOTENCY_PURGE_BATCH_SIZE } from './jobs/idempotency-purge';
+export type { IdempotencyPurgeCount } from './jobs/idempotency-purge';
+export { IdempotencyPurgeModule, IDEMPOTENCY_PURGE_SCHEDULER } from './jobs/idempotency-purge.module';
+export { IDEMPOTENCY_PURGE_JOB, IdempotencyPurgeProcessor } from './jobs/idempotency-purge.processor';
+export { IDEMPOTENCY_WINDOW_DAYS } from './domain/idempotency-window';
 export { OrdersEngineModule } from './orders-engine.module';
 export { OrdersAdminModule } from './orders-admin.module';
 export { OrderTrackingModule } from './order-tracking.module';

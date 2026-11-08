@@ -1,0 +1,2 @@
+CREATE INDEX "idempotency_keys_created_idx" ON "idempotency_keys" USING btree ("created_at");--> statement-breakpoint
+CREATE INDEX "orders_idempotency_placed_idx" ON "orders" USING btree ("placed_at") WHERE "orders"."idempotency_key" is not null;

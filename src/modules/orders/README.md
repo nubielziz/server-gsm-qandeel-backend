@@ -144,7 +144,14 @@ are ISO with milliseconds, ids are numbers, lists are simple-rest with `x-total-
   scope and request hash (keyed hash of the canonical body: key order does not matter) replays the stored status and body with
   `Idempotency-Replayed: true` and posts nothing (not even when the wallet is empty or the service is off by then); another body or the
   other route is `409 IDEMPOTENCY_KEY_REUSED`. A refusal stores nothing, so the key may be tried again. Keys are per merchant and are
-  kept for as long as the row lives (no expiry job yet). A single placement also keeps the key on `orders.idempotency_key`.
+  remembered for 7 days (`domain/idempotency-window.ts`, B166, P4a): the answer's `created_at` is the clock's time, and the daily job
+  `idempotency_purge` (`jobs/`, 04:10 UTC, see "Jobs and schedules") deletes the answers older than the window and clears
+  `orders.idempotency_key` of the orders placed before it, so the key is free again (a new order, not a replay). The window is exact: when
+  `IdempotencyStore.run` finds a stored answer older than the window (`idempotencyCutoff`, the same strict `<` as the job) it deletes that
+  row and clears `orders.idempotency_key` for that merchant and key in the same transaction, then carries on as a first request, whatever
+  the new body or route is. So an old key never replays, or answers `409 IDEMPOTENCY_KEY_REUSED`, between the window and the next 04:10
+  run; the job is only the cleanup of keys nobody sends again. A single placement also
+  keeps the key on `orders.idempotency_key`; a bulk of several orders keeps it only on the stored answer.
 - **Bulk over REST v1**: each item is placed inside a savepoint of one transaction, in the order sent, drawing on one wallet: a refused
   item (`INSUFFICIENT_FUNDS`, `PRICE_CHANGED`, `DUPLICATE_ORDER`, `INVALID_IMEI`, ...) undoes only itself and is answered in its place as
   `{ index, ok: false, error: { code, status, title, detail, errors?, listedPrice?, currentPrice?, orderId? } }`; the answer is `200` even
@@ -158,10 +165,19 @@ are ISO with milliseconds, ids are numbers, lists are simple-rest with `x-total-
   REFERENCEID }`, our order id as text), `placeimeiorderbulk` (one entry per caller request id, items placed one after the other, each
   in its own transaction), `getimeiorder` and `getimeiorderbulk` (`STATUS` 0 new, 1 in process, 3 rejected, 4 completed, `CODE` the result
   or reason, `""` while it runs; another merchant's order is `Order not found`), `placefileorder` (`FILENAME` + base64 `FILEDATA`, or a file
-  part of a multipart call; stored through platform's `FileUploadService`; an IMEI service in `placefileorder` and a File service in
-  `placeimeiorder` are refused naming the right action) and `getfileorder` (adds `FILEID` when staff attached a result file). Dhru has
+  part of a multipart call; stored through platform's `FileUploadService`; when the order is then refused or rolled back (changed price,
+  not enough credits, a duplicate) the stored object and its `files` row are removed again by `FileUploadService.discard`, which keeps any
+  file something still points at (B166, P4a; platform README "File uploads"); an IMEI service in `placefileorder` and a File service in
+  `placeimeiorder` are refused naming the right action; the form body of this route may be up to the multipart size, 25 MiB plus the form
+  fields (`src/common/route-body-limits.ts`), about 13 MiB of file as `FILEDATA` because the file is base64 inside the base64 `parameters`;
+  a larger file, up to 25 MiB, goes as a multipart file part; every other route and the JSON body of this one keep 1 MiB) and `getfileorder` (adds `FILEID` when staff attached a result file). Dhru has
   no idempotency field: a repeated placement is stopped by the duplicate rule. Money's `accountinfo` and catalog's `imeiservicelist` are
   bound to the same gateway by their modules.
+- **A refused file order and its file (B166, P4a).** Only the Dhru `placefileorder` discards its file, because it carries the file inside the
+  request: the upload is stored first and the caller never learns its id, so nobody could reuse it. REST v1 (`POST /v1/orders`) and portal
+  (`POST /client/orders`) file orders need no cleanup on a refusal: they point at a file the merchant uploaded separately (`POST /v1/files`,
+  `POST /client/files`) and sent as `fileId`. The refusal leaves that file in place on purpose, so the merchant can fix the cause (price,
+  funds) and retry with the same `fileId`; removing it would break the retry.
 - A multipart placement during maintenance is refused by the pipeline too: `registerMultipartBodies` (`src/common/multipart.ts`) parses
   the three multipart routes before the guards, so the maintenance stage sees the Dhru `action`.
 
@@ -307,7 +323,9 @@ Outgoing webhook events from the map (documented as OpenAPI `webhooks` once defi
 
 ## Jobs and schedules
 
-None in this feature. The dispatch job (`supplier-dispatch`) and the poll jobs (`supplier-poll`) are feature 6 (suppliers module); the
+`idempotency_purge` (P4a, `jobs/idempotency-purge*.ts`, `IdempotencyPurgeModule`, worker only): daily at 04:10 UTC on the `maintenance` queue,
+recorded in `job_runs`; it forgets REST v1 Idempotency-Keys older than 7 days (clears `orders.idempotency_key`, deletes the stored answers,
+1000 rows per statement). The dispatch job (`supplier-dispatch`) and the poll jobs (`supplier-poll`) are feature 6 (suppliers module); the
 webhook deliveries (`merchant-webhooks`) are 7b. See `docs/queues.md`.
 
 ## Cache keys
@@ -328,7 +346,7 @@ A bulk apply also writes `applied bulk reply to` (label `N of M orders`) and an 
 Unit: the machine, main input, placement rules, bulk reply, CSV, timeline lines, views, outbox, the Dhru contracts, the idempotency
 hash. Integration (`test/integration/`): `client-orders-placement`, `client-orders`, `orders-read`, `orders-actions`, `orders-b2c-actions`,
 `orders-bulk-reply`, `orders-export`, `orders-client-stats`, `orders-seed`, `files`, and (7a) `dhru-surface`, `rest-v1`,
-`rest-v1-idempotency`, `files-upload`. The Dhru fixtures (one request/response record per action, checked on keys and types):
+`rest-v1-idempotency`, `files-upload`, and (P4a) `idempotency-purge`, `file-order-cleanup`, `dhru-file-body`. The Dhru fixtures (one request/response record per action, checked on keys and types):
 `test/dhru/`. Scenarios `success`, `reject`, `timeout` and `manual` (`test/scenarios/`) include the merchant's Dhru calls
 (`placeimeiorder`, `getimeiorder`).
 

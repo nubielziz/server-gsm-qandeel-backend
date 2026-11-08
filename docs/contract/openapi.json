@@ -44221,7 +44221,7 @@
     },
     "/admin/dashboard": {
       "get": {
-        "description": "One object, every section from one snapshot, cached about 15 seconds per (`scope`, `days`) (the sidebar reads it every minute for its counts). `scope` is `all`, `b2b` (merchants) or `b2c` (the storefront); `days` is 1, 7 or 14. `stats` covers orders created in the rolling window; `previous` is the window of the same length before it, or `null` when it had no order. `attention` is every item ranked critical, high, medium, low (stable): `supplier_down` and `supplier_degraded` come only from a real down or degraded check, never from an unknown or missing one, and supplier items only for active suppliers. Each kind has its own fixed severity (RULES dashboard 3): `disputes_due` counts every dispute that needs a response and is critical when the first is due within 3 days; `orders_review` counts merchant orders only (a held storefront order is `orders_held`); `fx_stale` uses the currencies page rule (older than 24 hours). `queues` has one row per service type; `pastSla` is the one age-only rule shared with `GET /admin/orders?pastSla=true`. `suppliers` maps the latest check to `up`, `degraded`, `down`, and an unknown or missing check to `degraded`. `services_below_floor` is judged on the effective cost (user rule 9). Money is USD as a 4-decimal string; payments, refunds and disputes convert per row at the checkout's locked rate or the current currency rate and the sum is rounded once. `storefront` and `topCustomers` are `null` for `b2b`, `revenueByChannel` is `null` unless `scope=all`; `storefront` always covers the last 30 days and its funnel is the customers module's `storefrontFunnel(30)`.",
+        "description": "One object, every section from one snapshot, cached about 15 seconds per (`scope`, `days`) (the sidebar reads it every minute for its counts). `scope` is `all`, `b2b` (merchants) or `b2c` (the storefront); `days` is 1, 7 or 14. `stats` covers orders created in the rolling window; `previous` is the window of the same length before it, or `null` when it had no order. `attention` is every item ranked critical, high, medium, low (stable): `supplier_down` and `supplier_degraded` come only from a real down or degraded check, never from an unknown or missing one, and supplier items only for active suppliers. Each kind has its own fixed severity (RULES dashboard 3): `disputes_due` counts every dispute that needs a response and is critical when the first is due within 3 days; `orders_review` counts merchant orders only (a held storefront order is `orders_held`); `fx_stale` uses the currencies page rule (older than 24 hours). `queues` has one row per service type; `pastSla` is the one age-only rule shared with `GET /admin/orders?pastSla=true`. `suppliers` maps the latest check to `up`, `degraded`, `down`; a supplier with no check or no recent calls (an `unknown` check) is idle, neither healthy nor failing, and reads `unknown` (B180; the console shows \"No recent calls\"). `services_below_floor` is judged on the effective cost (user rule 9). Money is USD as a 4-decimal string; payments, refunds and disputes convert per row at the checkout's locked rate or the current currency rate and the sum is rounded once. `storefront` and `topCustomers` are `null` for `b2b`, `revenueByChannel` is `null` unless `scope=all`; `storefront` always covers the last 30 days and its funnel is the customers module's `storefrontFunnel(30)`.",
         "operationId": "getAdminDashboard",
         "parameters": [
           {
@@ -45321,7 +45321,8 @@
                             "enum": [
                               "up",
                               "degraded",
-                              "down"
+                              "down",
+                              "unknown"
                             ]
                           },
                           "successRate1h": {
@@ -158445,7 +158446,7 @@
                   {
                     "type": "object",
                     "title": "placefileorder",
-                    "description": "Place a file order. Orders a File service. The file is `FILENAME` and `FILEDATA` (base64) in `parameters`, or a file part of a `multipart/form-data` request; it is stored like `POST /v1/files` (up to 25 MiB). Everything else is as `placeimeiorder`. A service that is not a File service is refused.",
+                    "description": "Place a file order. Orders a File service. The file is `FILENAME` and `FILEDATA` (base64) in `parameters`, or a file part of a `multipart/form-data` request; it is stored like `POST /v1/files` (up to 25 MiB). A form body of this endpoint may be up to 25 MiB (every other route keeps 1 MiB); `FILEDATA` is base64 inside the base64 `parameters`, so about 13 MiB of file fits a form: send a larger file as a multipart file part. Everything else is as `placeimeiorder`. A service that is not a File service is refused. If the order is refused (changed price, not enough credits), the uploaded file is not kept.",
                     "required": [
                       "username",
                       "apiaccesskey",
@@ -200497,17 +200498,17 @@
         "x-gsm-surface": "v1"
       },
       "post": {
-        "description": "Orders a service at the merchant's own price (the one price resolver). The price is held from the wallet in the same transaction. An order that would cost more than the tolerance above the price the merchant last listed is refused with `409 PRICE_CHANGED` (`listedPrice` and `currentPrice` in the body: list the services again and order again), a smaller raise is charged and recorded. A second open order for the same service and input is refused under the service's `block_open` rule (`DUPLICATE_ORDER`). An IMEI service takes `imei` (15 digits, Luhn); a server or remote service takes `inputs`; a File service a `fileId` and/or `inputs`. The answer is immediate: the order is `pending` (or already `completed` when the service delivers from stock). Send an `Idempotency-Key` so that a retry never places a second order. Scope `orders:write`.",
+        "description": "Orders a service at the merchant's own price (the one price resolver). The price is held from the wallet in the same transaction. An order that would cost more than the tolerance above the price the merchant last listed is refused with `409 PRICE_CHANGED` (`listedPrice` and `currentPrice` in the body: list the services again and order again), a smaller raise is charged and recorded. A second open order for the same service and input is refused under the service's `block_open` rule (`DUPLICATE_ORDER`). An IMEI service takes `imei` (15 digits, Luhn); a server or remote service takes `inputs`; a File service a `fileId` and/or `inputs`. The answer is immediate: the order is `pending` (or already `completed` when the service delivers from stock). Send an `Idempotency-Key` so that a retry never places a second order; the answer is kept 7 days (a retry later than that places a new order). Scope `orders:write`.",
         "operationId": "postV1Orders",
         "parameters": [
           {
             "name": "idempotency-key",
             "in": "header",
-            "description": "Makes a retry safe: the first answer is stored with the key and sent again for the same request; another request with the key is `409 IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS`.",
+            "description": "Makes a retry safe: the first answer is stored with the key and sent again for the same request; another request with the key is `409 IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS`. The answer is kept 7 days from the first request; after that the stored answer is gone and the same key places a new order.",
             "required": false,
             "schema": {
               "type": "string",
-              "description": "Makes a retry safe: the first answer is stored with the key and sent again for the same request; another request with the key is `409 IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS`.",
+              "description": "Makes a retry safe: the first answer is stored with the key and sent again for the same request; another request with the key is `409 IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS`. The answer is kept 7 days from the first request; after that the stored answer is gone and the same key places a new order.",
               "minLength": 1,
               "maxLength": 255,
               "pattern": "^[\\x21-\\x7e]+$"
@@ -201893,17 +201894,17 @@
     },
     "/v1/orders/bulk": {
       "post": {
-        "description": "Places up to 100 orders in one request, each item exactly as `POST /v1/orders` would (the price, the price guard, the duplicate rule, the hold). The answer has one result per item, in the order sent: `ok: true` with the order, or `ok: false` with the refusal (`code`, `status`, `detail`, field `errors`, and `listedPrice` and `currentPrice` for a changed price). An item that is refused places nothing and never stops the others; the items draw on one wallet in the order sent, so a later item may be refused for lack of funds. The answer is `200` even when every item was refused. An `Idempotency-Key` stores the whole answer and replays it.",
+        "description": "Places up to 100 orders in one request, each item exactly as `POST /v1/orders` would (the price, the price guard, the duplicate rule, the hold). The answer has one result per item, in the order sent: `ok: true` with the order, or `ok: false` with the refusal (`code`, `status`, `detail`, field `errors`, and `listedPrice` and `currentPrice` for a changed price). An item that is refused places nothing and never stops the others; the items draw on one wallet in the order sent, so a later item may be refused for lack of funds. The answer is `200` even when every item was refused. An `Idempotency-Key` stores the whole answer and replays it for 7 days (after that the stored answer is gone and the same key places new orders).",
         "operationId": "postV1OrdersBulk",
         "parameters": [
           {
             "name": "idempotency-key",
             "in": "header",
-            "description": "Makes a retry safe: the first answer is stored with the key and sent again for the same request; another request with the key is `409 IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS`.",
+            "description": "Makes a retry safe: the first answer is stored with the key and sent again for the same request; another request with the key is `409 IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS`. The answer is kept 7 days from the first request; after that the stored answer is gone and the same key places a new order.",
             "required": false,
             "schema": {
               "type": "string",
-              "description": "Makes a retry safe: the first answer is stored with the key and sent again for the same request; another request with the key is `409 IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS`.",
+              "description": "Makes a retry safe: the first answer is stored with the key and sent again for the same request; another request with the key is `409 IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS`. The answer is kept 7 days from the first request; after that the stored answer is gone and the same key places a new order.",
               "minLength": 1,
               "maxLength": 255,
               "pattern": "^[\\x21-\\x7e]+$"

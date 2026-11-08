@@ -3,10 +3,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { schema as s } from '../../src/infra/db';
+import { IDEMPOTENCY_WINDOW_DAYS } from '../../src/modules/orders';
 import { MaintenanceService } from '../../src/modules/platform';
 import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches } from '../support/auth';
-import { TestClock } from '../support/clock';
+import { DAY, HOUR, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 import { type MachineCredentials, body, clearApiKeyCaches, credentialsFor, v1Client } from '../support/machine-orders';
 import { IMEIS, type OrdersWorld, ledgerOf, ordersWorld, outboxOf, walletOf } from '../support/orders';
@@ -241,5 +242,99 @@ describe('POST /v1/orders/bulk with an Idempotency-Key', () => {
     expect(new Set(done.map((res) => JSON.stringify(body(res)))).size).toBe(1);
     expect(await db.select().from(s.orders)).toHaveLength(2);
     expect(await walletOf(db, world.merchant.id)).toEqual({ wallet: '77.7200', hold: '22.2800' });
+  });
+});
+
+/** Finishes every order, so the duplicate rule (one open order per merchant, service and input) does not refuse a new one. */
+async function finishOrders(): Promise<void> {
+  const { db } = await testDb();
+  await db.update(s.orders).set({ status: 'completed', dispatchState: 'done', resultCode: 'Done' });
+}
+
+describe('the 7-day window is exact (no purge job run)', () => {
+  const window = IDEMPOTENCY_WINDOW_DAYS * DAY;
+
+  it('POST /v1/orders: at 7 days + 1 hour the same key places a new order, at 7 days - 1 hour it replays', async () => {
+    const { db } = await testDb();
+    const first = await place('aging');
+    expect(first.statusCode).toBe(201);
+    await finishOrders();
+    clock.advance(window - HOUR);
+    const young = await place('aging');
+    expect(young.statusCode).toBe(201);
+    expect(young.headers['idempotency-replayed']).toBe('true');
+    expect(body(young)).toEqual(body(first));
+    expect(await db.select().from(s.orders)).toHaveLength(1);
+
+    clock.advance(2 * HOUR);
+    const old = await place('aging');
+    expect(old.statusCode).toBe(201);
+    expect(old.headers['idempotency-replayed']).toBeUndefined();
+    expect(body(old).id).not.toBe(body(first).id);
+    const orders = await db.select().from(s.orders).orderBy(s.orders.id);
+    expect(orders.map((order) => order.idempotencyKey)).toEqual([null, 'aging']);
+    // The old row is replaced by the new answer, created now: the key replays again.
+    const [stored] = await db.select().from(s.idempotencyKeys);
+    expect(stored!.createdAt.getTime()).toBe(clock.nowMs());
+    expect((await place('aging')).headers['idempotency-replayed']).toBe('true');
+    expect(await db.select().from(s.orders)).toHaveLength(2);
+  });
+
+  it('keeps the key to the exact moment: at 7 days it still replays, a millisecond later it is free', async () => {
+    const first = await place('edge');
+    await finishOrders();
+    clock.advance(window);
+    const atEdge = await place('edge');
+    expect(atEdge.headers['idempotency-replayed']).toBe('true');
+    expect(body(atEdge)).toEqual(body(first));
+    clock.advance(1);
+    const after = await place('edge');
+    expect(after.statusCode).toBe(201);
+    expect(after.headers['idempotency-replayed']).toBeUndefined();
+    expect(body(after).id).not.toBe(body(first).id);
+  });
+
+  it('frees an expired key for any request: another body or the other route is a new request, not 409 IDEMPOTENCY_KEY_REUSED', async () => {
+    const { db } = await testDb();
+    expect((await place('free')).statusCode).toBe(201);
+    clock.advance(window + HOUR);
+    const other = await place('free', { imei: IMEIS[1] });
+    expect(other.statusCode).toBe(201);
+    expect(other.headers['idempotency-replayed']).toBeUndefined();
+    clock.advance(window + HOUR);
+    const asBulk = await bulk('free', [{ serviceId: world.auto.serviceId, imei: IMEIS[2] }]);
+    expect(asBulk.statusCode).toBe(200);
+    expect(asBulk.headers['idempotency-replayed']).toBeUndefined();
+    const stored = await db.select().from(s.idempotencyKeys);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ key: 'free', scope: 'bulk' });
+  });
+
+  it('POST /v1/orders/bulk: at 7 days + 1 hour the same key places new orders, at 7 days - 1 hour it replays', async () => {
+    const { db } = await testDb();
+    const items = [
+      { serviceId: world.auto.serviceId, imei: IMEIS[0] },
+      { serviceId: world.auto.serviceId, imei: IMEIS[1] },
+    ];
+    const first = await bulk('bulk-aging', items);
+    expect(first.statusCode).toBe(200);
+    await finishOrders();
+    clock.advance(window - HOUR);
+    const young = await bulk('bulk-aging', items);
+    expect(young.headers['idempotency-replayed']).toBe('true');
+    expect(body(young)).toEqual(body(first));
+    expect(await db.select().from(s.orders)).toHaveLength(2);
+
+    clock.advance(2 * HOUR);
+    const old = await bulk('bulk-aging', items);
+    expect(old.statusCode).toBe(200);
+    expect(old.headers['idempotency-replayed']).toBeUndefined();
+    const ids = (answer: Awaited<ReturnType<typeof bulk>>) =>
+      body(answer).results.map((result: { order: { id: number } }) => result.order.id);
+    expect(ids(old)).toHaveLength(2);
+    expect(ids(old).filter((id: number) => ids(first).includes(id))).toEqual([]);
+    expect(await db.select().from(s.orders)).toHaveLength(4);
+    expect(await db.select().from(s.idempotencyKeys)).toHaveLength(1);
+    expect((await bulk('bulk-aging', items)).headers['idempotency-replayed']).toBe('true');
   });
 });

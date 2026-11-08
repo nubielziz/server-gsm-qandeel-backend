@@ -5776,7 +5776,8 @@
          "enum": [
           "degraded",
           "down",
-          "up"
+          "up",
+          "unknown"
          ]
         },
         "successRate1h": {
@@ -7029,10 +7030,10 @@
         },
         "status": {
          "enum": [
+          "unknown",
           "clean",
           "blacklisted",
-          "locked",
-          "unknown"
+          "locked"
          ]
         },
         "source": {
@@ -7171,10 +7172,10 @@
      },
      "status": {
       "enum": [
+       "unknown",
        "clean",
        "blacklisted",
-       "locked",
-       "unknown"
+       "locked"
       ]
      },
      "source": {

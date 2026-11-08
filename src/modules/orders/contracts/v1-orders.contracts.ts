@@ -4,6 +4,7 @@
 import { z } from 'zod';
 import { defineRoute, zCursor, zCursorLimit, zCursorPage, zId, zIdParam, zMoney } from '../../../common/contract';
 import { ORDER_STATUSES } from '../db/schema';
+import { IDEMPOTENCY_WINDOW_DAYS } from '../domain/idempotency-window';
 import { MerchantOrderSchema } from './shared';
 
 /** The most orders one `POST /v1/orders/bulk` may hold (the same limit as a Dhru bulk call). */
@@ -91,7 +92,8 @@ const IdempotencyHeaders = z.object({
     .optional()
     .describe(
       'Makes a retry safe: the first answer is stored with the key and sent again for the same request; another request with the key ' +
-        'is `409 IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS`.',
+        'is `409 IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS`. ' +
+        `The answer is kept ${IDEMPOTENCY_WINDOW_DAYS} days from the first request; after that the stored answer is gone and the same key places a new order.`,
     ),
 });
 
@@ -107,7 +109,9 @@ const PLACE_DESCRIPTION =
 export const placeV1Order = defineRoute({
   key: 'POST /v1/orders',
   summary: 'Place an order',
-  description: `${PLACE_DESCRIPTION} Send an \`Idempotency-Key\` so that a retry never places a second order. Scope \`orders:write\`.`,
+  description:
+    `${PLACE_DESCRIPTION} Send an \`Idempotency-Key\` so that a retry never places a second order; the answer is kept ` +
+    `${IDEMPOTENCY_WINDOW_DAYS} days (a retry later than that places a new order). Scope \`orders:write\`.`,
   tags: ['orders'],
   surface: 'v1',
   access: 'api-key',
@@ -152,7 +156,8 @@ export const placeV1OrdersBulk = defineRoute({
     'the duplicate rule, the hold). The answer has one result per item, in the order sent: `ok: true` with the order, or `ok: false` with the refusal ' +
     '(`code`, `status`, `detail`, field `errors`, and `listedPrice` and `currentPrice` for a changed price). An item that is refused ' +
     'places nothing and never stops the others; the items draw on one wallet in the order sent, so a later item may be refused for lack ' +
-    'of funds. The answer is `200` even when every item was refused. An `Idempotency-Key` stores the whole answer and replays it.',
+    'of funds. The answer is `200` even when every item was refused. An `Idempotency-Key` stores the whole answer and replays it for ' +
+    `${IDEMPOTENCY_WINDOW_DAYS} days (after that the stored answer is gone and the same key places new orders).`,
   tags: ['orders'],
   surface: 'v1',
   access: 'api-key',

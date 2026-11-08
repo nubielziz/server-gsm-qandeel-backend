@@ -895,12 +895,15 @@ describe('PUT /admin/services/:id/supplier-links', () => {
     expect((await world.db.select().from(s.services).where(eq(s.services.id, serviceId)))[0]).toMatchObject({
       effectiveCost: '9.0000',
     });
-    expect((await world.db.select().from(s.auditLogs).where(eq(s.auditLogs.entityId, serviceId))).at(-1)).toMatchObject(
-      {
-        action: 'changed supplier links of',
-        entityType: 'service',
-      },
-    );
+    // Filter by the entity type too: a supplier can have the same numeric id as the service, and its audit rows are not this one.
+    const serviceAudit = await world.db
+      .select()
+      .from(s.auditLogs)
+      .where(and(eq(s.auditLogs.entityType, 'service'), eq(s.auditLogs.entityId, serviceId)));
+    expect(serviceAudit.at(-1)).toMatchObject({
+      action: 'changed supplier links of',
+      entityType: 'service',
+    });
   });
 
   it('keeps the field map of a link that stays, and unlinks with []', async () => {

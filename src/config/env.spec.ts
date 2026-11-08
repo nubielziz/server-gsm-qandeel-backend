@@ -71,9 +71,28 @@ describe('parseEnv in development and test', () => {
     expect(config.security.cookieSecure).toBe(false);
     expect(config.http.referenceDocs).toBe('open');
     expect(config.log.level).toBe('debug');
-    expect(config.http.corsOrigins).toEqual(['http://localhost:5173', 'http://127.0.0.1:5173']);
+    expect(config.http.corsOrigins).toEqual([
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
+      'http://localhost:5174',
+    ]);
     expect(config.redis.bullPrefix).toBe('gsm:development:bull');
     expect(config.http.portalBaseUrl).toBe(DEV_DEFAULTS.portalBaseUrl);
+  });
+
+  it('lets the merchant portal origin through CORS in development only (P4a): the origin of PORTAL_BASE_URL is in the dev default', () => {
+    const portalOrigin = new URL(DEV_DEFAULTS.portalBaseUrl).origin;
+    expect(portalOrigin).toBe('http://localhost:5174');
+    expect(parseEnv({}).http.corsOrigins).toContain(portalOrigin);
+    // A given CORS_ORIGINS is used as it is: nothing is added to it.
+    expect(parseEnv({ CORS_ORIGINS: 'https://console.example.com' }).http.corsOrigins).toEqual([
+      'https://console.example.com',
+    ]);
+    // Tests and production default to no cross-origin access, with or without a portal URL.
+    expect(parseEnv({ NODE_ENV: 'test' }).http.corsOrigins).toEqual([]);
+    expect(parseEnv({ NODE_ENV: 'test', PORTAL_BASE_URL: 'http://localhost:5174' }).http.corsOrigins).toEqual([]);
+    expect(parseEnv(production()).http.corsOrigins).toEqual([]);
+    expect(parseEnv({ ...production(), PORTAL_BASE_URL: 'https://portal.gsm.example' }).http.corsOrigins).toEqual([]);
   });
 
   it('reads PORTAL_BASE_URL without a trailing slash and refuses a value that is not an http(s) URL', () => {

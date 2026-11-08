@@ -204,7 +204,8 @@ export const DEV_DEFAULTS = {
   errorsBaseUrl: 'http://localhost:3000/errors',
   portalBaseUrl: 'http://localhost:5174',
   storeBaseUrl: 'http://localhost:5175',
-  corsOrigins: 'http://localhost:5173,http://127.0.0.1:5173',
+  // The console on 5173 and the merchant portal on 5174 (the origin of `portalBaseUrl`); development only: production and tests default to none.
+  corsOrigins: 'http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174',
   // The Mailpit of compose.yaml (decision 033): SMTP on 1025, a web UI on 8025 with every message.
   mailSmtpUrl: 'smtp://localhost:1025',
   mailFrom: 'GSM <noreply@gsm.local>',

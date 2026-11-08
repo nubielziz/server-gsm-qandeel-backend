@@ -213,7 +213,7 @@ describe('suppliers', () => {
       .values({ component: `supplier:${supplierId}`, supplierId, status, checkedAt: ago(MINUTE) });
   };
 
-  it('maps the latest check to up, degraded and down, and an unknown or missing check to degraded without an alert', async () => {
+  it('maps the latest check to up, degraded and down, and an idle supplier (unknown or no check) to up without an alert', async () => {
     const api = await adminWith(t, ['dashboard:read']);
     const ok = await supplier('Ok Supplier');
     const degraded = await supplier('Degraded Supplier');
@@ -238,9 +238,12 @@ describe('suppliers', () => {
       [ok]: 'up',
       [degraded]: 'degraded',
       [down]: 'down',
-      [unknown]: 'degraded',
-      [fresh]: 'degraded',
+      [unknown]: 'unknown',
+      [fresh]: 'unknown',
     });
+    // The console's SupplierHealth.health has these four words; an idle supplier is unknown, shown as "No recent calls" (B180, M260).
+    for (const row of body.suppliers as Array<{ health: string }>)
+      expect(['up', 'degraded', 'down', 'unknown']).toContain(row.health);
     expect(body.suppliers[0]).toMatchObject({
       name: 'Ok Supplier',
       enabled: true,

@@ -10,14 +10,18 @@ export type Severity = (typeof SEVERITIES)[number];
 /**
  * The supplier health word of the dashboard row.
  *
- * Why: identity-platform-8: `ok` is `up`, `degraded` is `degraded`, `down` is `down`, and `unknown` or no check yet is `degraded`:
- * a supplier nobody has checked is never shown as healthy, and the console has no `unknown` word.
+ * Why: B168 and B180 (identity-platform-9 amended): a supplier with no check yet, or whose latest check is `unknown` (no calls in the
+ * health window), is idle: no data is not healthy (the console's M257) and it is not a fault either, so its row reads `unknown`, which the
+ * console shows as a neutral "No recent calls" badge (its M260). `up`, `degraded` and `down` come only from a real check result. System
+ * health says `unknown` too, and the attention items are not changed ({@link supplierAttentionKind}).
  *
  * @param status the supplier's latest check status, or `null` when it has no check
- * @returns `up`, `degraded` or `down`
+ * @returns `up`, `degraded`, `down` or `unknown`
  */
-export function dashboardHealth(status: CheckStatus | null): 'up' | 'degraded' | 'down' {
-  return status === 'ok' ? 'up' : status === 'down' ? 'down' : 'degraded';
+export function dashboardHealth(status: CheckStatus | null): 'up' | 'degraded' | 'down' | 'unknown' {
+  if (status === 'ok') return 'up';
+  if (status === 'degraded' || status === 'down') return status;
+  return 'unknown';
 }
 
 /**
