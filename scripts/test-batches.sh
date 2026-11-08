@@ -17,7 +17,7 @@ trap 'rm -f "$tmp"' EXIT
 for ((i = 0; i < ${#files[@]}; i += batch)); do
   part=("${files[@]:i:batch}")
   echo "== batch $((i / batch + 1)): ${#part[@]} files, from ${part[0]}"
-  bun test --timeout 15000 "${part[@]}" 2>&1 | tee "$tmp"
+  GSM_TEST_BATCHED=1 bun test --timeout 15000 "${part[@]}" 2>&1 | tee "$tmp"
   code=${PIPESTATUS[0]}
   read -r p < <(grep -E '^ *[0-9]+ pass$' "$tmp" | tail -1 | awk '{print $1}')
   read -r s < <(grep -E '^ *[0-9]+ skip$' "$tmp" | tail -1 | awk '{print $1}')
