@@ -22,6 +22,7 @@ describe('RATE_LIMITERS', () => {
       'ip',
       'sign-in',
       'supplier',
+      'ticket-email',
       'token',
       'upload',
       'webhook-retry',
@@ -30,6 +31,10 @@ describe('RATE_LIMITERS', () => {
 
   it('locks a sign-in pair out for as long as its window after five attempts', () => {
     expect(RATE_LIMITERS['sign-in']).toMatchObject({ points: 5, windowSeconds: 900, blockSeconds: 900 });
+  });
+
+  it('lets one email address open 3 tickets an hour on the public form', () => {
+    expect(RATE_LIMITERS['ticket-email']).toMatchObject({ points: 3, windowSeconds: 3600 });
   });
 
   it('uses limiter names that are valid parts of a Redis key', () => {

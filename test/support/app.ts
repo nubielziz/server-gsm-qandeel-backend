@@ -36,6 +36,7 @@ import { CheckoutModule } from '../../src/modules/customers';
 import { ImeiCheckModule } from '../../src/modules/risk';
 import { StorefrontContentModule, StorefrontPublicModule } from '../../src/modules/storefront';
 import { SuppliersAdminModule } from '../../src/modules/suppliers';
+import { SupportAdminModule, SupportMailModule, SupportStoreModule } from '../../src/modules/support';
 import {
   MaintenanceModule,
   MerchantWebhooksModule,
@@ -127,6 +128,9 @@ const NEEDS_DATABASE_AND_CACHE = [
   HealthAdminModule,
   NotificationAdminModule,
   NotificationDeliveryModule,
+  SupportAdminModule,
+  SupportStoreModule,
+  SupportMailModule,
 ];
 /** The pipeline module that only uses the cache Redis and the rate limiter: replaced when the infrastructure is. */
 const NEEDS_INFRASTRUCTURE = [PublicIpLimitModule];

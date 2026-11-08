@@ -23,7 +23,8 @@ export interface LimiterConfig {
  * Why: decision 021. The keys of the callers: `ip` the client IP; `api-key` the API key id (the points come from
  * `api_keys.rate_limit_per_min` through the `limit` option, this is the default); `sign-in` email + IP (build the key
  * with `RateLimitService.compositeKey`), counted per attempt and reset on success; `token` the client IP; `supplier` the
- * supplier id (the points come from `suppliers.rate_limit_per_min`); `webhook-retry` the delivery id; `upload` the client IP.
+ * supplier id (the points come from `suppliers.rate_limit_per_min`); `webhook-retry` the delivery id; `upload` the client IP; `ticket-email`
+ * the hashed email address of a public ticket form (`RateLimitService.compositeKey`).
  *
  * @see docs/decisions/021-rate-limiting.md
  */
@@ -66,6 +67,12 @@ export const RATE_LIMITERS = {
     windowSeconds: 60,
     description:
       'Manual retries of one webhook delivery by staff: one a minute per delivery (POST /admin/webhook-deliveries/:id/retry).',
+  },
+  'ticket-email': {
+    points: 3,
+    windowSeconds: 60 * 60,
+    description:
+      'The public ticket form (POST /store/v1/tickets): new tickets per email address per hour, so the receipt email cannot relay spam to a stranger.',
   },
 } as const satisfies Record<string, LimiterConfig>;
 

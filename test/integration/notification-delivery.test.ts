@@ -170,7 +170,7 @@ describe('NotificationService.enqueue and the send job', () => {
 
   it('refuses an event the audience does not have and a channel the event does not use (programming errors)', async () => {
     const clientId = await merchant();
-    await expectRejection(enqueue({ ...lowBalance(clientId), event: 'support.reply' }), RangeError);
+    await expectRejection(enqueue({ ...lowBalance(clientId), event: 'order.received' }), RangeError);
     await expectRejection(
       enqueue({ ...lowBalance(clientId), event: 'merchant.invited', channel: 'telegram' }),
       'cannot be sent by telegram',

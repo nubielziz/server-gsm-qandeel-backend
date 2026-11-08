@@ -1,5 +1,5 @@
 // Support tables (map domain J): tickets from customers and merchants, their messages and reply templates.
-// Conventions: decision 027; schema additions: MISMATCHES B116; ownership: scripts/module-map.mjs.
+// Conventions: decision 027; schema additions: MISMATCHES B116 and the ticket token (feature 17); ownership: scripts/module-map.mjs.
 import { sql } from 'drizzle-orm';
 import { boolean, check, index, integer, pgTable, text, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { bigId, bigintList, createdAt, fk, inList, lower, pk, timestampTz, updatedAt } from '../../../infra/db/columns';
@@ -103,11 +103,18 @@ export const supportTickets = pgTable(
     resolvedAt: timestampTz(),
     /** 1 to 5, set by the requester after resolution */
     csatScore: integer(),
+    /** the capability token of the requester's ticket page (decision 010, stored as issued); null for a ticket nobody can open by link */
+    token: text(),
+    /** when the satisfaction survey was queued; set once, in the resolve transaction, and never cleared (one survey per ticket) */
+    surveySentAt: timestampTz(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     uniqueIndex('support_tickets_number_uq').on(t.number),
+    uniqueIndex('support_tickets_token_uq')
+      .on(t.token)
+      .where(sql`${t.token} is not null`),
     check('support_tickets_channel_check', inList(t.channel, TICKET_CHANNELS)),
     check('support_tickets_requester_type_check', inList(t.requesterType, TICKET_REQUESTER_TYPES)),
     check('support_tickets_category_check', inList(t.category, TICKET_CATEGORIES)),

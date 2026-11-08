@@ -109,7 +109,9 @@ Exports the checkout rules `CHECKOUT_SESSION_TTL_MINUTES`, `CHECKOUT_IMEI_AAD`, 
 storefront funnel, IMEI checks, checkouts started, paid, delivered, over the last `days` days, shared by the dashboard's storefront
 block of feature 9 and the funnel report of feature 19); the modules `CustomersModule`, `CheckoutModule` and
 `CustomersAccountsModule` (the app's test builder replaces those that need a database when there is none), `CustomerMailModule`
-(the worker loads it), `CUSTOMER_MAIL_EVENTS` and the `CustomerMailKind` type (the mails are sent through the platform's notification delivery, decision 033).
+(the worker loads it), `CUSTOMER_MAIL_EVENTS` and the `CustomerMailKind` type (the mails are sent through the platform's notification delivery, decision 033);
+`CustomerDirectory` with its `CustomerRef` type (`application/customer-directory.ts`) and `CustomerDirectoryModule` (`customer-directory.module.ts`): find or make a guest
+customer by email in the caller's transaction, used by the support tickets of feature 17, so that no other module inserts into `customers`.
 Feature 16 reads a session through its own use case in this module. Add the services other modules may call here, and nothing
 else: other modules import only `src/modules/customers/index.ts` (lint rule `gsm/module-boundaries`).
 

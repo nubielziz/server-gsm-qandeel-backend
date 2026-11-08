@@ -49,6 +49,7 @@ export const AUDIT_ENTITY_TYPES = [
   'webhook_endpoint',
   'kyc_submission',
   'notification_template',
+  'reply_template',
   'alert_rule',
   'alert',
   'incident',

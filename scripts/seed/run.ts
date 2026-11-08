@@ -14,6 +14,7 @@ import { seedMoney } from './money';
 import { seedOrders } from './orders';
 import { seedPlatform } from './platform';
 import { seedStorefront } from './storefront';
+import { seedSupport } from './support';
 import { seedSupplierLogs, seedSuppliers } from './suppliers';
 
 /** One module's seeder. */
@@ -33,7 +34,9 @@ export interface Seeder {
  * the orders, which need the merchants, the services, the suppliers and the ledger the others seed, then the commission plans,
  * assignments and accruals (they need the merchants and the orders), the supplier call log, whose rows point at orders, the
  * health checks and job runs (a supplier's check needs the supplier), and last the storefront (retail prices, listings, TAC
- * catalogue, content pages, help articles, legal documents), which needs the services and the retail group.
+ * catalogue, content pages, help articles, legal documents), which needs the services and the retail group, and then the support
+ * tickets and reply templates (they refer to staff, merchants, customers and orders the others seed; a customer or an order that is
+ * not seeded leaves the ticket's requester or order link empty, never an error).
  */
 export const SEEDERS: readonly Seeder[] = [
   { module: 'identity', run: seedIdentity },
@@ -48,6 +51,7 @@ export const SEEDERS: readonly Seeder[] = [
   { module: 'supplier-logs', run: seedSupplierLogs },
   { module: 'health', run: seedHealth },
   { module: 'storefront', run: seedStorefront },
+  { module: 'support', run: seedSupport },
 ];
 
 /**

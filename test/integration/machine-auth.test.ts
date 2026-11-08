@@ -22,6 +22,7 @@ import {
 import { CheckoutModule, CustomersAccountsModule } from '../../src/modules/customers';
 import { OrderTrackingModule } from '../../src/modules/orders';
 import { MaintenanceService } from '../../src/modules/platform';
+import { SupportStoreModule } from '../../src/modules/support';
 import { type TestApp, createTestApp } from '../support/app';
 import { insertMerchant } from '../support/auth';
 import { HOUR, MINUTE, SECOND, TestClock } from '../support/clock';
@@ -40,10 +41,9 @@ import {
 } from '../support/machine-auth';
 import { freshClientIp } from '../support/pipeline-routes';
 
-/** The checkout and tracking modules register the real resolvers of their kinds; this file stands in its own for all four. */
 // The modules that register the real capability token resolvers (checkout, tracking: feature 14a; the customer link tokens and the
-// `customer` session subject: feature 14b); this test stands in for them with fixed tokens.
-const REAL_RESOLVER_MODULES = [CheckoutModule, OrderTrackingModule, CustomersAccountsModule];
+// `customer` session subject: feature 14b; the support ticket token: feature 17); this test stands in for them with fixed tokens.
+const REAL_RESOLVER_MODULES = [CheckoutModule, OrderTrackingModule, CustomersAccountsModule, SupportStoreModule];
 
 const DHRU_FAILED = { ERROR: [{ MESSAGE: 'Authentication Failed' }], apiversion: '6.1' };
 

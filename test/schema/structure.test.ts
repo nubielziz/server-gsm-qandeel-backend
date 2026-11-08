@@ -91,6 +91,7 @@ const ADDITIONS: Record<string, string[]> = {
   refunds: ['note'],
   data_requests: ['note'],
   notifications: ['error', 'attempts', 'dedupe_key'],
+  support_tickets: ['token', 'survey_sent_at'],
   webhook_deliveries: ['response_body', 'error', 'event_id'],
   alert_rules: ['deleted_at'],
   alert_events: [

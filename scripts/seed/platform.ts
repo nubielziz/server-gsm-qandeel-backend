@@ -5,6 +5,8 @@ import { EncryptionService, TokenService } from '../../src/infra/crypto';
 import { schema as s, type DbExecutor } from '../../src/infra/db';
 import type { JsonObject } from '../../src/common/contract';
 import { WEBHOOK_SECRET_AAD } from '../../src/modules/platform/webhooks/webhook-deliveries';
+import type { DefaultTemplate } from '../../src/modules/platform';
+import { SUPPORT_DEFAULT_TEMPLATES } from '../../src/modules/support';
 import {
   invoicePaid,
   orderStatusChanged,
@@ -137,6 +139,44 @@ const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 
 /**
+ * Finds the default template of one support event and channel.
+ *
+ * Why: the seed reuses the text the support module ships. A missing template must stop the seed with a message that names it, not with a bare
+ * `undefined` error at import time.
+ *
+ * @param templates the support module's default templates
+ * @param key the event, channel, audience and language of the template
+ * @returns the template
+ * @throws {Error} when no template has this key (the message names it)
+ */
+export function requireSupportTemplate(
+  templates: readonly DefaultTemplate[],
+  key: Pick<DefaultTemplate, 'event' | 'channel' | 'audience' | 'locale'>,
+): DefaultTemplate {
+  const found = templates.find(
+    (template) =>
+      template.event === key.event &&
+      template.channel === key.channel &&
+      template.audience === key.audience &&
+      template.locale === key.locale,
+  );
+  if (!found) {
+    throw new Error(
+      `The default template ${key.event} (${key.channel}, ${key.audience}, ${key.locale}) is missing from SUPPORT_DEFAULT_TEMPLATES.`,
+    );
+  }
+  return found;
+}
+
+/** The customer reply mail the support module ships: nt4 below uses its text, so a seeded database sends the reply with `{{message}}` and `{{link}}`. */
+const SUPPORT_REPLY_DEFAULT = requireSupportTemplate(SUPPORT_DEFAULT_TEMPLATES, {
+  event: 'support.reply',
+  channel: 'email',
+  audience: 'customer',
+  locale: 'en',
+});
+
+/**
  * The six customer emails of the demo (`S.settings.notifs`), as templates: the event key, the subject and the text the console's mock shows
  * (`TEXTS` in src/features/settings/mocks/seedMessages.ts), keyed by the demo id.
  */
@@ -156,11 +196,8 @@ const CUSTOMER_TEMPLATES: Record<string, { event: string; subject: string; body:
     subject: 'We couldn’t unlock order {{orderId}}',
     body: 'Hi {{customerName}}, the carrier rejected this unlock, so we have refunded {{amount}} to your card. It can take 5 to 10 days to appear. We are sorry it did not work out.',
   },
-  nt4: {
-    event: 'support.reply',
-    subject: 'Re: Where is my result?',
-    body: 'Hi {{customerName}}, thanks for your patience. We checked with the carrier and… (the text of the agent’s reply). Reply to this email to keep the conversation going.',
-  },
+  // The demo's text is a placeholder for the agent's reply; the real template carries the reply and the ticket link (feature 17).
+  nt4: { event: 'support.reply', subject: SUPPORT_REPLY_DEFAULT.subject, body: SUPPORT_REPLY_DEFAULT.body },
   nt5: {
     event: 'checkout.abandoned',
     subject: 'You left something behind',

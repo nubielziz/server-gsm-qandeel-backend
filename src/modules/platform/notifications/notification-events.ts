@@ -291,13 +291,24 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
     channels: ['email'],
     variables: ['customerName', 'orderId', 'amount', 'service', 'device'],
   }),
-  customerEvent({
-    key: 'support.reply',
-    label: 'Support reply',
-    description: 'Support answered a ticket.',
-    channels: ['email'],
-    variables: ['customerName'],
-  }),
+  // Feature 17 widened the variables: a reply email carries the reply, the ticket and the link to the ticket page (12a had only the name).
+  {
+    ...customerEvent({
+      key: 'support.reply',
+      label: 'Support reply',
+      description: 'Support answered a ticket.',
+      channels: ['email'],
+      variables: ['customerName', 'ticketNumber', 'subject', 'message', 'link'],
+    }),
+    sample: {
+      customerName: 'Daniel',
+      ticketNumber: 'T-1042',
+      subject: 'Where is my unlock?',
+      message:
+        'Hi Daniel, your order is with the carrier and should finish within the hour. I will update you when it moves.',
+      link: 'https://shop.example.com/support/tickets/example',
+    },
+  },
   customerEvent({
     key: 'checkout.abandoned',
     label: 'Abandoned checkout',

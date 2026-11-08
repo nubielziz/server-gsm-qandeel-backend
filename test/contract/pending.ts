@@ -44,21 +44,6 @@ export const PENDING: readonly string[] = [
   // storefront
   'POST /admin/content-pages/generate',
   'PATCH /admin/storefront/settings',
-  // support
-  'POST /store/v1/tickets',
-  'GET /store/v1/tickets/:token',
-  'POST /store/v1/tickets/:token/messages',
-  'POST /store/v1/tickets/:token/csat',
-  'GET /admin/support-tickets',
-  'GET /admin/support-tickets/:id',
-  'PATCH /admin/support-tickets/:id',
-  'POST /admin/support-tickets/:id/reply',
-  'POST /admin/support-tickets/:id/note',
-  'GET /admin/reply-templates',
-  'GET /admin/reply-templates/:id',
-  'POST /admin/reply-templates',
-  'PATCH /admin/reply-templates/:id',
-  'DELETE /admin/reply-templates/:id',
   // risk
   'POST /store/v1/me/data-export',
   'POST /store/v1/me/data-delete',

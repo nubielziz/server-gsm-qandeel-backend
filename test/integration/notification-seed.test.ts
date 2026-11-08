@@ -5,9 +5,10 @@ import { existsSync } from 'node:fs';
 import { parseEnv } from '../../src/config';
 import { schema as s } from '../../src/infra/db';
 import { CUSTOMER_MAIL_EVENT_KEYS } from '../../src/modules/platform';
+import { SUPPORT_DEFAULT_TEMPLATES } from '../../src/modules/support';
 import { demoStatePath, loadDemoState } from '../../scripts/seed/demo-state';
 import { seedIdentity } from '../../scripts/seed/identity';
-import { seedPlatform } from '../../scripts/seed/platform';
+import { requireSupportTemplate, seedPlatform } from '../../scripts/seed/platform';
 import { adminWith } from '../support/admin-api';
 import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches } from '../support/auth';
@@ -66,6 +67,14 @@ describe.skipIf(!frontendPresent)('the 12a seed', () => {
       locale: 'en',
       subject: 'Your order {{orderId}} is confirmed',
     });
+    // The seeded reply mail is the text the support module ships, so a reply on a seeded database carries the message and the ticket link.
+    const shipped = SUPPORT_DEFAULT_TEMPLATES.find(
+      (row) => row.event === 'support.reply' && row.audience === 'customer',
+    )!;
+    const reply = customer.find((row) => row.event === 'support.reply')!;
+    expect(reply).toMatchObject({ subject: shipped.subject, body: shipped.body });
+    expect(reply.body).toContain('{{message}}');
+    expect(reply.body).toContain('{{link}}');
     // Rerunning the seed adds nothing.
     const again = (await seed()).platform;
     expect(reportOf(again, 'notification_templates')).toMatchObject({ inserted: 0, existing: 6 });
@@ -111,5 +120,20 @@ describe.skipIf(!frontendPresent)('the 12a seed', () => {
       expect(row.recipient, row.recipient).toMatch(row.channel === 'telegram' ? /^@\d\*\*\*$/ : /^.\*\*\*@/);
       expect(row.recipient).not.toMatch(/^[^*]{4,}@/);
     }
+  });
+});
+
+describe('the support reply template of the seed', () => {
+  const reply = { event: 'support.reply', channel: 'email', audience: 'customer', locale: 'en' } as const;
+
+  it('finds the shipped template', () => {
+    expect(requireSupportTemplate(SUPPORT_DEFAULT_TEMPLATES, reply)).toMatchObject(reply);
+  });
+
+  it('throws an error that names the missing template, not an undefined access', () => {
+    const without = SUPPORT_DEFAULT_TEMPLATES.filter((row) => row.event !== 'support.reply');
+    expect(() => requireSupportTemplate(without, reply)).toThrow(
+      'The default template support.reply (email, customer, en) is missing from SUPPORT_DEFAULT_TEMPLATES.',
+    );
   });
 });
