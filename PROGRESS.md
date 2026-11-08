@@ -68,7 +68,7 @@ publish time, minors), 11 `wf_518b4ee4-1d8` (the client statement PDF, the accru
 one consistent report read, audit phrases). Lead integration already committed: 12a routes `invoice.paid` to
 `notifications` too (no producer for `deposit.approved`: a credited top-up already writes `invoice.paid`), provides the
 `mail` health probe (`MailHealthProbeModule`, global symbol `gsm.MAIL_PROBE`) and redacts `x-telegram-bot-api-secret-token`.
-After each run: full check, squash-merge, B-entry, and the dependent launches (17 after 12a and 14b, 19 after 12a and 15,
+**12a merged** (`4af39e9`, B170; check 3823 pass, the migrations test timed out once under load and passes alone; console live routes 162, frontend `78c3f18`). 14b took main again (`750d79b`) and its second merge-fix run `wf_63e76295-1c5` routes the four customer account mails through 12a's delivery (token rotated in the job, default templates in a new migration) plus the first run's review notes. **17** support started early (`wf_a44f3524-a84`, worktree from `4af39e9`, Redis 8): it needs 12a (merged) and reads `customers` through a foreign read until 14b lands. After each run: full check, squash-merge, B-entry, and the dependent launches (17 after 12a and 14b, 19 after 12a and 15,
 18 after 16 and 14b).
 
 **Merge notes from the reviews of 2026-11-07 (B-entry material; the items already sent to the merge-fix runs are done there):**
