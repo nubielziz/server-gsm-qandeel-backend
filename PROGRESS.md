@@ -71,6 +71,60 @@ one consistent report read, audit phrases). Lead integration already committed: 
 After each run: full check, squash-merge, B-entry, and the dependent launches (17 after 12a and 14b, 19 after 12a and 15,
 18 after 16 and 14b).
 
+**Merge notes from the reviews of 2026-11-07 (B-entry material; the items already sent to the merge-fix runs are done there):**
+- **14b** customers and accounts (`wf_4b060a2c-6a7`): **pass after fix, ready to merge** (23 routes, about 153 tests; the
+  review's blocking finding fixed: create and a country change need a current tax rate for the country, else 422 on
+  `country` 'Choose a country.', and the currency is the country's active storefront currency, else USD; its check: 3053
+  pass, 0 fail). At the merge: set `turnstile: true` on its three store auth routes; the checkout items of 14a above (link a
+  signed-in customer, let a signed-in account holder record marketing, `withoutModules` for the link-token tests, one
+  `findCustomer`); make 14a's `GET /store/v1/config` use the same tax window `[valid_from, valid_to)` as 14b's
+  `hasCurrentTaxRate`; compare the country against the locked row in PATCH (customer-admin.service.ts:225); the review
+  minors (b2c-account e2e step 3: assert the `customer.invited` outbox event; store-account.test.ts:113 assert the IP equals
+  the request address; READMEs: the `customers:sign-in-failures` cache key and identity's new exports; the unused
+  `CustomerSignInLimiter.enforceLink`; the B148 allowlist wording); decide who builds the hourly `fx_refresh` job (not built).
+  B-entry: sign-in lockout in cache Redis keyed by the email hash (10 failures lock 15 minutes, an unknown email locks the same
+  way) instead of the DB columns; magic-link self-signup turns an unknown email into a nameless guest (limited per email+IP,
+  plus Turnstile at the merge); TAC audit `added TAC entry` / `edited TAC entry` on a new entity type `tac_entry`; B148
+  allowlist entries for `currency: null` on four customer routes; PATCH checks the country only when it changes; the FX
+  audit phrase `refreshed exchange rate`; `GET /store/v1/me/orders` reads orders through a documented foreign read.
+- **12a** notifications (`wf_4cd665ad-733`): **pass after fix, ready to merge** (12 routes; the review's two blocking findings
+  fixed and re-reviewed: a queued or digest row re-checks suspension and the merchant's current choice when it is sent, and
+  the log detail masks `payload.chatId`; its check: 3050 pass, 0 fail). At the merge: renumber
+  `0009_notifications_delivery` after main's migrations; route `invoice.paid` (main's `InvoiceOutbox` sends `{invoiceId,
+  clientId}`, which its planner expects) to `notifications` as well as `merchant-webhooks`; `deposit.approved` has no producer
+  on main yet (decide: emit it from 8's deposit approval); point feature 9's `mail` health check at `MailTransport.verify()`;
+  add `x-telegram-bot-api-secret-token` to the redacted log headers; mask a `chatId` nested in `variables` too; the review
+  minors (the log's `q` search matches the unmasked address: use an exact match or drop `recipient` from it; a merchant-mail
+  row stays `queued` when a retry ends skipped: mark it failed; give the digest send job a minimum delay of about 10 s;
+  the audit phrases 'turned on/off notification template' vs the demo's 'turned on/off notification'; a stale comment at
+  client-admin.service.ts:234). B-entry: `notification.send` is an outbox event; the `url-secret` access kind gained
+  `header` and `refusal: 'not_found'`; the digest day runs 06:00 to 06:00 UTC; a suspended merchant (and a suspended staff
+  member, for 12b's alerts) gets only transactional messages; customer events are registered for the Customer emails tab;
+  Telegram's `retry_after` is not read (the queue's backoff applies); the send-time re-check (B165) and the `chatId` mask.
+- **15** storefront content (`wf_c039bfd4-270`): **pass, ready to merge** (20 routes, 144 tests). At the merge: re-run the
+  full check on a quiet machine (its last run had 3 `db-schema` timeouts under load; the file passes alone) and drop the
+  leftover `gsm_mig_*` scratch databases; **make 14a's checkout and listings take the floor from 15's new
+  `RetailPrices.quotes`** (catalog; `PriceResolver.floor` alone misses the x1.10 term of b2c-7) and resolve the catalog
+  overlap with 14a (module providers, index); fix the review minors (listing-admin.service.ts:239 audit `before` from the
+  locked row; :265 skip a row without a quote instead of a 500; reuse catalog's `dollars()` in listing-rules.ts; the
+  foreign-reads header; two test names); decide `canonicalUrl` on admin page rows (ANSWERS storefront Q8 asks for it, the
+  implementer dropped it for shape parity: allowlist it with Q8 as the reason or amend Q8). B-entry: legal slugs `terms`,
+  `privacy`, `refund`, `cookies` reserved and served at `/store/v1/pages/:slug` in their version in force; help slug
+  `<id>-<words>` (only the id counts); `SERVICE_DISABLED` checked before `LISTING_LOCKED`; `NOT_A_DRAFT` for a replaced
+  version; `publishedAt` kept when a live page is published again (the doc says now: decide); `RetailPrices` provider in
+  catalog; storefront's foreign-reads file (decision 016 deviation).
+- **11** commissions and reports (`wf_a50bf7cb-24e`): **pass, ready to merge** (19 of 20 routes, about 161 tests). At the
+  merge: renumber its migration `0009_commission_accrual_reversed_at` after main's 0010; re-run the full check (4 timeouts
+  under load, each passes alone); add `GET /admin/reports/client-statement/:clientId` with `PdfRenderer`; merge 11 before 16
+  (both edit `order-placement.ts` / `order-transitions.ts`); consider the review minors (a rare deadlock between a refund or
+  reopen and an approval: lock the order's live accruals before `ledger.move` in `OrderTransitions.apply` or retry on
+  40P01; `CHECK (amount > 0)` on `commission_accruals`; the reports' "one consistent read" claim). B-entry: audit verbs
+  (`approved commissions for` is the demo's, the brief's "of" is a typo; plan verbs partly invented); business time zone
+  UTC; an accrual paid back after approval stays approved with `reversed_at`; approval key
+  `commission:<agent>:<lowest accrual id>`; amounts rounding to zero accrue nothing; a switched-off plan stops accruals for
+  agents still assigned (confirm); `clients.referral_code` is NOT NULL so B164's "generate on read" never happens; the portal
+  does not send `reversedAt`; `report.repository.ts` reads other modules' tables (decision 016 deviation, decide).
+
 **Next, in order:** merge each running feature as it finishes (commit its work, merge `main` in, resolve, regenerate, full
 check, squash-merge, B-entry, walk what the console can show, `npm run mocks:live` in the frontend); start **17** support
 (after 12a and 14b), **18** risk and privacy (after 16) and **19** content generation and reports (after 9, 12a, 14a and 15)
