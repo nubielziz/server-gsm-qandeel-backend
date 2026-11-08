@@ -109,6 +109,9 @@
       "name": "audit"
     },
     {
+      "name": "checkouts"
+    },
+    {
       "name": "client-groups"
     },
     {
@@ -249,6 +252,7 @@
         "admin: support-tickets",
         "admin: webhooks",
         "audit",
+        "checkouts",
         "client-groups",
         "client-prices",
         "clients",
@@ -10116,6 +10120,975 @@
         ],
         "x-gsm-access": "public",
         "x-gsm-key": "POST /admin/auth/password/set",
+        "x-gsm-surface": "admin"
+      }
+    },
+    "/admin/checkouts/abandoned": {
+      "get": {
+        "description": "Checkout sessions created in the last 30 days that are not paid, plus paid ones that had a recovery email (recovered). A session younger than `abandonedMinutes` (the storefront policy, 5 to 1440, default 60) is listed with `canRecover: false`. `q` is a case-insensitive contains over the FULL email while rows carry it masked. `canRecover=true` is the \"Needs a reminder\" filter and uses the same rule as the row flag. Default order: newest first. Needs `growth:read` only (the delay is applied by the server).",
+        "operationId": "getAdminCheckoutsAbandoned",
+        "parameters": [
+          {
+            "name": "_start",
+            "required": false,
+            "in": "query",
+            "description": "First row to return (0-based, inclusive). Default 0.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000000
+            }
+          },
+          {
+            "name": "_end",
+            "required": false,
+            "in": "query",
+            "description": "Row after the last one to return (exclusive). Default _start + 25; a page holds at most 1000 rows.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "_sort",
+            "required": false,
+            "in": "query",
+            "description": "Comma-separated sort fields. Allowed: createdAt, grossAmount, recoveryEmailedAt. Default: createdAt desc.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "_order",
+            "required": false,
+            "in": "query",
+            "description": "Comma-separated directions (asc or desc), one per sort field in the same order.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Case-insensitive text search over: email.",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "canRecover",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where canRecover equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "true",
+                  "false"
+                ]
+              }
+            },
+            "style": "form",
+            "explode": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "x-gsm-alias": "Id",
+                        "description": "Numeric record id.",
+                        "examples": [
+                          42
+                        ]
+                      },
+                      "email": {
+                        "type": "string",
+                        "description": "The buyer's address with most of it hidden (`ab•••@domain`); `q` searches the full address."
+                      },
+                      "grossAmount": {
+                        "type": "string",
+                        "pattern": "^-?\\d+\\.\\d{4}$",
+                        "x-gsm-alias": "Money",
+                        "description": "The basket in USD including VAT (`checkout_sessions.gross_amount`).",
+                        "examples": [
+                          "12.4900"
+                        ]
+                      },
+                      "fxRate": {
+                        "type": "string",
+                        "maxLength": 40,
+                        "pattern": "^-?\\d+(\\.\\d+)?$",
+                        "x-gsm-alias": "Decimal",
+                        "description": "Units of the buyer currency per 1 USD, locked on the session; the console shows `grossAmount` x `fxRate`.",
+                        "examples": [
+                          "19.0000"
+                        ]
+                      },
+                      "currencyCode": {
+                        "type": "string",
+                        "description": "The currency the buyer pays in."
+                      },
+                      "serviceName": {
+                        "type": "string",
+                        "description": "The service in the basket (`Unknown service` when it no longer exists)."
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "open",
+                          "paid",
+                          "expired"
+                        ],
+                        "description": "`open` until paid; `expired` once the session ran out unpaid (judged on the clock, no job flips it); `paid` when it made an order."
+                      },
+                      "utm": {
+                        "x-gsm-alias": "JsonObject",
+                        "type": "object",
+                        "additionalProperties": true,
+                        "description": "Where the buyer came from; the console reads `source`."
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "x-gsm-alias": "IsoDateTime",
+                        "description": "ISO 8601 UTC time with milliseconds.",
+                        "examples": [
+                          "2026-03-01T09:30:00.000Z"
+                        ]
+                      },
+                      "recoveryEmailedAt": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "date-time",
+                            "x-gsm-alias": "IsoDateTime",
+                            "description": "ISO 8601 UTC time with milliseconds.",
+                            "examples": [
+                              "2026-03-01T09:30:00.000Z"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "`null` until a recovery email is sent, automatic or manual; set when the email is queued."
+                      },
+                      "orderId": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "x-gsm-alias": "Id",
+                            "description": "Numeric record id.",
+                            "examples": [
+                              42
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "Set when the session was paid; the console calls a row recovered when this and `recoveryEmailedAt` are both set."
+                      },
+                      "marketingConsent": {
+                        "type": "boolean",
+                        "description": "True when the latest `marketing` consent record of the buyer's customer is a grant and the customer's own switch is on."
+                      },
+                      "canRecover": {
+                        "type": "boolean",
+                        "description": "The server verdict: consent, customer active, no email sent, not paid, older than `abandonedMinutes` and not older than 30 days."
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "email",
+                      "grossAmount",
+                      "fxRate",
+                      "currencyCode",
+                      "serviceName",
+                      "status",
+                      "utm",
+                      "createdAt",
+                      "recoveryEmailedAt",
+                      "orderId",
+                      "marketingConsent",
+                      "canRecover"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "example": [
+                  {
+                    "id": 3000,
+                    "email": "al•••@mail.example",
+                    "grossAmount": "4.7900",
+                    "fxRate": "0.92000000",
+                    "currencyCode": "EUR",
+                    "serviceName": "Apple Warranty & Activation Date",
+                    "status": "expired",
+                    "utm": {
+                      "source": "Direct"
+                    },
+                    "createdAt": "2026-11-07T08:50:00.000Z",
+                    "recoveryEmailedAt": null,
+                    "orderId": null,
+                    "marketingConsent": true,
+                    "canRecover": true
+                  }
+                ]
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "x-total-count": {
+                "description": "Rows that match the filters, before the range is applied.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to do this.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FORBIDDEN"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "staffSession": []
+          }
+        ],
+        "summary": "List abandoned checkouts",
+        "tags": [
+          "checkouts"
+        ],
+        "x-gsm-access": "staff-permission",
+        "x-gsm-key": "GET /admin/checkouts/abandoned",
+        "x-gsm-permission": "growth:read",
+        "x-gsm-session-stages": [
+          "active"
+        ],
+        "x-gsm-surface": "admin"
+      }
+    },
+    "/admin/checkouts/recover": {
+      "post": {
+        "description": "Decides each id again on the server, in this order: `not_found`, `already_emailed`, `already_paid`, `no_marketing_consent`, `recipient_suspended` (a suspended or blocked customer), `too_recent` (still inside the `abandonedMinutes` delay), `expired` (older than 30 days), then `no_template` or `template_off` when the `checkout.abandoned` email has no active template. An eligible checkout gets `recovery_emailed_at` set (once only, under a row lock, so two calls never mail one checkout twice) and one email queued; the worker sends it with a one-click link back to the saved basket, after checking consent again. One audit entry records the call. The answer is `200` even when everything was skipped.",
+        "operationId": "postAdminCheckoutsRecover",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ids": {
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "x-gsm-alias": "Id",
+                      "description": "Numeric record id.",
+                      "examples": [
+                        42
+                      ]
+                    },
+                    "description": "The ticked checkouts. A repeated id counts once."
+                  }
+                },
+                "required": [
+                  "ids"
+                ]
+              },
+              "examples": {
+                "example": {
+                  "value": {
+                    "ids": [
+                      3000,
+                      3001,
+                      3099
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sent": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "How many recovery emails were queued (the worker sends them within moments)."
+                    },
+                    "skipped": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "x-gsm-alias": "Id",
+                            "description": "Numeric record id.",
+                            "examples": [
+                              42
+                            ]
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "not_found",
+                              "already_emailed",
+                              "already_paid",
+                              "no_marketing_consent",
+                              "recipient_suspended",
+                              "too_recent",
+                              "expired",
+                              "no_template",
+                              "template_off"
+                            ],
+                            "description": "Why this checkout was left out; the console prints a new code with spaces for underscores."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "reason"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "The checkouts left out, in the order they were sent."
+                    }
+                  },
+                  "required": [
+                    "sent",
+                    "skipped"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "sent": 1,
+                  "skipped": [
+                    {
+                      "id": 3001,
+                      "reason": "already_emailed"
+                    },
+                    {
+                      "id": 3099,
+                      "reason": "not_found"
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to do this.\nCSRF_FAILED: The security check for this request failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FORBIDDEN",
+                        "CSRF_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CSRF_FAILED": {
+                    "summary": "The security check for this request failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/csrf-failed",
+                      "title": "The security check for this request failed.",
+                      "status": 403,
+                      "code": "CSRF_FAILED",
+                      "detail": "The security check for this request failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "staffSession": []
+          }
+        ],
+        "summary": "Send recovery emails",
+        "tags": [
+          "checkouts"
+        ],
+        "x-gsm-access": "staff-permission",
+        "x-gsm-audit": true,
+        "x-gsm-key": "POST /admin/checkouts/recover",
+        "x-gsm-permission": "growth:send",
+        "x-gsm-session-stages": [
+          "active"
+        ],
         "x-gsm-surface": "admin"
       }
     },
@@ -29084,6 +30057,585 @@
         "x-gsm-access": "staff-permission",
         "x-gsm-audit": true,
         "x-gsm-key": "POST /admin/content-pages",
+        "x-gsm-permission": "storefront:create",
+        "x-gsm-session-stages": [
+          "active"
+        ],
+        "x-gsm-surface": "admin"
+      }
+    },
+    "/admin/content-pages/generate": {
+      "post": {
+        "description": "Makes a draft for each model x network: title `Unlock <model> on <network>`, slug from the title, language `en`, kind `model`, status `draft`, `template_params` `{brand, model, network}` and a short body. Nothing is published. Empty lists mean everything the site knows: every brand of the TAC catalogue, every model (marketing name, else model) of those brands, every carrier of the service listings. A model that is not in the catalogue is generated when typed. Combinations that repeat an earlier one of the same run (the same slug) are merged; the distinct combinations whose slug already exists in `en`, or that a parallel run made first, are skipped and counted in `skipped`. A catalogue model with no Latin letter or digit cannot make a slug: it is left out and counted in `unusableModels` (present only when above 0), never a `422`; so is a listing carrier with no Latin letter or digit on a run with no networks typed, counted in `unusableNetworks` (present only when above 0). A run that would create more than 50 new drafts creates none: `422` with no field and the detail `This run would create N pages; the limit is 50 per run. Narrow the lists.`. A run over 20 000 combinations (a safety bound) is refused the same way, with N the number of combinations; so is a run with no models typed whose catalogue has more than 20 000 models (N is then 20001, where the read stops), whatever the networks. A typed model or network with no Latin letter or digit is `422` on `models` or `networks`. Needs `storefront:create` (B57). Audited as `generated landing pages`.",
+        "operationId": "postAdminContentPagesGenerate",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "brands": {
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 60
+                    },
+                    "description": "The brands (TAC catalogue names, any case). Empty means every brand of the TAC catalogue."
+                  },
+                  "models": {
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 60
+                    },
+                    "description": "The models; one that the catalogue does not know is generated as typed. Empty means every model of those brands."
+                  },
+                  "networks": {
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 60
+                    },
+                    "description": "The carriers, such as AT&T or Vodafone. Empty means every carrier of the service listings."
+                  }
+                },
+                "required": [
+                  "brands",
+                  "models",
+                  "networks"
+                ]
+              },
+              "examples": {
+                "example": {
+                  "value": {
+                    "brands": [
+                      "Apple"
+                    ],
+                    "models": [
+                      "iPhone 13"
+                    ],
+                    "networks": [
+                      "AT&T",
+                      "Vodafone"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "created": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "x-gsm-alias": "Id",
+                            "description": "Numeric record id.",
+                            "examples": [
+                              42
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "country",
+                              "model",
+                              "brand",
+                              "carrier",
+                              "tool",
+                              "static",
+                              "blog"
+                            ]
+                          },
+                          "slug": {
+                            "type": "string"
+                          },
+                          "locale": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "bodyMd": {
+                            "type": "string",
+                            "description": "The full Markdown, as stored; the editors start from the row."
+                          },
+                          "seoTitle": {
+                            "type": "string",
+                            "description": "`''` when none."
+                          },
+                          "seoDescription": {
+                            "type": "string",
+                            "description": "`''` when none."
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "draft",
+                              "published",
+                              "noindex"
+                            ]
+                          },
+                          "publishedAt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time",
+                                "x-gsm-alias": "IsoDateTime",
+                                "description": "ISO 8601 UTC time with milliseconds.",
+                                "examples": [
+                                  "2026-03-01T09:30:00.000Z"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "`null` until the first publish; the moment of the last publish after that."
+                          },
+                          "canonicalUrl": {
+                            "description": "The canonical address of the page, `null` when none is set (ANSWERS storefront Q8).",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "x-gsm-alias": "IsoDateTime",
+                            "description": "ISO 8601 UTC time with milliseconds.",
+                            "examples": [
+                              "2026-03-01T09:30:00.000Z"
+                            ]
+                          },
+                          "updatedAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "x-gsm-alias": "IsoDateTime",
+                            "description": "ISO 8601 UTC time with milliseconds.",
+                            "examples": [
+                              "2026-03-01T09:30:00.000Z"
+                            ]
+                          },
+                          "visits30d": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "`null`: the map has no analytics source (B55)."
+                          },
+                          "orders30d": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "`null`: the map has no analytics source (B55)."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "slug",
+                          "locale",
+                          "title",
+                          "bodyMd",
+                          "seoTitle",
+                          "seoDescription",
+                          "status",
+                          "publishedAt",
+                          "canonicalUrl",
+                          "createdAt",
+                          "updatedAt",
+                          "visits30d",
+                          "orders30d"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "The new drafts, by id."
+                    },
+                    "skipped": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "Distinct combinations that already had a page."
+                    },
+                    "unusableModels": {
+                      "description": "Present only when it is above 0: the catalogue models left out because their name has no Latin letter or digit, so it cannot make a slug.",
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "unusableNetworks": {
+                      "description": "Present only when it is above 0: the carriers of the listings left out because their name has no Latin letter or digit (a run with no networks typed).",
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "created",
+                    "skipped"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "created": [
+                    {
+                      "id": 21,
+                      "kind": "model",
+                      "slug": "unlock-iphone-13-on-atandt",
+                      "locale": "en",
+                      "title": "Unlock iPhone 13 on AT&T",
+                      "bodyMd": "# Unlock iPhone 13 on AT&T\n\nDraft for review.",
+                      "seoTitle": "",
+                      "seoDescription": "",
+                      "status": "draft",
+                      "publishedAt": null,
+                      "canonicalUrl": null,
+                      "createdAt": "2026-11-07T12:00:00.000Z",
+                      "updatedAt": "2026-11-07T12:00:00.000Z",
+                      "visits30d": null,
+                      "orders30d": null
+                    }
+                  ],
+                  "skipped": 1
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to do this.\nCSRF_FAILED: The security check for this request failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FORBIDDEN",
+                        "CSRF_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CSRF_FAILED": {
+                    "summary": "The security check for this request failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/csrf-failed",
+                      "title": "The security check for this request failed.",
+                      "status": 403,
+                      "code": "CSRF_FAILED",
+                      "detail": "The security check for this request failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "staffSession": []
+          }
+        ],
+        "summary": "Generate landing page drafts",
+        "tags": [
+          "content-pages"
+        ],
+        "x-gsm-access": "staff-permission",
+        "x-gsm-audit": true,
+        "x-gsm-key": "POST /admin/content-pages/generate",
         "x-gsm-permission": "storefront:create",
         "x-gsm-session-stages": [
           "active"
@@ -59363,7 +60915,7 @@
                       },
                       "isActive": {
                         "type": "boolean",
-                        "description": "Off means the message is not sent."
+                        "description": "Off means this language's template is not used: a message in this language is written with the English template while that one is on, and is not sent (`template_off`) when neither is on. Turning the English template off also stops English messages and the fallback."
                       },
                       "sentLast30Days": {
                         "type": "integer",
@@ -59845,7 +61397,7 @@
                     },
                     "isActive": {
                       "type": "boolean",
-                      "description": "Off means the message is not sent."
+                      "description": "Off means this language's template is not used: a message in this language is written with the English template while that one is on, and is not sent (`template_off`) when neither is on. Turning the English template off also stops English messages and the fallback."
                     },
                     "sentLast30Days": {
                       "type": "integer",
@@ -60280,7 +61832,7 @@
                     },
                     "isActive": {
                       "type": "boolean",
-                      "description": "Off means the message is not sent."
+                      "description": "Off means this language's template is not used: a message in this language is written with the English template while that one is on, and is not sent (`template_off`) when neither is on. Turning the English template off also stops English messages and the fallback."
                     },
                     "sentLast30Days": {
                       "type": "integer",
@@ -60750,7 +62302,7 @@
                     },
                     "isActive": {
                       "type": "boolean",
-                      "description": "Off means the message is not sent."
+                      "description": "Off means this language's template is not used: a message in this language is written with the English template while that one is on, and is not sent (`template_off`) when neither is on. Turning the English template off also stops English messages and the fallback."
                     },
                     "sentLast30Days": {
                       "type": "integer",
@@ -85639,6 +87191,376 @@
         "x-gsm-access": "staff-permission",
         "x-gsm-key": "GET /admin/reports/client-statement/:clientId",
         "x-gsm-permission": "reports:read",
+        "x-gsm-session-stages": [
+          "active"
+        ],
+        "x-gsm-surface": "admin"
+      }
+    },
+    "/admin/reports/funnel": {
+      "get": {
+        "description": "Records, not people, storefront only, over `[now - days x 24 h, now)` (b2c-10): a record made exactly `days` x 24 h ago is counted, one made at this very moment is not (the end is exclusive, like the dashboard's). `imeiChecks` counts `imei_checks` from the storefront sources; `paymentStarted` the checkout sessions created in the period; `paid` those with an order; `delivered` those whose order is completed. The dashboard's storefront block calls the same function (`storefrontFunnel`). `days` is 7, 30 or 90 (default 30); anything else is `422` on `days`.",
+        "operationId": "getAdminReportsFunnel",
+        "parameters": [
+          {
+            "name": "days",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 30,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "days": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "The period asked for."
+                    },
+                    "imeiChecks": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "IMEI checks made on the storefront (sources `storefront_free` and `pre_order`)."
+                    },
+                    "paymentStarted": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "Checkout sessions opened in the period, any status."
+                    },
+                    "paid": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "Those sessions that made an order."
+                    },
+                    "delivered": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "Those orders that are completed."
+                    }
+                  },
+                  "required": [
+                    "days",
+                    "imeiChecks",
+                    "paymentStarted",
+                    "paid",
+                    "delivered"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "days": 30,
+                  "imeiChecks": 312,
+                  "paymentStarted": 94,
+                  "paid": 41,
+                  "delivered": 38
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to do this.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FORBIDDEN"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "staffSession": []
+          }
+        ],
+        "summary": "Storefront sales funnel",
+        "tags": [
+          "checkouts"
+        ],
+        "x-gsm-access": "staff-permission",
+        "x-gsm-key": "GET /admin/reports/funnel",
+        "x-gsm-permission": "reports:growth",
         "x-gsm-session-stages": [
           "active"
         ],

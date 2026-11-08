@@ -38,11 +38,7 @@ export const PENDING: readonly string[] = [
   'POST /admin/customers/:id/block',
   'GET /admin/customers/:id/export',
   'POST /admin/customers/:id/anonymize',
-  'GET /admin/checkouts/abandoned',
-  'POST /admin/checkouts/recover',
-  'GET /admin/reports/funnel',
   // storefront
-  'POST /admin/content-pages/generate',
   'PATCH /admin/storefront/settings',
   // risk
   'POST /store/v1/me/data-export',

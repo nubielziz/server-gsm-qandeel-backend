@@ -11,7 +11,7 @@ Decisions that shape this module: 022 caching, 034 Turnstile. Common to all modu
 Built: the public catalog (feature 14a, storefront-checkout: 3 of the 6 storefront routes `GET /store/v1/config`,
 `GET /store/v1/services`, `GET /store/v1/services/:slug`) and the admin and content parts (feature 15: the admin routes of the
 listings, content pages, help articles and legal documents and the three public content routes, 20 routes), with the one demo seed
-(`scripts/seed/storefront.ts`). The page generator (19) and `PATCH /admin/storefront/settings` (16) are not built.
+(`scripts/seed/storefront.ts`), and the page generator (feature 19: `POST /admin/content-pages/generate`). `PATCH /admin/storefront/settings` (16) is not built.
 
 Layout: `contracts/` (one file per route group, `shared.ts` for the field schemas), `controllers/` (thin), `application/` (one
 service per group, `storefront-catalog.service.ts`, `storefront-quotes.ts`, `storefront-policies.ts`, `legal-documents.ts`,
@@ -91,10 +91,10 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 ## Routes
 
 25 endpoints (admin 19, store 6). Source: `docs/slices/storefront.json`. Built by feature 15: the 20 below; built by feature 14a:
-`GET /store/v1/config`, `GET /store/v1/services`, `GET /store/v1/services/:slug` (described above). Not built:
-`POST /admin/content-pages/generate` (19) and `PATCH /admin/storefront/settings` (16).
+`GET /store/v1/config`, `GET /store/v1/services`, `GET /store/v1/services/:slug` (described above); built by feature 19:
+`POST /admin/content-pages/generate` (below, "Landing-page generator"). Not built: `PATCH /admin/storefront/settings` (16).
 
-### Admin console (16 of 19)
+### Admin console (17 of 19)
 
 | Route | Permission | What it does |
 |---|---|---|
@@ -107,6 +107,7 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 | `POST /admin/content-pages` | `storefront:create` | A draft written by the signed-in staff member (`SLUG_TAKEN`). |
 | `PATCH /admin/content-pages/:id` | `storefront:update` | Text, slug, language and SEO; never kind or status. |
 | `POST /admin/content-pages/:id/publish` | `storefront:publish` | Publish or hide (`published` boolean). |
+| `POST /admin/content-pages/generate` | `storefront:create` | Draft landing pages for brand x model x network (`422` over 50 new drafts); feature 19. |
 | `GET /admin/help-articles` | `storefront:read` | Articles with votes; filters `isPublished`, `category`, `locale`. |
 | `GET /admin/help-articles/:id` | `storefront:read` | One article. |
 | `POST /admin/help-articles` | `storefront:create` | A new article, last in the order. |
@@ -152,10 +153,34 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 - **Audit** (demo phrases, ANSWERS audit Q3): `created listing for`, `listed on storefront`, `unlisted from storefront`, `changed
   retail price of` (entity `listing`); `created page`, `edited page`, `published page`, `unpublished page` (`content_page`);
   `created help article`, `edited help article`, `published help article`, `unpublished help article` (`help_article`);
-  `created legal document`, `published legal document` (`legal`, label `Terms of service (EN) 3.2`).
+  `created legal document`, `published legal document` (`legal`, label `Terms of service (EN) 3.2`); `generated landing pages` (`content_page`,
+  label `12 drafts`, feature 19).
 - **Seed** (`scripts/seed/storefront.ts`, last in the order; one seeder, reports in this order): the 14 retail prices, the mock's 14
   listings (ids 1 to 14), the 8 TAC catalogue entries, 14 landing and 6 content pages, 12 help articles and 7 legal versions (one
   draft refund policy 1.5).
+
+## Landing-page generator (feature 19)
+
+`POST /admin/content-pages/generate` (`storefront:create`, B57; `contracts/page-generator.contracts.ts`, `application/page-generator.service.ts`,
+`domain/page-generator.ts`, `infra/page-generator.repository.ts`). Body `{ brands, models, networks }`, each a list of names (at most 100 of at most
+60 characters); the server trims, splits on commas and new lines, and drops blanks and repeats (ignoring case). Empty lists mean everything the site
+knows: every brand of the TAC catalogue, every model of those brands (marketing name, else the model code), every distinct carrier of the service
+listings (a read of `tac_catalog` in `infra/foreign-reads.repository.ts`, the only read of another module's table; `service_listings` is this module's).
+A typed model is generated as typed; the brand in `template_params` is the catalogue's (the typed brands first when two share a name), else the one
+brand typed, else empty.
+
+For each model x network (model by model): title `Unlock <model> on <network>`, slug `slugOf(title)`, language `en`, kind `model`, status `draft`,
+`template_params { brand, model, network }`, `author_id` the signed-in staff member, a short Markdown body. Combinations that repeat
+an earlier one of the run (`iPhone 13` and `iPhone-13`) are merged before counting; the distinct combinations whose slug exists in `en`, or that a
+parallel run made first, are skipped and counted in `skipped`. A catalogue model with no Latin letter or digit cannot make a slug: it is left out and
+counted in `unusableModels` (in the answer only when above 0, and always in the audit entry), never a `422`; a listing carrier with no Latin letter or
+digit is left out of an "all networks" run the same way and counted in `unusableNetworks`. If more than `STOREFRONT_GENERATE_MAX_PER_RUN` (50, a code
+constant, b2c-15) new drafts remain, nothing is created: `422 VALIDATION_FAILED`, detail `This run would create N pages; the limit is 50 per run. Narrow
+the lists.`, `errors: []` (no field). The same `422` and sentence (N = the combinations) cover more than 20 000 combinations (a safety bound), and an "all models" run whose catalogue read returns more than 20 000 models (the read stops
+at 20 001, N = 20001; judged before any unusable name is dropped, or a cut-off catalogue would pass); a typed
+model or network with no Latin letter or digit is `422` on `models` or `networks` (it cannot make a slug). The insert is `ON CONFLICT (locale, slug) DO NOTHING`, so two requests at once
+never create a page twice and never answer an error. One audit entry `generated landing pages` (entity `content_page`, label `N drafts`, ids in `after`),
+also when nothing was created. Nothing is published.
 
 ## Scenarios
 
@@ -165,7 +190,7 @@ None of the 13 map scenarios (`docs/slices/` → `scenarios`) touches this modul
 
 Staff permissions the map requires on this module's admin routes: `legal:*`, `legal:publish`, `settings:storefront`, `storefront:*`, `storefront:publish`.
 
-As built (CRUD rows expand per ALIGNMENT § 4): `storefront:read`, `storefront:create`, `storefront:update`, `storefront:publish`,
+As built (CRUD rows expand per ALIGNMENT § 4; the generator needs `storefront:create`): `storefront:read`, `storefront:create`, `storefront:update`, `storefront:publish`,
 `legal:read`, `legal:create`, `legal:publish`. The public routes need none. Keep this list in step with the contracts
 (`permission` of each `defineRoute`).
 

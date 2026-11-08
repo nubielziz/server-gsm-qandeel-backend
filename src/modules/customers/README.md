@@ -102,14 +102,60 @@ consents are feature 14a; block, export and anonymize are feature 18 (their rout
   eight TACs; `seedCustomerDevCredentials` gives the accounts `demo-password` in development only. The storefront orders (and so
   `ordersCount` and `total_spent`) come with 14a and 16.
 
+## Growth pages (feature 19)
+
+Built: `GET /admin/checkouts/abandoned`, `POST /admin/checkouts/recover` and `GET /admin/reports/funnel` (the Checkouts page of the console), the
+mail job of one recovery email and the automatic reminder. Files: `growth.module.ts` (routes), `checkout-recovery.module.ts` (the event, the mail job,
+the reminder and its schedule: loaded by the API and the worker), `controllers/growth.controller.ts`, `contracts/growth.contracts.ts`,
+`application/{abandoned-checkouts,checkout-recovery,funnel-report,recovery-queue,recovery-outbox,recovery-mail,recovery-sweep}.*`,
+`jobs/checkout-recovery.processors.ts`, `infra/recovery.repository.ts`, `domain/recovery.ts`. Rules: RULES checkouts 1 to 8, ANSWERS checkouts 1 to 8,
+resolutions `b2c-10` and `b2c-14`.
+
+- **One rule** (`domain/recovery.ts`, `recoveryVerdict`): a checkout may get its recovery email when it exists, no recovery email went out
+  (`recovery_emailed_at` is null), it is not paid (no `order_id` and status not `paid`), its customer agreed to marketing email and is `active`, it is at
+  least `abandonedMinutes` old (the storefront policy, 5 to 1440, default 60) and not older than 30 days. The first failing check is the skip reason, in
+  this order: `not_found`, `already_emailed`, `already_paid`, `no_marketing_consent`, `recipient_suspended`, `too_recent`, `expired`; the send adds
+  `no_template` and `template_off` when the `checkout.abandoned` email has no active template. The list's `canRecover` flag is this function returning
+  `null`; the `canRecover=true` filter and the automatic reminder select with its SQL twin (`canRecoverSql` in `infra/recovery.repository.ts`), and a test
+  walks every state of the rule to keep the two equal.
+- **Consent** (`consentSql`): the latest `marketing` record of the session's customer (append only, a withdrawal is a new `granted = false` row) is a
+  grant AND the customer's own `marketing_opt_in` is on. A guest's choice is the record its checkout wrote (14a), an account holder's the record its
+  account page wrote (14b); a switch turned off by staff stops the mail even without a withdrawal record. A session with no customer has no consent.
+- **List**: sessions created in the last 30 days that are not paid, plus paid ones that had a recovery email (recovered); rows carry the email masked
+  (`ab•••@domain`; `q` searches the full address), the USD basket with the locked rate, the service name (`StorefrontServices.names`, one batch per
+  page), `status` judged on the clock (`effectiveStatus`), `utm`, `orderId`, `marketingConsent` and `canRecover`. Sorts `createdAt` (default, newest
+  first), `grossAmount`, `recoveryEmailedAt`. The delay is read by the server (`SettingsReader`), so a growth user needs no `settings:read`.
+- **Recover** (`RecoveryQueue.queue`, shared with the reminder): in one transaction the sessions are read `FOR UPDATE OF checkout_sessions` in id
+  order (two sends over the same ids never mail one checkout twice and never deadlock), each id is decided again, the template is probed through
+  `NotificationService.check` (once per customer language; a language whose template is missing or switched off falls back to the English template, and the checkout is skipped as `no_template` / `template_off` only when that one is unusable too), and an eligible checkout is claimed (`UPDATE ... WHERE recovery_emailed_at IS NULL`) with
+  one outbox event `checkout.recovery` written in the same transaction. The answer is `{ sent, skipped: [{ id, reason }] }` in the order asked (a
+  repeated id counts once); `422` on `ids` when empty, over 100 or not ids. One audit entry `sent recovery emails` (entity `checkout`, `before { emails: 0 }`,
+  `after { emails, checkoutIds, skipped }`).
+- **The mail** (`RecoveryMail`, queue `notifications`, job `checkout.recovery`): re-reads the session, repeats the checks that can change after the
+  claim (paid, consent, active customer; consent is checked again at send time), builds the link `<STORE_BASE_URL>/checkout/resume?token=<checkout
+  token>` and sends through `NotificationService.sendNow` with the link as a secret: the checkout token is a bearer credential (decision 010), so it
+  is never in the event, the job data or the `notifications` row the console shows. The device name is the TAC catalogue's marketing name of the IMEI's
+  first 8 digits (else brand and model, else "your phone"), the greeting the customer's name (else "there"). Dedupe key `outbox-<event id>:email`; a
+  repeat of the job after a sent or failed row is skipped; a job that ends skipped finishes the earlier row as `failed` with the reason and, unless a row of
+  its event was `sent`, takes the claim off again (`recovery_emailed_at = null`, in one transaction), so the checkout is recoverable again.
+- **The automatic reminder** (`RecoverySweep`, scheduler `checkout-recovery-sweep`, queue `maintenance`, job `checkout_recovery_sweep`, every 5
+  minutes): selects at most 200 due checkouts of customers whose language can be mailed now (`NotificationService.writableLanguages`: the language's own
+  switched-on template, or the English one for every language), oldest first, and queues them through the same `RecoveryQueue`, so a manual send after it is
+  `already_emailed`. A tick with nothing due writes no `job_runs` row; a tick that queued something is recorded and audited as the system
+  (`sent automatic recovery emails`).
+- **Funnel**: `FunnelReportService` calls `storefrontFunnel(db, now, days)` for `days` 7, 30 (default) or 90 (`422` on `days` otherwise), the same
+  function as the dashboard's storefront block.
+- **Seed**: `scripts/seed/growth.ts` writes the demo's 238 checkouts (ids 3000 and up, one guest customer per address, the mock's marketing answers);
+  the paid ones have no order until feature 16's seed.
+
 ## Public API (`index.ts`)
 
 Exports the checkout rules `CHECKOUT_SESSION_TTL_MINUTES`, `CHECKOUT_IMEI_AAD`, `LEGAL_TYPE_OF_PURPOSE`, `effectiveStatus`,
 `requiredConsents`; `storefrontFunnel(db, now, days)` (`storefront-funnel.ts`, resolution b2c-10: a read-only count of the
 storefront funnel, IMEI checks, checkouts started, paid, delivered, over the last `days` days, shared by the dashboard's storefront
-block of feature 9 and the funnel report of feature 19); the modules `CustomersModule`, `CheckoutModule` and
-`CustomersAccountsModule` (the app's test builder replaces those that need a database when there is none), `CustomerMailModule`
-(the worker loads it), `CUSTOMER_MAIL_EVENTS` and the `CustomerMailKind` type (the mails are sent through the platform's notification delivery, decision 033);
+block of feature 9 and the funnel report of feature 19); the modules `CustomersModule`, `CheckoutModule`,
+`CustomersAccountsModule`, `GrowthModule` (the app's test builder replaces those that need a database when there is none), `CustomerMailModule`
+and `CheckoutRecoveryModule` with `CHECKOUT_RECOVERY_SCHEDULER` (the worker loads both), `CUSTOMER_MAIL_EVENTS` and the `CustomerMailKind` type (the mails are sent through the platform's notification delivery, decision 033).
 `CustomerDirectory` with its `CustomerRef` type (`application/customer-directory.ts`) and `CustomerDirectoryModule` (`customer-directory.module.ts`): find or make a guest
 customer by email in the caller's transaction, used by the support tickets of feature 17, so that no other module inserts into `customers`.
 Feature 16 reads a session through its own use case in this module. Add the services other modules may call here, and nothing
@@ -191,6 +237,9 @@ queue): `customer.magic_link` (sign-in link), `customer.password_reset` (forgot 
 created the account, link mode) and `customer.email_verification` (an account's email changed). The checkout routes write none. Consumed: none. The routes are
 registered by `CustomerMailOutbox` (this module is their one owner, decision 020) and documented in `docs/queues.md`.
 
+Feature 19: `checkout.recovery` (aggregate `checkout_sessions`, no payload; written by `POST /admin/checkouts/recover` and
+the automatic reminder; route: queue `notifications`, job `checkout.recovery`, registered by `RecoveryOutbox` in both processes).
+
 ## Jobs and schedules
 
 One processor per mail event (`jobs/customer-mail.processors.ts`, queue `notifications`, loaded in the worker by `CustomerMailModule`), all running
@@ -208,13 +257,23 @@ with its attempts and without the link; a retry of the job rotates again and res
 delivered mail is skipped (`already_sent`) before it can spoil the link that arrived. In development the mail lands in Mailpit
 (`http://localhost:8025`); the old "link in the log" convenience is gone, because a link is a credential. See `docs/queues.md` (notifications).
 
+Feature 19:
+
+- `checkout.recovery` (queue `notifications`): the mail of one recovery email; job id `outbox-<event id>`; guarded by the notification row's dedupe key
+  `outbox-<event id>:email`; the queue's policy (5 attempts, backoff from 30 s); `UnrecoverableError` for a job with no session.
+- `checkout_recovery_sweep` (queue `maintenance`, scheduler `checkout-recovery-sweep`, every 5 minutes): the automatic reminder; recorded in
+  `job_runs` only when something was due or the run is manual; the queue's policy (3 attempts), and the next tick is the real retry.
+
+Both are documented in `docs/queues.md`.
+
 ## Cache keys
 
 One of its own: `gsm:{env}:customers:sign-in-failures:{emailHash}` (`customerSignInFailures`, the count of wrong passwords behind
 the 15-minute email lock; a throttle, not truth: `docs/cache-keys.md`). Customer sessions use identity's session keys
 (`gsm:{env}:identity:session:{hash}`), and the per-email-and-address sign-in limit uses the rate-limit keys of decision 021
 (`customer-sign-in` prefix inside the hashed key). A checkout session, its consents and the guest customer are decision-making
-state and are read from Postgres every time.
+state and are read from Postgres every time. The `abandonedMinutes` setting of the recovery is read through `SettingsReader` (the settings snapshot,
+`docs/cache-keys.md`).
 
 ## Audit resolutions
 

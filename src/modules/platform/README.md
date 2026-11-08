@@ -445,7 +445,7 @@ outbox event `notification.send` commit with the caller's change. Producers that
 `EventNotifier` (job `notification.plan`) decides who is told by the merchant's preferences and needs an active template. The send job (`NotificationDelivery.deliver`)
 re-reads the row, the recipient and the template, renders (an HTML body gets escaped values and a text part), sends and marks the row `sent` with a guarded update.
 A transient failure records the attempt and rethrows (the queue retries: 5 attempts, 30 s backoff); the last attempt, or a refusal that cannot change, marks the row
-`failed` with the reason. A missing template is logged and sends nothing; an inactive one sends nothing; a suspended merchant gets only transactional messages.
+`failed` with the reason. The template is the recipient's language's own while it is switched on, else the English one while it is switched on (`findTemplateFor`); a message with no usable template is logged and sends nothing (`no_template` when none exists, `template_off` when one exists and is off); a suspended merchant gets only transactional messages.
 
 **Price change digest** (user rule 9): `service.price_changed` events do not send at once; they join the merchant's digest row of the period (06:00 UTC to 06:00 UTC, one row
 per merchant, channel and period, key `digest:service.price_changed:<channel>:<client>:<day>`), sent by a delayed job `notification-<id>` at the end of the period. The send job

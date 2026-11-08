@@ -201,7 +201,8 @@ const CUSTOMER_TEMPLATES: Record<string, { event: string; subject: string; body:
   nt5: {
     event: 'checkout.abandoned',
     subject: 'You left something behind',
-    body: 'Hi, you started an unlock for an {{device}} and did not finish paying. Your basket is saved: one tap takes you back to the payment step. No account needed.',
+    // The demo's text, with the greeting and the one-click link of the recovery mail (feature 19: `customerName`, `device` and `link` are the event's variables).
+    body: 'Hi {{customerName}}, you started an unlock for {{device}} and did not finish paying. Your basket is saved: {{link}} takes you back to the payment step. No account needed.',
   },
   nt6: {
     event: 'payment.failed',

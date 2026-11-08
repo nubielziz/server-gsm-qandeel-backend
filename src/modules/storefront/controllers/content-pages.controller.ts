@@ -4,6 +4,7 @@ import { Body, Controller, Param, Query } from '@nestjs/common';
 import { type BodyOf, type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
 import { CurrentStaff, type StaffPrincipal } from '../../identity';
 import { ContentPageAdminService } from '../application/content-page-admin.service';
+import { PageGeneratorService } from '../application/page-generator.service';
 import {
   createContentPage,
   listContentPages,
@@ -11,6 +12,7 @@ import {
   showContentPage,
   updateContentPage,
 } from '../contracts/content-pages.contracts';
+import { generateContentPages } from '../contracts/page-generator.contracts';
 
 /**
  * The content page routes.
@@ -22,10 +24,14 @@ import {
  * @route POST /admin/content-pages
  * @route PATCH /admin/content-pages/:id
  * @route POST /admin/content-pages/:id/publish
+ * @route POST /admin/content-pages/generate
  */
 @Controller()
 export class ContentPagesController {
-  constructor(private readonly pages: ContentPageAdminService) {}
+  constructor(
+    private readonly pages: ContentPageAdminService,
+    private readonly generator: PageGeneratorService,
+  ) {}
 
   /**
    * Lists pages.
@@ -97,5 +103,21 @@ export class ContentPagesController {
     @Body() body: BodyOf<typeof publishContentPage>,
   ): Promise<ResultOf<typeof publishContentPage>> {
     return this.pages.publish(params.id, body.published);
+  }
+
+  /**
+   * Generates draft landing pages (brand x model x network).
+   *
+   * @param staff the signed-in staff member (`author_id`)
+   * @param body the typed brands, models and networks
+   * @returns the new drafts and the number of skipped combinations
+   * @route POST /admin/content-pages/generate
+   */
+  @Route(generateContentPages)
+  generate(
+    @CurrentStaff() staff: StaffPrincipal,
+    @Body() body: BodyOf<typeof generateContentPages>,
+  ): Promise<ResultOf<typeof generateContentPages>> {
+    return this.generator.generate(body, staff.staffId);
   }
 }

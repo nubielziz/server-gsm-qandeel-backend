@@ -32,7 +32,7 @@ import { IpRulesModule } from '../../src/modules/identity/security/ip-rules/ip-r
 import { HealthAdminModule } from '../../src/modules/health';
 import { MoneyAdminModule } from '../../src/modules/money/money-admin.module';
 import { OrderTrackingModule, OrdersAdminModule } from '../../src/modules/orders';
-import { CheckoutModule } from '../../src/modules/customers';
+import { CheckoutModule, GrowthModule } from '../../src/modules/customers';
 import { ImeiCheckModule } from '../../src/modules/risk';
 import { StorefrontContentModule, StorefrontPublicModule } from '../../src/modules/storefront';
 import { SuppliersAdminModule } from '../../src/modules/suppliers';
@@ -122,6 +122,7 @@ const NEEDS_DATABASE_AND_CACHE = [
   CheckoutModule,
   CommissionsAdminModule,
   CustomersAccountsModule,
+  GrowthModule,
   StorefrontContentModule,
   MerchantWebhooksModule,
   WebhookDeliveryModule,

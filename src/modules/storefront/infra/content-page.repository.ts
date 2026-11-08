@@ -130,3 +130,40 @@ export async function findLivePage(db: DbExecutor, slug: string, locale: string)
     .limit(1);
   return row;
 }
+
+/**
+ * Inserts several pages, leaving out the ones whose slug is taken in their language.
+ *
+ * Why: the landing-page generator makes up to 50 drafts in one statement; a draft that another request created a moment earlier is
+ * skipped instead of failing the whole run (`ON CONFLICT (locale, slug) DO NOTHING`).
+ *
+ * @param db the caller's transaction
+ * @param values the new rows (at least one)
+ * @returns the rows that were created, by ascending id
+ */
+export async function insertPagesSkippingTaken(db: DbExecutor, values: NewContentPage[]): Promise<ContentPage[]> {
+  if (values.length === 0) return [];
+  const rows = await db
+    .insert(contentPages)
+    .values(values)
+    .onConflictDoNothing({ target: [contentPages.locale, contentPages.slug] })
+    .returning();
+  return rows.sort((a, b) => a.id - b.id);
+}
+
+/**
+ * Lists which of some slugs are already used in a language.
+ *
+ * @param db the database or a transaction
+ * @param locale the language
+ * @param slugs the slugs to look for
+ * @returns the slugs that exist
+ */
+export async function takenSlugs(db: DbExecutor, locale: string, slugs: readonly string[]): Promise<Set<string>> {
+  if (slugs.length === 0) return new Set();
+  const rows = await db
+    .select({ slug: contentPages.slug })
+    .from(contentPages)
+    .where(and(eq(contentPages.locale, locale), inArray(contentPages.slug, [...slugs])));
+  return new Set(rows.map((row) => row.slug));
+}

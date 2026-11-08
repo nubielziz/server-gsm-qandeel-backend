@@ -314,7 +314,7 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
     label: 'Abandoned checkout',
     description: 'A checkout was started and not paid.',
     channels: ['email'],
-    variables: ['customerName', 'device'],
+    variables: ['customerName', 'device', 'link'],
   }),
   customerEvent({
     key: 'payment.failed',

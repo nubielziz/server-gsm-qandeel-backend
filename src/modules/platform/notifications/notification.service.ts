@@ -3,13 +3,18 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { DbService, type DbExecutor, type TransactionContext } from '../../../infra/db';
-import type { NotificationChannel, NotificationRecipientType, NotificationStatus } from '../db/schema';
+import type {
+  NotificationAudience,
+  NotificationChannel,
+  NotificationRecipientType,
+  NotificationStatus,
+} from '../db/schema';
 import { OutboxService } from '../outbox/outbox.service';
 import { type AttemptContext, NotificationDelivery } from './notification-delivery';
 import { type NotificationEventDefinition, NotificationEventRegistry } from './notification-events';
 import { type Recipient, recipientOf } from './notification-foreign-reads';
 import { OPERATIONS_RECIPIENT_ID } from './notification-payload';
-import { findTemplateFor } from './notification-template.repository';
+import { activeTemplateLocales, findTemplateFor } from './notification-template.repository';
 import {
   type NotificationPayload,
   findNotificationByKey,
@@ -253,10 +258,31 @@ export class NotificationService {
    * rotates the link's token, because a rotation would invalidate the link of a mail that already arrived.
    *
    * @param dedupeKey the key the row was made with
+   * @param db the database or a transaction to read with (default: the pool); a caller deciding inside its transaction passes `tx`
    * @returns the row's status, or `undefined` when no row has the key
    */
-  async statusOf(dedupeKey: string): Promise<NotificationStatus | undefined> {
-    return (await findNotificationByKey(this.db.db, dedupeKey))?.status;
+  async statusOf(dedupeKey: string, db: DbExecutor = this.db.db): Promise<NotificationStatus | undefined> {
+    return (await findNotificationByKey(db, dedupeKey))?.status;
+  }
+
+  /**
+   * Tells which languages a message can be written in right now.
+   *
+   * Why: feature 19: a job that picks the people to mail (the recovery reminder) must leave out those who cannot be mailed now, or it
+   * would pick the same ones on every run and starve the others. The rule is the one `check` applies per recipient: a language's own
+   * switched-on template, else the English one.
+   *
+   * @param db the database or a transaction
+   * @param key the event, channel and audience
+   * @returns `anyLanguage` when the English template is on (every language falls back to it), else the languages that have their own
+   *   switched-on template (none: nobody can be mailed)
+   */
+  async writableLanguages(
+    db: DbExecutor,
+    key: { event: string; channel: NotificationChannel; audience: NotificationAudience },
+  ): Promise<{ readonly anyLanguage: boolean; readonly locales: readonly string[] }> {
+    const locales = await activeTemplateLocales(db, key);
+    return { anyLanguage: locales.includes('en'), locales };
   }
 
   /**
@@ -270,12 +296,14 @@ export class NotificationService {
    *
    * @param dedupeKey the key the row was made with
    * @param reason why nothing was sent (a short code; no address or secret)
+   * @param db the database or a transaction to write with (default: the pool); a caller that must finish other work together with the
+   *   row (the recovery mail takes its claim off) passes its `tx`
    * @returns true when a queued row was marked failed
    */
-  async abandon(dedupeKey: string, reason: string): Promise<boolean> {
-    const row = await findNotificationByKey(this.db.db, dedupeKey);
+  async abandon(dedupeKey: string, reason: string, db: DbExecutor = this.db.db): Promise<boolean> {
+    const row = await findNotificationByKey(db, dedupeKey);
     if (!row || row.status !== 'queued') return false;
-    const marked = await markFailed(this.db.db, row.id, row.attempts, reason, this.clock.now());
+    const marked = await markFailed(db, row.id, row.attempts, reason, this.clock.now());
     if (marked) this.logger.warn(`Notification ${row.id} (${row.event}, ${row.channel}) was not sent: ${reason}.`);
     return marked;
   }

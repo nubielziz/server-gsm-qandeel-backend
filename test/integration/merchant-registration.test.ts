@@ -327,10 +327,16 @@ describe('the merchant mail events', () => {
     const named = [...(table.get('notifications')?.byName.keys() ?? [])]
       .filter((name) => !name.startsWith('customer.'))
       .sort();
-    // The notifications queue has named processors only: the three merchant mails, the two jobs of feature 12a and the ticket mail of
-    // feature 17.
+    // The notifications queue has named processors only: the three merchant mails, the two jobs of feature 12a, the ticket mail of
+    // feature 17 and the recovery mail of feature 19.
     expect(named).toEqual(
-      [...Object.values(MERCHANT_MAIL_EVENTS), 'notification.plan', 'notification.send', 'support.ticket_mail'].sort(),
+      [
+        ...Object.values(MERCHANT_MAIL_EVENTS),
+        'notification.plan',
+        'notification.send',
+        'support.ticket_mail',
+        'checkout.recovery',
+      ].sort(),
     );
     expect(table.get('notifications')?.catchAll).toBeUndefined();
   });

@@ -162,15 +162,18 @@ Sends emails and Telegram messages.
   - `support.ticket_mail` (support, `src/modules/support/jobs/ticket-mail.processor.ts`, feature 17): sends a support ticket's receipt, a staff reply (email, or Telegram to a merchant's
     linked chat) or the satisfaction survey. It re-reads the ticket, the requester and the message, builds the ticket link from the ticket token and sends it through
     `NotificationService.sendNow` with the link as a secret that is never stored or logged (the `notifications` row has the other variables).
+  - `checkout.recovery` (customers, `src/modules/customers/jobs/checkout-recovery.processors.ts`, feature 19): the one recovery email of an abandoned checkout. It re-reads the session,
+    its customer and the marketing consent (consent is checked again at send time), builds the one-click link from the session token and sends the mail with the link as a secret that is never
+    stored (the token is a bearer credential: it is not in the event, the job data or the `notifications` row).
 - **Payload:** `OutboxJobData` of the event (ids only). `notification.send` carries the row (`aggregateId` = the `notifications.id`; a digest job carries `{ notificationId }`). The
-  merchant mail jobs carry `aggregateId` = the merchant and `payload.tokenId`; the customer mail jobs carry `aggregateId` = the customer and `payload.tokenId`; a ticket mail job carries `aggregateId` = the ticket and `payload.kind` (`received`, `reply` or `survey`), with `messageId` and `channel` for a reply. Never a token, a link, an address or a message text: the job re-reads the row, the recipient and the
+  merchant mail jobs carry `aggregateId` = the merchant and `payload.tokenId`; the customer mail jobs carry `aggregateId` = the customer and `payload.tokenId`; a ticket mail job carries `aggregateId` = the ticket and `payload.kind` (`received`, `reply` or `survey`), with `messageId` and `channel` for a reply; `checkout.recovery` carries `aggregateId` = the checkout session and no payload. Never a token, a link, an address or a message text: the job re-reads the row, the recipient and the
   active template.
 - **Idempotency:** the outbox job id is `outbox-<event id>` (per queue). A `notifications` row has a `dedupe_key` (`outbox-<event id>:<channel>` for the planning job,
   `telegram-update-<update id>` for the bot's answer, `digest:<event>:<channel>:<merchant>:<day>` for a digest, unique where not null): a job that runs twice makes no second row.
   A send is guarded (`status = 'queued'` on the update): a row already `sent` or `failed` is skipped, so a job that runs twice records one send; the row's id is the
   `Message-ID` of the mail (`<notification-<id>@<domain of MAIL_FROM>>`), so a provider that dedupes drops the rare repeat after a crash between the provider's answer and the update.
   A digest job has the id `notification-<id>` and a delay up to the end of its period (06:00 UTC), at least 10 seconds (`MIN_DIGEST_DELAY_MS`: a job added before its transaction commits must not run before the row is visible); the send job closes the digest first (`payload.closed`), so a change that arrives
-  later joins the next period's row. A merchant or customer mail job asks the row's status before it rotates the token, so a repeat after a delivered mail never spoils the link that arrived.
+  later joins the next period's row. A merchant or customer mail job asks the row's status before it rotates the token, so a repeat after a delivered mail never spoils the link that arrived. A `checkout.recovery` job is guarded twice: `POST /admin/checkouts/recover` and the automatic reminder claim the checkout with `UPDATE checkout_sessions SET recovery_emailed_at ... WHERE recovery_emailed_at IS NULL` in the same transaction that writes the event (so one checkout has at most one event), and the mail's row has the dedupe key `outbox-<event id>:email`, so a job that runs twice sends once; a job that ends skipped without sending (consent withdrawn, template off, customer no longer active, checkout paid) marks the row of an earlier attempt `failed` with the reason and, in one transaction and only if no row of the event was `sent`, sets `recovery_emailed_at` back to null, so the checkout is recoverable again and a later send can try again.
 - **Retry policy:** 5 attempts, exponential backoff from 30 s (jitter 50 %). A transient failure (an SMTP 4xx or a dropped connection, a Telegram 429 or 5xx, a timeout) records the
   attempt on the row and throws, so the queue retries; the last attempt marks the row `failed` with the reason and throws. A refusal that cannot change (an SMTP 5xx, a Telegram
   400, 403 or 404, a missing template, no address, a recipient that is gone) marks the row `failed` at once and ends the job. The queue's own backoff applies as it is: a provider's
@@ -228,7 +231,7 @@ Processes uploaded and generated files (exports, result files).
 Scheduled housekeeping: group promotion, data retention, integrity checks, FX refresh.
 
 - **Concurrency:** 2 per worker process.
-- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly (money module, below), `service_price_scan`, event-driven (catalog module, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below). The others are built by their features, each
+- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly (money module, below), `checkout_recovery_sweep`, every 5 minutes (customers module, below), `service_price_scan`, event-driven (catalog module, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below). The others are built by their features, each
   registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
   `ledger_integrity` (12b, nightly 02:30 UTC, below), `data_retention` (nightly
   03:00 UTC), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). The names are the
@@ -248,7 +251,8 @@ Scheduled housekeeping: group promotion, data retention, integrity checks, FX re
   `session-purge` at 03:15 UTC (`src/modules/identity/jobs/session-purge.module.ts`);
   `client-group-promotion` at 03:30 UTC (`src/modules/identity/jobs/group-promotion.module.ts`);
   `payment-auto-credit` every minute (`src/modules/money/jobs/payment-auto-credit.module.ts`); `fx-refresh` every hour at minute 0
-  (`src/modules/money/jobs/fx-refresh.module.ts`); the health jobs in
+  (`src/modules/money/jobs/fx-refresh.module.ts`); `checkout-recovery-sweep` every 5 minutes
+  (`src/modules/customers/checkout-recovery.module.ts`); the health jobs in
   `src/modules/health/jobs/health-jobs.module.ts`; the others are registered with `JobSchedulerRegistry` by the owning
   features.
 
@@ -296,6 +300,17 @@ Credits the wallet of confirmed top-ups of automatic gateways by themselves (use
 - **What it does, per payment:** asks the gateway's API again through the driver (no row lock is held across the call); then, under `SELECT ... FOR UPDATE` on the payment, re-checks that it is still pending and not flagged and (a) credits it (`deposit` from `gateway_clearing`, key `deposit:payment:<id>`, invoice paid, `invoice.paid` outbox row, audit `credited deposit of` by the system) when the gateway still says confirmed (a crypto gateway only after its required confirmations), (b) sets `review_required` with the reason (audit `sent deposit to review`) when the gateway no longer confirms, the invoice is no longer payable or the payment stayed unconfirmed for 24 hours, or (c) moves `auto_credit_at` 5 minutes ahead while the gateway has not confirmed yet or cannot be reached.
 - **Idempotency:** the payment row lock plus the unique ledger key make a double credit impossible, whether two ticks overlap or a staff decision races the job (the loser changes nothing; staff get `PAYMENT_ALREADY_REVIEWED`). A failure of one payment never stops the others; it stays due for the next tick.
 - **Recorded in `job_runs`** (job `payment_auto_credit`, `processed` = payments credited, `result` = the counts) only for a tick that had payments due and for every manual run: a run every minute with nothing due would bury the jobs list (like the outbox tick, decision 020). Retry policy: the queue's (3 attempts, backoff from 1 min); the next minute's tick is the real retry.
+
+### `checkout_recovery_sweep` (customers module)
+
+The automatic reminder of abandoned checkouts (feature 19, RULES checkouts 3): emails, once, the checkouts that waited `abandonedMinutes` and whose customer agreed to marketing email.
+
+- **Trigger:** the scheduler `checkout-recovery-sweep` every 5 minutes (`*/5 * * * *`). A tick selects the due checkouts (`canRecoverSql`: consent and an active customer, no recovery email yet, not paid, created at least `abandonedMinutes` ago (the storefront policy, 5 to 1440, default 60) and at most 30 days ago), at most 200, oldest first (`checkout_sessions_created_idx`), and only customers whose language can be written in now (the language's own switched-on `checkout.abandoned` template, or the English one, which covers every language), so checkouts that cannot be mailed never fill the batch and block the others.
+- **Payload:** none (a manual run carries `{ runId }`). The tick reads everything from Postgres.
+- **What it does:** in one transaction it runs the manual send's own `RecoveryQueue`: reads the selected sessions `FOR UPDATE` in id order, decides each again (the rule can have changed since the selection), probes the `checkout.abandoned` template, claims the checkout (`recovery_emailed_at`, guarded by `IS NULL`) and writes one `checkout.recovery` outbox event for it (queue `notifications`, above). It sends no mail itself.
+- **Idempotency:** the claim. A checkout is mailed at most once whether the reminder, a staff send or two ticks reach it first; the loser of a race finds `recovery_emailed_at` set and skips it. A staff send after the reminder answers `already_emailed`.
+- **Recorded in `job_runs`** (job `checkout_recovery_sweep`, `processed` = emails queued, `result` = `{ due, queued, skipped }`) only for a tick that found checkouts due and for every manual run; one `audit_logs` row (`sent automatic recovery emails`, actor system) per tick that queued something. A tick with nothing due writes neither.
+- **Retry policy:** the queue's (3 attempts, backoff from 1 min); the next tick is the real retry. While the `checkout.abandoned` email has no usable template the tick selects and claims nothing.
 
 ### `fx_refresh` (money module)
 
@@ -408,6 +423,7 @@ none); the job id is `outbox-<event id>`.
 | `merchant.invited` | `notifications` | `merchant.invited` | `tokenId` (aggregate: `clients`) | identity (`MerchantMailOutbox`), written by `POST /admin/clients` (feature 2a) |
 | `support.ticket_mail` | `notifications` | `support.ticket_mail` | `kind` (`received`, `reply`, `survey`), `messageId` and `channel` for a reply (aggregate: `support_tickets`) | support (`TicketMailRoutes`, loaded by the API and the worker), written by `POST /store/v1/tickets` (the receipt), `POST /admin/support-tickets/:id/reply` and `PATCH /admin/support-tickets/:id` with `status: resolved` (the survey) (feature 17) |
 | `notification.send` | `notifications` | `notification.send` | none (aggregate: `notifications`, the row) | platform (`NotificationRoutes`), written by `NotificationService.enqueue` together with the row |
+| `checkout.recovery` | `notifications` | `checkout.recovery` | none (aggregate: `checkout_sessions`, the abandoned checkout) | customers (`RecoveryOutbox`, loaded by the API and the worker), written by `POST /admin/checkouts/recover` and the `checkout_recovery_sweep` job, in the transaction that claims the checkout (`recovery_emailed_at`) |
 | `order.status_changed` | `merchant-webhooks`, `notifications` | `order.status_changed` on the webhooks, `notification.plan` on `notifications` | `orderId`, `clientId` (null for a storefront order), `fromStatus`, `toStatus` (aggregate: `orders`) | orders (`OrderOutbox`: the webhooks route, loaded by the API and the worker) and platform (`NotificationRoutes`: the notifications route); written by every transition that changes the status: accept, reply, reject, cancel, reopen, refund, verification refund. Consumers: the webhook fan-out (7b) and the order result notifications (12a) |
 | `wallet.low_balance` | `merchant-webhooks`, `notifications` | `wallet.low_balance` / `notification.plan` | `clientId`, `currency`, `available`, `threshold` (aggregate: `ledger_accounts`) | platform (`MerchantEventRoutes` webhooks route, `NotificationRoutes` notifications route), written by the money module's `WalletLowBalanceWatch` |
 | `service.price_changed` | `merchant-webhooks`, `notifications` | `service.price_changed` / `notification.plan` | `clientId`, `serviceId`, `previousPrice`, `price`, `currency` (aggregate: `services`) | platform (both routes), written by the catalog's price change scan |
@@ -427,6 +443,7 @@ Registered with `JobSchedulerRegistry.register` in `onModuleInit`; the worker up
 | `session-purge` | `maintenance` | `session_purge` | daily 03:15 UTC | identity (`src/modules/identity/jobs/`) |
 | `client-group-promotion` | `maintenance` | `client_group_promotion` | daily 03:30 UTC | identity (`src/modules/identity/jobs/`) |
 | `payment-auto-credit` | `maintenance` | `payment_auto_credit` | every minute | money (`src/modules/money/jobs/`) |
+| `checkout-recovery-sweep` | `maintenance` | `checkout_recovery_sweep` | every 5 minutes | customers (`src/modules/customers/checkout-recovery.module.ts`) |
 | `service-checks` | `maintenance` | `service_checks` | every minute | health (`src/modules/health/jobs/`) |
 | `service-checks-purge` | `maintenance` | `service_checks_purge` | daily 03:30 UTC | health (`src/modules/health/jobs/`) |
 | `job-runs-reaper` | `maintenance` | `job_runs_reaper` | every 5 minutes | health (`src/modules/health/jobs/`) |

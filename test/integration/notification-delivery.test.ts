@@ -16,6 +16,7 @@ import {
 } from '../../src/modules/platform';
 import { type TestApp, createTestApp } from '../support/app';
 import { insertMerchant } from '../support/auth';
+import { insertRecoveryTemplate } from '../support/growth';
 import { DAY, HOUR, MINUTE, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 import {
@@ -154,6 +155,40 @@ describe('NotificationService.enqueue and the send job', () => {
     expect(await enqueue(lowBalance(clientId))).toEqual({ status: 'skipped', reason: 'no_template' });
     expect(await notificationRows(db)).toEqual([]);
     expect(await outboxRows()).toEqual([]);
+  });
+
+  it("writes to a recipient in the English template when the recipient's language has none or has it off, and tells which languages can be written in", async () => {
+    const [customer] = await db
+      .insert(s.customers)
+      .values({ email: 'sam@mail.example', name: 'Sam', locale: 'ar' })
+      .returning({ id: s.customers.id });
+    const input = {
+      event: 'checkout.abandoned',
+      recipient: { type: 'customer' as const, id: customer!.id },
+      channel: 'email' as const,
+    };
+    const check = () => service().check(db, input);
+    const languages = () =>
+      service().writableLanguages(db, { event: 'checkout.abandoned', channel: 'email', audience: 'customer' });
+    expect(await check()).toEqual({ skipped: 'no_template' });
+    expect(await languages()).toEqual({ anyLanguage: false, locales: [] });
+
+    await insertRecoveryTemplate(db);
+    expect(await check()).toHaveProperty('recipient');
+    expect(await languages()).toEqual({ anyLanguage: true, locales: ['en'] });
+
+    // The language's own template, off: the English one still covers it.
+    await insertRecoveryTemplate(db, { locale: 'ar', isActive: false });
+    expect(await check()).toHaveProperty('recipient');
+    expect(await languages()).toEqual({ anyLanguage: true, locales: ['en'] });
+
+    // Both off: nothing can be written; with only the language's own on, only that language can.
+    await db.update(s.notificationTemplates).set({ isActive: false });
+    expect(await check()).toEqual({ skipped: 'template_off' });
+    expect(await languages()).toEqual({ anyLanguage: false, locales: [] });
+    await db.update(s.notificationTemplates).set({ isActive: true }).where(eq(s.notificationTemplates.locale, 'ar'));
+    expect(await check()).toHaveProperty('recipient');
+    expect(await languages()).toEqual({ anyLanguage: false, locales: ['ar'] });
   });
 
   it('keeps a suspended merchant from messages that are not transactional, but not from the mails it needs', async () => {

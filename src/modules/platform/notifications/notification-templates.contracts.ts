@@ -13,7 +13,13 @@ const TemplateRow = z.object({
   locale: z.string().describe('A language code such as `en` or `en-GB`.'),
   subject: z.string().describe("The email subject; '' for a Telegram template."),
   body: z.string().describe('The message with `{{placeholders}}`; HTML when it has markup.'),
-  isActive: z.boolean().describe('Off means the message is not sent.'),
+  isActive: z
+    .boolean()
+    .describe(
+      "Off means this language's template is not used: a message in this language is written with the English template while that one " +
+        'is on, and is not sent (`template_off`) when neither is on. Turning the English template off also stops English messages and ' +
+        'the fallback.',
+    ),
   sentLast30Days: z
     .number()
     .int()

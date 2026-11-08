@@ -1,13 +1,15 @@
 // Read-only lookups into tables other modules own, kept in this one file: the service, its category and the retail group behind a
-// listing, the storefront sales of a service, and the consents that reference a legal document.
+// listing, the storefront sales of a service, the consents that reference a legal document, and the TAC catalogue's brands and model
+// names for the landing-page generator.
 //
 // DEVIATION to resolve when those modules export a read: decision 016 wants these reads through the owning module's public
 // service. Catalog exports the price resolver and `RetailPrices` (used for every price figure and every write; the retail price
-// itself is never read here) but no join that can be filtered, sorted and searched by service name and code, and orders and
-// customers export no counts yet, so this file reads `services`, `service_categories`, `client_groups`, `orders` and
-// `consent_records` with plain selects, like catalog's foreign-reads file. Replace the bodies with calls to their services;
+// itself is never read here) but no join that can be filtered, sorted and searched by service name and code, and no list of the TAC
+// catalogue's brands and model names (`TacDirectory` finds one TAC), and orders and customers export no counts yet, so this file reads
+// `services`, `service_categories`, `client_groups`, `orders`, `consent_records` and `tac_catalog` with plain selects, like catalog's
+// foreign-reads file. Replace the bodies with calls to their services;
 // nothing outside this file knows.
-import { type SQL, and, eq, gte, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+import { type SQL, and, asc, eq, gte, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere, schema as s } from '../../../infra/db';
 import type { ServiceListing } from '../db/schema';
@@ -198,4 +200,41 @@ export async function acceptedCounts(db: DbExecutor, documentIds: readonly numbe
     .where(and(inArray(s.consentRecords.legalDocumentId, [...documentIds]), eq(s.consentRecords.granted, true)))
     .groupBy(s.consentRecords.legalDocumentId);
   return new Map(rows.flatMap((row) => (row.documentId === null ? [] : [[row.documentId, row.accepted] as const])));
+}
+
+/** A model name of the TAC catalogue with its brand. */
+export interface TacName {
+  readonly brand: string;
+  readonly name: string;
+}
+
+/**
+ * Lists the distinct (brand, model name) pairs of the TAC catalogue, optionally narrowed by brand or by name.
+ *
+ * Why: the landing-page generator (`POST /admin/content-pages/generate`): the model name of an entry is its marketing name, else its model
+ * code (the endpoint doc). Matching ignores case; the answer carries the catalogue's own spelling.
+ *
+ * @param db the database or a transaction
+ * @param filter `brands` keeps entries of those brands, `names` keeps entries with those model names (both lower case)
+ * @param limit the most pairs to read
+ * @returns the pairs by brand then name
+ */
+export async function listTacNames(
+  db: DbExecutor,
+  filter: { readonly brands?: readonly string[]; readonly names?: readonly string[] },
+  limit: number,
+): Promise<TacName[]> {
+  const t = s.tacCatalog;
+  const name = sql<string>`coalesce(nullif(btrim(${t.marketingName}), ''), ${t.model})`;
+  const brand = sql<string>`lower(${t.brand})`;
+  const lowerName = sql<string>`lower(${name})`;
+  const conditions: SQL[] = [];
+  if (filter.brands !== undefined) conditions.push(inArray(brand, [...filter.brands]));
+  if (filter.names !== undefined) conditions.push(inArray(lowerName, [...filter.names]));
+  return db
+    .selectDistinct({ brand: t.brand, name })
+    .from(s.tacCatalog)
+    .where(conditions.length === 0 ? undefined : and(...conditions))
+    .orderBy(asc(t.brand), asc(name))
+    .limit(limit);
 }

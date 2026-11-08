@@ -138,4 +138,14 @@ export const ALLOWLIST: readonly AllowlistEntry[] = [
       "console can offer 'Open the page' again); the console's ContentPage type does not declare it yet, so its mock rows, which " +
       'the harvested fixture is made of, lack it.',
   },
+  {
+    route: 'POST /admin/content-pages/generate',
+    part: 'fixture',
+    path: 'created[]',
+    rule: 'fixture',
+    mismatch: 'B171',
+    reason:
+      "The drafts the generator answers are admin content page rows and carry `canonicalUrl` (ANSWERS storefront Q8); the console's " +
+      'ContentPage type does not declare it yet, so its mock rows, which the harvested fixture is made of, lack it.',
+  },
 ];

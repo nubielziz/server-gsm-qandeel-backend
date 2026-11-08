@@ -22,7 +22,7 @@ const DAY_MS = 86_400_000;
 /**
  * Counts the storefront funnel over the last `days` days.
  *
- * Why: b2c-10: the window is `[now - days x 24 h, now]`; `imeiChecks` counts `imei_checks` with source `storefront_free` or
+ * Why: b2c-10: the window is `[now - days x 24 h, now)` (the start is included, the end is not); `imeiChecks` counts `imei_checks` with source `storefront_free` or
  * `pre_order`; `paymentStarted` counts `checkout_sessions` created in it (any status); `paid` those with an order; `delivered` those
  * whose order is `completed`. Until checkouts exist (14a, 16) every number is zero.
  *

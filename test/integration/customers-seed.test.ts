@@ -57,7 +57,8 @@ afterAll(async () => {
 describe.skipIf(!frontendPresent)('the customers seed', () => {
   it("writes the demo's 30 customers by their demo ids, with the currency of the country and `medium` for the demo's `med`", async () => {
     const { db } = await testDb();
-    const rows = await db.select().from(s.customers).orderBy(s.customers.id);
+    // The growth seed (feature 19) adds a guest customer per left checkout from id 900 000; the demo's own customers come first.
+    const rows = (await db.select().from(s.customers).orderBy(s.customers.id)).filter((row) => row.id < 900_000);
     expect(rows).toHaveLength(30);
     expect(rows.map((row) => row.id)).toEqual(Array.from({ length: 30 }, (_, index) => index + 1));
     expect(rows[0]).toMatchObject({
@@ -83,10 +84,15 @@ describe.skipIf(!frontendPresent)('the customers seed', () => {
   });
 
   it('shows through the admin routes as the console expects, and the detail answers for a seeded customer', async () => {
-    const list = await staff.get('/admin/customers?_start=0&_end=100&_sort=name&_order=asc');
+    // Descending, so the demo's named customers come before the growth seed's nameless guests (an empty name sorts first).
+    const list = await staff.get('/admin/customers?_start=0&_end=100&_sort=name&_order=desc');
     expect(list.status).toBe(200);
-    expect(list.total).toBe(30);
-    expect(list.body[0]).toMatchObject({ name: 'Ana Costa', currencyCode: 'EUR', ordersCount: 0 });
+    // Every customer row counts, the growth seed's guests included.
+    const { db } = await testDb();
+    expect(list.total).toBe((await db.select({ id: s.customers.id }).from(s.customers)).length);
+    const named = list.body.filter((row: { name: string }) => row.name !== '');
+    expect(named).toHaveLength(30);
+    expect(named.at(-1)).toMatchObject({ name: 'Ana Costa', currencyCode: 'EUR', ordersCount: 0 });
     const blocked = await staff.get('/admin/customers?status=blocked');
     expect(blocked.total).toBe(1);
     expect(blocked.body[0]).toMatchObject({ riskLevel: 'high', status: 'blocked' });
