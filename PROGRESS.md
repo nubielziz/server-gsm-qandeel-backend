@@ -77,6 +77,17 @@ worktree has it). The lead's watchdog `.lead/mem-watch.sh` (run as a Monitor) wa
 with under 1 GB swap left, stops the single largest test, lint or typecheck process. The user's instruction (13:20): full
 permission to finish the project, **at most 4 agents**, avoid crashes. Running: 16, 12b merge fixes, 17, 19 (all resumed).
 
+**18:55 state:** **16 merged** (`8085f59`, B177; its check: 5081 pass, 1 skip, 3 fail: the b2c seed test counted 19's checkouts
+and guests, and the notification-template test's "placeholder the event does not offer" used `support.reply`, which 17 gave
+`{{link}}`; all three fixed, the two batches reran 207 and 224 pass, 0 fail; console live routes 251, frontend `6dc2673`).
+**18** passed its review after the lead fixed the re-review's lint finding (the top-up screen spec), took main twice (17 and
+19, then 16: `bad748d`, 378 of 382 endpoints) and its merge-fix run `wf_69e48409-ea6` (items in `.lead/18-merge-items.md`,
+args `.lead/18-merge-args.json`) wires the capture screening, the risk refund through 16's refund, anonymize into 17's ticket
+tokens, the blocklist at checkout, one `require3ds`, the Risk page seed and the review minors. **6b** (new, `wf_4b8e42cb-926`,
+worktree `../backend-6b` from `8085f59`, Redis 14, brief `docs/briefs/6b-supplier-calls.md` in the worktree): contracts for the
+four outgoing supplier calls (`defineSupplierCall`), the last four manifest keys (382 of 382). The workflow prompts now say to
+run checks in the foreground (18's fix agent replied while its check still ran).
+
 **18:15 state:** **19 merged** (`9df68a8`, B176; its check: 4877 pass, 1 skip, 2 fail in 14b's `customers-seed.test.ts`, which
 expected exactly the demo's 30 customers while 19's seed adds a guest per left checkout from id 900 000: the test now counts
 the demo's ids, and the failing batch reran 196 pass, 0 fail; console live routes 239, frontend `b45581d`). **16** took main
