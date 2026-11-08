@@ -77,6 +77,19 @@ worktree has it). The lead's watchdog `.lead/mem-watch.sh` (run as a Monitor) wa
 with under 1 GB swap left, stops the single largest test, lint or typecheck process. The user's instruction (13:20): full
 permission to finish the project, **at most 4 agents**, avoid crashes. Running: 16, 12b merge fixes, 17, 19 (all resumed).
 
+**19:55 state:** **18 merged** (`35dfcde`, B178; its check: 5302 pass, 1 skip, 0 fail; console live routes 268, frontend
+`3e7586b`: every route the console calls is built, the 269th being the Bull Board page `GET /admin/queues` it only links
+to). 18's merge-fix run passed after one refix; the lead added at the merge: a storefront settings PATCH that changes nothing
+writes one audit row (16's route answered 500 under the audit enforcement), a stricter Risk seed test. **6b** passed its
+review on the first round; the lead applied its minors (the service list archive keeps the supplier's own entry, docs, three
+tests), merged main (`3f61017`: **382 of 382 endpoints built**, `pending.ts` empty), wrote B179 (`c50b530`); full check
+running (`.lead/check-6b.log`). **P4a** follow-ups (`wf_99d70d35-0b2`, worktree `../backend-p4a` from `35dfcde`, Redis 12,
+brief `.lead/P4a-polish.md`): idempotency keys expire after 7 days (B166), no file left by a refused file order, the Dhru
+form limit for `FILEDATA`, an idle supplier never shown degraded (B168), the portal origin in the dev CORS default. First walk
+of the whole console on main before 18 (16, 17, 19 in): 76 steps, 279 real calls, only 18's routes mocked, failures only
+System health's metrics and errors (503: Prometheus is not running; start `docker compose up -d prometheus mailpit` and
+`PROMETHEUS_URL` for the final walk).
+
 **18:55 state:** **16 merged** (`8085f59`, B177; its check: 5081 pass, 1 skip, 3 fail: the b2c seed test counted 19's checkouts
 and guests, and the notification-template test's "placeholder the event does not offer" used `support.reply`, which 17 gave
 `{{link}}`; all three fixed, the two batches reran 207 and 224 pass, 0 fail; console live routes 251, frontend `6dc2673`).
