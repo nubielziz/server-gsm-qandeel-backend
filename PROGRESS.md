@@ -70,6 +70,13 @@ plus the lead's one full check, and a low-memory monitor (below 2 GB available) 
 12:58: 16 (`wf_bc19eab4-9c0`), 12b merge fixes (`wf_73c324f5-a7e`), 17 (`wf_9bbe47ba-2ea`), all resumed; 19
 (`wf_1c12d204-b6b`, continue) waits for a slot.
 
+**Third restart (13:16) and the fix (13:25):** a single full `bun test` process grew past 11 GB even with `smol`, so the suite
+now runs in batches (`scripts/test-batches.sh`: 25 files per fresh process, totals summed) and at most two heavy runs (a
+full suite or the typed lint) run at once on the machine (`scripts/with-slot.sh`, lock files in /tmp; main `cf47afb`, every
+worktree has it). The lead's watchdog `.lead/mem-watch.sh` (run as a Monitor) warns below 1.5 GB available and, below 700 MB
+with under 1 GB swap left, stops the single largest test, lint or typecheck process. The user's instruction (13:20): full
+permission to finish the project, **at most 4 agents**, avoid crashes. Running: 16, 12b merge fixes, 17, 19 (all resumed).
+
 **Day 2 (2026-11-08, from 10:55; the user asked for six agents at once).** Docker started clean (no recovery). Running:
 **12b** (`wf_be974e75-abf`) and **16** (`wf_bc19eab4-9c0`) through `gsm-backend-continue` (finishing their partial work,
 then review and fix); the merges of **12a**, **14b**, **15** and **11** are prepared by the lead (main merged into each
