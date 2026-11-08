@@ -54,6 +54,16 @@ MinIO run; the API, worker and Vite start only for a walk and stop after it.
   orders, the FILEDATA 1 MiB form limit, invoice PDF inline rendering, mismatched payments not reconciling through
   gateway_clearing, idle suppliers shown as degraded.
 
+**Standing authorization (the user, 2026-11-08 12:40, before leaving the house):** continue without asking until the project
+is complete (every remaining feature built, reviewed, merged and walked; the console integrated), at most **5 agents at once**;
+if the usage limit is reached, wait for the reset and continue from this file. The machine restarted at 12:36: Docker was
+started again, and the interrupted runs were relaunched: 16 (`wf_bc19eab4-9c0`, resumed at its fix step), 12b merge fixes
+(`wf_73c324f5-a7e`, resumed), 17 (`wf_9bbe47ba-2ea`) and 19 (`wf_1c12d204-b6b`) through `gsm-backend-continue`; 14b's full
+check rerun. **Order from here:** merge 14b (B172 written) then 11 (re-merge main for 14b's migration 0012, renumber 11's to
+0013, B-entry), then 12b, 16, 17, 19 as their runs end (each: re-merge main, renumber migrations, B-entry, full check, squash);
+launch 18 when 16 and 14b are on main; walk the console pages of the merged features; frontend `npm run mocks:live` after each
+merge; final PROGRESS in both repos.
+
 **Day 2 (2026-11-08, from 10:55; the user asked for six agents at once).** Docker started clean (no recovery). Running:
 **12b** (`wf_be974e75-abf`) and **16** (`wf_bc19eab4-9c0`) through `gsm-backend-continue` (finishing their partial work,
 then review and fix); the merges of **12a**, **14b**, **15** and **11** are prepared by the lead (main merged into each
