@@ -77,6 +77,17 @@ worktree has it). The lead's watchdog `.lead/mem-watch.sh` (run as a Monitor) wa
 with under 1 GB swap left, stops the single largest test, lint or typecheck process. The user's instruction (13:20): full
 permission to finish the project, **at most 4 agents**, avoid crashes. Running: 16, 12b merge fixes, 17, 19 (all resumed).
 
+**18:15 state:** **19 merged** (`9df68a8`, B176; its check: 4877 pass, 1 skip, 2 fail in 14b's `customers-seed.test.ts`, which
+expected exactly the demo's 30 customers while 19's seed adds a guest per left checkout from id 900 000: the test now counts
+the demo's ids, and the failing batch reran 196 pass, 0 fail; console live routes 239, frontend `b45581d`). **16** took main
+twice (17, then 19: `d6a36d8`; migrations renumbered `0017_b2c_payments` and `0018_refund_declined_template`, test database
+recreated), B177 written (`e6dccc7`), full check running (`.lead/check-16.log`). Order changed: 16 lands before 18, and
+18's merge-fix run wires `RiskScreening.assess` into 16's capture (hold places the order `held`, block refunds), its risk
+refund into 16's `b2c_refund`, anonymize into 17's ticket tokens (`CustomerErasureHooks`), billing's auto-credit into
+`reviewTopUp`, and decides the `Blocklist.match` calls in checkout and registration. 18 (`wf_13a23d14-575`): built (19
+routes, no migration; its implementer's check 4580 pass, 1 skip, 1 fail, an `api-keys` ordering tie that passes alone), Opus
+review running. The final walk script `.lead/walk/walk-final.cjs` visits every console page and clicks every tab.
+
 **18:00 state:** 16's merge-fix passed after its refix (refund double-pay guard with the send attempt, default templates of the four
 customer mails); 16 merged main (`f079f1f`: migrations now `0016_b2c_payments` and `0017_refund_declined_template`, to renumber
 once more after 17's `0016_support_tickets`); it waits for 18 (the risk screening is wired into its capture at the merge), then
