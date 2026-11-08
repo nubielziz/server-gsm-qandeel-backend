@@ -77,6 +77,10 @@ worktree has it). The lead's watchdog `.lead/mem-watch.sh` (run as a Monitor) wa
 with under 1 GB swap left, stops the single largest test, lint or typecheck process. The user's instruction (13:20): full
 permission to finish the project, **at most 4 agents**, avoid crashes. Running: 16, 12b merge fixes, 17, 19 (all resumed).
 
+**14b merged** (`f3a8341`, B172; 4181 pass, the real-worker test refused a connection once under load and passes alone; console
+live routes 193, frontend `6af4286`). Test batches are now 12 files (a 25-file integration batch reached 3 GB) with a 4 GB
+runaway limit (main `e96f051`). 11 took main again (migration renumbered `0013`, B173 written) and its full check runs.
+
 **Root cause of the three crashes (found 13:30):** not the suite size alone: 12b's interrupted fix changed the alert notifier
 to take the transaction as its first argument, and `alert-evaluator.test.ts` still asserted on that argument as the notice;
 the failing assertion made Bun print the whole transaction object graph, synchronously, to 13 GB. Guards now in main
