@@ -24,4 +24,59 @@ export const ALLOWLIST: readonly AllowlistEntry[] = [
       "The backend answers [{key, label, group}] (ANSWERS access Q4, the console's Permission type); the console's mock answers " +
       'plain strings, which the console normalises. Roles and permissions come from the server; the mock is only a seed (B8).',
   },
+  {
+    route: 'GET /admin/content-pages',
+    part: 'fixture',
+    path: 'data[]',
+    rule: 'fixture',
+    mismatch: 'B171',
+    reason:
+      "The admin content page row carries `canonicalUrl` (ANSWERS storefront Q8: the row sends the page's canonical address so the " +
+      "console can offer 'Open the page' again); the console's ContentPage type does not declare it yet, so its mock rows, which " +
+      'the harvested fixture is made of, lack it.',
+  },
+  {
+    route: 'GET /admin/content-pages/:id',
+    part: 'fixture',
+    path: '',
+    rule: 'fixture',
+    mismatch: 'B171',
+    reason:
+      "The admin content page row carries `canonicalUrl` (ANSWERS storefront Q8: the row sends the page's canonical address so the " +
+      "console can offer 'Open the page' again); the console's ContentPage type does not declare it yet, so its mock rows, which " +
+      'the harvested fixture is made of, lack it.',
+  },
+  {
+    route: 'POST /admin/content-pages',
+    part: 'fixture',
+    path: '',
+    rule: 'fixture',
+    mismatch: 'B171',
+    reason:
+      "The admin content page row carries `canonicalUrl` (ANSWERS storefront Q8: the row sends the page's canonical address so the " +
+      "console can offer 'Open the page' again); the console's ContentPage type does not declare it yet, so its mock rows, which " +
+      'the harvested fixture is made of, lack it.',
+  },
+  {
+    route: 'PATCH /admin/content-pages/:id',
+    part: 'fixture',
+    path: '',
+    rule: 'fixture',
+    mismatch: 'B171',
+    reason:
+      "The admin content page row carries `canonicalUrl` (ANSWERS storefront Q8: the row sends the page's canonical address so the " +
+      "console can offer 'Open the page' again); the console's ContentPage type does not declare it yet, so its mock rows, which " +
+      'the harvested fixture is made of, lack it.',
+  },
+  {
+    route: 'POST /admin/content-pages/:id/publish',
+    part: 'fixture',
+    path: '',
+    rule: 'fixture',
+    mismatch: 'B171',
+    reason:
+      "The admin content page row carries `canonicalUrl` (ANSWERS storefront Q8: the row sends the page's canonical address so the " +
+      "console can offer 'Open the page' again); the console's ContentPage type does not declare it yet, so its mock rows, which " +
+      'the harvested fixture is made of, lack it.',
+  },
 ];

@@ -30,7 +30,7 @@ export interface Seeder {
  * merchant groups), the suppliers with their links (they need the services), then the orders, which need the merchants, the
  * services, the suppliers and the ledger the others seed, then the supplier call log, whose rows point at orders, the health
  * checks and job runs (a supplier's check needs the supplier), and last the storefront (retail prices, listings, TAC catalogue,
- * legal documents), which needs the services and the retail group.
+ * content pages, help articles, legal documents), which needs the services and the retail group.
  */
 export const SEEDERS: readonly Seeder[] = [
   { module: 'identity', run: seedIdentity },

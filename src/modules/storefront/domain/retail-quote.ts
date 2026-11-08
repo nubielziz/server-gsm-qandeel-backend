@@ -2,7 +2,6 @@
 // amounts in the buyer's currency. Pure functions on exact decimals (decision 011); no database.
 import { Decimal } from 'decimal.js';
 import { Money } from '../../../common/money';
-import { storefrontFloor } from '../../catalog';
 
 /** Exact decimals with half-up rounding, whatever the global Decimal settings are. */
 const D = Decimal.clone({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
@@ -16,20 +15,19 @@ export interface Amounts {
 }
 
 /**
- * The retail price the shop charges for one unit: the larger of the resolver's price and the storefront floor.
+ * The retail price the shop charges for one unit: the larger of the staff retail price and the storefront floor.
  *
  * Why: RESOLUTIONS b2c-7 and catalog-12: a retail price is never under the floor, and the floor of the storefront group is
- * `max(round(base price x 1.10, 2), effective cost + minimum profit)`. The resolver already clamps to the second part; the
- * 10 % over the base price is the storefront's own rule, so a cost rise or a later edit can never sell under it.
+ * `max(round(base price x 1.10, 2), effective cost + minimum profit)`. The floor comes from catalog's `RetailPrices.quotes`
+ * (the function the console's listing admin uses), so a cost rise or a later edit can never sell under it and the console and
+ * the checkout always agree.
  *
- * @param resolved the resolver's price for the retail group (net, USD)
- * @param basePrice the service's base price
- * @param floor the resolver's floor for the retail group
+ * @param retailPrice the retail price staff set for the retail group (net, USD)
+ * @param floor the storefront floor of the service (`RetailQuote.floor`)
  * @returns the unit net price
  */
-export function retailNet(resolved: Money, basePrice: Money, floor: Money): Money {
-  const minimum = storefrontFloor(basePrice, floor);
-  return resolved.cmp(minimum) >= 0 ? resolved : minimum;
+export function retailNet(retailPrice: Money, floor: Money): Money {
+  return retailPrice.cmp(floor) >= 0 ? retailPrice : floor;
 }
 
 /**

@@ -12,6 +12,8 @@ export { ServiceImporter } from './application/service-importer';
 export type { ImportedServiceInput } from './application/service-importer';
 export { PriceResolver, PricingContext } from './application/price-resolver';
 export type { ContextOptions, FloorQuote, PriceRequest } from './application/price-resolver';
+export { RetailPrices } from './application/retail-prices';
+export type { LockedService, RetailQuote } from './application/retail-prices';
 export { ListedPrices } from './application/listed-prices';
 export type { ListedPrice, ListedPriceEntry } from './application/listed-prices';
 export { MerchantCatalog } from './application/merchant-catalog';
@@ -47,6 +49,7 @@ export type { PriceChangeOptions, PriceChangeVerdict, PriceRaiseReason } from '.
 export {
   defaultMinProfit,
   deliveryTimeText,
+  dollars,
   effectiveMinProfit,
   floorPrice,
   isBelowFloor,

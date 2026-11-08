@@ -1,8 +1,11 @@
-// Helpers for the storefront tests (feature 14a): the anti-bot header, currencies, tax windows, a priced and listed service and
-// the legal documents a checkout needs, inserted straight into the test database.
+// Helpers for the storefront tests (features 14a and 15): the anti-bot header, currencies, tax windows, a priced and listed service,
+// the legal documents a checkout needs and a world for the listing admin tests, plus direct inserts of listings, content pages,
+// help articles, legal versions, a storefront customer and a storefront order, straight into the test database.
 import { type Database, schema as s } from '../../src/infra/db';
 import { TURNSTILE_DUMMY_TOKEN, TURNSTILE_HEADER } from '../../src/infra/turnstile';
 import { insertCategory, insertService } from './catalog';
+import { insertUsd } from './fixtures';
+import { insertOrderRow } from './orders';
 import { insertDemoGroups } from './pricing';
 
 /** The headers of a storefront write that passes the anti-bot check (decision 034): the dummy token of the development verifier. */
@@ -181,4 +184,120 @@ export async function storefrontWorld(db: Database): Promise<StorefrontWorld> {
     icloud: { serviceId: icloudId, categoryId: apple, listingId: icloudListing, slug: icloudSlug },
     att: { serviceId: attId, listingId: attListing, slug: attSlug },
   };
+}
+
+/**
+ * Builds a world for the listing tests: USD, the demo's groups (the last is the retail group) and two services in a category
+ * open to every group: the AT&T unlock (cost 13.50, base 17.28, own minimum profit 0.81: storefront floor 19.01) and a cheap
+ * check (cost 0.08, base 0.13, no own minimum profit: floor 0.14).
+ */
+export async function listingWorld(db: Database) {
+  await insertUsd(db);
+  const groups = await insertDemoGroups(db);
+  const categoryId = await insertCategory(db, { name: 'Carrier unlock' });
+  const att = await insertService(db, categoryId, {
+    name: 'AT&T USA Premier Unlock',
+    code: 'IMEI-ATT-USA',
+    cost: '13.5000',
+    effectiveCost: '13.5000',
+    basePrice: '17.2800',
+    minProfit: '0.8100',
+    slaMinutes: 1440,
+  });
+  const check = await insertService(db, categoryId, {
+    name: 'iCloud Clean / Lost Check',
+    code: 'IMEI-ICL-CHK',
+    cost: '0.0800',
+    effectiveCost: '0.0800',
+    basePrice: '0.1300',
+    slaMinutes: 5,
+  });
+  return { groups, categoryId, att, check };
+}
+
+/** Inserts a listing (listed in English, not featured by default) and returns its id. */
+export async function insertListingRow(
+  db: Database,
+  serviceId: number,
+  values: Partial<typeof s.serviceListings.$inferInsert> = {},
+): Promise<number> {
+  const [row] = await db
+    .insert(s.serviceListings)
+    .values({
+      serviceId,
+      locale: 'en',
+      slug: `listing-${crypto.randomUUID().slice(0, 8)}`,
+      publicTitle: 'A listing',
+      ...values,
+    })
+    .returning({ id: s.serviceListings.id });
+  return row!.id;
+}
+
+/** Inserts the retail price of a service (the `b2c_retail` group row). */
+export async function insertRetailPrice(db: Database, serviceId: number, groupId: number, price: string) {
+  await db.insert(s.serviceGroupPrices).values({ serviceId, groupId, price });
+}
+
+/** Inserts a content page (a published static page in English by default) and returns it. */
+export async function insertPageRow(db: Database, values: Partial<typeof s.contentPages.$inferInsert> = {}) {
+  const [row] = await db
+    .insert(s.contentPages)
+    .values({
+      kind: 'static',
+      slug: `page-${crypto.randomUUID().slice(0, 8)}`,
+      locale: 'en',
+      title: 'A page',
+      bodyMd: '# A page',
+      status: 'published',
+      publishedAt: new Date(),
+      ...values,
+    })
+    .returning();
+  return row!;
+}
+
+/** Inserts a help article (published, English) and returns it. */
+export async function insertArticleRow(db: Database, values: Partial<typeof s.helpArticles.$inferInsert> = {}) {
+  const [row] = await db
+    .insert(s.helpArticles)
+    .values({
+      category: 'Orders',
+      question: 'How long does a carrier unlock take?',
+      answerMd: 'Usually one to three days.',
+      locale: 'en',
+      isPublished: true,
+      ...values,
+    })
+    .returning();
+  return row!;
+}
+
+/** Inserts a legal version (a draft terms version in English by default) and returns it. */
+export async function insertLegalRow(db: Database, values: Partial<typeof s.legalDocuments.$inferInsert> = {}) {
+  const [row] = await db
+    .insert(s.legalDocuments)
+    .values({ type: 'terms', version: '1.0', locale: 'en', bodyMd: '# Terms', ...values })
+    .returning();
+  return row!;
+}
+
+/** Inserts a storefront customer and returns its id. */
+export async function insertCustomerRow(db: Database): Promise<number> {
+  const [row] = await db
+    .insert(s.customers)
+    .values({ email: `customer-${crypto.randomUUID().slice(0, 8)}@example.com`, name: 'A customer' })
+    .returning({ id: s.customers.id });
+  return row!.id;
+}
+
+/** Inserts a storefront order (a customer, source `store`) of a service and returns its id. */
+export async function insertStoreOrder(
+  db: Database,
+  serviceId: number,
+  customerId: number,
+  values: Partial<typeof s.orders.$inferInsert> = {},
+): Promise<number> {
+  const order = await insertOrderRow(db, { serviceId, customerId, source: 'store', ...values });
+  return order.id;
 }

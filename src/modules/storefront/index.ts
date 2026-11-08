@@ -1,5 +1,5 @@
 // Public API of the storefront module: the price quotes a checkout locks, the legal documents in force, the policy switches, the
-// shared request schemas, then the modules. Other modules import only this file.
+// shared request schemas, the legal type words and names, then the modules. Other modules import only this file.
 // Order matters (decision 032): the leaves other modules use come first.
 export { StorefrontQuotes } from './application/storefront-quotes';
 export type { PricedService, QuoteAmounts, QuoteContext, QuoteInput } from './application/storefront-quotes';
@@ -12,5 +12,7 @@ export type { StorefrontPolicySwitches } from './application/storefront-policies
 export { STOREFRONT_LOCALES, zCountryCode, zCurrencyCode, zLocale } from './contracts/storefront-public.contracts';
 export { LEGAL_DOCUMENT_TYPES } from './db/schema';
 export type { LegalDocumentType } from './db/schema';
+export { LEGAL_TYPE_LABEL } from './domain/legal';
 export { StorefrontPublicModule } from './storefront-public.module';
 export { StorefrontModule } from './storefront.module';
+export { StorefrontContentModule } from './storefront-content.module';

@@ -28,7 +28,7 @@ import { MoneyModule } from './modules/money';
 import { OrdersModule } from './modules/orders';
 import { PlatformModule } from './modules/platform';
 import { RiskModule } from './modules/risk';
-import { StorefrontModule } from './modules/storefront';
+import { StorefrontContentModule, StorefrontModule } from './modules/storefront';
 import { SuppliersModule } from './modules/suppliers';
 import { SupportModule } from './modules/support';
 
@@ -69,6 +69,7 @@ import { SupportModule } from './modules/support';
     CommissionsModule,
     CustomersModule,
     StorefrontModule,
+    StorefrontContentModule,
     SupportModule,
     RiskModule,
   ],

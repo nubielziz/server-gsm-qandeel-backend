@@ -7,22 +7,17 @@ import { amountsOf, inCurrency, lockedFxRate, percentWire, retailNet, taxOn } fr
 const m = (text: string) => Money.of(text);
 
 describe('retailNet', () => {
-  it('keeps the resolved price when it is above the storefront floor', () => {
-    // base 17.28 x 1.10 = 19.008 -> 19.01; floor 14.31; the staff price 25.99 stands.
-    expect(retailNet(m('25.99'), m('17.28'), m('14.31')).toWire()).toBe('25.9900');
+  // The storefront floor is catalog's: for base 17.28 and cost + minimum profit 14.31 it is max(19.01, 14.31) = 19.01.
+  it('keeps the staff price when it is above the storefront floor', () => {
+    expect(retailNet(m('25.99'), m('19.01')).toWire()).toBe('25.9900');
   });
 
-  it('lifts a price that is under 110 % of the base price', () => {
-    expect(retailNet(m('18.00'), m('17.28'), m('14.31')).toWire()).toBe('19.0100');
-  });
-
-  it('lifts a price under the effective floor when that is the larger part', () => {
-    // base 1.00 x 1.10 = 1.10 but the supplier cost rose: floor 2.50.
-    expect(retailNet(m('1.20'), m('1.00'), m('2.50')).toWire()).toBe('2.5000');
+  it('lifts a price that is under the storefront floor, even when it is above cost plus minimum profit', () => {
+    expect(retailNet(m('18.00'), m('19.01')).toWire()).toBe('19.0100');
   });
 
   it('keeps a price exactly at the floor', () => {
-    expect(retailNet(m('19.01'), m('17.28'), m('14.31')).toWire()).toBe('19.0100');
+    expect(retailNet(m('19.01'), m('19.01')).toWire()).toBe('19.0100');
   });
 });
 

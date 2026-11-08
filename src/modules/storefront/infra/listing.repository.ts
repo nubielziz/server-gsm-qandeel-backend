@@ -1,9 +1,16 @@
-// Drizzle queries of the public storefront (feature 14a): the page of listed service pages, one page by slug and the FAQs of a
-// service. Read only; the admin routes that create and edit listings arrive with feature 15.
+// Drizzle queries on `service_listings` (the storefront module's own table): the public catalog reads (the page of listed service
+// pages, one page by slug, the FAQs of a service; feature 14a) and the admin writes (insert, switch on or off, conflict checks;
+// feature 15). The joined reads of the console rows are in foreign-reads.repository.ts.
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../infra/db';
-import { type HelpArticle, type ServiceListing, helpArticles, serviceListings } from '../db/schema';
+import {
+  type HelpArticle,
+  type NewServiceListing,
+  type ServiceListing,
+  helpArticles,
+  serviceListings,
+} from '../db/schema';
 
 /** The sort fields of the public service list. */
 export type ListingSort = 'featured' | 'sort' | 'title';
@@ -134,4 +141,71 @@ export async function findServiceFaqs(db: DbExecutor, serviceId: number, locale:
       and(eq(helpArticles.serviceId, serviceId), eq(helpArticles.locale, locale), eq(helpArticles.isPublished, true)),
     )
     .orderBy(asc(helpArticles.sort), asc(helpArticles.id));
+}
+
+/**
+ * Finds a listing row without its service.
+ *
+ * @param db the database or a transaction
+ * @param id the listing id
+ * @returns the row, or `undefined`
+ */
+export async function findListing(db: DbExecutor, id: number): Promise<ServiceListing | undefined> {
+  const [row] = await db.select().from(serviceListings).where(eq(serviceListings.id, id)).limit(1);
+  return row;
+}
+
+/**
+ * Inserts a listing.
+ *
+ * @param db the caller's transaction
+ * @param values the new row
+ * @returns the stored row
+ * @throws a unique violation of `service_listings_service_locale_uq` or `service_listings_slug_uq`
+ */
+export async function insertListing(db: DbExecutor, values: NewServiceListing): Promise<ServiceListing> {
+  const [row] = await db.insert(serviceListings).values(values).returning();
+  return row!;
+}
+
+/**
+ * Switches a listing on or off the site.
+ *
+ * @param db the caller's transaction
+ * @param id the listing id
+ * @param isListed the new value
+ * @returns the updated row
+ */
+export async function setListed(db: DbExecutor, id: number, isListed: boolean): Promise<ServiceListing> {
+  const [row] = await db.update(serviceListings).set({ isListed }).where(eq(serviceListings.id, id)).returning();
+  return row!;
+}
+
+/**
+ * Tells whether a listing already exists for a service and language, or a slug is used in a language.
+ *
+ * @param db the database or a transaction
+ * @param serviceId the service
+ * @param locale the language
+ * @param slug the slug
+ * @returns which rule the new listing would break, or `undefined` when none
+ */
+export async function listingConflict(
+  db: DbExecutor,
+  serviceId: number,
+  locale: string,
+  slug: string,
+): Promise<'serviceId' | 'slug' | undefined> {
+  const [sameService] = await db
+    .select({ id: serviceListings.id })
+    .from(serviceListings)
+    .where(and(eq(serviceListings.serviceId, serviceId), eq(serviceListings.locale, locale)))
+    .limit(1);
+  if (sameService) return 'serviceId';
+  const [sameSlug] = await db
+    .select({ id: serviceListings.id })
+    .from(serviceListings)
+    .where(and(eq(serviceListings.locale, locale), eq(serviceListings.slug, slug)))
+    .limit(1);
+  return sameSlug ? 'slug' : undefined;
 }

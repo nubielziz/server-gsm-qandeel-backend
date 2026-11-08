@@ -32,7 +32,7 @@ import { MoneyAdminModule } from '../../src/modules/money/money-admin.module';
 import { OrderTrackingModule, OrdersAdminModule } from '../../src/modules/orders';
 import { CheckoutModule } from '../../src/modules/customers';
 import { ImeiCheckModule } from '../../src/modules/risk';
-import { StorefrontPublicModule } from '../../src/modules/storefront';
+import { StorefrontContentModule, StorefrontPublicModule } from '../../src/modules/storefront';
 import { SuppliersAdminModule } from '../../src/modules/suppliers';
 import {
   MaintenanceModule,
@@ -116,6 +116,7 @@ const NEEDS_DATABASE_AND_CACHE = [
   StorefrontPublicModule,
   ImeiCheckModule,
   CheckoutModule,
+  StorefrontContentModule,
   MerchantWebhooksModule,
   WebhookDeliveryModule,
   HealthAdminModule,

@@ -132,6 +132,13 @@ the price version: `PriceResolver` (`context`, `resolveMany`, `resolve`, `floor`
 `PRICE_CHANGE_TOLERANCE_KEY`, `DEFAULT_PRICE_CHANGE_TOLERANCE_PERCENT` and `PRICE_CHANGE_TOLERANCE_BOUNDS`, and `CatalogPriceVersion`
 (`CatalogPricesModule`, global, needs the cache; a test app without the infrastructure leaves it out like `CatalogAdminModule`).
 
+Feature 15 adds `RetailPrices` (global through `CatalogModule`, takes the caller's database handle): the storefront's door into the
+catalog. `retailGroupId`, `quotes(db, serviceIds, at?)` (per live service: effective cost, minimum profit for the retail group, the
+storefront floor `storefrontFloor(base, floor)` and the retail price), `lockLiveService(db, id, 'update' | 'share')` and `set(db,
+serviceId, price)` (the one writer of the retail row of `service_group_prices` outside the group-price route; the caller moves the
+price version after its commit). `PATCH /admin/service-listings/:id` uses it, so the listing page and the group-price page hold
+the retail price to the same floor.
+
 ## Owned tables
 
 Only this module reads and writes these 10 tables and `listed_prices` (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts`.

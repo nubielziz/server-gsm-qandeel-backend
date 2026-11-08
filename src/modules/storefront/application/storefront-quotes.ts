@@ -5,7 +5,7 @@ import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
-import { ClientGroupDirectory, PriceResolver, type SellableService, StorefrontServices } from '../../catalog';
+import { ClientGroupDirectory, RetailPrices, type SellableService, StorefrontServices } from '../../catalog';
 import { StorefrontMoney, type StorefrontCurrency } from '../../money';
 import { type Amounts, amountsOf, inCurrency, lockedFxRate, percentWire, retailNet } from '../domain/retail-quote';
 import { listedServiceIds } from '../infra/listing.repository';
@@ -52,10 +52,11 @@ export interface QuoteInput {
 /**
  * Prices services for the storefront.
  *
- * Why: RESOLUTIONS b2c-7 and catalog-3, user rule 9: the price is the catalog resolver's for the `b2c_retail` group, never
- * under the storefront floor; only services staff priced for that group, switched a listing on for, and the catalog says may be
- * sold have a price; tax is the window of the buyer's country at the moment; the exchange rate is the currency's with its markup,
- * locked on the session.
+ * Why: RESOLUTIONS b2c-7 and catalog-3, user rule 9: the price is the retail price staff set for the `b2c_retail` group, never
+ * under the storefront floor, and the floor is the one `RetailPrices.quotes` works out (the function the console's listing admin
+ * uses, so the console, the public list and the checkout never disagree); only services staff priced for that group, switched a
+ * listing on for, and the catalog says may be sold have a price; tax is the window of the buyer's country at the moment; the
+ * exchange rate is the currency's with its markup, locked on the session.
  *
  * Side effects: none (reads only).
  */
@@ -63,7 +64,7 @@ export interface QuoteInput {
 export class StorefrontQuotes {
   constructor(
     private readonly groups: ClientGroupDirectory,
-    private readonly resolver: PriceResolver,
+    private readonly retail: RetailPrices,
     private readonly services: StorefrontServices,
     private readonly money: StorefrontMoney,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -154,14 +155,14 @@ export class StorefrontQuotes {
     serviceIds: readonly number[],
   ): Promise<Map<number, PricedService>> {
     const sellable = await this.listedSellable(db, serviceIds, context.retailGroupId);
-    const pricing = await this.resolver.context(db, { serviceIds: [...sellable.keys()], at: context.at });
+    const quotes = await this.retail.quotes(db, [...sellable.keys()], context.at);
     const out = new Map<number, PricedService>();
     for (const [id, service] of sellable) {
-      const resolution = pricing.resolve({ serviceId: id, groupId: context.retailGroupId });
-      // Only a price staff set for the retail group is a retail price: without the row the resolver falls back to the base
-      // price, which is the B2B list price, not something to sell to the public.
-      if (resolution === undefined || resolution.source !== 'group') continue;
-      out.set(id, { service, unitNet: retailNet(resolution.price, service.basePrice, resolution.floor) });
+      const quote = quotes.get(id);
+      // Only a price staff set for the retail group is a retail price: without the row the shop would fall back to the B2B
+      // base price, which is not something to sell to the public. A service archived since the sellable read has no quote.
+      if (quote === undefined || quote.retailPrice === null) continue;
+      out.set(id, { service, unitNet: retailNet(quote.retailPrice, quote.floor) });
     }
     return out;
   }
