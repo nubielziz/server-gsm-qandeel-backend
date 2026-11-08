@@ -5,7 +5,7 @@ These tests keep the backend, the map and the frontend console telling the same 
 
 | Test file | What it proves | Typical failure and fix |
 |---|---|---|
-| `route-parity.test.ts` | The registry (`defineRoute`, `defineEvent`) equals the route manifest minus `pending.ts`; Fastify serves exactly the registry plus `DOCUMENTATION_ROUTES`; every route the console calls is built or pending. | `X is built but not expected`: the key is not in the manifest (typo) or the route is still listed in `pending.ts`. `X is expected but not built`: you removed a key from `pending.ts` without defining the contract. |
+| `route-parity.test.ts` | The registry (`defineRoute`, `defineDhruAction`, `defineSupplierCall`, `defineEvent`) equals the route manifest minus `pending.ts`; Fastify serves exactly the registry plus `DOCUMENTATION_ROUTES`; every route the console calls is built or pending. | `X is built but not expected`: the key is not in the manifest (typo) or the route is still listed in `pending.ts`. `X is expected but not built`: you removed a key from `pending.ts` without defining the contract. |
 | `shape-parity.test.ts` | For every built route the console calls: the response, request and success status match what the console reads and sends; the harvested fixture satisfies the response schema. Deviations only through `allowlist.ts`. | Read the line: `GET /admin/orders [response] data[].status: backend value "x" unknown to the frontend (enum)`. Fix the contract, or record a decision in `docs/contract/MISMATCHES.md` and add an allowlist entry. |
 | `error-parity.test.ts` | The error catalog equals `docs/contract/error-codes.md` (code, status); every code the console references exists with the status it expects; backend-only codes are printed. | A code was added to one side only. Add it to `error-codes.md` (via `lead-decisions.json`) and `src/common/errors/catalog.ts`. |
 | `openapi-examples.test.ts` | Every example in `docs/contract/openapi.json` and `openapi.public.json` validates against the schema next to it (ajv, draft 2020-12, formats). | Fix the `examples` of the contract, then `bun run docs:openapi`. |
@@ -45,8 +45,9 @@ values are compared as strings. The list dialect (`_start`, `_end`, `_sort`, fil
 
 1. Write the contract as usual (`CONTRIBUTING.md`).
 2. Delete the route's key from `pending.ts` (every endpoint of the map is listed there under its module). Dhru actions,
-   supplier calls and events are keys too (`DHRU …`, `SUPPLIER …`, `EVENT …`); register them in `built` in
-   `route-parity.test.ts` once their registry exists (Dhru actions and supplier calls have none yet).
+   supplier calls and events are keys too (`DHRU …`, `SUPPLIER …`, `EVENT …`); their registries (`defineDhruAction`,
+   `defineSupplierCall`, `defineEvent`) fill `built` in `route-parity.test.ts` through the snapshot, so a new one needs no
+   change there.
 3. Run `bun test test/contract`. If the console calls the route, `shape-parity` now compares it with the console's types and
    with the fixture of the route; fix what it reports.
 4. The review fails if a built route is still in `pending.ts`.

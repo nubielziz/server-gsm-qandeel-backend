@@ -14,6 +14,7 @@ export {
 export type { CallCounts, LatestCheck, SupplierHealthWord, SupplierPageHealth } from './domain/supplier-health';
 export { linkUnitCost, pickLink } from './domain/link-selection';
 export type { LinkChoice, RoutingLink } from './domain/link-selection';
+export { SUPPLIER_CALLS } from './contracts/supplier-calls.contracts';
 export { SUPPLIER_CALL_OUTCOMES, SUPPLIER_DRIVERS, SUPPLIER_PARAM_FORMATS, SUPPLIER_STATUSES } from './db/schema';
 export type { Supplier, SupplierCallOutcome, SupplierDriver, SupplierParamFormat, SupplierStatus } from './db/schema';
 export { SUPPLIER_PLAIN_HTTP_KEY, SUPPLIER_TARGET_POLICY } from './application/supplier-target-policy';

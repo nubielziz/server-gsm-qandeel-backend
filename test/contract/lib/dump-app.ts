@@ -9,6 +9,7 @@ import {
   eventRegistry,
   isListQuerySchema,
   parseRouteKey,
+  supplierCallRegistry,
   toJsonSchema,
 } from '../../../src/common/contract';
 import { dhruActionRegistry } from '../../../src/common/dhru';
@@ -63,6 +64,7 @@ const snapshot: AppSnapshot = {
     payload: toJsonSchema(event.payload, 'output'),
   })),
   dhruActions: dhruActionRegistry.all().map((action) => action.key),
+  supplierCalls: supplierCallRegistry.keys(),
   served: [...served].sort(),
   documentationRoutes: [...DOCUMENTATION_ROUTES],
 };

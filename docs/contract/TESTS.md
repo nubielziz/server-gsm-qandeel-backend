@@ -19,8 +19,8 @@ live in `test/contract/` and run in `bun run check`; a red contract test blocks 
 1. **`route-parity.test.ts`**
    - HTTP: the registry's keys equal the manifest's `kind: http` keys (all surfaces), and the Fastify router serves
      exactly those routes plus the documentation routes (no route without a contract, no contract without a route).
-   - Dhru actions = manifest `DHRU …` keys; supplier client methods = `SUPPLIER …`; outgoing event schemas =
-     `EVENT …`.
+   - Dhru actions = manifest `DHRU …` keys; supplier calls (`defineSupplierCall`, the calls the supplier client
+     makes) = `SUPPLIER …`; outgoing event schemas = `EVENT …`.
    - Every key in `frontend-endpoints.json` is a backend route.
 2. **`shape-parity.test.ts`**: for each frontend endpoint, compare its shapes with the backend JSON Schema
    (zod → JSON Schema 2020-12) of the same route:

@@ -108,6 +108,13 @@ example })` (`src/common/contract/define-event.ts`) registers it, and the public
 the delivery envelope `{ id, type, createdAt, data }`, the `X-GSM-Signature` header and the retry rule. Regenerate the
 documents afterwards.
 
+### Calls to a supplier
+
+A call this backend makes to a supplier's Dhru API is a contract as well: `defineSupplierCall({ key: 'SUPPLIER accountinfo',
+summary, params, success, examples })` (`src/common/contract/define-supplier-call.ts`) registers it, and the supplier client
+reads every answer through its `success` schema (`domain/dhru-protocol.ts`), so a change to what the client reads without a
+change to the contract fails a test. The internal document lists the calls in `x-gsm-supplier-calls`; the public one never does.
+
 ## Add a job **(P2.4)**
 
 Jobs run only in the worker process (decision 020); the API writes the database and an outbox row, then returns. The code is

@@ -3,7 +3,7 @@
   "info": {
     "title": "GSM Supplier API: internal reference",
     "version": "1.0.0",
-    "description": "Every route of the API: admin console, merchant portal, storefront, REST API v1, Dhru Fusion, incoming webhooks and system routes. Generated from the route contracts; the public subset is `/openapi.json`.\n\nEach operation shows its access kind (`x-gsm-access`), the permission a staff route, or the scope an API key, needs (`x-gsm-permission`) and the manifest key (`x-gsm-key`).\n\n**Conventions.** JSON bodies use camelCase names. Money is a string with exactly four decimals (`\"12.4900\"`), timestamps are ISO 8601 UTC with milliseconds (`\"2026-03-01T09:30:00.000Z\"`) and ids are numbers. Errors are `application/problem+json` with a stable `code`; quote the `requestId` when you contact support."
+    "description": "Every route of the API: admin console, merchant portal, storefront, REST API v1, Dhru Fusion, incoming webhooks and system routes. Generated from the route contracts; the public subset is `/openapi.json`.\n\nEach operation shows its access kind (`x-gsm-access`), the permission a staff route, or the scope an API key, needs (`x-gsm-permission`) and the manifest key (`x-gsm-key`).\n\n**Conventions.** JSON bodies use camelCase names. Money is a string with exactly four decimals (`\"12.4900\"`), timestamps are ISO 8601 UTC with milliseconds (`\"2026-03-01T09:30:00.000Z\"`) and ids are numbers. Errors are `application/problem+json` with a stable `code`; quote the `requestId` when you contact support.\n\n**Supplier calls.** Calls this backend makes to a supplier's Dhru Fusion API (`POST <supplier>/api/index.php`); they are no routes of this API. Schemas and examples are in `x-gsm-supplier-calls`.\n\n- `accountinfo`: Our balance at the supplier.\n- `imeiservicelist`: The supplier's services and their cost.\n- `placeimeiorder`: Send an order to the supplier. Bulk variant `placeimeiorderbulk`: never sent.\n- `getimeiorder`: Ask the supplier for the status of an order. Bulk variant `getimeiorderbulk`: never sent."
   },
   "servers": [
     {
@@ -209393,5 +209393,478 @@
         "description": "Header we add to every outgoing webhook event: `t=<unix seconds>,v1=<hex HMAC-SHA256 of \"<t>.<raw body>\">`, keyed with the secret of the webhook endpoint. Recompute it over the raw body and refuse deliveries older than 5 minutes. Documented for receivers; it cannot be used to call this API."
       }
     }
-  }
+  },
+  "x-gsm-supplier-calls": [
+    {
+      "key": "SUPPLIER accountinfo",
+      "action": "accountinfo",
+      "summary": "Our balance at the supplier",
+      "description": "Asks the supplier how much prepaid credit we have. The standard spells the answer key `AccoutInfo` (sic); `AccountInfo` is accepted too (when both come, a well-formed `AccoutInfo` wins and a malformed one gives way to `AccountInfo`). A missing block or a credit that is not a number is an unusable answer: the call is logged as failed. Extra fields are ignored.",
+      "transport": {
+        "method": "POST",
+        "path": "<supplier>/api/index.php",
+        "contentType": "application/x-www-form-urlencoded",
+        "note": "The form fields are `username`, `apiaccesskey`, `action`, `requestformat=JSON` and `parameters` (base64 of a JSON object). The call is made by the worker or by a staff action, with the supplier's own account."
+      },
+      "bulk": null,
+      "parameters": null,
+      "success": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "description": "`Your Accout Info`. Not read.",
+            "type": [
+              "string",
+              "number"
+            ]
+          },
+          "AccoutInfo": {
+            "description": "The balance block, spelled as in the Dhru standard.",
+            "type": "object",
+            "properties": {
+              "credit": {
+                "description": "Our prepaid balance at the supplier, in its own currency. Read as a number: `\"$1,200.50\"` is accepted.",
+                "type": [
+                  "string",
+                  "number"
+                ]
+              },
+              "currency": {
+                "description": "The currency of the balance, for example `USD`. Optional.",
+                "type": [
+                  "string",
+                  "number"
+                ]
+              },
+              "mail": {
+                "description": "The e-mail of our account at the supplier. Optional.",
+                "type": [
+                  "string",
+                  "number"
+                ]
+              }
+            },
+            "required": [
+              "credit"
+            ],
+            "additionalProperties": {}
+          },
+          "AccountInfo": {
+            "description": "The balance block with the corrected spelling.",
+            "type": "object",
+            "properties": {
+              "credit": {
+                "description": "Our prepaid balance at the supplier, in its own currency. Read as a number: `\"$1,200.50\"` is accepted.",
+                "type": [
+                  "string",
+                  "number"
+                ]
+              },
+              "currency": {
+                "description": "The currency of the balance, for example `USD`. Optional.",
+                "type": [
+                  "string",
+                  "number"
+                ]
+              },
+              "mail": {
+                "description": "The e-mail of our account at the supplier. Optional.",
+                "type": [
+                  "string",
+                  "number"
+                ]
+              }
+            },
+            "required": [
+              "credit"
+            ],
+            "additionalProperties": {}
+          }
+        },
+        "additionalProperties": {}
+      },
+      "error": {
+        "type": "object",
+        "properties": {
+          "MESSAGE": {
+            "type": "string",
+            "description": "Why the supplier refused, for example `Authentication Failed` or `Not enough credits`."
+          }
+        },
+        "required": [
+          "MESSAGE"
+        ],
+        "additionalProperties": {}
+      },
+      "examples": {
+        "answer": {
+          "SUCCESS": [
+            {
+              "message": "Your Accout Info",
+              "AccoutInfo": {
+                "credit": "1240.50",
+                "mail": "ops@supplier.example",
+                "currency": "USD"
+              }
+            }
+          ]
+        },
+        "refusal": {
+          "ERROR": [
+            {
+              "MESSAGE": "Authentication Failed"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "key": "SUPPLIER imeiservicelist",
+      "action": "imeiservicelist",
+      "summary": "The supplier's services and their cost",
+      "description": "Asks for the whole catalogue: `LIST` is an object of groups, each with a `SERVICES` object of services. The client keeps each service once (the first one wins when an id repeats) and leaves out a service without an id, a name or a readable price; a field of the wrong type counts as missing, and every `Requires.*` flag is kept. The log keeps the count of services, not the list.",
+      "transport": {
+        "method": "POST",
+        "path": "<supplier>/api/index.php",
+        "contentType": "application/x-www-form-urlencoded",
+        "note": "The form fields are `username`, `apiaccesskey`, `action`, `requestformat=JSON` and `parameters` (base64 of a JSON object). The call is made by the worker or by a staff action, with the supplier's own account."
+      },
+      "bulk": null,
+      "parameters": null,
+      "success": {
+        "type": "object",
+        "properties": {
+          "MESSAGE": {
+            "description": "`IMEI Service List`. Not read.",
+            "type": [
+              "string",
+              "number"
+            ]
+          },
+          "LIST": {
+            "description": "The groups by name. A list that is missing or empty means the supplier has no services.",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "GROUPNAME": {
+                  "description": "The group name; the key of the group in `LIST` when it is missing.",
+                  "type": [
+                    "string",
+                    "number"
+                  ]
+                },
+                "GROUPTYPE": {
+                  "description": "`IMEI`, `SERVER` or `REMOTE`.",
+                  "type": [
+                    "string",
+                    "number"
+                  ]
+                },
+                "SERVICES": {
+                  "description": "The services of the group by id. A group without `SERVICES` is skipped.",
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "SERVICEID": {
+                        "description": "The supplier's service id; the key of the entry in `SERVICES` when it is missing.",
+                        "type": [
+                          "string",
+                          "number"
+                        ]
+                      },
+                      "SERVICETYPE": {
+                        "description": "`IMEI`, `SERVER` or `REMOTE`; used when the group has no `GROUPTYPE`.",
+                        "type": [
+                          "string",
+                          "number"
+                        ]
+                      },
+                      "SERVICENAME": {
+                        "description": "The name (kept to 300 characters). A service without a name is left out.",
+                        "type": [
+                          "string",
+                          "number"
+                        ]
+                      },
+                      "CREDIT": {
+                        "description": "The price in supplier credits. A service without a readable price is left out.",
+                        "type": [
+                          "string",
+                          "number"
+                        ]
+                      },
+                      "TIME": {
+                        "description": "The delivery time as text, for example `1-2 hours`.",
+                        "type": [
+                          "string",
+                          "number"
+                        ]
+                      },
+                      "Requires.Custom": {
+                        "description": "The custom fields the service needs: `{ type, fieldname, fieldtype, description, fieldoptions, required }` each.",
+                        "type": "array",
+                        "items": {}
+                      }
+                    },
+                    "additionalProperties": {}
+                  }
+                }
+              },
+              "additionalProperties": {}
+            }
+          }
+        },
+        "additionalProperties": {}
+      },
+      "error": {
+        "type": "object",
+        "properties": {
+          "MESSAGE": {
+            "type": "string",
+            "description": "Why the supplier refused, for example `Authentication Failed` or `Not enough credits`."
+          }
+        },
+        "required": [
+          "MESSAGE"
+        ],
+        "additionalProperties": {}
+      },
+      "examples": {
+        "answer": {
+          "SUCCESS": [
+            {
+              "MESSAGE": "IMEI Service List",
+              "LIST": {
+                "Carrier unlock": {
+                  "GROUPNAME": "Carrier unlock",
+                  "GROUPTYPE": "IMEI",
+                  "SERVICES": {
+                    "4411": {
+                      "SERVICEID": "4411",
+                      "SERVICETYPE": "IMEI",
+                      "SERVICENAME": "AT&T USA Premier",
+                      "CREDIT": "13.5000",
+                      "TIME": "1-2 hours",
+                      "Requires.Network": "None"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "refusal": {
+          "ERROR": [
+            {
+              "MESSAGE": "Authentication Failed"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "key": "SUPPLIER placeimeiorder+placeimeiorderbulk",
+      "action": "placeimeiorder",
+      "summary": "Send an order to the supplier",
+      "description": "Places one order and keeps the `REFERENCEID` of the answer (kept to 200 characters) as the supplier reference. An answer without a REFERENCEID is unusable: the order goes to attention, it is never sent again by itself. The bulk variant `placeimeiorderbulk` (parameters keyed by a request id) is described by the Dhru standard but this backend never sends it: each order is its own job, so a refusal never stops another order and every order has its own log row.",
+      "transport": {
+        "method": "POST",
+        "path": "<supplier>/api/index.php",
+        "contentType": "application/x-www-form-urlencoded",
+        "note": "The form fields are `username`, `apiaccesskey`, `action`, `requestformat=JSON` and `parameters` (base64 of a JSON object). The call is made by the worker or by a staff action, with the supplier's own account."
+      },
+      "bulk": {
+        "action": "placeimeiorderbulk",
+        "sent": false
+      },
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ID": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The supplier's service id (`supplier_services.remote_id`)."
+          },
+          "IMEI": {
+            "description": "The main input: the IMEI, or the first required field. Left out when the order has none.",
+            "type": "string"
+          },
+          "QNT": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "description": "The quantity."
+          },
+          "CUSTOMFIELD": {
+            "description": "The custom field values by the supplier's field names. On the wire it is base64 of this JSON object (decision 026).",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "ID",
+          "QNT"
+        ]
+      },
+      "success": {
+        "type": "object",
+        "properties": {
+          "MESSAGE": {
+            "description": "`Order received`. Not read.",
+            "type": [
+              "string",
+              "number"
+            ]
+          },
+          "REFERENCEID": {
+            "description": "The supplier's reference of the order.",
+            "type": [
+              "string",
+              "number"
+            ]
+          }
+        },
+        "required": [
+          "REFERENCEID"
+        ],
+        "additionalProperties": {}
+      },
+      "error": {
+        "type": "object",
+        "properties": {
+          "MESSAGE": {
+            "type": "string",
+            "description": "Why the supplier refused, for example `Authentication Failed` or `Not enough credits`."
+          }
+        },
+        "required": [
+          "MESSAGE"
+        ],
+        "additionalProperties": {}
+      },
+      "examples": {
+        "parameters": {
+          "ID": "4411",
+          "IMEI": "352905112490861",
+          "QNT": 1,
+          "CUSTOMFIELD": {
+            "AccountUser": "ali"
+          }
+        },
+        "answer": {
+          "SUCCESS": [
+            {
+              "MESSAGE": "Order received",
+              "REFERENCEID": "88121"
+            }
+          ]
+        },
+        "refusal": {
+          "ERROR": [
+            {
+              "MESSAGE": "Not enough credits"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "key": "SUPPLIER getimeiorder+getimeiorderbulk",
+      "action": "getimeiorder",
+      "summary": "Ask the supplier for the status of an order",
+      "description": "`STATUS` 4 is completed and 3 rejected; `CODE` is the result of a completed order or the reason of a rejected one. 0 and 1 mean the order is still running (2 is accepted as running too; the standard does not use it) and the CODE is ignored. A missing or unknown STATUS is an unusable answer: the order stays as it is and is asked again. The bulk variant `getimeiorderbulk` is described by the Dhru standard but this backend never sends it: each poll job asks about one order.",
+      "transport": {
+        "method": "POST",
+        "path": "<supplier>/api/index.php",
+        "contentType": "application/x-www-form-urlencoded",
+        "note": "The form fields are `username`, `apiaccesskey`, `action`, `requestformat=JSON` and `parameters` (base64 of a JSON object). The call is made by the worker or by a staff action, with the supplier's own account."
+      },
+      "bulk": {
+        "action": "getimeiorderbulk",
+        "sent": false
+      },
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ID": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The supplier's reference of the order: the `REFERENCEID` of the placement."
+          }
+        },
+        "required": [
+          "ID"
+        ]
+      },
+      "success": {
+        "type": "object",
+        "properties": {
+          "STATUS": {
+            "description": "0 new, 1 in process, 3 rejected (refunded), 4 completed. Text such as `\"4\"` is accepted.",
+            "type": [
+              "string",
+              "number"
+            ]
+          },
+          "CODE": {
+            "description": "The result of a completed order, the reason of a rejected one; empty while it runs.",
+            "type": [
+              "string",
+              "number"
+            ]
+          }
+        },
+        "required": [
+          "STATUS"
+        ],
+        "additionalProperties": {}
+      },
+      "error": {
+        "type": "object",
+        "properties": {
+          "MESSAGE": {
+            "type": "string",
+            "description": "Why the supplier refused, for example `Authentication Failed` or `Not enough credits`."
+          }
+        },
+        "required": [
+          "MESSAGE"
+        ],
+        "additionalProperties": {}
+      },
+      "examples": {
+        "parameters": {
+          "ID": "88121"
+        },
+        "answer": {
+          "SUCCESS": [
+            {
+              "STATUS": 4,
+              "CODE": "Unlocked: code 8842 1113"
+            }
+          ]
+        },
+        "refusal": {
+          "ERROR": [
+            {
+              "MESSAGE": "Order not found"
+            }
+          ]
+        }
+      }
+    }
+  ]
 }

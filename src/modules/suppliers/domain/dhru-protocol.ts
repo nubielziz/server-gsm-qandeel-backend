@@ -1,6 +1,11 @@
 // The Dhru Fusion v6.1 client side (decision 026): the request an outbound supplier call sends and how each answer is read. Pure,
-// so the fake supplier of the tests and the real one are judged by the same code. Serves the supplier calls of stage 6.
+// so the fake supplier of the tests and the real one are judged by the same code. Serves the supplier calls of stage 6; every answer is
+// read through the schema of its contract (`contracts/supplier-calls.contracts.ts`).
 import { Decimal } from 'decimal.js';
+import { accountInfoCall, getOrderCall, placeOrderCall, serviceListCall } from '../contracts/supplier-calls.contracts';
+import { amountText } from './amount-text';
+
+export { amountText };
 
 /** The four supplier actions this backend calls (`docs/slices/suppliers.json`, `SUPPLIER ...` rows). */
 export const DHRU_ACTIONS = {
@@ -100,23 +105,6 @@ export function parseDhruAnswer(body: unknown): DhruAnswer {
   return { kind: 'invalid', message: 'The supplier answer has neither SUCCESS nor ERROR.' };
 }
 
-/**
- * Turns a supplier's number text into the 4-decimal text this backend stores.
- *
- * @param value a number or text such as `"120.5"`, `"$1,200.50"`
- * @returns the amount rounded half up to four decimals, or `undefined` when no number can be read
- */
-export function amountText(value: unknown): string | undefined {
-  const raw = typeof value === 'number' ? String(value) : typeof value === 'string' ? value : '';
-  const cleaned = raw.replace(/,/g, '').match(/-?\d+(\.\d+)?/);
-  if (!cleaned) return undefined;
-  try {
-    return new Decimal(cleaned[0]).toDecimalPlaces(4, Decimal.ROUND_HALF_UP).toFixed(4);
-  } catch {
-    return undefined;
-  }
-}
-
 /** The supplier account as `accountinfo` reports it. */
 export interface AccountInfo {
   /** Our prepaid balance at the supplier, 4 decimals, in the supplier's own currency. */
@@ -125,8 +113,40 @@ export interface AccountInfo {
   readonly mail: string | null;
 }
 
+/** A member the object itself holds (never one it inherits, such as `__proto__`), or `undefined`. */
+function ownMember(value: unknown, key: string): unknown {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) && Object.hasOwn(value, key)
+    ? (value as Record<string, unknown>)[key]
+    : undefined;
+}
+
+/**
+ * The supplier's own entry of one service, as it was sent.
+ *
+ * Why: `supplier_services.raw` archives what the supplier said; the schema's reading may have dropped a field of an unexpected type, so
+ * the archive takes the entry from the payload itself.
+ *
+ * @param payload the success entry of `imeiservicelist`
+ * @param groupKey the key of the group in `LIST`
+ * @param serviceKey the key of the service in the group's `SERVICES`
+ * @returns the entry as sent, or `undefined` when it is not an object
+ */
+function sentEntry(
+  payload: Record<string, unknown>,
+  groupKey: string,
+  serviceKey: string,
+): Record<string, unknown> | undefined {
+  const entry = ownMember(ownMember(ownMember(payload, 'LIST'), groupKey), 'SERVICES');
+  const service = ownMember(entry, serviceKey);
+  return typeof service === 'object' && service !== null && !Array.isArray(service)
+    ? (service as Record<string, unknown>)
+    : undefined;
+}
+
 /**
  * Reads the answer of `accountinfo`.
+ *
+ * Why: the schema of `SUPPLIER accountinfo` decides whether the answer is usable; an answer it refuses has no readable credit.
  *
  * @param payload the success entry
  * @returns the balance and who the account is, or the reason it cannot be read
@@ -134,8 +154,9 @@ export interface AccountInfo {
 export function readAccountInfo(
   payload: Record<string, unknown>,
 ): { ok: true; value: AccountInfo } | { ok: false; message: string } {
+  const entry = accountInfoCall.success.safeParse(payload);
   // The standard spells the key `AccoutInfo` (sic); a corrected spelling is accepted too.
-  const info = asRecord(payload.AccoutInfo) ?? asRecord(payload.AccountInfo);
+  const info = entry.success ? (entry.data.AccoutInfo ?? entry.data.AccountInfo) : undefined;
   const credit = amountText(info?.credit);
   if (!info || credit === undefined) return { ok: false, message: 'The supplier answer has no readable credit.' };
   return {
@@ -172,26 +193,24 @@ const MAX_NAME = 300;
  * @returns the services, each once (the first one wins when an id repeats)
  */
 export function readServiceList(payload: Record<string, unknown>): RemoteService[] {
-  const list = asRecord(payload.LIST);
+  // The schema of `SUPPLIER imeiservicelist` is lenient on purpose: a group or service of the wrong shape arrives as `undefined` and is skipped.
+  const entry = serviceListCall.success.safeParse(payload);
+  const list = entry.success ? entry.data.LIST : undefined;
   const found = new Map<string, RemoteService>();
-  for (const [groupKey, groupValue] of Object.entries(list ?? {})) {
-    const group = asRecord(groupValue);
-    const services = asRecord(group?.SERVICES);
+  for (const [groupKey, group] of Object.entries(list ?? {})) {
+    const services = group?.SERVICES;
     if (!group || !services) continue;
     const groupName = textOf(group.GROUPNAME) || groupKey;
     const groupType = textOf(group.GROUPTYPE);
-    for (const [serviceKey, serviceValue] of Object.entries(services)) {
-      const service = asRecord(serviceValue);
+    for (const [serviceKey, service] of Object.entries(services)) {
       if (!service) continue;
       const remoteId = textOf(service.SERVICEID) || serviceKey;
       const name = textOf(service.SERVICENAME).slice(0, MAX_NAME);
       const credit = amountText(service.CREDIT);
       if (remoteId === '' || name === '' || credit === undefined || found.has(remoteId)) continue;
       const requires: Record<string, unknown> = {};
-      let customFields: unknown[] = [];
       for (const [key, value] of Object.entries(service)) {
-        if (key === 'Requires.Custom') customFields = Array.isArray(value) ? value : [];
-        else if (key.startsWith('Requires.')) requires[key.slice('Requires.'.length)] = value;
+        if (key !== 'Requires.Custom' && key.startsWith('Requires.')) requires[key.slice('Requires.'.length)] = value;
       }
       found.set(remoteId, {
         remoteId,
@@ -201,8 +220,8 @@ export function readServiceList(payload: Record<string, unknown>): RemoteService
         credit: Decimal.max(credit, 0).toFixed(4),
         time: textOf(service.TIME),
         requires,
-        customFields,
-        raw: service,
+        customFields: service['Requires.Custom'] ?? [],
+        raw: sentEntry(payload, groupKey, serviceKey) ?? service,
       });
     }
   }
@@ -216,8 +235,8 @@ export function readServiceList(payload: Record<string, unknown>): RemoteService
  * @returns the supplier's reference of the order, or `undefined` when the answer has none
  */
 export function readPlacedOrder(payload: Record<string, unknown>): string | undefined {
-  const reference = textOf(payload.REFERENCEID);
-  return reference === '' ? undefined : reference.slice(0, 200);
+  const entry = placeOrderCall.success.safeParse(payload);
+  return entry.success ? textOf(entry.data.REFERENCEID).slice(0, 200) : undefined;
 }
 
 /** What a supplier says about one order. */
@@ -235,10 +254,10 @@ export interface SupplierOrderStatus {
  * @returns the state and the CODE, or `undefined` when the STATUS is missing or unknown
  */
 export function readOrderStatus(payload: Record<string, unknown>): SupplierOrderStatus | undefined {
-  const statusText = textOf(payload.STATUS);
-  if (statusText === '') return undefined;
-  const status = Number(statusText);
-  const code = textOf(payload.CODE);
+  const entry = getOrderCall.success.safeParse(payload);
+  if (!entry.success) return undefined;
+  const status = Number(textOf(entry.data.STATUS));
+  const code = textOf(entry.data.CODE);
   if (status === 4) return { state: 'completed', code: code === '' ? null : code };
   if (status === 3) return { state: 'rejected', code: code === '' ? null : code };
   if (status === 0 || status === 1 || status === 2) return { state: 'running', code: null };

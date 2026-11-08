@@ -85,6 +85,15 @@ describe('readAccountInfo', () => {
     expect(readAccountInfo({ AccountInfo: { credit: '5' } })).toMatchObject({ ok: true });
   });
 
+  it('takes the standard spelling when both come, and the corrected one when the standard block is malformed', () => {
+    expect(readAccountInfo({ AccoutInfo: { credit: '1' }, AccountInfo: { credit: '7' } })).toMatchObject({
+      value: { credit: '1.0000' },
+    });
+    expect(readAccountInfo({ AccoutInfo: 'broken', AccountInfo: { credit: '7' } })).toMatchObject({
+      value: { credit: '7.0000' },
+    });
+  });
+
   it('refuses an answer without a readable credit', () => {
     expect(readAccountInfo({ AccoutInfo: { mail: 'x' } }).ok).toBe(false);
     expect(readAccountInfo({}).ok).toBe(false);
@@ -139,6 +148,13 @@ describe('readServiceList', () => {
 
   it('answers an empty list for a payload without LIST', () => {
     expect(readServiceList({})).toEqual([]);
+  });
+
+  it('archives the entry as the supplier sent it, a field of an unexpected type included', () => {
+    const sent = { SERVICEID: '7', SERVICENAME: 'Odd time', CREDIT: '3', TIME: ['not', 'text'], EXTRA: { a: 1 } };
+    const [service] = readServiceList({ LIST: { G: { GROUPNAME: 'G', SERVICES: { '7': sent } } } });
+    expect(service?.raw).toEqual(sent);
+    expect(service?.time).toBe('');
   });
 });
 

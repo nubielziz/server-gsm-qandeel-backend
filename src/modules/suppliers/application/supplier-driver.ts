@@ -4,6 +4,7 @@
 // touches the database: the caller writes the `supplier_api_logs` row from the record every call returns.
 import type { HttpRequestOptions, HttpResult } from '../../../infra/http';
 import { HttpRequestError } from '../../../infra/http';
+import type { GetOrderParameters, PlaceOrderParameters } from '../contracts/supplier-calls.contracts';
 import type { SupplierCallOutcome } from '../db/schema';
 import {
   DHRU_ACTIONS,
@@ -139,7 +140,8 @@ export class DhruDriver implements SupplierDriver {
    * @returns the supplier's REFERENCEID, or why the call failed, with the record for the log
    */
   placeOrder(context: DriverContext, order: PlaceOrderInput): Promise<DriverCall<{ reference: string }>> {
-    const parameters: Record<string, unknown> = {
+    // Typed by the contract of `SUPPLIER placeimeiorder`: a parameter the contract does not list does not compile.
+    const parameters: PlaceOrderParameters = {
       ID: order.remoteServiceId,
       ...(order.input === null ? {} : { IMEI: order.input }),
       QNT: order.quantity,
@@ -161,7 +163,8 @@ export class DhruDriver implements SupplierDriver {
    * @returns the state and the CODE, or why the call failed, with the record for the log
    */
   getOrder(context: DriverContext, reference: string): Promise<DriverCall<SupplierOrderStatus>> {
-    return this.call(context, DHRU_ACTIONS.getOrder, { ID: reference }, (payload) => {
+    const parameters: GetOrderParameters = { ID: reference };
+    return this.call(context, DHRU_ACTIONS.getOrder, parameters, (payload) => {
       const status = readOrderStatus(payload);
       return status ? { ok: true, value: status } : { ok: false, message: 'The supplier answer has no known STATUS.' };
     });

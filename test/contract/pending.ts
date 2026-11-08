@@ -15,10 +15,6 @@ export const PENDING: readonly string[] = [
   // catalog
   // orders
   // suppliers
-  'SUPPLIER accountinfo',
-  'SUPPLIER imeiservicelist',
-  'SUPPLIER placeimeiorder+placeimeiorderbulk',
-  'SUPPLIER getimeiorder+getimeiorderbulk',
   // health
   // customers
 ];

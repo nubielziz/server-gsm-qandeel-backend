@@ -3,9 +3,17 @@
 // Pure functions over plain JSON plus one call into @nestjs/swagger; the generator script and the app share them.
 import type { INestApplication } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { type EventContract, eventRegistry, toJsonSchema, zIsoDateTime } from '../../../common/contract';
+import {
+  type AnySupplierCall,
+  type EventContract,
+  eventRegistry,
+  supplierCallRegistry,
+  toJsonSchema,
+  zIsoDateTime,
+} from '../../../common/contract';
 import { type AnyDhruAction, dhruActionRegistry } from '../../../common/dhru';
 import { describeDhruActions } from './dhru-reference';
+import { describeSupplierCalls } from './supplier-calls-reference';
 import type {
   OpenApiDocument,
   OpenApiOperation,
@@ -106,6 +114,8 @@ export interface BuildOptions {
   readonly events?: readonly EventContract[];
   /** Dhru actions to describe in the Dhru operation; defaults to the process-wide registry. */
   readonly dhruActions?: readonly AnyDhruAction[];
+  /** Supplier calls to list in the internal document only; defaults to the process-wide registry. */
+  readonly supplierCalls?: readonly AnySupplierCall[];
 }
 
 function clone<T>(value: T): T {
@@ -390,9 +400,13 @@ function orderDocument(doc: OpenApiDocument): OpenApiDocument {
  * permission as `x-gsm-*` extensions.
  *
  * @param raw the document `SwaggerModule.createDocument` produced (not modified)
+ * @param supplierCalls the calls this backend makes to suppliers, listed in `x-gsm-supplier-calls` (none by default)
  * @returns a new document with every operation, all security schemes and surface-grouped tags
  */
-export function buildInternalDocument(raw: OpenApiDocument): OpenApiDocument {
+export function buildInternalDocument(
+  raw: OpenApiDocument,
+  supplierCalls: readonly AnySupplierCall[] = [],
+): OpenApiDocument {
   // An empty `schemas: {}` (no class-based models) is dropped; the contracts inline their schemas.
   const rawComponents = Object.fromEntries(
     Object.entries(clone(raw.components ?? {})).filter(([, entries]) => Object.keys(entries).length > 0),
@@ -406,6 +420,7 @@ export function buildInternalDocument(raw: OpenApiDocument): OpenApiDocument {
   };
   usedSecuritySchemes(doc);
   organizeTags(doc);
+  describeSupplierCalls(doc, supplierCalls);
   return orderDocument(doc);
 }
 
@@ -460,7 +475,7 @@ export function buildOpenApiDocuments(app: INestApplication, options: BuildOptio
   // Decision 017: the Dhru operation lists its eight actions (a `oneOf` by `action`, an example each) in both documents.
   describeDhruActions(raw, options.dhruActions ?? dhruActionRegistry.all());
   return {
-    internal: buildInternalDocument(raw),
+    internal: buildInternalDocument(raw, options.supplierCalls ?? supplierCallRegistry.all()),
     public: buildPublicDocument(raw, options.events ?? eventRegistry.all()),
   };
 }

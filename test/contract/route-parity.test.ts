@@ -26,13 +26,13 @@ const BACKEND_EVENTS: readonly string[] = ['EVENT service.price_changed'];
 const DHRU_TRANSPORT = 'POST /api/index.php';
 
 /**
- * What is built, per kind of manifest key. Dhru actions come from the registry of `defineDhruAction`; supplier calls have no
- * registry yet: the feature that adds one lists its keys here, otherwise removing them from pending.ts fails the first test below.
+ * What is built, per kind of manifest key. Dhru actions come from the registry of `defineDhruAction`, supplier calls from the one of
+ * `defineSupplierCall`, events from `defineEvent`.
  */
 const built: Record<string, string[]> = {
   http: snapshot.contracts.map((contract) => contract.key).filter((key) => key !== DHRU_TRANSPORT),
   'dhru-action': [...snapshot.dhruActions],
-  'supplier-call': [],
+  'supplier-call': [...snapshot.supplierCalls],
   event: snapshot.events.map((event) => event.key),
 };
 

@@ -46,6 +46,8 @@ export interface AppSnapshot {
   readonly events: readonly { readonly key: string; readonly name: string; readonly payload: JsonSchema }[];
   /** `DHRU <action>` of every Dhru action the application defines (the registry of `defineDhruAction`). */
   readonly dhruActions: readonly string[];
+  /** `SUPPLIER <action>[+<action>bulk]` of every call the application makes to a supplier (the registry of `defineSupplierCall`). */
+  readonly supplierCalls: readonly string[];
   /** `METHOD /path` of every route Fastify serves (no HEAD, no OPTIONS). */
   readonly served: readonly string[];
   /** Routes the application serves without a contract (`DOCUMENTATION_ROUTES`). */

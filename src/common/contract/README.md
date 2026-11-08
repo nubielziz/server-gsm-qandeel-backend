@@ -167,6 +167,14 @@ never with numbers.
   security scheme named in `SECURITY_SCHEME`. Regenerate with `bun run docs:openapi`; CI runs the `--check`.
 - `defineEvent({ key: 'EVENT order.status_changed', summary, payload, example })` registers an outgoing webhook event in
   `eventRegistry` (same rules as `defineRoute`); the public document lists it under `webhooks`.
+- `defineSupplierCall({ key: 'SUPPLIER placeimeiorder+placeimeiorderbulk', summary, description, params, success, examples })`
+  (`define-supplier-call.ts`, feature 6b) registers a call this backend **makes** to a supplier's Dhru Fusion API in
+  `supplierCallRegistry`: the manifest key is `SUPPLIER <action>` or `SUPPLIER <action>+<action>bulk` (anything else throws at
+  load), `params` is the schema of the decoded `parameters` we send, `success` the schema of the `SUCCESS` entry we accept (the
+  supplier client reads every answer through it), `error` the `ERROR` entry (default `{ MESSAGE }`) and the examples are
+  validated against the schemas. A bulk variant needs a description that says whether the client sends it (`sendsBulk`, default
+  `false`: described, never sent). The four calls live in `src/modules/suppliers/contracts/supplier-calls.contracts.ts`; the
+  internal OpenAPI document lists them in `x-gsm-supplier-calls` (the public document does not).
 - Do not chain `.meta()`/`.describe()` on the result of `listQuery()`: zod clones the schema and drops its list marker.
 
 ## Testing a route

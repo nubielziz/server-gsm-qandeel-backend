@@ -10,7 +10,7 @@ Decisions that shape this module: 023 outbound HTTP, 026 Dhru compatibility, 020
 
 Built (feature 6, suppliers): the 13 routes of this module plus the three order routes that move an order to a supplier (`dispatch`, `fetch`, `change-supplier`, owned by the orders map but built here, because they read the supplier tables; they move the order through the orders module's `OrderSupplierMoves`), the Dhru supplier client behind a driver interface, the dispatch, poll and sync jobs, the demo seed and the scenarios `success`, `reject` and `timeout`. Not here: the supplier report (11), the system health supplier view (9, it reuses `supplierHealth`), Dhru and REST v1 for merchants (7a), the outgoing order events (7b). `GET /admin/reports/suppliers` is stage 11.
 
-Structure: `contracts/` (zod contracts), `controllers/` (thin), `application/` (use cases and the supplier client), `domain/` (pure rules, unit tested), `infra/` (Drizzle queries), `jobs/` (worker processors and schedules), `db/schema.ts`.
+Structure: `contracts/` (zod contracts: the routes, and the four supplier calls), `controllers/` (thin), `application/` (use cases and the supplier client), `domain/` (pure rules, unit tested), `infra/` (Drizzle queries), `jobs/` (worker processors and schedules), `db/schema.ts`.
 Three Nest modules: `SuppliersAdminModule` (routes and use cases, needs the database; listed in `NEEDS_DATABASE_AND_CACHE` of `test/support/app.ts`), `SupplierEngineModule` (client, sync, dispatch, poll: no routes, loaded by both processes) and `SupplierJobsModule` (processors and schedules, worker only).
 
 ## The supplier client (decision 026)
@@ -27,7 +27,7 @@ Money: a supplier's result settles the order through `OrderTransitions`: the hol
 
 ## Public API (`index.ts`)
 
-Exports the modules (`SuppliersModule`, `SuppliersAdminModule`, `SupplierEngineModule`, `SupplierJobsModule`), the health rules (`supplierHealth`, `healthFromCalls`, `toPageHealth`, `runwayDays`, `isLowBalance`: the system health view of feature 9 reuses them), the link rules (`pickLink`, `linkUnitCost`), `SupplierDirectory` (supplier names for other modules), `SupplierReader`, `SupplierDispatch`, `SupplierPoll`, `SupplierSync`, the vocabularies and row types, and the test policy token. Other modules import only `src/modules/suppliers/index.ts` (lint rule `gsm/module-boundaries`).
+Exports the modules (`SuppliersModule`, `SuppliersAdminModule`, `SupplierEngineModule`, `SupplierJobsModule`), the health rules (`supplierHealth`, `healthFromCalls`, `toPageHealth`, `runwayDays`, `isLowBalance`: the system health view of feature 9 reuses them), the link rules (`pickLink`, `linkUnitCost`), the four supplier call contracts (`SUPPLIER_CALLS`), `SupplierDirectory` (supplier names for other modules), `SupplierReader`, `SupplierDispatch`, `SupplierPoll`, `SupplierSync`, the vocabularies and row types, and the test policy token. Other modules import only `src/modules/suppliers/index.ts` (lint rule `gsm/module-boundaries`).
 
 ## Owned tables
 
@@ -73,12 +73,14 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 
 ### Supplier calls (outgoing)
 
-| Call | What it does |
-|---|---|
-| `SUPPLIER accountinfo` | Our balance at the supplier (test, sync, balance check). |
-| `SUPPLIER imeiservicelist` | The supplier's services and their cost, for the sync. |
-| `SUPPLIER placeimeiorder` | Send the order and store `supplier_ref` (the dispatch job). |
-| `SUPPLIER getimeiorder` | Poll the status and the result (the poll job, `fetch`). |
+These are calls this backend makes, not routes it serves. Each has a contract made with `defineSupplierCall` (`src/common/contract/define-supplier-call.ts`, registry `supplierCallRegistry`) in `contracts/supplier-calls.contracts.ts` (feature 6b): the manifest key, the schema of the decoded `parameters` we send (the driver builds its request as that type), the schema of the `SUCCESS` entry we accept, the shape of an `ERROR` entry and validated examples. The client reads every answer through its contract (`readAccountInfo`, `readServiceList`, `readPlacedOrder`, `readOrderStatus` in `domain/dhru-protocol.ts` call the schema first), so changing what the client reads without changing the contract fails a test. The tolerance did not change: extra fields are ignored, a field of the wrong type counts as missing, and only the fields the client needs can make a call unusable (the credit, the `REFERENCEID`, the `STATUS`); a service of a list that has no id, name or readable price is skipped, never the whole list. The internal OpenAPI document lists the calls in `x-gsm-supplier-calls`; the public one does not.
+
+| Call | What it does | Unusable answer |
+|---|---|---|
+| `SUPPLIER accountinfo` | Our balance at the supplier (test, sync, balance check). | no `AccoutInfo` (or `AccountInfo`) block with a readable `credit` |
+| `SUPPLIER imeiservicelist` | The supplier's services and their cost, for the sync. | none: a list that cannot be read is empty |
+| `SUPPLIER placeimeiorder+placeimeiorderbulk` | Send the order and store `supplier_ref` (the dispatch job). The bulk variant is described but never sent: one order is one job. | no `REFERENCEID` |
+| `SUPPLIER getimeiorder+getimeiorderbulk` | Poll the status and the result (the poll job, `fetch`). `STATUS` 4 completed, 3 rejected, 0 and 1 (and 2) running. The bulk variant is described but never sent: one poll job asks about one order. | no known `STATUS` |
 
 ## Scenarios
 
