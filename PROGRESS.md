@@ -77,6 +77,13 @@ worktree has it). The lead's watchdog `.lead/mem-watch.sh` (run as a Monitor) wa
 with under 1 GB swap left, stops the single largest test, lint or typecheck process. The user's instruction (13:20): full
 permission to finish the project, **at most 4 agents**, avoid crashes. Running: 16, 12b merge fixes, 17, 19 (all resumed).
 
+**17:10 state:** **12b merged** (`320404c`, B174; console live routes 225, frontend `7e37ac8`). 19 passed review, merged main
+(`b581211`) and its merge-fix run `wf_de932880-b27` handles the recovery mark on a skipped mail, the English template fallback,
+the page generator's skips and the funnel edge. 17 merged main (`5e8e38d`, migration now `0016_support_tickets`) and its
+merge-fix run `wf_15137898-566` moves the guest insert behind a customers service, fixes the audit phrase, limits tickets per
+email, sends one survey per ticket and searches the requester's email. Still running: 16 fixes (`wf_27c5b76d-222`) and 18
+(`wf_13a23d14-575`).
+
 **16:35 state:** 12b merged main (`8839974`: migrations `0014_alerts` and `0015_alert_templates`, B174) and its full check runs;
 17 passed after fix (`wf_9bbe47ba-2ea`: the ticket token is returned only on the order-token path) and waits for 12b to land
 (its `0012_support_tickets` must follow 12b's 0015; move its guest-customer insert behind a customers service; the audit
