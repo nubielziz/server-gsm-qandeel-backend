@@ -63,6 +63,12 @@ check rerun. **Order from here:** merge 14b (B172 written) then 11 (re-merge mai
 0013, B-entry), then 12b, 16, 17, 19 as their runs end (each: re-merge main, renumber migrations, B-entry, full check, squash);
 launch 18 when 16 and 14b are on main; walk the console pages of the merged features; frontend `npm run mocks:live` after each
 merge; final PROGRESS in both repos.
+**Memory limit (found 2026-11-08 12:55):** the two restarts at 12:34 and 12:50 were the Linux out-of-memory killer (WSL has 15 GB;
+one full `bun test` process peaked at 5 GB; 4 to 6 full suites at once took 14.7 GB plus swap and the init scope was killed).
+Since then: `bunfig.toml` sets `[test] smol = true` (main `69d4220` and every worktree), at most **3 agent runs** at once
+plus the lead's one full check, and a low-memory monitor (below 2 GB available) is armed while agents run. Relaunched at
+12:58: 16 (`wf_bc19eab4-9c0`), 12b merge fixes (`wf_73c324f5-a7e`), 17 (`wf_9bbe47ba-2ea`), all resumed; 19
+(`wf_1c12d204-b6b`, continue) waits for a slot.
 
 **Day 2 (2026-11-08, from 10:55; the user asked for six agents at once).** Docker started clean (no recovery). Running:
 **12b** (`wf_be974e75-abf`) and **16** (`wf_bc19eab4-9c0`) through `gsm-backend-continue` (finishing their partial work,
