@@ -64,6 +64,8 @@ export interface AppConfig {
     readonly errorsBaseUrl: string;
     /** Base URL of the merchant portal, without a trailing slash; links in invitation emails are built from it. */
     readonly portalBaseUrl: string;
+    /** Base URL of the storefront, without a trailing slash; the sign-in and password links of customers are built from it. */
+    readonly storeBaseUrl: string;
     /** Lower-case name of the country header a trusted proxy sets (e.g. `cf-ipcountry`); unset = not used. */
     readonly geoipCountryHeader: string | undefined;
     readonly referenceDocs: ReferenceDocsMode;
@@ -191,6 +193,7 @@ export const DEV_DEFAULTS = {
   encryptionKey: Buffer.alloc(32, 'gsm-dev-key').toString('base64'),
   errorsBaseUrl: 'http://localhost:3000/errors',
   portalBaseUrl: 'http://localhost:5174',
+  storeBaseUrl: 'http://localhost:5175',
   corsOrigins: 'http://localhost:5173,http://127.0.0.1:5173',
   // The Mailpit of compose.yaml (decision 033): SMTP on 1025, a web UI on 8025 with every message.
   mailSmtpUrl: 'smtp://localhost:1025',
@@ -214,6 +217,7 @@ const rawSchema = z.object({
   CORS_ORIGINS: z.string().optional(),
   ERRORS_BASE_URL: httpUrl.optional(),
   PORTAL_BASE_URL: httpUrl.optional(),
+  STORE_BASE_URL: httpUrl.optional(),
   GEOIP_COUNTRY_HEADER: z
     .string()
     .regex(/^[A-Za-z0-9-]{1,64}$/, 'use a header name: letters, digits or "-" (1-64 characters)')
@@ -498,6 +502,8 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
     /\/+$/,
     '',
   );
+  // The customer links are `<STORE_BASE_URL>/sign-in?token=...` and `/set-password?token=...` (feature 14b).
+  const storeBaseUrl = withDefault('STORE_BASE_URL', raw.STORE_BASE_URL, DEV_DEFAULTS.storeBaseUrl).replace(/\/+$/, '');
   const s3Endpoint = raw.S3_ENDPOINT ?? (production ? undefined : DEV_DEFAULTS.s3Endpoint);
   // Decision 034: production never runs the dummy verifier, which accepts a public test token.
   if (production && raw.TURNSTILE_SECRET_KEY === undefined) fail('TURNSTILE_SECRET_KEY', 'is required in production');
@@ -515,6 +521,7 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
       corsOrigins: cors.ok ? cors.value : [],
       errorsBaseUrl,
       portalBaseUrl,
+      storeBaseUrl,
       geoipCountryHeader: raw.GEOIP_COUNTRY_HEADER?.toLowerCase(),
       referenceDocs: raw.REFERENCE_DOCS ?? (production ? 'staff' : 'open'),
     },
@@ -702,6 +709,7 @@ export function summarizeConfig(config: AppConfig): Record<string, unknown> {
       corsOrigins: config.http.corsOrigins,
       errorsBaseUrl: config.http.errorsBaseUrl,
       portalBaseUrl: config.http.portalBaseUrl,
+      storeBaseUrl: config.http.storeBaseUrl,
       geoipCountryHeader: config.http.geoipCountryHeader,
       referenceDocs: config.http.referenceDocs,
     },

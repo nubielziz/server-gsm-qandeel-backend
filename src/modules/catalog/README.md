@@ -10,8 +10,8 @@ Decisions that shape this module: 011 money, 026 Dhru compatibility. Common to a
 
 Built: feature 4a (catalog-structure, 20 routes): merchant groups, service categories, services with their custom fields and
 option lists, and the code inventory; feature 4b (catalog-pricing, 16 routes): group prices, client prices, pricing rules, the
-bulk price change, the price resolver and the merchant catalog (below). Supplier links and import are feature 6; the TAC catalog
-is 14b.
+bulk price change, the price resolver and the merchant catalog (below); feature 14b (4 routes): the TAC catalog (below). Supplier links and import are
+feature 6.
 
 - **Merchant groups** (`application/client-group-admin.service.ts`, `infra/group.repository.ts`): list with `merchantCount`
   (not for the retail group), show, create (`b2b`, last in the order), change, delete. One default group at all times: making a
@@ -44,6 +44,17 @@ is 14b.
   public, in `CatalogModule`) hands codes to an order at placement: `claim` locks the oldest available codes of a service
   (`FOR UPDATE SKIP LOCKED`) and decrypts them as the order's result, `sell` marks them sold with the order id (RULES orders 10).
 - **`recomputeEffectiveCost(tx, serviceIds)`** (`application/effective-cost.ts`): the one writer of `services.effective_cost`.
+
+### TAC catalog (feature 14b)
+
+`TacCatalogAdminService` (`application/tac-catalog-admin.service.ts`, `infra/tac-catalog.repository.ts`, `domain/tac-input.ts`) serves
+`/admin/tac-catalog` (`catalog:read|create|update`, audit entity type `tac_entry`): list with `q` over TAC (a typed prefix finds it), brand, model code and
+marketing name, an exact `brand` filter, sorts by `tac` (default), `brand`, `model` and `releaseYear`; add (`source` `manual`) and correct. A TAC appears once
+(`409 TAC_TAKEN` on `tac`, also for two requests at once through the unique index). RESOLUTIONS catalog-7: the `tac` of an entry is editable only while no `imei_checks`
+row has it (`imei_checks.tac` is history, no `ON UPDATE CASCADE`): otherwise `422` on `tac` with "N IMEI checks already use TAC <old>; add a new entry for the new TAC
+instead." (the count is a foreign read of risk's table, `infra/tac-foreign-reads.repository.ts`). RESOLUTIONS catalog-8: `release_year` stays nullable and an unknown year is
+sent as `0` (sorted as 0); a body year is a whole number from 1990 to next year by the clock (0 and null are `422` on `releaseYear`); a year cannot be cleared; `brand` and
+`model` cannot be emptied. The seed loads the demo's eight TACs (`scripts/seed/customers.ts`).
 
 ### Pricing (feature 4b)
 

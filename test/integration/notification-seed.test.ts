@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, setDefaultTimeou
 import { existsSync } from 'node:fs';
 import { parseEnv } from '../../src/config';
 import { schema as s } from '../../src/infra/db';
+import { CUSTOMER_MAIL_EVENT_KEYS } from '../../src/modules/platform';
 import { demoStatePath, loadDemoState } from '../../scripts/seed/demo-state';
 import { seedIdentity } from '../../scripts/seed/identity';
 import { seedPlatform } from '../../scripts/seed/platform';
@@ -47,8 +48,10 @@ describe.skipIf(!frontendPresent)('the 12a seed', () => {
     const first = await seed();
     expect(reportOf(first.platform, 'notification_templates')).toMatchObject({ inserted: 6, existing: 0 });
     const { db } = await testDb();
+    // The four account mails (feature 14b) are default templates of the migrations, not the demo's six.
+    const accountMails: readonly string[] = CUSTOMER_MAIL_EVENT_KEYS;
     const customer = (await db.select().from(s.notificationTemplates).orderBy(s.notificationTemplates.id)).filter(
-      (row) => row.audience === 'customer',
+      (row) => row.audience === 'customer' && !accountMails.includes(row.event),
     );
     expect(customer.map((row) => [row.event, row.isActive])).toEqual([
       ['order.received', true],
@@ -73,7 +76,13 @@ describe.skipIf(!frontendPresent)('the 12a seed', () => {
     const { platform } = await seed();
     expect(reportOf(platform, 'notifications')).toMatchObject({ inserted: 112 + 86 + 6 + 41 + 17 + 48, existing: 0 });
     const owner = await adminWith(t, ['*']);
-    const templates = (await owner.get('/admin/notification-templates?audience=customer&_sort=id&_order=asc')).body;
+    const accountMails: readonly string[] = CUSTOMER_MAIL_EVENT_KEYS;
+    const templates = (
+      (await owner.get('/admin/notification-templates?audience=customer&_sort=id&_order=asc')).body as Array<{
+        event: string;
+        sentLast30Days: number;
+      }>
+    ).filter((row) => !accountMails.includes(row.event));
     expect(templates.map((row: { event: string; sentLast30Days: number }) => [row.event, row.sentLast30Days])).toEqual([
       ['order.received', 112],
       ['order.completed', 86],

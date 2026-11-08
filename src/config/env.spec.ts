@@ -22,6 +22,7 @@ const production = (): Record<string, string> => ({
   NODE_ENV: 'production',
   ERRORS_BASE_URL: 'https://errors.gsm.example/',
   PORTAL_BASE_URL: 'https://portal.gsm.example/',
+  STORE_BASE_URL: 'https://shop.gsm.example/',
   DATABASE_URL: 'postgres://app:pw@db.internal:5432/gsm',
   REDIS_QUEUE_URL: 'redis://queue.internal:6379/0',
   REDIS_CACHE_URL: 'redis://cache.internal:6379/0',
@@ -79,6 +80,14 @@ describe('parseEnv in development and test', () => {
       'https://portal.example.com',
     );
     expect(issuesOf({ PORTAL_BASE_URL: 'portal.example.com' }).map((i) => i.variable)).toEqual(['PORTAL_BASE_URL']);
+  });
+
+  it('reads STORE_BASE_URL without a trailing slash and refuses a value that is not an http(s) URL', () => {
+    expect(parseEnv({ STORE_BASE_URL: 'https://shop.example.com//' }).http.storeBaseUrl).toBe(
+      'https://shop.example.com',
+    );
+    expect(parseEnv({}).http.storeBaseUrl).toBe(DEV_DEFAULTS.storeBaseUrl);
+    expect(issuesOf({ STORE_BASE_URL: 'shop.example.com' }).map((i) => i.variable)).toEqual(['STORE_BASE_URL']);
   });
 
   it('uses warn logs and no CORS origins in test', () => {
@@ -156,6 +165,7 @@ describe('parseEnv in production', () => {
     expect(config.isProduction).toBe(true);
     expect(config.http.errorsBaseUrl).toBe('https://errors.gsm.example');
     expect(config.http.portalBaseUrl).toBe('https://portal.gsm.example');
+    expect(config.http.storeBaseUrl).toBe('https://shop.gsm.example');
     expect(config.http.referenceDocs).toBe('staff');
     expect(config.log.level).toBe('info');
     expect(config.security.cookieSecure).toBe(true);
@@ -171,6 +181,7 @@ describe('parseEnv in production', () => {
     for (const required of [
       'ERRORS_BASE_URL',
       'PORTAL_BASE_URL',
+      'STORE_BASE_URL',
       'DATABASE_URL',
       'REDIS_QUEUE_URL',
       'REDIS_CACHE_URL',

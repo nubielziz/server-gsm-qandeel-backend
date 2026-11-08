@@ -112,10 +112,15 @@ export const openCheckoutSession = defineRoute({
   key: 'POST /store/v1/checkout-sessions',
   summary: 'Open a checkout',
   description:
-    'Starts a purchase as a guest: the email makes (or finds) a guest customer, and the session locks the retail price, the tax rate of ' +
-    "the buyer's `country` and the exchange rate of `currency` for 30 minutes. An IMEI service needs a valid `imei` (else `422 " +
+    "Starts a purchase, as a guest or as a signed-in customer: the session locks the retail price, the tax rate of the buyer's " +
+    "`country` and the exchange rate of `currency` for 30 minutes. A guest's email makes (or finds) a guest customer. A request that " +
+    'carries the cookie of a signed-in customer (and its `X-CSRF-Token`, else `403 CSRF_FAILED` and nothing is written) opens the ' +
+    'checkout as that account instead: ' +
+    '`email` must be the email of the account in any case (else `422` on `email`: "Use the email of your account, or sign out to ' +
+    'check out as a guest."), the `guestCheckout` switch does not apply and the session belongs to the signed-in customer. A request ' +
+    'without a usable customer session is a guest. An IMEI service needs a valid `imei` (else `422 ' +
     'INVALID_IMEI`); a service with order fields needs their `inputs`. A suspended or blocked customer is refused (`403 ' +
-    'ACCOUNT_SUSPENDED`); when the shop requires an account (`guestCheckout` off) the answer is `401 UNAUTHORIZED`. A service the ' +
+    'ACCOUNT_SUSPENDED`); when the shop requires an account (`guestCheckout` off) a guest gets `401 UNAUTHORIZED`. A service the ' +
     'shop cannot sell is `422` on `serviceId`. The answer carries the session token: the whole credential of the next two routes. ' +
     'Paying comes later. Needs the anti-bot token (`X-Turnstile-Token`). The answer holds the token, so it is never cached.',
   tags: ['checkout'],
@@ -124,7 +129,7 @@ export const openCheckoutSession = defineRoute({
   turnstile: true,
   body: OpenBody,
   success: { status: 201, schema: CheckoutSessionSchema },
-  errors: ['VALIDATION_FAILED', 'INVALID_IMEI', 'UNAUTHORIZED', 'ACCOUNT_SUSPENDED'],
+  errors: ['VALIDATION_FAILED', 'INVALID_IMEI', 'UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'CSRF_FAILED'],
   examples: {
     request: { serviceId: 1, email: 'sam@mail.example', country: 'GB', currency: 'GBP', imei: '353890110000004' },
     response: SESSION_EXAMPLE,
@@ -168,6 +173,9 @@ export const recordCheckoutConsents = defineRoute({
     'one record with the version of the current legal document (`terms`, `privacy` and `refund_policy` have one; the waiver and ' +
     "marketing do not), the time and the buyer's IP. A repeat of the latest record changes nothing. When the checkout's email " +
     "belongs to an account, `marketing` is not recorded and is left out of `records`: only the account's own page changes it. " +
+    "The exception is the account holder: a request that also carries the cookie and `X-CSRF-Token` of that account's signed-in " +
+    "session records `marketing` too, and the account's marketing choice (`marketingOptIn`) follows the answer; a customer session " +
+    'without its CSRF header is `403 CSRF_FAILED` and nothing is written. ' +
     '`422` when a purpose has no published document or a purpose is listed twice; `409 INVALID_TRANSITION` when the session is ' +
     'paid or expired. The answer says whether the session now has every required consent. The token in the path is the credential.',
   tags: ['checkout'],
@@ -189,7 +197,7 @@ export const recordCheckoutConsents = defineRoute({
       consent: CheckoutSessionSchema.shape.consent,
     }),
   },
-  errors: ['NOT_FOUND', 'VALIDATION_FAILED', 'INVALID_TRANSITION'],
+  errors: ['NOT_FOUND', 'VALIDATION_FAILED', 'INVALID_TRANSITION', 'CSRF_FAILED'],
   examples: {
     request: {
       consents: [

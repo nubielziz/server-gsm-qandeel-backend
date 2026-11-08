@@ -4,6 +4,7 @@ import type { AppConfig } from '../../src/config';
 import type { Database } from '../../src/infra/db';
 import { seedBilling } from './billing';
 import { seedCatalog } from './catalog';
+import { seedCustomers } from './customers';
 import type { DemoSeed } from './demo-state';
 import { seedHealth } from './health';
 import type { SeedReport } from './helpers';
@@ -27,10 +28,11 @@ export interface Seeder {
 /**
  * The seeders, in the order they run: identity first (staff are referenced by almost everything), then platform, money, billing
  * (gateways, top-ups and invoices: after the money seed, whose deposit journals they link to) and catalog (which needs the
- * merchant groups), the suppliers with their links (they need the services), then the orders, which need the merchants, the
- * services, the suppliers and the ledger the others seed, then the supplier call log, whose rows point at orders, the health
- * checks and job runs (a supplier's check needs the supplier), and last the storefront (retail prices, listings, TAC catalogue,
- * content pages, help articles, legal documents), which needs the services and the retail group.
+ * merchant groups), the customers (the currencies are money's), the suppliers with their links (they need
+ * the services), then the orders, which need the merchants, the services, the suppliers and the ledger the others seed, then
+ * the supplier call log, whose rows point at orders, the health checks and job runs (a supplier's check needs the supplier), and
+ * last the storefront (retail prices, listings, TAC catalogue, content pages, help articles, legal documents), which needs the
+ * services and the retail group.
  */
 export const SEEDERS: readonly Seeder[] = [
   { module: 'identity', run: seedIdentity },
@@ -38,6 +40,7 @@ export const SEEDERS: readonly Seeder[] = [
   { module: 'money', run: seedMoney },
   { module: 'billing', run: seedBilling },
   { module: 'catalog', run: seedCatalog },
+  { module: 'customers', run: seedCustomers },
   { module: 'suppliers', run: seedSuppliers },
   { module: 'orders', run: seedOrders },
   { module: 'supplier-logs', run: seedSupplierLogs },

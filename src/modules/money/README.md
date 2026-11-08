@@ -10,7 +10,8 @@ Decisions that shape this module: 011 money, 024 ledger. Common to all modules: 
 
 Stage 3 is built (feature 3): the ledger core, merchant wallets, the ledger screens, reconciliation and currencies (14
 routes). Stage 8 billing is built (feature 8, below): gateways, invoices, top-up payments, the payment webhook and the
-automatic credit. FX refresh arrives with 14b, refunds and disputes with 16, the money reports with 11 and 16.
+automatic credit. The exchange-rate refresh (`POST /admin/currencies/refresh-fx`) is built (feature 14b, below). Refunds and
+disputes arrive with 16, the money reports with 11 and 16.
 
 - **Ledger writer.** `postTransaction(tx, input, now)` (and the injectable `LedgerPoster.post(tx, input)`, which reads the
   Clock) is the only writer of `ledger_transactions`, `ledger_entries` and account balances (decision 024): at least two
@@ -38,6 +39,19 @@ automatic credit. FX refresh arrives with 14b, refunds and disputes with 16, the
   synchronous (ANSWERS finance Q4) and never corrects anything.
 - **Currencies.** `CurrencyService`: CRUD with `decimals` 0 to 4 and `isStale` for a non-base rate older than 24 h
   (money-13).
+- **Exchange-rate refresh** (feature 14b, decision 029, resolution money-9): `FxRefreshService` (`application/fx-refresh.service.ts`) asks the
+  driver behind the token `FX_PROVIDER` for every active non-base currency, stores the rates it gets (`rate_updated_at` from the clock, so
+  `isStale` is false), and answers `{ refreshed, failed, source }`. A currency the provider does not offer, or sends an unusable rate for, is in
+  `failed[]` ("Not offered by the provider") and the route still answers `200`; `502 FX_PROVIDER_DOWN` when nothing could be fetched at all (the
+  detail is the driver's: "No exchange-rate provider is configured." for `manual` or a missing key, "The exchange-rate provider did not answer in
+  time.", "...refused the request (HTTP n).", "...answer could not be read.", or "...offered none of our currencies."): the old rates stay and no
+  audit row is written. The provider is called before the transaction (no lock across the network); the rows are locked in code order. Audit:
+  `refreshed exchange rate` on entity type `currency`, with the old and new rates. Drivers (`domain/fx-provider.ts`, `infra/`):
+  `OpenExchangeRatesProvider` (`GET <base>/latest.json?symbols=...`, key in `Authorization: Token ...`, never in the URL or a log line, through
+  `OutboundHttp` target `fx_provider`, timeout `FX_TIMEOUT_MS`, no retry) and `ManualFxProvider` (fetches nothing). The module provider picks the
+  driver from `FX_PROVIDER`/`FX_API_KEY`. The hourly `fx_refresh` maintenance job of decision 029 (`jobs/fx-refresh.module.ts`, `FxRefreshJobModule` in the worker; scheduler `fx-refresh`, `0 * * * *`, queue `maintenance`) runs the same
+  `FxRefreshService.refresh()` with no request behind it, so the audit actor is the system, and records a `job_runs` row (`processed` = rates refreshed). With the `manual` driver, or
+  `openexchangerates` without a key, it asks nothing, changes nothing and is recorded as `succeeded` with the reason in `result` (no error, no retry; `skipped` would show a warning every hour); with a provider but no active non-base currency it ends without a call and without an audit row (`refresh({ auditEmpty: false })`; the admin route audits its empty refresh as before); a configured provider that cannot answer fails the run and the queue's retry policy applies.
 - **Tax rates** (stage 14, built ahead of feature 14b by the lead): `TaxRateService` lists, reads, adds and changes the
   windows of `tax_rates` (`/admin/tax-rates`, permissions `tax:read|create|update`): country two capital letters, rate 0 to
   100 with four decimals, `taxType` vat | gst | sales_tax | none, `validTo` after `validFrom` (exclusive end), and one window
@@ -87,7 +101,7 @@ services as they appear (identity, catalog 4a, suppliers 6, customers 14b). Noth
 
 ## Public API (`index.ts`)
 
-`MoneyModule` (global: `MerchantAccounts`, `LedgerPoster`, `MerchantWallets`, `MerchantSpend`, `OrderSettlements`, `PaymentGateways`, `StorefrontMoney`), `MoneyOutboxModule`, `PaymentAutoCreditModule` (worker), `INVOICE_PAID_EVENT`, `GATEWAY_HTTP_POLICY`, `topupMethodOf`, `postTransaction`, the 13 money event builders and their ids, the reversal builders `reopen`, `reopenB2c` and `refund`,
+`MoneyModule` (global: `MerchantAccounts`, `LedgerPoster`, `MerchantWallets`, `MerchantSpend`, `OrderSettlements`, `PaymentGateways`, `StorefrontMoney`), `MoneyOutboxModule`, `PaymentAutoCreditModule` (worker), `FxRefreshJobModule` (worker), `INVOICE_PAID_EVENT`, `GATEWAY_HTTP_POLICY`, `topupMethodOf`, `postTransaction`, the 13 money event builders and their ids, the reversal builders `reopen`, `reopenB2c` and `refund`,
 the account helpers (`walletViewOf`, `balanceDelta`, `normalSideOf`, `toDebitPositive`, `BASE_CURRENCY`), the ledger line
 helpers, the wire ref types (`toWireRefType`, `storedRefTypesOf`) and the stale-rate rule `isRateStale` (the System health dashboard's `fx_stale` item reads it, so it agrees with the currencies page). `StorefrontMoney` (feature 14a, read only, takes the caller's
 database handle): `currencies` / `offered` / `defaultCurrency` / `byCode` (the currencies the shop offers, `is_storefront` and

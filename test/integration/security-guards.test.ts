@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 import { eq } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import { schema as s } from '../../src/infra/db';
+import { CustomersAccountsModule } from '../../src/modules/customers';
 import {
   AccessHandlers,
   RolePermissions,
@@ -41,8 +42,9 @@ beforeAll(async () => {
     controllers: [SecurityTestController, TestController],
     env: { CORS_ORIGINS: CONSOLE },
     clock,
+    // The customers module registers the real customer resolver (feature 14b); this test stands in for it with a map of states.
+    withoutModules: [CustomersAccountsModule],
   });
-  // The customers module registers its resolver when its feature is built; the test stands in for it.
   customers = new Map();
   const resolver: SessionSubjectResolver = {
     subjectType: 'customer',
@@ -482,7 +484,10 @@ describe('customer session guard', () => {
   });
 
   it('refuses every customer session while no resolver is registered (fail closed)', async () => {
-    const bare = await createTestApp({ controllers: [SecurityTestController] });
+    const bare = await createTestApp({
+      controllers: [SecurityTestController],
+      withoutModules: [CustomersAccountsModule],
+    });
     try {
       expect(bare.app.get(SessionSubjects).has('customer')).toBe(false);
       const session = await openSession(bare, { type: 'customer', id: 1 });

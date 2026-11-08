@@ -4,6 +4,7 @@ import { Module } from '@nestjs/common';
 import { CheckoutSessionService } from './application/checkout-session.service';
 import { CheckoutTokenResolver } from './application/checkout-token.resolver';
 import { ConsentService } from './application/consent.service';
+import { OptionalCustomerSession } from './application/optional-customer-session';
 import { CheckoutController } from './controllers/checkout.controller';
 
 /**
@@ -14,6 +15,6 @@ import { CheckoutController } from './controllers/checkout.controller';
  */
 @Module({
   controllers: [CheckoutController],
-  providers: [CheckoutSessionService, ConsentService, CheckoutTokenResolver],
+  providers: [CheckoutSessionService, ConsentService, CheckoutTokenResolver, OptionalCustomerSession],
 })
 export class CheckoutModule {}

@@ -323,8 +323,11 @@ describe('the merchant mail events', () => {
       expect(routes.get(type), type).toMatchObject({ type, queue: 'notifications' });
     }
     const table = buildProcessorTable(findQueueProcessors(new DiscoveryService(t.app.get(ModulesContainer))));
-    const named = [...(table.get('notifications')?.byName.keys() ?? [])].sort();
-    // The notifications queue has named processors only: the three mails and the two jobs of feature 12a.
+    // The queue is shared: the customer mails (feature 14b) have named processors of their own on it.
+    const named = [...(table.get('notifications')?.byName.keys() ?? [])]
+      .filter((name) => !name.startsWith('customer.'))
+      .sort();
+    // The notifications queue has named processors only: the three merchant mails and the two jobs of feature 12a.
     expect(named).toEqual([...Object.values(MERCHANT_MAIL_EVENTS), 'notification.plan', 'notification.send'].sort());
     expect(table.get('notifications')?.catchAll).toBeUndefined();
   });

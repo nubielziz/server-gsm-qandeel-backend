@@ -1,6 +1,6 @@
 // Drizzle queries on checkout_sessions and the guest rows of customers for the storefront checkout (feature 14a). Only the customers
 // module touches these tables.
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
 import {
   type CheckoutSession,
@@ -10,34 +10,6 @@ import {
   checkoutSessions,
   customers,
 } from '../db/schema';
-
-/**
- * Finds a customer by email, ignoring case (the unique index is on `lower(email)`).
- *
- * @param db the database or a transaction
- * @param email the address
- * @returns the customer, or `undefined`
- */
-export async function findCustomerByEmail(db: DbExecutor, email: string): Promise<Customer | undefined> {
-  const [row] = await db
-    .select()
-    .from(customers)
-    .where(sql`lower(${customers.email}) = lower(${email})`)
-    .limit(1);
-  return row;
-}
-
-/**
- * Finds a customer by id.
- *
- * @param db the database or a transaction
- * @param id the customer id
- * @returns the customer, or `undefined`
- */
-export async function findCustomer(db: DbExecutor, id: number): Promise<Customer | undefined> {
-  const [row] = await db.select().from(customers).where(eq(customers.id, id)).limit(1);
-  return row;
-}
 
 /**
  * Keeps a guest's marketing choice in step with the consent a checkout recorded.

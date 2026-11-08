@@ -2,6 +2,16 @@
 import type { AllowlistEntry } from './lib/allowlist-check';
 
 /**
+ * The reason of the four B148 entries below (`Customer.currency` may be null).
+ *
+ * Why: `customers.currency` is a foreign key to `currencies`, so a code that is not in the table cannot be stored. The wire id is null
+ * only when the column itself is null, or when the USD row the country rule falls back to is missing (lead resolution b2c-1).
+ */
+const CUSTOMER_CURRENCY_NULL =
+  'The console types Customer.currency as an id; it is null only for a customer whose currency column is null, or when the USD row ' +
+  'of the currencies table is missing (customers.currency is a foreign key), as lead resolution b2c-1 says.';
+
+/**
  * Deviations the contract tests accept, each tied to a decision in docs/contract/MISMATCHES.md.
  *
  * Why: the frontend decides the wire format and the map decides the rules; where the lead chose otherwise the choice
@@ -23,6 +33,38 @@ export const ALLOWLIST: readonly AllowlistEntry[] = [
     reason:
       "The backend answers [{key, label, group}] (ANSWERS access Q4, the console's Permission type); the console's mock answers " +
       'plain strings, which the console normalises. Roles and permissions come from the server; the mock is only a seed (B8).',
+  },
+  {
+    route: 'GET /admin/customers',
+    part: 'response',
+    path: 'data[].currency',
+    rule: 'nullable',
+    mismatch: 'B148',
+    reason: CUSTOMER_CURRENCY_NULL,
+  },
+  {
+    route: 'GET /admin/customers/:id',
+    part: 'response',
+    path: 'currency',
+    rule: 'nullable',
+    mismatch: 'B148',
+    reason: CUSTOMER_CURRENCY_NULL,
+  },
+  {
+    route: 'POST /admin/customers',
+    part: 'response',
+    path: 'currency',
+    rule: 'nullable',
+    mismatch: 'B148',
+    reason: CUSTOMER_CURRENCY_NULL,
+  },
+  {
+    route: 'PATCH /admin/customers/:id',
+    part: 'response',
+    path: 'currency',
+    rule: 'nullable',
+    mismatch: 'B148',
+    reason: CUSTOMER_CURRENCY_NULL,
   },
   {
     route: 'GET /admin/content-pages',

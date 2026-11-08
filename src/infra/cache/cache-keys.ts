@@ -183,6 +183,16 @@ export class CacheKeys {
   }
 
   /**
+   * The count of wrong sign-in attempts of one customer email, which decides the temporary lock (customers module).
+   *
+   * @param emailHash the keyed hash of the normalised email (never the email itself)
+   * @returns `gsm:{env}:customers:sign-in-failures:{emailHash}`
+   */
+  customerSignInFailures(emailHash: string): CacheKey {
+    return `${this.keyspace}customers:sign-in-failures:${segment('email hash', emailHash)}` as CacheKey;
+  }
+
+  /**
    * The heartbeat a process leaves for the health checker (health module).
    *
    * @param name the process (`api`)
@@ -341,6 +351,14 @@ export const CACHE_KEY_FAMILIES: readonly CacheKeyFamily[] = [
     owner: 'platform',
     ttl: '60 s (+-15 %), then the old state is served for up to 5 minutes while one refresh runs',
     invalidation: 'MaintenanceService.invalidate() after the commit of a maintenance change',
+  },
+  {
+    builder: 'customerSignInFailures',
+    pattern: 'gsm:{env}:customers:sign-in-failures:{emailHash}',
+    owner: 'customers',
+    ttl: '15 min after the last wrong password, so the tenth failure locks the email for 15 min; a throttle, not truth: an evicted counter only loosens the lock',
+    invalidation:
+      'deleted after a correct password, and after a password is set for the account (reset link, staff, own change); otherwise it expires',
   },
   {
     builder: 'heartbeat',

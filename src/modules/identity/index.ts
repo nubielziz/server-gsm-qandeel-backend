@@ -46,6 +46,16 @@ export { MERCHANT_TOKEN_TTL_MS, MerchantAuthTokens } from './application/merchan
 export type { IssueMerchantTokenInput, IssuedMerchantToken } from './application/merchant-auth-tokens';
 export { CLIENT_TOKEN_PURPOSES } from './infra/merchant-token.repository';
 export type { ClientTokenPurpose } from './infra/merchant-token.repository';
+export { CUSTOMER_TOKEN_TTL_MS, CustomerAuthTokens, isUsableLink } from './application/customer-auth-tokens';
+export type {
+  CustomerTokenRecord,
+  IssueCustomerTokenInput,
+  IssuedCustomerToken,
+} from './application/customer-auth-tokens';
+export { CUSTOMER_PASSWORD_LINK_PURPOSES, CUSTOMER_TOKEN_PURPOSES } from './infra/customer-token.repository';
+export type { CustomerTokenPurpose } from './infra/customer-token.repository';
+export { CustomerTokensModule } from './customer-tokens.module';
+export { temporaryPasswordFor } from './domain/temporary-password';
 export { MERCHANT_MAIL_EVENTS, MerchantMailOutbox } from './application/mail/merchant-mail-outbox';
 export type { MerchantMailKind } from './application/mail/merchant-mail-outbox';
 export { checkPasswordPolicy, MIN_PASSWORD_LENGTH } from './domain/password-policy';
@@ -131,3 +141,5 @@ export type { FlushResult } from './security/ip-rules/ip-rule-hits-flush';
 export { compileIpRules, decideIpAccess } from './security/ip-rules/ip-rule-matcher';
 export type { ActiveIpRule, CompiledIpRules, IpDecision, IpRuleSnapshot } from './security/ip-rules/ip-rule-matcher';
 export { clientAddressOf } from './security/ip-rules/ip-rules.hook';
+export { requestMetaOf } from './application/request-meta';
+export type { RequestMeta } from './application/request-meta';

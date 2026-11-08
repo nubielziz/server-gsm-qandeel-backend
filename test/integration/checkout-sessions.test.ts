@@ -7,6 +7,7 @@ import { schema as s } from '../../src/infra/db';
 import { EncryptionService } from '../../src/infra/crypto';
 import { CHECKOUT_IMEI_AAD } from '../../src/modules/customers';
 import { type TestApp, createTestApp } from '../support/app';
+import { clearIdentityCaches } from '../support/auth';
 import { MINUTE, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 import { insertCategory, insertService } from '../support/catalog';
@@ -19,6 +20,7 @@ import {
   storefrontWorld,
   type StorefrontWorld,
 } from '../support/storefront';
+import { StoreClient, customerRow, makeCustomer } from '../support/store';
 
 const clock = new TestClock('2026-11-07T12:00:00.000Z');
 let t: TestApp;
@@ -427,6 +429,122 @@ describe('POST /store/v1/checkout-sessions', () => {
   });
 });
 
+/** A customer who signed in on the storefront, with the client that holds the cookies and the CSRF token. */
+async function signedInCustomer(overrides: Parameters<typeof makeCustomer>[1] = {}) {
+  const customer = await makeCustomer(t, overrides);
+  const client = new StoreClient(t, freshClientIp());
+  expect((await client.login(customer.email)).statusCode).toBe(200);
+  return { customer, client };
+}
+const OPEN_URL = '/store/v1/checkout-sessions';
+
+describe('POST /store/v1/checkout-sessions as a signed-in customer (feature 14b)', () => {
+  it('opens the checkout as the account, even with guest checkout off, whatever the case of the typed email', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    await db.insert(s.settings).values({ key: 'guestCheckout', value: false });
+    const { customer, client } = await signedInCustomer();
+
+    const res = await client.call('POST', OPEN_URL, valid(world, { email: customer.email.toUpperCase() }));
+    expect(res.statusCode).toBe(201);
+    expect(res.headers['cache-control']).toBe('no-store');
+    const [row] = await db.select().from(s.checkoutSessions);
+    expect(row).toMatchObject({ token: body(res).token, customerId: customer.id, email: customer.email });
+    // The account is the customer: no guest row was made, and the session works like any other.
+    expect(await counts()).toEqual({ customers: 1, sessions: 1, consents: 0 });
+    expect((await show(body(res).token)).statusCode).toBe(200);
+
+    // Without the cookie the same call is a guest's, which this shop does not accept.
+    expect((await open(valid(world))).statusCode).toBe(401);
+  });
+
+  it('needs the CSRF header of the session and writes nothing without it', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    const { customer, client } = await signedInCustomer();
+    for (const csrf of [false, 'not-the-token']) {
+      const res = await client.call('POST', OPEN_URL, valid(world, { email: customer.email }), { csrf });
+      expect(res.statusCode, String(csrf)).toBe(403);
+      expect(body(res).code).toBe('CSRF_FAILED');
+    }
+    expect(await counts()).toEqual({ customers: 1, sessions: 0, consents: 0 });
+    // With the header it opens.
+    expect((await client.call('POST', OPEN_URL, valid(world, { email: customer.email }))).statusCode).toBe(201);
+  });
+
+  it("refuses an email that is not the account's with 422 on email, guest checkout on or off, and writes nothing", async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    const { client } = await signedInCustomer();
+    const other = await makeCustomer(t, { guest: true });
+    for (const guestCheckout of [true, false]) {
+      await db.delete(s.settings);
+      await db.insert(s.settings).values({ key: 'guestCheckout', value: guestCheckout });
+      for (const email of ['someone.else@mail.example', other.email]) {
+        const res = await client.call('POST', OPEN_URL, valid(world, { email }));
+        expect(res.statusCode, `${guestCheckout} ${email}`).toBe(422);
+        expect(body(res).code).toBe('VALIDATION_FAILED');
+        expect(body(res).errors).toEqual([
+          {
+            field: 'email',
+            code: 'not_account_email',
+            message: 'Use the email of your account, or sign out to check out as a guest.',
+          },
+        ]);
+      }
+    }
+    expect(await counts()).toEqual({ customers: 2, sessions: 0, consents: 0 });
+  });
+
+  it('treats a request with no usable session as a guest: no cookie, an unknown token, or a session that is not complete', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    const account = await makeCustomer(t);
+    // No cookie: a guest who types an account's email gets that customer row, as before 14b.
+    const asGuest = await open(valid(world, { email: account.email }));
+    expect(asGuest.statusCode).toBe(201);
+
+    // A cookie that names no session.
+    const stale = new StoreClient(t, freshClientIp());
+    stale.setSessionToken('x'.repeat(43));
+    expect(
+      (await stale.call('POST', OPEN_URL, valid(world, { email: 'new.guest@mail.example' }), { csrf: false }))
+        .statusCode,
+    ).toBe(201);
+
+    // A pending_password session cannot act as the account.
+    const pending = await makeCustomer(t, { mustChangePassword: true });
+    const pendingClient = new StoreClient(t, freshClientIp());
+    expect((await pendingClient.login(pending.email)).json()).toEqual({ next: 'password' });
+    await db.insert(s.settings).values({ key: 'guestCheckout', value: false });
+    const refused = await pendingClient.call('POST', OPEN_URL, valid(world, { email: pending.email }));
+    expect(refused.statusCode).toBe(401);
+    expect(body(refused).detail).toBe('Sign in to check out.');
+
+    const rows = await db.select().from(s.checkoutSessions).orderBy(s.checkoutSessions.id);
+    expect(rows.map((row) => row.email)).toEqual([account.email, 'new.guest@mail.example']);
+    expect(rows[0]?.customerId).toBe(account.id);
+  });
+
+  it('still refuses a suspended customer, who has no usable session any more', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    const { customer, client } = await signedInCustomer();
+    await db.update(s.customers).set({ status: 'suspended' }).where(eq(s.customers.id, customer.id));
+    await clearIdentityCaches(t);
+
+    const res = await client.call('POST', OPEN_URL, valid(world, { email: customer.email }));
+    expect(res.statusCode).toBe(403);
+    expect(body(res).code).toBe('ACCOUNT_SUSPENDED');
+    expect(body(res).detail).toBe('This account cannot start a new order. Contact support.');
+    // With guest checkout off the suspended customer is just a guest who must sign in.
+    await db.insert(s.settings).values({ key: 'guestCheckout', value: false });
+    expect((await client.call('POST', OPEN_URL, valid(world, { email: customer.email }))).statusCode).toBe(401);
+    expect(await counts()).toEqual({ customers: 1, sessions: 0, consents: 0 });
+    expect((await customerRow(customer.id)).status).toBe('suspended');
+  });
+});
+
 describe('GET /store/v1/checkout-sessions/:token', () => {
   it('shows the session by its token, with the consent state and the payment methods that are on', async () => {
     const { db } = await testDb();
@@ -702,6 +820,73 @@ describe('POST /store/v1/checkout-sessions/:token/consents', () => {
     const rows = await db.select().from(s.consentRecords);
     expect(new Set(rows.map((row) => row.checkoutSessionId)).size).toBe(1);
     expect(body(await show(token)).consent.granted).toEqual([]);
+  });
+
+  describe('marketing for the signed-in account holder (feature 14b)', () => {
+    const MARKETING = [...ALL, { purpose: 'marketing', granted: true }];
+    const purposesOf = (res: { json: () => unknown }) =>
+      (body(res).records as Array<{ purpose: string }>).map((record) => record.purpose);
+
+    /** A checkout opened by a signed-in customer, and the client that holds that customer's cookies. */
+    async function openedByAccount() {
+      const { db } = await testDb();
+      const world = await storefrontWorld(db);
+      const { customer, client } = await signedInCustomer({ marketingOptIn: false });
+      const session = body(await client.call('POST', OPEN_URL, valid(world, { email: customer.email })));
+      return { db, world, customer, client, token: session.token as string };
+    }
+    const consentsUrl = (token: string) => `${OPEN_URL}/${token}/consents`;
+
+    it('records marketing for the account holder with the CSRF header, sets marketing_opt_in, and a withdrawal sets it back', async () => {
+      const { db, customer, client, token } = await openedByAccount();
+      const res = await client.call('POST', consentsUrl(token), { consents: MARKETING });
+      expect(res.statusCode).toBe(201);
+      expect(purposesOf(res)).toEqual(['terms', 'privacy', 'withdrawal_waiver', 'marketing']);
+      expect((await customerRow(customer.id)).marketingOptIn).toBe(true);
+      const [record] = await db.select().from(s.consentRecords).where(eq(s.consentRecords.purpose, 'marketing'));
+      expect(record).toMatchObject({ subjectId: customer.id, granted: true, legalDocumentId: null });
+
+      clock.advance(MINUTE);
+      const withdrawn = await client.call('POST', consentsUrl(token), {
+        consents: [{ purpose: 'marketing', granted: false }],
+      });
+      expect(withdrawn.statusCode).toBe(201);
+      const updated = await customerRow(customer.id);
+      expect(updated.marketingOptIn).toBe(false);
+      expect(updated.updatedAt.toISOString()).toBe('2026-11-07T12:01:00.000Z');
+      expect(await db.select().from(s.consentRecords).where(eq(s.consentRecords.purpose, 'marketing'))).toHaveLength(2);
+    });
+
+    it('keeps the guest rule for a request without the session: the token alone never changes the account', async () => {
+      const { db, customer, token } = await openedByAccount();
+      const res = await consent(token, { consents: MARKETING });
+      expect(res.statusCode).toBe(201);
+      expect(purposesOf(res)).toEqual(['terms', 'privacy', 'withdrawal_waiver']);
+      expect((await customerRow(customer.id)).marketingOptIn).toBe(false);
+      expect(await db.select().from(s.consentRecords).where(eq(s.consentRecords.purpose, 'marketing'))).toHaveLength(0);
+    });
+
+    it("keeps the guest rule for another signed-in customer: only the checkout's own customer may choose", async () => {
+      const { db, customer, token } = await openedByAccount();
+      const { customer: stranger, client: strangerClient } = await signedInCustomer({ marketingOptIn: false });
+      const res = await strangerClient.call('POST', consentsUrl(token), { consents: MARKETING });
+      expect(res.statusCode).toBe(201);
+      expect(purposesOf(res)).toEqual(['terms', 'privacy', 'withdrawal_waiver']);
+      expect((await customerRow(customer.id)).marketingOptIn).toBe(false);
+      expect((await customerRow(stranger.id)).marketingOptIn).toBe(false);
+      expect(await db.select().from(s.consentRecords).where(eq(s.consentRecords.purpose, 'marketing'))).toHaveLength(0);
+    });
+
+    it('answers CSRF_FAILED for a customer session without its CSRF header and writes nothing', async () => {
+      const { db, customer, client, token } = await openedByAccount();
+      for (const csrf of [false, 'not-the-token']) {
+        const res = await client.call('POST', consentsUrl(token), { consents: MARKETING }, { csrf });
+        expect(res.statusCode, String(csrf)).toBe(403);
+        expect(body(res).code).toBe('CSRF_FAILED');
+      }
+      expect(await db.select().from(s.consentRecords)).toHaveLength(0);
+      expect((await customerRow(customer.id)).marketingOptIn).toBe(false);
+    });
   });
 
   it('does not need the anti-bot token: the capability token in the path is the credential', async () => {

@@ -7,6 +7,7 @@ import { AppError } from '../../../common/errors';
 import { CurrentPrincipal, type CapabilityGrant, type Principal } from '../../identity';
 import { CheckoutSessionService } from '../application/checkout-session.service';
 import { ConsentService } from '../application/consent.service';
+import { OptionalCustomerSession } from '../application/optional-customer-session';
 import { openCheckoutSession, recordCheckoutConsents, showCheckoutSession } from '../contracts/checkout.contracts';
 
 /** The session id the capability guard found; a handler behind a `checkout-token` route always has one. */
@@ -39,25 +40,28 @@ export class CheckoutController {
   constructor(
     private readonly sessions: CheckoutSessionService,
     private readonly consents: ConsentService,
+    private readonly signedIn: OptionalCustomerSession,
   ) {}
 
   /**
-   * Opens a checkout.
+   * Opens a checkout, as the signed-in customer when the request carries a customer session.
    *
    * @param body the service, the buyer's email and country, and the order input
-   * @param request the request, for the visitor's address and user agent
+   * @param request the request, for the session cookie, the visitor's address and user agent
    * @param reply the reply, for the cache header
    * @returns the new session
+   * @throws {AppError} `CSRF_FAILED` when a customer session comes without its CSRF header (nothing is written)
    * @route POST /store/v1/checkout-sessions
    */
   @Route(openCheckoutSession)
-  open(
+  async open(
     @Body() body: BodyOf<typeof openCheckoutSession>,
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<ResultOf<typeof openCheckoutSession>> {
     reply.header('cache-control', NO_STORE);
-    return this.sessions.open({ ...body, ip: request.ip, userAgent: userAgentOf(request) });
+    const customerId = await this.signedIn.customerId(request);
+    return this.sessions.open({ ...body, customerId, ip: request.ip, userAgent: userAgentOf(request) });
   }
 
   /**
@@ -82,19 +86,26 @@ export class CheckoutController {
    *
    * @param principal the holder of the checkout token
    * @param body the purposes with their answers
-   * @param request the request, for the visitor's address and user agent
+   * @param request the request, for the session cookie, the visitor's address and user agent
    * @param reply the reply, for the cache header
    * @returns the records and where the session's consent stands
+   * @throws {AppError} `CSRF_FAILED` when a customer session comes without its CSRF header (nothing is written)
    * @route POST /store/v1/checkout-sessions/:token/consents
    */
   @Route(recordCheckoutConsents)
-  record(
+  async record(
     @CurrentPrincipal() principal: Principal | undefined,
     @Body() body: BodyOf<typeof recordCheckoutConsents>,
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<ResultOf<typeof recordCheckoutConsents>> {
     reply.header('cache-control', NO_STORE);
-    return this.consents.record(sessionIdOf(principal), body, { ip: request.ip, userAgent: userAgentOf(request) });
+    const customerId = await this.signedIn.customerId(request);
+    return this.consents.record(
+      sessionIdOf(principal),
+      body,
+      { ip: request.ip, userAgent: userAgentOf(request) },
+      customerId,
+    );
   }
 }

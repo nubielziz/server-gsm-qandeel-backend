@@ -109,6 +109,7 @@ export { NotificationDeliveryModule } from './notifications/notification-deliver
 export { NotificationAdminModule } from './notifications/notification-admin.module';
 export {
   BUILT_IN_EVENTS,
+  CUSTOMER_MAIL_EVENT_KEYS,
   MERCHANT_MAIL_EVENT_KEYS,
   NotificationEventRegistry,
   TELEGRAM_LINKED_EVENT,

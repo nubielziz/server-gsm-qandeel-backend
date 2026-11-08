@@ -55,13 +55,15 @@ const MERCHANT_SAMPLE = {
   changes: '- Vodafone UK iPhone Unlock: 12.00 to 12.50 USD\n- O2 UK iPhone Unlock: 9.80 to 10.20 USD',
 } as const;
 
-/** Sample data of the customer events: the sample order of the demo's preview (`NOTIF_SAMPLE`). */
+/** Sample data of the customer events: the sample order of the demo's preview (`NOTIF_SAMPLE`), and a sample link for the account mails. */
 const CUSTOMER_SAMPLE = {
   customerName: 'Daniel',
   orderId: 'SF-20431',
   amount: '£14.39',
   service: 'Vodafone UK iPhone Unlock',
   device: 'iPhone 13',
+  link: 'https://shop.example.com/sign-in?token=example',
+  expiresAt: '2026-11-01 11:00 UTC',
 } as const;
 
 /** Picks the samples of the listed variables; a variable with no sample is a programming error that the unit test catches. */
@@ -86,13 +88,17 @@ function merchantEvent(
 }
 
 function customerEvent(
-  spec: Omit<NotificationEventDefinition, 'audience' | 'sample' | 'defaultTelegram' | 'defaultEmail' | 'transactional'>,
+  spec: Omit<
+    NotificationEventDefinition,
+    'audience' | 'sample' | 'defaultTelegram' | 'defaultEmail' | 'transactional'
+  > &
+    Partial<Pick<NotificationEventDefinition, 'transactional'>>,
 ): NotificationEventDefinition {
   return {
     ...spec,
     audience: 'customer',
     sample: samplesOf(CUSTOMER_SAMPLE, spec.variables),
-    transactional: false,
+    transactional: spec.transactional ?? false,
     defaultEmail: true,
     defaultTelegram: false,
   };
@@ -105,14 +111,24 @@ export const MERCHANT_MAIL_EVENT_KEYS = [
   'merchant.invited',
 ] as const;
 
+/** The outbox event types of the four customer account mails (feature 14b); the processors live in the customers module. */
+export const CUSTOMER_MAIL_EVENT_KEYS = [
+  'customer.magic_link',
+  'customer.password_reset',
+  'customer.invited',
+  'customer.email_verification',
+] as const;
+
 /** The event of the bot's answer when a merchant links a chat. */
 export const TELEGRAM_LINKED_EVENT = 'telegram.linked';
 /** The event of the bot's answer when a merchant sends `/stop`. */
 export const TELEGRAM_UNLINKED_EVENT = 'telegram.unlinked';
 
 /**
- * The events built into the platform: the merchant events 12a wires now, the customer events the console's templates list (their
- * producers are the storefront, support and recovery features), and nothing for staff until the alert feature registers its own.
+ * The events built into the platform: the merchant events 12a wires now, the four transactional customer account mails of
+ * feature 14b (sign-in link, password reset, invitation, email verification), the customer events the console's templates list
+ * (their producers are the storefront, support and recovery features), and nothing for staff until the alert feature registers
+ * its own.
  *
  * Why: "a registry entry for each, with its default template seeded" (brief 12a); the customer events exist so the console's
  * Customer emails tab can be edited before the storefront sends them.
@@ -251,6 +267,40 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
     description: 'The customer’s payment was declined.',
     channels: ['email'],
     variables: ['customerName', 'amount'],
+  }),
+  customerEvent({
+    key: 'customer.magic_link',
+    label: 'Sign-in link',
+    description: 'Sent when a storefront customer asks for a sign-in link: the link that signs them in.',
+    channels: ['email'],
+    variables: ['customerName', 'link', 'expiresAt'],
+    transactional: true,
+  }),
+  customerEvent({
+    key: 'customer.password_reset',
+    label: 'Reset your password',
+    description: 'Sent when a customer asks for a new password, or staff send a reset link: the link that sets it.',
+    channels: ['email'],
+    variables: ['customerName', 'link', 'expiresAt'],
+    transactional: true,
+  }),
+  customerEvent({
+    key: 'customer.invited',
+    label: 'Invitation to the account',
+    description:
+      'Sent when staff create a storefront account in link mode: the link where the customer chooses a password.',
+    channels: ['email'],
+    variables: ['customerName', 'link', 'expiresAt'],
+    transactional: true,
+  }),
+  customerEvent({
+    key: 'customer.email_verification',
+    label: 'Verify your email address',
+    description:
+      'Sent to the new address after staff change the email of an account: the link that confirms it and signs in.',
+    channels: ['email'],
+    variables: ['customerName', 'link', 'expiresAt'],
+    transactional: true,
   }),
 ];
 

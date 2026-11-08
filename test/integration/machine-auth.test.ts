@@ -19,7 +19,7 @@ import {
   UrlSecretVerifiers,
   WebhookVerifiers,
 } from '../../src/modules/identity';
-import { CheckoutModule } from '../../src/modules/customers';
+import { CheckoutModule, CustomersAccountsModule } from '../../src/modules/customers';
 import { OrderTrackingModule } from '../../src/modules/orders';
 import { MaintenanceService } from '../../src/modules/platform';
 import { type TestApp, createTestApp } from '../support/app';
@@ -41,7 +41,9 @@ import {
 import { freshClientIp } from '../support/pipeline-routes';
 
 /** The checkout and tracking modules register the real resolvers of their kinds; this file stands in its own for all four. */
-const REAL_RESOLVER_MODULES = [CheckoutModule, OrderTrackingModule];
+// The modules that register the real capability token resolvers (checkout, tracking: feature 14a; the customer link tokens and the
+// `customer` session subject: feature 14b); this test stands in for them with fixed tokens.
+const REAL_RESOLVER_MODULES = [CheckoutModule, OrderTrackingModule, CustomersAccountsModule];
 
 const DHRU_FAILED = { ERROR: [{ MESSAGE: 'Authentication Failed' }], apiversion: '6.1' };
 

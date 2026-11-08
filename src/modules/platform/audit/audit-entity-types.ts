@@ -60,6 +60,7 @@ export const AUDIT_ENTITY_TYPES = [
   'pricing_rule',
   'queue',
   'job',
+  'tac_entry',
 ] as const;
 
 /** One value of {@link AUDIT_ENTITY_TYPES}. */

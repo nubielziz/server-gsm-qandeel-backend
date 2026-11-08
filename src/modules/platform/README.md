@@ -22,7 +22,7 @@ The outbox: `OutboxModule` (global: `OutboxService`, `OutboxRouteRegistry`), `Ou
 
 Documents and stored files (feature 8): `PdfModule` (global) provides `PdfRenderer.render(document)` (`PdfDocument`, `PdfBlock`, `PdfColumn`), and `StoredFiles` (`store`, `metaOf`, `findOwned`, with `StoreFileInput`, `FileMeta` and `PROOF_MIME_TYPES`) is the public side of the `files` table for the money and identity modules.
 
-The notifications (12a): `NotificationEventsModule` (global: `NotificationEventRegistry` and the outbox routes, API and worker), `NotificationTransportModule` (`MailTransport`, `TelegramClient`, their drivers), `NotificationDeliveryModule` (`NotificationService`, the planning and sending processors; API and worker), `NotificationAdminModule` (the 8 staff routes); `BUILT_IN_EVENTS`, `NotificationService` (`enqueue`, `sendNow`, `statusOf`, `abandon`, `check`), `NOTIFICATION_SEND_EVENT`, `DeliveryError`, `MailTransport` (`send`, `verify`: the `mail` health check of feature 9 calls it), `TelegramClient`, the in-memory drivers and their tokens (`MAIL_DRIVER`, `TELEGRAM_DRIVER`), `maskEmail`, `maskTelegram`, `redactAddresses`, the preference rules (`choiceFor`, `channelsFor`, `applyPreferences`, `withoutTelegram`, `thresholdOf`, `parseThreshold`) that identity's portal routes use, and `DEFAULT_TEMPLATES`.
+The notifications (12a): `NotificationEventsModule` (global: `NotificationEventRegistry` and the outbox routes, API and worker), `NotificationTransportModule` (`MailTransport`, `TelegramClient`, their drivers), `NotificationDeliveryModule` (`NotificationService`, the planning and sending processors; API and worker), `NotificationAdminModule` (the 8 staff routes); `BUILT_IN_EVENTS`, `MERCHANT_MAIL_EVENT_KEYS`, `CUSTOMER_MAIL_EVENT_KEYS`, `NotificationService` (`enqueue`, `sendNow`, `statusOf`, `abandon`, `check`), `NOTIFICATION_SEND_EVENT`, `DeliveryError`, `MailTransport` (`send`, `verify`: the `mail` health check of feature 9 calls it), `TelegramClient`, the in-memory drivers and their tokens (`MAIL_DRIVER`, `TELEGRAM_DRIVER`), `maskEmail`, `maskTelegram`, `redactAddresses`, the preference rules (`choiceFor`, `channelsFor`, `applyPreferences`, `withoutTelegram`, `thresholdOf`, `parseThreshold`) that identity's portal routes use, and `DEFAULT_TEMPLATES`.
 
 The merchant webhooks (7b): `WebhookEventsModule` (event contracts and the outbox routes of `wallet.low_balance` and `service.price_changed`, loaded by the API and the worker), `WebhookDeliveryModule` (sender, fan-out, the processor of `merchant-webhooks`; API and worker), `MerchantWebhooksModule` (the staff log routes and `MerchantWebhookService`), the four `defineEvent` contracts (`orderStatusChanged`, `walletLowBalance`, `invoicePaid`, `servicePriceChanged`), `WEBHOOK_EVENT_NAMES`, `PING_EVENT`, `WebhookDeliveries`, `WebhookFanOut`, `MerchantWebhooksProcessor`, the event type constants and the `WEBHOOK_TARGET_POLICY` token. The portal's controller for `/client/webhooks*` (`MerchantWebhooksController`) lives in the identity module (`controllers/merchant-webhooks.controller.ts`, `MerchantWebhookRoutesModule`): it needs identity's `CurrentMerchant`, and platform imports no module, so a platform file that imported identity would make a cycle for every identity file that imports platform (decision 032). Platform exports `MerchantWebhookService` and the six portal contracts for it.
 
@@ -429,9 +429,12 @@ Code: `notifications/` (contracts `notification-templates.contracts.ts` and `not
 **The event registry** (`notification-events.ts`) is the only list of events: key, audience (`staff`, `merchant`, `customer`), channels, the variables a template may
 use with a sample of each, whether the message is transactional (always sent, not in a merchant's preferences) and its defaults. Built in: the three merchant
 mails, `wallet.low_balance`, `service.price_changed` (a digest), `deposit.approved`, `invoice.paid`, `order.completed` and `order.failed` (off until a merchant
-opts in), the bot's `telegram.linked` and `telegram.unlinked`, and the six customer events of the console's Customer emails tab (their producers are the storefront
-features). A later feature (12b alerts for staff) adds its events with `NotificationEventRegistry.register` in `onModuleInit`. The default English templates are
-`DEFAULT_TEMPLATES`; migration 0009 inserts the same rows (a test keeps them equal).
+opts in), the bot's `telegram.linked` and `telegram.unlinked`, the six customer events of the console's Customer emails tab (their producers are the storefront
+features) and the four transactional customer account mails of feature 14b (`customer.magic_link`, `customer.password_reset`, `customer.invited`,
+`customer.email_verification`; variables `customerName`, `link`, `expiresAt`; `CUSTOMER_MAIL_EVENT_KEYS`). A later feature (12b alerts for staff) adds its events with
+`NotificationEventRegistry.register` in `onModuleInit`. The default English templates are `DEFAULT_TEMPLATES`; migration `0011_notifications_delivery.sql` inserts the
+merchant rows and `0012_customer_mail_templates.sql` the customer mails' rows (a test reads both files and keeps code and migrations equal; a later migration that adds
+templates must be listed in that test).
 
 **One delivery path** (decision 020, `docs/queues.md` "notifications"). A use case calls `NotificationService.enqueue({ tx }, ...)`: a `notifications` row (`queued`) and the
 outbox event `notification.send` commit with the caller's change. Producers that already write an outbox event (`order.status_changed`, `wallet.low_balance`,
@@ -449,8 +452,9 @@ closes the row first, so a later change opens the next period's row: at most one
 `NODE_ENV=test` uses the in-memory drivers (nothing leaves the process). A 5xx SMTP answer, a Telegram 400, 403 or 404 fail the row at once; everything else is retried.
 Reasons are cleaned of addresses and never hold a token. The log's masks are built from the recipient's current row.
 
-**Merchant mail** (identity's `MerchantMailJobs`) calls `NotificationService.sendNow` with the clear link as a secret placeholder: it fills the template and is never stored,
-logged or put in the payload.
+**Merchant and customer mail** (identity's `MerchantMailJobs`, feature 14b's customers `CustomerMailJobs`) call `NotificationService.sendNow` with the clear link as a secret
+placeholder: it fills the template and is never stored, logged or put in the payload. The platform reads a customer as never suspended (`recipientOf`), so the customer mail
+job judges the customer's status itself (only an active customer gets a link).
 
 **Foreign reads.** `notification-foreign-reads.ts` reads `clients`, `staff_users` and `customers` (the recipient) and the order of an order notification with plain selects:
 the documented deviation of decision 016 that the webhook reads already carry (platform imports no module, decision 032). Replace the bodies when those modules export a reader.

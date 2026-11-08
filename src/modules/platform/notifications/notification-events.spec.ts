@@ -1,6 +1,11 @@
 // Unit tests of the notification event registry (feature 12a): the built-in events are consistent and extendable.
 import { describe, expect, it } from 'bun:test';
-import { BUILT_IN_EVENTS, NotificationEventRegistry, isEventKey } from './notification-events';
+import {
+  BUILT_IN_EVENTS,
+  CUSTOMER_MAIL_EVENT_KEYS,
+  NotificationEventRegistry,
+  isEventKey,
+} from './notification-events';
 
 describe('the built-in events', () => {
   it('give every variable a sample and use well-formed keys', () => {
@@ -36,6 +41,30 @@ describe('the built-in events', () => {
     expect(registry.get('order.completed', 'staff')).toBeUndefined();
     expect(registry.has('support.reply')).toBe(true);
     expect(registry.has('nope.nothing')).toBe(false);
+  });
+
+  it('register the four customer account mails as transactional email events, next to the six console events', () => {
+    const registry = new NotificationEventRegistry();
+    for (const key of CUSTOMER_MAIL_EVENT_KEYS) {
+      expect(registry.get(key, 'customer'), key).toMatchObject({
+        channels: ['email'],
+        transactional: true,
+        variables: ['customerName', 'link', 'expiresAt'],
+      });
+      expect(registry.get(key, 'merchant'), key).toBeUndefined();
+    }
+    const consoleEvents = registry
+      .list()
+      .filter((definition) => definition.audience === 'customer' && !definition.transactional)
+      .map((definition) => definition.key);
+    expect(consoleEvents).toEqual([
+      'order.received',
+      'order.completed',
+      'order.failed',
+      'support.reply',
+      'checkout.abandoned',
+      'payment.failed',
+    ]);
   });
 
   it('offer a merchant the non-transactional merchant events only', () => {

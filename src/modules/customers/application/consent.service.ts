@@ -17,14 +17,13 @@ import {
   requiredConsents,
 } from '../domain/checkout';
 import {
-  findCustomer,
-  findCustomerByEmail,
   insertGuestCustomer,
   lockCheckoutSession,
   setGuestMarketingOptIn,
   setSessionCustomer,
 } from '../infra/checkout.repository';
 import { insertConsents, listSessionConsents } from '../infra/consent.repository';
+import { findCustomerByEmail, findCustomerById, setMarketingOptIn } from '../infra/customer.repository';
 
 type Body = BodyOf<typeof recordCheckoutConsents>;
 
@@ -45,10 +44,12 @@ export interface ConsentOrigin {
  * of the text, the time, the IP) for a chargeback (scenario b2c-chargeback step 4). The proof is never overwritten: a withdrawal
  * is a new row with `granted = false`, and the latest row of a purpose decides. A guest checkout proves the purchase only: when its
  * email belongs to an account, `marketing` is not recorded (anyone can type someone else's email; the account page owns that
- * choice) and is left out of the answer.
+ * choice) and is left out of the answer. The exception is the account holder themself: a request with the signed-in session of
+ * the session's own customer (cookie and CSRF token checked by the caller) may record `marketing` too, and then the account's
+ * `marketing_opt_in` follows the answer, as it does on the account page.
  *
- * Side effects: inserts `consent_records` rows (one per changed purpose) in one transaction, with the session row locked; a guest's
- * `marketing_opt_in` follows its recorded marketing answer.
+ * Side effects: inserts `consent_records` rows (one per changed purpose) in one transaction, with the session row locked; the
+ * customer's `marketing_opt_in` follows its recorded marketing answer (a guest's, or the signed-in owner's).
  */
 @Injectable()
 export class ConsentService {
@@ -65,11 +66,17 @@ export class ConsentService {
    * @param sessionId the session the token resolved to
    * @param body the purposes with their answers and the language of the texts
    * @param origin the visitor's address and user agent
+   * @param signedInCustomerId the customer the request is signed in as, when it carries a usable customer session
    * @returns the record of each purpose sent and where the session's consent now stands
    * @throws {AppError} `NOT_FOUND` when the session no longer exists; `INVALID_TRANSITION` when it is paid or expired;
    *   `VALIDATION_FAILED` for a purpose listed twice or one whose document is not published
    */
-  async record(sessionId: number, body: Body, origin: ConsentOrigin): Promise<RecordedConsents> {
+  async record(
+    sessionId: number,
+    body: Body,
+    origin: ConsentOrigin,
+    signedInCustomerId?: number,
+  ): Promise<RecordedConsents> {
     const purposes = body.consents.map((item) => item.purpose);
     const duplicate = purposes.findIndex((purpose, index) => purposes.indexOf(purpose) !== index);
     if (duplicate >= 0) {
@@ -87,8 +94,10 @@ export class ConsentService {
         throw new AppError('INVALID_TRANSITION', { detail: 'This checkout is no longer open.' });
       }
       const customer = await this.customerOf(tx, session.id, session.customerId, session.email, now);
-      // Stage 14 checkouts are guest checkouts: an account holder's marketing choice is never changed from one.
-      const consents = body.consents.filter((item) => item.purpose !== 'marketing' || !customer.hasAccount);
+      // An account holder's marketing choice is changed only by the holder (the signed-in session of this very customer), never
+      // by a request that merely typed the account's email.
+      const isOwner = signedInCustomerId === customer.id;
+      const consents = body.consents.filter((item) => item.purpose !== 'marketing' || !customer.hasAccount || isOwner);
 
       const documents = new Map<ConsentPurpose, LegalDocumentRef | null>();
       const problems: FieldError[] = [];
@@ -141,7 +150,10 @@ export class ConsentService {
       }
       const inserted = await insertConsents(tx, toInsert);
       const marketing = inserted.find((row) => row.purpose === 'marketing');
-      if (marketing) await setGuestMarketingOptIn(tx, customer.id, marketing.granted, now);
+      if (marketing) {
+        if (isOwner) await setMarketingOptIn(tx, customer.id, marketing.granted, now);
+        else await setGuestMarketingOptIn(tx, customer.id, marketing.granted, now);
+      }
       const byPurpose = new Map<ConsentPurpose, ConsentRecord>([
         ...kept,
         ...inserted.map((row) => [row.purpose, row] as const),
@@ -184,7 +196,7 @@ export class ConsentService {
     now: Date,
   ): Promise<Customer> {
     if (customerId !== null) {
-      const linked = await findCustomer(tx, customerId);
+      const linked = await findCustomerById(tx, customerId);
       if (!linked) throw new Error('The customer of a checkout session is missing.');
       return linked;
     }

@@ -1,9 +1,14 @@
-// Unit tests of the default templates (feature 12a): they use only their event's placeholders, cover every merchant event the platform wires, and the
-// data section of migration 0009 is exactly what `defaultTemplatesSql()` writes, so the two cannot drift.
+// Unit tests of the default templates (features 12a and 14b): they use only their event's placeholders, cover every merchant event the platform
+// wires and the four customer account mails, and the data sections of migrations 0011 and 0012 together are exactly what `defaultTemplatesSql()` writes.
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { DEFAULT_TEMPLATES, defaultTemplatesSql } from './default-templates';
-import { BUILT_IN_EVENTS, MERCHANT_MAIL_EVENT_KEYS, NotificationEventRegistry } from './notification-events';
+import {
+  BUILT_IN_EVENTS,
+  CUSTOMER_MAIL_EVENT_KEYS,
+  MERCHANT_MAIL_EVENT_KEYS,
+  NotificationEventRegistry,
+} from './notification-events';
 import { checkTemplateFields } from './template-rules';
 
 const registry = new NotificationEventRegistry();
@@ -41,16 +46,53 @@ describe('DEFAULT_TEMPLATES', () => {
       expect(template.body).toContain('{{expiresAt}}');
     }
   });
+
+  it('cover the four customer account mails with an English email that holds the link, its expiry and the name', () => {
+    for (const key of CUSTOMER_MAIL_EVENT_KEYS) {
+      const template = DEFAULT_TEMPLATES.find(
+        (t) => t.event === key && t.audience === 'customer' && t.channel === 'email',
+      );
+      expect(template, key).toBeDefined();
+      expect(template!.locale).toBe('en');
+      expect(template!.subject, key).not.toBe('');
+      for (const placeholder of ['{{customerName}}', '{{link}}', '{{expiresAt}}'])
+        expect(template!.body, `${key} ${placeholder}`).toContain(placeholder);
+    }
+  });
 });
 
-describe('migration 0009', () => {
-  it('holds exactly the INSERT that defaultTemplatesSql() writes', () => {
-    const migration = readFileSync(
-      new URL('../../../../drizzle/0011_notifications_delivery.sql', import.meta.url),
-      'utf8',
-    );
+/** The migrations that insert default templates, oldest first. */
+const MIGRATIONS = ['0011_notifications_delivery.sql', '0012_customer_mail_templates.sql'] as const;
+
+/** The `event|channel|audience|locale` key of every row an INSERT in a migration holds (a row starts with two spaces and a bracket). */
+function keysInInsert(insert: string): string[] {
+  return [...insert.matchAll(/^ {2}\('([^']+)', '([^']+)', '([^']+)', '([^']+)', /gm)].map((m) =>
+    m.slice(1, 5).join('|'),
+  );
+}
+
+describe('the migrations that insert the default templates', () => {
+  const insertOf = (file: string): string => {
+    const migration = readFileSync(new URL(`../../../../drizzle/${file}`, import.meta.url), 'utf8');
     const start = migration.indexOf('INSERT INTO "notification_templates"');
-    expect(start).toBeGreaterThan(0);
-    expect(migration.slice(start).trim()).toBe(defaultTemplatesSql());
+    expect(start, file).toBeGreaterThan(0);
+    return migration.slice(start).trim();
+  };
+
+  it('each hold exactly the INSERT that defaultTemplatesSql() writes for the templates it names', () => {
+    for (const file of MIGRATIONS) {
+      const insert = insertOf(file);
+      const keys = new Set(keysInInsert(insert));
+      expect(keys.size, file).toBeGreaterThan(0);
+      const templates = DEFAULT_TEMPLATES.filter((t) => keys.has(`${t.event}|${t.channel}|${t.audience}|${t.locale}`));
+      expect(templates.length, file).toBe(keys.size);
+      expect(insert, file).toBe(defaultTemplatesSql(templates));
+    }
+  });
+
+  it('together insert every default template, each once', () => {
+    const inserted = MIGRATIONS.flatMap((file) => keysInInsert(insertOf(file))).sort();
+    const expected = DEFAULT_TEMPLATES.map((t) => `${t.event}|${t.channel}|${t.audience}|${t.locale}`).sort();
+    expect(inserted).toEqual(expected);
   });
 });

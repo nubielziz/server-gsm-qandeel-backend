@@ -1,5 +1,6 @@
-// The default templates of the merchant events (platform module, feature 12a): English email and Telegram texts. Migration 0009 inserts
-// the same rows into a fresh database (a test keeps the two equal); the console edits them afterwards.
+// The default templates of the merchant events and the customer account mails (platform module, features 12a and 14b): English email and
+// Telegram texts. Migrations 0011 (merchant) and 0012 (customer mails) insert the same rows into a fresh database (a test keeps code and
+// migrations equal); the console edits them afterwards.
 import type { NotificationAudience, NotificationChannel } from '../db/schema';
 
 /** One default template, as the migration inserts it. */
@@ -17,8 +18,9 @@ const LINK_FOOTER = 'The link works once and stops working at {{expiresAt}}.';
 /**
  * The templates every installation starts with.
  *
- * Why: "a registry entry for each, with its default template seeded (English)" (brief 12a). Without them the merchant mails would
- * send nothing (a missing template sends nothing), so they come with the migration, not with the development seed.
+ * Why: "a registry entry for each, with its default template seeded (English)" (brief 12a). Without them the merchant mails and the
+ * customer account mails (feature 14b) would send nothing (a missing template sends nothing), so they come with the migrations, not
+ * with the development seed.
  */
 export const DEFAULT_TEMPLATES: readonly DefaultTemplate[] = [
   {
@@ -157,19 +159,52 @@ export const DEFAULT_TEMPLATES: readonly DefaultTemplate[] = [
     subject: '',
     body: 'Telegram notifications for {{merchantName}} are off. Create a new link in the portal to connect this chat again.',
   },
+  {
+    event: 'customer.magic_link',
+    channel: 'email',
+    audience: 'customer',
+    locale: 'en',
+    subject: 'Your sign-in link',
+    body: `Hi {{customerName}},\n\nUse this link to sign in to your GSM account:\n\n{{link}}\n\n${LINK_FOOTER} If you did not ask for it, you can ignore this email.`,
+  },
+  {
+    event: 'customer.password_reset',
+    channel: 'email',
+    audience: 'customer',
+    locale: 'en',
+    subject: 'Reset your password',
+    body: `Hi {{customerName}},\n\nUse this link to choose a new password:\n\n{{link}}\n\n${LINK_FOOTER} If you did not ask for a new password, you can ignore this email: your password stays as it is.`,
+  },
+  {
+    event: 'customer.invited',
+    channel: 'email',
+    audience: 'customer',
+    locale: 'en',
+    subject: 'Your GSM account is ready',
+    body: `Hi {{customerName}},\n\nOur team created a GSM account for you. Choose your password here to sign in:\n\n{{link}}\n\n${LINK_FOOTER}`,
+  },
+  {
+    event: 'customer.email_verification',
+    channel: 'email',
+    audience: 'customer',
+    locale: 'en',
+    subject: 'Confirm your email address',
+    body: `Hi {{customerName}},\n\nThe email address of your GSM account was changed to this one. Confirm it here:\n\n{{link}}\n\n${LINK_FOOTER} If this is not your account, you can ignore this email.`,
+  },
 ];
 
 /**
- * Writes the default templates as the SQL the migration holds.
+ * Writes default templates as the SQL a migration holds.
  *
- * Why: the migration is plain SQL, so the text is written once here and pasted; a test runs the migration's data section and
- * compares it with this list, so the two cannot drift.
+ * Why: the migrations are plain SQL, so the text is written once here and pasted; a test compares the data section of each
+ * migration with this function's output for the templates that migration holds, so code and migrations cannot drift.
  *
- * @returns one `INSERT ... ON CONFLICT DO NOTHING` statement for every template
+ * @param templates the templates one migration inserts (default: all of them)
+ * @returns one `INSERT ... ON CONFLICT DO NOTHING` statement for them
  */
-export function defaultTemplatesSql(): string {
+export function defaultTemplatesSql(templates: readonly DefaultTemplate[] = DEFAULT_TEMPLATES): string {
   const quote = (text: string) => `'${text.replace(/'/g, "''")}'`;
-  const rows = DEFAULT_TEMPLATES.map(
+  const rows = templates.map(
     (t) =>
       `  (${quote(t.event)}, ${quote(t.channel)}, ${quote(t.audience)}, ${quote(t.locale)}, ${quote(t.subject)}, ${quote(t.body)}, true)`,
   );

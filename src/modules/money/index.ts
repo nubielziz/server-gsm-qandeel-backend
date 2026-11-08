@@ -57,6 +57,8 @@ export { INVOICE_PAID_EVENT, InvoiceOutbox } from './application/invoice-outbox'
 export { MoneyOutboxModule } from './money-outbox.module';
 export { PaymentAutoCreditModule, PAYMENT_AUTO_CREDIT_SCHEDULER } from './jobs/payment-auto-credit.module';
 export { PAYMENT_AUTO_CREDIT_JOB } from './jobs/payment-auto-credit.processor';
+export { FxRefreshJobModule, FX_REFRESH_SCHEDULER } from './jobs/fx-refresh.module';
+export { FX_REFRESH_JOB } from './jobs/fx-refresh.processor';
 export { AUTO_CREDIT_BATCH, PaymentAutoCredit } from './jobs/payment-auto-credit';
 export type { AutoCreditSummary } from './jobs/payment-auto-credit';
 export { GATEWAY_HTTP_POLICY } from './infra/gateway-drivers/driver';

@@ -152,15 +152,22 @@ Sends emails and Telegram messages.
     the merge of feature 8, `invoice.paid` and `deposit.approved`. It is registered next to the event's other consumer (the merchant webhooks): one outbox event, one job per queue.
   - `merchant.email_verification`, `merchant.password_reset`, `merchant.invited` (identity, `src/modules/identity/jobs/merchant-mail.processors.ts`, feature 2b/12a): rotate the
     link's token on its `auth_tokens` row and send the mail with the clear link as a secret that is never stored.
+  - `customer.magic_link`, `customer.password_reset`, `customer.invited`, `customer.email_verification` (customers,
+    `src/modules/customers/jobs/customer-mail.processors.ts`, feature 14b, handled by `CustomerMailJobs`): the storefront customer's links.
+    Built like the merchant mails (decision 033): the job re-reads the customer and the link, sends nothing when the customer is not
+    active (suspended, blocked, anonymized) or the link was used, voided or has expired, rotates the link's token on its `auth_tokens` row
+    and sends the mail (`<STORE_BASE_URL>/sign-in`, `/set-password` or `/verify-email` with `?token=`) through `NotificationService.sendNow`
+    with the clear link as a secret that is never stored or logged. One `notifications` row per mail (`outbox-<event id>:email`, with its
+    attempts); a repeat after a delivered mail is skipped before it can spoil the link that arrived.
 - **Payload:** `OutboxJobData` of the event (ids only). `notification.send` carries the row (`aggregateId` = the `notifications.id`; a digest job carries `{ notificationId }`). The
-  merchant mail jobs carry `aggregateId` = the merchant and `payload.tokenId`. Never a token, a link, an address or a message text: the job re-reads the row, the recipient and the
+  merchant mail jobs carry `aggregateId` = the merchant and `payload.tokenId`; the customer mail jobs carry `aggregateId` = the customer and `payload.tokenId`. Never a token, a link, an address or a message text: the job re-reads the row, the recipient and the
   active template.
 - **Idempotency:** the outbox job id is `outbox-<event id>` (per queue). A `notifications` row has a `dedupe_key` (`outbox-<event id>:<channel>` for the planning job,
   `telegram-update-<update id>` for the bot's answer, `digest:<event>:<channel>:<merchant>:<day>` for a digest, unique where not null): a job that runs twice makes no second row.
   A send is guarded (`status = 'queued'` on the update): a row already `sent` or `failed` is skipped, so a job that runs twice records one send; the row's id is the
   `Message-ID` of the mail (`<notification-<id>@<domain of MAIL_FROM>>`), so a provider that dedupes drops the rare repeat after a crash between the provider's answer and the update.
   A digest job has the id `notification-<id>` and a delay up to the end of its period (06:00 UTC), at least 10 seconds (`MIN_DIGEST_DELAY_MS`: a job added before its transaction commits must not run before the row is visible); the send job closes the digest first (`payload.closed`), so a change that arrives
-  later joins the next period's row. A merchant mail job asks the row's status before it rotates the token, so a repeat after a delivered mail never spoils the link that arrived.
+  later joins the next period's row. A merchant or customer mail job asks the row's status before it rotates the token, so a repeat after a delivered mail never spoils the link that arrived.
 - **Retry policy:** 5 attempts, exponential backoff from 30 s (jitter 50 %). A transient failure (an SMTP 4xx or a dropped connection, a Telegram 429 or 5xx, a timeout) records the
   attempt on the row and throws, so the queue retries; the last attempt marks the row `failed` with the reason and throws. A refusal that cannot change (an SMTP 5xx, a Telegram
   400, 403 or 404, a missing template, no address, a recipient that is gone) marks the row `failed` at once and ends the job. The queue's own backoff applies as it is: a provider's
@@ -218,10 +225,10 @@ Processes uploaded and generated files (exports, result files).
 Scheduled housekeeping: group promotion, data retention, integrity checks, FX refresh.
 
 - **Concurrency:** 2 per worker process.
-- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute (money module, below), `service_price_scan`, event-driven (catalog module, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below). The others are built by their features, each
+- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly (money module, below), `service_price_scan`, event-driven (catalog module, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below). The others are built by their features, each
   registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
   `ledger_integrity` (12b, nightly 02:30 UTC), `data_retention` (nightly
-  03:00 UTC), `fx_refresh` (hourly), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). The names are the
+  03:00 UTC), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). The names are the
   console's job names (`GET /admin/system/jobs`, which lists only the jobs that write `job_runs`: `ip_rule_hits_flush` does not, so it is not listed and a manual run of it is 404). `data_retention` erases `imei_checks` older than `imeiRetentionDays` by
   setting `imei_enc`, `imei_hash` and `cached_until` to NULL together (no marker column; the wire then shows the TAC followed
   by bullets up to 15 characters), the same erasure `POST /admin/customers/:id/anonymize` applies to the customer's checks.
@@ -237,7 +244,8 @@ Scheduled housekeeping: group promotion, data retention, integrity checks, FX re
 - **Schedule:** `ip-rule-hits-flush` every minute (`src/modules/identity/security/ip-rules/ip-rule-hits-flush.module.ts`);
   `session-purge` at 03:15 UTC (`src/modules/identity/jobs/session-purge.module.ts`);
   `client-group-promotion` at 03:30 UTC (`src/modules/identity/jobs/group-promotion.module.ts`);
-  `payment-auto-credit` every minute (`src/modules/money/jobs/payment-auto-credit.module.ts`); the health jobs in
+  `payment-auto-credit` every minute (`src/modules/money/jobs/payment-auto-credit.module.ts`); `fx-refresh` every hour at minute 0
+  (`src/modules/money/jobs/fx-refresh.module.ts`); the health jobs in
   `src/modules/health/jobs/health-jobs.module.ts`; the others are registered with `JobSchedulerRegistry` by the owning
   features.
 
@@ -269,6 +277,18 @@ Credits the wallet of confirmed top-ups of automatic gateways by themselves (use
 - **What it does, per payment:** asks the gateway's API again through the driver (no row lock is held across the call); then, under `SELECT ... FOR UPDATE` on the payment, re-checks that it is still pending and not flagged and (a) credits it (`deposit` from `gateway_clearing`, key `deposit:payment:<id>`, invoice paid, `invoice.paid` outbox row, audit `credited deposit of` by the system) when the gateway still says confirmed (a crypto gateway only after its required confirmations), (b) sets `review_required` with the reason (audit `sent deposit to review`) when the gateway no longer confirms, the invoice is no longer payable or the payment stayed unconfirmed for 24 hours, or (c) moves `auto_credit_at` 5 minutes ahead while the gateway has not confirmed yet or cannot be reached.
 - **Idempotency:** the payment row lock plus the unique ledger key make a double credit impossible, whether two ticks overlap or a staff decision races the job (the loser changes nothing; staff get `PAYMENT_ALREADY_REVIEWED`). A failure of one payment never stops the others; it stays due for the next tick.
 - **Recorded in `job_runs`** (job `payment_auto_credit`, `processed` = payments credited, `result` = the counts) only for a tick that had payments due and for every manual run: a run every minute with nothing due would bury the jobs list (like the outbox tick, decision 020). Retry policy: the queue's (3 attempts, backoff from 1 min); the next minute's tick is the real retry.
+
+### `fx_refresh` (money module)
+
+Refreshes the exchange rates every hour, with the same code as `POST /admin/currencies/refresh-fx` (`FxRefreshService`, decision 029).
+
+- **Trigger:** the scheduler `fx-refresh` every hour at minute 0 (`0 * * * *`); a manual run from the Jobs tab carries `{ runId }`. The processor is `FxRefreshProcessor` (`src/modules/money/jobs/`).
+- **Payload:** none (a manual run carries `{ runId }`).
+- **What it does:** asks the configured provider (`FX_PROVIDER`, `FX_API_KEY`) for the latest rate of every active non-base currency, in one call outside any transaction, then writes the rates in one transaction (rows locked in code order, `rate_updated_at` from the clock) with one `audit_logs` row, `refreshed exchange rate`, written by the system actor (no request is behind the job). A currency the provider does not offer, or sends an unusable rate for, is counted as failed and keeps its old rate.
+- **No provider configured** (`manual`, or `openexchangerates` without a key): it asks nothing and changes nothing, writes no audit row, and the run is recorded as `succeeded` with `processed` 0 and `result.reason` (`no provider configured`); a `skipped` run would show a warning in the console every hour. This is not an error and is not retried.
+- **No active non-base currency** (a configured provider): it ends without a call, a transaction or an audit row (`processed` 0, `result` `{ source, refreshed: 0, failed: 0 }`). The admin route still audits its empty refresh, because every staff write is audited.
+- **Idempotency:** a repeat only writes the newer rates again; two runs at once are serialised by the row locks and `JobRunsService.run`, which skips a run while another run of `fx_refresh` is going on.
+- **Recorded in `job_runs`** (job `fx_refresh`): `processed` = the rates refreshed, `result` = `{ source, refreshed, failed }`. A provider that is configured but cannot answer (timeout, refusal, unreadable answer, none of our currencies offered) fails the run (`FX_PROVIDER_DOWN`, the old rates stay): the queue's retry policy applies (3 attempts, backoff from 1 min, each attempt its own run) and the next hour's tick is the real retry. The dashboard's `fx_stale` item and the currencies panel show rates older than 24 hours as stale.
 
 ### `service_price_scan` (catalog module)
 

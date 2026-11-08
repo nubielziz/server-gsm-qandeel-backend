@@ -15,6 +15,7 @@ import { PricingResolveService } from './application/pricing-resolve.service';
 import { PricingRuleAdminService } from './application/pricing-rule-admin.service';
 import { ServiceAdminService } from './application/service-admin.service';
 import { ServicePartsService } from './application/service-parts.service';
+import { TacCatalogAdminService } from './application/tac-catalog-admin.service';
 import { CategoriesController } from './controllers/categories.controller';
 import { ClientCatalogController } from './controllers/client-catalog.controller';
 import { ClientGroupsController } from './controllers/client-groups.controller';
@@ -24,6 +25,7 @@ import { PricingController } from './controllers/pricing.controller';
 import { PricingRulesController } from './controllers/pricing-rules.controller';
 import { ServicesController } from './controllers/services.controller';
 import { V1ServicesController } from './controllers/v1-services.controller';
+import { TacCatalogController } from './controllers/tac-catalog.controller';
 
 /**
  * Provides `/admin/client-groups`, `/admin/service-categories`, `/admin/services` (with `fields`, `options`, `group-prices` and
@@ -46,6 +48,7 @@ import { V1ServicesController } from './controllers/v1-services.controller';
     InventoryController,
     ClientCatalogController,
     V1ServicesController,
+    TacCatalogController,
   ],
   providers: [
     ClientGroupAdminService,
@@ -60,6 +63,7 @@ import { V1ServicesController } from './controllers/v1-services.controller';
     ClientCatalogService,
     MerchantApiCatalog,
     InventoryAdminService,
+    TacCatalogAdminService,
   ],
 })
 export class CatalogAdminModule {}

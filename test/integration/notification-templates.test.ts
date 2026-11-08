@@ -70,12 +70,12 @@ describe('GET /admin/notification-templates', () => {
     expect(events).toEqual([...events].sort());
     expect(res.body[0]).toEqual({
       id: expect.any(Number),
-      event: 'deposit.approved',
+      event: 'customer.email_verification',
       channel: 'email',
-      audience: 'merchant',
+      audience: 'customer',
       locale: 'en',
-      subject: 'Your deposit of {{amount}} {{currency}} was approved',
-      body: expect.stringContaining('{{merchantName}}'),
+      subject: 'Confirm your email address',
+      body: expect.stringContaining('{{customerName}}'),
       isActive: true,
       sentLast30Days: 0,
       createdAt: expect.any(String),
@@ -96,7 +96,10 @@ describe('GET /admin/notification-templates', () => {
     });
     const total = async (query: string) => (await owner.get(`/admin/notification-templates?${query}`)).total;
     expect(await total('channel=telegram')).toBe(DEFAULT_TEMPLATES.filter((x) => x.channel === 'telegram').length);
-    expect(await total('audience=customer')).toBe(1);
+    // The four customer account mails (feature 14b) ship with a default template each, next to the one this test adds.
+    expect(await total('audience=customer')).toBe(
+      DEFAULT_TEMPLATES.filter((x) => x.audience === 'customer').length + 1,
+    );
     expect(await total('isActive=false')).toBe(1);
     expect(await total('event=wallet.low_balance')).toBe(2);
     expect(await total('locale=en-GB')).toBe(1);

@@ -18,6 +18,7 @@ import { PublicIpLimitModule, RateLimitModule } from '../../src/infra/rate-limit
 import { RedisModule } from '../../src/infra/redis';
 import { StorageModule } from '../../src/infra/storage';
 import { CatalogAdminModule, CatalogPricesModule } from '../../src/modules/catalog';
+import { CustomersAccountsModule } from '../../src/modules/customers';
 import { AccessAdminModule } from '../../src/modules/identity/access-admin.module';
 import { ApiKeysModule } from '../../src/modules/identity/api-keys.module';
 import { KycModule } from '../../src/modules/identity/kyc.module';
@@ -51,6 +52,7 @@ export const PRODUCTION_ENV: Record<string, string> = {
   NODE_ENV: 'production',
   ERRORS_BASE_URL: 'https://errors.gsm.example',
   PORTAL_BASE_URL: 'https://portal.gsm.example',
+  STORE_BASE_URL: 'https://shop.gsm.example',
   DATABASE_URL: 'postgres://app:pw@db.internal:5432/gsm',
   REDIS_QUEUE_URL: 'redis://queue.internal:6379/0',
   REDIS_CACHE_URL: 'redis://cache.internal:6379/0',
@@ -116,6 +118,7 @@ const NEEDS_DATABASE_AND_CACHE = [
   StorefrontPublicModule,
   ImeiCheckModule,
   CheckoutModule,
+  CustomersAccountsModule,
   StorefrontContentModule,
   MerchantWebhooksModule,
   WebhookDeliveryModule,

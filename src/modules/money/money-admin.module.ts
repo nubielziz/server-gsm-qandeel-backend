@@ -6,6 +6,7 @@ import { JobRunsModule } from '../health';
 import { ClientGroupDirectory } from '../catalog';
 import { StoredFiles } from '../platform';
 import { CurrencyService } from './application/currency.service';
+import { FxRefreshService } from './application/fx-refresh.service';
 import { GatewayCredentialsVault } from './application/gateway-credentials';
 import { InvoiceAdminService } from './application/invoice-admin.service';
 import { InvoiceDocuments } from './application/invoice-documents';
@@ -25,12 +26,14 @@ import { ClientBillingController } from './controllers/client-billing.controller
 import { CurrenciesController } from './controllers/currencies.controller';
 import { GatewaysController } from './controllers/gateways.controller';
 import { InvoicesController } from './controllers/invoices.controller';
+import { FxController } from './controllers/fx.controller';
 import { LedgerController } from './controllers/ledger.controller';
 import { PaymentWebhookController } from './controllers/payment-webhook.controller';
 import { PaymentsController } from './controllers/payments.controller';
 import { TaxRatesController } from './controllers/tax-rates.controller';
 import { V1AccountController } from './controllers/v1-account.controller';
 import { WalletController } from './controllers/wallet.controller';
+import { FX_PROVIDER_FACTORY } from './infra/fx-provider.factory';
 import { MoneyOutboxModule } from './money-outbox.module';
 
 /**
@@ -51,6 +54,7 @@ import { MoneyOutboxModule } from './money-outbox.module';
     LedgerController,
     CurrenciesController,
     TaxRatesController,
+    FxController,
     V1AccountController,
     GatewaysController,
     InvoicesController,
@@ -77,6 +81,9 @@ import { MoneyOutboxModule } from './money-outbox.module';
     MerchantBillingService,
     PaymentWebhookService,
     PaymentWebhookVerifier,
+    FxRefreshService,
+    // Decision 029: the driver named by FX_PROVIDER; `openexchangerates` without a key behaves like `manual` (502 on refresh).
+    FX_PROVIDER_FACTORY,
   ],
   exports: [WalletService],
 })

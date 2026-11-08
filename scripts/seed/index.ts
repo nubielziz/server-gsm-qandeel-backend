@@ -4,6 +4,7 @@ import { loadConfigOrExit } from '../../src/config';
 import { createDrizzle, createPool } from '../../src/infra/db';
 import { databaseUrlFor } from '../../src/infra/db/url';
 import { frontendDir, loadDemoState } from './demo-state';
+import { seedCustomerDevCredentials } from './customers';
 import { seedDevCredentials } from './dev-credentials';
 import { runSeed } from './run';
 
@@ -30,6 +31,7 @@ try {
   // Development only (the seed refuses production): `demo-password` and a fixed TOTP secret per seeded member (README "Local sign-in").
   if (config.env === 'development') {
     reports.push({ module: 'identity', ...(await db.transaction((tx) => seedDevCredentials(tx, config))) });
+    reports.push({ module: 'customers', ...(await db.transaction((tx) => seedCustomerDevCredentials(tx, config))) });
   }
   for (const report of reports) {
     console.log(
