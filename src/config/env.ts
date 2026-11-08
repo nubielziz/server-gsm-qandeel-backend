@@ -76,6 +76,22 @@ export interface AppConfig {
     /** Explicit timeout of the provider call in milliseconds (decision 023). */
     readonly timeoutMs: number;
   };
+  /** Email delivery (decision 033): SMTP through nodemailer; under `NODE_ENV=test` the app never opens a connection to it. */
+  readonly mail: {
+    /** `smtp://` or `smtps://` URL with credentials (secret). Development: the Mailpit of compose.yaml. */
+    readonly smtpUrl: string;
+    /** The sender of every mail: an address, or `Name <address>`. */
+    readonly from: string;
+  };
+  /** Telegram Bot API (decision 033). Every value is optional: without a token, Telegram sends fail with a clear reason. */
+  readonly telegram: {
+    /** Secret token of the bot; unset means "Telegram is not configured". */
+    readonly botToken: string | undefined;
+    /** The bot's username without `@`, for the link `https://t.me/<username>?start=<token>`. */
+    readonly botUsername: string | undefined;
+    /** Secret of `POST /webhooks/telegram/:secret` (path segment and `X-Telegram-Bot-Api-Secret-Token` header); unset refuses every call. */
+    readonly webhookSecret: string | undefined;
+  };
   readonly log: { readonly level: LogLevel };
   readonly database: { readonly url: string; readonly testUrl: string; readonly poolMax: number };
   readonly redis: { readonly queueUrl: string; readonly cacheUrl: string; readonly bullPrefix: string };
@@ -176,6 +192,9 @@ export const DEV_DEFAULTS = {
   errorsBaseUrl: 'http://localhost:3000/errors',
   portalBaseUrl: 'http://localhost:5174',
   corsOrigins: 'http://localhost:5173,http://127.0.0.1:5173',
+  // The Mailpit of compose.yaml (decision 033): SMTP on 1025, a web UI on 8025 with every message.
+  mailSmtpUrl: 'smtp://localhost:1025',
+  mailFrom: 'GSM <noreply@gsm.local>',
 } as const;
 
 const url = (protocol: RegExp) => z.url({ protocol });
@@ -202,6 +221,20 @@ const rawSchema = z.object({
   FX_PROVIDER: z.enum(FX_PROVIDERS).optional(),
   FX_API_KEY: z.string().min(1).optional(),
   FX_TIMEOUT_MS: int(100, 60_000).optional(),
+  MAIL_SMTP_URL: url(/^smtps?$/).optional(),
+  MAIL_FROM: z
+    .string()
+    .regex(/^(?:[^<>@\r\n]+<[^<>@\s]+@[^<>@\s]+>|[^<>@\s]+@[^<>@\s]+)$/, 'use an address or "Name <address>"')
+    .optional(),
+  TELEGRAM_BOT_TOKEN: z.string().min(10).optional(),
+  TELEGRAM_BOT_USERNAME: z
+    .string()
+    .regex(/^[A-Za-z0-9_]{5,32}$/, 'use the bot username without "@": 5-32 letters, digits or "_"')
+    .optional(),
+  TELEGRAM_WEBHOOK_SECRET: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{16,256}$/, 'use 16-256 letters, digits, "_" or "-" (Telegram allows nothing else)')
+    .optional(),
   DATABASE_URL: postgresUrl.optional(),
   DATABASE_URL_TEST: postgresUrl.optional(),
   DATABASE_POOL_MAX: int(1, 200).optional(),
@@ -491,6 +524,17 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
       apiKey: raw.FX_API_KEY,
       timeoutMs: raw.FX_TIMEOUT_MS ?? 5000,
     },
+    // Production sends real mail, so both settings must be given there (decision 033); elsewhere Mailpit is the default.
+    mail: {
+      smtpUrl: withDefault('MAIL_SMTP_URL', raw.MAIL_SMTP_URL, DEV_DEFAULTS.mailSmtpUrl),
+      from: withDefault('MAIL_FROM', raw.MAIL_FROM, DEV_DEFAULTS.mailFrom),
+    },
+    // Telegram is optional everywhere: a missing token fails the send with a reason instead of stopping the boot.
+    telegram: {
+      botToken: raw.TELEGRAM_BOT_TOKEN,
+      botUsername: raw.TELEGRAM_BOT_USERNAME,
+      webhookSecret: raw.TELEGRAM_WEBHOOK_SECRET,
+    },
     log: { level: raw.LOG_LEVEL ?? (production ? 'info' : env === 'test' ? 'warn' : 'debug') },
     database: {
       url: withDefault('DATABASE_URL', raw.DATABASE_URL, DEV_DEFAULTS.databaseUrl),
@@ -662,6 +706,12 @@ export function summarizeConfig(config: AppConfig): Record<string, unknown> {
       referenceDocs: config.http.referenceDocs,
     },
     fx: { provider: config.fx.provider, apiKey: flag(config.fx.apiKey), timeoutMs: config.fx.timeoutMs },
+    mail: { smtpUrl: redactUrl(config.mail.smtpUrl), from: config.mail.from },
+    telegram: {
+      botToken: flag(config.telegram.botToken),
+      botUsername: config.telegram.botUsername,
+      webhookSecret: flag(config.telegram.webhookSecret),
+    },
     logLevel: config.log.level,
     database: { url: redactUrl(config.database.url), poolMax: config.database.poolMax },
     redis: {

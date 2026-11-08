@@ -9,6 +9,9 @@ import { OpenApiService } from './docs/openapi.service';
 import { ReferenceAccessGuard } from './docs/reference-access.guard';
 import { AuditModule } from './audit/audit.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
+import { NotificationAdminModule } from './notifications/notification-admin.module';
+import { NotificationDeliveryModule } from './notifications/notification-delivery.module';
+import { NotificationEventsModule } from './notifications/notification-events.module';
 import { OutboxModule } from './outbox/outbox.module';
 import { PdfModule } from './pdf/pdf.module';
 import { PlatformAdminModule } from './platform-admin.module';
@@ -38,6 +41,9 @@ import { WebhookEventsModule } from './webhooks/webhook-events.module';
     WebhookEventsModule,
     MerchantWebhooksModule,
     PdfModule,
+    NotificationEventsModule,
+    NotificationDeliveryModule,
+    NotificationAdminModule,
   ],
   controllers: [DocsController, ReferenceController],
   providers: [OpenApiService, ReferenceAccessGuard],

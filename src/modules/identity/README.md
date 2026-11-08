@@ -8,7 +8,7 @@ Decisions that shape this module: 007 password hashing, 010 ids and tokens, 018 
 
 ## Status
 
-Built: the staff, role, permission, session, IP-rule and merchant routes of feature 2a (27 of its 31 routes; the other 4 are the platform's audit log and settings), the daily purge of ended sessions and the demo merchants of the seed (see "Staff access, merchants and sessions (feature 2a)" below); the 6 API key routes of feature 7b (see "API keys (feature 7b)" below); the 15 merchant portal routes of feature 2b (`/client/auth/*`, `/client/profile`, `/client/security/*`, `/client/sessions`, see "Merchant portal sign-in (2b)" below) and the pending-merchant rule of B153. Built earlier (P2.5a, P2.5c and the P2.6 sign-in routes, code in `security/`): the session service, cookies and CSRF token, the guard dispatcher with the staff, merchant and customer session guards, the CSRF guard, the permission guard with the permissions catalog and the Owner helpers, the staff gate of the internal API reference, and the machine guards (`security/machine/`): capability tokens, URL secrets, merchant API keys (REST v1 Bearer and Dhru credentials) and gateway webhook signatures. The sign-in routes (P2.6) and the IP rules, maintenance and rate-limit hooks (P2.5b) are built too.
+Built: the staff, role, permission, session, IP-rule and merchant routes of feature 2a (27 of its 31 routes; the other 4 are the platform's audit log and settings), the daily purge of ended sessions and the demo merchants of the seed (see "Staff access, merchants and sessions (feature 2a)" below); the 6 API key routes of feature 7b (see "API keys (feature 7b)" below); the 4 notification routes of feature 12a (the merchant's preferences, the Telegram link and Telegram's update webhook, see "Notification settings and Telegram (feature 12a)" below); the 15 merchant portal routes of feature 2b (`/client/auth/*`, `/client/profile`, `/client/security/*`, `/client/sessions`, see "Merchant portal sign-in (2b)" below) and the pending-merchant rule of B153. Built earlier (P2.5a, P2.5c and the P2.6 sign-in routes, code in `security/`): the session service, cookies and CSRF token, the guard dispatcher with the staff, merchant and customer session guards, the CSRF guard, the permission guard with the permissions catalog and the Owner helpers, the staff gate of the internal API reference, and the machine guards (`security/machine/`): capability tokens, URL secrets, merchant API keys (REST v1 Bearer and Dhru credentials) and gateway webhook signatures. The sign-in routes (P2.6) and the IP rules, maintenance and rate-limit hooks (P2.5b) are built too.
 
 ## Public API (`index.ts`)
 
@@ -36,8 +36,8 @@ Exports `IdentityModule` and the security stack (`SecurityModule`, global). Othe
 | `checkPasswordPolicy`, `MIN_PASSWORD_LENGTH` | the staff password policy (also for a temporary password the server generates) |
 | `STAFF_TOTP_AAD`, `CLIENT_TOTP_AAD`, `TOTP_ISSUER` | the encryption contexts of `staff_users.totp_secret_enc` and `clients.totp_secret_enc`, and the name authenticator apps show |
 | `MerchantAuthTokens` | `issue(work, { clientId, purpose: 'verify_email' \| 'reset' \| 'invite', createdBy?, ip? })`: the one-hour, single-use link token of a merchant (feature 2a calls it with `invite` for `POST /admin/clients`); it voids the merchant's older unused links of the same family and returns `{ token, id, expiresAt }` |
-| `MerchantMailOutbox`, `MERCHANT_MAIL_EVENTS` | `enqueue(work, { kind: 'email_verification' \| 'password_reset' \| 'invited', clientId, tokenId, token })`: writes the outbox event of a merchant mail (ids only) in the caller's transaction; feature 2a writes `invited` with it |
-| `MAIL_SENDER`, `MailSender`, `MerchantMail` | the seam between the mail jobs and a mail transport; feature 12a provides the real sender under the `MAIL_SENDER` token |
+| `MerchantMailOutbox`, `MERCHANT_MAIL_EVENTS` | `enqueue(work, { kind: 'email_verification' \| 'password_reset' \| 'invited', clientId, tokenId })`: writes the outbox event of a merchant mail (ids only, never the token) in the caller's transaction; feature 2a writes `invited` with it |
+| `MerchantNotificationsModule` | the merchant's notification preferences, the Telegram link and the Telegram webhook (feature 12a) |
 | `CurrentMerchant` | parameter decorator: the signed-in merchant (`MerchantPrincipal`) of a `merchant-session` route |
 | `MerchantGroupMembers` | `countByGroup(db, groupIds)` (the `merchantCount` of the catalog's group routes and their delete guard) and `countInGroup(db, groupId, clientIds)` (the overdraft rule); read-only, no dependencies, exported in the leaf block of `index.ts` (decision 032) |
 | `GroupPromotionModule`, `GroupPromotion`, `decidePromotion`, `breaksCreditRule` | the nightly promotion job of feature 4a (worker only) and its pure decision |
@@ -159,7 +159,9 @@ follows an old link. Brute force is limited per client address by the pipeline's
 **URL secrets** (`url-secrets.ts`). `UrlSecretVerifiers.register({ routeKey: 'POST /webhooks/telegram/:secret', load })`; `load` returns
 `{ form: 'hash', value: TokenService.hash(secret) }` or `{ form: 'secret', value }` (decrypted by the owning module for the comparison only).
 The comparison is constant time and always runs, so a missing configuration takes as long to refuse as a wrong secret. A route without a
-source, or without a stored secret, refuses every request with `401`.
+source, or without a stored secret, refuses every request with `401`. A source may also name a request `header` that must carry the same
+secret (both are compared, both always, so the time does not say which failed) and a `refusal` of `not_found` (404, so a scanner cannot tell
+the route exists); feature 12a's Telegram webhook uses both (`X-Telegram-Bot-Api-Secret-Token`, `TELEGRAM_WEBHOOK_SECRET`).
 
 **Gateway signatures** (`webhooks/`). The `:gateway` of the URL (lower case; `^[a-z0-9][a-z0-9_-]{0,39}$`) picks the `WebhookVerifier` billing
 registers (feature 8): `verify({ gateway, headers, rawBody, nowSeconds })` checks the gateway's own scheme over the **exact bytes** of the
@@ -345,13 +347,34 @@ MISMATCHES B121 to B136 and ALIGNMENT § 7. Session cookie `gsm_client_session`,
 An email is outbox work (decision 020): the use case writes `merchant.email_verification`, `merchant.password_reset` (and feature 2a
 `merchant.invited`) in its transaction with `MerchantMailOutbox.enqueue`; the payload is `{ tokenId }` and the aggregate the
 merchant, never the token or the address. The events map to the `notifications` queue; `MerchantMailModule` (loaded by the API
-and by the worker) registers them and provides one named processor per type (`jobs/merchant-mail.processors.ts`) that re-reads the
-merchant and the link, skips what is no longer worth sending and hands the rest to the `MailSender` bound to `MAIL_SENDER`. The
-development sender (`LogMailSender`) writes one redacted log line per mail; **feature 12a replaces it with templates and real
-delivery.** Open point for 12a: the token exists in clear text only in the request that created it and the outbox carries ids only,
-so the worker cannot build the link `<PORTAL_BASE_URL>/set-password?token=<token>` or `/verify-email?token=<token>` yet. Outside
-production `MerchantMailOutbox.enqueue` writes the link to the log after the commit (`DEVELOPMENT ONLY: ...`), which is how a
-developer finishes a flow. 12a must decide how the token reaches the mailer (for example a sealed copy that the job wipes).
+and by the worker) registers them and provides one named processor per type (`jobs/merchant-mail.processors.ts`) that runs
+`MerchantMailJobs.handle` (feature 12a made the mail real, decision 033): it re-reads the merchant and the link and skips what is no
+longer worth sending (a suspended or deleted merchant, a link that was used, replaced or has expired, a template that is missing or
+switched off, a mail that already went out). The request makes a placeholder token that nobody receives (the clear value is not kept
+anywhere); **the job rotates it**: it puts a new random token's hash on the same `auth_tokens` row (same id, same expiry, only while the
+row is unused and unexpired) and sends the link `<PORTAL_BASE_URL>/set-password?token=<token>` (or `/verify-email`) through the platform's
+`NotificationService.sendNow`, with the clear link as a *secret* placeholder that is never stored or logged. The `notifications` row
+(`outbox-<event id>:email`) logs the mail without the link; a retry of the job rotates again and resends (the earlier value never
+arrived), and a repeat after a delivered mail is skipped before it can spoil the link that arrived. In development the mail lands in
+Mailpit (`http://localhost:8025`); the old "link in the log" convenience is gone, because a link is a credential.
+
+### Notification settings and Telegram (feature 12a)
+
+Four routes (contracts `contracts/merchant-notifications.contracts.ts`; controller `controllers/merchant-notifications.controller.ts`; use cases
+`application/merchant-notification-settings.service.ts` and `application/telegram-linking.service.ts`; queries `infra/merchant-notification.repository.ts`;
+the webhook secret `application/telegram-webhook-secret.ts`; module `merchant-notifications.module.ts`). They live here because they need
+`CurrentMerchant` and the merchant's own columns (`notification_prefs`, `telegram_chat_id`); the delivery path itself is the platform's. Spec:
+MISMATCHES B165.
+
+| Route | Access | What it does |
+|---|---|---|
+| `GET /client/notification-preferences` | merchant session | `{ email: { address }, telegram: { linked }, lowBalanceThreshold (money or null), events: [{ event, label, email, telegram }] }`: the non-transactional merchant events of the platform's registry; never saved reads as email on, Telegram off (the order results stay off until chosen) |
+| `PUT /client/notification-preferences` | merchant session | `{ lowBalanceThreshold?, events }` replaces the listed events, keeps the others and the keys it does not know; `422` on `events.N.event` (unknown, always-sent or repeated), on `events.N.telegram` ("Link Telegram first.") and on `lowBalanceThreshold` (negative or malformed); answers the GET body; the row is locked, so it takes turns with a Telegram link |
+| `POST /client/telegram/link` | merchant session | `201 { url: 'https://t.me/<bot>?start=<token>', expiresAt }`, `Cache-Control: no-store`: a single-use `telegram_link` token (hash only, 15 minutes); a new call voids the previous link; `503 UNAVAILABLE` without `TELEGRAM_BOT_USERNAME` |
+| `POST /webhooks/telegram/:secret` | url-secret | the path secret and `X-Telegram-Bot-Api-Secret-Token` must both equal `TELEGRAM_WEBHOOK_SECRET` (constant time, else `404`); always `200 {}`; a private-chat `/start <token>` with a live token links the chat (a chat of another merchant moves, that merchant's Telegram switches go off) and the bot answers "Linked to <merchant name>."; `/stop` unlinks the chat, turns the merchant's Telegram events off and the bot says so; anything else is ignored; a repeated `update_id` is processed once (the answer's dedupe key is `telegram-update-<id>`) |
+
+The merchant portal writes no audit rows (B121). The link token is the platform's delivery of one more purpose of `auth_tokens` (`telegram_link`, migration
+0009); `clients.telegram_chat_id` is unique (one chat, one merchant).
 
 ## Owned tables
 
@@ -504,10 +527,10 @@ Outbox events produced (types, payload ids; all on the `notifications` queue, re
 `merchant.email_verification` (`POST /client/auth/register`, token purpose `verify_email`) and `merchant.password_reset`
 (`POST /client/auth/password/forgot`, purpose `reset`), both built by feature 2b; `merchant.invited` (`POST /admin/clients`, purpose
 `invite`), written by feature 2a with `MerchantMailOutbox`. The payload is `{ tokenId }` (the `auth_tokens` row), the aggregate is
-the merchant: ids only, never a token. Until feature 12a adds the templates, the `MailSender` development implementation logs a
-redacted line. The links are built from the config key `PORTAL_BASE_URL`
+the merchant: ids only, never a token. Feature 12a made the mail real: the job rotates the link's token and sends the mail through the platform's
+notification delivery (see "Merchant mail"). The links are built from the config key `PORTAL_BASE_URL`
 (`<PORTAL_BASE_URL>/set-password?token=<token>`). `auth_tokens.purpose` is closed to `invite | reset | verify_email |
-magic_link` (exported `AUTH_TOKEN_PURPOSES`); `POST /client/auth/password/reset` accepts `reset` and `invite`. Consumed: the three types above, by `jobs/merchant-mail.processors.ts` (worker). Record each outbox type and the queue it maps to here and in `docs/queues.md`.
+magic_link | telegram_link` (exported `AUTH_TOKEN_PURPOSES`; `telegram_link` is the Telegram link of feature 12a); `POST /client/auth/password/reset` accepts `reset` and `invite`. Consumed: the three types above, by `jobs/merchant-mail.processors.ts` (worker). Record each outbox type and the queue it maps to here and in `docs/queues.md`.
 
 ## Jobs and schedules
 

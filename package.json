@@ -61,6 +61,7 @@
     "drizzle-orm": "^0.45.4",
     "ioredis": "^6.0.0",
     "nestjs-pino": "^5.3.1",
+    "nodemailer": "10.2.1",
     "otplib": "^13.6.0",
     "pdf-lib": "1.17.1",
     "pg": "^8.23.1",

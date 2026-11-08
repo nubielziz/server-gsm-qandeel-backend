@@ -21,6 +21,7 @@ import { CatalogAdminModule, CatalogPricesModule } from '../../src/modules/catal
 import { AccessAdminModule } from '../../src/modules/identity/access-admin.module';
 import { ApiKeysModule } from '../../src/modules/identity/api-keys.module';
 import { KycModule } from '../../src/modules/identity/kyc.module';
+import { MerchantNotificationsModule } from '../../src/modules/identity/merchant-notifications.module';
 import { MerchantWebhookRoutesModule } from '../../src/modules/identity/merchant-webhook-routes.module';
 import { MerchantAdminModule } from '../../src/modules/identity/merchant-admin.module';
 import { MerchantAuthModule } from '../../src/modules/identity/merchant-auth.module';
@@ -36,6 +37,8 @@ import { SuppliersAdminModule } from '../../src/modules/suppliers';
 import {
   MaintenanceModule,
   MerchantWebhooksModule,
+  NotificationAdminModule,
+  NotificationDeliveryModule,
   SettingsModule,
   WebhookDeliveryModule,
 } from '../../src/modules/platform';
@@ -59,6 +62,8 @@ export const PRODUCTION_ENV: Record<string, string> = {
   ENCRYPTION_KEYS: `k1:${Buffer.alloc(32, 7).toString('base64')}`,
   ENCRYPTION_ACTIVE_KID: 'k1',
   METRICS_TOKEN: 'm'.repeat(32),
+  MAIL_SMTP_URL: 'smtps://mailer:pw@smtp.gsm.example:465',
+  MAIL_FROM: 'GSM <noreply@gsm.example>',
   LOG_LEVEL: 'warn',
   TURNSTILE_SECRET_KEY: 'turnstile-secret-for-tests',
 };
@@ -101,6 +106,7 @@ const NEEDS_DATABASE_AND_CACHE = [
   ApiKeysModule,
   MerchantWebhookRoutesModule,
   KycModule,
+  MerchantNotificationsModule,
   MoneyAdminModule,
   CatalogPricesModule,
   CatalogAdminModule,
@@ -113,6 +119,8 @@ const NEEDS_DATABASE_AND_CACHE = [
   MerchantWebhooksModule,
   WebhookDeliveryModule,
   HealthAdminModule,
+  NotificationAdminModule,
+  NotificationDeliveryModule,
 ];
 /** The pipeline module that only uses the cache Redis and the rate limiter: replaced when the infrastructure is. */
 const NEEDS_INFRASTRUCTURE = [PublicIpLimitModule];

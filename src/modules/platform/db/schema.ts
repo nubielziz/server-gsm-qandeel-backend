@@ -11,6 +11,7 @@ import {
   pgTable,
   text,
   unique,
+  uniqueIndex,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import {
@@ -167,6 +168,13 @@ export const notifications = pgTable(
     sentAt: timestampTz(),
     /** schema addition B116 */
     error: text(),
+    /** how many sends were tried (feature 12a: the attempt is on the row, decision 020) */
+    attempts: integer().notNull().default(0),
+    /**
+     * names the occurrence a row is for (`outbox-<event id>:<channel>`, `telegram-update-<id>`, `digest:...`), so a job that runs
+     * twice, or an update Telegram repeats, never makes a second row; null for a row nothing repeats (feature 12a)
+     */
+    dedupeKey: text(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -177,6 +185,13 @@ export const notifications = pgTable(
     index('notifications_recipient_idx').on(t.recipientType, t.recipientId),
     index('notifications_status_created_idx').on(t.status, t.createdAt.desc()),
     index('notifications_created_idx').on(t.createdAt.desc()),
+    uniqueIndex('notifications_dedupe_key_uq')
+      .on(t.dedupeKey)
+      .where(sql`${t.dedupeKey} is not null`),
+    // The count of "sent in the last 30 days" per template (identity-platform-11) reads only sent rows.
+    index('notifications_sent_idx')
+      .on(t.event, t.channel, t.recipientType, t.sentAt)
+      .where(sql`${t.status} = 'sent'`),
   ],
 );
 

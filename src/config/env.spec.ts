@@ -33,6 +33,8 @@ const production = (): Record<string, string> => ({
   ENCRYPTION_KEYS: `k1:${KEY}`,
   ENCRYPTION_ACTIVE_KID: 'k1',
   METRICS_TOKEN: 'metrics-token-for-prometheus',
+  MAIL_SMTP_URL: 'smtps://mailer:pw@smtp.provider.example:465',
+  MAIL_FROM: 'GSM <noreply@gsm.example>',
   TURNSTILE_SECRET_KEY: 'turnstile-secret-for-tests',
 });
 
@@ -244,6 +246,54 @@ describe('ARGON2_* (decision 007)', () => {
   it('is part of the redacted summary (the cost is not a secret)', () => {
     const text = JSON.stringify(summarizeConfig(parseEnv({})));
     expect(text).toContain('"argon2":{"memoryKib":19456,"timeCost":2,"parallelism":1}');
+  });
+});
+
+describe('MAIL_* and TELEGRAM_* (decision 033)', () => {
+  it('defaults to the Mailpit of compose.yaml outside production and leaves Telegram unset', () => {
+    const config = parseEnv({});
+    expect(config.mail).toEqual({ smtpUrl: 'smtp://localhost:1025', from: 'GSM <noreply@gsm.local>' });
+    expect(config.telegram).toEqual({ botToken: undefined, botUsername: undefined, webhookSecret: undefined });
+  });
+
+  it('requires both mail settings in production, and nothing for Telegram', () => {
+    const { MAIL_SMTP_URL: _smtp, MAIL_FROM: _from, ...without } = production();
+    expect(issuesOf(without).map((i) => i.variable)).toEqual(['MAIL_SMTP_URL', 'MAIL_FROM']);
+    const config = parseEnv(production());
+    expect(config.mail.smtpUrl).toBe('smtps://mailer:pw@smtp.provider.example:465');
+    expect(config.telegram.botToken).toBeUndefined();
+  });
+
+  it('checks the formats and names the variable without echoing the value', () => {
+    const issues = issuesOf({
+      MAIL_SMTP_URL: 'http://mail.example',
+      MAIL_FROM: 'not an address',
+      TELEGRAM_BOT_USERNAME: '@bot',
+      TELEGRAM_WEBHOOK_SECRET: 'short secret!',
+    });
+    expect(issues.map((i) => i.variable).sort()).toEqual([
+      'MAIL_FROM',
+      'MAIL_SMTP_URL',
+      'TELEGRAM_BOT_USERNAME',
+      'TELEGRAM_WEBHOOK_SECRET',
+    ]);
+    expect(JSON.stringify(issues)).not.toContain('short secret');
+    expect(issuesOf({ MAIL_FROM: 'noreply@gsm.example' })).toEqual([]);
+  });
+
+  it('reads the Telegram settings and keeps every secret out of the summary', () => {
+    const config = parseEnv({
+      TELEGRAM_BOT_TOKEN: '123456:ABC-secret-token',
+      TELEGRAM_BOT_USERNAME: 'gsm_supply_bot',
+      TELEGRAM_WEBHOOK_SECRET: 'w'.repeat(32),
+      MAIL_SMTP_URL: 'smtp://user:smtp-password@mail.example:587',
+    });
+    expect(config.telegram.botUsername).toBe('gsm_supply_bot');
+    const text = JSON.stringify(summarizeConfig(config));
+    expect(text).not.toContain('ABC-secret-token');
+    expect(text).not.toContain('smtp-password');
+    expect(text).not.toContain('w'.repeat(32));
+    expect(text).toContain('"botToken":"[set]"');
   });
 });
 

@@ -10,7 +10,6 @@ import { PasswordHasher } from '../../src/infra/crypto';
 import { DbService, schema as s } from '../../src/infra/db';
 import { UnrecoverableError } from '../../src/infra/queues';
 import { buildProcessorTable, findQueueProcessors } from '../../src/infra/queues/queue-processor';
-import { LogMailSender } from '../../src/modules/identity/application/mail/log-mail-sender';
 import { MerchantMailOutbox } from '../../src/modules/identity/application/mail/merchant-mail-outbox';
 import {
   EmailVerificationMailProcessor,
@@ -18,7 +17,7 @@ import {
   PasswordResetMailProcessor,
 } from '../../src/modules/identity/jobs/merchant-mail.processors';
 import { MERCHANT_MAIL_EVENTS, MerchantAuthTokens } from '../../src/modules/identity';
-import { OutboxRouteRegistry, type OutboxJobData } from '../../src/modules/platform';
+import { DeliveryError, OutboxRouteRegistry, type OutboxJobData } from '../../src/modules/platform';
 import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches, productionEnvOnTestInstances } from '../support/auth';
 import { HOUR, TestClock } from '../support/clock';
@@ -34,6 +33,7 @@ import {
   makeMerchant,
   seedPortalBasics,
 } from '../support/merchant-portal';
+import { mailbox, seedDefaultTemplates, tokenIn } from '../support/notifications';
 import { freshClientIp } from '../support/pipeline-routes';
 import { expectRejection } from '../support/rejection';
 
@@ -60,6 +60,8 @@ beforeEach(async () => {
   logSink.clear();
   captureEmailedLinks(t);
   defaultGroupId = await seedPortalBasics();
+  await seedDefaultTemplates((await testDb()).db);
+  mailbox(t).reset();
 });
 
 const portal = (ip?: string) => new MerchantPortal(t, ip ?? freshClientIp());
@@ -232,29 +234,28 @@ describe('POST /client/auth/register', () => {
     expect((await portal().register(form({ email: 'other@example.com' }))).statusCode).toBe(204);
   });
 
-  it('prints the link to the log outside production, for a developer without a mail transport', async () => {
+  it('never writes a link or a token to the log, in development or in production, and still writes the outbox event', async () => {
     const log = spyOn(Logger.prototype, 'log');
+    const warn = spyOn(Logger.prototype, 'warn');
     await portal().register(form());
     const [link] = emailedLinks();
-    const lines = log.mock.calls.map((call) => String(call[0]));
-    expect(lines).toContain(
-      `DEVELOPMENT ONLY: merchant.email_verification link for client ${link!.clientId}: ` +
-        `${t.config.http.portalBaseUrl}/verify-email?token=${encodeURIComponent(link!.token)}`,
-    );
-  });
+    const text = [...log.mock.calls, ...warn.mock.calls].map((call) => String(call[0])).join('\n');
+    expect(text).not.toContain(link!.token);
+    expect(text).not.toContain('DEVELOPMENT ONLY');
+    expect(text).not.toContain('verify-email?token');
 
-  it('writes no link into the log in production, and still writes the outbox event', async () => {
     const production = await createTestApp({
       env: productionEnvOnTestInstances({ CORS_ORIGINS: PORTAL_ORIGIN }),
       clock,
     });
     try {
-      const log = spyOn(Logger.prototype, 'log');
-      const res = await new MerchantPortal(production, freshClientIp()).register(form());
+      const res = await new MerchantPortal(production, freshClientIp()).register(
+        form({ email: 'prod.merchant@example.com' }),
+      );
       expect(res.statusCode).toBe(204);
-      expect(log.mock.calls.map((call) => String(call[0])).join('\n')).not.toContain('DEVELOPMENT ONLY');
       const { db } = await testDb();
-      expect(await db.select().from(s.outboxEvents)).toHaveLength(1);
+      expect(await db.select().from(s.outboxEvents)).toHaveLength(2);
+      expect([...log.mock.calls, ...warn.mock.calls].map((call) => String(call[0])).join('\n')).not.toContain('token=');
     } finally {
       await production.close();
     }
@@ -323,7 +324,8 @@ describe('the merchant mail events', () => {
     }
     const table = buildProcessorTable(findQueueProcessors(new DiscoveryService(t.app.get(ModulesContainer))));
     const named = [...(table.get('notifications')?.byName.keys() ?? [])].sort();
-    expect(named).toEqual(Object.values(MERCHANT_MAIL_EVENTS).sort());
+    // The notifications queue has named processors only: the three mails and the two jobs of feature 12a.
+    expect(named).toEqual([...Object.values(MERCHANT_MAIL_EVENTS), 'notification.plan', 'notification.send'].sort());
     expect(table.get('notifications')?.catchAll).toBeUndefined();
   });
 
@@ -343,54 +345,156 @@ describe('the merchant mail events', () => {
     };
   }
 
-  it('hand a registration mail to the sender with ids and the merchant, and log a redacted line without the token', async () => {
-    await portal().register(form());
-    const [link] = emailedLinks();
-    const sender = t.app.get(LogMailSender);
-    const send = spyOn(sender, 'send');
-    const log = spyOn(Logger.prototype, 'log');
+  const processJob = (
+    processor: { process(job: never): Promise<unknown> },
+    job: { data: OutboxJobData },
+    attemptsMade = 0,
+  ) => processor.process({ ...job, attemptsMade, opts: { attempts: 5 } } as never);
 
-    const result = await t.app
-      .get(EmailVerificationMailProcessor)
-      .process((await jobOf(MERCHANT_MAIL_EVENTS.email_verification)) as never);
+  it('rotate the link token inside the job, mail the new link and log the mail without the token', async () => {
+    await portal().register(form());
+    const [placeholder] = emailedLinks();
+    const { db } = await testDb();
+    const [before] = await db.select().from(s.authTokens);
+    const log = spyOn(Logger.prototype, 'log');
+    const warn = spyOn(Logger.prototype, 'warn');
+
+    const job = await jobOf(MERCHANT_MAIL_EVENTS.email_verification);
+    const result = await processJob(t.app.get(EmailVerificationMailProcessor), job);
     expect(result).toEqual({ sent: true });
-    expect(send).toHaveBeenCalledTimes(1);
-    expect(send.mock.calls[0]![0]).toMatchObject({
-      kind: 'email_verification',
-      clientId: link!.clientId,
-      email: 'ali.hassan@example.com',
-      name: 'Ali Hassan',
+
+    // One mail with the merchant's address and a link whose token is NOT the placeholder of the request.
+    const [mail] = mailbox(t).sent;
+    expect(mailbox(t).sent).toHaveLength(1);
+    expect(mail).toMatchObject({ to: 'ali.hassan@example.com', subject: 'Confirm your email address' });
+    expect(mail!.text).toContain(`${t.config.http.portalBaseUrl}/verify-email?token=`);
+    const delivered = tokenIn(mail!.text);
+    expect(delivered).not.toBe(placeholder!.token);
+
+    // The row keeps its id and expiry, holds the hash of the delivered token, and the placeholder no longer works.
+    const [after] = await db.select().from(s.authTokens);
+    expect(after).toMatchObject({ id: before!.id, expiresAt: before!.expiresAt, usedAt: null });
+    expect(after!.tokenHash).toBe(t.app.get(TokenService).hash(delivered));
+    expect((await portal().verifyEmail(placeholder!.token)).statusCode).toBe(410);
+
+    // The notifications row logs the mail and holds no token and no link anywhere.
+    const [row] = await db.select().from(s.notifications);
+    expect(row).toMatchObject({
+      recipientType: 'client',
+      recipientId: placeholder!.clientId,
+      channel: 'email',
+      event: 'merchant.email_verification',
+      status: 'sent',
+      attempts: 1,
+      dedupeKey: `outbox-${job.data.eventId}:email`,
     });
-    const logged = log.mock.calls.map((call) => String(call[0])).join('\n');
-    expect(logged).toContain('merchant.email_verification');
-    expect(logged).toContain('a***@example.com');
-    expect(logged).not.toContain('ali.hassan@example.com');
-    expect(logged).not.toContain(link!.token);
-    send.mockRestore();
+    expect(JSON.stringify(row)).not.toContain(delivered);
+    expect(JSON.stringify(row)).not.toContain('token=');
+    const logged = [...log.mock.calls, ...warn.mock.calls].map((call) => String(call[0])).join('\n');
+    expect(logged).not.toContain(delivered);
+
+    // The delivered link works once.
+    expect((await portal().verifyEmail(delivered)).statusCode).toBe(204);
+  });
+
+  it('run twice without sending twice or spoiling the link that arrived', async () => {
+    await portal().register(form());
+    const job = await jobOf(MERCHANT_MAIL_EVENTS.email_verification);
+    const processor = t.app.get(EmailVerificationMailProcessor);
+    expect(await processJob(processor, job)).toEqual({ sent: true });
+    const delivered = tokenIn(mailbox(t).sent[0]!.text);
+
+    expect(await processJob(processor, job, 1)).toEqual({ sent: false, skipped: 'already_sent' });
+    expect(mailbox(t).sent).toHaveLength(1);
+    expect((await portal().verifyEmail(delivered)).statusCode).toBe(204);
   });
 
   it('skip a mail that is no longer worth sending, and fail a job that lost its token id for good', async () => {
     await portal().register(form());
     const [link] = emailedLinks();
-    const job = (await jobOf(MERCHANT_MAIL_EVENTS.email_verification)) as never;
+    const job = await jobOf(MERCHANT_MAIL_EVENTS.email_verification);
     const processor = t.app.get(EmailVerificationMailProcessor);
 
     // The link was used.
     expect((await portal().verifyEmail(link!.token)).statusCode).toBe(204);
-    expect(await processor.process(job)).toEqual({ sent: false, skipped: 'link_not_usable' });
+    expect(await processJob(processor, job)).toEqual({ sent: false, skipped: 'link_not_usable' });
 
     // A suspended merchant gets no mail; a merchant that is gone gets none either.
     const { db } = await testDb();
     await db.update(s.clients).set({ status: 'suspended' }).where(eq(s.clients.id, link!.clientId));
-    expect(await processor.process(job)).toEqual({ sent: false, skipped: 'merchant_suspended' });
+    expect(await processJob(processor, job)).toEqual({ sent: false, skipped: 'merchant_suspended' });
     await db.delete(s.clients).where(eq(s.clients.id, link!.clientId));
-    expect(await processor.process(job)).toEqual({ sent: false, skipped: 'merchant_gone' });
+    expect(await processJob(processor, job)).toEqual({ sent: false, skipped: 'merchant_gone' });
+    expect(mailbox(t).sent).toEqual([]);
 
-    const broken = { data: { ...(job as { data: OutboxJobData }).data, payload: {} } } as never;
-    await expectRejection(processor.process(broken), UnrecoverableError);
+    const broken = { data: { ...job.data, payload: {} } };
+    await expectRejection(processJob(processor, broken), UnrecoverableError);
   });
 
-  it('retry when the sender fails, and send a reset and an invitation mail through their own processors', async () => {
+  it('send nothing, and keep the link as it is, when the template is missing or switched off', async () => {
+    await portal().register(form());
+    const [link] = emailedLinks();
+    const job = await jobOf(MERCHANT_MAIL_EVENTS.email_verification);
+    const processor = t.app.get(EmailVerificationMailProcessor);
+    const { db } = await testDb();
+    const [before] = await db.select().from(s.authTokens);
+
+    await db
+      .update(s.notificationTemplates)
+      .set({ isActive: false })
+      .where(eq(s.notificationTemplates.event, 'merchant.email_verification'));
+    expect(await processJob(processor, job)).toEqual({ sent: false, skipped: 'template_off' });
+    await db.delete(s.notificationTemplates).where(eq(s.notificationTemplates.event, 'merchant.email_verification'));
+    expect(await processJob(processor, job)).toEqual({ sent: false, skipped: 'no_template' });
+
+    expect(mailbox(t).sent).toEqual([]);
+    expect(await db.select().from(s.notifications)).toEqual([]);
+    const [after] = await db.select().from(s.authTokens);
+    expect(after!.tokenHash).toBe(before!.tokenHash);
+    expect((await portal().verifyEmail(link!.token)).statusCode).toBe(204);
+  });
+
+  it('finish the row an earlier attempt made as failed, with the skip reason, when a retry ends skipped', async () => {
+    await portal().register(form());
+    const job = await jobOf(MERCHANT_MAIL_EVENTS.email_verification);
+    const processor = t.app.get(EmailVerificationMailProcessor);
+    const { db } = await testDb();
+    const rows = () => db.select().from(s.notifications);
+
+    // Attempt 1: the mail server is busy, so the row stays queued and the job is retried.
+    mailbox(t).failNext(new DeliveryError('The mail server is busy.'));
+    await expectRejection(processJob(processor, job, 0), 'The mail server is busy.');
+    expect(await rows()).toMatchObject([{ status: 'queued', attempts: 1, error: null }]);
+
+    // Before the retry the link was used (attempt 1 rotated its token, so the row is marked used directly), so attempt 2 ends skipped
+    // and the row must not stay queued.
+    await db.update(s.authTokens).set({ usedAt: clock.now() });
+    expect(await processJob(processor, job, 1)).toEqual({ sent: false, skipped: 'link_not_usable' });
+    expect(await rows()).toMatchObject([{ status: 'failed', attempts: 1, error: 'link_not_usable' }]);
+    expect(mailbox(t).sent).toEqual([]);
+
+    // A third run finds a finished row and leaves it as it is.
+    expect(await processJob(processor, job, 2)).toEqual({ sent: false, skipped: 'link_not_usable' });
+    expect(await rows()).toMatchObject([{ status: 'failed', error: 'link_not_usable' }]);
+  });
+
+  it('finish the queued row of an earlier attempt as failed when the template was switched off before the retry', async () => {
+    await portal().register(form());
+    const job = await jobOf(MERCHANT_MAIL_EVENTS.email_verification);
+    const processor = t.app.get(EmailVerificationMailProcessor);
+    const { db } = await testDb();
+
+    mailbox(t).failNext(new DeliveryError('The mail server is busy.'));
+    await expectRejection(processJob(processor, job, 0), 'The mail server is busy.');
+    await db
+      .update(s.notificationTemplates)
+      .set({ isActive: false })
+      .where(eq(s.notificationTemplates.event, 'merchant.email_verification'));
+    expect(await processJob(processor, job, 1)).toEqual({ sent: false, skipped: 'template_off' });
+    expect(await db.select().from(s.notifications)).toMatchObject([{ status: 'failed', error: 'template_off' }]);
+  });
+
+  it('retry when the mail server fails, mark the row failed on the last attempt, and send a reset and an invitation through their own processors', async () => {
     const merchant = await makeMerchant(t, { status: 'pending', noPassword: true });
     const outbox = t.app.get(MerchantMailOutbox);
     const issue = t.app.get(MerchantAuthTokens);
@@ -400,28 +504,31 @@ describe('the merchant mail events', () => {
     ] as const) {
       await t.app.get(DbService).runInTransaction(async (work) => {
         const issued = await issue.issue(work, { clientId: merchant.id, purpose });
-        await outbox.enqueue(work, { kind, clientId: merchant.id, tokenId: issued.id, token: issued.token });
+        await outbox.enqueue(work, { kind, clientId: merchant.id, tokenId: issued.id });
       });
     }
-    const sender = t.app.get(LogMailSender);
-    const send = spyOn(sender, 'send');
     // The invitation is the newest link of the family, so the reset link was replaced: only the invitation is sent.
-    expect(
-      await t.app.get(PasswordResetMailProcessor).process((await jobOf('merchant.password_reset')) as never),
-    ).toEqual({
+    expect(await processJob(t.app.get(PasswordResetMailProcessor), await jobOf('merchant.password_reset'))).toEqual({
       sent: false,
       skipped: 'link_not_usable',
     });
-    expect(await t.app.get(MerchantInvitedMailProcessor).process((await jobOf('merchant.invited')) as never)).toEqual({
-      sent: true,
-    });
-    expect(send.mock.calls[0]![0]).toMatchObject({ kind: 'invited', clientId: merchant.id });
+    const invited = await jobOf('merchant.invited');
+    expect(await processJob(t.app.get(MerchantInvitedMailProcessor), invited)).toEqual({ sent: true });
+    expect(mailbox(t).sent[0]).toMatchObject({ subject: 'Your GSM merchant account is ready' });
 
-    send.mockRejectedValueOnce(new Error('smtp is down'));
-    await expectRejection(
-      t.app.get(MerchantInvitedMailProcessor).process((await jobOf('merchant.invited')) as never),
-      'smtp is down',
-    );
-    send.mockRestore();
+    // A transient failure: the first four attempts keep the row queued and throw, the fifth marks it failed.
+    const { db } = await testDb();
+    await db.delete(s.notifications);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      mailbox(t).failNext(new DeliveryError('The mail server is busy.'));
+      await expectRejection(
+        processJob(t.app.get(MerchantInvitedMailProcessor), invited, attempt),
+        'The mail server is busy.',
+      );
+      const [row] = await db.select().from(s.notifications);
+      expect(row).toMatchObject({ attempts: attempt + 1, status: attempt === 4 ? 'failed' : 'queued' });
+    }
+    const [row] = await db.select().from(s.notifications);
+    expect(row!.error).toBe('The mail server is busy.');
   });
 });

@@ -12,7 +12,8 @@ const tokens = new TokenService(parseEnv({ NODE_ENV: 'test' }));
 const KEY = 'POST /webhooks/telegram/:secret';
 const SECRET = 'tg-secret-0123456789-abcdefghij';
 const contract = { key: KEY } as unknown as AnyRouteContract;
-const requestWith = (params: unknown) => ({ params }) as unknown as FastifyRequest;
+const requestWith = (params: unknown, headers: Record<string, unknown> = {}) =>
+  ({ params, headers }) as unknown as FastifyRequest;
 
 function handlerFor(stored: StoredUrlSecret | null | undefined, param?: string) {
   const sources = new UrlSecretVerifiers();
@@ -92,6 +93,39 @@ describe('UrlSecretAccessHandler', () => {
     expect(await rejectionOf(handler.authenticate(requestWith({ secret: SECRET }), contract))).toMatchObject({
       code: 'UNAUTHORIZED',
     });
+  });
+});
+
+describe('a source with a header and a 404 refusal (the Telegram webhook, B165)', () => {
+  const handler = () => {
+    const sources = new UrlSecretVerifiers();
+    sources.register({
+      routeKey: KEY,
+      header: 'x-telegram-bot-api-secret-token',
+      refusal: 'not_found',
+      load: () => ({ form: 'secret', value: SECRET }),
+    });
+    return new UrlSecretAccessHandler(sources, tokens);
+  };
+
+  it('accepts a request whose path and header both carry the secret', async () => {
+    const request = requestWith({ secret: SECRET }, { 'x-telegram-bot-api-secret-token': SECRET });
+    expect(await handler().authenticate(request, contract)).toEqual({});
+  });
+
+  it('answers 404, not 401, when either one is wrong, missing or different from the other', async () => {
+    for (const request of [
+      requestWith({ secret: SECRET }, {}),
+      requestWith({ secret: SECRET }, { 'x-telegram-bot-api-secret-token': `${SECRET}x` }),
+      requestWith({ secret: `${SECRET}x` }, { 'x-telegram-bot-api-secret-token': SECRET }),
+      requestWith({ secret: SECRET }, { 'x-telegram-bot-api-secret-token': [SECRET, SECRET] }),
+      requestWith({}, {}),
+    ]) {
+      expect(await rejectionOf(handler().authenticate(request, contract))).toMatchObject({
+        code: 'NOT_FOUND',
+        status: 404,
+      });
+    }
   });
 });
 

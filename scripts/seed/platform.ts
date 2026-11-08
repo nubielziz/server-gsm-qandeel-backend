@@ -30,7 +30,7 @@ export async function seedPlatform(db: DbExecutor, demo: DemoSeed, config?: AppC
   await syncIdentity(db, s.settings);
   // The endpoints need the encryption key and the deliveries the token pepper (the event ids): without a configuration there are none.
   const webhooks = config ? await seedWebhooks(db, demo, config) : [];
-  return [settings, ...webhooks];
+  return [settings, ...webhooks, ...(await seedNotifications(db, demo))];
 }
 
 const MINUTE_MS = 60_000;
@@ -131,4 +131,162 @@ async function seedWebhooks(db: DbExecutor, demo: DemoSeed, config: AppConfig): 
   await syncIdentity(db, s.webhookEndpoints);
   await syncIdentity(db, s.webhookDeliveries);
   return [endpointReport, deliveryReport];
+}
+
+const HOUR_MS = 3_600_000;
+const DAY_MS = 24 * HOUR_MS;
+
+/**
+ * The six customer emails of the demo (`S.settings.notifs`), as templates: the event key, the subject and the text the console's mock shows
+ * (`TEXTS` in src/features/settings/mocks/seedMessages.ts), keyed by the demo id.
+ */
+const CUSTOMER_TEMPLATES: Record<string, { event: string; subject: string; body: string }> = {
+  nt1: {
+    event: 'order.received',
+    subject: 'Your order {{orderId}} is confirmed',
+    body: 'Hi {{customerName}}, thanks for your order. We received {{amount}} for "{{service}}". Your receipt is attached and shows the VAT. We will email you the result as soon as the carrier confirms it, usually within a few hours.',
+  },
+  nt2: {
+    event: 'order.completed',
+    subject: 'Your unlock is ready',
+    body: 'Hi {{customerName}}, good news: the carrier confirmed the unlock for {{orderId}}. Insert a SIM from another network and restart the phone. If anything is unclear, just reply to this email.',
+  },
+  nt3: {
+    event: 'order.failed',
+    subject: 'We couldn’t unlock order {{orderId}}',
+    body: 'Hi {{customerName}}, the carrier rejected this unlock, so we have refunded {{amount}} to your card. It can take 5 to 10 days to appear. We are sorry it did not work out.',
+  },
+  nt4: {
+    event: 'support.reply',
+    subject: 'Re: Where is my result?',
+    body: 'Hi {{customerName}}, thanks for your patience. We checked with the carrier and… (the text of the agent’s reply). Reply to this email to keep the conversation going.',
+  },
+  nt5: {
+    event: 'checkout.abandoned',
+    subject: 'You left something behind',
+    body: 'Hi, you started an unlock for an {{device}} and did not finish paying. Your basket is saved: one tap takes you back to the payment step. No account needed.',
+  },
+  nt6: {
+    event: 'payment.failed',
+    subject: 'Your payment didn’t go through',
+    body: 'Hi, the payment for your unlock was declined by your bank, so we did not start it. Nothing was charged. You can try again or use another card.',
+  },
+};
+
+/** The merchant messages the seeded log cycles through: the event, its channel and the values of its placeholders. */
+const MERCHANT_LOG: ReadonlyArray<{
+  event: string;
+  channel: 'email' | 'telegram';
+  variables: Record<string, string>;
+}> = [
+  {
+    event: 'wallet.low_balance',
+    channel: 'email',
+    variables: { currency: 'USD', available: '42.50', threshold: '50.00' },
+  },
+  {
+    event: 'order.completed',
+    channel: 'telegram',
+    variables: { orderId: '48102', service: 'Vodafone UK iPhone Unlock' },
+  },
+  { event: 'deposit.approved', channel: 'email', variables: { amount: '250.00', currency: 'USD' } },
+  {
+    event: 'invoice.paid',
+    channel: 'email',
+    variables: { invoiceNumber: 'INV-2026-0042', amount: '250.00', currency: 'USD' },
+  },
+  { event: 'service.price_changed', channel: 'email', variables: { count: '2' } },
+  { event: 'order.failed', channel: 'email', variables: { orderId: '48099', service: 'O2 UK iPhone Unlock' } },
+];
+
+/**
+ * Seeds the console's Customer emails tab and Notification log (feature 12a): the six customer email templates of the demo, the "sent in the last 30 days"
+ * messages that make their counts, and a log of 48 recent messages to the demo merchants, a seventh of them failed and an eleventh still queued.
+ *
+ * Why: the demo's merchant templates (low balance, invoices, order results, Telegram) are the defaults migration 0009 ships, so the seed adds only the
+ * customer emails the demo knows. The counts the mock shows (112, 86, 6, 41, 17, 0) become real `sent` rows with the demo customers' ids; the customers
+ * themselves arrive with feature 14b, so until then the log shows their address as `***`. Every row has a `seed:` dedupe key, so a second run adds nothing.
+ *
+ * @param db the transaction to write with
+ * @param demo the loaded frontend demo state
+ * @returns the reports of `notification_templates` and `notifications`
+ */
+async function seedNotifications(db: DbExecutor, demo: DemoSeed): Promise<SeedReport[]> {
+  const settings = demo.state.settings as { notifs?: Array<{ id: string; on: boolean; sent: number }> } | undefined;
+  const notifs = (settings?.notifs ?? []).filter((row) => CUSTOMER_TEMPLATES[row.id] !== undefined);
+  const templateReport = await insertRows(
+    db,
+    s.notificationTemplates,
+    notifs.map((row) => ({
+      event: CUSTOMER_TEMPLATES[row.id]!.event,
+      channel: 'email' as const,
+      audience: 'customer' as const,
+      locale: 'en',
+      subject: CUSTOMER_TEMPLATES[row.id]!.subject,
+      body: CUSTOMER_TEMPLATES[row.id]!.body,
+      isActive: row.on,
+    })),
+  );
+
+  const customers = demoRows<{ id: string; email: string }>(demo, 'customers');
+  const merchants = demoRows<{ id: string; name: string }>(demo, 'merchants').slice(0, 9);
+  const log: Array<typeof s.notifications.$inferInsert> = [];
+  // The customer messages behind each template's "sent, 30 days": spread evenly over the last 29 days, newest first.
+  if (customers.length > 0) {
+    for (const row of notifs) {
+      const event = CUSTOMER_TEMPLATES[row.id]!.event;
+      for (let n = 0; n < row.sent; n += 1) {
+        const at = new Date(demo.now - Math.round(((n + 0.5) * 29 * DAY_MS) / row.sent));
+        log.push({
+          recipientType: 'customer',
+          recipientId: demoNumericId(customers[n % customers.length]!.id),
+          channel: 'email',
+          event,
+          payload: { variables: { orderId: `SF-${20431 - n}` } },
+          status: 'sent',
+          sentAt: at,
+          attempts: 1,
+          dedupeKey: `seed:customer:${event}:${n}`,
+          createdAt: at,
+          updatedAt: at,
+        });
+      }
+    }
+  }
+  // The recent merchant log the console lists first: every seventh message failed, every eleventh is still queued.
+  if (merchants.length > 0) {
+    for (let index = 0; index < 48; index += 1) {
+      const kind = MERCHANT_LOG[index % MERCHANT_LOG.length]!;
+      const merchant = merchants[index % merchants.length]!;
+      const at = new Date(demo.now - (index + 1) * 1.5 * HOUR_MS);
+      const failed = index % 7 === 3;
+      const queued = !failed && index % 11 === 5;
+      log.push({
+        recipientType: 'client',
+        recipientId: demoNumericId(merchant.id),
+        channel: kind.channel,
+        event: kind.event,
+        // The merchants of the seed have no linked chat, so a Telegram row carries its chat in the payload (the log masks it from there).
+        payload: {
+          variables: { merchantName: merchant.name, ...kind.variables },
+          ...(kind.channel === 'telegram' ? { chatId: `70010${index % 5}` } : {}),
+        },
+        status: failed ? 'failed' : queued ? 'queued' : 'sent',
+        sentAt: failed || queued ? null : at,
+        attempts: queued ? 0 : failed ? 5 : 1,
+        error: failed
+          ? kind.channel === 'telegram'
+            ? 'Telegram refused the message: Bad Request: chat not found'
+            : '550 5.1.1 The mailbox does not exist.'
+          : null,
+        dedupeKey: `seed:merchant:${index}`,
+        createdAt: at,
+        updatedAt: at,
+      });
+    }
+  }
+  const notificationReport = await insertRows(db, s.notifications, log);
+  await syncIdentity(db, s.notificationTemplates);
+  await syncIdentity(db, s.notifications);
+  return [templateReport, notificationReport];
 }

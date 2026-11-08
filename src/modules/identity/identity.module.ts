@@ -9,6 +9,7 @@ import { ApiKeysModule } from './api-keys.module';
 import { KycModule } from './kyc.module';
 import { MerchantAdminModule } from './merchant-admin.module';
 import { MerchantAuthModule } from './merchant-auth.module';
+import { MerchantNotificationsModule } from './merchant-notifications.module';
 import { MerchantWebhookRoutesModule } from './merchant-webhook-routes.module';
 import { IpRulesModule } from './security/ip-rules/ip-rules.module';
 import { SecurityModule } from './security/security.module';
@@ -22,7 +23,8 @@ import { StaffAuthModule } from './staff-auth.module';
  * stage of the request pipeline (`IpRulesModule`, scenario ip-rules), the staff sign-in routes (`StaffAuthModule`), the staff
  * access routes (`AccessAdminModule`), the merchant management routes (`MerchantAdminModule`), the merchant portal's
  * sign-in (`MerchantAuthModule`), the API key routes (`ApiKeysModule`) and the controller of the merchant portal's webhook routes
- * (`MerchantWebhookRoutesModule`; the use cases are the platform's) and the verification routes (`KycModule`, stage 8).
+ * (`MerchantWebhookRoutesModule`; the use cases are the platform's), the verification routes (`KycModule`, stage 8) and the
+ * merchant's notification settings with the Telegram link and webhook (`MerchantNotificationsModule`, feature 12a).
  */
 @Module({
   imports: [
@@ -35,6 +37,7 @@ import { StaffAuthModule } from './staff-auth.module';
     ApiKeysModule,
     MerchantWebhookRoutesModule,
     KycModule,
+    MerchantNotificationsModule,
   ],
 })
 export class IdentityModule {}

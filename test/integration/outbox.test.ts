@@ -227,6 +227,46 @@ describe('the relay', () => {
     expect((await countJobs(r)).waiting).toBe(1);
   });
 
+  it('hands an event with two routes to both queues, one job each', async () => {
+    const r = await rig();
+    const routes = r.harness.get(OutboxRouteRegistry);
+    routes.register({ type: 'test.fanout', queue: 'merchant-webhooks' });
+    routes.register({ type: 'test.fanout', queue: 'notifications', jobName: 'notification.plan' });
+    const event = await r.db.runInTransaction(({ tx }) =>
+      r.outbox.add(tx, { type: 'test.fanout', aggregateType: 'orders', aggregateId: 7, payload: { orderId: 7 } }),
+    );
+
+    expect(await r.relay.run()).toEqual({ relayed: 1, failed: 0, queueUnavailable: false });
+    const webhooks = await r.queues.queue('merchant-webhooks').getJob(queueJobId('outbox', event.id));
+    const notifications = await r.queues.queue('notifications').getJob(queueJobId('outbox', event.id));
+    expect(webhooks?.name).toBe('test.fanout');
+    expect(notifications?.name).toBe('notification.plan');
+    expect(notifications?.data).toEqual(webhooks?.data);
+    expect((await rows())[0]?.processedAt).toBeInstanceOf(Date);
+    expect(await r.relay.run()).toEqual({ relayed: 0, failed: 0, queueUnavailable: false });
+  });
+
+  it('survives a crash after the first route took its job: the retry adds the missing job and no second one', async () => {
+    const r = await rig();
+    const routes = r.harness.get(OutboxRouteRegistry);
+    routes.register({ type: 'test.fanout', queue: 'merchant-webhooks' });
+    routes.register({ type: 'test.fanout', queue: 'notifications', jobName: 'notification.plan' });
+    const event = await r.db.runInTransaction(({ tx }) =>
+      r.outbox.add(tx, { type: 'test.fanout', aggregateType: 'orders', aggregateId: 8, payload: { orderId: 8 } }),
+    );
+    // The crashed pass had added the job of the first route and died before it could set processed_at.
+    await r.queues.add(
+      'merchant-webhooks',
+      'test.fanout',
+      { eventId: event.id },
+      { jobId: queueJobId('outbox', event.id) },
+    );
+
+    expect(await r.relay.run()).toMatchObject({ relayed: 1 });
+    expect((await r.queues.queue('merchant-webhooks').getJobCounts('waiting')).waiting).toBe(1);
+    expect((await r.queues.queue('notifications').getJobCounts('waiting')).waiting).toBe(1);
+  });
+
   it('never relays an event whose transaction rolled back', async () => {
     const r = await rig();
     await expectRejection(

@@ -18,6 +18,8 @@ const SECRET_HEADERS = [
   'idempotency-key',
   // The storefront's anti-bot token is single use but still a credential for five minutes (decision 034).
   'x-turnstile-token',
+  // The Telegram webhook's shared secret (decision 033, B165).
+  'x-telegram-bot-api-secret-token',
   'Authorization',
   'Cookie',
 ] as const;
@@ -57,7 +59,7 @@ const BODY_HOLDERS = ['body', 'req.body', 'request.body', '*.body', '*.*.body'] 
  * Every pino redaction path: credential headers, secret fields and body-only secrets.
  *
  * Why: decision 012 lists `authorization`, `cookie`, `set-cookie`, `x-csrf-token`, `idempotency-key` (plus decision 034's
- * `x-turnstile-token`) and the body fields `password`, `currentPassword`, `newPassword`, `token`, `code`, `secret`,
+ * `x-turnstile-token` and decision 033's `x-telegram-bot-api-secret-token`) and the body fields `password`, `currentPassword`, `newPassword`, `token`, `code`, `secret`,
  * `apiaccesskey`, `apiKey`, `totpSecret`, `otpauthUrl` as never loggable.
  */
 export const REDACT_PATHS: readonly string[] = [

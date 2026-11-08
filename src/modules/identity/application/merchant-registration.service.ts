@@ -165,7 +165,6 @@ export class MerchantRegistrationService {
         kind: 'email_verification',
         clientId: client.id,
         tokenId: issued.id,
-        token: issued.token,
       });
     });
   }

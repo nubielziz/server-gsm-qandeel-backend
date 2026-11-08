@@ -90,7 +90,7 @@ const ADDITIONS: Record<string, string[]> = {
   kyc_submissions: ['submitted_note'],
   refunds: ['note'],
   data_requests: ['note'],
-  notifications: ['error'],
+  notifications: ['error', 'attempts', 'dedupe_key'],
   webhook_deliveries: ['response_body', 'error', 'event_id'],
   alert_rules: ['deleted_at'],
   alert_events: ['rule_name', 'metric', 'comparator', 'threshold', 'window_seconds', 'unit'],
@@ -333,7 +333,7 @@ describe('audit resolutions (docs/contract/RESOLUTIONS.md, migration 0003)', () 
     expect(money.TOPUP_METHODS).toEqual(['bank', 'card', 'usdt', 'wise']);
     expect(money.ORDER_METHODS).toEqual(['card', 'wallet', 'crypto']);
     expect(catalog.SERVICE_PRICE_MODES).toEqual(['fixed']);
-    expect(identity.AUTH_TOKEN_PURPOSES).toEqual(['invite', 'reset', 'verify_email', 'magic_link']);
+    expect(identity.AUTH_TOKEN_PURPOSES).toEqual(['invite', 'reset', 'verify_email', 'magic_link', 'telegram_link']);
     // Every order event type the engine writes is in the list (a new one needs a migration).
     expect(orders.ORDER_EVENT_TYPES).toHaveLength(21);
   });

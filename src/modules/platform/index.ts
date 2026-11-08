@@ -1,7 +1,8 @@
 // Public API of the platform module: the module itself, what the bootstrap, the generator script and the contract tests
 // need from its documentation routes, the audit log, the transactional outbox (write events, register their queues, relay
 // them), the settings readers, maintenance mode and the merchant webhooks (the event contracts and outbox routes of 7b, the
-// delivery engine, the processor of the `merchant-webhooks` queue).
+// delivery engine, the processor of the `merchant-webhooks` queue) and the notifications (event registry, templates, delivery, the
+// mail and Telegram channels, a merchant's preference rules).
 export { PlatformModule } from './platform.module';
 export { FilesModule } from './files.module';
 export {
@@ -101,3 +102,39 @@ export { PdfRenderer } from './pdf/pdf-renderer';
 export type { PdfBlock, PdfColumn, PdfDocument } from './pdf/pdf-renderer';
 export { PROOF_MIME_TYPES, StoredFiles } from './files/stored-files';
 export type { FileMeta, StoreFileInput } from './files/stored-files';
+export { NotificationEventsModule } from './notifications/notification-events.module';
+export { NotificationTransportModule } from './notifications/notification-transport.module';
+export { MAIL_PROBE_TOKEN, MailHealthProbe, MailHealthProbeModule } from './notifications/mail-health-probe';
+export { NotificationDeliveryModule } from './notifications/notification-delivery.module';
+export { NotificationAdminModule } from './notifications/notification-admin.module';
+export {
+  BUILT_IN_EVENTS,
+  MERCHANT_MAIL_EVENT_KEYS,
+  NotificationEventRegistry,
+  TELEGRAM_LINKED_EVENT,
+  TELEGRAM_UNLINKED_EVENT,
+} from './notifications/notification-events';
+export type { NotificationEventDefinition } from './notifications/notification-events';
+export { NOTIFICATION_SEND_EVENT, NotificationService } from './notifications/notification.service';
+export type { EnqueueResult, NotificationInput, SendNowResult, SkipReason } from './notifications/notification.service';
+export type { AttemptContext, DeliveryOutcome } from './notifications/notification-delivery';
+export { DeliveryError } from './notifications/delivery-error';
+export { InMemoryMailDriver } from './notifications/mail-driver';
+export { MAIL_DRIVER, MailTransport } from './notifications/mail-transport';
+export { InMemoryTelegramDriver } from './notifications/telegram-driver';
+export { TELEGRAM_DRIVER, TELEGRAM_NOT_CONFIGURED, TelegramClient } from './notifications/telegram-client';
+export { maskEmail, maskTelegram } from './notifications/masking';
+export {
+  EVENTS_KEY,
+  LOW_BALANCE_THRESHOLD_KEY as PREFS_LOW_BALANCE_THRESHOLD_KEY,
+  applyPreferences,
+  channelsFor,
+  choiceFor,
+  parseThreshold,
+  thresholdOf,
+  withoutTelegram,
+} from './notifications/merchant-preferences';
+export type { EventChoice } from './notifications/merchant-preferences';
+export { DEFAULT_TEMPLATES, defaultTemplatesSql } from './notifications/default-templates';
+export type { DefaultTemplate } from './notifications/default-templates';
+export { redactAddresses } from './notifications/masking';

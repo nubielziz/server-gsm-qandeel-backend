@@ -11,18 +11,6 @@
 export const PENDING: readonly string[] = [
   // identity
   // platform
-  'GET /client/notification-preferences',
-  'PUT /client/notification-preferences',
-  'POST /client/telegram/link',
-  'GET /admin/notification-templates',
-  'GET /admin/notification-templates/:id',
-  'POST /admin/notification-templates',
-  'PATCH /admin/notification-templates/:id',
-  'DELETE /admin/notification-templates/:id',
-  'POST /admin/notification-templates/:id/preview',
-  'GET /admin/notifications',
-  'GET /admin/notifications/:id',
-  'POST /webhooks/telegram/:secret',
   // money
   'GET /admin/reports/profit',
   'GET /admin/reports/wallet-exposure',

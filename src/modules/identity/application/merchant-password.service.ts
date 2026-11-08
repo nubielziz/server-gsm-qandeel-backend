@@ -69,7 +69,6 @@ export class MerchantPasswordService {
         kind: 'password_reset',
         clientId: client.id,
         tokenId: issued.id,
-        token: issued.token,
       });
     });
   }

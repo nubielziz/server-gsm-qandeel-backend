@@ -25,5 +25,11 @@ Status: accepted, 2026-10-31.
   own supplier call logs). System health's jobs list leaves the three out and a manual run of one is `404` (feature 9,
   `UNRECORDED_JOBS`).
 
+- Amended with feature 12a: an event type may have **several routes, one per queue** (`OutboxRouteRegistry.register` throws only for the same
+  type on the same queue twice; `routesOf(type)` lists them, `get(type)` keeps answering the first). The relay adds one job per route, each with
+  `jobId = outbox-<id>` (ids are per queue), and sets `processed_at` only when every route took its job; after a crash between two routes the retry
+  adds the same id again on the route that has it, which BullMQ ignores. So the consumers of one event stay independent: an order change reaches the
+  merchant's webhooks (`merchant-webhooks`) and its notifications (`notifications`, job `notification.plan`) without the producer knowing either.
+
 **Consequences.** The API stays fast and consistent: no job is enqueued for a rolled-back change, and no committed
 change loses its job.

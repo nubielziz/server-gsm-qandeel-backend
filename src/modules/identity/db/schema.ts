@@ -78,13 +78,14 @@ export const SUBJECT_TYPES = ['staff', 'client', 'customer'] as const;
 export type SubjectType = (typeof SUBJECT_TYPES)[number];
 
 /**
- * What a one-time token is for: a staff or merchant invitation, a password reset, an email verification or a
- * magic sign-in link.
+ * What a one-time token is for: a staff or merchant invitation, a password reset, an email verification, a magic sign-in
+ * link or the link that connects a merchant's Telegram chat.
  *
  * Why: RESOLUTIONS identity-platform-2 settles the vocabulary: the invite link of POST /admin/clients uses `invite`
- * (decisions 010 and 019); staff use `invite` and `reset` today.
+ * (decisions 010 and 019); staff use `invite` and `reset` today. `telegram_link` is feature 12a's (MISMATCHES B165): the token
+ * of `POST /client/telegram/link`, spent when the merchant sends `/start <token>` to the bot.
  */
-export const AUTH_TOKEN_PURPOSES = ['invite', 'reset', 'verify_email', 'magic_link'] as const;
+export const AUTH_TOKEN_PURPOSES = ['invite', 'reset', 'verify_email', 'magic_link', 'telegram_link'] as const;
 
 /** One value of {@link AUTH_TOKEN_PURPOSES}. */
 export type AuthTokenPurpose = (typeof AUTH_TOKEN_PURPOSES)[number];
@@ -260,6 +261,10 @@ export const clients = pgTable(
     uniqueIndex('clients_username_uq').on(lower(t.username)),
     uniqueIndex('clients_email_uq').on(lower(t.email)),
     uniqueIndex('clients_referral_code_uq').on(t.referralCode),
+    // One chat belongs to one merchant (B165: a chat linked to another merchant moves); two parallel links cannot both win.
+    uniqueIndex('clients_telegram_chat_uq')
+      .on(t.telegramChatId)
+      .where(sql`${t.telegramChatId} is not null`),
     check('clients_status_check', inList(t.status, CLIENT_STATUSES)),
     check('clients_kyc_status_check', inList(t.kycStatus, KYC_STATUSES)),
     index('clients_group_id_idx').on(t.groupId),

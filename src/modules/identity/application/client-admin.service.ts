@@ -231,8 +231,8 @@ export class ClientAdminService {
         overdraftAllowed: group.overdraftAllowed,
       });
       const invite = await this.invites.issue(work, { clientId: client.id, createdBy: caller.staffId, ip: caller.ip });
-      // One owner for the merchant mail events (route, payload with ids only, the dev-only link log): MerchantMailOutbox.
-      await this.mail.enqueue(work, { kind: 'invited', clientId: client.id, tokenId: invite.id, token: invite.token });
+      // The invitation mail is a real mail job: MerchantMailOutbox owns the route and the payload (ids only); the worker mails the link.
+      await this.mail.enqueue(work, { kind: 'invited', clientId: client.id, tokenId: invite.id });
       await this.audit.record(work.tx, {
         action: 'invited merchant',
         entityType: 'merchant',

@@ -1,6 +1,6 @@
 // Drizzle queries on `auth_tokens` for the one-time links of merchants: email verification, password reset and invitation.
 // Only keyed hashes are stored; inserting and consuming a row reuse the generic functions of auth-token.repository.ts.
-import { and, eq, inArray, isNull, ne } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, ne } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
 import { type AuthToken, authTokens } from '../db/schema';
 
@@ -90,4 +90,33 @@ export async function voidOpenClientTokens(
     )
     .returning({ id: authTokens.id });
   return rows.length;
+}
+
+/**
+ * Replaces the secret of a link that is still usable, keeping the row.
+ *
+ * Why: feature 12a: the request makes a placeholder token that nobody receives (the clear value is not kept), and the mail job rotates it
+ * to the token that goes into the mail. The guard is the usability rule itself (unused, not expired), so a link that was used or has
+ * expired since the job read it is never given a new secret; the row id and expiry stay, so the outbox event still names it.
+ *
+ * @param db the database or a transaction
+ * @param id the `auth_tokens` id
+ * @param tokenHash the keyed hash of the new token
+ * @param now the time from the injected clock
+ * @returns true when the row was usable and now has the new hash
+ */
+export async function rotateClientToken(db: DbExecutor, id: number, tokenHash: string, now: Date): Promise<boolean> {
+  const rows = await db
+    .update(authTokens)
+    .set({ tokenHash, updatedAt: now })
+    .where(
+      and(
+        eq(authTokens.id, id),
+        eq(authTokens.subjectType, 'client'),
+        isNull(authTokens.usedAt),
+        gt(authTokens.expiresAt, now),
+      ),
+    )
+    .returning({ id: authTokens.id });
+  return rows.length > 0;
 }

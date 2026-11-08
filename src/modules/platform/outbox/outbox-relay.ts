@@ -37,7 +37,7 @@ export interface RelayResult {
 
 interface Pass {
   readonly selected: number;
-  readonly relayed: ReadonlyArray<{ readonly queue: QueueName; readonly lagSeconds: number }>;
+  readonly relayed: ReadonlyArray<{ readonly queues: readonly QueueName[]; readonly lagSeconds: number }>;
   readonly failed: number;
   readonly queueUnavailable: boolean;
 }
@@ -46,13 +46,15 @@ interface Pass {
  * Hands pending outbox events to their queues.
  *
  * Why: decision 020. One pass is one transaction: select the oldest pending rows `FOR UPDATE SKIP LOCKED`, add one BullMQ
- * job per row (`jobId = outbox-<id>`) to the queue its event type maps to, and set `processed_at` in the same transaction.
+ * job per route of the row's event type (`jobId = outbox-<id>`, on each route's queue; most types have one route, an event that
+ * two consumers want has one per queue, decision 020 amended by feature 12a) and set `processed_at` in the same transaction.
  * A crash between the enqueue and the commit rolls the rows back and the next pass adds the same job ids again, which
  * BullMQ ignores while the first jobs are retained. `SKIP LOCKED` lets a second worker, or a NOTIFY wake-up beside the
  * tick, work on the same backlog without taking a row twice. When the queue Redis is down the pass stops and keeps every
  * row pending (no attempt is counted: the rows are not at fault); a row that cannot be handed over for its own reason
  * (no queue registered for its type, BullMQ refuses the job) counts an attempt and waits `2^attempts` seconds (at most
- * five minutes) before it is tried again.
+ * five minutes) before it is tried again. A row with several routes is relayed only when every route took its job; a route that
+ * already took it adds the same job id again on the retry, which BullMQ ignores.
  *
  * Single flight: calls that arrive while a run is going share it, and a call that arrives after its last look at the
  * table makes it look once more, so an event committed meanwhile is never left for the next tick.
@@ -139,7 +141,7 @@ export class OutboxRelay implements OnModuleDestroy {
       pass = await this.db.runInTransaction(async ({ tx }) => {
         const now = this.clock.now();
         const rows = await lockPendingOutboxEvents(tx, RELAY_BATCH_SIZE, now);
-        const relayed: Array<{ id: number; queue: QueueName; lagSeconds: number }> = [];
+        const relayed: Array<{ id: number; queues: readonly QueueName[]; lagSeconds: number }> = [];
         const failed: number[] = [];
         let queueUnavailable = false;
         for (const row of rows) {
@@ -149,7 +151,7 @@ export class OutboxRelay implements OnModuleDestroy {
             break;
           }
           if (outcome === 'failed') failed.push(row.id);
-          else relayed.push({ id: row.id, queue: outcome.queue, lagSeconds: row.lagSeconds });
+          else relayed.push({ id: row.id, queues: outcome.queues, lagSeconds: row.lagSeconds });
         }
         await markOutboxRelayed(
           tx,
@@ -165,7 +167,9 @@ export class OutboxRelay implements OnModuleDestroy {
     }
     // The transaction committed: only now do the rows count as relayed.
     const byQueue = new Map<QueueName, number[]>();
-    for (const entry of pass.relayed) byQueue.set(entry.queue, [...(byQueue.get(entry.queue) ?? []), entry.lagSeconds]);
+    for (const entry of pass.relayed) {
+      for (const queue of entry.queues) byQueue.set(queue, [...(byQueue.get(queue) ?? []), entry.lagSeconds]);
+    }
     for (const [queue, lags] of byQueue) this.metrics.recordRelayed(queue, lags);
     if (pass.queueUnavailable) {
       this.metrics.recordFailure('queue_unavailable');
@@ -177,10 +181,12 @@ export class OutboxRelay implements OnModuleDestroy {
     return pass;
   }
 
-  /** Adds the job of one row. Returns the queue it went to, `failed` for a fault of the row, or `unavailable`. */
-  private async relayRow(row: PendingOutboxEvent): Promise<{ queue: QueueName } | 'failed' | 'unavailable'> {
-    const route = this.routes.get(row.type);
-    if (!route) {
+  /** Adds the jobs of one row, one per route. Returns the queues it went to, `failed` for a fault of the row, or `unavailable`. */
+  private async relayRow(
+    row: PendingOutboxEvent,
+  ): Promise<{ queues: readonly QueueName[] } | 'failed' | 'unavailable'> {
+    const routes = this.routes.routesOf(row.type);
+    if (routes.length === 0) {
       this.metrics.recordFailure('unmapped_type');
       this.logFailure(
         'unmapped_type',
@@ -188,20 +194,22 @@ export class OutboxRelay implements OnModuleDestroy {
       );
       return 'failed';
     }
-    try {
-      await this.queues.add(route.queue, route.jobName ?? row.type, jobDataOf(row), {
-        jobId: queueJobId('outbox', row.id),
-      });
-      return { queue: route.queue };
-    } catch (error) {
-      if (error instanceof AppError && error.code === 'UNAVAILABLE') return 'unavailable';
-      this.metrics.recordFailure('enqueue_error');
-      this.logFailure(
-        'enqueue_error',
-        `Outbox event ${row.id} (${row.type}) could not be added to ${route.queue}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      return 'failed';
+    const data = jobDataOf(row);
+    for (const route of routes) {
+      try {
+        // The same job id on two queues is two jobs: BullMQ ids are per queue.
+        await this.queues.add(route.queue, route.jobName ?? row.type, data, { jobId: queueJobId('outbox', row.id) });
+      } catch (error) {
+        if (error instanceof AppError && error.code === 'UNAVAILABLE') return 'unavailable';
+        this.metrics.recordFailure('enqueue_error');
+        this.logFailure(
+          'enqueue_error',
+          `Outbox event ${row.id} (${row.type}) could not be added to ${route.queue}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        return 'failed';
+      }
     }
+    return { queues: routes.map((route) => route.queue) };
   }
 
   private logFailure(reason: string, message: string): void {

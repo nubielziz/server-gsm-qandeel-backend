@@ -1,6 +1,6 @@
 // Root module of the worker process (decision 016): config, the clock (decision 031), logging, metrics, the infrastructure (database, Redis, cache,
 // rate limits, crypto, storage, outbound HTTP), the queue workers and schedulers, the outbox relay, job runs, the IP rule
-// hit flush, the ended-session purge, the nightly merchant group promotion, the merchant mail jobs (verification, reset and invitation links), the automatic credit of top-ups (`payment_auto_credit`, with the `invoice.paid` outbox route), the order outbox routes (`order.status_changed` to the merchant webhook deliveries, `order.dispatch_requested` to the supplier dispatch job), the merchant webhook deliveries, the price change scan, the supplier jobs (dispatch, poll, sync), the health jobs (component checks, purge, reaper, size sample) and the metrics listener. Domain modules add their processors and schedules here as their features are built.
+// hit flush, the ended-session purge, the nightly merchant group promotion, the merchant mail jobs (verification, reset and invitation links), the automatic credit of top-ups (`payment_auto_credit`, with the `invoice.paid` outbox route), the order outbox routes (`order.status_changed` to the merchant webhook deliveries, `order.dispatch_requested` to the supplier dispatch job), the merchant webhook deliveries, the notifications (event routes, planning and sending processors, feature 12a), the price change scan, the supplier jobs (dispatch, poll, sync), the health jobs (component checks, purge, reaper, size sample) and the metrics listener. Domain modules add their processors and schedules here as their features are built.
 import { Module } from '@nestjs/common';
 import { ClockModule } from './common/clock.module';
 import { ConfigModule } from './config';
@@ -24,7 +24,13 @@ import {
 } from './modules/identity';
 import { PaymentAutoCreditModule } from './modules/money';
 import { OrdersOutboxModule } from './modules/orders';
-import { OutboxRelayModule, WebhookDeliveryModule } from './modules/platform';
+import {
+  MailHealthProbeModule,
+  NotificationDeliveryModule,
+  NotificationEventsModule,
+  OutboxRelayModule,
+  WebhookDeliveryModule,
+} from './modules/platform';
 import { SupplierJobsModule } from './modules/suppliers';
 
 /**
@@ -58,6 +64,9 @@ import { SupplierJobsModule } from './modules/suppliers';
     MerchantMailModule,
     OrdersOutboxModule,
     WebhookDeliveryModule,
+    NotificationEventsModule,
+    NotificationDeliveryModule,
+    MailHealthProbeModule,
     PriceChangeScanModule,
     PaymentAutoCreditModule,
     SupplierJobsModule,

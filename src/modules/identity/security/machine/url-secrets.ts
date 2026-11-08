@@ -34,6 +34,16 @@ export interface UrlSecretSource {
   /** The path parameter that holds the secret (default `secret`). */
   readonly param?: string;
   /**
+   * A request header (lower case) that must carry the same secret as the path, compared in constant time as well: both must match.
+   * Telegram's `X-Telegram-Bot-Api-Secret-Token` is the use (MISMATCHES B165).
+   */
+  readonly header?: string;
+  /**
+   * What a refused request is answered with: `unauthorized` (401, the default) or `not_found` (404, so a scanner cannot tell the
+   * route exists; B165 uses it for the Telegram webhook).
+   */
+  readonly refusal?: 'unauthorized' | 'not_found';
+  /**
    * Reads the stored secret.
    *
    * @returns the stored form, or `null`/`undefined` when none is configured (every request is then refused)
@@ -102,7 +112,7 @@ export class UrlSecretAccessHandler implements AccessHandler {
    * @param request the Fastify request
    * @param contract the route contract (its key picks the source)
    * @returns an empty state: the webhook is not an account
-   * @throws {AppError} `UNAUTHORIZED` (401) for a missing, wrong or unconfigured secret
+   * @throws {AppError} `UNAUTHORIZED` (401), or `NOT_FOUND` (404) when the source asks for it, for a missing, wrong or unconfigured secret
    */
   async authenticate(request: FastifyRequest, contract: AnyRouteContract): Promise<AccessState> {
     const source = this.sources.get(contract.key);
@@ -114,11 +124,17 @@ export class UrlSecretAccessHandler implements AccessHandler {
     }
     const presented = (request.params as Record<string, unknown> | null | undefined)?.[source.param ?? DEFAULT_PARAM];
     const stored = await source.load();
-    const usable = typeof presented === 'string' && presented.length > 0 && presented.length <= MAX_SECRET_LENGTH;
-    const candidate = usable ? (stored?.form === 'hash' ? this.tokens.hash(presented) : presented) : '';
-    // Always compare, whatever is missing, so the time does not tell a configured route from an unconfigured one.
-    const equal = constantTimeEqual(candidate, stored?.value ?? NOTHING_STORED);
-    if (!usable || !stored || !equal) throw new AppError('UNAUTHORIZED');
+    const matches = (value: unknown): boolean => {
+      const usable = typeof value === 'string' && value.length > 0 && value.length <= MAX_SECRET_LENGTH;
+      const candidate = usable ? (stored?.form === 'hash' ? this.tokens.hash(value) : value) : '';
+      // Always compare, whatever is missing, so the time does not tell a configured route from an unconfigured one.
+      const equal = constantTimeEqual(candidate, stored?.value ?? NOTHING_STORED);
+      return usable && stored !== null && stored !== undefined && equal;
+    };
+    const pathOk = matches(presented);
+    // The header is compared even when the path was wrong, so the time does not tell which of the two failed.
+    const headerOk = source.header === undefined ? true : matches(request.headers[source.header]);
+    if (!pathOk || !headerOk) throw new AppError(source.refusal === 'not_found' ? 'NOT_FOUND' : 'UNAUTHORIZED');
     return {};
   }
 }

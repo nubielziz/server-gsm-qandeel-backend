@@ -144,19 +144,27 @@ Delivers signed events to the webhook endpoints of merchants.
 Sends emails and Telegram messages.
 
 - **Concurrency:** 10 per worker process.
-- **Jobs:** the merchant mails of the identity module (feature 2b), one named job per outbox event type:
-  `merchant.email_verification`, `merchant.password_reset` and `merchant.invited` (processors in
-  `src/modules/identity/jobs/merchant-mail.processors.ts`). The queue has named processors only, so feature 12a adds its
-  `send` job under its own name (a catch-all next to named processors stops the worker). Still to build by 12a: `send` per
-  `notifications` row.
-- **Payload:** `OutboxJobData` of the event: `aggregateId` is the merchant (`clients.id`), `payload.tokenId` the
-  `auth_tokens` row of the link; never the token or the email address. 12a's `send` job: the notification id.
-- **Idempotency:** a merchant mail job re-reads the merchant and the link row and sends nothing when the merchant is gone or
-  suspended, or the link was used, voided or has expired (`skipped` in the job result); the job id is `outbox-<event id>`, so
-  the relay never adds a second job for one event. A job that runs twice sends twice (a mail is not exactly-once). 12a's
-  rule: job id `notification-<id>`; a sent row is not sent again.
-- **Retry policy:** 5 attempts, exponential backoff from 30 s (jitter 50 %); a provider's "retry after" is honoured by the
-  processor.
+- **Jobs:** named jobs only (a catch-all next to named processors stops the worker).
+  - `notification.send` (`NotificationSendProcessor`, `src/modules/platform/notifications/notification.processors.ts`): sends one `notifications` row. Added by the
+    relay for the outbox event `notification.send` (written with the row by `NotificationService.enqueue`), and, delayed, for a digest row.
+  - `notification.plan` (`NotificationPlanProcessor`): turns an outbox event a merchant may want to hear about into notifications (`EventNotifier`): `wallet.low_balance`,
+    `order.status_changed` (`order.completed`, `order.failed` for merchants who opted in), `service.price_changed` (the daily digest) and, once the lead adds their routes at
+    the merge of feature 8, `invoice.paid` and `deposit.approved`. It is registered next to the event's other consumer (the merchant webhooks): one outbox event, one job per queue.
+  - `merchant.email_verification`, `merchant.password_reset`, `merchant.invited` (identity, `src/modules/identity/jobs/merchant-mail.processors.ts`, feature 2b/12a): rotate the
+    link's token on its `auth_tokens` row and send the mail with the clear link as a secret that is never stored.
+- **Payload:** `OutboxJobData` of the event (ids only). `notification.send` carries the row (`aggregateId` = the `notifications.id`; a digest job carries `{ notificationId }`). The
+  merchant mail jobs carry `aggregateId` = the merchant and `payload.tokenId`. Never a token, a link, an address or a message text: the job re-reads the row, the recipient and the
+  active template.
+- **Idempotency:** the outbox job id is `outbox-<event id>` (per queue). A `notifications` row has a `dedupe_key` (`outbox-<event id>:<channel>` for the planning job,
+  `telegram-update-<update id>` for the bot's answer, `digest:<event>:<channel>:<merchant>:<day>` for a digest, unique where not null): a job that runs twice makes no second row.
+  A send is guarded (`status = 'queued'` on the update): a row already `sent` or `failed` is skipped, so a job that runs twice records one send; the row's id is the
+  `Message-ID` of the mail (`<notification-<id>@<domain of MAIL_FROM>>`), so a provider that dedupes drops the rare repeat after a crash between the provider's answer and the update.
+  A digest job has the id `notification-<id>` and a delay up to the end of its period (06:00 UTC), at least 10 seconds (`MIN_DIGEST_DELAY_MS`: a job added before its transaction commits must not run before the row is visible); the send job closes the digest first (`payload.closed`), so a change that arrives
+  later joins the next period's row. A merchant mail job asks the row's status before it rotates the token, so a repeat after a delivered mail never spoils the link that arrived.
+- **Retry policy:** 5 attempts, exponential backoff from 30 s (jitter 50 %). A transient failure (an SMTP 4xx or a dropped connection, a Telegram 429 or 5xx, a timeout) records the
+  attempt on the row and throws, so the queue retries; the last attempt marks the row `failed` with the reason and throws. A refusal that cannot change (an SMTP 5xx, a Telegram
+  400, 403 or 404, a missing template, no address, a recipient that is gone) marks the row `failed` at once and ends the job. The queue's own backoff applies as it is: a provider's
+  `retry_after` (Telegram's is a few seconds) is shorter than the first wait, so the processors do not read it.
 - **Schedule:** none (event-driven).
 
 ## supplier-sync
@@ -340,9 +348,10 @@ Evaluates alert rules and sends their messages.
 
 ## Outbox event types
 
-An event type maps to exactly one queue; the module that produces it registers the mapping in `onModuleInit` with
-`OutboxRouteRegistry.register({ type, queue, jobName? })`, and `OutboxService.add` refuses a type that is not registered.
-The job name on the queue is the event type unless `jobName` is given. The job data is `OutboxJobData`
+An event type maps to one or more queues, one route per queue (decision 020, amended by feature 12a); the module that produces it, or one that consumes
+it, registers a route in `onModuleInit` with `OutboxRouteRegistry.register({ type, queue, jobName? })`, and `OutboxService.add` refuses a type that is not
+registered. Registering the same type on the same queue twice stops the app at boot. The relay adds one job per route (the same id `outbox-<id>` on each queue,
+which are separate id spaces), and marks the row relayed only when every route took its job. The job name on a queue is the event type unless `jobName` is given. The job data is `OutboxJobData`
 (`src/modules/platform/outbox/outbox.types.ts`): `{ eventId, type, aggregateType, aggregateId, payload, requestId }`, where
 `payload` is the ids the use case passed and `requestId` the request that wrote the event (`outbox-<event id>` when there was
 none); the job id is `outbox-<event id>`.
@@ -352,11 +361,14 @@ none); the job id is `outbox-<event id>`.
 | `merchant.email_verification` | `notifications` | `merchant.email_verification` | `tokenId` (aggregate: `clients`, the merchant) | identity (`MerchantMailOutbox`), written by `POST /client/auth/register` |
 | `merchant.password_reset` | `notifications` | `merchant.password_reset` | `tokenId` (aggregate: `clients`) | identity (`MerchantMailOutbox`), written by `POST /client/auth/password/forgot` |
 | `merchant.invited` | `notifications` | `merchant.invited` | `tokenId` (aggregate: `clients`) | identity (`MerchantMailOutbox`), written by `POST /admin/clients` (feature 2a) |
-| `order.status_changed` | `merchant-webhooks` | `order.status_changed` | `orderId`, `clientId` (null for a storefront order), `fromStatus`, `toStatus` (aggregate: `orders`) | orders (`OrderOutbox`, loaded by the API and the worker), written by every transition that changes the status: accept, reply, reject, cancel, reopen, refund, verification refund. No processor yet: the webhook fan-out is feature 7b |
+| `notification.send` | `notifications` | `notification.send` | none (aggregate: `notifications`, the row) | platform (`NotificationRoutes`), written by `NotificationService.enqueue` together with the row |
+| `order.status_changed` | `merchant-webhooks`, `notifications` | `order.status_changed` on the webhooks, `notification.plan` on `notifications` | `orderId`, `clientId` (null for a storefront order), `fromStatus`, `toStatus` (aggregate: `orders`) | orders (`OrderOutbox`: the webhooks route, loaded by the API and the worker) and platform (`NotificationRoutes`: the notifications route); written by every transition that changes the status: accept, reply, reject, cancel, reopen, refund, verification refund. Consumers: the webhook fan-out (7b) and the order result notifications (12a) |
+| `wallet.low_balance` | `merchant-webhooks`, `notifications` | `wallet.low_balance` / `notification.plan` | `clientId`, `currency`, `available`, `threshold` (aggregate: `ledger_accounts`) | platform (`MerchantEventRoutes` webhooks route, `NotificationRoutes` notifications route), written by the money module's `WalletLowBalanceWatch` |
+| `service.price_changed` | `merchant-webhooks`, `notifications` | `service.price_changed` / `notification.plan` | `clientId`, `serviceId`, `previousPrice`, `price`, `currency` (aggregate: `services`) | platform (both routes), written by the catalog's price change scan |
 | `order.dispatch_requested` | `supplier-dispatch` | `order.dispatch_requested` | `orderId` (aggregate: `orders`) | orders (`OrderOutbox`), written by placement of an automatic order with an active supplier link (and by a staff dispatch, feature 6). No processor yet: the dispatch job is feature 6 |
 | `invoice.paid` | `merchant-webhooks` | `invoice.paid` | `invoiceId`, `clientId` (aggregate: `invoices`) | money (`InvoiceOutbox`, loaded by the API and the worker), written by every credit of a top-up: a staff approval (`POST /admin/payments/:id/approve`) and the automatic credit job. The fan-out re-reads the invoice (7b) |
 
-The map's other outgoing event `wallet.low_balance` is written by the money module's posting hook (feature 7b registers it).
+`invoice.paid` (feature 8) routes to `merchant-webhooks` (`InvoiceOutbox`) and to `notifications` (`notification.plan`, registered by the platform's `NotificationRoutes` since the 12a merge): every credited top-up tells the merchant once. `deposit.approved` has a registry entry and default templates but no producer: a credited top-up already writes `invoice.paid`, and emitting both would send two messages per top-up (B-entry of 12a). A test app plans a job directly through `test/support/notifications.ts` (`eventJob`).
 
 ## Schedulers
 

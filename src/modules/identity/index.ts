@@ -36,6 +36,7 @@ export { MerchantAuthModule } from './merchant-auth.module';
 export { ApiKeysModule } from './api-keys.module';
 export { MerchantWebhookRoutesModule } from './merchant-webhook-routes.module';
 export { KycModule } from './kyc.module';
+export { MerchantNotificationsModule } from './merchant-notifications.module';
 export { MerchantMailModule } from './merchant-mail.module';
 export { STAFF_TOKEN_TTL_MS, StaffAuthTokens } from './application/staff-auth-tokens';
 export type { IssueStaffTokenInput, IssuedStaffToken } from './application/staff-auth-tokens';
@@ -45,9 +46,8 @@ export { MERCHANT_TOKEN_TTL_MS, MerchantAuthTokens } from './application/merchan
 export type { IssueMerchantTokenInput, IssuedMerchantToken } from './application/merchant-auth-tokens';
 export { CLIENT_TOKEN_PURPOSES } from './infra/merchant-token.repository';
 export type { ClientTokenPurpose } from './infra/merchant-token.repository';
-export { MAIL_SENDER } from './application/mail/mail-sender';
-export type { MailSender, MerchantMail, MerchantMailKind } from './application/mail/mail-sender';
 export { MERCHANT_MAIL_EVENTS, MerchantMailOutbox } from './application/mail/merchant-mail-outbox';
+export type { MerchantMailKind } from './application/mail/merchant-mail-outbox';
 export { checkPasswordPolicy, MIN_PASSWORD_LENGTH } from './domain/password-policy';
 export { CLIENT_TOTP_AAD, STAFF_TOTP_AAD, TOTP_ISSUER } from './application/totp.service';
 export { AccessGuard } from './security/access.guard';

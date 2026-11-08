@@ -8,7 +8,7 @@ Decisions that shape this module: 004 file storage, 017 API documentation, 020 o
 
 ## Status
 
-Built: `GET /openapi.json` and `GET /docs` (the public documentation), plus the internal `GET /reference` and `GET /reference/openapi.json` (no contracts: they are documentation routes, gated by `REFERENCE_DOCS`). Code: `docs/`. The transactional outbox (`outbox_events`): writing events and the worker's relay. Code: `outbox/`. The audit log (`audit_logs`): `AuditService.record` and the check that staff writes are audited. Code: `audit/`. Cached read access to `settings` for other modules. Code: `settings/`. Feature 7b built the merchant webhooks (9 routes, 4 events, the delivery engine): see "Merchant webhooks (feature 7b)" below. Feature 2a built the four admin routes of the audit log and the settings (`GET /admin/audit-logs[/:id]`, `GET` and `PATCH /admin/settings`): see "Audit log and settings routes (feature 2a)" below. Code: `contracts/`, `controllers/`, `application/`, `infra/`, wired by `PlatformAdminModule`.
+Built: `GET /openapi.json` and `GET /docs` (the public documentation), plus the internal `GET /reference` and `GET /reference/openapi.json` (no contracts: they are documentation routes, gated by `REFERENCE_DOCS`). Code: `docs/`. The transactional outbox (`outbox_events`): writing events and the worker's relay. Code: `outbox/`. The audit log (`audit_logs`): `AuditService.record` and the check that staff writes are audited. Code: `audit/`. Cached read access to `settings` for other modules. Code: `settings/`. Feature 7b built the merchant webhooks (9 routes, 4 events, the delivery engine): see "Merchant webhooks (feature 7b)" below. Feature 12a built the notifications (8 admin routes, the event registry, the delivery path over SMTP and the Telegram Bot API, the daily price change digest): see "Notifications (feature 12a)" below. Feature 2a built the four admin routes of the audit log and the settings (`GET /admin/audit-logs[/:id]`, `GET` and `PATCH /admin/settings`): see "Audit log and settings routes (feature 2a)" below. Code: `contracts/`, `controllers/`, `application/`, `infra/`, wired by `PlatformAdminModule`.
 
 ## Public API (`index.ts`)
 
@@ -21,6 +21,8 @@ Settings and maintenance: `SettingsModule` (global) and `SettingsService.get(key
 The outbox: `OutboxModule` (global: `OutboxService`, `OutboxRouteRegistry`), `OutboxService.add(tx, event)` and `backlog(db)`, `OutboxRouteRegistry.register({ type, queue, jobName? })`, the types `OutboxEventInput`, `OutboxPayload`, `OutboxJobData`, `OutboxRoute`, `OutboxBacklog`, and, for the worker only, `OutboxRelayModule` with `OutboxRelay`.
 
 Documents and stored files (feature 8): `PdfModule` (global) provides `PdfRenderer.render(document)` (`PdfDocument`, `PdfBlock`, `PdfColumn`), and `StoredFiles` (`store`, `metaOf`, `findOwned`, with `StoreFileInput`, `FileMeta` and `PROOF_MIME_TYPES`) is the public side of the `files` table for the money and identity modules.
+
+The notifications (12a): `NotificationEventsModule` (global: `NotificationEventRegistry` and the outbox routes, API and worker), `NotificationTransportModule` (`MailTransport`, `TelegramClient`, their drivers), `NotificationDeliveryModule` (`NotificationService`, the planning and sending processors; API and worker), `NotificationAdminModule` (the 8 staff routes); `BUILT_IN_EVENTS`, `NotificationService` (`enqueue`, `sendNow`, `statusOf`, `abandon`, `check`), `NOTIFICATION_SEND_EVENT`, `DeliveryError`, `MailTransport` (`send`, `verify`: the `mail` health check of feature 9 calls it), `TelegramClient`, the in-memory drivers and their tokens (`MAIL_DRIVER`, `TELEGRAM_DRIVER`), `maskEmail`, `maskTelegram`, `redactAddresses`, the preference rules (`choiceFor`, `channelsFor`, `applyPreferences`, `withoutTelegram`, `thresholdOf`, `parseThreshold`) that identity's portal routes use, and `DEFAULT_TEMPLATES`.
 
 The merchant webhooks (7b): `WebhookEventsModule` (event contracts and the outbox routes of `wallet.low_balance` and `service.price_changed`, loaded by the API and the worker), `WebhookDeliveryModule` (sender, fan-out, the processor of `merchant-webhooks`; API and worker), `MerchantWebhooksModule` (the staff log routes and `MerchantWebhookService`), the four `defineEvent` contracts (`orderStatusChanged`, `walletLowBalance`, `invoicePaid`, `servicePriceChanged`), `WEBHOOK_EVENT_NAMES`, `PING_EVENT`, `WebhookDeliveries`, `WebhookFanOut`, `MerchantWebhooksProcessor`, the event type constants and the `WEBHOOK_TARGET_POLICY` token. The portal's controller for `/client/webhooks*` (`MerchantWebhooksController`) lives in the identity module (`controllers/merchant-webhooks.controller.ts`, `MerchantWebhookRoutesModule`): it needs identity's `CurrentMerchant`, and platform imports no module, so a platform file that imported identity would make a cycle for every identity file that imports platform (decision 032). Platform exports `MerchantWebhookService` and the six portal contracts for it.
 
@@ -231,7 +233,8 @@ operation of both documents: the form body becomes a `oneOf` by `action` (each b
 ## Events
 
 Outbox events produced (types, payload ids): the orders module registers `order.status_changed` and `order.dispatch_requested`
-(`docs/queues.md`); this module registers none itself. A module registers an event type with its queue in `onModuleInit`
+(`docs/queues.md`); this module registers `notification.send` (one `notifications` row, written with the row) and adds a `notifications`
+route to `order.status_changed`, `wallet.low_balance` and `service.price_changed` (an event type may have one route per queue). A module registers an event type with its queue in `onModuleInit`
 (`OutboxRouteRegistry.register`) and writes it with `OutboxService.add(tx, ...)` inside its transaction; the table of event
 types is in `docs/queues.md` ("Outbox event types"). Consumed: none yet. The map's outgoing events (`order.status_changed`,
 `wallet.low_balance`, `invoice.paid`) are registered by the features that produce them.
@@ -244,8 +247,8 @@ types is in `docs/queues.md` ("Outbox event types"). Consumed: none yet. The map
   64 characters, flags and short lists; no decimals (no money), no nesting, no free text, at most 2 KB. It is stored with
   `meta.requestId` (the current request id, decision 012). An event type that no module registered is refused.
 - **Relay** (worker only, `OutboxRelayModule`): `OutboxRelay.run()` selects the pending rows `ORDER BY id LIMIT 100 FOR
-  UPDATE SKIP LOCKED`, adds one job per row to the queue of its type with the job id `outbox-<id>` and the data
-  `OutboxJobData`, sets `processed_at` and counts the attempt in the same transaction, and repeats while batches are full.
+  UPDATE SKIP LOCKED`, adds one job per route of the row's type (one route per queue, decision 020 amended by 12a; most types have one)
+  with the job id `outbox-<id>` and the data `OutboxJobData`, sets `processed_at` and counts the attempt in the same transaction, and repeats while batches are full.
   It runs on a one-second BullMQ tick (`outbox-relay-tick`, the safety net) and on a Postgres `NOTIFY outbox` wake-up
   (`OutboxListener`: one dedicated `pg.Client` named `gsm-outbox-listener`, reconnects with a growing wait, catches up after
   every reconnect, closed in `onModuleDestroy`). Calls that arrive during a run share it and make it look once more.
@@ -274,7 +277,7 @@ upload routes are feature 7a's; invoice PDFs are written here as the merchant's 
 ## Jobs and schedules
 
 The relay tick: `outbox-relay-tick`, every second, queue `outbox-relay`, job `tick` (processor `OutboxRelayProcessor`). Listed
-in `docs/queues.md`. Other jobs of this module (notifications, webhook deliveries, file jobs) arrive with their features.
+in `docs/queues.md`. The webhook deliveries (7b) and the notifications (12a: `notification.plan`, `notification.send`, no schedule) are event-driven; file jobs arrive with their feature.
 
 ## Cache keys
 
@@ -284,7 +287,7 @@ in `docs/queues.md`. Other jobs of this module (notifications, webhook deliverie
 |---|---|---|---|
 | `gsm:{env}:platform:maintenance:state` | the maintenance state | 60 s, then stale for 5 min while one refresh runs | `MaintenanceService.invalidate()` after the commit of a maintenance change |
 
-Registered in `docs/cache-keys.md`. Register each further key family (owner, TTL, invalidation after commit) there too (see `CONTRIBUTING.md` → "Add a cache key").
+Feature 12a added no key family: delivery state lives in Postgres (the row is the truth, decision 020). Registered in `docs/cache-keys.md`. Register each further key family (owner, TTL, invalidation after commit) there too (see `CONTRIBUTING.md` → "Add a cache key").
 
 Register every other key family (owner, TTL, invalidation after commit) in `docs/cache-keys.md` (see `CONTRIBUTING.md` → "Add a cache key").
 
@@ -403,3 +406,54 @@ event id on every retry lets the receiver drop repeats. `failure_count` of the e
 
 Open points: nothing re-queues a pending delivery whose job was lost (the queue Redis lost its data): `webhook_deliveries_retry_idx` supports a sweep for 12b;
 an endpoint is never switched off automatically after many failures; `invoice.paid` needs feature 8 to register its route and write `payload.clientId`.
+
+## Notifications (feature 12a)
+
+Eight staff routes, one code path for every message, and the merchant portal's four routes (in the identity module, see its README). Specs: RULES settings
+10 to 12, RESOLUTIONS identity-platform-11 and -16, MISMATCHES B165, decision 033 (mail over SMTP with nodemailer, Telegram over `OutboundHttp`).
+Code: `notifications/` (contracts `notification-templates.contracts.ts` and `notification-log.contracts.ts`; controllers; use cases
+`notification-template-admin.service.ts` and `notification-log-admin.service.ts`; queries `notification-template.repository.ts` and
+`notification.repository.ts`; pure rules `template-rules.ts`, `digest-rules.ts`, `merchant-preferences.ts`, `masking.ts`).
+
+| Route | Access | What it does |
+|---|---|---|
+| `GET /admin/notification-templates` | `notifications:read` | templates, `event` A to Z; filters `audience`, `channel`, `isActive`, `event`, `locale`; `q` over event and subject; each row has `sentLast30Days` (identity-platform-11: `sent` rows with the same event, channel and recipient type, `audience` merchant is `client`, across all languages) |
+| `GET /admin/notification-templates/:id` | `notifications:read` | one template |
+| `POST /admin/notification-templates` | `notifications:create` | `{ event, channel, audience, locale = 'en', subject, body, isActive = true }`: `422` on `event` for an unregistered or duplicate event, on `audience` / `channel` when the event is not sent to it, on `locale`, `subject` (an email needs one), `body` (not blank) and on a `{{placeholder}}` the event does not offer; audited `created notification template` |
+| `PATCH /admin/notification-templates/:id` | `notifications:update` | `subject`, `body`, `isActive`; `event`, `channel`, `audience`, `locale` are fixed (`422 immutable` on a different value); the texts are checked only when sent, so an old template can still be switched off; audited with before and after: `edited notification template`, or `turned on notification` / `turned off notification` (the demo's phrases, ANSWERS audit Q3) when the request carries only the switch |
+| `DELETE /admin/notification-templates/:id` | `notifications:delete` | `204`; audited `deleted notification template` |
+| `POST /admin/notification-templates/:id/preview` | `notifications:read` | `{ subject?, body? }` (unsaved text) → `{ subject, body, format ('text' \| 'html'), from, note }`; sample data of the event, an unknown placeholder stays visible; sends nothing, no audit row |
+| `GET /admin/notifications` | `notifications:read` | the log, newest first; filters `status` (`queued`, `sent`, `failed`; `status_ne`), `channel`, `event`, `recipientType`; `q` a case-insensitive contains search over the event, and over the recipient's address only when `q` is the whole address; `recipient` is masked by the server (`r***@example.com`, `@1***`), `error` only for a failed message, no `payload` |
+| `GET /admin/notifications/:id` | `notifications:read` | the same row with its `payload` (placeholder values, never a secret) |
+
+**The event registry** (`notification-events.ts`) is the only list of events: key, audience (`staff`, `merchant`, `customer`), channels, the variables a template may
+use with a sample of each, whether the message is transactional (always sent, not in a merchant's preferences) and its defaults. Built in: the three merchant
+mails, `wallet.low_balance`, `service.price_changed` (a digest), `deposit.approved`, `invoice.paid`, `order.completed` and `order.failed` (off until a merchant
+opts in), the bot's `telegram.linked` and `telegram.unlinked`, and the six customer events of the console's Customer emails tab (their producers are the storefront
+features). A later feature (12b alerts for staff) adds its events with `NotificationEventRegistry.register` in `onModuleInit`. The default English templates are
+`DEFAULT_TEMPLATES`; migration 0009 inserts the same rows (a test keeps them equal).
+
+**One delivery path** (decision 020, `docs/queues.md` "notifications"). A use case calls `NotificationService.enqueue({ tx }, ...)`: a `notifications` row (`queued`) and the
+outbox event `notification.send` commit with the caller's change. Producers that already write an outbox event (`order.status_changed`, `wallet.low_balance`,
+`service.price_changed`, and feature 8's `invoice.paid` and `deposit.approved` once the lead routes them) reach the `notifications` queue as well as the webhooks;
+`EventNotifier` (job `notification.plan`) decides who is told by the merchant's preferences and needs an active template. The send job (`NotificationDelivery.deliver`)
+re-reads the row, the recipient and the template, renders (an HTML body gets escaped values and a text part), sends and marks the row `sent` with a guarded update.
+A transient failure records the attempt and rethrows (the queue retries: 5 attempts, 30 s backoff); the last attempt, or a refusal that cannot change, marks the row
+`failed` with the reason. A missing template is logged and sends nothing; an inactive one sends nothing; a suspended merchant gets only transactional messages.
+
+**Price change digest** (user rule 9): `service.price_changed` events do not send at once; they join the merchant's digest row of the period (06:00 UTC to 06:00 UTC, one row
+per merchant, channel and period, key `digest:service.price_changed:<channel>:<client>:<day>`), sent by a delayed job `notification-<id>` at the end of the period. The send job
+closes the row first, so a later change opens the next period's row: at most one message a day, no change lost.
+
+**Mail and Telegram** (decision 033): `MailTransport` (`send`, `verify`) over nodemailer with explicit timeouts; `TelegramClient.sendMessage` over `OutboundHttp` (target `telegram`);
+`NODE_ENV=test` uses the in-memory drivers (nothing leaves the process). A 5xx SMTP answer, a Telegram 400, 403 or 404 fail the row at once; everything else is retried.
+Reasons are cleaned of addresses and never hold a token. The log's masks are built from the recipient's current row.
+
+**Merchant mail** (identity's `MerchantMailJobs`) calls `NotificationService.sendNow` with the clear link as a secret placeholder: it fills the template and is never stored,
+logged or put in the payload.
+
+**Foreign reads.** `notification-foreign-reads.ts` reads `clients`, `staff_users` and `customers` (the recipient) and the order of an order notification with plain selects:
+the documented deviation of decision 016 that the webhook reads already carry (platform imports no module, decision 032). Replace the bodies when those modules export a reader.
+
+Open points: the routes of `invoice.paid` and `deposit.approved` to `notifications` are added when feature 8 (their producer) is merged; a Telegram `retry_after` is not
+honoured beyond the queue's own 30 s first backoff (it is shorter in practice).
