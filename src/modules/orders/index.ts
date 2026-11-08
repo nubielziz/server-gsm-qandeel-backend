@@ -39,6 +39,8 @@ export { ORDER_OUTBOX_EVENTS, OrderOutbox } from './application/order-outbox';
 export type { StatusChangedPayload } from './application/order-outbox';
 export { OrderPlacement } from './application/order-placement';
 export type { PlacementItem, PlacementRequest } from './application/order-placement';
+export { CustomerOrderPlacement } from './application/customer-placement';
+export type { CustomerPlacementRequest } from './application/customer-placement';
 export { OrderTransitions, refusalError } from './application/order-transitions';
 export type { TransitionOutcome, TransitionRequest } from './application/order-transitions';
 export { OrderCompletionListeners } from './application/order-completion-listeners';

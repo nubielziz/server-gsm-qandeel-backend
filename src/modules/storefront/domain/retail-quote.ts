@@ -15,19 +15,21 @@ export interface Amounts {
 }
 
 /**
- * The retail price the shop charges for one unit: the larger of the staff retail price and the storefront floor.
+ * The retail price the shop charges for one unit: the larger of the staff retail price and the storefront floor, in whole cents.
  *
  * Why: RESOLUTIONS b2c-7 and catalog-12: a retail price is never under the floor, and the floor of the storefront group is
  * `max(round(base price x 1.10, 2), effective cost + minimum profit)`. The floor comes from catalog's `RetailPrices.quotes`
  * (the function the console's listing admin uses), so a cost rise or a later edit can never sell under it and the console and
- * the checkout always agree.
+ * the checkout always agree. A floor-clamped price can carry four decimals and a buyer is charged cents, so the price is
+ * rounded UP to the cent (MISMATCHES B169's open point, closed by feature 16): what is shown and charged is never below it.
  *
  * @param retailPrice the retail price staff set for the retail group (net, USD)
  * @param floor the storefront floor of the service (`RetailQuote.floor`)
- * @returns the unit net price
+ * @returns the unit net price, a whole number of cents
  */
 export function retailNet(retailPrice: Money, floor: Money): Money {
-  return retailPrice.cmp(floor) >= 0 ? retailPrice : floor;
+  const net = retailPrice.cmp(floor) >= 0 ? retailPrice : floor;
+  return Money.of(new D(net.toWire()).toDecimalPlaces(2, Decimal.ROUND_UP).toFixed(4));
 }
 
 /**

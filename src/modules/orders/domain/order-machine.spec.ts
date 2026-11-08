@@ -340,4 +340,31 @@ describe('merchant and risk actions', () => {
     });
     expect(decideOrderAction(b2c(), { kind: 'riskRefund' })).toEqual({ ok: false, refusal: 'INVALID_TRANSITION' });
   });
+  it('refund approved (feature 16): cancels an open storefront order in any queue, even held or reopened, and refunds its money', () => {
+    for (const state of [
+      b2c({ dispatchState: 'pending' }),
+      b2c({ dispatchState: 'manual' }),
+      b2c({ dispatchState: 'held' }),
+      b2c({ status: 'processing', dispatchState: 'sent' }),
+      b2c({ status: 'processing', dispatchState: 'needs_attention' }),
+      b2c({ status: 'pending', dispatchState: 'manual', completedBefore: true }),
+    ]) {
+      expect(allowed(decideOrderAction(state, { kind: 'refundApproved' }))).toMatchObject({
+        next: { status: 'rejected', dispatchState: 'done' },
+        event: 'rejected',
+        money: 'b2c_refund',
+      });
+    }
+    expect(queueAfter(b2c({ dispatchState: 'held' }), { kind: 'refundApproved' })).toBeNull();
+  });
+
+  it('refund approved: refuses a merchant order and an order that is already closed', () => {
+    expect(decideOrderAction(b2b(), { kind: 'refundApproved' })).toEqual({ ok: false, refusal: 'INVALID_TRANSITION' });
+    for (const status of ['completed', 'rejected'] as const) {
+      expect(decideOrderAction(b2c({ status, dispatchState: 'done' }), { kind: 'refundApproved' })).toEqual({
+        ok: false,
+        refusal: 'ORDER_NOT_OPEN',
+      });
+    }
+  });
 });

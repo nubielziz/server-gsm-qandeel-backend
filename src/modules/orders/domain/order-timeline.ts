@@ -113,8 +113,13 @@ export interface TransitionContext {
   readonly decision?: 'accept' | 'refund' | undefined;
   /** The staff note that came with a verification decision. */
   readonly note?: string | undefined;
-  /** The money that moved (4-decimal texts); `posted` is false for a free order. */
-  readonly money: { readonly posted: boolean; readonly amount: string; readonly cost: string };
+  /** The money that moved (4-decimal texts); `posted` is false for a free order. `requested` marks a refund that waits for staff to approve. */
+  readonly money: {
+    readonly posted: boolean;
+    readonly amount: string;
+    readonly cost: string;
+    readonly requested?: boolean;
+  };
 }
 
 function line(
@@ -170,10 +175,16 @@ export function transitionLines(
       return [
         line('rejected', context.actor, { message: reason ?? 'Rejected', reason: reason ?? null }, status),
         money === 'b2c_refund'
-          ? line('refund', SYSTEM_ACTOR, {
-              message: `Refund of ${amount} sent to the original payment method`,
-              amount: context.money.amount,
-            })
+          ? context.money.requested
+            ? line('refund', SYSTEM_ACTOR, {
+                message: `Refund of ${amount} is waiting for staff to approve`,
+                amount: context.money.amount,
+                requested: true,
+              })
+            : line('refund', SYSTEM_ACTOR, {
+                message: `Refund of ${amount} sent to the original payment method`,
+                amount: context.money.amount,
+              })
           : line('release', SYSTEM_ACTOR, {
               message: `${amount} released back to wallet`,
               amount: context.money.amount,

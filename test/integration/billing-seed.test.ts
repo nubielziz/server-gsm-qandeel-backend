@@ -94,7 +94,9 @@ describe.skipIf(!existsSync(demoStatePath()))('the billing seed', () => {
     expect(gateways[2]!.configEnc).toBeNull();
 
     // Every payment has the invoice with its number minus 999, in the status its own implies.
-    const payments = await db.select().from(s.payments).orderBy(s.payments.id);
+    const payments = (await db.select().from(s.payments).orderBy(s.payments.id)).filter(
+      (payment) => payment.purpose === 'topup',
+    );
     const invoices = new Map((await db.select().from(s.invoices)).map((invoice) => [invoice.id, invoice]));
     expect(payments).toHaveLength(demoPayments.length);
     const byStatus = (status: string) => payments.filter((payment) => payment.status === status).length;

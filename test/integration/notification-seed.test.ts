@@ -45,12 +45,14 @@ async function seed() {
 const reportOf = (reports: Array<{ table: string }>, table: string) => reports.find((report) => report.table === table);
 
 describe.skipIf(!frontendPresent)('the 12a seed', () => {
-  it('writes the six customer emails with the demo’s switches, next to the defaults the migration ships, and nothing twice', async () => {
+  it('writes the customer emails the migrations do not ship, sets the demo’s switch on those they do, and nothing twice', async () => {
     const first = await seed();
-    expect(reportOf(first.platform, 'notification_templates')).toMatchObject({ inserted: 6, existing: 0 });
+    // Four of the demo's six (order received, completed, failed and payment failed) are migration defaults since feature 16: only the other two are new.
+    expect(reportOf(first.platform, 'notification_templates')).toMatchObject({ inserted: 2, existing: 4 });
     const { db } = await testDb();
-    // The four account mails (feature 14b) are default templates of the migrations, not the demo's six.
-    const accountMails: readonly string[] = CUSTOMER_MAIL_EVENT_KEYS;
+    // The four account mails (14b) and the refund-declined mail (16) are default templates of the migrations, not the demo's six.
+    const accountMails: readonly string[] = [...CUSTOMER_MAIL_EVENT_KEYS, 'refund.declined'];
+    // The migrations' rows come first (they were there before the seed ran), then the two the seed added.
     const customer = (await db.select().from(s.notificationTemplates).orderBy(s.notificationTemplates.id)).filter(
       (row) => row.audience === 'customer' && !accountMails.includes(row.event),
     );
@@ -58,9 +60,9 @@ describe.skipIf(!frontendPresent)('the 12a seed', () => {
       ['order.received', true],
       ['order.completed', true],
       ['order.failed', true],
+      ['payment.failed', false],
       ['support.reply', true],
       ['checkout.abandoned', true],
-      ['payment.failed', false],
     ]);
     expect(customer[0]).toMatchObject({
       channel: 'email',
@@ -78,6 +80,9 @@ describe.skipIf(!frontendPresent)('the 12a seed', () => {
     // Rerunning the seed adds nothing.
     const again = (await seed()).platform;
     expect(reportOf(again, 'notification_templates')).toMatchObject({ inserted: 0, existing: 6 });
+    expect((await db.select().from(s.notificationTemplates)).filter((row) => row.event === 'payment.failed')).toEqual([
+      expect.objectContaining({ audience: 'customer', isActive: false }),
+    ]);
     expect(reportOf(again, 'notifications')).toMatchObject({ inserted: 0 });
   });
 
@@ -85,7 +90,8 @@ describe.skipIf(!frontendPresent)('the 12a seed', () => {
     const { platform } = await seed();
     expect(reportOf(platform, 'notifications')).toMatchObject({ inserted: 112 + 86 + 6 + 41 + 17 + 48, existing: 0 });
     const owner = await adminWith(t, ['*']);
-    const accountMails: readonly string[] = CUSTOMER_MAIL_EVENT_KEYS;
+    // The four account mails (14b) and the refund-declined mail (16) are default templates of the migrations, not the demo's six.
+    const accountMails: readonly string[] = [...CUSTOMER_MAIL_EVENT_KEYS, 'refund.declined'];
     const templates = (
       (await owner.get('/admin/notification-templates?audience=customer&_sort=id&_order=asc')).body as Array<{
         event: string;
@@ -96,9 +102,9 @@ describe.skipIf(!frontendPresent)('the 12a seed', () => {
       ['order.received', 112],
       ['order.completed', 86],
       ['order.failed', 6],
+      ['payment.failed', 0],
       ['support.reply', 41],
       ['checkout.abandoned', 17],
-      ['payment.failed', 0],
     ]);
   });
 

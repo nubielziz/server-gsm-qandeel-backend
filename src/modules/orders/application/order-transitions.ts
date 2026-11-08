@@ -4,6 +4,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import type { DbExecutor } from '../../../infra/db';
+import { StorefrontMails } from '../../money';
 import { AuditService } from '../../platform';
 import type { Order } from '../db/schema';
 import {
@@ -43,6 +44,8 @@ export interface TransitionRequest {
   readonly comment?: string | undefined;
   /** The note of a verification decision. */
   readonly note?: string | undefined;
+  /** The storefront refund this transition pays out (feature 16): the ledger posting is linked to it instead of opening a new refund. */
+  readonly refundId?: number | undefined;
   /**
    * The audit row of a staff action: the demo's verb phrase (`completed order`, `rejected order`, ...). Leave it out for an action
    * that is not a staff write (the merchant's own cancel and verify, jobs).
@@ -109,7 +112,8 @@ function stateOf(order: Order, completedBefore: boolean): OrderState {
  * Side effects (all on the caller's transaction): updates `orders`; inserts `ledger_transactions` and entries; inserts
  * `order_events`; inserts one `outbox_events` row when the status changed and one more when the dispatch job must run; inserts an
  * `audit_logs` row when `audit` is given; whatever the registered completion listeners write (commission accruals) on a completion, a
- * reopen or a refund.
+ * reopen or a refund; and a `notifications` row (and its send event) for a storefront customer whose order was completed or rejected
+ * and refunded.
  *
  * @see docs/decisions/025-order-state-machine.md
  */
@@ -120,6 +124,7 @@ export class OrderTransitions {
     private readonly outbox: OrderOutbox,
     private readonly audit: AuditService,
     private readonly completions: OrderCompletionListeners,
+    private readonly mails: StorefrontMails,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -165,10 +170,13 @@ export class OrderTransitions {
     await this.completions.beforeMove(tx, updated, decision.money);
     // A settlement is numbered by how many completions came before it, and books the supplier cost only once (B17).
     const settling = decision.money === 'complete' || decision.money === 'b2c_deliver';
+    const completions = settling ? await countEventsOfType(tx, order.id, 'completed') : 0;
     const moved = await this.ledger.move(tx, updated, decision.money, {
       actor: ledgerActorOf(request.actor),
-      completedBefore: settling ? await countEventsOfType(tx, order.id, 'completed') : 0,
+      completedBefore: completions,
       costBooked: settling ? await costAlreadyBooked(tx, order.id) : false,
+      refundId: request.refundId,
+      systemDecided: request.actor.type === 'supplier' || request.actor.type === 'system',
     });
     // Feature 11: commissions accrue on a completion and are reversed with a reopen or a refund, in this same transaction.
     await this.completions.afterMove(tx, updated, decision.money, ledgerActorOf(request.actor));
@@ -205,6 +213,16 @@ export class OrderTransitions {
     }
     if (decision.enqueueDispatch) await this.outbox.dispatchRequested(tx, order.id);
 
+    // A storefront customer hears about the end of their order: delivered, or rejected with the money sent back (a refund request that waits
+    // for staff is told when it is approved). The mail is written in this transaction, so it exists only if the transition does.
+    if (updated.clientId === null && updated.customerId !== null && order.status !== updated.status) {
+      if (updated.status === 'completed') {
+        await this.mails.orderCompleted(tx, { orderId: order.id, completions: completions + 1 });
+      } else if (updated.status === 'rejected' && moved.posted) {
+        await this.mails.orderFailed(tx, order.id);
+      }
+    }
+
     if (request.audit !== undefined) await this.record(tx, request.audit, order, updated);
     return { order: updated, applied: true, decision };
   }
@@ -223,6 +241,7 @@ export class OrderTransitions {
       case 'cancel':
         return { resultCode: request.reason ?? null, resultComment: null, completedAt: now };
       case 'refund':
+      case 'refundApproved':
         return { resultCode: request.reason ?? null, resultComment: null, completedAt: now };
       case 'verification':
         return to === 'rejected'

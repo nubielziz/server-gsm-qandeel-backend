@@ -16,6 +16,29 @@ export type { PostTransactionInput, PostedAccount, PostedTransaction } from './a
 export { WalletService } from './application/wallet.service';
 export { ReconcileService, compareLedgerBalances } from './application/reconcile.service';
 export type { ReconcileReport } from './application/reconcile.service';
+export { MoneyAdminModule } from './money-admin.module';
+export { StorefrontPayments } from './application/storefront-payments';
+export type {
+  CapturedSession,
+  RecordedCapture,
+  StartPaymentInput,
+  StartedPayment,
+} from './application/storefront-payments';
+export { OrderReceipts } from './application/order-receipts';
+export { brandLine, paymentFacts, storefrontMismatch } from './domain/b2c-money';
+export { B2cRefunds } from './application/b2c-refunds';
+export type { RefundActor, RefundLeft, RefundPosting } from './application/b2c-refunds';
+export { StorefrontCaptures, StorefrontOrderPorts } from './application/storefront-ports';
+export type {
+  CaptureOutcome,
+  CaptureRequest,
+  PortActor,
+  PortTimelineLine,
+  RefundedOrder,
+  StorefrontCapture,
+  StorefrontOrderPort,
+} from './application/storefront-ports';
+export { REFUND_PROCESS_EVENT, RefundOutbox } from './application/refund-outbox';
 export {
   BASE_CURRENCY,
   CREDIT_NORMAL_KINDS,
@@ -64,12 +87,21 @@ export type { WireRefType } from './domain/ref-types';
 export { PaymentGateways } from './application/payment-gateways';
 export { INVOICE_PAID_EVENT, InvoiceOutbox } from './application/invoice-outbox';
 export { MoneyOutboxModule } from './money-outbox.module';
+export { StorefrontMails } from './application/storefront-mails';
+export { StorefrontMailsModule } from './storefront-mails.module';
 export { PaymentAutoCreditModule, PAYMENT_AUTO_CREDIT_SCHEDULER } from './jobs/payment-auto-credit.module';
 export { PAYMENT_AUTO_CREDIT_JOB } from './jobs/payment-auto-credit.processor';
 export { FxRefreshJobModule, FX_REFRESH_SCHEDULER } from './jobs/fx-refresh.module';
 export { FX_REFRESH_JOB } from './jobs/fx-refresh.processor';
 export { AUTO_CREDIT_BATCH, PaymentAutoCredit } from './jobs/payment-auto-credit';
 export type { AutoCreditSummary } from './jobs/payment-auto-credit';
+export { ReceiptRenderModule } from './jobs/receipt-render.module';
+export { ReceiptRenderProcessor } from './jobs/receipt-render.processor';
+export { RECEIPT_RENDER_EVENT, ReceiptOutbox } from './application/receipt-outbox';
+export type { ReceiptRenderResult } from './application/order-receipts';
+export { RefundProcessModule } from './jobs/refund-process.module';
+export { RefundSender } from './jobs/refund-sender';
+export type { RefundSendResult } from './jobs/refund-sender';
 export { GATEWAY_HTTP_POLICY } from './infra/gateway-drivers/driver';
 export type { GatewayHttpPolicy } from './infra/gateway-drivers/driver';
 export { topupMethodOf } from './domain/gateway-rules';

@@ -62,6 +62,7 @@ const CUSTOMER_SAMPLE = {
   amount: '£14.39',
   service: 'Vodafone UK iPhone Unlock',
   device: 'iPhone 13',
+  reason: 'The code was delivered and works.',
   link: 'https://shop.example.com/sign-in?token=example',
   expiresAt: '2026-11-01 11:00 UTC',
 } as const;
@@ -156,7 +157,7 @@ export const TELEGRAM_UNLINKED_EVENT = 'telegram.unlinked';
 /**
  * The events built into the platform: the merchant events 12a wires now, the four transactional customer account mails of
  * feature 14b (sign-in link, password reset, invitation, email verification), the customer events the console's templates list
- * (their producers are the storefront, support and recovery features), and the two staff events of the alerts (feature 12b).
+ * (their producers are the storefront money flows of feature 16, support and recovery), and the two staff events of the alerts (feature 12b).
  *
  * Why: "a registry entry for each, with its default template seeded" (brief 12a); the customer events exist so the console's
  * Customer emails tab can be edited before the storefront sends them.
@@ -322,6 +323,13 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
     description: 'The customer’s payment was declined.',
     channels: ['email'],
     variables: ['customerName', 'amount'],
+  }),
+  customerEvent({
+    key: 'refund.declined',
+    label: 'Refund declined',
+    description: 'Staff declined a refund request: the customer reads the reason staff gave.',
+    channels: ['email'],
+    variables: ['customerName', 'orderId', 'amount', 'reason'],
   }),
   customerEvent({
     key: 'customer.magic_link',

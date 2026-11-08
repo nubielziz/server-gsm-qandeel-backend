@@ -85,6 +85,35 @@ describe('card driver', () => {
   });
 });
 
+describe('card driver refund events', () => {
+  const refundEvent = (type: string, metadata?: Record<string, string>) => ({
+    id: 'evt_r',
+    type,
+    data: { object: { id: 're_1', failure_reason: 'expired_or_canceled_card', ...(metadata ? { metadata } : {}) } },
+  });
+
+  it('reads the refund id and the send attempt the refund call put in the metadata', () => {
+    expect(cardDriver.parseRefund?.(refundEvent('refund.failed', { refund_id: '7', send_attempt: '2' }))).toMatchObject(
+      { kind: 'failed', gatewayRefundId: 're_1', refundId: 7, sendAttempt: 2 },
+    );
+    expect(
+      cardDriver.parseRefund?.(refundEvent('refund.succeeded', { refund_id: '7', send_attempt: '1' })),
+    ).toMatchObject({ kind: 'succeeded', refundId: 7, sendAttempt: 1 });
+  });
+
+  it('reads no attempt from an event that does not say, or says something that is not one', () => {
+    expect(cardDriver.parseRefund?.(refundEvent('refund.failed'))).toMatchObject({ refundId: null, sendAttempt: null });
+    for (const junk of ['0', '-1', '1.5', 'two', '']) {
+      expect(
+        cardDriver.parseRefund?.(refundEvent('refund.failed', { refund_id: '7', send_attempt: junk })),
+      ).toMatchObject({
+        sendAttempt: null,
+      });
+    }
+    expect(cardDriver.parseRefund?.(refundEvent('refund.updated'))).toBeUndefined();
+  });
+});
+
 describe('crypto driver', () => {
   const body = JSON.stringify({ id: 'evt_c', type: 'invoice.confirmed', data: {} });
 

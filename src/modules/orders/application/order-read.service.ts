@@ -4,12 +4,13 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
-import { DbService } from '../../../infra/db';
+import { type DbExecutor, DbService } from '../../../infra/db';
 import { MerchantWallets } from '../../money';
 import { actorKey, actorNamesOf } from '../infra/foreign-reads.repository';
 import { attemptsOf, eventsOfOrder, findOrder, reviewReasonsOf } from '../infra/order.repository';
 import { type OrderRow, type OrderSort, findOrderRow, listOrderRows } from '../infra/order-read.repository';
 import { statusCountsOf } from '../infra/order-stats.repository';
+import { trackingTokenOfOrder } from '../infra/tracking.repository';
 import {
   MERCHANT_EVENT_TYPES,
   type MerchantEventView,
@@ -55,6 +56,19 @@ export class OrderReadService {
     private readonly wallets: MerchantWallets,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
+
+  /**
+   * Reads the tracking token of a storefront order.
+   *
+   * Why: a paid checkout shows the buyer the link that follows their order (feature 16); the customers module asks here instead of reading `orders`.
+   *
+   * @param db the database or a transaction
+   * @param orderId the order
+   * @returns the token, or `null` for an order that has none
+   */
+  trackingTokenOf(db: DbExecutor, orderId: number): Promise<string | null> {
+    return trackingTokenOfOrder(db, orderId);
+  }
 
   /**
    * Lists a page of orders for staff.

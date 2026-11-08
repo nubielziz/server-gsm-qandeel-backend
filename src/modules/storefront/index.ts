@@ -14,5 +14,6 @@ export { LEGAL_DOCUMENT_TYPES } from './db/schema';
 export type { LegalDocumentType } from './db/schema';
 export { LEGAL_TYPE_LABEL } from './domain/legal';
 export { StorefrontPublicModule } from './storefront-public.module';
+export { StorefrontAdminModule } from './storefront-admin.module';
 export { StorefrontModule } from './storefront.module';
 export { StorefrontContentModule } from './storefront-content.module';

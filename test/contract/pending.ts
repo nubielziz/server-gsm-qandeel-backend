@@ -12,21 +12,8 @@ export const PENDING: readonly string[] = [
   // identity
   // platform
   // money
-  'GET /admin/refunds',
-  'GET /admin/refunds/:id',
-  'POST /admin/refunds/:id/approve',
-  'POST /admin/refunds/:id/decline',
-  'POST /admin/refunds/:id/retry',
-  'GET /admin/disputes',
-  'GET /admin/disputes/:id',
-  'POST /admin/disputes/:id/evidence',
-  'POST /admin/disputes/:id/accept',
-  'GET /admin/reports/vat',
-  'GET /admin/reports/payments',
-  'POST /webhooks/disputes/:gateway',
   // catalog
   // orders
-  'GET /store/v1/orders/:token/receipt',
   // suppliers
   'SUPPLIER accountinfo',
   'SUPPLIER imeiservicelist',
@@ -34,12 +21,10 @@ export const PENDING: readonly string[] = [
   'SUPPLIER getimeiorder+getimeiorderbulk',
   // health
   // customers
-  'POST /store/v1/checkout-sessions/:token/pay',
   'POST /admin/customers/:id/block',
   'GET /admin/customers/:id/export',
   'POST /admin/customers/:id/anonymize',
   // storefront
-  'PATCH /admin/storefront/settings',
   // risk
   'POST /store/v1/me/data-export',
   'POST /store/v1/me/data-delete',

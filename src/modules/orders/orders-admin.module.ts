@@ -5,6 +5,7 @@ import { Global, Module } from '@nestjs/common';
 import { ApiOrdersService } from './application/api-orders.service';
 import { BulkReplyService } from './application/bulk-reply.service';
 import { ClientOrdersService } from './application/client-orders.service';
+import { CustomerOrderPlacement } from './application/customer-placement';
 import { DhruOrders } from './application/dhru-orders';
 import { IdempotencyStore } from './application/idempotency-store';
 import { OrderActionsService } from './application/order-actions.service';
@@ -14,12 +15,15 @@ import { OrderLedger } from './application/order-ledger';
 import { OrderPlacement } from './application/order-placement';
 import { OrderReadService } from './application/order-read.service';
 import { OrderTransitions } from './application/order-transitions';
+import { StorefrontOrderPortImpl } from './application/storefront-order-port';
 import { ClientOrdersController } from './controllers/client-orders.controller';
 import { DhruController } from './controllers/dhru.controller';
 import { OrderActionsController } from './controllers/order-actions.controller';
 import { OrdersController } from './controllers/orders.controller';
 import { OrderCompletionModule } from './order-completion.module';
 import { V1OrdersController } from './controllers/v1-orders.controller';
+import { StorefrontMailsModule } from '../money';
+import { StorefrontPolicies } from '../storefront';
 import { OrdersOutboxModule } from './orders-outbox.module';
 
 /**
@@ -32,12 +36,15 @@ import { OrdersOutboxModule } from './orders-outbox.module';
  */
 @Global()
 @Module({
-  imports: [OrdersOutboxModule, OrderCompletionModule],
+  imports: [OrdersOutboxModule, OrderCompletionModule, StorefrontMailsModule],
   controllers: [OrdersController, OrderActionsController, ClientOrdersController, V1OrdersController, DhruController],
   providers: [
+    StorefrontPolicies,
     OrderLedger,
     OrderTransitions,
+    StorefrontOrderPortImpl,
     OrderPlacement,
+    CustomerOrderPlacement,
     OrderReadService,
     OrderActionsService,
     BulkReplyService,
@@ -48,6 +55,6 @@ import { OrdersOutboxModule } from './orders-outbox.module';
     OrderExportService,
     OrderClientStats,
   ],
-  exports: [OrderPlacement, OrderTransitions, OrderReadService],
+  exports: [OrderPlacement, CustomerOrderPlacement, OrderTransitions, OrderReadService],
 })
 export class OrdersAdminModule {}

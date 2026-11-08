@@ -90,6 +90,7 @@ export const cryptoDriver: PaymentGatewayDriver = {
       amount: amount && /^\d+(\.\d{1,4})?$/.test(amount) ? amount : null,
       currency: currency ? currency.toUpperCase() : null,
       raw: event as PaymentEvent['raw'],
+      details: { coin: textOf(invoice['coin']), network: textOf(invoice['network']) },
     };
   },
 

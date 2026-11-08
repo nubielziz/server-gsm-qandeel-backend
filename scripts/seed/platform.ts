@@ -1,5 +1,6 @@
 // Seeder of the platform module: the settings the frontend demo starts with.
 // Mirrors src/mocks/settings.ts: `adminAllowlistOnly` comes from the demo's `access.restrict`.
+import { and, eq, ne } from 'drizzle-orm';
 import type { AppConfig } from '../../src/config';
 import { EncryptionService, TokenService } from '../../src/infra/crypto';
 import { schema as s, type DbExecutor } from '../../src/infra/db';
@@ -242,7 +243,8 @@ const MERCHANT_LOG: ReadonlyArray<{
  * messages that make their counts, and a log of 48 recent messages to the demo merchants, a seventh of them failed and an eleventh still queued.
  *
  * Why: the demo's merchant templates (low balance, invoices, order results, Telegram) are the defaults migration 0009 ships, so the seed adds only the
- * customer emails the demo knows. The counts the mock shows (112, 86, 6, 41, 17, 0) become real `sent` rows with the demo customers' ids; the customers
+ * customer emails the demo knows and the migrations do not ship (support reply, abandoned checkout); the four storefront order and payment mails are
+ * migration defaults too (feature 16), and the seed only sets their on/off switch to the demo's. The counts the mock shows (112, 86, 6, 41, 17, 0) become real `sent` rows with the demo customers' ids; the customers
  * themselves arrive with feature 14b, so until then the log shows their address as `***`. Every row has a `seed:` dedupe key, so a second run adds nothing.
  *
  * @param db the transaction to write with
@@ -265,6 +267,23 @@ async function seedNotifications(db: DbExecutor, demo: DemoSeed): Promise<SeedRe
       isActive: row.on,
     })),
   );
+
+  // The migrations already ship English defaults for four of the six events (feature 16: order received, completed, failed, payment failed), so
+  // `insertRows` skips those rows; the demo's on/off switch (the payment failed mail is off) still applies to them, as the console's tab shows it.
+  for (const row of notifs) {
+    await db
+      .update(s.notificationTemplates)
+      .set({ isActive: row.on })
+      .where(
+        and(
+          eq(s.notificationTemplates.event, CUSTOMER_TEMPLATES[row.id]!.event),
+          eq(s.notificationTemplates.channel, 'email'),
+          eq(s.notificationTemplates.audience, 'customer'),
+          eq(s.notificationTemplates.locale, 'en'),
+          ne(s.notificationTemplates.isActive, row.on),
+        ),
+      );
+  }
 
   const customers = demoRows<{ id: string; email: string }>(demo, 'customers');
   const merchants = demoRows<{ id: string; name: string }>(demo, 'merchants').slice(0, 9);

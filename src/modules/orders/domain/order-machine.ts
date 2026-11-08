@@ -56,7 +56,9 @@ export type OrderAction =
   /** Risk staff release a held B2C order; `manual` is the placement rule's answer for the order's service. */
   | { readonly kind: 'riskApprove'; readonly manual: boolean }
   /** Risk staff refund a held B2C order. */
-  | { readonly kind: 'riskRefund' };
+  | { readonly kind: 'riskRefund' }
+  /** Staff approved a storefront refund of an order that was not delivered: the order is cancelled and the payment goes back. */
+  | { readonly kind: 'refundApproved' };
 
 /** The refusals the machine can answer, all `409` in the error catalog. */
 export type OrderRefusal =
@@ -312,6 +314,13 @@ export function decideOrderAction(order: OrderState, action: OrderAction): Order
     case 'riskRefund': {
       if (order.dispatchState !== 'held' || !isOpen(order.status)) return refuse('INVALID_TRANSITION');
       return to(order, { status: 'rejected', dispatchState: 'done' }, 'risk', 'b2c_refund');
+    }
+    case 'refundApproved': {
+      // Feature 16: approving a refund of an order that is still open (held, sent, or reopened after a delivery) cancels it. Unlike
+      // `reject` it works on a held order and on one delivered before and reopened, because the refund decision is the refund page's.
+      if (order.channel !== 'b2c') return refuse('INVALID_TRANSITION');
+      if (!isOpen(order.status)) return refuse('ORDER_NOT_OPEN');
+      return to(order, { status: 'rejected', dispatchState: 'done' }, 'rejected', 'b2c_refund');
     }
   }
 }

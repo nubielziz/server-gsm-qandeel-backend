@@ -61,3 +61,22 @@ export const trackStoreOrder = defineRoute({
     },
   },
 });
+
+/** `GET /store/v1/orders/:token/receipt`. */
+export const receiptStoreOrder = defineRoute({
+  key: 'GET /store/v1/orders/:token/receipt',
+  summary: 'Download the tax receipt of an order',
+  description:
+    'The PDF tax receipt of the order the tracking token names: receipt number, order, date paid, the buyer, the tax country, the service ' +
+    "with its net price, the VAT rate and amount, and the total paid, in the buyer's currency (`Content-Disposition: attachment`). The " +
+    'receipt is drawn once, by a background job that runs right after the payment is captured, and stored: every download serves the same ' +
+    'stored file. A download that comes before the job has stored it draws and stores it, once. `404` for an unknown, malformed or wrong ' +
+    'token, or an order with no receipt. `503` (`UNAVAILABLE`) when the stored copy is missing and could not be made (the file storage ' +
+    'is down): try the download again. Lookups are limited to 30 a minute per address. Never cached.',
+  tags: ['storefront'],
+  surface: 'store',
+  access: 'tracking-token',
+  params: z.object({ token: z.string().min(16).max(128).describe('The tracking token.') }),
+  success: { status: 200, contentType: 'application/pdf' },
+  errors: ['NOT_FOUND', 'UNAVAILABLE'],
+});

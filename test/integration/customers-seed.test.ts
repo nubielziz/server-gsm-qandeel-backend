@@ -92,7 +92,8 @@ describe.skipIf(!frontendPresent)('the customers seed', () => {
     expect(list.total).toBe((await db.select({ id: s.customers.id }).from(s.customers)).length);
     const named = list.body.filter((row: { name: string }) => row.name !== '');
     expect(named).toHaveLength(30);
-    expect(named.at(-1)).toMatchObject({ name: 'Ana Costa', currencyCode: 'EUR', ordersCount: 0 });
+    // The storefront money seeder (feature 16) runs after this one and gives the demo's customers their orders: Ana Costa has two.
+    expect(named.at(-1)).toMatchObject({ name: 'Ana Costa', currencyCode: 'EUR', ordersCount: 2 });
     const blocked = await staff.get('/admin/customers?status=blocked');
     expect(blocked.total).toBe(1);
     expect(blocked.body[0]).toMatchObject({ riskLevel: 'high', status: 'blocked' });

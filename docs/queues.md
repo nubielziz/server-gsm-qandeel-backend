@@ -159,6 +159,10 @@ Sends emails and Telegram messages.
     and sends the mail (`<STORE_BASE_URL>/sign-in`, `/set-password` or `/verify-email` with `?token=`) through `NotificationService.sendNow`
     with the clear link as a secret that is never stored or logged. One `notifications` row per mail (`outbox-<event id>:email`, with its
     attempts); a repeat after a delivered mail is skipped before it can spoil the link that arrived.
+  - The storefront money mails (feature 16, `StorefrontMails` in the money module) have no job of their own: `order.received` (the capture), `order.completed` and `order.failed` (the order
+    transition, or the approval of a refund request for an order the system rejected), `payment.failed` (the gateway's failure event) and `refund.declined` (the decline) are written with
+    `NotificationService.enqueue` in the transaction of the change they report, so each is a `notifications` row (dedupe key `order.received:<order>`, `order.completed:<order>:<n>`,
+    `order.failed:<order>`, `payment.failed:<payment>`, `refund.declined:<refund>`) plus a `notification.send` event that commits and rolls back with the change.
   - `support.ticket_mail` (support, `src/modules/support/jobs/ticket-mail.processor.ts`, feature 17): sends a support ticket's receipt, a staff reply (email, or Telegram to a merchant's
     linked chat) or the satisfaction survey. It re-reads the ticket, the requester and the message, builds the ticket link from the ticket token and sends it through
     `NotificationService.sendNow` with the link as a secret that is never stored or logged (the `notifications` row has the other variables).
@@ -220,18 +224,29 @@ Runs bulk imports (service lists, inventory codes) started by staff.
 Processes uploaded and generated files (exports, result files).
 
 - **Concurrency:** 4 per worker process.
-- **Jobs:** none yet. Built by the orders and platform features: `export` for CSV exports and result-file handling.
-- **Payload:** none yet (file id).
-- **Idempotency:** none yet. Rule: job id `file-<file id>`; the output is written under a key derived from the file id.
+- **Jobs:** `receipt.render` (money module, below). Built by the orders and platform features: `export` for CSV exports and result-file handling.
+- **Payload:** `{ invoiceId }` for `receipt.render` (aggregate: `invoices`); the others none yet (file id).
+- **Idempotency:** `receipt.render`: the job id is `outbox-<event id>`, the invoice row is locked and `pdf_file_id` re-read under the lock, so a repeat (or a download that made the copy first) stores nothing twice. Rule for the others: job id `file-<file id>`; the output is written under a key derived from the file id.
 - **Retry policy:** 3 attempts, exponential backoff from 10 s (jitter 50 %).
 - **Schedule:** none (event-driven).
+
+### `receipt.render` (money module)
+
+Draws the PDF tax receipt of a paid storefront order and stores it (`GET /store/v1/orders/:token/receipt`, RESOLUTIONS money-7, decision 030).
+
+- **Trigger:** the outbox event `receipt.render`, written in the capture's transaction together with the receipt invoice (`StorefrontPayments.recordCapture`), so the gateway's webhook is answered as soon as the capture commits and never waits for the render or the upload. A duplicate payment for an already paid checkout issues no receipt and writes no event: an order has one paid receipt. The processor is `ReceiptRenderProcessor` (`src/modules/money/jobs/`), loaded by the worker through `ReceiptRenderModule`.
+- **Payload:** `{ invoiceId }` (aggregate: `invoices`). The job re-reads the invoice, the order, the customer and the payment.
+- **What it does:** under the invoice's row lock, draws the PDF from the invoice's own numbers and stores it in `files` (owned by the customer), then sets `invoices.pdf_file_id`. An invoice that is gone or has no customer is skipped.
+- **Idempotency:** see the `files` queue above. The download route keeps its fallback: if the job has not stored the copy yet (or failed every attempt), the first download makes it, under the same lock, once; `503 UNAVAILABLE` when the storage is down.
+- **Retry policy:** the `files` queue's (3 attempts, backoff from 10 s). A storage failure is thrown so the queue retries; a payload without an invoice id is an `UnrecoverableError`.
+- **Not recorded in `job_runs`:** event-driven; the invoice's `pdf_file_id` is the record.
 
 ## maintenance
 
 Scheduled housekeeping: group promotion, data retention, integrity checks, FX refresh.
 
 - **Concurrency:** 2 per worker process.
-- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly (money module, below), `checkout_recovery_sweep`, every 5 minutes (customers module, below), `service_price_scan`, event-driven (catalog module, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below). The others are built by their features, each
+- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly, and `refund.process`, event-driven (money module, below), `checkout_recovery_sweep`, every 5 minutes (customers module, below), `service_price_scan`, event-driven (catalog module, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below). The others are built by their features, each
   registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
   `ledger_integrity` (12b, nightly 02:30 UTC, below), `data_retention` (nightly
   03:00 UTC), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). The names are the
@@ -300,6 +315,17 @@ Credits the wallet of confirmed top-ups of automatic gateways by themselves (use
 - **What it does, per payment:** asks the gateway's API again through the driver (no row lock is held across the call); then, under `SELECT ... FOR UPDATE` on the payment, re-checks that it is still pending and not flagged and (a) credits it (`deposit` from `gateway_clearing`, key `deposit:payment:<id>`, invoice paid, `invoice.paid` outbox row, audit `credited deposit of` by the system) when the gateway still says confirmed (a crypto gateway only after its required confirmations), (b) sets `review_required` with the reason (audit `sent deposit to review`) when the gateway no longer confirms, the invoice is no longer payable or the payment stayed unconfirmed for 24 hours, or (c) moves `auto_credit_at` 5 minutes ahead while the gateway has not confirmed yet or cannot be reached.
 - **Idempotency:** the payment row lock plus the unique ledger key make a double credit impossible, whether two ticks overlap or a staff decision races the job (the loser changes nothing; staff get `PAYMENT_ALREADY_REVIEWED`). A failure of one payment never stops the others; it stays due for the next tick.
 - **Recorded in `job_runs`** (job `payment_auto_credit`, `processed` = payments credited, `result` = the counts) only for a tick that had payments due and for every manual run: a run every minute with nothing due would bury the jobs list (like the outbox tick, decision 020). Retry policy: the queue's (3 attempts, backoff from 1 min); the next minute's tick is the real retry.
+
+### `refund.process` (money module)
+
+Sends an approved storefront refund to its payment gateway (scenario b2c-refund step 6, RESOLUTIONS money-11, user rule 7).
+
+- **Trigger:** the outbox event `refund.process`, written by `POST /admin/refunds/:id/approve` (when the money goes back through the gateway), by `POST /admin/refunds/:id/retry`, and by the system when it refunds a paid order it rejected or a payment that arrived twice for one checkout. The job id is `outbox-<event id>`. A refund paid out by hand (crypto, a gateway that cannot refund) writes no event: it completes at once.
+- **Payload:** `{ refundId }` (aggregate: `refunds`). The job re-reads the refund, its payment and its gateway.
+- **What it does:** skips a refund that is no longer `processing` or is paid by hand; otherwise calls the gateway's refund API through the driver (outside any database transaction) with the idempotency key `refund-<id>` (`refund-<id>-<n>` once the gateway has refused the refund for good, `n` = `refunds.send_attempt`) and the refund id and the send attempt as metadata (a late `refund.failed` of an earlier attempt is ignored, so it cannot fail the retry that replaced it). `succeeded` completes the refund (the payment becomes `partial_refund` or `refunded`, the order timeline says so); `failed` fails it with the gateway's text; `pending` stores the gateway's refund id and waits for the signed `refund.succeeded` or `refund.failed` event (`POST /webhooks/payments/:gateway`, which settles it by the same guarded step). The ledger journal is not posted here: it was posted at approval (once, key `refund:<id>`, or `order:<id>:refund`), so no run and no retry moves money.
+- **Idempotency:** only a `processing` refund moves (guarded `UPDATE ... WHERE status = 'processing'` under the refund's row lock), the gateway call carries a stable key, and the ledger is untouched, so a stalled job, a retry and a staff retry cannot refund twice. The key moves on only when the gateway refused the refund for good (a 4xx answer other than 408, 409, 425 and 429; a refund object that comes back `failed`; the signed `refund.failed` event): the same key would only replay the refusal. After an answer that is not known (a timeout, a network error, a 5xx) the key stays, so a refund the gateway may already have made is never made twice.
+- **Retry policy:** the `maintenance` queue's (3 attempts, exponential backoff from 1 min, jitter 50 %). An error of the call whose outcome is not known (a timeout, a 5xx) is rethrown so the queue retries it with the same key; on the last attempt the refund is set to `failed` with that error and staff retry it from the console (`POST /admin/refunds/:id/retry`, which queues a new event, same key). A permanent refusal (4xx) fails the refund at once and ends the job with an `UnrecoverableError` (no queue retries); the staff retry then sends under the new key.
+- **Not recorded in `job_runs`:** event-driven, like the supplier dispatch; the refund row is the record.
 
 ### `checkout_recovery_sweep` (customers module)
 
@@ -429,6 +455,8 @@ none); the job id is `outbox-<event id>`.
 | `service.price_changed` | `merchant-webhooks`, `notifications` | `service.price_changed` / `notification.plan` | `clientId`, `serviceId`, `previousPrice`, `price`, `currency` (aggregate: `services`) | platform (both routes), written by the catalog's price change scan |
 | `order.dispatch_requested` | `supplier-dispatch` | `order.dispatch_requested` | `orderId` (aggregate: `orders`) | orders (`OrderOutbox`), written by placement of an automatic order with an active supplier link (and by a staff dispatch, feature 6). No processor yet: the dispatch job is feature 6 |
 | `invoice.paid` | `merchant-webhooks` | `invoice.paid` | `invoiceId`, `clientId` (aggregate: `invoices`) | money (`InvoiceOutbox`, loaded by the API and the worker), written by every credit of a top-up: a staff approval (`POST /admin/payments/:id/approve`) and the automatic credit job. The fan-out re-reads the invoice (7b) |
+| `receipt.render` | `files` | `receipt.render` | `invoiceId` (aggregate: `invoices`) | money (`ReceiptOutbox`, loaded by the API and the worker), written by the capture of a storefront payment together with the receipt invoice. The processor is `ReceiptRenderProcessor` (`src/modules/money/jobs/`) |
+| `refund.process` | `maintenance` | `refund.process` | `refundId` (aggregate: `refunds`) | money (`RefundOutbox`, loaded by the API and the worker), written by the approval and the retry of a storefront refund and by the system's automatic refunds. The processor is `RefundProcessProcessor` (`src/modules/money/jobs/`) |
 
 `invoice.paid` (feature 8) routes to `merchant-webhooks` (`InvoiceOutbox`) and to `notifications` (`notification.plan`, registered by the platform's `NotificationRoutes` since the 12a merge): every credited top-up tells the merchant once. `deposit.approved` has a registry entry and default templates but no producer: a credited top-up already writes `invoice.paid`, and emitting both would send two messages per top-up (B-entry of 12a). A test app plans a job directly through `test/support/notifications.ts` (`eventJob`).
 

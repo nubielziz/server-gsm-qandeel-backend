@@ -117,3 +117,20 @@ export async function findSessionByToken(
 export async function setSessionCustomer(db: DbExecutor, id: number, customerId: number, now: Date): Promise<void> {
   await db.update(checkoutSessions).set({ customerId, updatedAt: now }).where(eq(checkoutSessions.id, id));
 }
+
+/**
+ * Marks a checkout session paid and links the order it created.
+ *
+ * Why: scenario b2c-paid step 7: in the capture's transaction the session becomes `paid` with its `order_id`; an expired session that was
+ * paid late is `paid` too (the buyer paid the locked price).
+ *
+ * Side effects: updates the `checkout_sessions` row.
+ *
+ * @param db the capture's transaction (the session row is locked)
+ * @param id the session
+ * @param orderId the order the payment created
+ * @param now the clock's time
+ */
+export async function markSessionPaid(db: DbExecutor, id: number, orderId: number, now: Date): Promise<void> {
+  await db.update(checkoutSessions).set({ status: 'paid', orderId, updatedAt: now }).where(eq(checkoutSessions.id, id));
+}

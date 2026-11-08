@@ -1,11 +1,21 @@
 // The order engine's transition services without any route: what the supplier jobs of the worker (and the suppliers module's use
 // cases) need to move an order, built from plain providers so the worker can load it (it never loads the API's route modules).
 import { Module } from '@nestjs/common';
-import { LedgerPoster, OrderSettlements, WalletLowBalanceWatch } from '../money';
+import {
+  B2cRefunds,
+  LedgerPoster,
+  MoneyOutboxModule,
+  OrderSettlements,
+  StorefrontMailsModule,
+  StorefrontOrderPorts,
+  WalletLowBalanceWatch,
+} from '../money';
 import { AuditService } from '../platform';
 import { OrderLedger } from './application/order-ledger';
 import { OrderSupplierMoves } from './application/order-supplier-moves';
+import { StorefrontOrderPortImpl } from './application/storefront-order-port';
 import { OrderTransitions } from './application/order-transitions';
+import { StorefrontPolicies } from '../storefront';
 import { OrderCompletionModule } from './order-completion.module';
 import { OrdersOutboxModule } from './orders-outbox.module';
 
@@ -18,12 +28,16 @@ import { OrdersOutboxModule } from './orders-outbox.module';
  * and orders modules, simply gets a second copy.
  */
 @Module({
-  imports: [OrdersOutboxModule, OrderCompletionModule],
+  imports: [OrdersOutboxModule, MoneyOutboxModule, OrderCompletionModule, StorefrontMailsModule],
   providers: [
     LedgerPoster,
+    B2cRefunds,
+    StorefrontOrderPorts,
+    StorefrontOrderPortImpl,
     WalletLowBalanceWatch,
     OrderSettlements,
     AuditService,
+    StorefrontPolicies,
     OrderLedger,
     OrderTransitions,
     OrderSupplierMoves,

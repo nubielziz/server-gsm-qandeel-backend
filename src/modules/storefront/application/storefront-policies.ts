@@ -14,6 +14,9 @@ export interface StorefrontPolicySwitches {
   readonly imeiPrecheck: boolean;
 }
 
+/** `autoRefundFailed` is on until staff turn it off (the console's hint: "refunded without waiting for a person"). */
+export const DEFAULT_AUTO_REFUND_FAILED = true;
+
 /** Every switch is on until staff turn it off (the demo's defaults). */
 export const DEFAULT_POLICY_SWITCHES: StorefrontPolicySwitches = {
   guestCheckout: true,
@@ -50,5 +53,20 @@ export class StorefrontPolicies {
       withdrawalWaiver: await read('withdrawalWaiver'),
       imeiPrecheck: await read('imeiPrecheck'),
     };
+  }
+
+  /**
+   * Reads `autoRefundFailed`: whether a storefront order the system rejects (a supplier's rejection) is refunded by the system.
+   *
+   * Why: RULES settings 5: on means the money goes back without waiting for a person; off means the rejection opens a refund request that
+   * staff approve. It is read apart from {@link switches} because only the order engine needs it, at the moment of a rejection.
+   * Like the others it is on until staff turn it off, and anything but `true` or `false` in the row means on.
+   *
+   * @param db the database or a transaction to read with
+   * @returns false only when staff switched it off
+   */
+  async autoRefundFailed(db: DbExecutor): Promise<boolean> {
+    const value = await this.settings.get('autoRefundFailed', db);
+    return typeof value === 'boolean' ? value : DEFAULT_AUTO_REFUND_FAILED;
   }
 }

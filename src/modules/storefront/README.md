@@ -11,7 +11,8 @@ Decisions that shape this module: 022 caching, 034 Turnstile. Common to all modu
 Built: the public catalog (feature 14a, storefront-checkout: 3 of the 6 storefront routes `GET /store/v1/config`,
 `GET /store/v1/services`, `GET /store/v1/services/:slug`) and the admin and content parts (feature 15: the admin routes of the
 listings, content pages, help articles and legal documents and the three public content routes, 20 routes), with the one demo seed
-(`scripts/seed/storefront.ts`), and the page generator (feature 19: `POST /admin/content-pages/generate`). `PATCH /admin/storefront/settings` (16) is not built.
+(`scripts/seed/storefront.ts`), and the page generator (feature 19: `POST /admin/content-pages/generate`). Feature 16 built
+`PATCH /admin/storefront/settings` (below).
 
 Layout: `contracts/` (one file per route group, `shared.ts` for the field schemas), `controllers/` (thin), `application/` (one
 service per group, `storefront-catalog.service.ts`, `storefront-quotes.ts`, `storefront-policies.ts`, `legal-documents.ts`,
@@ -60,6 +61,13 @@ tables).
   `currentWithBody` is the version in force in exactly one language with its text (the public page route, 404 otherwise); `find`
   reads a version by id; `listCurrent` feeds the storefront config. The console's Legal page publishes into the same
   `is_current` flag, so a consent always references the version the console shows as current.
+
+- **Policies** (feature 16, `PATCH /admin/storefront/settings`, permission `settings:storefront`): `StorefrontSettingsService` writes the eight policy keys of the console's Policies tab as flat keys of the settings table: the switches `guestCheckout`, `require3ds`,
+  `withdrawalWaiver`, `autoRefundFailed`, `imeiPrecheck` (JSON booleans) and the numbers `refundHoursBeforeDispatch` (0 to 72), `abandonedMinutes` (5 to 1440), `imeiRetentionDays` (0 to 3650, the same check as `PATCH /admin/settings`). Any other key or a value that does not fit is
+  `422` on that key (`This is not a storefront setting.`), and one bad key writes none. Every changed key writes its own audit row in the demo's words (`turned on policy`, `turned off policy`, `changed policy`, entity type `setting`, the row label as `entityLabel`);
+  an unchanged value writes nothing. The answer is the policies that have a value after the change, the same ones `GET /admin/settings` shows; the settings snapshot is cleared after the commit. The checkout reads `guestCheckout`, `withdrawalWaiver` and `imeiPrecheck`
+  through `StorefrontPolicies`, and `POST .../pay` reads `require3ds`, so a change reaches them at once. **A `require3ds` change should also flip the risk rule of that name: that rule belongs to the risk feature (18) and plugs in right after the write in `StorefrontSettingsService.update`.**
+  `StorefrontPolicies.autoRefundFailed` reads `autoRefundFailed` for the order engine (a supplier-rejected storefront order is refunded by the system while it is on, which is the default; off, the rejection opens a refund request for staff). The other policy keys (`refundHoursBeforeDispatch`, `abandonedMinutes`) are stored here and read by the features that use them (the self-cancel window, the abandoned-checkout reminder).
 
 ## Public API (`index.ts`)
 

@@ -26,7 +26,7 @@ import {
   timestampTz,
   updatedAt,
 } from '../../../infra/db/columns';
-import { customers } from '../../customers/db/schema';
+import { checkoutSessions, customers } from '../../customers/db/schema';
 import { clients, staffUsers } from '../../identity/db/schema';
 import { orders } from '../../orders/db/schema';
 import { files } from '../../platform/db/schema';
@@ -545,6 +545,14 @@ export const payments = pgTable(
     reviewedAt: timestampTz(),
     /** schema addition B116 */
     reviewNote: text(),
+    /** the storefront checkout this order payment pays; null for a top-up (feature 16) */
+    checkoutSessionId: fk((): AnyPgColumn => checkoutSessions.id),
+    /** the `Idempotency-Key` of the `/pay` call that opened this payment: a retry with it finds the payment (feature 16) */
+    idempotencyKey: text(),
+    /** where the customer pays: the hosted page the gateway opened for a pending order payment; null otherwise (feature 16) */
+    checkoutUrl: text(),
+    /** what the `/pay` call asked for (gateway and return address), kept apart from `raw` so capture and failure never overwrite it: the same key with another request is refused (feature 16) */
+    requestFingerprint: text(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -579,6 +587,10 @@ export const payments = pgTable(
     index('payments_card_fingerprint_idx')
       .on(t.cardFingerprint)
       .where(sql`${t.cardFingerprint} is not null`),
+    index('payments_checkout_session_id_idx').on(t.checkoutSessionId),
+    uniqueIndex('payments_session_key_uq')
+      .on(t.checkoutSessionId, t.idempotencyKey)
+      .where(sql`${t.idempotencyKey} is not null`),
   ],
 );
 
@@ -653,10 +665,17 @@ export const refunds = pgTable(
     completedAt: timestampTz(),
     /** schema addition B116 */
     note: text().notNull().default(''),
+    /**
+     * Schema addition (feature 16): which gateway idempotency key the next send uses. 1 is `refund-<id>`, n is `refund-<id>-<n>`. It grows when
+     * the gateway refused the refund for good (a 4xx answer, a failed refund object), because the same key would only replay that refusal;
+     * it stays when the answer is unknown (a timeout, a 5xx), because the gateway may have made the refund and the same key stops a second one.
+     */
+    sendAttempt: integer().notNull().default(1),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
+    check('refunds_send_attempt_check', sql`${t.sendAttempt} >= 1`),
     check('refunds_status_check', inList(t.status, REFUND_STATUSES)),
     check('refunds_method_check', inList(t.method, REFUND_METHODS)),
     // A storefront refund always points at its payment and order (RESOLUTIONS money-12).

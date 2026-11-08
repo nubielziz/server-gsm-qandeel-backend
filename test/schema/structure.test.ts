@@ -85,10 +85,24 @@ const ADDITIONS: Record<string, string[]> = {
     'password_changed_at',
   ],
   staff_users: ['totp_last_step'],
-  payments: ['reviewed_at', 'review_note', 'review_required', 'auto_credit_at', 'brand', 'card_fingerprint'],
+  payments: [
+    'reviewed_at',
+    'review_note',
+    'review_required',
+    'auto_credit_at',
+    'brand',
+    'card_fingerprint',
+    // Feature 16 (storefront payments, migrations 0011 and 0012): the checkout it pays, its Idempotency-Key, the hosted page, and the
+    // fingerprint of the /pay request the key belongs to.
+    'checkout_session_id',
+    'idempotency_key',
+    'checkout_url',
+    'request_fingerprint',
+  ],
   invoices: ['description', 'checkout_url'],
   kyc_submissions: ['submitted_note'],
-  refunds: ['note'],
+  // Feature 16 (migration 0014): which idempotency key the next gateway send of the refund uses.
+  refunds: ['note', 'send_attempt'],
   data_requests: ['note'],
   notifications: ['error', 'attempts', 'dedupe_key'],
   support_tickets: ['token', 'survey_sent_at'],

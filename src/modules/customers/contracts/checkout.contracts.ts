@@ -82,6 +82,13 @@ export const CheckoutSessionSchema = z.object({
     complete: z.boolean(),
   }),
   paymentMethods: z.array(z.object({ code: z.string(), name: z.string(), supports3ds: z.boolean() })),
+  trackingToken: z
+    .string()
+    .nullable()
+    .describe(
+      'The tracking token of the order this payment created (`GET /store/v1/orders/:token`); null until the checkout is paid. The holder of the ' +
+        'checkout token is the buyer, so the shop can send them to their order without an account.',
+    ),
 });
 
 const SESSION_EXAMPLE = {
@@ -103,6 +110,7 @@ const SESSION_EXAMPLE = {
   },
   consent: { required: ['terms', 'privacy', 'withdrawal_waiver'], granted: [], complete: false },
   paymentMethods: [{ code: 'card', name: 'Card gateway', supports3ds: true }],
+  trackingToken: null,
 } as const;
 
 const TOKEN_PARAMS = z.object({ token: z.string().min(16).max(128).describe('The checkout token.') });

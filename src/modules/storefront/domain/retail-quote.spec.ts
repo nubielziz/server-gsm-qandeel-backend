@@ -19,6 +19,14 @@ describe('retailNet', () => {
   it('keeps a price exactly at the floor', () => {
     expect(retailNet(m('19.01'), m('19.01')).toWire()).toBe('19.0100');
   });
+
+  it('rounds a price with more than two decimals up to the next cent, never down (B169)', () => {
+    // A floor-clamped price: effective cost 4.2831 plus a minimum profit of 0.50 is 4.7831 -> 4.79, not 4.78.
+    expect(retailNet(m('4.7831'), m('4.7831')).toWire()).toBe('4.7900');
+    expect(retailNet(m('3.00'), m('4.7831')).toWire()).toBe('4.7900');
+    expect(retailNet(m('5.0001'), m('4.00')).toWire()).toBe('5.0100');
+    expect(retailNet(m('5.0000'), m('4.00')).toWire()).toBe('5.0000');
+  });
 });
 
 describe('taxOn', () => {

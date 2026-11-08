@@ -2,9 +2,10 @@
 // and record it, read the metadata of files by id, and check which of them a merchant owns. The upload routes are 7a's.
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
+import { AppError } from '../../../common/errors';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
-import { StorageService } from '../../../infra/storage';
+import { DEFAULT_MAX_OBJECT_BYTES, StorageService } from '../../../infra/storage';
 import { type StoredFile, files } from '../db/schema';
 
 /**
@@ -86,6 +87,32 @@ export class StoredFiles {
       })
       .returning();
     return metaOf(row!);
+  }
+
+  /**
+   * Reads a stored file's bytes.
+   *
+   * Why: a generated document that is made once and kept (the storefront tax receipt, decision 030) is served from its stored copy, so every
+   * download gives the same bytes.
+   *
+   * @param db the database or a transaction
+   * @param id the file id
+   * @returns the metadata and the bytes, or `undefined` when the row or its object is missing
+   * @throws {AppError} `UNAVAILABLE` when the object store cannot be reached; `PAYLOAD_TOO_LARGE` for an object over the default limit
+   */
+  async read(db: DbExecutor, id: number): Promise<{ meta: FileMeta; bytes: Uint8Array } | undefined> {
+    const [row] = await db.select().from(files).where(eq(files.id, id)).limit(1);
+    if (!row) return undefined;
+    if (row.size > DEFAULT_MAX_OBJECT_BYTES) {
+      throw new AppError('PAYLOAD_TOO_LARGE', { detail: `The file is larger than ${DEFAULT_MAX_OBJECT_BYTES} bytes.` });
+    }
+    const object = await this.storage.get(row.key);
+    if (!object) return undefined;
+    const chunks: Buffer[] = [];
+    for await (const chunk of object.body as AsyncIterable<Uint8Array | string>) {
+      chunks.push(typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : Buffer.from(chunk));
+    }
+    return { meta: metaOf(row), bytes: Buffer.concat(chunks) };
   }
 
   /**

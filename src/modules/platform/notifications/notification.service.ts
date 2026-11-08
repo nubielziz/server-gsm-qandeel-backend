@@ -100,12 +100,12 @@ export class NotificationService {
   /**
    * Writes a notification and the event that sends it, in the caller's transaction.
    *
-   * @param work the caller's transaction (`runInTransaction`)
+   * @param work the caller's transaction (`runInTransaction`; a use case that holds the transaction as a `DbExecutor` passes it as `{ tx }`)
    * @param input the event, recipient, channel and variables
    * @returns the row id (and whether this call made it), or why nothing was made
    * @throws {RangeError} when the event is not registered for the recipient's audience, or the event has no such channel (a programming error)
    */
-  async enqueue(work: Pick<TransactionContext, 'tx'>, input: NotificationInput): Promise<EnqueueResult> {
+  async enqueue(work: { readonly tx: DbExecutor }, input: NotificationInput): Promise<EnqueueResult> {
     const checked = await this.check(work.tx, input);
     if ('skipped' in checked) return { status: 'skipped', reason: checked.skipped };
     const now = this.clock.now();

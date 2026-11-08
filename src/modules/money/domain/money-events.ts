@@ -288,18 +288,20 @@ export function b2cDeliver(input: { net: Money; cost?: Money; supplierId?: numbe
 }
 
 /**
- * Event `b2c_refund`: a storefront order is refunded before delivery, in full.
+ * Event `b2c_refund`: a storefront order is refunded; before delivery the whole payment goes back, after delivery the revenue does.
  *
- * Why: the map's "استرداد قبل التسليم": the whole 14.99 goes back to the card.
+ * Why: the map's "استرداد قبل التسليم": the whole 14.99 goes back to the card. RESOLUTIONS money-11 and the endpoint doc of
+ * `POST /admin/refunds/:id/approve`: a delivered order is reversed from `revenue` (the supplier cost is never recovered), an
+ * undelivered one from `customer_funds`; the VAT share leaves `vat_payable` either way.
  *
- * @param input the net amount and the VAT paid
- * @returns Dr customer_funds net / Dr vat_payable vat / Cr gateway_clearing net + vat; reference type `order`
+ * @param input the net amount and the VAT paid back, and where the net comes from (`customer_funds` unless the order was delivered)
+ * @returns Dr customer_funds (or revenue) net / Dr vat_payable vat / Cr gateway_clearing net + vat; reference type `order`
  */
-export function b2cRefund(input: { net: Money; vat: Money }): MoneyEventPosting {
+export function b2cRefund(input: { net: Money; vat: Money; from?: 'customer_funds' | 'revenue' }): MoneyEventPosting {
   return posting(
     'b2c_refund',
     'order',
-    debitLine(SYSTEM('customer_funds'), input.net),
+    debitLine(SYSTEM(input.from ?? 'customer_funds'), input.net),
     debitLine(SYSTEM('vat_payable'), input.vat),
     creditLine(SYSTEM('gateway_clearing'), input.net.add(input.vat)),
   );

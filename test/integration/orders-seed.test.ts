@@ -39,10 +39,12 @@ afterAll(async () => {
 });
 
 describe.skipIf(!frontendPresent)('the orders seed', () => {
-  it("writes the demo's 760 merchant orders by their demo ids and leaves the storefront orders for 14b and 16", async () => {
+  it("writes the demo's 760 merchant orders by their demo ids (the 104 storefront orders are the storefront money seed's, feature 16)", async () => {
     const { db } = await testDb();
-    const rows = await db.select().from(s.orders).orderBy(s.orders.id);
+    const all = await db.select().from(s.orders).orderBy(s.orders.id);
+    const rows = all.filter((row) => row.clientId !== null);
     expect(rows).toHaveLength(760);
+    expect(all).toHaveLength(864);
     expect(rows.map((row) => row.id)).toEqual([...new Set(rows.map((row) => row.id))].sort((a, b) => a - b));
     expect(rows.find((row) => row.id === 48100)).toMatchObject({
       clientId: 3,
@@ -66,7 +68,7 @@ describe.skipIf(!frontendPresent)('the orders seed', () => {
     expect(rows.every((row) => row.clientId !== null && row.customerId === null)).toBe(true);
     expect(rows.every((row) => row.placedAt.getTime() === row.createdAt.getTime())).toBe(true);
     const counts = await db.execute<{ status: string; n: number }>(
-      sql`select status, count(*)::int as n from orders group by 1 order by 1`,
+      sql`select status, count(*)::int as n from orders where client_id is not null group by 1 order by 1`,
     );
     expect(counts.rows).toEqual([
       { status: 'completed', n: 680 },
@@ -81,8 +83,9 @@ describe.skipIf(!frontendPresent)('the orders seed', () => {
     expect(await queue('manual')).toBe(1);
     expect(await queue('verification')).toBe(2);
     expect(await queue('needs_attention')).toBe(8);
-    expect(await queue('pending')).toBe(5);
-    expect(await queue('review')).toBe(0);
+    // Five merchant orders and one storefront order wait in the queue; the four storefront orders the risk rules hold are in review.
+    expect(await queue('pending')).toBe(6);
+    expect(await queue('review')).toBe(4);
     const manual = (await staff.get('/admin/orders?queue=manual')).body[0];
     expect(manual).toMatchObject({
       status: 'pending',

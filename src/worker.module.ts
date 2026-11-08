@@ -1,6 +1,6 @@
 // Root module of the worker process (decision 016): config, the clock (decision 031), logging, metrics, the infrastructure (database, Redis, cache,
 // rate limits, crypto, storage, outbound HTTP), the queue workers and schedulers, the outbox relay, job runs, the IP rule
-// hit flush, the ended-session purge, the nightly merchant group promotion, the merchant mail jobs (verification, reset and invitation links), the automatic credit of top-ups (`payment_auto_credit`, with the `invoice.paid` outbox route), the order outbox routes (`order.status_changed` to the merchant webhook deliveries, `order.dispatch_requested` to the supplier dispatch job), the merchant webhook deliveries, the notifications (event routes, planning and sending processors, feature 12a), the customer mail jobs (sign-in, reset, invitation and verification links, feature 14b), the hourly exchange-rate refresh (`fx_refresh`), the price change scan, the supplier jobs (dispatch, poll, sync), the health jobs (component checks, purge, reaper, size sample), the commission engine (it accrues commissions when a supplier's result completes an order), the support ticket mails (receipt, reply, survey), the abandoned checkout recovery (the recovery mail and the 5-minute sweep) and the metrics listener. Domain modules add their processors and schedules here as their features are built.
+// hit flush, the ended-session purge, the nightly merchant group promotion, the merchant mail jobs (verification, reset and invitation links), the automatic credit of top-ups (`payment_auto_credit`, with the `invoice.paid` outbox route), the order outbox routes (`order.status_changed` to the merchant webhook deliveries, `order.dispatch_requested` to the supplier dispatch job), the merchant webhook deliveries, the notifications (event routes, planning and sending processors, feature 12a), the customer mail jobs (sign-in, reset, invitation and verification links, feature 14b), the hourly exchange-rate refresh (`fx_refresh`), the storefront refunds sent to their gateways (`refund.process`), the storefront receipts drawn and stored (`receipt.render`), the price change scan, the supplier jobs (dispatch, poll, sync), the health jobs (component checks, purge, reaper, size sample), the commission engine (it accrues commissions when a supplier's result completes an order), the support ticket mails (receipt, reply, survey), the abandoned checkout recovery (the recovery mail and the 5-minute sweep) and the metrics listener. Domain modules add their processors and schedules here as their features are built.
 import { Module } from '@nestjs/common';
 import { ClockModule } from './common/clock.module';
 import { ConfigModule } from './config';
@@ -24,7 +24,7 @@ import {
   MerchantMailModule,
   SessionPurgeModule,
 } from './modules/identity';
-import { FxRefreshJobModule, PaymentAutoCreditModule } from './modules/money';
+import { FxRefreshJobModule, PaymentAutoCreditModule, ReceiptRenderModule, RefundProcessModule } from './modules/money';
 import { OrdersOutboxModule } from './modules/orders';
 import {
   MailHealthProbeModule,
@@ -74,6 +74,8 @@ import { SupportEventsModule, SupportMailModule } from './modules/support';
     PriceChangeScanModule,
     PaymentAutoCreditModule,
     FxRefreshJobModule,
+    RefundProcessModule,
+    ReceiptRenderModule,
     SupplierJobsModule,
     CheckoutRecoveryModule,
     HealthJobsModule,

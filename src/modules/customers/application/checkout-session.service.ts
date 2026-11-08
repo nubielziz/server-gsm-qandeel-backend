@@ -1,5 +1,6 @@
 // CheckoutSessionService: opens a storefront checkout (price, tax and exchange rate locked, a guest customer by email) and reads it
-// back (feature 14a, scenario b2c-paid steps 2 and 3). Paying the session and creating the order are feature 16.
+// back (feature 14a, scenario b2c-paid steps 2 and 3). Paying the session and creating the order are feature 16 (`CheckoutPayService`,
+// `CheckoutCaptureService`); a paid session shows the tracking token of its order.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import type { ResultOf } from '../../../common/contract';
@@ -9,7 +10,7 @@ import { DbService, type DbExecutor } from '../../../infra/db';
 import { EncryptionService, TokenService } from '../../../infra/crypto';
 import { StorefrontServices, type SellableField } from '../../catalog';
 import { StorefrontMoney } from '../../money';
-import { inputProblems, isValidImei, normalizeImei, quantityProblem } from '../../orders';
+import { OrderReadService, inputProblems, isValidImei, normalizeImei, quantityProblem } from '../../orders';
 import { StorefrontPolicies, StorefrontQuotes, inCurrency } from '../../storefront';
 import type { openCheckoutSession } from '../contracts/checkout.contracts';
 import type { CheckoutSession, Customer } from '../db/schema';
@@ -77,6 +78,7 @@ export class CheckoutSessionService {
     private readonly services: StorefrontServices,
     private readonly money: StorefrontMoney,
     private readonly policies: StorefrontPolicies,
+    private readonly orders: OrderReadService,
     private readonly encryption: EncryptionService,
     private readonly tokens: TokenService,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -189,12 +191,13 @@ export class CheckoutSessionService {
    */
   async view(db: DbExecutor, row: CheckoutSession): Promise<CheckoutSessionView> {
     const now = this.clock.now();
-    const [names, currency, consents, switches, methods] = await Promise.all([
+    const [names, currency, consents, switches, methods, trackingToken] = await Promise.all([
       this.services.names(db, [row.serviceId]),
       this.money.byCode(db, row.currency),
       listSessionConsents(db, row.id),
       this.policies.switches(db),
       this.money.paymentMethods(db),
+      row.orderId === null ? Promise.resolve(null) : this.orders.trackingTokenOf(db, row.orderId),
     ]);
     const service = names.get(row.serviceId);
     const usd = { net: row.netAmount, tax: row.taxAmount, gross: row.grossAmount };
@@ -227,6 +230,7 @@ export class CheckoutSessionService {
       },
       consent: consentOf(consentState(consents, requiredConsents(switches.withdrawalWaiver))),
       paymentMethods: methods,
+      trackingToken,
     };
   }
 

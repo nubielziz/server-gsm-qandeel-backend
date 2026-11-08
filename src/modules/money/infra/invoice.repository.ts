@@ -1,6 +1,6 @@
 // Drizzle queries on invoices (map routes /admin/invoices, /client/invoices, stage 8): lists for staff and for one merchant with
 // sort, search and exact count, find, id allocation, insert and update. Only the money module touches this table.
-import { type SQL, and, eq, inArray, or, sql } from 'drizzle-orm';
+import { type SQL, and, asc, eq, inArray, or, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import type { DbExecutor } from '../../../infra/db';
 import { escapeLike, listOrderBy, listWhere } from '../../../infra/db/list-sql';
@@ -177,4 +177,24 @@ export async function insertInvoice(db: DbExecutor, row: NewInvoice & { id: numb
 export async function updateInvoice(db: DbExecutor, id: number, changes: Partial<NewInvoice>): Promise<Invoice> {
   const [updated] = await db.update(invoices).set(changes).where(eq(invoices.id, id)).returning();
   return updated!;
+}
+
+/**
+ * Finds the tax receipt of a storefront order.
+ *
+ * Why: scenario b2c-paid step 16: the receipt invoice (kind `receipt`) is issued when the payment is captured; the order's tracking page
+ * downloads its PDF.
+ *
+ * @param db the database or a transaction
+ * @param orderId the order
+ * @returns the receipt, or `undefined` when the order was never paid through the storefront
+ */
+export async function findReceiptOfOrder(db: DbExecutor, orderId: number): Promise<Invoice | undefined> {
+  const [row] = await db
+    .select()
+    .from(invoices)
+    .where(and(eq(invoices.orderId, orderId), eq(invoices.kind, 'receipt')))
+    .orderBy(asc(invoices.id))
+    .limit(1);
+  return row;
 }

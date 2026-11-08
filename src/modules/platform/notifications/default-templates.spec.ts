@@ -1,6 +1,6 @@
-// Unit tests of the default templates (features 12a, 14b and 12b): they use only their event's placeholders, cover every merchant event the
-// platform wires, the four customer account mails and both alert events, and the data sections of migrations 0011, 0012 and 0015 together are
-// exactly what `defaultTemplatesSql()` writes.
+// Unit tests of the default templates (features 12a, 14b, 12b and 16): they use only their event's placeholders, cover every merchant event
+// the platform wires, the four customer account mails, both alert events and the five storefront mails of feature 16, and the data sections of
+// migrations 0011, 0012, 0015 and 0017 together are exactly what `defaultTemplatesSql()` writes.
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { DEFAULT_TEMPLATES, defaultTemplatesSql } from './default-templates';
@@ -75,6 +75,7 @@ const MIGRATIONS = [
   '0011_notifications_delivery.sql',
   '0012_customer_mail_templates.sql',
   '0015_alert_templates.sql',
+  '0018_refund_declined_template.sql',
 ] as const;
 
 /** The `event|channel|audience|locale` key of every row an INSERT in a migration holds (a row starts with two spaces and a bracket). */
@@ -83,6 +84,50 @@ function keysInInsert(insert: string): string[] {
     m.slice(1, 5).join('|'),
   );
 }
+
+/** The customer events feature 16 sends through `StorefrontMails`, with the placeholder each one's text must use to say what it is about. */
+const STOREFRONT_MAILS: ReadonlyArray<readonly [event: string, placeholder: string]> = [
+  ['order.received', '{{amount}}'],
+  ['order.completed', '{{orderId}}'],
+  ['order.failed', '{{amount}}'],
+  ['payment.failed', '{{amount}}'],
+  ['refund.declined', '{{reason}}'],
+];
+
+describe('the storefront mails of feature 16', () => {
+  it('each ship an English, active-by-default email to the customer, so a migrated database sends them without the development seed', () => {
+    for (const [event, placeholder] of STOREFRONT_MAILS) {
+      const template = DEFAULT_TEMPLATES.find((t) => t.event === event && t.audience === 'customer');
+      expect(template, event).toMatchObject({ channel: 'email', locale: 'en' });
+      expect(template!.subject, event).not.toBe('');
+      expect(template!.body, `${event} ${placeholder}`).toContain(placeholder);
+      expect(template!.body, `${event} name`).toContain('{{customerName}}');
+      // No mail carries a file, so no text may promise one.
+      expect(`${template!.subject} ${template!.body}`, event).not.toMatch(/attach/i);
+    }
+  });
+
+  it('are exactly the events StorefrontMails writes: each is a customer event of the registry that reaches the customer by email only', () => {
+    for (const [event] of STOREFRONT_MAILS) {
+      expect(registry.get(event, 'customer')?.channels, event).toEqual(['email']);
+    }
+  });
+});
+
+describe('the refund declined mail', () => {
+  it('has an English email that names the order, the amount and the reason staff gave', () => {
+    const template = DEFAULT_TEMPLATES.find((t) => t.event === 'refund.declined' && t.audience === 'customer');
+    expect(template).toMatchObject({ channel: 'email', locale: 'en' });
+    expect(template!.subject).toContain('{{orderId}}');
+    for (const placeholder of ['{{customerName}}', '{{orderId}}', '{{amount}}', '{{reason}}'])
+      expect(template!.body, placeholder).toContain(placeholder);
+    expect(registry.get('refund.declined', 'customer')).toMatchObject({
+      channels: ['email'],
+      variables: ['customerName', 'orderId', 'amount', 'reason'],
+    });
+    expect(registry.get('refund.declined', 'merchant')).toBeUndefined();
+  });
+});
 
 describe('the migrations that insert the default templates', () => {
   const insertOf = (file: string): string => {

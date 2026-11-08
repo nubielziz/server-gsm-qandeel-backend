@@ -1,8 +1,10 @@
 // Storefront & content module (map domain H): service listings, content pages, help articles and legal documents (docs/ARCHITECTURE.md § 2).
 // It provides the read-only CurrentLegalDocuments (no connection: callers pass their database handle) and imports the public catalog
-// (stage 14: configuration, the service list and the service page); the admin and public content routes are StorefrontContentModule.
+// (stage 14: configuration, the service list and the service page) and the storefront policies route (stage 16); the admin and
+// public content routes are StorefrontContentModule.
 import { Global, Module } from '@nestjs/common';
 import { CurrentLegalDocuments } from './application/legal-documents';
+import { StorefrontAdminModule } from './storefront-admin.module';
 import { StorefrontPublicModule } from './storefront-public.module';
 
 /**
@@ -16,7 +18,7 @@ import { StorefrontPublicModule } from './storefront-public.module';
  */
 @Global()
 @Module({
-  imports: [StorefrontPublicModule],
+  imports: [StorefrontPublicModule, StorefrontAdminModule],
   providers: [CurrentLegalDocuments],
   exports: [CurrentLegalDocuments],
 })

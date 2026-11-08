@@ -2,12 +2,14 @@
 // in CheckoutSessionService and ConsentService. The token routes read the session id the capability guard resolved.
 import { Body, Controller, Req, Res } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { type BodyOf, type ResultOf, Route } from '../../../common/contract';
+import { type BodyOf, ContractHeaders, type HeadersOf, type ResultOf, Route } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { CurrentPrincipal, type CapabilityGrant, type Principal } from '../../identity';
 import { CheckoutSessionService } from '../application/checkout-session.service';
+import { CheckoutPayService } from '../application/checkout-pay.service';
 import { ConsentService } from '../application/consent.service';
 import { OptionalCustomerSession } from '../application/optional-customer-session';
+import { payCheckoutSession } from '../contracts/checkout-pay.contracts';
 import { openCheckoutSession, recordCheckoutConsents, showCheckoutSession } from '../contracts/checkout.contracts';
 
 /** The session id the capability guard found; a handler behind a `checkout-token` route always has one. */
@@ -34,6 +36,7 @@ function userAgentOf(request: FastifyRequest): string {
  * @route POST /store/v1/checkout-sessions
  * @route GET /store/v1/checkout-sessions/:token
  * @route POST /store/v1/checkout-sessions/:token/consents
+ * @route POST /store/v1/checkout-sessions/:token/pay
  */
 @Controller()
 export class CheckoutController {
@@ -41,6 +44,7 @@ export class CheckoutController {
     private readonly sessions: CheckoutSessionService,
     private readonly consents: ConsentService,
     private readonly signedIn: OptionalCustomerSession,
+    private readonly pay: CheckoutPayService,
   ) {}
 
   /**
@@ -107,5 +111,28 @@ export class CheckoutController {
       { ip: request.ip, userAgent: userAgentOf(request) },
       customerId,
     );
+  }
+
+  /**
+   * Starts paying a checkout.
+   *
+   * @param principal the holder of the checkout token
+   * @param body the chosen method and the return address
+   * @param headers the required `Idempotency-Key`
+   * @param reply the reply, for the cache header and the replay marker
+   * @returns the payment and the gateway's hosted page (`201`)
+   * @route POST /store/v1/checkout-sessions/:token/pay
+   */
+  @Route(payCheckoutSession)
+  async payNow(
+    @CurrentPrincipal() principal: Principal | undefined,
+    @Body() body: BodyOf<typeof payCheckoutSession>,
+    @ContractHeaders() headers: HeadersOf<typeof payCheckoutSession>,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<ResultOf<typeof payCheckoutSession>> {
+    reply.header('cache-control', NO_STORE);
+    const started = await this.pay.pay(sessionIdOf(principal), body, headers['idempotency-key']);
+    if (started.replayed) reply.header('idempotency-replayed', 'true');
+    return started.view;
   }
 }

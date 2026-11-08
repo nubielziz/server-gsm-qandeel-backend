@@ -120,6 +120,20 @@
       "when": 1794146869992,
       "tag": "0016_support_tickets",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794149339419,
+      "tag": "0017_b2c_payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794149345807,
+      "tag": "0018_refund_declined_template",
+      "breakpoints": true
     }
   ]
 }

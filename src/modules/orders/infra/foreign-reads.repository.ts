@@ -224,3 +224,36 @@ export async function actorNamesOf(
   for (const [type, rows] of lookups) for (const row of await rows) names.set(actorKey(type, row.id), row.name);
   return names;
 }
+
+/** A service as a paid storefront order needs it. */
+export interface StorefrontServiceRecord {
+  readonly id: number;
+  readonly type: 'imei' | 'server' | 'remote' | 'file';
+  readonly fulfillment: 'auto' | 'manual';
+  /** The service's effective cost (USD): what the supplier is expected to charge; booked only when a supplier executes the order. */
+  readonly effectiveCost: string;
+}
+
+/**
+ * Reads a service for a paid storefront order, whatever its state.
+ *
+ * Why: the customer already paid the locked price when this runs (feature 16), so a service switched off or archived since is still
+ * delivered or worked by hand: the refusal rules of the merchant's placement do not apply.
+ *
+ * @param db the database or a transaction
+ * @param id the service
+ * @returns the service, or `undefined` when it does not exist
+ */
+export async function storefrontServiceOf(db: DbExecutor, id: number): Promise<StorefrontServiceRecord | undefined> {
+  const [row] = await db
+    .select({
+      id: s.services.id,
+      type: s.services.type,
+      fulfillment: s.services.fulfillment,
+      effectiveCost: s.services.effectiveCost,
+    })
+    .from(s.services)
+    .where(eq(s.services.id, id))
+    .limit(1);
+  return row;
+}

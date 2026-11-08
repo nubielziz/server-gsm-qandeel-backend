@@ -75,3 +75,15 @@ export async function findOrderEventsOfTypes(
     .where(and(eq(orderEvents.orderId, orderId), inArray(orderEvents.type, [...types])))
     .orderBy(asc(orderEvents.createdAt), asc(orderEvents.id));
 }
+
+/**
+ * Reads the tracking token of one order.
+ *
+ * @param db the database or a transaction
+ * @param orderId the order
+ * @returns the token, or `null` for an order without one (a merchant's)
+ */
+export async function trackingTokenOfOrder(db: DbExecutor, orderId: number): Promise<string | null> {
+  const [row] = await db.select({ token: orders.publicToken }).from(orders).where(eq(orders.id, orderId)).limit(1);
+  return row?.token ?? null;
+}

@@ -4,12 +4,12 @@ import { Injectable } from '@nestjs/common';
 import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
 import {
+  B2cRefunds,
   type MoneyEventPosting,
   LedgerPoster,
   OrderSettlements,
   type ReversalPosting,
   b2cDeliver,
-  b2cRefund,
   complete,
   order as holdEvent,
   refund,
@@ -17,6 +17,7 @@ import {
   reopen,
   reopenB2c,
 } from '../../money';
+import { StorefrontPolicies } from '../../storefront';
 import type { Order } from '../db/schema';
 import type { OrderMoneyMove } from '../domain/order-machine';
 
@@ -34,6 +35,8 @@ export interface MoveOutcome {
   readonly amount: string;
   /** The supplier cost booked by a settlement (`0.0000` when none was booked). */
   readonly cost: string;
+  /** True when no refund was made and a refund request waits for staff (`autoRefundFailed` off); `amount` is what it asks for (USD). */
+  readonly requested?: boolean;
 }
 
 /** What the use case knows when it asks for a move. */
@@ -43,6 +46,13 @@ export interface MoveContext {
   readonly completedBefore: number;
   /** True when an earlier settlement already booked the supplier cost (B17: a reopen keeps the cost). */
   readonly costBooked: boolean;
+  /** The storefront refund an approval is paying out (feature 16): its journal is the refund's, not a new automatic refund's. */
+  readonly refundId?: number | undefined;
+  /**
+   * True when the system decided the rejection (a supplier's answer), not a person: only then does the storefront policy `autoRefundFailed`
+   * apply. A staff member who rejects or cancels an order has decided to refund it.
+   */
+  readonly systemDecided?: boolean;
 }
 
 const memo = (word: string, order: Order): string => `${word} ORD-${order.id}`;
@@ -54,7 +64,8 @@ const memo = (word: string, order: Order): string => `${word} ORD-${order.id}`;
  * revenue, with the cost lines only when a supplier executed the order and no earlier settlement booked the cost), rejection
  * releases it (`reject`), a reopen moves the revenue back to the hold and a B2B refund moves it to the wallet, both keeping the
  * cost. Keys: `order:<id>:hold`, `order:<id>:settle` (numbered from the second completion), `order:<id>:release`,
- * `order:<id>:refund` (B2C), and `reverse:<settlement id>` for a reopen or a B2B refund, the key `MerchantSpend` reads to stop
+ * `order:<id>:refund` (B2C, or `refund:<id>` for an approved refund, posted by `B2cRefunds`; none while `autoRefundFailed` is off and the
+ * system rejected the order: a refund request waits for staff instead), and `reverse:<settlement id>` for a reopen or a B2B refund, the key `MerchantSpend` reads to stop
  * counting a reversed settlement. A repeated key posts nothing, so a retried or doubled transition never moves money twice.
  *
  * Side effects: inserts ledger transactions and entries and changes account balances through `LedgerPoster` (locks the accounts
@@ -67,6 +78,8 @@ export class OrderLedger {
   constructor(
     private readonly poster: LedgerPoster,
     private readonly settlements: OrderSettlements,
+    private readonly refunds: B2cRefunds,
+    private readonly policies: StorefrontPolicies,
   ) {}
 
   /**
@@ -137,17 +150,29 @@ export class OrderLedger {
           context.actor,
           { amount: price, cost: Money.zero() },
         );
-      case 'b2c_refund':
-        // The ledger part of the refund; the refunds row and the gateway refund arrive with feature 16 (B16).
-        return this.post(
-          tx,
+      case 'b2c_refund': {
+        // Feature 16: the money module posts the refund (what is left on the payment, the VAT share, the refund row and the gateway
+        // job); an order without a payment on record keeps the journal feature 5 wrote. RULES settings 5: a rejection the system decided
+        // is refunded by the system while `autoRefundFailed` is on; when it is off the refund waits as a request for staff to approve.
+        const mode =
+          context.systemDecided === true &&
+          context.refundId === undefined &&
+          !(await this.policies.autoRefundFailed(tx))
+            ? 'request'
+            : 'refund';
+        const refunded = await this.refunds.onOrderRefund(tx, {
           order,
-          b2cRefund({ net: price, vat: Money.of(order.taxAmount) }),
-          `order:${order.id}:refund`,
-          memo('Refund', order),
-          context.actor,
-          { amount: price, cost: Money.zero() },
-        );
+          actor: context.actor,
+          refundId: context.refundId,
+          mode,
+        });
+        return {
+          posted: refunded.posted,
+          amount: refunded.amount,
+          cost: Money.zero().toWire(),
+          ...(refunded.requested ? { requested: true } : {}),
+        };
+      }
       case 'reopen':
       case 'refund': {
         const settlement = await this.settlements.liveOf(tx, order.id);

@@ -66,7 +66,7 @@ describe('the built-in events', () => {
     expect(registry.merchantPreferenceEvents().map((definition) => definition.key)).not.toContain('alert.fired');
   });
 
-  it('register the four customer account mails as transactional email events, next to the six console events', () => {
+  it('register the four customer account mails as transactional email events, next to the seven console events', () => {
     const registry = new NotificationEventRegistry();
     for (const key of CUSTOMER_MAIL_EVENT_KEYS) {
       expect(registry.get(key, 'customer'), key).toMatchObject({
@@ -87,6 +87,7 @@ describe('the built-in events', () => {
       'support.reply',
       'checkout.abandoned',
       'payment.failed',
+      'refund.declined',
     ]);
   });
 

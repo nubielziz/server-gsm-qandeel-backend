@@ -1,6 +1,7 @@
-// The default templates of the merchant events, the customer account mails and the alert messages (platform module, features 12a,
-// 14b and 12b): English email and Telegram texts. Migrations 0011 (merchant), 0012 (customer mails) and 0015 (alerts) insert the
-// same rows into a fresh database (a test keeps code and migrations equal); the console edits them afterwards.
+// The default templates of the merchant events, the customer account mails, the alert messages and the storefront order, payment and
+// refund mails (platform module, features 12a, 14b, 12b and 16): English email and Telegram texts. Migrations 0011 (merchant), 0012
+// (customer mails), 0015 (alerts) and 0017 (storefront mails) insert the same rows into a fresh database (a test keeps code and
+// migrations equal); the console edits them afterwards.
 import type { NotificationAudience, NotificationChannel } from '../db/schema';
 
 /** One default template, as the migration inserts it. */
@@ -18,9 +19,10 @@ const LINK_FOOTER = 'The link works once and stops working at {{expiresAt}}.';
 /**
  * The templates every installation starts with.
  *
- * Why: "a registry entry for each, with its default template seeded (English)" (brief 12a). Without them the merchant mails and the
- * customer account mails (feature 14b) would send nothing (a missing template sends nothing), so they come with the migrations, not
- * with the development seed.
+ * Why: "a registry entry for each, with its default template seeded (English)" (brief 12a). Without them the merchant mails, the
+ * customer account mails (feature 14b) and the storefront mails feature 16 sends (order received, completed and failed, payment failed, refund
+ * declined) would send nothing (a missing template sends nothing), so they come with the migrations, not with the development seed. The
+ * storefront texts are the demo's (`TEXTS` of the console's Customer emails tab) without "Your receipt is attached": no mail carries a file.
  */
 export const DEFAULT_TEMPLATES: readonly DefaultTemplate[] = [
   {
@@ -222,6 +224,46 @@ export const DEFAULT_TEMPLATES: readonly DefaultTemplate[] = [
     locale: 'en',
     subject: 'Confirm your email address',
     body: `Hi {{customerName}},\n\nThe email address of your GSM account was changed to this one. Confirm it here:\n\n{{link}}\n\n${LINK_FOOTER} If this is not your account, you can ignore this email.`,
+  },
+  {
+    event: 'order.received',
+    channel: 'email',
+    audience: 'customer',
+    locale: 'en',
+    subject: 'Your order {{orderId}} is confirmed',
+    body: 'Hi {{customerName}}, thanks for your order. We received {{amount}} for "{{service}}". We will email you the result as soon as the carrier confirms it, usually within a few hours.',
+  },
+  {
+    event: 'order.completed',
+    channel: 'email',
+    audience: 'customer',
+    locale: 'en',
+    subject: 'Your unlock is ready',
+    body: 'Hi {{customerName}}, good news: the carrier confirmed the unlock for {{orderId}}. Insert a SIM from another network and restart the phone. If anything is unclear, just reply to this email.',
+  },
+  {
+    event: 'order.failed',
+    channel: 'email',
+    audience: 'customer',
+    locale: 'en',
+    subject: 'We couldn’t unlock order {{orderId}}',
+    body: 'Hi {{customerName}}, the carrier rejected this unlock, so we have refunded {{amount}} to your card. It can take 5 to 10 days to appear. We are sorry it did not work out.',
+  },
+  {
+    event: 'payment.failed',
+    channel: 'email',
+    audience: 'customer',
+    locale: 'en',
+    subject: 'Your payment didn’t go through',
+    body: 'Hi {{customerName}}, the payment of {{amount}} for your unlock was declined by your bank, so we did not start it. Nothing was charged. You can try again or use another card.',
+  },
+  {
+    event: 'refund.declined',
+    channel: 'email',
+    audience: 'customer',
+    locale: 'en',
+    subject: 'About your refund request for order {{orderId}}',
+    body: 'Hi {{customerName}},\n\nWe looked at your refund request of {{amount}} for order {{orderId}} and we could not approve it.\n\nReason: {{reason}}\n\nIf you have more details that could change this, reply to this email and we will look again.',
   },
 ];
 

@@ -10,7 +10,7 @@ Decisions that shape this module: 010 ids and tokens, 018 authentication, sessio
 
 Built (feature 14a, storefront-checkout): the checkout, 3 of the 13 storefront routes (`POST /store/v1/checkout-sessions`,
 `GET /store/v1/checkout-sessions/:token`, `POST /store/v1/checkout-sessions/:token/consents`). Store sign-in, accounts and the admin
-customer routes are feature 14b; paying a session (`.../pay`) and creating the order are feature 16. Checkout files:
+customer routes are feature 14b; paying a session (`.../pay`) and creating the order are feature 16 (below). Checkout files:
 `checkout.module.ts` (routes), `application/checkout-session.service.ts`, `application/consent.service.ts`,
 `application/checkout-token.resolver.ts`, `infra/checkout.repository.ts`, `infra/consent.repository.ts`, `domain/checkout.ts`.
 
@@ -58,6 +58,14 @@ customer routes are feature 14b; paying a session (`.../pay`) and creating the o
   customer, and then also sets `customers.marketing_opt_in` to the recorded answer (as `PATCH /store/v1/me` does); any other request
   keeps the guest rule above.
 - **Anti-bot**: opening a session is `turnstile: true` (decision 034).
+- **Pay** (feature 16, scenario b2c-paid steps 4 and 5): `POST /store/v1/checkout-sessions/:token/pay`, body `{ gateway, returnUrl }`, header `Idempotency-Key` (required, ALIGNMENT § 7), answer `201 { payment, gateway, paymentUrl }`.
+  `CheckoutPayService` judges the checkout and hands the money side to the money module's `StorefrontPayments.start`: a replay of an earlier call (same key, same body) answers before any check, so a retry after the session expired still receives the page it missed
+  (`Idempotency-Replayed: true`); otherwise the session must be `open` (`409 INVALID_TRANSITION` for a paid or expired one), its customer `active` (`403 ACCOUNT_SUSPENDED`) and every required consent granted (`422` on `consent`), the method one of the shop's whose limits take the amount
+  (`422` on `gateway`); another body under the key is `409 IDEMPOTENCY_KEY_REUSED` (also after the payment was captured, failed or held), a call still opening its page `409 IDEMPOTENCY_IN_PROGRESS` (a call whose page is still empty after 60 s starts over), a page that opens after its payment was written off `409 INVALID_TRANSITION`; a gateway that cannot open its page is `502 GATEWAY_ERROR` and frees the key. 3-D Secure is asked of a card when the policy `require3ds` is on (the default) and the gateway supports it.
+  **No order exists after this call**: B2C never dispatches before payment.
+- **Capture** (scenario b2c-paid steps 6 to 8): `CheckoutCaptureService` fills the money module's capture slot at boot; the signed payment confirmation calls it inside its own transaction, under the payment row's lock. It takes the session's lock, refuses a confirmation that says another amount or currency
+  than the quote (the payment waits for staff), records a second confirmation for a paid session as a duplicate and refunds it, and otherwise places the order through the orders module's `CustomerOrderPlacement` (locked net, VAT and rate from the session, the IMEI decrypted with `CHECKOUT_IMEI_AAD`, a 22-character tracking token,
+  stock codes delivered at once), books the payment and marks the session `paid` with its `order_id`. An expired but unpaid session is still honoured: the buyer paid the locked price. The risk hold of feature 18 plugs in at the placement call; the buyer's `order.received` email (and `order.completed` for an order delivered from stock) is written in this transaction by the money module's `StorefrontMails`, and the receipt PDF is a `receipt.render` job queued here.
 
 
 Built: feature 14b (customers-accounts, 19 routes in this module): the storefront customer's sign-in, the account and the admin

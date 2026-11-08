@@ -8,6 +8,8 @@ import { StorefrontMoney } from './application/storefront-money';
 import { MerchantWallets } from './application/merchant-wallets';
 import { WalletLowBalanceWatch } from './application/wallet-low-balance-watch';
 import { LedgerPoster } from './application/post-transaction';
+import { B2cRefunds } from './application/b2c-refunds';
+import { StorefrontCaptures, StorefrontOrderPorts } from './application/storefront-ports';
 import { PaymentGateways } from './application/payment-gateways';
 import { MoneyAdminModule } from './money-admin.module';
 import { MoneyOutboxModule } from './money-outbox.module';
@@ -32,6 +34,9 @@ import { MoneyOutboxModule } from './money-outbox.module';
     OrderSettlements,
     PaymentGateways,
     StorefrontMoney,
+    B2cRefunds,
+    StorefrontCaptures,
+    StorefrontOrderPorts,
   ],
   exports: [
     MerchantAccounts,
@@ -41,6 +46,9 @@ import { MoneyOutboxModule } from './money-outbox.module';
     OrderSettlements,
     PaymentGateways,
     StorefrontMoney,
+    B2cRefunds,
+    StorefrontCaptures,
+    StorefrontOrderPorts,
   ],
 })
 export class MoneyModule {}

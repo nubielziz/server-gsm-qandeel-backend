@@ -38,13 +38,14 @@ beforeEach(async () => {
 });
 
 const fieldsOf = (body: { errors: Array<{ field: string }> }) => body.errors.map((error) => error.field);
-const customerOrderCompleted = {
-  event: 'order.completed',
+// A customer template of an event no migration ships a default for (`support.reply`), so a test can add the first one.
+const customerSupportReply = {
+  event: 'support.reply',
   channel: 'email',
   audience: 'customer',
   locale: 'en',
-  subject: 'Your unlock is ready',
-  body: 'Hi {{customerName}}, the carrier confirmed the unlock for {{orderId}}.',
+  subject: 'Re: your question',
+  body: 'Hi {{customerName}}, we looked into it.',
   isActive: true,
 };
 
@@ -94,24 +95,24 @@ describe('GET /admin/notification-templates', () => {
   it('filters by audience, channel, switch, event and language, searches the event and the subject, and pages', async () => {
     const { db } = await testDb();
     await db.insert(s.notificationTemplates).values({
-      event: 'order.completed',
+      event: 'support.reply',
       channel: 'email',
       audience: 'customer',
       locale: 'en-GB',
-      subject: 'Your unlock is ready',
+      subject: 'Zebra reply',
       body: 'Hi {{customerName}}',
       isActive: false,
     });
     const total = async (query: string) => (await owner.get(`/admin/notification-templates?${query}`)).total;
     expect(await total('channel=telegram')).toBe(DEFAULT_TEMPLATES.filter((x) => x.channel === 'telegram').length);
-    // The four customer account mails (feature 14b) ship with a default template each, next to the one this test adds.
+    // The customer mails of features 14b and 16 ship with a default template each, next to the one this test adds.
     expect(await total('audience=customer')).toBe(
       DEFAULT_TEMPLATES.filter((x) => x.audience === 'customer').length + 1,
     );
     expect(await total('isActive=false')).toBe(1);
     expect(await total('event=wallet.low_balance')).toBe(2);
     expect(await total('locale=en-GB')).toBe(1);
-    expect(await total('q=UNLOCK')).toBe(1);
+    expect(await total('q=ZEBRA')).toBe(1);
     expect(await total('q=low_balance')).toBe(2);
     const page = await owner.get('/admin/notification-templates?_sort=id&_order=desc&_start=1&_end=3');
     expect(page.body).toHaveLength(2);
@@ -181,22 +182,22 @@ describe('GET /admin/notification-templates/:id', () => {
 describe('POST /admin/notification-templates', () => {
   it('adds a template for a registered event, with the defaults, and writes the audit entry', async () => {
     const res = await owner.post('/admin/notification-templates', {
-      ...customerOrderCompleted,
+      ...customerSupportReply,
       locale: undefined,
       isActive: undefined,
     });
     expect(res.status).toBe(201);
-    expect(res.body).toMatchObject({ ...customerOrderCompleted, sentLast30Days: 0 });
+    expect(res.body).toMatchObject({ ...customerSupportReply, sentLast30Days: 0 });
     const entries = await audit();
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
       action: 'created notification template',
       entityType: 'notification_template',
       entityId: res.body.id,
-      entityLabel: 'order.completed (email, customer, en)',
+      entityLabel: 'support.reply (email, customer, en)',
       actorName: 'Rami K.',
       before: null,
-      after: { event: 'order.completed', channel: 'email', audience: 'customer', locale: 'en', isActive: true },
+      after: { event: 'support.reply', channel: 'email', audience: 'customer', locale: 'en', isActive: true },
     });
   });
 
@@ -216,14 +217,14 @@ describe('POST /admin/notification-templates', () => {
 
   it('refuses an event the system does not send, with 422 on event', async () => {
     const unknown = await owner.post('/admin/notification-templates', {
-      ...customerOrderCompleted,
+      ...customerSupportReply,
       event: 'order.teleported',
     });
     expect(unknown.status).toBe(422);
     expect(fieldsOf(unknown.body)).toEqual(['event']);
     expect(unknown.body.errors[0].code).toBe('unknown_event');
     const typo = await owner.post('/admin/notification-templates', {
-      ...customerOrderCompleted,
+      ...customerSupportReply,
       event: 'Order Completed',
     });
     expect(fieldsOf(typo.body)).toEqual(['event']);
@@ -232,13 +233,13 @@ describe('POST /admin/notification-templates', () => {
 
   it('refuses an event that is not sent to the audience or not by the channel', async () => {
     const audience = await owner.post('/admin/notification-templates', {
-      ...customerOrderCompleted,
+      ...customerSupportReply,
       event: 'wallet.low_balance',
       body: 'Low',
     });
     expect(fieldsOf(audience.body)).toEqual(['audience']);
     const channel = await owner.post('/admin/notification-templates', {
-      ...customerOrderCompleted,
+      ...customerSupportReply,
       channel: 'telegram',
       subject: '',
     });
@@ -246,8 +247,8 @@ describe('POST /admin/notification-templates', () => {
   });
 
   it('refuses a second template for the same event, channel, audience and language with 422 on event, also in parallel', async () => {
-    expect((await owner.post('/admin/notification-templates', customerOrderCompleted)).status).toBe(201);
-    const again = await owner.post('/admin/notification-templates', customerOrderCompleted);
+    expect((await owner.post('/admin/notification-templates', customerSupportReply)).status).toBe(201);
+    const again = await owner.post('/admin/notification-templates', customerSupportReply);
     expect(again.status).toBe(422);
     expect(again.body.errors[0]).toMatchObject({
       field: 'event',
@@ -255,13 +256,13 @@ describe('POST /admin/notification-templates', () => {
     });
     // Another language is a different template.
     expect(
-      (await owner.post('/admin/notification-templates', { ...customerOrderCompleted, locale: 'en-GB' })).status,
+      (await owner.post('/admin/notification-templates', { ...customerSupportReply, locale: 'en-GB' })).status,
     ).toBe(201);
 
     const race = {
-      ...customerOrderCompleted,
-      event: 'order.failed',
-      body: 'Order {{orderId}} failed, {{customerName}}.',
+      ...customerSupportReply,
+      event: 'checkout.abandoned',
+      body: 'Hi {{customerName}}, you left {{device}} behind.',
     };
     const answers = await Promise.all(
       Array.from({ length: 4 }, () => owner.post('/admin/notification-templates', race)),
@@ -272,7 +273,7 @@ describe('POST /admin/notification-templates', () => {
 
   it('refuses an email without a subject, an empty message, a bad language and a placeholder the event does not offer', async () => {
     const post = (patch: Record<string, unknown>) =>
-      owner.post('/admin/notification-templates', { ...customerOrderCompleted, ...patch });
+      owner.post('/admin/notification-templates', { ...customerSupportReply, ...patch });
     expect(fieldsOf((await post({ subject: '  ' })).body)).toEqual(['subject']);
     expect(fieldsOf((await post({ body: '   ' })).body)).toEqual(['body']);
     expect(fieldsOf((await post({ locale: 'English' })).body)).toEqual(['locale']);
@@ -280,20 +281,23 @@ describe('POST /admin/notification-templates', () => {
     expect(fieldsOf(typo.body)).toEqual(['body']);
     expect(typo.body.errors[0].message).toContain('{{custmerName}}');
     expect(typo.body.errors[0].message).toContain('{{customerName}}');
-    expect(fieldsOf((await post({ subject: 'Hello {{link}}' })).body)).toEqual(['subject']);
+    // `support.reply` offers `{{link}}` (feature 17), so this one asks an event that has none, in a language with no default.
+    expect(fieldsOf((await post({ event: 'order.completed', locale: 'ar', subject: 'Hello {{link}}' })).body)).toEqual([
+      'subject',
+    ]);
     expect((await post({ body: undefined })).status).toBe(422);
     expect((await post({ channel: 'sms' })).status).toBe(422);
     expect(await audit()).toEqual([]);
   });
 
   it('needs a CSRF token and the notifications:create permission', async () => {
-    expect((await owner.withoutCsrf('POST', '/admin/notification-templates', customerOrderCompleted)).body.code).toBe(
+    expect((await owner.withoutCsrf('POST', '/admin/notification-templates', customerSupportReply)).body.code).toBe(
       'CSRF_FAILED',
     );
     const reader = await adminWith(t, ['notifications:read']);
-    expect((await reader.post('/admin/notification-templates', customerOrderCompleted)).body.code).toBe('FORBIDDEN');
+    expect((await reader.post('/admin/notification-templates', customerSupportReply)).body.code).toBe('FORBIDDEN');
     const creator = await adminWith(t, ['notifications:create']);
-    expect((await creator.post('/admin/notification-templates', customerOrderCompleted)).status).toBe(201);
+    expect((await creator.post('/admin/notification-templates', customerSupportReply)).status).toBe(201);
   });
 });
 

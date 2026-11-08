@@ -2,8 +2,8 @@
 // as the frontend mocks map them (src/features/customers/mocks/store.ts): the same ids, names, emails, countries and statuses. The
 // demo's eight TACs are written once, by the storefront seeder (scripts/seed/storefront.ts).
 //
-// Left for later features, by the lead's seed order: the storefront (B2C) orders, their payments and consents (14a and 16), so the
-// seeded customers have no orders yet and `total_spent` stays 0; `risk_assessments` and the legal documents come with 18 and 15.
+// The storefront (B2C) orders, their payments and consents are written by the storefront money seeder (feature 16, scripts/seed/b2c.ts), which
+// runs after this one and uses these customer rows (it adds none); `total_spent` stays 0. `risk_assessments` come with feature 18.
 import { and, eq, isNull } from 'drizzle-orm';
 import type { AppConfig } from '../../src/config';
 import { PasswordHasher } from '../../src/infra/crypto';
