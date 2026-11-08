@@ -4,6 +4,15 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+**Found after the final state (2026-11-08, 23:15): no first run on a fresh server.** Only the dev seed (which refuses production)
+creates the base currency USD, the 12 system ledger accounts (decision 024), the Owner role and staff who can sign in; migrations
+create none of them, so a fresh production database has no way in and cannot move money. **P4b** (`wf_12f54905-bff`, worktree
+`../backend-p4b` from `6dad4fa`, Redis 10, brief `docs/briefs/P4b-first-run.md` in the worktree) adds `bun run setup` (production-safe,
+idempotent: reference data from one definition shared with the seed, the Owner role, the first owner with a temporary password printed
+once, forced change and TOTP at the first sign-in) and `bun run db:reset` (development only: drop, migrate, empty Redis and the bucket,
+then `--seed` or `--setup`). Until it lands, a fresh development start is `docker compose down -v && docker compose up -d && bun run
+db:migrate && bun run db:seed`.
+
 **Final state (2026-11-08, 22:20): the project is complete.** Every feature is built, reviewed (Opus), checked and squash-merged
 on `main`: through 9 and 14a as below, then **12a** (`4af39e9`, B170), **15** (`a9301be`, B171), **14b** (`f3a8341`, B172),
 **11** (`93bab9b`, B173), **12b** (`320404c`, B174), **17** (`3e5e775`, B175), **19** (`9df68a8`, B176), **16** (`8085f59`,
