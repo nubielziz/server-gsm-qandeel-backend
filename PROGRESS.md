@@ -77,6 +77,13 @@ worktree has it). The lead's watchdog `.lead/mem-watch.sh` (run as a Monitor) wa
 with under 1 GB swap left, stops the single largest test, lint or typecheck process. The user's instruction (13:20): full
 permission to finish the project, **at most 4 agents**, avoid crashes. Running: 16, 12b merge fixes, 17, 19 (all resumed).
 
+**11 merged** (`93bab9b`, B173; check 4399 pass, 0 fail with the batched runner; console live routes 211, frontend
+`07c5074`). 16 merged main (`7cf5e8c`: migrations joined as `0013_b2c_payments`, to renumber after 11's `0013`; retailNet
+keeps 15's floor and rounds up to cents) and its merge-fix run `wf_27c5b76d-222` wires the customer emails through 12a, the
+receipt job, refund retry keys, autoRefundFailed, the approve/reject lock order and the seed. Running too: 17 review
+(`wf_9bbe47ba-2ea`), 19 finish (`wf_1c12d204-b6b`), 12b fixes (`wf_5440cc29-e86`). A usage-limit pause stopped work
+from about 14:05 to 15:50.
+
 **14b merged** (`f3a8341`, B172; 4181 pass, the real-worker test refused a connection once under load and passes alone; console
 live routes 193, frontend `6af4286`). Test batches are now 12 files (a 25-file integration batch reached 3 GB) with a 4 GB
 runaway limit (main `e96f051`). 11 took main again (migration renumbered `0013`, B173 written) and its full check runs.
