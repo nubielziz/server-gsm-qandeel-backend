@@ -77,6 +77,14 @@ worktree has it). The lead's watchdog `.lead/mem-watch.sh` (run as a Monitor) wa
 with under 1 GB swap left, stops the single largest test, lint or typecheck process. The user's instruction (13:20): full
 permission to finish the project, **at most 4 agents**, avoid crashes. Running: 16, 12b merge fixes, 17, 19 (all resumed).
 
+**Root cause of the three crashes (found 13:30):** not the suite size alone: 12b's interrupted fix changed the alert notifier
+to take the transaction as its first argument, and `alert-evaluator.test.ts` still asserted on that argument as the notice;
+the failing assertion made Bun print the whole transaction object graph, synchronously, to 13 GB. Guards now in main
+(`a2edc3a`) and every worktree: the test preload starts a watcher process that kills its test process past 3 GB
+(`GSM_TEST_MAX_RSS_MB`) with a clear message, and refuses a direct one-process run of more than 40 test files; all test
+scripts run batched behind the two machine-wide slots. 12b's fix run was relaunched fresh with this cause as item 0
+(`wf_5440cc29-e86`). `.lead/run-capped.sh <MB> <cmd>` runs any command under a memory cap.
+
 **Day 2 (2026-11-08, from 10:55; the user asked for six agents at once).** Docker started clean (no recovery). Running:
 **12b** (`wf_be974e75-abf`) and **16** (`wf_bc19eab4-9c0`) through `gsm-backend-continue` (finishing their partial work,
 then review and fix); the merges of **12a**, **14b**, **15** and **11** are prepared by the lead (main merged into each
