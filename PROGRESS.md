@@ -4,6 +4,28 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+**Final state (2026-11-08, 22:30): the project is complete.** Every feature is built, reviewed (Opus), checked and squash-merged
+on `main`: through 9 and 14a as below, then **12a** (`4af39e9`, B170), **15** (`a9301be`, B171), **14b** (`f3a8341`, B172),
+**11** (`93bab9b`, B173), **12b** (`320404c`, B174), **17** (`3e5e775`, B175), **19** (`9df68a8`, B176), **16** (`8085f59`,
+B177), **18** (`35dfcde`, B178), **6b** supplier call contracts (`d2ed171`, B179) and **P4a** follow-ups (`6afa404`, B180).
+`docs/COVERAGE.md`: **382 of 382** manifest entries built (routes, Dhru actions, supplier calls, events; `test/contract/pending.ts`
+is empty), the console's **269 of 269**, **13 of 13** scenario e2e tests. Last full `bun run check` (P4a, on the tree that became
+`6afa404`): 5383 pass, 1 skip, 0 fail, every step green; `contract:check`, `routes:check` and `coverage:check` rerun on `main`
+after the merge. **Final walk** (Playwright, real sign-in with TOTP, the console with `VITE_API_MOCKS=false`, Prometheus and
+Mailpit running, dev database migrated and seeded): every console page and tab, 76 steps, **290 real API calls, none mocked, no
+failure, no page or console error** (`.lead/walk/walk-final.cjs`, screenshots `.lead/walk/out-final3`). The console needed two
+changes found by the walks (frontend M259 customers header, M260 idle supplier badge); its checks are green (405 test files,
+4261 tests). Dev services are back to Postgres, the two Redis servers and MinIO; the API, worker, Vite, Prometheus and Mailpit
+start only for a walk (`docker compose up -d prometheus mailpit`, `PROMETHEUS_URL=http://localhost:9090`).
+
+**Known gaps, decided and recorded (not built):** gateway health checks (no definition of a gateway's health, B168); the invoice
+PDF still renders inside the request; a mismatched payment adjusted by hand never passes through `gateway_clearing`; webhook
+deliveries lost with the queue Redis are not re-queued and failing endpoints are not auto-disabled (7b); the paid supplier IMEI
+check (no supplier call in the manifest) and mails when a data request completes (B178); blocklist entries from chargebacks
+(M115); an approved held order of a stocked service goes to a supplier or the manual queue, not to stock (B178); money's
+`foreign-directory.repository.ts` and a few list joins read other modules' tables (documented decision 016 deviations); stock codes
+carry no purchase cost. The `origin` remote still points at `nestjs/typescript-starter` (nothing was pushed).
+
 **State on 2026-11-07, late night.** Phase 3 waves 1 to 3 are merged on `main`, plus: **3** money (`c332201`), **2b**
 merchant portal (`446fd46`), **2a** staff access (`ed74e0b`), **4a** catalog structure (`7c012d2`), **4b** catalog pricing
 (`3838d27`), the 4 tax rate routes of 14b built early by the lead (`23dc5d5`), **7b** merchant API keys and webhooks
@@ -283,7 +305,7 @@ and `docs/slices/<module>.json`, `docs/contract/RULES.md` for its frontend featu
 | 1 Architecture + contract | done | see `git log` (`docs: phase 1 ...`) | 6 (Opus analysts, one workflow, 3 at once) |
 | 2 Foundation | done | per feature, see below | 28 |
 | 3 Feature loop (by stage) | | | |
-| 4 Frontend integration | running since 2026-11-07 (partial mock mode; runtime walks after each merge; 87 console routes live) | frontend `169ddb9` … `0a91da5` | 1 (frontend Sonnet implementer) |
+| 4 Frontend integration | done 2026-11-08 (the console runs on the real API with no mocks; final walk 290 real calls, no failure) | frontend `169ddb9` … `df99600` | 1 (frontend Sonnet implementer) |
 
 ## Business rules answered by the user (2026-10-31)
 
@@ -330,16 +352,16 @@ tests are added by the feature that completes the scenario. Endpoint counts from
 | 7b | merchant-api-webhooks | API keys, webhook endpoints, deliveries, outgoing events incl. `service.price_changed` (user rule 9, route-parity allowance B117), public docs (st7) | | done (`e9322de`) |
 | 8 | billing | gateways, invoices (user rule 3), payments, approve/reject (user rule 4), automatic credit after the verification delay (user rule 6), KYC, payment webhook (B2B), invoice.paid (st8) | | done (`8f8f4b0`, B167 `56f48f7`) |
 | 9 | health-dashboard | system health routes, dashboard (services_below_floor on the effective cost, user rule 9), queues board (st9) | | done (`6826959`, B168 `815313d`) |
-| 11 | commissions-reports | plans, assignments, accruals (user rule 5 on refunds), approve, reports (st11) | | |
-| 12a | notifications | templates, notifications, preferences, Telegram link + webhook, price-change digest (user rule 9) (st12) | | |
-| 12b | alerts-integrity | alert rules, alerts, incidents, integrity job (st12) | system-alert, system-integrity | |
-| 14a | storefront-checkout | store config, listings, IMEI check (checksum + TAC), checkout sessions, consents (st14) | | |
-| 14b | customers-accounts | store sign-in, account, admin customers, tax rates (done early: `23dc5d5`), TAC catalog, FX refresh (st14) | b2c-account | |
-| 15 | storefront-content | listings admin, content pages, help, legal documents (st15) | | |
-| 16 | b2c-payments-refunds | pay, receipt, B2C payment webhook, refunds (user rule 7: `processing`), disputes, VAT/payments reports, storefront settings (st16) | b2c-paid, b2c-refund, b2c-chargeback | |
-| 17 | support | tickets (store + admin), replies, notes, templates, CSAT (st17) | b2c-ticket | |
-| 18 | risk-privacy | IMEI checks via supplier, blocklist, risk queue and rules, data requests, export/anonymize (st18) | | |
-| 19 | growth | abandoned checkouts, recovery, funnel, content generation (st19) | | |
+| 11 | commissions-reports | plans, assignments, accruals (user rule 5 on refunds), approve, reports (st11) | | done (`93bab9b`) |
+| 12a | notifications | templates, notifications, preferences, Telegram link + webhook, price-change digest (user rule 9) (st12) | | done (`4af39e9`) |
+| 12b | alerts-integrity | alert rules, alerts, incidents, integrity job (st12) | system-alert, system-integrity | done (`320404c`) |
+| 14a | storefront-checkout | store config, listings, IMEI check (checksum + TAC), checkout sessions, consents (st14) | | done (`ae1dc07`) |
+| 14b | customers-accounts | store sign-in, account, admin customers, tax rates (done early: `23dc5d5`), TAC catalog, FX refresh (st14) | b2c-account | done (`f3a8341`) |
+| 15 | storefront-content | listings admin, content pages, help, legal documents (st15) | | done (`a9301be`) |
+| 16 | b2c-payments-refunds | pay, receipt, B2C payment webhook, refunds (user rule 7: `processing`), disputes, VAT/payments reports, storefront settings (st16) | b2c-paid, b2c-refund, b2c-chargeback | done (`8085f59`) |
+| 17 | support | tickets (store + admin), replies, notes, templates, CSAT (st17) | b2c-ticket | done (`3e5e775`) |
+| 18 | risk-privacy | IMEI checks via supplier, blocklist, risk queue and rules, data requests, export/anonymize (st18) | | done (`35dfcde`) |
+| 19 | growth | abandoned checkouts, recovery, funnel, content generation (st19) | | done (`9df68a8`) |
 
 ## Agent budget
 
