@@ -14,6 +14,8 @@ export { LOW_BALANCE_THRESHOLD_KEY, availableOf, crossedBelow, thresholdFrom } f
 export { LedgerPoster, LedgerRefRequiredError, postTransaction } from './application/post-transaction';
 export type { PostTransactionInput, PostedAccount, PostedTransaction } from './application/post-transaction';
 export { WalletService } from './application/wallet.service';
+export { ReconcileService, compareLedgerBalances } from './application/reconcile.service';
+export type { ReconcileReport } from './application/reconcile.service';
 export {
   BASE_CURRENCY,
   CREDIT_NORMAL_KINDS,

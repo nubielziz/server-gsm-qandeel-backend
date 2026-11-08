@@ -94,6 +94,16 @@ export interface AppConfig {
     /** Secret of `POST /webhooks/telegram/:secret` (path segment and `X-Telegram-Bot-Api-Secret-Token` header); unset refuses every call. */
     readonly webhookSecret: string | undefined;
   };
+  /**
+   * Where the messages of alerts go (feature 12b): the ops mailbox(es) and the ops Telegram chat. Both are optional: a channel with no recipient
+   * is recorded as a failed notification with a clear reason instead of stopping the boot.
+   */
+  readonly alerts: {
+    /** Addresses that receive the email of an alert (one message to all of them); empty = none configured. */
+    readonly emailTo: readonly string[];
+    /** The Telegram chat that receives the Telegram message of an alert; unset = none configured. */
+    readonly telegramChatId: string | undefined;
+  };
   readonly log: { readonly level: LogLevel };
   readonly database: { readonly url: string; readonly testUrl: string; readonly poolMax: number };
   readonly redis: { readonly queueUrl: string; readonly cacheUrl: string; readonly bullPrefix: string };
@@ -238,6 +248,14 @@ const rawSchema = z.object({
   TELEGRAM_WEBHOOK_SECRET: z
     .string()
     .regex(/^[A-Za-z0-9_-]{16,256}$/, 'use 16-256 letters, digits, "_" or "-" (Telegram allows nothing else)')
+    .optional(),
+  ALERTS_EMAIL_TO: z.string().optional(),
+  ALERTS_TELEGRAM_CHAT_ID: z
+    .string()
+    .regex(
+      /^(?:-?\d{1,20}|@[A-Za-z][A-Za-z0-9_]{4,31})$/,
+      'use a chat id (digits, "-" first for a group) or @channelname',
+    )
     .optional(),
   DATABASE_URL: postgresUrl.optional(),
   DATABASE_URL_TEST: postgresUrl.optional(),
@@ -390,6 +408,34 @@ export function parseTurnstileHostnames(
 }
 
 /**
+ * Parses `ALERTS_EMAIL_TO`: a comma list of email addresses (`ops@example.com`).
+ *
+ * Why: feature 12b sends one email per alert to these addresses; an entry with a name, a space or no domain would never be delivered, so it stops
+ * the deploy instead of failing in the middle of the night.
+ *
+ * @param value raw variable text
+ * @returns the unique addresses (compared without regard to letter case, written as given), or the reason one is invalid
+ */
+export function parseAlertEmails(
+  value: string,
+): { ok: true; value: readonly string[] } | { ok: false; message: string } {
+  const addresses: string[] = [];
+  for (const part of value.split(',')) {
+    const address = part.trim();
+    if (address === '') continue;
+    if (!/^[^\s@,<>]+@[^\s@,<>]+\.[^\s@,<>]+$/.test(address)) {
+      // The address itself is not repeated: the boot error is logged, and the variable may hold other people's addresses.
+      return {
+        ok: false,
+        message: 'holds an entry that is not an email address (write plain addresses separated by commas)',
+      };
+    }
+    if (!addresses.some((known) => known.toLowerCase() === address.toLowerCase())) addresses.push(address);
+  }
+  return { ok: true, value: addresses };
+}
+
+/**
  * Parses `ENCRYPTION_KEYS` (`kid:base64-32-bytes`, comma separated; decision 019).
  *
  * Why: decision 019: a malformed keyring must stop the deploy, not the first encryption.
@@ -509,6 +555,8 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
   if (production && raw.TURNSTILE_SECRET_KEY === undefined) fail('TURNSTILE_SECRET_KEY', 'is required in production');
   const turnstileHosts = parseTurnstileHostnames(raw.TURNSTILE_HOSTNAMES ?? '');
   if (!turnstileHosts.ok) fail('TURNSTILE_HOSTNAMES', turnstileHosts.message);
+  const alertEmails = parseAlertEmails(raw.ALERTS_EMAIL_TO ?? '');
+  if (!alertEmails.ok) fail('ALERTS_EMAIL_TO', alertEmails.message);
 
   return {
     env,
@@ -541,6 +589,11 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
       botToken: raw.TELEGRAM_BOT_TOKEN,
       botUsername: raw.TELEGRAM_BOT_USERNAME,
       webhookSecret: raw.TELEGRAM_WEBHOOK_SECRET,
+    },
+    // The ops recipients of alert messages are optional everywhere: without them the message is recorded as failed, with the reason.
+    alerts: {
+      emailTo: alertEmails.ok ? alertEmails.value : [],
+      telegramChatId: raw.ALERTS_TELEGRAM_CHAT_ID,
     },
     log: { level: raw.LOG_LEVEL ?? (production ? 'info' : env === 'test' ? 'warn' : 'debug') },
     database: {
@@ -720,6 +773,8 @@ export function summarizeConfig(config: AppConfig): Record<string, unknown> {
       botUsername: config.telegram.botUsername,
       webhookSecret: flag(config.telegram.webhookSecret),
     },
+    // Addresses and the chat id are personal data: the summary says only how many and whether they are set.
+    alerts: { emailRecipients: config.alerts.emailTo.length, telegramChat: flag(config.alerts.telegramChatId) },
     logLevel: config.log.level,
     database: { url: redactUrl(config.database.url), poolMax: config.database.poolMax },
     redis: {

@@ -77,8 +77,21 @@ const COUNT = 'http_request_duration_seconds_count';
 const BUCKET = 'http_request_duration_seconds_bucket';
 const NOW_WINDOW = '5m';
 
-/** The PromQL of the six figures of a surface, for a rate window and an optional surface selector. */
-function expressions(window: string, scope: string, groupBy: string): Record<keyof SurfaceSeries | 'count429', string> {
+/**
+ * The PromQL of the six figures of a surface, for a rate window and an optional surface selector.
+ *
+ * Why: exported so the alert evaluator (`api.p95`, `api.rate5xx`) judges the same expressions the traffic page draws.
+ *
+ * @param window the PromQL rate window (`5m`, `180s`)
+ * @param scope a label selector such as `surface="admin"`, or `''` for every surface
+ * @param groupBy the label to group by (`surface`), or `''` for one series
+ * @returns the expression of each figure
+ */
+export function expressions(
+  window: string,
+  scope: string,
+  groupBy: string,
+): Record<keyof SurfaceSeries | 'count429', string> {
   const sel = (extra: string): string => `{${[scope, extra].filter((part) => part !== '').join(',')}}`;
   const by = groupBy === '' ? '' : ` by (${groupBy})`;
   const quantile = (q: number): string =>

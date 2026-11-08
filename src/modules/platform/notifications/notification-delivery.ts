@@ -11,7 +11,7 @@ import { describeChanges } from './digest-rules';
 import { MailTransport } from './mail-transport';
 import { choiceFor } from './merchant-preferences';
 import { NotificationEventRegistry } from './notification-events';
-import { asString, itemsOf, variablesOf } from './notification-payload';
+import { OPERATIONS_RECIPIENT_ID, asString, itemsOf, operationsRecipientOf, variablesOf } from './notification-payload';
 import {
   type NotificationPayload,
   closeDigest,
@@ -129,7 +129,12 @@ export class NotificationDelivery {
 
   /** Renders the row's message and hands it to its channel. */
   private async send(row: Notification, secrets: Readonly<Record<string, string>>): Promise<void> {
-    const recipient = await recipientOf(this.db.db, row.recipientType, row.recipientId);
+    const payload = row.payload as NotificationPayload;
+    // An alert's message has no person's row: it goes to the address or chat the configuration named when the row was made.
+    const recipient =
+      row.recipientType === 'staff' && row.recipientId === OPERATIONS_RECIPIENT_ID
+        ? operationsRecipientOf(payload)
+        : await recipientOf(this.db.db, row.recipientType, row.recipientId);
     if (!recipient) throw new DeliveryError('The recipient no longer exists.', { permanent: true });
     const definition = this.registry.get(row.event, recipient.audience);
     if (!definition)
@@ -152,7 +157,6 @@ export class NotificationDelivery {
     if (!template) throw new DeliveryError('There is no template for this message.', { permanent: true });
     if (!template.isActive) throw new DeliveryError('The template is switched off.', { permanent: true });
 
-    const payload = row.payload as NotificationPayload;
     const variables: Record<string, string> = { ...variablesOf(payload), ...secrets };
     const items = itemsOf(payload);
     if (Array.isArray(payload.items)) {
@@ -162,7 +166,10 @@ export class NotificationDelivery {
     const message = renderMessage(template, variables);
 
     if (row.channel === 'email') {
-      if (!/^[^\s@]+@[^\s@]+$/.test(recipient.email))
+      // Only an operations message (alerts) may name several addresses, joined by commas; a person has one address.
+      const operations = row.recipientType === 'staff' && row.recipientId === OPERATIONS_RECIPIENT_ID;
+      const addresses = operations ? recipient.email.split(',') : [recipient.email];
+      if (!addresses.every((address) => /^[^\s@,]+@[^\s@,]+$/.test(address)))
         throw new DeliveryError('The recipient has no email address.', { permanent: true });
       await this.mail.send({
         to: recipient.email,

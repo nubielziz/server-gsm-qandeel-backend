@@ -227,7 +227,7 @@ Scheduled housekeeping: group promotion, data retention, integrity checks, FX re
 - **Concurrency:** 2 per worker process.
 - **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly (money module, below), `service_price_scan`, event-driven (catalog module, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below). The others are built by their features, each
   registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
-  `ledger_integrity` (12b, nightly 02:30 UTC), `data_retention` (nightly
+  `ledger_integrity` (12b, nightly 02:30 UTC, below), `data_retention` (nightly
   03:00 UTC), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). The names are the
   console's job names (`GET /admin/system/jobs`, which lists only the jobs that write `job_runs`: `ip_rule_hits_flush` does not, so it is not listed and a manual run of it is 404). `data_retention` erases `imei_checks` older than `imeiRetentionDays` by
   setting `imei_enc`, `imei_hash` and `cached_until` to NULL together (no marker column; the wire then shows the TAC followed
@@ -267,6 +267,22 @@ Four jobs of the worker's `maintenance` queue keep the System health page truthf
   (their worker died), so the one-run-at-a-time guard cannot block a job for ever. A closed run is never run again.
 - **`db_size_sample`** (03:45 UTC): records `pg_database_size` in the run's `result.bytes`; `GET /admin/system/database` reads these
   samples for the growth per day.
+
+### Alerts and integrity jobs (health module, feature 12b)
+
+- **`alert_evaluation`** (queue `alerts`, every minute, `AlertEvaluator.evaluateAll`): judges every active alert rule over its window and opens or closes
+  `alert_events` (see the module README, "Alerts and integrity"). Wrapped with `JobRunsService.run` (one `job_runs` row per run, `skip` while another is
+  going): `processed` = rules judged, `result` = `{ rules, evaluated, unevaluated, unevaluatedRules, fired, resolved }`. `unevaluated` counts the active rules
+  whose metric could not be read (Prometheus down, a store not answering); the System health page does not read "no open alerts" as healthy while a run
+  has unevaluated rules (M213). A source that fails skips only its rules; Postgres being down fails the run. A reading of the moment (`supplier.balance`,
+  `queue.oldest_age`, `orders.past_sla`, `db.connection_usage`, `redis.memory_usage`) fires and resolves only after it held for the rule's whole window:
+  the start of the stretch is a row of `alert_streaks`. The scheduler sets `removeOnComplete` to one hour.
+- **`ledger_integrity`** (queue `maintenance`, nightly at 02:30 UTC and on demand, `LedgerIntegrityCheck`): the four money checks (entries sum to zero,
+  accounts match their lines, no hold stuck over 24 hours, every confirmed payment has an entry). A manual run is inserted by `POST /admin/system/integrity/run`
+  (`job_runs` `manual`, `running`, the staff member) and enqueued with the job id `manual-<run id>` and `{ runId }`. `processed` = accounts checked,
+  `result` = counters at the top level (`failedChecks`, `mismatchCount`, `accountsChecked`, `entriesChecked`, `transactionsChecked`, one count per check) and the
+  four checks with their first 20 findings under `checks` (B99). Read-only: it never corrects anything. After a succeeded run the processor judges the
+  `ledger.mismatch_count` rule at once. Idempotent: a repeat only records another run; a retry of a finished manual run changes nothing.
 
 ### `payment_auto_credit` (money module)
 
@@ -360,11 +376,17 @@ targets; staff change a group by hand at any time (`PATCH /admin/clients/:id`) a
 Evaluates alert rules and sends their messages.
 
 - **Concurrency:** 2 per worker process.
-- **Jobs:** none yet. Built by the alerts feature (12b): `evaluate_rules` every minute, alert reminders.
-- **Payload:** none yet (rule id or alert id).
-- **Idempotency:** none yet. Rule: an alert event is opened once per rule while it is firing (guarded insert).
-- **Retry policy:** 3 attempts, exponential backoff from 10 s (jitter 50 %).
-- **Schedule:** none yet (registered by the alerts feature).
+- **Jobs:** `alert_evaluation` every minute (health module, feature 12b: `AlertEvaluationProcessor`, below). The evaluation also repeats the message of every
+  firing, unacknowledged alert every 30 minutes (`REMINDER_INTERVAL_MS`). The messages themselves are platform notifications (12a): the `AlertNotifier`
+  writes the `notifications` rows (`alert.fired`, `alert.resolved`, recipient (`staff`, 0), `dedupe_key` `alert-<id>:fired|resolved|reminder-<n>:<channel>`) and their
+  `notification.send` outbox events in the transaction of the change; the `notifications` queue sends them.
+- **Payload:** none (a manual run, `POST /admin/system/jobs/alert_evaluation/run`, carries `{ runId }`).
+- **Idempotency:** an alert is opened once per rule and subject while it is open: `INSERT ... ON CONFLICT DO NOTHING` on the partial unique index
+  `alert_events_open_uq (rule_id, subject_key) WHERE status <> 'resolved'`, so two overlapping runs open it once and only the run that opened it notifies;
+  closing is a guarded `UPDATE ... WHERE status <> 'resolved'`. The insert runs in a transaction that locks the rule `FOR SHARE` and re-checks it (still
+  on, not deleted, not muted, same condition), so a rule changed during a run gets no alert from the run's stale copy.
+- **Retry policy:** 3 attempts, exponential backoff from 10 s (jitter 50 %); the next minute's tick is the real retry.
+- **Schedule:** `alert-evaluation` every minute (`src/modules/health/jobs/health-jobs.module.ts`).
 
 ## Outbox event types
 
@@ -405,6 +427,8 @@ Registered with `JobSchedulerRegistry.register` in `onModuleInit`; the worker up
 | `service-checks-purge` | `maintenance` | `service_checks_purge` | daily 03:30 UTC | health (`src/modules/health/jobs/`) |
 | `job-runs-reaper` | `maintenance` | `job_runs_reaper` | every 5 minutes | health (`src/modules/health/jobs/`) |
 | `db-size-sample` | `maintenance` | `db_size_sample` | daily 03:45 UTC | health (`src/modules/health/jobs/`) |
+| `alert-evaluation` | `alerts` | `alert_evaluation` | every minute | health (`src/modules/health/jobs/`) |
+| `ledger-integrity` | `maintenance` | `ledger_integrity` | daily 02:30 UTC | health (`src/modules/health/jobs/`) |
 
 ## Adding a queue or a job
 

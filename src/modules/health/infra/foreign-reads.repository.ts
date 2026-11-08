@@ -351,3 +351,25 @@ export async function oldestIncomingEvent(db: DbExecutor): Promise<Date | null> 
     .where(and(sql`${e.processedAt} is null`, sql`${e.aggregateType} in ('payment', 'dispute')`));
   return row?.at ? new Date(row.at) : null;
 }
+
+/**
+ * Outgoing webhook deliveries that ended, since a time.
+ *
+ * Why: the `webhooks.success_rate` alert metric: delivered / (delivered + failed) over the rule's window, by the time a delivery was queued
+ * (the same basis as {@link outgoingWebhooks}).
+ *
+ * @param db the database
+ * @param since the start of the window
+ * @returns how many deliveries were delivered and how many gave up
+ */
+export async function webhookOutcomes(db: DbExecutor, since: Date): Promise<{ delivered: number; failed: number }> {
+  const d = s.webhookDeliveries;
+  const [row] = await db
+    .select({
+      delivered: sql<number>`(count(*) filter (where ${d.status} = 'delivered'))::int`,
+      failed: sql<number>`(count(*) filter (where ${d.status} = 'failed'))::int`,
+    })
+    .from(d)
+    .where(sql`${d.createdAt} >= ${since}`);
+  return { delivered: row?.delivered ?? 0, failed: row?.failed ?? 0 };
+}

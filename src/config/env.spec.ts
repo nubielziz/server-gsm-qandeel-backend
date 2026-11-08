@@ -6,6 +6,7 @@ import {
   ConfigError,
   DEV_DEFAULTS,
   ENV_VARIABLES,
+  parseAlertEmails,
   parseCorsOrigins,
   parseEncryptionKeys,
   parseEnv,
@@ -305,6 +306,46 @@ describe('MAIL_* and TELEGRAM_* (decision 033)', () => {
     expect(text).not.toContain('smtp-password');
     expect(text).not.toContain('w'.repeat(32));
     expect(text).toContain('"botToken":"[set]"');
+  });
+});
+
+describe('ALERTS_* (feature 12b)', () => {
+  it('is optional: no address and no chat by default, in production too', () => {
+    expect(parseEnv({}).alerts).toEqual({ emailTo: [], telegramChatId: undefined });
+    expect(parseEnv(production()).alerts).toEqual({ emailTo: [], telegramChatId: undefined });
+  });
+
+  it('reads a comma list of addresses (spaces and empty entries dropped, repeats removed) and the ops chat', () => {
+    const config = parseEnv({
+      ALERTS_EMAIL_TO: ' ops@example.com, Oncall@example.com ,, OPS@example.com ',
+      ALERTS_TELEGRAM_CHAT_ID: '-1001234567890',
+    });
+    expect(config.alerts).toEqual({
+      emailTo: ['ops@example.com', 'Oncall@example.com'],
+      telegramChatId: '-1001234567890',
+    });
+    expect(parseEnv({ ALERTS_TELEGRAM_CHAT_ID: '@gsm_ops' }).alerts.telegramChatId).toBe('@gsm_ops');
+  });
+
+  it('stops the boot for an entry that is not an address or a chat, naming the variable and not echoing it', () => {
+    expect(issuesOf({ ALERTS_EMAIL_TO: 'ops@example.com, Ops Team <ops@example.com>' }).map((i) => i.variable)).toEqual(
+      ['ALERTS_EMAIL_TO'],
+    );
+    expect(issuesOf({ ALERTS_EMAIL_TO: 'not-an-address' }).map((i) => i.variable)).toEqual(['ALERTS_EMAIL_TO']);
+    expect(issuesOf({ ALERTS_TELEGRAM_CHAT_ID: 'my chat' }).map((i) => i.variable)).toEqual([
+      'ALERTS_TELEGRAM_CHAT_ID',
+    ]);
+    expect(JSON.stringify(issuesOf({ ALERTS_TELEGRAM_CHAT_ID: 'my chat' }))).not.toContain('my chat');
+    expect(parseAlertEmails('a@b.co,')).toEqual({ ok: true, value: ['a@b.co'] });
+  });
+
+  it('keeps the addresses and the chat out of the boot summary, which only counts them', () => {
+    const summary = summarizeConfig(
+      parseEnv({ ALERTS_EMAIL_TO: 'ops@example.com', ALERTS_TELEGRAM_CHAT_ID: '-1001234567890' }),
+    );
+    expect(summary.alerts).toEqual({ emailRecipients: 1, telegramChat: '[set]' });
+    expect(JSON.stringify(summary)).not.toContain('ops@example.com');
+    expect(JSON.stringify(summary)).not.toContain('1001234567890');
   });
 });
 

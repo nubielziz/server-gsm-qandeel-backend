@@ -93,7 +93,16 @@ const ADDITIONS: Record<string, string[]> = {
   notifications: ['error', 'attempts', 'dedupe_key'],
   webhook_deliveries: ['response_body', 'error', 'event_id'],
   alert_rules: ['deleted_at'],
-  alert_events: ['rule_name', 'metric', 'comparator', 'threshold', 'window_seconds', 'unit'],
+  alert_events: [
+    'rule_name',
+    'metric',
+    'comparator',
+    'threshold',
+    'window_seconds',
+    'unit',
+    'subject_label',
+    'subject_key',
+  ],
   commission_accruals: ['approved_at', 'reversed_at'],
   suppliers: ['api_key_hint', 'prices_synced_at'],
   supplier_api_logs: ['outcome'],
@@ -119,10 +128,10 @@ describe('module ownership', () => {
     }
   });
 
-  it("the infra barrel re-exports all 68 tables once (the map's 66 and the backend's listed_prices and idempotency_keys)", () => {
+  it("the infra barrel re-exports all 69 tables once (the map's 66 and the backend's listed_prices, idempotency_keys and alert_streaks)", () => {
     const names = tablesOf(barrel).map(nameOf);
-    expect(names).toHaveLength(68);
-    expect(new Set(names).size).toBe(68);
+    expect(names).toHaveLength(69);
+    expect(new Set(names).size).toBe(69);
   });
 });
 

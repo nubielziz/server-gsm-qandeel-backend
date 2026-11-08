@@ -32,8 +32,14 @@ export interface HealthJobData {
   readonly runId?: number;
 }
 
-/** The options `JobRunsService.run` takes for a job's schedule or manual run. */
-function optionsOf(job: string, data: HealthJobData) {
+/**
+ * The options `JobRunsService.run` takes for a job's schedule or manual run.
+ *
+ * @param job the job name
+ * @param data the BullMQ job data: a manual run carries its `job_runs` id
+ * @returns the run options (`schedule`, or `manual` on the existing row)
+ */
+export function optionsOf(job: string, data: HealthJobData) {
   return data.runId === undefined
     ? ({ job, trigger: 'schedule' } as const)
     : ({ job, trigger: 'manual', runId: data.runId } as const);

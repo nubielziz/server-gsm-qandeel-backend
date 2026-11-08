@@ -1,5 +1,6 @@
-// Unit tests of the default templates (features 12a and 14b): they use only their event's placeholders, cover every merchant event the platform
-// wires and the four customer account mails, and the data sections of migrations 0011 and 0012 together are exactly what `defaultTemplatesSql()` writes.
+// Unit tests of the default templates (features 12a, 14b and 12b): they use only their event's placeholders, cover every merchant event the
+// platform wires, the four customer account mails and both alert events, and the data sections of migrations 0011, 0012 and 0015 together are
+// exactly what `defaultTemplatesSql()` writes.
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { DEFAULT_TEMPLATES, defaultTemplatesSql } from './default-templates';
@@ -39,6 +40,14 @@ describe('DEFAULT_TEMPLATES', () => {
     }
   });
 
+  it('word each alert message with the rule, the subject, the value against the limit and the detail', () => {
+    for (const template of DEFAULT_TEMPLATES.filter((t) => t.audience === 'staff')) {
+      const label = `${template.event} ${template.channel}`;
+      for (const name of ['ruleName', 'subject', 'metric', 'value', 'threshold', 'detail'])
+        expect(template.body, `${label} {{${name}}}`).toContain(`{{${name}}}`);
+    }
+  });
+
   it('give the links the merchant mails need: the link and its expiry', () => {
     for (const key of MERCHANT_MAIL_EVENT_KEYS) {
       const template = DEFAULT_TEMPLATES.find((t) => t.event === key)!;
@@ -62,7 +71,11 @@ describe('DEFAULT_TEMPLATES', () => {
 });
 
 /** The migrations that insert default templates, oldest first. */
-const MIGRATIONS = ['0011_notifications_delivery.sql', '0012_customer_mail_templates.sql'] as const;
+const MIGRATIONS = [
+  '0011_notifications_delivery.sql',
+  '0012_customer_mail_templates.sql',
+  '0015_alert_templates.sql',
+] as const;
 
 /** The `event|channel|audience|locale` key of every row an INSERT in a migration holds (a row starts with two spaces and a bracket). */
 function keysInInsert(insert: string): string[] {
@@ -94,5 +107,17 @@ describe('the migrations that insert the default templates', () => {
     const inserted = MIGRATIONS.flatMap((file) => keysInInsert(insertOf(file))).sort();
     const expected = DEFAULT_TEMPLATES.map((t) => `${t.event}|${t.channel}|${t.audience}|${t.locale}`).sort();
     expect(inserted).toEqual(expected);
+  });
+});
+
+describe('the alert templates (feature 12b)', () => {
+  it('are the two alert events by email and Telegram, for the staff audience', () => {
+    const staff = DEFAULT_TEMPLATES.filter((template) => template.audience === 'staff');
+    expect(staff.map((template) => `${template.event}:${template.channel}`)).toEqual([
+      'alert.fired:email',
+      'alert.fired:telegram',
+      'alert.resolved:email',
+      'alert.resolved:telegram',
+    ]);
   });
 });

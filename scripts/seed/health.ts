@@ -1,12 +1,13 @@
 // Seeder of the health module (feature 9): a week of service checks (the System health uptime bars and the Dashboard supplier health)
 // and the run history of the scheduled jobs (the Jobs and Database tabs), shaped like the frontend mock's calm story
-// (src/features/system-health/mocks/seedOps.ts, seedIntegrity.ts). Alert rules, alerts and incidents are feature 12b's seed.
+// (src/features/system-health/mocks/seedOps.ts, seedIntegrity.ts). Alert rules, alerts, incidents and the integrity runs are `health-alerts.ts` (feature 12b).
 //
 // It runs after the suppliers seed (a check of `supplier:<id>` needs the supplier) and writes only into empty tables: the worker's own
 // checker and job runs are the real data, so a database that already has them keeps them and the seed adds nothing.
 import { sql } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../src/infra/db';
 import { type DemoSeed, demoNumericId, demoRows } from './demo-state';
+import { seedHealthAlerts } from './health-alerts';
 import { type SeedReport, insertRows, syncIdentity } from './helpers';
 
 const MINUTE_MS = 60_000;
@@ -222,5 +223,5 @@ async function seedJobRuns(db: DbExecutor, demo: DemoSeed): Promise<SeedReport> 
  * @returns one report per table
  */
 export async function seedHealth(db: DbExecutor, demo: DemoSeed): Promise<SeedReport[]> {
-  return [await seedServiceChecks(db, demo), await seedJobRuns(db, demo)];
+  return [await seedServiceChecks(db, demo), await seedJobRuns(db, demo), ...(await seedHealthAlerts(db, demo))];
 }

@@ -113,9 +113,14 @@ describe('the real worker (bun src/worker.ts)', () => {
 
     // 3. Its own metrics listener shows the ticks and the NOTIFY connection is open.
     // (The tick that found the event may still be running when the attempt shows: wait for a tick that has finished.)
+    // (The relay can be up before the metrics listener: the worker schedules every job of every module and starts the alert evaluation first,
+    // so a refused connection means "not listening yet", like a body without the ticks.)
     const metrics = await eventually(async () => {
-      const text = await (await fetch(`http://127.0.0.1:${port}/metrics`)).text();
-      return /queue_jobs_processed_total\{queue="outbox-relay",job="tick",outcome="completed"\} [1-9]/.test(text)
+      const text = await fetch(`http://127.0.0.1:${port}/metrics`)
+        .then((response) => response.text())
+        .catch(() => undefined);
+      return text !== undefined &&
+        /queue_jobs_processed_total\{queue="outbox-relay",job="tick",outcome="completed"\} [1-9]/.test(text)
         ? text
         : undefined;
     }, 10_000);

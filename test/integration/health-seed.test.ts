@@ -19,6 +19,7 @@ const frontendPresent = existsSync(demoStatePath());
 const clock = new TestClock('2026-11-05T12:00:00.000Z');
 let t: TestApp;
 let staff: AdminApi;
+let alertsStaff: AdminApi;
 let activeSupplierIds: number[] = [];
 
 beforeAll(async () => {
@@ -32,6 +33,7 @@ beforeAll(async () => {
     .map((supplier) => Number(/\d+$/.exec(supplier.id)![0]));
   await runSeed((await testDb()).db, demo, t.config);
   staff = await adminWith(t, ['system:read', 'dashboard:read']);
+  alertsStaff = await adminWith(t, ['alerts:read', 'incidents:read']);
 });
 afterAll(async () => {
   if (!frontendPresent) return;
@@ -116,6 +118,7 @@ describe.skipIf(!frontendPresent)('the health seed', () => {
         'balance_check',
         'client_group_promotion',
         'db_size_sample',
+        'ledger_integrity',
         'price_sync',
         'service_checks_purge',
         'session_purge',
@@ -144,15 +147,127 @@ describe.skipIf(!frontendPresent)('the health seed', () => {
     expect(body.size.growthPerDayBytes).toBeLessThan(4_310_000);
   });
 
+  it('seeds the ten alert rules of the mock, in its order, one muted and one switched off', async () => {
+    const { db } = await testDb();
+    const rules = await db.select().from(s.alertRules).orderBy(s.alertRules.id);
+    expect(rules.map((rule) => rule.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(rules.map((rule) => rule.key).slice(0, 3)).toEqual([
+      'supplier_timeout_rate',
+      'ledger_mismatch',
+      'api_rate5xx',
+    ]);
+    expect(rules.filter((rule) => !rule.isActive).map((rule) => rule.key)).toEqual(['redis_memory']);
+    expect(
+      rules
+        .filter((rule) => rule.mutedUntil !== null)
+        .map((rule) => [rule.key, rule.mutedUntil!.getTime() > clock.nowMs()]),
+    ).toEqual([['supplier_balance_low', true]]);
+    expect(rules.every((rule) => rule.deletedAt === null)).toBe(true);
+    const wire = await alertsStaff.get('/admin/alert-rules?_start=0&_end=25');
+    expect(wire.status).toBe(200);
+    expect(wire.total).toBe(10);
+    expect(wire.body.map((rule: { name: string }) => rule.name)).toEqual([...rules.map((rule) => rule.name)].sort());
+    expect(wire.body.find((rule: { key: string }) => rule.key === 'supplier_timeout_rate')).toMatchObject({
+      metric: 'supplier.timeout_rate',
+      threshold: 20,
+      unit: 'percent',
+      open: false,
+      muted: false,
+    });
+    expect(wire.body.find((rule: { key: string }) => rule.key === 'supplier_balance_low')).toMatchObject({
+      unit: null,
+      muted: true,
+    });
+  });
+
+  it('seeds a month of resolved alerts with the rule snapshot, and none open: the console opens on Operational', async () => {
+    const { db } = await testDb();
+    const alerts = await db.select().from(s.alertEvents).orderBy(s.alertEvents.id);
+    expect(alerts).toHaveLength(10);
+    expect(alerts.every((alert) => alert.status === 'resolved' && alert.resolvedAt !== null)).toBe(true);
+    const times = alerts.map((alert) => alert.startedAt.getTime());
+    expect(times).toEqual([...times].sort((a, b) => a - b));
+    expect(alerts.every((alert) => alert.startedAt.getTime() < clock.nowMs())).toBe(true);
+    // A queue alert is named by its subject label, a supplier alert has its id, the ledger alert is about the system.
+    expect(alerts.find((alert) => alert.subjectKey === 'queue:orders.fetch')).toMatchObject({
+      subjectType: 'queue',
+      subjectId: null,
+      unit: 's',
+    });
+    expect(alerts.find((alert) => alert.subjectKey === 'supplier:6')).toMatchObject({
+      subjectLabel: 'Bosphorus Unlock',
+      unit: 'percent',
+    });
+    expect(alerts.filter((alert) => alert.metric === 'ledger.mismatch_count')).toMatchObject([
+      { subjectType: 'system', subjectKey: 'system', note: 'Reversing entry posted in Finance.' },
+    ]);
+    const wire = await alertsStaff.get('/admin/alerts?_start=0&_end=25');
+    expect(wire.total).toBe(10);
+    expect(wire.body[0].startedAt > wire.body.at(-1).startedAt).toBe(true);
+    expect((await alertsStaff.get('/admin/alerts?open=true')).total).toBe(0);
+    expect(
+      wire.body.every(
+        (alert: { subjectId: number; rule: { key: string } }) =>
+          Number.isInteger(alert.subjectId) && alert.rule.key !== '',
+      ),
+    ).toBe(true);
+  });
+
+  it('seeds four resolved incidents with their timelines, root cause and who closed them', async () => {
+    const { db } = await testDb();
+    const incidents = await db.select().from(s.incidents).orderBy(s.incidents.id);
+    expect(incidents).toHaveLength(4);
+    expect(
+      incidents.every(
+        (incident) => incident.status === 'resolved' && incident.resolvedAt !== null && incident.rootCause !== null,
+      ),
+    ).toBe(true);
+    const wire = await alertsStaff.get('/admin/incidents');
+    expect(wire.total).toBe(4);
+    expect((await alertsStaff.get('/admin/incidents?open=true')).total).toBe(0);
+    const [newest] = wire.body;
+    expect(newest.timeline.at(-1)).toMatchObject({ status: 'resolved' });
+    expect(newest.timeline[0]).toMatchObject({ status: 'investigating' });
+    expect(newest.createdBy).toMatchObject({ name: expect.any(String) });
+  });
+
+  it('seeds two weeks of clean nightly integrity runs that the Integrity tab reads', async () => {
+    const { db } = await testDb();
+    const runs = await db
+      .select()
+      .from(s.jobRuns)
+      .where(sql`job = 'ledger_integrity'`)
+      .orderBy(s.jobRuns.id);
+    expect(runs).toHaveLength(14);
+    expect(runs.every((run) => run.status === 'succeeded' && run.trigger === 'schedule')).toBe(true);
+    const report = await staff.get('/admin/system/integrity');
+    expect(report.status).toBe(200);
+    expect(report.body).toMatchObject({ running: false, result: 'pass' });
+    expect(report.body.lastRun).toMatchObject({ job: 'ledger_integrity', status: 'succeeded' });
+    expect(report.body.lastSuccessAt).toBe(report.body.lastRun.finishedAt);
+    expect(report.body.checks.map((check: { status: string }) => check.status)).toEqual([
+      'pass',
+      'pass',
+      'pass',
+      'pass',
+    ]);
+  });
+
   it('is idempotent: a second run leaves the tables as they are, even with a later clock', async () => {
     const { db } = await testDb();
     const count = async (table: typeof s.serviceChecks | typeof s.jobRuns) =>
       (await db.select({ n: sql<number>`count(*)::int` }).from(table))[0]!.n;
     const before = [await count(s.serviceChecks), await count(s.jobRuns)];
     const reports = await runSeed(db, await loadDemoState({ now: clock.nowMs() + 3_600_000 }), t.config);
-    const mine = reports.filter((report) => ['service_checks', 'job_runs'].includes(report.table));
+    const mine = reports.filter((report) =>
+      ['service_checks', 'job_runs', 'alert_rules', 'alert_events', 'incidents'].includes(report.table),
+    );
     expect(mine.map((report) => [report.table, report.inserted])).toEqual([
       ['service_checks', 0],
+      ['job_runs', 0],
+      ['alert_rules', 0],
+      ['alert_events', 0],
+      ['incidents', 0],
       ['job_runs', 0],
     ]);
     expect([await count(s.serviceChecks), await count(s.jobRuns)]).toEqual(before);

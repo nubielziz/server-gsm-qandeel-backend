@@ -431,9 +431,12 @@ use with a sample of each, whether the message is transactional (always sent, no
 mails, `wallet.low_balance`, `service.price_changed` (a digest), `deposit.approved`, `invoice.paid`, `order.completed` and `order.failed` (off until a merchant
 opts in), the bot's `telegram.linked` and `telegram.unlinked`, the six customer events of the console's Customer emails tab (their producers are the storefront
 features) and the four transactional customer account mails of feature 14b (`customer.magic_link`, `customer.password_reset`, `customer.invited`,
-`customer.email_verification`; variables `customerName`, `link`, `expiresAt`; `CUSTOMER_MAIL_EVENT_KEYS`). A later feature (12b alerts for staff) adds its events with
-`NotificationEventRegistry.register` in `onModuleInit`. The default English templates are `DEFAULT_TEMPLATES`; migration `0011_notifications_delivery.sql` inserts the
-merchant rows and `0012_customer_mail_templates.sql` the customer mails' rows (a test reads both files and keeps code and migrations equal; a later migration that adds
+`customer.email_verification`; variables `customerName`, `link`, `expiresAt`; `CUSTOMER_MAIL_EVENT_KEYS`). Feature 12b adds two staff events, `alert.fired` and `alert.resolved` (email and Telegram,
+always sent), for the messages of alerts. They go to no person's row but to the ops mailbox(es) and chat of the configuration
+(`ALERTS_EMAIL_TO`, `ALERTS_TELEGRAM_CHAT_ID`): `NotificationService.enqueueToAddress({ tx }, ...)` writes the row for the
+pseudo-recipient (`staff`, `OPERATIONS_RECIPIENT_ID` = 0) with the address or chat in the payload (`to`, `chatId`; the log masks
+both), or a `failed` row with the caller's reason when none is configured. The default English templates are `DEFAULT_TEMPLATES`; migration `0011_notifications_delivery.sql` inserts the
+merchant rows, `0012_customer_mail_templates.sql` the customer mails' rows and `0015_alert_templates.sql` the alert rows (a test reads both files and keeps code and migrations equal; a later migration that adds
 templates must be listed in that test).
 
 **One delivery path** (decision 020, `docs/queues.md` "notifications"). A use case calls `NotificationService.enqueue({ tx }, ...)`: a `notifications` row (`queued`) and the

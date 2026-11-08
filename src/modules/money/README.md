@@ -288,8 +288,8 @@ Outgoing webhook events from the map (documented as OpenAPI `webhooks` once defi
 ## Jobs and schedules
 
 `payment_auto_credit` (queue `maintenance`, every minute; see `docs/queues.md`): credits the confirmed top-ups of automatic gateways after the delay. `POST /admin/ledger/reconcile` runs in the request and records a `job_runs` row of job `ledger_reconcile`
-(trigger `manual`, overlap refused: `RECONCILE_RUNNING`); the nightly integrity job of feature 12b can reuse
-`ReconcileService.compare`.
+(trigger `manual`, overlap refused: `RECONCILE_RUNNING`); the nightly integrity job of feature 12b reuses its comparison
+through the exported `compareLedgerBalances(db, ranAt)` (which `ReconcileService.compare` calls too).
 
 ## Cache keys
 

@@ -43,6 +43,29 @@ describe('the built-in events', () => {
     expect(registry.has('nope.nothing')).toBe(false);
   });
 
+  it('register the two alert events for the staff audience, sent by email and Telegram, with the variables the messages need (feature 12b)', () => {
+    const registry = new NotificationEventRegistry();
+    for (const key of ['alert.fired', 'alert.resolved']) {
+      const definition = registry.get(key, 'staff');
+      expect(definition, key).toBeDefined();
+      expect(definition?.channels).toEqual(['email', 'telegram']);
+      expect(definition?.transactional).toBe(true);
+      expect(definition?.variables).toEqual([
+        'ruleName',
+        'severity',
+        'metric',
+        'value',
+        'threshold',
+        'subject',
+        'detail',
+      ]);
+      // An alert is not a merchant's or a customer's message.
+      expect(registry.get(key, 'merchant')).toBeUndefined();
+      expect(registry.get(key, 'customer')).toBeUndefined();
+    }
+    expect(registry.merchantPreferenceEvents().map((definition) => definition.key)).not.toContain('alert.fired');
+  });
+
   it('register the four customer account mails as transactional email events, next to the six console events', () => {
     const registry = new NotificationEventRegistry();
     for (const key of CUSTOMER_MAIL_EVENT_KEYS) {

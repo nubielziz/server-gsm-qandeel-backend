@@ -1,6 +1,7 @@
 // Read queries on `alert_events` and `incidents` (health module) for the System health overview: the open alerts and incidents and
 // how many alerts were open at each moment of the last 24 hours. Alert rules, the evaluator and the routes that change alerts
-// are feature 12b's; this file only reads. Supplier and gateway names for an alert's subject come from a plain join.
+// are feature 12b's (`alert-events.repository.ts`); this file only reads for the overview. The subject's name is the one stored when
+// the alert fired; a plain join to suppliers and gateways names the subject of an alert that has none.
 import { desc, eq, sql } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
 import { alertEvents, incidents } from '../db/schema';
@@ -31,6 +32,7 @@ export async function openAlerts(db: DbExecutor): Promise<OpenAlert[]> {
       status: a.status,
       subjectType: a.subjectType,
       subjectId: a.subjectId,
+      subjectLabel: a.subjectLabel,
       startedAt: a.startedAt,
       supplierName: s.suppliers.name,
       gatewayName: s.paymentGateways.name,
@@ -46,6 +48,7 @@ export async function openAlerts(db: DbExecutor): Promise<OpenAlert[]> {
     severity: row.severity,
     status: row.status as 'firing' | 'acknowledged',
     subjectLabel:
+      row.subjectLabel ??
       row.supplierName ??
       row.gatewayName ??
       (row.subjectType === 'system' || row.subjectId === null ? null : `${row.subjectType} #${row.subjectId}`),
@@ -122,15 +125,16 @@ export async function lastIncidentResolvedAt(db: DbExecutor): Promise<Date | nul
  * Whether the alert evaluator ran lately.
  *
  * Why: M213: while the rules cannot be evaluated, "no open alerts" must not read as healthy. Feature 12b's evaluator records its
- * runs in `job_runs` under the job name {@link ALERT_EVALUATION_JOB}; until it exists no run is found.
+ * runs in `job_runs` under the job name {@link ALERT_EVALUATION_JOB}; its `result.unevaluated` counts the active rules it could not read
+ * that time (Prometheus down, ANSWERS Q15), and such a run does not count: only a run that judged every active rule does.
  *
  * @param db the database
  * @param since how far back a succeeded run counts
- * @returns true when a succeeded run started since then
+ * @returns true when a succeeded run that evaluated every active rule started since then
  */
 export async function alertsEvaluatedSince(db: DbExecutor, since: Date): Promise<boolean> {
   const rows = await db.execute<{ n: number }>(
-    sql`select count(*)::int as n from job_runs where job = ${ALERT_EVALUATION_JOB} and status = 'succeeded' and started_at >= ${since}`,
+    sql`select count(*)::int as n from job_runs where job = ${ALERT_EVALUATION_JOB} and status = 'succeeded' and started_at >= ${since} and coalesce((result->>'unevaluated')::int, 0) = 0`,
   );
   return (rows.rows[0]?.n ?? 0) > 0;
 }

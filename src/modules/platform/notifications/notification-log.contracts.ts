@@ -8,7 +8,13 @@ import { NOTIFICATION_CHANNELS, NOTIFICATION_RECIPIENT_TYPES, NOTIFICATION_STATU
 const LogRow = z.object({
   id: zId,
   recipientType: z.enum(NOTIFICATION_RECIPIENT_TYPES),
-  recipientId: zId,
+  recipientId: z
+    .number()
+    .int()
+    .min(0)
+    .describe(
+      'The recipient row id; `0` with `recipientType` `staff` names the ops address or chat that alert messages go to (feature 12b).',
+    ),
   channel: z.enum(NOTIFICATION_CHANNELS),
   event: z.string().describe('The event key, such as `wallet.low_balance`.'),
   status: z.enum(NOTIFICATION_STATUSES),

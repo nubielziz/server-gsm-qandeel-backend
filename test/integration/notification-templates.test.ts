@@ -68,7 +68,15 @@ describe('GET /admin/notification-templates', () => {
     expect(res.total).toBe(DEFAULT_TEMPLATES.length);
     const events = res.body.map((row: { event: string }) => row.event);
     expect(events).toEqual([...events].sort());
-    expect(res.body[0]).toEqual({
+    // The alert templates of feature 12b (staff audience) come first, then the merchant and customer ones.
+    expect(res.body[0]).toMatchObject({
+      event: 'alert.fired',
+      channel: 'email',
+      audience: 'staff',
+      subject: 'Alert ({{severity}}): {{ruleName}} - {{subject}}',
+    });
+    // The wire fields of one row: the first customer account mail of feature 14b.
+    expect(res.body.find((row: { event: string }) => row.event === 'customer.email_verification')).toEqual({
       id: expect.any(Number),
       event: 'customer.email_verification',
       channel: 'email',

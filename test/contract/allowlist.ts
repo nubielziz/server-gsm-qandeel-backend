@@ -35,6 +35,23 @@ export const ALLOWLIST: readonly AllowlistEntry[] = [
       'plain strings, which the console normalises. Roles and permissions come from the server; the mock is only a seed (B8).',
   },
   {
+    route: 'POST /admin/alert-rules',
+    part: 'request',
+    path: 'body.metric',
+    rule: 'enum',
+    mismatch: 'B101',
+    reason:
+      'The console types the metric as a string and offers 11 keys; the backend owns the registry (B101, health-commissions-13) and answers 422 on `metric` for any other key, and OpenAPI carries the 11 keys as an enum.',
+  },
+  {
+    route: 'PATCH /admin/alert-rules/:id',
+    part: 'request',
+    path: 'body.metric',
+    rule: 'enum',
+    mismatch: 'B101',
+    reason: "Same as POST /admin/alert-rules: the metric is one of the backend registry's 11 keys (B101).",
+  },
+  {
     route: 'GET /admin/customers',
     part: 'response',
     path: 'data[].currency',

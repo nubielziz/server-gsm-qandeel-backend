@@ -109,6 +109,7 @@ export const modules = [
     name: 'System health (checks, alerts, incidents, jobs, queues)',
     domain: 'G',
     tables: ['service_checks', 'alert_rules', 'alert_events', 'incidents', 'job_runs'],
+    additionalTables: ['alert_streaks'],
     rows: [/^admin \S+ \/admin\/(system|alert-rules|alerts|incidents|queues)(\/|$)/, /^system GET \/(health|metrics)$/],
   },
   {

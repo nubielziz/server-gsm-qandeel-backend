@@ -37,3 +37,12 @@ export type { Measure, MeasureSpec, MeasureUnit, MetricState } from './domain/me
 export { OLDEST_WAITING_GAUGE } from './application/queue-admin.service';
 export { PrometheusClient } from './application/prometheus.client';
 export type { PromMatrix, PromVector } from './application/prometheus.client';
+export { AlertEvaluator } from './application/alert-evaluator';
+export type { EvaluationReport } from './application/alert-evaluator';
+export { AlertNotifier, NotificationAlertNotifier } from './application/alert-notifier';
+export type { AlertNotice } from './application/alert-notifier';
+export { LedgerIntegrityCheck } from './application/ledger-integrity-check';
+export { INTEGRITY_JOB } from './domain/integrity';
+export { METRICS, METRIC_KEYS } from './domain/metric-registry';
+export type { MetricKey } from './domain/metric-registry';
+export { AlertEvaluationProcessor, LedgerIntegrityProcessor } from './jobs/alerts-processors';

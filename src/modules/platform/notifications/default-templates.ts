@@ -1,6 +1,6 @@
-// The default templates of the merchant events and the customer account mails (platform module, features 12a and 14b): English email and
-// Telegram texts. Migrations 0011 (merchant) and 0012 (customer mails) insert the same rows into a fresh database (a test keeps code and
-// migrations equal); the console edits them afterwards.
+// The default templates of the merchant events, the customer account mails and the alert messages (platform module, features 12a,
+// 14b and 12b): English email and Telegram texts. Migrations 0011 (merchant), 0012 (customer mails) and 0015 (alerts) insert the
+// same rows into a fresh database (a test keeps code and migrations equal); the console edits them afterwards.
 import type { NotificationAudience, NotificationChannel } from '../db/schema';
 
 /** One default template, as the migration inserts it. */
@@ -158,6 +158,38 @@ export const DEFAULT_TEMPLATES: readonly DefaultTemplate[] = [
     locale: 'en',
     subject: '',
     body: 'Telegram notifications for {{merchantName}} are off. Create a new link in the portal to connect this chat again.',
+  },
+  {
+    event: 'alert.fired',
+    channel: 'email',
+    audience: 'staff',
+    locale: 'en',
+    subject: 'Alert ({{severity}}): {{ruleName}} - {{subject}}',
+    body: '{{ruleName}} fired on {{subject}} (severity: {{severity}}).\n\n{{metric}} is {{value}} (limit {{threshold}}).\n{{detail}}\n\nOpen System health, Alerts and incidents, in the admin console to acknowledge it.',
+  },
+  {
+    event: 'alert.fired',
+    channel: 'telegram',
+    audience: 'staff',
+    locale: 'en',
+    subject: '',
+    body: 'ALERT {{severity}}: {{ruleName}} on {{subject}}. {{metric}} is {{value}} (limit {{threshold}}). {{detail}}',
+  },
+  {
+    event: 'alert.resolved',
+    channel: 'email',
+    audience: 'staff',
+    locale: 'en',
+    subject: 'Resolved: {{ruleName}} - {{subject}}',
+    body: '{{ruleName}} on {{subject}} is resolved (severity was {{severity}}).\n\n{{metric}} is {{value}} (limit {{threshold}}).\n{{detail}}',
+  },
+  {
+    event: 'alert.resolved',
+    channel: 'telegram',
+    audience: 'staff',
+    locale: 'en',
+    subject: '',
+    body: 'RESOLVED: {{ruleName}} on {{subject}}. {{metric}} is {{value}} (limit {{threshold}}). {{detail}}',
   },
   {
     event: 'customer.magic_link',

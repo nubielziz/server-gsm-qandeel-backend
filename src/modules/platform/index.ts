@@ -117,7 +117,14 @@ export {
 } from './notifications/notification-events';
 export type { NotificationEventDefinition } from './notifications/notification-events';
 export { NOTIFICATION_SEND_EVENT, NotificationService } from './notifications/notification.service';
-export type { EnqueueResult, NotificationInput, SendNowResult, SkipReason } from './notifications/notification.service';
+export type {
+  AddressedNotificationInput,
+  AddressedResult,
+  EnqueueResult,
+  NotificationInput,
+  SendNowResult,
+  SkipReason,
+} from './notifications/notification.service';
 export type { AttemptContext, DeliveryOutcome } from './notifications/notification-delivery';
 export { DeliveryError } from './notifications/delivery-error';
 export { InMemoryMailDriver } from './notifications/mail-driver';

@@ -4,11 +4,13 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 import { eq, sql } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
 import { Money } from '../../src/common/money';
-import { schema as s } from '../../src/infra/db';
+import { DbService, schema as s } from '../../src/infra/db';
 import {
   type MoneyEventPosting,
+  ReconcileService,
   adjust,
   b2cPay,
+  compareLedgerBalances,
   complete,
   deposit,
   order,
@@ -465,6 +467,20 @@ describe('POST /admin/ledger/reconcile', () => {
     expect((await db.select({ n: sql<number>`count(*)::int` }).from(s.ledgerEntries))[0]!.n).toBe(20);
     const runs = await db.select().from(s.jobRuns).orderBy(s.jobRuns.id);
     expect(runs.map((run) => run.result)).toMatchObject([{ differences: 2 }, { differences: 2 }]);
+  });
+
+  it('compares with the plain function the integrity check uses: compareLedgerBalances answers what ReconcileService.compare answers, and writes nothing', async () => {
+    const { db, zain } = await world();
+    await db.execute(
+      sql`update ledger_accounts set balance = balance + 1.2345 where kind = 'client_wallet' and owner_id = ${zain.id}`,
+    );
+    const viaService = await t.app.get(ReconcileService).compare(clock.now());
+    const viaFunction = await compareLedgerBalances(t.app.get(DbService), clock.now());
+    expect(viaFunction).toEqual(viaService);
+    expect(viaFunction.differences.map((row) => row.difference)).toEqual(['-1.2345']);
+    // Only reads: no run was recorded and nothing was audited.
+    expect(await db.$count(s.jobRuns)).toBe(0);
+    expect(await db.$count(s.auditLogs)).toBe(0);
   });
 
   it('answers 409 RECONCILE_RUNNING while a run is going on, and runs again once it ended', async () => {

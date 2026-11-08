@@ -66,6 +66,17 @@ const CUSTOMER_SAMPLE = {
   expiresAt: '2026-11-01 11:00 UTC',
 } as const;
 
+/** Sample data of the staff events: an alert of a made-up rule, the way the messages word it (feature 12b). */
+const STAFF_SAMPLE = {
+  ruleName: 'Supplier timeouts',
+  severity: 'critical',
+  metric: 'supplier.timeout_rate',
+  value: '25%',
+  threshold: '20%',
+  subject: 'Supplier Bosphorus Unlock',
+  detail: 'The limit is above 20% over 3 min.',
+} as const;
+
 /** Picks the samples of the listed variables; a variable with no sample is a programming error that the unit test catches. */
 function samplesOf(
   source: Readonly<Record<string, string>>,
@@ -83,6 +94,24 @@ function merchantEvent(
     audience: 'merchant',
     sample: samplesOf(MERCHANT_SAMPLE, spec.variables),
     defaultEmail: spec.defaultEmail ?? true,
+    defaultTelegram: false,
+  };
+}
+
+/**
+ * A staff event: always sent (it carries no preference), to the ops recipients named by the configuration, not to a staff member's row.
+ *
+ * Why: feature 12b, RULES health 6: the messages of alerts go to the ops mailbox and chat (`ALERTS_EMAIL_TO`, `ALERTS_TELEGRAM_CHAT_ID`).
+ */
+function staffEvent(
+  spec: Omit<NotificationEventDefinition, 'audience' | 'sample' | 'defaultTelegram' | 'defaultEmail' | 'transactional'>,
+): NotificationEventDefinition {
+  return {
+    ...spec,
+    audience: 'staff',
+    sample: samplesOf(STAFF_SAMPLE, spec.variables),
+    transactional: true,
+    defaultEmail: false,
     defaultTelegram: false,
   };
 }
@@ -127,8 +156,7 @@ export const TELEGRAM_UNLINKED_EVENT = 'telegram.unlinked';
 /**
  * The events built into the platform: the merchant events 12a wires now, the four transactional customer account mails of
  * feature 14b (sign-in link, password reset, invitation, email verification), the customer events the console's templates list
- * (their producers are the storefront, support and recovery features), and nothing for staff until the alert feature registers
- * its own.
+ * (their producers are the storefront, support and recovery features), and the two staff events of the alerts (feature 12b).
  *
  * Why: "a registry entry for each, with its default template seeded" (brief 12a); the customer events exist so the console's
  * Customer emails tab can be edited before the storefront sends them.
@@ -225,6 +253,22 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
     channels: ['telegram'],
     variables: ['merchantName'],
     transactional: true,
+  }),
+  staffEvent({
+    key: 'alert.fired',
+    label: 'Alert fired',
+    description:
+      'A rule of the System health page fired: sent once to the ops email and Telegram chat, and again after the reminder interval until a staff member acknowledges it.',
+    channels: ['email', 'telegram'],
+    variables: ['ruleName', 'severity', 'metric', 'value', 'threshold', 'subject', 'detail'],
+  }),
+  staffEvent({
+    key: 'alert.resolved',
+    label: 'Alert resolved',
+    description:
+      'An alert closed: its value stayed in range, or its rule was switched off or deleted. Sent once to the ops email and Telegram chat.',
+    channels: ['email', 'telegram'],
+    variables: ['ruleName', 'severity', 'metric', 'value', 'threshold', 'subject', 'detail'],
   }),
   customerEvent({
     key: 'order.received',
@@ -324,7 +368,7 @@ export function isEventKey(text: string): boolean {
  *
  * Why: see {@link NotificationEventDefinition}. The API validates template writes and preferences against it and the worker
  * reads the variables of an event from it; both load the same class, so both see the same list. A feature that adds events
- * (the alert feature for staff) calls `register` in `onModuleInit`.
+ * of its own calls `register` in `onModuleInit`.
  */
 @Injectable()
 export class NotificationEventRegistry {

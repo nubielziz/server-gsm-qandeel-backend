@@ -20,6 +20,53 @@ export const LEDGER_RECONCILE_JOB = 'ledger_reconcile';
 export type ReconcileReport = z.output<typeof ReconcileReportSchema>;
 
 /**
+ * Compares every account's stored balance with the sum of its entries, in one snapshot.
+ *
+ * Why: scenario system-integrity steps 1 and 2. It is a plain function so the health module's nightly integrity check can call it through a
+ * late import of money's index (decision 032: a provider of money cannot be built from the health module), and so `ReconcileService.compare`
+ * and the integrity job answer from one query. It only reads.
+ *
+ * @param db the database service (it opens the transaction)
+ * @param ranAt the time to report
+ * @returns when it ran, how much it checked and the accounts that differ (debit-positive amounts)
+ */
+export async function compareLedgerBalances(db: DbService, ranAt: Date): Promise<ReconcileReport> {
+  // Repeatable read: the two counts and the comparison describe one instant even while postings go on.
+  return db.runInTransaction(
+    async ({ tx }) => {
+      const [totals, differences] = [await countLedger(tx), await findBalanceDifferences(tx)];
+      const names = await loadOwnerNames(
+        tx,
+        differences.flatMap((row) =>
+          row.ownerType !== null && row.ownerId !== null ? [{ ownerType: row.ownerType, ownerId: row.ownerId }] : [],
+        ),
+      );
+      return {
+        ranAt: ranAt.toISOString(),
+        accountsChecked: totals.accounts,
+        entriesChecked: totals.entries,
+        differences: differences.map((row) => {
+          const stored = toDebitPositive(row.kind, Money.of(row.stored));
+          const expected = toDebitPositive(row.kind, Money.of(row.expected));
+          return {
+            accountId: row.accountId,
+            kind: row.kind,
+            ownerName:
+              row.ownerType !== null && row.ownerId !== null
+                ? (names.get(ownerKey(row.ownerType, row.ownerId)) ?? null)
+                : null,
+            stored: stored.toWire(),
+            expected: expected.toWire(),
+            difference: stored.sub(expected).toWire(),
+          };
+        }),
+      };
+    },
+    { isolation: 'repeatable read' },
+  );
+}
+
+/**
  * Runs the reconciliation.
  *
  * Why: scenario system-integrity steps 1, 3 and 6: "sum of entries per account = balance". The route is synchronous (ANSWERS
@@ -88,40 +135,8 @@ export class ReconcileService {
    * @param ranAt the time to report
    * @returns the report
    */
-  async compare(ranAt: Date): Promise<ReconcileReport> {
-    // Repeatable read: the two counts and the comparison describe one instant even while postings go on.
-    return this.db.runInTransaction(
-      async ({ tx }) => {
-        const [totals, differences] = [await countLedger(tx), await findBalanceDifferences(tx)];
-        const names = await loadOwnerNames(
-          tx,
-          differences.flatMap((row) =>
-            row.ownerType !== null && row.ownerId !== null ? [{ ownerType: row.ownerType, ownerId: row.ownerId }] : [],
-          ),
-        );
-        return {
-          ranAt: ranAt.toISOString(),
-          accountsChecked: totals.accounts,
-          entriesChecked: totals.entries,
-          differences: differences.map((row) => {
-            const stored = toDebitPositive(row.kind, Money.of(row.stored));
-            const expected = toDebitPositive(row.kind, Money.of(row.expected));
-            return {
-              accountId: row.accountId,
-              kind: row.kind,
-              ownerName:
-                row.ownerType !== null && row.ownerId !== null
-                  ? (names.get(ownerKey(row.ownerType, row.ownerId)) ?? null)
-                  : null,
-              stored: stored.toWire(),
-              expected: expected.toWire(),
-              difference: stored.sub(expected).toWire(),
-            };
-          }),
-        };
-      },
-      { isolation: 'repeatable read' },
-    );
+  compare(ranAt: Date): Promise<ReconcileReport> {
+    return compareLedgerBalances(this.db, ranAt);
   }
 
   private async start(staffId: number) {

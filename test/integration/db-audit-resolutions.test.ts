@@ -457,11 +457,11 @@ describe('system health', () => {
       ),
     );
   }
-  /** An alert for the rule with the given unit and subject (omitted = the column default). */
+  /** An alert for the rule with the given unit and subject (omitted = the column default); the subject key keeps one open alert per subject (12b). */
   const alert = (ruleId: number, unit: string | null, subjectType?: string) =>
     run(
-      `insert into alert_events (rule_id, rule_name, metric, comparator, threshold, window_seconds, severity, value, unit, subject_type)
-       values ($1, 'High errors', 'api.error_rate', 'gt', 5, 300, 'warning', 7, $2, coalesce($3, 'system'))
+      `insert into alert_events (rule_id, rule_name, metric, comparator, threshold, window_seconds, severity, value, unit, subject_type, subject_key)
+       values ($1, 'High errors', 'api.error_rate', 'gt', 5, 300, 'warning', 7, $2, coalesce($3, 'system'), coalesce($3, 'system'))
        returning unit, subject_type`,
       [ruleId, unit, subjectType ?? null],
     );

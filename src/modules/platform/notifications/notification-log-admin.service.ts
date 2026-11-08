@@ -63,30 +63,43 @@ export class NotificationLogAdminService {
   }
 }
 
+/** Masks each address of a comma list (an operations email names the addresses in its payload). */
+const maskAddresses = (addresses: string): string =>
+  addresses
+    .split(',')
+    .map((address) => maskEmail(address.trim()))
+    .join(', ');
+
 /** The masked recipient of a row: the address of an email, the chat of a Telegram message. */
 function recipientOf(row: LogRow): string {
-  if (row.notification.channel === 'email') return maskEmail(row.email ?? '');
+  if (row.notification.channel === 'email') {
+    // An alert's message has no recipient row: its addresses are in the payload.
+    const payloadTo = (row.notification.payload as { to?: unknown }).to;
+    return row.email === null && asString(payloadTo) ? maskAddresses(payloadTo) : maskEmail(row.email ?? '');
+  }
   const payloadChat = (row.notification.payload as { chatId?: unknown }).chatId;
   return maskTelegram(row.telegramChatId ?? (asString(payloadChat) ? payloadChat : null));
 }
 
 /**
- * The payload as staff may see it: every Telegram chat id is masked, at any depth.
+ * The payload as staff may see it: every Telegram chat id and every operations address list is masked, at any depth.
  *
  * Why: the recipient is masked (RULES settings 11), so a chat id in the payload (the bot's answers carry the chat they were sent to, and
- * a template variable or a nested object may carry one too) must not give back what the mask hides.
+ * a template variable or a nested object may carry one too) or the `to` addresses of an alert's email must not give back what the mask hides.
  */
 function publicPayload(payload: JsonObject): JsonObject {
-  return maskChatIds(payload) as JsonObject;
+  return maskRecipients(payload) as JsonObject;
 }
 
-/** Copies a JSON value and replaces the value of every `chatId` key, in objects and in arrays, with its mask. */
-function maskChatIds(value: JsonValue): JsonValue {
-  if (Array.isArray(value)) return value.map(maskChatIds);
+/** Copies a JSON value and replaces the value of every `chatId` and `to` key, in objects and in arrays, with its mask. */
+function maskRecipients(value: JsonValue): JsonValue {
+  if (Array.isArray(value)) return value.map(maskRecipients);
   if (value === null || typeof value !== 'object') return value;
   const copy: JsonObject = {};
   for (const [key, inner] of Object.entries(value)) {
-    copy[key] = key === 'chatId' ? maskTelegram(asString(inner) ? inner : null) : maskChatIds(inner);
+    if (key === 'chatId') copy[key] = maskTelegram(asString(inner) ? inner : null);
+    else if (key === 'to') copy[key] = asString(inner) ? maskAddresses(inner) : maskRecipients(inner);
+    else copy[key] = maskRecipients(inner);
   }
   return copy;
 }

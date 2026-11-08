@@ -8,6 +8,7 @@ import { OutboxService } from '../outbox/outbox.service';
 import { type AttemptContext, NotificationDelivery } from './notification-delivery';
 import { type NotificationEventDefinition, NotificationEventRegistry } from './notification-events';
 import { type Recipient, recipientOf } from './notification-foreign-reads';
+import { OPERATIONS_RECIPIENT_ID } from './notification-payload';
 import { findTemplateFor } from './notification-template.repository';
 import {
   type NotificationPayload,
@@ -32,6 +33,26 @@ export interface NotificationInput {
   /** Names the occurrence, so a repeat makes no second row (`outbox-<id>:email`, `telegram-update-<id>`). */
   readonly dedupeKey?: string;
 }
+
+/** What a caller asks for when the message goes to an address or chat that configuration names, not to a person's row (an alert, feature 12b). */
+export interface AddressedNotificationInput {
+  /** A registered event key for the staff audience. */
+  readonly event: string;
+  readonly channel: NotificationChannel;
+  /** For an email the addresses joined by commas, for Telegram the chat id; `undefined` when the configuration names none. */
+  readonly to: string | undefined;
+  /** The reason written on the failed row when `to` is missing (no address, no secret). */
+  readonly noRecipientReason: string;
+  /** The values of the event's placeholders. They are stored on the row and shown in the log: no secret goes here. */
+  readonly variables?: Readonly<Record<string, string>>;
+  /** Names the occurrence, so a repeat makes no second row (required: the caller runs again and again). */
+  readonly dedupeKey: string;
+}
+
+/** What `enqueueToAddress` did: like {@link EnqueueResult}, plus the failed row of a message that had nowhere to go. */
+export type AddressedResult =
+  | EnqueueResult
+  | { readonly status: 'failed'; readonly id: number; readonly created: boolean; readonly reason: string };
 
 /** Why a notification was not made. */
 export type SkipReason = 'recipient_gone' | 'recipient_suspended' | 'no_template' | 'template_off';
@@ -99,6 +120,78 @@ export class NotificationService {
       updatedAt: now,
     });
     // The event is written with the row, so a row made by an earlier run of this call already has its event.
+    if (created) {
+      await this.outbox.add(work.tx, {
+        type: NOTIFICATION_SEND_EVENT,
+        aggregateType: 'notifications',
+        aggregateId: row.id,
+      });
+    }
+    return { status: 'queued', id: row.id, created };
+  }
+
+  /**
+   * Writes a notification to an address or chat named by configuration, and the event that sends it, in the caller's transaction.
+   *
+   * Why: feature 12b: the messages of alerts go to the ops mailbox and chat, which are not rows of `staff_users`. The pseudo-recipient is
+   * (`staff`, {@link OPERATIONS_RECIPIENT_ID}); the address travels in the payload (`to`, or `chatId` for Telegram, which the log masks). A
+   * channel with no configured recipient is recorded as a `failed` row with the caller's reason and sends nothing, so the log says why the
+   * page never arrived. A missing or switched-off template is skipped like any other message (RULES settings 10).
+   *
+   * Side effects: inserts a `notifications` row (once per dedupe key) and, for a queued one, an `outbox_events` row.
+   *
+   * @param work the caller's transaction (`runInTransaction`)
+   * @param input the event, channel, address or chat, variables and dedupe key
+   * @returns the row (queued, or failed for a missing recipient), or why nothing was made
+   * @throws {RangeError} when the event is not registered for the staff audience, or the event has no such channel (a programming error)
+   */
+  async enqueueToAddress(
+    work: Pick<TransactionContext, 'tx'>,
+    input: AddressedNotificationInput,
+  ): Promise<AddressedResult> {
+    const definition = this.registry.get(input.event, 'staff');
+    if (!definition) throw new RangeError(`The event "${input.event}" is not registered for the audience "staff".`);
+    if (!definition.channels.includes(input.channel)) {
+      throw new RangeError(`The event "${input.event}" cannot be sent by ${input.channel}.`);
+    }
+    const template = await findTemplateFor(work.tx, {
+      event: input.event,
+      channel: input.channel,
+      audience: 'staff',
+      locale: 'en',
+    });
+    if (!template) {
+      this.logger.warn(`No ${input.channel} template for "${input.event}" (staff): nothing is sent.`);
+      return { status: 'skipped', reason: 'no_template' };
+    }
+    if (!template.isActive) return { status: 'skipped', reason: 'template_off' };
+    const now = this.clock.now();
+    const variables = { ...(input.variables ?? {}) };
+    const to = input.to?.trim() ?? '';
+    const base = {
+      recipientType: 'staff',
+      recipientId: OPERATIONS_RECIPIENT_ID,
+      channel: input.channel,
+      event: input.event,
+      dedupeKey: input.dedupeKey,
+      createdAt: now,
+      updatedAt: now,
+    } as const;
+    if (to === '') {
+      const { row, created } = await insertNotificationOnce(work.tx, {
+        ...base,
+        payload: { variables },
+        status: 'failed',
+        error: input.noRecipientReason,
+      });
+      if (created)
+        this.logger.warn(
+          `Notification ${row.id} (${input.event}, ${input.channel}) failed: ${input.noRecipientReason}`,
+        );
+      return { status: 'failed', id: row.id, created, reason: input.noRecipientReason };
+    }
+    const payload: NotificationPayload = { variables, ...(input.channel === 'email' ? { to } : { chatId: to }) };
+    const { row, created } = await insertNotificationOnce(work.tx, { ...base, payload, status: 'queued' });
     if (created) {
       await this.outbox.add(work.tx, {
         type: NOTIFICATION_SEND_EVENT,

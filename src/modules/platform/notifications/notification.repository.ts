@@ -28,6 +28,8 @@ export interface NotificationPayload {
   readonly variables?: Readonly<Record<string, string>>;
   /** A Telegram chat that overrides the recipient's linked chat (the bot's answer to `/stop` goes to a chat that is no longer linked). */
   readonly chatId?: string;
+  /** The addresses of an email that goes to the ops mailbox named by configuration, joined by commas (an alert's message, feature 12b). */
+  readonly to?: string;
   /** The price changes of a digest row. */
   readonly items?: readonly unknown[];
   /** The digest period (`YYYY-MM-DD`). */

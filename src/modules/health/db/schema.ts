@@ -1,7 +1,17 @@
 // System health tables (map domain G): periodic checks, alert rules and events, incidents and job runs.
 // Conventions: decision 027; schema additions: MISMATCHES B116; ownership: scripts/module-map.mjs.
 import { sql } from 'drizzle-orm';
-import { boolean, check, index, integer, pgTable, text, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  check,
+  index,
+  integer,
+  pgTable,
+  text,
+  unique,
+  uniqueIndex,
+  type AnyPgColumn,
+} from 'drizzle-orm/pg-core';
 import {
   bigId,
   createdAt,
@@ -90,6 +100,17 @@ export const ALERT_SUBJECT_TYPES = ['system', 'supplier', 'queue', 'gateway', 'l
 
 /** One value of {@link ALERT_SUBJECT_TYPES}. */
 export type AlertSubjectType = (typeof ALERT_SUBJECT_TYPES)[number];
+
+/**
+ * What an alert streak counts: how long a rule has been breached (so it can fire) or back in range (so it can resolve).
+ *
+ * Why: the readings of a moment (a balance, a queue age, a count, a usage) only fire or resolve an alert once they have held for the rule's
+ * whole window (feature 12b); the evaluator keeps the start of that stretch in `alert_streaks`.
+ */
+export const ALERT_STREAK_KINDS = ['breach', 'clear'] as const;
+
+/** One value of {@link ALERT_STREAK_KINDS}. */
+export type AlertStreakKind = (typeof ALERT_STREAK_KINDS)[number];
 
 /**
  * Severity of an incident.
@@ -259,6 +280,13 @@ export const alertEvents = pgTable(
     subjectType: text().$type<AlertSubjectType>().notNull().default('system'),
     /** polymorphic: suppliers by subject_type; null for system and queue alerts (B103) */
     subjectId: bigId(),
+    /** the supplier's or queue's name when the alert fired (the console's `subjectLabel`); null for system alerts (12b) */
+    subjectLabel: text(),
+    /**
+     * what makes the subject unique inside a rule: `system`, `supplier:<id>`, `queue:<name>`; the partial unique index below keeps
+     * one open alert per rule and subject (12b: a queue has no id, so the type and id alone cannot tell two queues apart)
+     */
+    subjectKey: text().notNull().default('system'),
     startedAt: timestampTz().notNull().defaultNow(),
     acknowledgedBy: fk((): AnyPgColumn => staffUsers.id),
     acknowledgedAt: timestampTz(),
@@ -275,6 +303,10 @@ export const alertEvents = pgTable(
     check('alert_events_unit_check', sql`${t.unit} is null or ${inList(t.unit, ALERT_UNITS)}`),
     check('alert_events_subject_type_check', inList(t.subjectType, ALERT_SUBJECT_TYPES)),
     index('alert_events_status_started_idx').on(t.status, t.startedAt.desc()),
+    // One open alert per rule and subject: the evaluator inserts with ON CONFLICT DO NOTHING, so two overlapping runs fire it once.
+    uniqueIndex('alert_events_open_uq')
+      .on(t.ruleId, t.subjectKey)
+      .where(sql`${t.status} <> 'resolved'`),
     index('alert_events_rule_id_idx').on(t.ruleId),
     index('alert_events_acknowledged_by_idx').on(t.acknowledgedBy),
   ],
@@ -285,6 +317,45 @@ export type AlertEvent = typeof alertEvents.$inferSelect;
 
 /** A row to insert into `alert_events`. */
 export type NewAlertEvent = typeof alertEvents.$inferInsert;
+
+/**
+ * The stretch of evaluations in which a rule has been breached (or back in range, for an open alert) for one subject, so a reading of the
+ * moment fires or resolves an alert only after it held for the rule's whole window. One row per rule and subject; the evaluator writes it
+ * every minute and deletes it when the stretch ends.
+ *
+ * Why: the evaluator is stateless between runs and may run in more than one process, so the start of a stretch lives in the database.
+ * A row that is lost only makes the window start again (never an alert that was not earned). Not in the map: an addition of feature 12b
+ * (the map's step 10 closes after "three consecutive minutes", so some memory between ticks is implied).
+ */
+export const alertStreaks = pgTable(
+  'alert_streaks',
+  {
+    id: pk(),
+    /** the streak dies with its rule */
+    ruleId: fk((): AnyPgColumn => alertRules.id, 'cascade').notNull(),
+    /** the same key as `alert_events.subject_key`: `system`, `supplier:<id>`, `queue:<name>` */
+    subjectKey: text().notNull(),
+    kind: text().$type<AlertStreakKind>().notNull(),
+    /** metric, comparator and threshold of the rule when the stretch started: a rule that was edited since starts the window again */
+    condition: text().notNull(),
+    /** when the stretch started (the first evaluation that saw the condition) */
+    since: timestampTz().notNull(),
+    /** the last evaluation that saw it; a stretch not seen for a few minutes (the rule was off, the source was down) is over */
+    seenAt: timestampTz().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique('alert_streaks_rule_subject_uq').on(t.ruleId, t.subjectKey),
+    check('alert_streaks_kind_check', inList(t.kind, ALERT_STREAK_KINDS)),
+  ],
+);
+
+/** A row read from `alert_streaks`. */
+export type AlertStreakRow = typeof alertStreaks.$inferSelect;
+
+/** A row to insert into `alert_streaks`. */
+export type NewAlertStreakRow = typeof alertStreaks.$inferInsert;
 
 /**
  * Operational incidents: declared by a staff member or opened from a critical alert. Severity, affected components,
