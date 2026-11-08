@@ -2,3 +2,6 @@
 # is the `--timeout 15000` of the test scripts in package.json: bunfig has no timeout key (a `timeout` here is ignored).
 [test]
 preload = ["./test/setup.ts"]
+# The test runner's low-memory mode: the full suite boots hundreds of Nest apps in one process, and several worktrees' suites run
+# at once on one machine (a full run without it peaked at 5 GB and the out-of-memory killer ended the machine's session).
+smol = true
