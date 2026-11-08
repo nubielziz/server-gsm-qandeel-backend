@@ -21,6 +21,7 @@ import {
 import { closeTestDb, resetDb, testDb } from '../support/db';
 import { eventually } from '../support/infra';
 import { insertOrderRow } from '../support/orders';
+import { insertBlock } from '../support/risk';
 import { StoreClient, captureCustomerLinks, customerLinks, customerRow, makeCustomer } from '../support/store';
 
 const clock = new TestClock('2026-11-07T10:00:00.000Z');
@@ -624,6 +625,22 @@ describe('POST /admin/customers', () => {
     // An expired entry no longer blocks.
     await db.update(s.blocklistEntries).set({ expiresAt: new Date(clock.nowMs() - HOUR) });
     expect((await send(staff, 'POST', '/admin/customers', body({ email: 'bad@example.com' }))).statusCode).toBe(201);
+  });
+
+  it('refuses an email on a blocklisted domain the same way, when staff create a customer and when they change the email', async () => {
+    const { db } = await testDb();
+    await insertBlock(t, db, 'domain', 'tempbox.example');
+    const creator = await staffWith('customers:create');
+    const created = await send(creator, 'POST', '/admin/customers', body({ email: 'Anyone@TempBox.example' }));
+    expect(created.statusCode).toBe(422);
+    expect(problem(created).errors).toMatchObject([{ field: 'email', message: 'This email is blocked.' }]);
+    expect(await db.select().from(s.customers)).toHaveLength(0);
+    const customer = await makeCustomer(t, { email: 'fine@example.com' });
+    const editor = await staffWith('customers:update');
+    const changed = await send(editor, 'PATCH', `/admin/customers/${customer.id}`, { email: 'moved@tempbox.example' });
+    expect(changed.statusCode).toBe(422);
+    expect(problem(changed).errors).toMatchObject([{ field: 'email', message: 'This email is blocked.' }]);
+    expect((await customerRow(customer.id)).email).toBe('fine@example.com');
   });
 
   it('answers 422 on each bad field, including the dotted password.mode', async () => {

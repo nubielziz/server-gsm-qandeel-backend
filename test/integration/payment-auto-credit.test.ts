@@ -23,6 +23,7 @@ import {
 import { HOUR, MINUTE, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 import { accountFigures, insertWalletMerchant } from '../support/money';
+import { insertBlock } from '../support/risk';
 
 const clock = new TestClock('2026-11-01T10:00:00.000Z');
 const fake = new FakeGateway();
@@ -220,6 +221,64 @@ describe('PaymentAutoCredit', () => {
     clock.advance(5 * MINUTE);
     expect(await tick()).toMatchObject({ credited: 1 });
     expect((await reload(payment.id)).status).toBe('approved');
+  });
+
+  it('sends a due top-up paid with a blocklisted card to staff review and posts nothing (money-3)', async () => {
+    const { merchant, payment } = await confirmed();
+    await db.update(s.payments).set({ cardFingerprint: 'fp_stolen' }).where(eq(s.payments.id, payment.id));
+    await insertBlock(t, db, 'card', 'fp_stolen');
+    clock.advance(11 * MINUTE);
+
+    expect(await tick()).toMatchObject({ checked: 1, credited: 0, review: 1, failed: 0 });
+    const flagged = await reload(payment.id);
+    expect(flagged).toMatchObject({
+      status: 'pending',
+      reviewRequired: true,
+      autoCreditAt: null,
+      reviewNote: 'Risk review: Card is on the blocklist',
+    });
+    // Nothing was credited: no deposit journal, no wallet change, the invoice is still open, no invoice.paid event.
+    expect(await db.select().from(s.ledgerTransactions)).toHaveLength(0);
+    expect((await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id }))!.balance).toBe('0.0000');
+    expect((await db.select().from(s.invoices))[0]!.status).toBe('open');
+    expect(await db.select().from(s.outboxEvents).where(eq(s.outboxEvents.type, 'invoice.paid'))).toHaveLength(0);
+    // The decision is audited as the system's, and the next tick has nothing to do.
+    const [audit] = await db.select().from(s.auditLogs).where(eq(s.auditLogs.action, 'sent deposit to review'));
+    expect(audit).toMatchObject({ actorType: 'system', entityType: 'payment', entityId: payment.id });
+    expect(audit!.after).toMatchObject({ reviewRequired: true, reason: 'Risk review: Card is on the blocklist' });
+    expect(await job.due()).toEqual([]);
+
+    // Staff can still decide it: the approval credits once.
+    const admin = await adminWith(t, ['payments:read', 'payments:approve']);
+    expect((await admin.post(`/admin/payments/${payment.id}/approve`)).status).toBe(200);
+    expect((await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id }))!.balance).toBe('96.8000');
+  });
+
+  it('sends a due top-up of a merchant whose email is on the blocklist to staff review', async () => {
+    const { merchant, payment } = await confirmed();
+    await db.update(s.clients).set({ email: 'Fraud.Merchant@example.com' }).where(eq(s.clients.id, merchant.id));
+    await insertBlock(t, db, 'email', 'fraud.merchant@example.com', { source: 'chargeback' });
+    clock.advance(11 * MINUTE);
+
+    expect(await tick()).toMatchObject({ checked: 1, credited: 0, review: 1, failed: 0 });
+    expect(await reload(payment.id)).toMatchObject({
+      status: 'pending',
+      reviewRequired: true,
+      autoCreditAt: null,
+      reviewNote: 'Risk review: Email on a previous chargeback',
+    });
+    expect(await db.select().from(s.ledgerTransactions)).toHaveLength(0);
+  });
+
+  it('still credits a top-up whose card is not on the blocklist', async () => {
+    const { merchant, payment } = await confirmed();
+    await db.update(s.payments).set({ cardFingerprint: 'fp_fine' }).where(eq(s.payments.id, payment.id));
+    await insertBlock(t, db, 'card', 'fp_stolen');
+    clock.advance(11 * MINUTE);
+
+    expect(await tick()).toMatchObject({ credited: 1, review: 0, failed: 0 });
+    expect((await reload(payment.id)).reviewRequired).toBe(false);
+    expect((await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id }))!.balance).toBe('96.8000');
   });
 
   it('waits the gateway hold hours instead of 10 minutes and leaves a flagged payment alone', async () => {

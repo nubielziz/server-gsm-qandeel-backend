@@ -24,7 +24,7 @@ export const updateStorefrontSettings = defineRoute({
     'must be JSON booleans; `refundHoursBeforeDispatch` a whole number from 0 to 72, `abandonedMinutes` from 5 to 1440 and `imeiRetentionDays` ' +
     'from 0 to 3650. Any other key is `422` on that key ("This is not a storefront setting."); so is a value that does not fit. Every changed ' +
     'key writes an audit row. The answer holds the policies that have a value after the change (the same values `GET /admin/settings` shows). ' +
-    'A `require3ds` change also flips the risk rule of that name once the risk feature exists.',
+    '`require3ds` is also the risk rule of that name: one stored value, so a change here shows on `GET /admin/risk/rules`.',
   tags: ['settings'],
   surface: 'admin',
   access: 'staff-permission',

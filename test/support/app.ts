@@ -33,7 +33,7 @@ import { HealthAdminModule } from '../../src/modules/health';
 import { MoneyAdminModule } from '../../src/modules/money/money-admin.module';
 import { OrderTrackingModule, OrdersAdminModule } from '../../src/modules/orders';
 import { CheckoutModule, GrowthModule } from '../../src/modules/customers';
-import { ImeiCheckModule } from '../../src/modules/risk';
+import { ImeiCheckModule, RiskAdminModule } from '../../src/modules/risk';
 import { StorefrontAdminModule, StorefrontContentModule, StorefrontPublicModule } from '../../src/modules/storefront';
 import { SuppliersAdminModule } from '../../src/modules/suppliers';
 import { SupportAdminModule, SupportMailModule, SupportStoreModule } from '../../src/modules/support';
@@ -120,6 +120,7 @@ const NEEDS_DATABASE_AND_CACHE = [
   StorefrontPublicModule,
   StorefrontAdminModule,
   ImeiCheckModule,
+  RiskAdminModule,
   CheckoutModule,
   CommissionsAdminModule,
   CustomersAccountsModule,

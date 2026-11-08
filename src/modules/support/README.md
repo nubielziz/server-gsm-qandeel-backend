@@ -98,6 +98,8 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
   registers with identity's `CapabilityTokenResolvers` and compares in constant time. A customer message on a resolved ticket reopens it, on
   a ticket that waited on the customer makes it `open`, on a `new` ticket leaves it `new`; the rating is once, 1 to 5, only when the ticket
   is resolved, and the ticket stays resolved. The storefront's view carries no staff name, assignee, priority, timer or internal message.
+- **Anonymization (B175, feature 18).** `SupportErasureModule` registers a customer erasure hook: when a customer is anonymized, in the same
+  transaction, the `token` of every ticket the customer opened is set to NULL, so the old link answers `404`; the tickets and messages stay.
 - **Templates.** The shortcut is trimmed; `''` is stored as NULL and read back as `''`; it must be `''` or `/word`; unique ignoring case among
   the non-empty ones (`409 SHORTCUT_TAKEN`, detail names the owner). The server renders no variables.
 

@@ -2,6 +2,7 @@
 // ticket routes, the staff inbox and the reply templates.
 import { Module } from '@nestjs/common';
 import { SupportAdminModule } from './support-admin.module';
+import { SupportErasureModule } from './support-erasure.module';
 import { SupportEventsModule } from './support-events.module';
 import { SupportMailModule } from './support-mail.module';
 import { SupportStoreModule } from './support-store.module';
@@ -12,7 +13,9 @@ import { SupportStoreModule } from './support-store.module';
  * Why: one module per map domain, each owning its tables and exposing a public service through `index.ts` (decision 016). The routes
  * with their use cases (`SupportAdminModule`, `SupportStoreModule`) are separate so a test app built without a database can leave them
  * out; the notification events and the outbox route (`SupportEventsModule`) need neither and, with the sending job (`SupportMailModule`), are also
- * loaded by the worker.
+ * loaded by the worker; `SupportErasureModule` lets the anonymization of a customer clear the ticket links (feature 18).
  */
-@Module({ imports: [SupportEventsModule, SupportMailModule, SupportAdminModule, SupportStoreModule] })
+@Module({
+  imports: [SupportEventsModule, SupportMailModule, SupportErasureModule, SupportAdminModule, SupportStoreModule],
+})
 export class SupportModule {}

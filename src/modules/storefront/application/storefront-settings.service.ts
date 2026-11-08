@@ -17,14 +17,19 @@ import {
 export type PolicyValues = Partial<Record<(typeof BOOLEAN_POLICIES)[number], boolean>> &
   Partial<Record<(typeof NUMBER_POLICIES)[number], number>>;
 
+/** The demo's audit words for a policy write: `turned on policy` / `turned off policy` for a switch, `changed policy` for a number. */
+function policyAction(value: boolean | number): string {
+  return typeof value === 'boolean' ? `turned ${value ? 'on' : 'off'} policy` : 'changed policy';
+}
+
 /**
  * Changes the storefront policies.
  *
  * Why: ANSWERS settings Q1 and B68: the Policies tab writes one key per call (a switch at once, a number on blur) to the flat keys of the settings
  * table; the route accepts only the eight policy keys (any other key is `422` on that key) and answers just those keys with their values after the
  * change, which `GET /admin/settings` shows too. Every changed key writes its own audit row in the demo's words (`turned on policy`, `turned off
- * policy`, `changed policy`). A `require3ds` change also flips the risk rule of the same name: that rule belongs to the risk feature (18) and
- * plugs in right after the write.
+ * policy`, `changed policy`). `require3ds` is also the risk rule of the same name: the risk module reads and writes this same `settings` row (no
+ * copy), so a change here shows on `GET /admin/risk/rules` and a change there shows here.
  *
  * Side effects: upserts `settings` rows and writes one `audit_logs` row per changed key, in one transaction; clears the settings snapshot after
  * the commit.
@@ -61,16 +66,32 @@ export class StorefrontSettingsService {
     if (problems.length > 0)
       throw new AppError('VALIDATION_FAILED', { detail: problems[0]!.message, errors: problems });
     return this.db.runInTransaction(async (work) => {
-      for (const key of keys.filter(isPolicyKey)) {
+      const sent = keys.filter(isPolicyKey);
+      let changed = 0;
+      for (const key of sent) {
         const value = patch[key] as boolean | number;
         const before = await this.settings.set(work.tx, key, value);
         if (before === value) continue;
+        changed += 1;
         await this.audit.record(work.tx, {
-          action: typeof value === 'boolean' ? `turned ${value ? 'on' : 'off'} policy` : 'changed policy',
+          action: policyAction(value),
           entityType: 'setting',
           entityLabel: POLICY_LABELS[key],
           before: { [key]: before ?? null },
           after: { [key]: value },
+        });
+      }
+      const first = sent[0];
+      if (changed === 0 && first !== undefined) {
+        // Every value was already stored (the same save twice): nothing changed but one audit entry, because every staff write leaves
+        // one (the platform's audit enforcement) and the log should show the request was made, as the support inbox does.
+        const value = patch[first] as boolean | number;
+        await this.audit.record(work.tx, {
+          action: policyAction(value),
+          entityType: 'setting',
+          entityLabel: POLICY_LABELS[first],
+          before: { [first]: value },
+          after: { [first]: value },
         });
       }
       work.afterCommit(() => this.reader.invalidate());

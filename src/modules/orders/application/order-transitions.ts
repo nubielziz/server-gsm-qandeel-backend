@@ -176,7 +176,9 @@ export class OrderTransitions {
       completedBefore: completions,
       costBooked: settling ? await costAlreadyBooked(tx, order.id) : false,
       refundId: request.refundId,
-      systemDecided: request.actor.type === 'supplier' || request.actor.type === 'system',
+      // A risk refund is always paid out: the rules decided to give the money back, which is not a failed delivery (`autoRefundFailed`).
+      systemDecided:
+        (request.actor.type === 'supplier' || request.actor.type === 'system') && request.action.kind !== 'riskRefund',
     });
     // Feature 11: commissions accrue on a completion and are reversed with a reopen or a refund, in this same transaction.
     await this.completions.afterMove(tx, updated, decision.money, ledgerActorOf(request.actor));
@@ -189,6 +191,7 @@ export class OrderTransitions {
       decision: request.action.kind === 'verification' ? request.action.decision : undefined,
       note: request.note,
       money: moved,
+      dispatchState: updated.dispatchState,
     });
     await insertEvents(
       tx,
@@ -240,7 +243,9 @@ export class OrderTransitions {
       case 'reject':
       case 'cancel':
         return { resultCode: request.reason ?? null, resultComment: null, completedAt: now };
+      // A refused held order (`riskRefund`) ends like a rejection: the reason is the result and the order is closed now.
       case 'refund':
+      case 'riskRefund':
       case 'refundApproved':
         return { resultCode: request.reason ?? null, resultComment: null, completedAt: now };
       case 'verification':
@@ -250,7 +255,7 @@ export class OrderTransitions {
       case 'reopen':
         // The order is open again: the old result must not show (the merchant's Dhru status would carry a stale CODE).
         return { resultCode: null, resultComment: null, completedAt: null };
-      // The other actions change the state only (the supplier jobs and risk, which feature 6 and 18 add, write their own columns).
+      // The other actions change the state only (the supplier jobs, which feature 6 adds, write their own columns).
       case 'accept':
       case 'requestVerification':
       case 'staffDispatch':
@@ -258,7 +263,6 @@ export class OrderTransitions {
       case 'supplierResult':
       case 'changeSupplier':
       case 'riskApprove':
-      case 'riskRefund':
         return {};
     }
   }

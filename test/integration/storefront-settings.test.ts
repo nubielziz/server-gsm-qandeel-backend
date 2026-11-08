@@ -125,15 +125,17 @@ describe('PATCH /admin/storefront/settings', () => {
     expect(await audit()).toHaveLength(0);
   });
 
-  it('writes one audit row per changed key in the demo words, and none when the value did not change', async () => {
+  it('writes one audit row per changed key in the demo words, and one with the same before and after when nothing changed', async () => {
     await patch({ guestCheckout: false });
-    await patch({ guestCheckout: false });
+    // The same save twice answers 200 (the audit enforcement needs a row for every staff write): one row, before equal to after.
+    expect((await patch({ guestCheckout: false })).status).toBe(200);
     await patch({ require3ds: true, abandonedMinutes: 60 });
     await patch({ require3ds: false });
     await patch({ abandonedMinutes: 30 });
     const rows = (await audit()).filter((row) => row.entityType === 'setting');
     expect(rows.map((row) => [row.action, row.entityLabel, row.before, row.after])).toEqual([
       ['turned off policy', 'Guest checkout', { guestCheckout: null }, { guestCheckout: false }],
+      ['turned off policy', 'Guest checkout', { guestCheckout: false }, { guestCheckout: false }],
       ['turned on policy', 'Require 3D Secure', { require3ds: null }, { require3ds: true }],
       ['changed policy', 'Abandoned checkout reminder', { abandonedMinutes: null }, { abandonedMinutes: 60 }],
       ['turned off policy', 'Require 3D Secure', { require3ds: true }, { require3ds: false }],

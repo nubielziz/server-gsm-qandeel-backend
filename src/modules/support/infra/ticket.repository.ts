@@ -358,6 +358,32 @@ export async function updateTicket(
 }
 
 /**
+ * Clears the page token of every ticket a customer opened.
+ *
+ * Why: the token is a capability link kept in an email; once the customer is anonymized nobody may open the thread with it
+ * (decision 010, feature 18). The ticket and its messages stay for the books; only the link goes. `updated_at` is kept so the inbox
+ * order does not move.
+ *
+ * @param db the anonymization's transaction
+ * @param customerId the customer
+ * @returns how many tickets lost their token
+ */
+export async function clearTicketTokensOfCustomer(db: DbExecutor, customerId: number): Promise<number> {
+  const rows = await db
+    .update(supportTickets)
+    .set({ token: null, updatedAt: sql`${supportTickets.updatedAt}` })
+    .where(
+      and(
+        eq(supportTickets.requesterType, 'customer'),
+        eq(supportTickets.requesterId, customerId),
+        sql`${supportTickets.token} is not null`,
+      ),
+    )
+    .returning({ id: supportTickets.id });
+  return rows.length;
+}
+
+/**
  * Inserts a message of a thread.
  *
  * @param db the transaction

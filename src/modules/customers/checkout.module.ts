@@ -2,6 +2,7 @@
 // resolver. Separate from CustomersModule so a test app built without a database can leave it out.
 import { Module } from '@nestjs/common';
 import { MoneyAdminModule, StorefrontMailsModule } from '../money';
+import { RiskServicesModule } from '../risk';
 import { CheckoutCaptureService } from './application/checkout-capture.service';
 import { CheckoutPayService } from './application/checkout-pay.service';
 import { CheckoutSessionService } from './application/checkout-session.service';
@@ -15,10 +16,11 @@ import { CheckoutController } from './controllers/checkout.controller';
  *
  * Why: these use cases need the global database, crypto, clock, catalog, money and storefront providers and the identity guard's
  * resolver registry, which a database-less test app does not have. It imports `MoneyAdminModule` for `StorefrontPayments` (the pay call and
- * the capture): a test app that leaves this module out leaves that import out with it.
+ * the capture): a test app that leaves this module out leaves that import out with it. `RiskServicesModule` gives the capture the screening
+ * of every payment and the refund of a blocked one (feature 18).
  */
 @Module({
-  imports: [MoneyAdminModule, StorefrontMailsModule],
+  imports: [MoneyAdminModule, StorefrontMailsModule, RiskServicesModule],
   controllers: [CheckoutController],
   providers: [
     CheckoutSessionService,

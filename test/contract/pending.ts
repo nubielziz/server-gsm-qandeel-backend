@@ -21,25 +21,4 @@ export const PENDING: readonly string[] = [
   'SUPPLIER getimeiorder+getimeiorderbulk',
   // health
   // customers
-  'POST /admin/customers/:id/block',
-  'GET /admin/customers/:id/export',
-  'POST /admin/customers/:id/anonymize',
-  // storefront
-  // risk
-  'POST /store/v1/me/data-export',
-  'POST /store/v1/me/data-delete',
-  'GET /admin/data-requests',
-  'GET /admin/data-requests/:id',
-  'PATCH /admin/data-requests/:id',
-  'GET /admin/risk/queue',
-  'POST /admin/risk/orders/:id/approve',
-  'POST /admin/risk/orders/:id/refund',
-  'GET /admin/imei-checks',
-  'GET /admin/imei-checks/:id',
-  'GET /admin/blocklist',
-  'GET /admin/blocklist/:id',
-  'POST /admin/blocklist',
-  'DELETE /admin/blocklist/:id',
-  'GET /admin/risk/rules',
-  'PUT /admin/risk/rules',
 ];

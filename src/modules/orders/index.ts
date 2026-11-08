@@ -17,6 +17,8 @@ export { MAX_INPUT_LENGTH, inputProblems, isValidImei, normalizeImei, quantityPr
 export type { PlacementField, QuantityRules } from './domain/placement-rules';
 export type { MainInputField, MainInputSource } from './domain/main-input';
 export { channelSql, pastSlaPredicate, queueSql } from './infra/order-sql';
+export { rewriteCustomerOrderInputs } from './infra/order.repository';
+export type { CustomerOrderInputs } from './infra/order.repository';
 export {
   ORDER_DISPATCH_STATES,
   ORDER_EVENT_ACTOR_TYPES,

@@ -109,8 +109,17 @@ describe.skipIf(!frontendPresent)('runSeed', () => {
       ['allow', 'admin', '::1/128', 'manual', null],
     ]);
 
-    expect(await db.select({ key: s.settings.key, value: s.settings.value }).from(s.settings)).toEqual([
-      { key: 'adminAllowlistOnly', value: true },
+    // The platform seeds the IP restriction; the risk seeder (feature 18) adds the risk rules, `require3ds` and the IMEI retention.
+    const settings = await db.select({ key: s.settings.key, value: s.settings.value }).from(s.settings);
+    expect(settings.find((row) => row.key === 'adminAllowlistOnly')).toEqual({
+      key: 'adminAllowlistOnly',
+      value: true,
+    });
+    expect(settings.map((row) => row.key).sort()).toEqual([
+      'adminAllowlistOnly',
+      'imeiRetentionDays',
+      'require3ds',
+      'riskRules',
     ]);
 
     const accounts = await db.select().from(s.ledgerAccounts);

@@ -13,6 +13,7 @@ import {
   SessionService,
   isUsableLink,
 } from '../../identity';
+import { Blocklist } from '../../risk';
 import type { Customer } from '../db/schema';
 import { canSignIn } from '../domain/customer-status';
 import { normaliseEmail } from '../domain/customer-input';
@@ -24,7 +25,6 @@ import {
   insertCustomerIfAbsent,
   updateCustomerRow,
 } from '../infra/customer.repository';
-import { isEmailBlocklisted } from '../infra/foreign-reads.repository';
 import { CustomerLinks } from './customer-links';
 import { CustomerSignInLimiter } from './customer-sign-in-limiter';
 import { type WireStoreMe, toStoreMe } from './customer-views';
@@ -72,6 +72,7 @@ export class CustomerSignInService implements OnModuleInit {
     private readonly db: DbService,
     private readonly hasher: PasswordHasher,
     private readonly tokenService: TokenService,
+    private readonly blocklist: Blocklist,
     private readonly authTokens: CustomerAuthTokens,
     private readonly sessions: SessionService,
     private readonly limiter: CustomerSignInLimiter,
@@ -95,7 +96,7 @@ export class CustomerSignInService implements OnModuleInit {
   async requestMagicLink(email: string, meta: RequestMeta): Promise<void> {
     await this.limiter.enforceMagicLink(email, meta.ip);
     const now = this.clock.now();
-    if (await isEmailBlocklisted(this.db.db, this.tokenService.hash(normaliseEmail(email)), now)) return;
+    if (await this.blocklist.isEmailBlocked(this.db.db, email)) return;
     await this.db.runInTransaction(async (work) => {
       const customer =
         (await findCustomerByEmail(work.tx, email)) ??

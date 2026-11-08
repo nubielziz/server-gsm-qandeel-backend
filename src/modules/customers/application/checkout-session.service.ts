@@ -11,6 +11,7 @@ import { EncryptionService, TokenService } from '../../../infra/crypto';
 import { StorefrontServices, type SellableField } from '../../catalog';
 import { StorefrontMoney } from '../../money';
 import { OrderReadService, inputProblems, isValidImei, normalizeImei, quantityProblem } from '../../orders';
+import { Blocklist } from '../../risk';
 import { StorefrontPolicies, StorefrontQuotes, inCurrency } from '../../storefront';
 import type { openCheckoutSession } from '../contracts/checkout.contracts';
 import type { CheckoutSession, Customer } from '../db/schema';
@@ -59,6 +60,15 @@ const notAvailable = () =>
   });
 
 /**
+ * The one refusal of a buyer who may not order: a suspended or blocked customer, or a blocklisted email, domain or IMEI.
+ *
+ * Why: the buyer is told to write to support, never which of these it is (scenario b2c-account step 8, RULES risk 5).
+ */
+function cannotOrder(): AppError {
+  return new AppError('ACCOUNT_SUSPENDED', { detail: 'This account cannot start a new order. Contact support.' });
+}
+
+/**
  * Opens and reads storefront checkout sessions.
  *
  * Why: scenario b2c-paid steps 2 and 3 and the map's `POST /store/v1/checkout-sessions`: the session locks the price (the retail
@@ -79,6 +89,7 @@ export class CheckoutSessionService {
     private readonly money: StorefrontMoney,
     private readonly policies: StorefrontPolicies,
     private readonly orders: OrderReadService,
+    private readonly blocklist: Blocklist,
     private readonly encryption: EncryptionService,
     private readonly tokens: TokenService,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -92,7 +103,7 @@ export class CheckoutSessionService {
    * @throws {AppError} `UNAUTHORIZED` when the shop requires an account and nobody is signed in (or the signed-in account is
    *   gone); `VALIDATION_FAILED` for a service that cannot be sold or ordered online, a quantity or order field that does not
    *   fit, a currency that is not offered, or (signed in) an email that is not the account's; `INVALID_IMEI` for a bad IMEI;
-   *   `ACCOUNT_SUSPENDED` for a suspended or blocked customer
+   *   `ACCOUNT_SUSPENDED` for a suspended or blocked customer, or a blocklisted email, email domain or IMEI (one message for all)
    */
   async open(request: OpenCheckoutRequest): Promise<CheckoutSessionView> {
     const row = await this.db.runInTransaction(async ({ tx }) => {
@@ -131,13 +142,13 @@ export class CheckoutSessionService {
       problems.push(...inputProblems(fields.map(placementField), request.inputs ?? {}));
       if (problems.length > 0) throw new AppError('VALIDATION_FAILED', { errors: problems });
 
-      const customer = account ?? (await this.guestFor(tx, request.email, request.country));
-      if (customer.status !== 'active') {
-        // The same words for suspended and blocked: the buyer is told to write to support, never which of the two it is.
-        throw new AppError('ACCOUNT_SUSPENDED', {
-          detail: 'This account cannot start a new order. Contact support.',
-        });
+      // RULES risk 5: a blocklisted email, email domain or IMEI cannot open a checkout. It gets the answer a blocked customer gets, so the
+      // buyer never learns which entry matched (and no guest row is made for it).
+      if ((await this.blocklist.match(tx, { email: request.email, imei: imei ?? null })).length > 0) {
+        throw cannotOrder();
       }
+      const customer = account ?? (await this.guestFor(tx, request.email, request.country));
+      if (customer.status !== 'active') throw cannotOrder();
 
       const amounts = this.quotes.amounts(context, priced.unitNet, quantity);
       const now = this.clock.now();

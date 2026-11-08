@@ -18,5 +18,6 @@ export type { TicketMailJobResult } from './application/ticket-mail.jobs';
 export { TicketMailProcessor } from './jobs/ticket-mail.processor';
 export { SupportMailModule } from './support-mail.module';
 export { SupportAdminModule } from './support-admin.module';
+export { SupportErasureModule } from './support-erasure.module';
 export { SupportStoreModule } from './support-store.module';
 export { SupportModule } from './support.module';

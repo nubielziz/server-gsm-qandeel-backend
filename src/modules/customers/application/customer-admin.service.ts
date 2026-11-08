@@ -5,14 +5,14 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
-import { PasswordHasher, TokenService } from '../../../infra/crypto';
+import { PasswordHasher } from '../../../infra/crypto';
 import { DbService, type DbExecutor, isUniqueViolation } from '../../../infra/db';
 import { CUSTOMER_TOKEN_PURPOSES, CustomerAuthTokens, type StaffPrincipal, temporaryPasswordFor } from '../../identity';
 import { AuditService } from '../../platform';
+import { Blocklist } from '../../risk';
 import type { Customer } from '../db/schema';
 import { FALLBACK_CURRENCY, currencyCodeFor } from '../domain/country-currency';
 import type { CustomerLocale } from '../domain/customer-input';
-import { normaliseEmail } from '../domain/customer-input';
 import { findCredentials, upsertCredentials } from '../infra/customer-credentials.repository';
 import { CustomerSignInFailures } from '../infra/customer-sign-in-failures';
 import {
@@ -29,7 +29,6 @@ import {
   currencyByCode,
   detailCounts,
   hasCurrentTaxRate,
-  isEmailBlocklisted,
   lastSeenIp,
   latestConsentEvidence,
   riskOf,
@@ -86,7 +85,7 @@ export class CustomerAdminService {
     private readonly db: DbService,
     private readonly audit: AuditService,
     private readonly hasher: PasswordHasher,
-    private readonly tokenService: TokenService,
+    private readonly blocklist: Blocklist,
     private readonly authTokens: CustomerAuthTokens,
     private readonly links: CustomerLinks,
     private readonly failures: CustomerSignInFailures,
@@ -137,9 +136,7 @@ export class CustomerAdminService {
   async create(staff: StaffPrincipal, input: CreateCustomerInput, ip: string): Promise<CreatedCustomer> {
     const now = this.clock.now();
     await this.assertEmailFree(this.db.db, input.email);
-    if (await isEmailBlocklisted(this.db.db, this.tokenService.hash(normaliseEmail(input.email)), now)) {
-      throw emailBlocked();
-    }
+    if (await this.blocklist.isEmailBlocked(this.db.db, input.email)) throw emailBlocked();
     await this.assertCountryAccepted(this.db.db, input.country, now);
     const temporary =
       input.mode === 'temporary_password'
@@ -228,8 +225,8 @@ export class CustomerAdminService {
         const newEmail =
           input.email !== undefined && input.email !== customer.email.toLowerCase() ? input.email : undefined;
         if (newEmail !== undefined) {
-          // The blocklist is a foreign read; it only matters for a new email, so it is asked here, once the new email is known.
-          if (await isEmailBlocklisted(work.tx, this.tokenService.hash(newEmail), now)) throw emailBlocked();
+          // The blocklist (risk) only matters for a new email, so it is asked here, once the new email is known.
+          if (await this.blocklist.isEmailBlocked(work.tx, newEmail)) throw emailBlocked();
           await this.assertEmailFree(work.tx, newEmail, id);
         }
         // Only a country change is checked: a form that sends the stored country again must not fail when its tax rate has ended

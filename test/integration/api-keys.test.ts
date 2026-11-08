@@ -198,11 +198,18 @@ describe('GET /client/api-keys', () => {
 
   it('pages with _start and _end and keeps the total', async () => {
     const m = await merchant();
-    for (let index = 0; index < 5; index++) await insertApiKey(t, db, m.clientId, { name: `k${index}` });
+    // One creation time for all five: the order must not depend on how fast the inserts ran, the id breaks the tie.
+    const createdAt = clock.now();
+    for (let index = 0; index < 5; index++) await insertApiKey(t, db, m.clientId, { name: `k${index}`, createdAt });
     const page = await m.call('GET', '/client/api-keys?_start=1&_end=3');
     expect(page.body).toHaveLength(2);
     expect(page.total).toBe(5);
-    expect((await m.call('GET', '/client/api-keys?_sort=createdAt&_order=asc')).body[0].name).toBe('k0');
+    const names = (query: string) =>
+      m.call('GET', `/client/api-keys${query}`).then((res) => res.body.map((row: { name: string }) => row.name));
+    expect(await names('?_sort=createdAt&_order=asc')).toEqual(['k0', 'k1', 'k2', 'k3', 'k4']);
+    expect(await names('?_sort=createdAt&_order=desc')).toEqual(['k4', 'k3', 'k2', 'k1', 'k0']);
+    // The pages of a tied sort do not repeat or skip a key.
+    expect(await names('?_sort=createdAt&_order=asc&_start=1&_end=3')).toEqual(['k1', 'k2']);
   });
 
   it("never shows another merchant's keys", async () => {

@@ -470,6 +470,33 @@ describe('defineRoute turnstile option (decision 034)', () => {
   });
 });
 
+describe('defineRoute originCheck option (RESOLUTIONS b2c-8)', () => {
+  const download = (override: Record<string, unknown> = {}) =>
+    define({
+      key: `GET /admin/spec-origin-${(counter += 1)}/:id`,
+      surface: 'admin',
+      access: 'staff-permission',
+      permission: 'customers:privacy',
+      params: z.object({ id: z.string() }),
+      success: { status: 200, contentType: 'application/json' },
+      ...override,
+    });
+
+  it('is off by default and on for a GET route with a session', () => {
+    expect(download().originCheck).toBe(false);
+    expect(download({ originCheck: true }).originCheck).toBe(true);
+  });
+
+  it('is refused on a mutation and on a route without a session', () => {
+    expect(() =>
+      define({ key: 'POST /admin/spec-origin-post', surface: 'admin', access: 'staff-session', originCheck: true }),
+    ).toThrow(/only applies to GET routes/);
+    expect(() =>
+      define({ key: 'GET /store/v1/spec-origin-public', surface: 'store', access: 'public', originCheck: true }),
+    ).toThrow(/only applies to routes with a session/);
+  });
+});
+
 describe('operationIdOf', () => {
   it('builds a stable camelCase id from the key', () => {
     expect(operationIdOf('GET /admin/staff/:id')).toBe('getAdminStaffById');

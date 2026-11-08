@@ -72,33 +72,6 @@ export async function hasCurrentTaxRate(db: DbExecutor, country: string, now: Da
 }
 
 /**
- * Tells whether the blocklist holds an email.
- *
- * Why: scenario b2c-account step 1 and B46: a blocklisted email is refused when staff create or edit a customer. The entry's
- * `value_hash` is the keyed hash of the normalised (trimmed, lower-case) email, kind `email` (feature 18 writes the entries
- * with the same recipe).
- *
- * @param db the database or a transaction
- * @param emailHash `TokenService.hash` of the normalised email
- * @param now the clock's time (decision 031): an entry past its `expires_at` does not count
- * @returns true when an entry of kind `email` has this hash and has not expired
- */
-export async function isEmailBlocklisted(db: DbExecutor, emailHash: string, now: Date): Promise<boolean> {
-  const rows = await db
-    .select({ id: s.blocklistEntries.id })
-    .from(s.blocklistEntries)
-    .where(
-      and(
-        eq(s.blocklistEntries.kind, 'email'),
-        eq(s.blocklistEntries.valueHash, emailHash),
-        sql`(${s.blocklistEntries.expiresAt} is null or ${s.blocklistEntries.expiresAt} > ${now})`,
-      ),
-    )
-    .limit(1);
-  return rows.length > 0;
-}
-
-/**
  * Counts the live sessions of a customer.
  *
  * @param db the database or a transaction

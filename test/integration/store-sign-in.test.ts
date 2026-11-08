@@ -14,6 +14,7 @@ import { clearIdentityCaches } from '../support/auth';
 import { HOUR, MINUTE, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 import { freshClientIp } from '../support/pipeline-routes';
+import { insertBlock } from '../support/risk';
 import {
   CUSTOMER_PASSWORD,
   STORE_ORIGIN,
@@ -322,6 +323,17 @@ describe('POST /store/v1/auth/magic-link and /auth/verify', () => {
     expect((await store().magicLink('Blocked@Example.com')).statusCode).toBe(204);
     expect(customerLinks()).toEqual([]);
     expect(await db.select().from(s.customers)).toHaveLength(0);
+  });
+
+  it('sends nothing for an email on a blocklisted domain either, and creates no customer', async () => {
+    const { db } = await testDb();
+    await insertBlock(t, db, 'domain', 'tempbox.example');
+    expect((await store().magicLink('Anyone@TempBox.example')).statusCode).toBe(204);
+    expect(customerLinks()).toEqual([]);
+    expect(await db.select().from(s.customers)).toHaveLength(0);
+    // A different domain still gets its link.
+    expect((await store().magicLink('anyone@other.example')).statusCode).toBe(204);
+    expect(customerLinks()).toHaveLength(1);
   });
 
   it('refuses a link that expired, was replaced, is of another kind, or belongs to a customer who is suspended since', async () => {

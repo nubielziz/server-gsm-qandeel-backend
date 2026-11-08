@@ -7,6 +7,7 @@ import {
   createdLine,
   dollars,
   holdLine,
+  holdReviewLine,
   manualReviewLine,
   transitionLines,
 } from './order-timeline';
@@ -38,6 +39,16 @@ describe('placement lines', () => {
       data: { message: '$3.31 held from Phone Doctor FZE wallet', amount: '3.3100' },
     });
     expect(manualReviewLine()).toMatchObject({ type: 'review', data: { reason: MANUAL_REASON } });
+  });
+
+  it('puts a risk hold in the review queue with the hold sentence as its reason', () => {
+    expect(holdReviewLine('Risk hold: score 62. Prepaid card BIN')).toEqual({
+      type: 'review',
+      actor: SYSTEM_ACTOR,
+      fromStatus: null,
+      toStatus: null,
+      data: { message: 'Risk hold: score 62. Prepaid card BIN', reason: 'Risk hold: score 62. Prepaid card BIN' },
+    });
   });
 });
 
@@ -132,5 +143,48 @@ describe('transitionLines', () => {
     });
     expect(kinds(refunded)).toEqual(['verification', 'rejected', 'refund']);
     expect(refunded[1]!.data.reason).toBe('Verification refund');
+  });
+});
+
+describe('transitionLines: the risk review (feature 18)', () => {
+  it('an approval writes one risk line that says where the order went', () => {
+    const toSupplier = transitionLines('risk', null, {
+      actor: staff,
+      from: 'pending',
+      to: 'pending',
+      money: { posted: false, amount: '0.0000', cost: '0.0000' },
+      dispatchState: 'pending',
+    });
+    expect(kinds(toSupplier)).toEqual(['risk']);
+    expect(toSupplier[0]!.data.message).toBe('Risk review: approved, sent to the supplier');
+    const toManual = transitionLines('risk', null, {
+      actor: staff,
+      from: 'pending',
+      to: 'pending',
+      money: { posted: false, amount: '0.0000', cost: '0.0000' },
+      dispatchState: 'manual',
+    });
+    expect(toManual[0]!.data.message).toBe('Risk review: approved, sent to the manual queue');
+  });
+
+  it('a refusal writes the risk line with the reason, then the refund line (the status moved to rejected)', () => {
+    const lines = transitionLines('risk', 'b2c_refund', {
+      actor: staff,
+      from: 'pending',
+      to: 'rejected',
+      reason: 'Refunded after risk review: Prepaid card BIN',
+      money: { posted: true, amount: '12.4900', cost: '0.0000' },
+      dispatchState: 'done',
+    });
+    expect(kinds(lines)).toEqual(['risk', 'refund']);
+    expect(lines[0]).toMatchObject({
+      fromStatus: 'pending',
+      toStatus: 'rejected',
+      data: {
+        message: 'Risk review: refunded. Refunded after risk review: Prepaid card BIN',
+        reason: 'Refunded after risk review: Prepaid card BIN',
+      },
+    });
+    expect(lines[1]!.data.message).toBe('Refund of $12.49 sent to the original payment method');
   });
 });

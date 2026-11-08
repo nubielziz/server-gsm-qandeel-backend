@@ -1,6 +1,6 @@
 // The timeline lines of an order (RESOLUTIONS orders-suppliers-15): which `order_events` rows each transition writes and the words
 // of their `data.message`, in the console's style ("$3.31 held from Phone Doctor FZE wallet"). Pure; the use case stores them.
-import type { OrderEventActorType, OrderEventType, OrderStatus } from '../db/schema';
+import type { OrderDispatchState, OrderEventActorType, OrderEventType, OrderStatus } from '../db/schema';
 import type { OrderMoneyMove } from './order-machine';
 
 /** The reason a manual order opens the manual queue with (the console's `REVIEW_REASONS.manual`). */
@@ -102,6 +102,22 @@ export function manualReviewLine(): TimelineLine {
   };
 }
 
+/**
+ * The line that puts a new storefront order in the risk review queue.
+ *
+ * @param reason the hold sentence of the risk screening (`Risk hold: score 62. ...`)
+ * @returns the `review` line carrying the reason the queue shows
+ */
+export function holdReviewLine(reason: string): TimelineLine {
+  return {
+    type: 'review',
+    actor: SYSTEM_ACTOR,
+    fromStatus: null,
+    toStatus: null,
+    data: { message: reason, reason },
+  };
+}
+
 /** What the lines of a transition need to know beyond the machine's answer. */
 export interface TransitionContext {
   readonly actor: TimelineActor;
@@ -120,6 +136,8 @@ export interface TransitionContext {
     readonly cost: string;
     readonly requested?: boolean;
   };
+  /** The dispatch state after the transition: a risk approval says whether the order went to a supplier or to the manual queue. */
+  readonly dispatchState?: OrderDispatchState | undefined;
 }
 
 function line(
@@ -223,7 +241,27 @@ export function transitionLines(
         ? [decision]
         : [decision, ...refundLines(context, status, note ?? VERIFICATION_REFUND_REASON, amount)];
     }
-    // The lines of the other events belong to the features that write them (suppliers, risk, notifications, disputes): a plain line.
+    // The risk review of a held storefront order (feature 18): approved (released to a supplier or the manual queue) or refunded.
+    case 'risk':
+      return money === 'b2c_refund'
+        ? [
+            line(
+              'risk',
+              context.actor,
+              { message: `Risk review: refunded${reason ? `. ${reason}` : ''}`, reason: reason ?? null },
+              status,
+            ),
+            line('refund', SYSTEM_ACTOR, {
+              message: `Refund of ${amount} sent to the original payment method`,
+              amount: context.money.amount,
+            }),
+          ]
+        : [
+            line('risk', context.actor, {
+              message: `Risk review: approved, sent to ${context.dispatchState === 'manual' ? 'the manual queue' : 'the supplier'}`,
+            }),
+          ];
+    // The lines of the other events belong to the features that write them (suppliers, notifications, disputes): a plain line.
     case 'created':
     case 'hold':
     case 'dispatch':
@@ -235,7 +273,6 @@ export function transitionLines(
     case 'supplier_changed':
     case 'note':
     case 'paid':
-    case 'risk':
     case 'notify':
     case 'dispute':
     case 'fetch':

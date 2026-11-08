@@ -87,6 +87,13 @@ export type { WireRefType } from './domain/ref-types';
 export { PaymentGateways } from './application/payment-gateways';
 export { INVOICE_PAID_EVENT, InvoiceOutbox } from './application/invoice-outbox';
 export { MoneyOutboxModule } from './money-outbox.module';
+export { TopUpScreeningHooks } from './application/top-up-screening-hooks';
+export type {
+  TopUpScreeningAnswer,
+  TopUpScreeningFacts,
+  TopUpScreeningHook,
+} from './application/top-up-screening-hooks';
+export { TopUpScreeningModule } from './top-up-screening.module';
 export { StorefrontMails } from './application/storefront-mails';
 export { StorefrontMailsModule } from './storefront-mails.module';
 export { PaymentAutoCreditModule, PAYMENT_AUTO_CREDIT_SCHEDULER } from './jobs/payment-auto-credit.module';

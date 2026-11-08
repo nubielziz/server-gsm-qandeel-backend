@@ -271,3 +271,46 @@ export async function attemptsOf(db: DbExecutor, orderIds: readonly number[]): P
   for (const row of rows) attempts.set(row.orderId, row.total);
   return attempts;
 }
+
+/** What a customer's order holds that a privacy action may rewrite: the main input and the custom field values. */
+export interface CustomerOrderInputs {
+  readonly imei: string | null;
+  readonly inputs: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * Rewrites the stored inputs of every order a customer placed, for a privacy action.
+ *
+ * Why: anonymizing a customer keeps the order (the accounting needs it) but not the device number (MISMATCHES B50, RESOLUTIONS b2c-4).
+ * The orders table is the orders module's, so the customers module asks here and says how to rewrite each row; the orders module does not
+ * know what counts as personal. A row the function leaves as it is, is not written (its `updated_at` stays).
+ *
+ * @param tx the anonymization's transaction
+ * @param customerId the customer
+ * @param now the clock's time, written as `updated_at` on a changed row
+ * @param rewrite makes the new main input and inputs from the stored ones
+ * @returns how many orders changed
+ */
+export async function rewriteCustomerOrderInputs(
+  tx: DbExecutor,
+  customerId: number,
+  now: Date,
+  rewrite: (current: CustomerOrderInputs) => CustomerOrderInputs,
+): Promise<number> {
+  const rows = await tx
+    .select({ id: orders.id, imei: orders.imei, inputs: orders.inputs })
+    .from(orders)
+    .where(eq(orders.customerId, customerId))
+    .for('update');
+  let changed = 0;
+  for (const row of rows) {
+    const next = rewrite({ imei: row.imei, inputs: row.inputs });
+    if (next.imei === row.imei && JSON.stringify(next.inputs) === JSON.stringify(row.inputs)) continue;
+    await tx
+      .update(orders)
+      .set({ imei: next.imei, inputs: { ...next.inputs }, updatedAt: now })
+      .where(eq(orders.id, row.id));
+    changed += 1;
+  }
+  return changed;
+}

@@ -10,7 +10,13 @@ import { InventoryStock } from '../../catalog';
 import type { Order } from '../db/schema';
 import { mainInputOf } from '../domain/main-input';
 import { placementDispatchState } from '../domain/order-machine';
-import { type TimelineLine, SYSTEM_ACTOR, createdLine, manualReviewLine } from '../domain/order-timeline';
+import {
+  type TimelineLine,
+  SYSTEM_ACTOR,
+  createdLine,
+  holdReviewLine,
+  manualReviewLine,
+} from '../domain/order-timeline';
 import { STOCK_DELIVERY_FROM, stockDeliveryLines } from '../domain/stock-delivery';
 import { hasActiveSupplierLink, serviceFieldsOf, storefrontServiceOf } from '../infra/foreign-reads.repository';
 import { insertEvents, insertOrder } from '../infra/order.repository';
@@ -37,6 +43,11 @@ export interface CustomerPlacementRequest {
   readonly snapshot: Readonly<Record<string, string>>;
   /** The line that says the payment arrived (`Payment of $4.79 received (Visa •••• 4242)`). */
   readonly paidMessage: string;
+  /**
+   * Set when the risk rules hold the order (feature 18): the sentence for the timeline (`Risk hold: score 62. ...`). The order then starts
+   * `held`: no stock is claimed and nothing is queued for dispatch until staff release it.
+   */
+  readonly holdReason?: string | undefined;
 }
 
 const CURRENCY = 'USD';
@@ -47,11 +58,13 @@ const CURRENCY = 'USD';
  * Why: scenario b2c-paid step 7: in the capture's transaction the order exists with `customer_id` and a tracking token instead of a
  * merchant, the payment is posted, and an automatic order is queued for dispatch ("B2C never dispatches before payment", CLAUDE.md).
  * Codes in stock are delivered at once like a merchant's order (RULES orders 10). The customer already paid the locked price, so
- * nothing here refuses: a service switched off since is still delivered or worked by hand. The risk hold of feature 18 plugs in at
- * `placementDispatchState({ held })`.
+ * nothing here refuses: a service switched off since is still delivered or worked by hand. An order the risk rules hold (feature 18,
+ * `holdReason` set) starts `held` through `placementDispatchState({ held })`: it claims no stock, queues no dispatch and carries the
+ * hold sentence on its timeline, so the review queue shows why.
  *
- * Side effects (on the caller's transaction): inserts `orders` and `order_events`; claims and sells stock codes; posts the settlement
- * of a stock delivery; inserts `outbox_events` (`order.dispatch_requested`, or `order.status_changed` for a stock delivery).
+ * Side effects (on the caller's transaction): inserts `orders` and `order_events`; claims and sells stock codes (not for a held order);
+ * posts the settlement of a stock delivery; inserts `outbox_events` (`order.dispatch_requested`, or `order.status_changed` for a stock
+ * delivery).
  *
  * @see docs/decisions/025-order-state-machine.md
  */
@@ -93,9 +106,11 @@ export class CustomerOrderPlacement {
     });
     const hasLink = await hasActiveSupplierLink(tx, service.id);
     const manualService = service.fulfillment === 'manual';
-    const claim = await this.stock.claim(tx, service.id, request.quantity);
+    const held = request.holdReason !== undefined;
+    // A held order keeps the stock until staff release it: nothing is delivered before the review.
+    const claim = held ? null : await this.stock.claim(tx, service.id, request.quantity);
     const begin = placementDispatchState({
-      held: false,
+      held,
       deliveredFromInventory: claim !== null,
       manualService,
       hasActiveSupplierLink: hasLink,
@@ -139,6 +154,7 @@ export class CustomerOrderPlacement {
         data: { message: request.paidMessage },
       },
       ...(begin.dispatchState === 'manual' ? [manualReviewLine()] : []),
+      ...(request.holdReason === undefined ? [] : [holdReviewLine(request.holdReason)]),
     ];
     await insertEvents(tx, rows(order.id, lines));
     await onInserted(order);

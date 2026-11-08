@@ -216,6 +216,13 @@ export interface RouteSpec<
    * It adds `TURNSTILE_FAILED` to the route's errors and the header to its OpenAPI parameters.
    */
   readonly turnstile?: boolean;
+  /**
+   * `true` marks a session `GET` route that has a side effect or hands out a download of personal data, so the CSRF guard asks
+   * for a same-site request instead of ignoring the safe method: `Sec-Fetch-Site` of `same-origin` or `same-site`, or (when the
+   * header is absent) an `Origin` exactly in the configured CORS origins, else `403 CSRF_FAILED` (RESOLUTIONS b2c-8). The console
+   * downloads send no CSRF token, so this is the check that fits a `GET`. Only for `GET` routes with a session access.
+   */
+  readonly originCheck?: boolean;
 }
 
 /**
@@ -268,6 +275,8 @@ export interface RouteContract<
   readonly csrf: boolean;
   /** True when the route needs a passing `X-Turnstile-Token` (decision 034); `TURNSTILE_FAILED` is then in `errors`. */
   readonly turnstile: boolean;
+  /** True when the CSRF guard also checks the origin of this `GET` route (RESOLUTIONS b2c-8). */
+  readonly originCheck: boolean;
 }
 
 /**
@@ -514,6 +523,13 @@ export function defineRoute<
     if (method === 'GET') problem('csrf: false only applies to routes that change data (a GET is never CSRF-checked)');
   }
 
+  if (spec.originCheck !== undefined) {
+    if (typeof spec.originCheck !== 'boolean') problem('originCheck must be true or false');
+    if (spec.originCheck && method !== 'GET')
+      problem('originCheck only applies to GET routes (a mutation is already protected by the CSRF token)');
+    if (spec.originCheck && !sessionAccess)
+      problem(`originCheck only applies to routes with a session (access is "${spec.access}")`);
+  }
   if (spec.turnstile !== undefined && typeof spec.turnstile !== 'boolean') problem('turnstile must be true or false');
   if (spec.turnstile === true && spec.surface !== 'store')
     problem(
@@ -623,6 +639,7 @@ export function defineRoute<
     audit: spec.audit ?? true,
     csrf: spec.csrf ?? true,
     turnstile: spec.turnstile ?? false,
+    originCheck: spec.originCheck ?? false,
   });
   contractRegistry.register(contract);
   return contract;

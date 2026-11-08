@@ -9,6 +9,7 @@ import { PaymentCrediting } from '../application/payment-crediting';
 import { LedgerPoster } from '../application/post-transaction';
 import { WalletLowBalanceWatch } from '../application/wallet-low-balance-watch';
 import { MoneyOutboxModule } from '../money-outbox.module';
+import { TopUpScreeningModule } from '../top-up-screening.module';
 import { PaymentAutoCredit } from './payment-auto-credit';
 import { PAYMENT_AUTO_CREDIT_JOB, PaymentAutoCreditProcessor } from './payment-auto-credit.processor';
 
@@ -24,10 +25,11 @@ export const PAYMENT_AUTO_CREDIT_SCHEDULER = 'payment-auto-credit';
  *
  * Why: the API never does slow work inline (decision 020); the worker does. The classes the job needs are plain services, so the
  * worker builds them here instead of loading the API's modules (the ledger writer, the audit writer, the invoice PDF). The outbox
- * route of `invoice.paid` comes with {@link MoneyOutboxModule}.
+ * route of `invoice.paid` comes with {@link MoneyOutboxModule}. {@link TopUpScreeningModule} is the list of risk hooks the credit
+ * asks (RESOLUTIONS money-3); the risk services module fills it, and the worker loads both.
  */
 @Module({
-  imports: [JobRunsModule, MoneyOutboxModule, PdfModule],
+  imports: [JobRunsModule, MoneyOutboxModule, PdfModule, TopUpScreeningModule],
   providers: [
     LedgerPoster,
     WalletLowBalanceWatch,

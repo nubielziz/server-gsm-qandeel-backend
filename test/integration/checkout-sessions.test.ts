@@ -12,6 +12,7 @@ import { MINUTE, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 import { insertCategory, insertService } from '../support/catalog';
 import { freshClientIp } from '../support/pipeline-routes';
+import { insertBlock } from '../support/risk';
 import {
   APPLE_IMEI,
   TURNSTILE_HEADERS,
@@ -398,6 +399,50 @@ describe('POST /store/v1/checkout-sessions', () => {
       expect(body(res).detail).toBe('This account cannot start a new order. Contact support.');
     }
     expect(await counts()).toEqual({ customers: 2, sessions: 0, consents: 0 });
+  });
+
+  it('refuses a blocklisted email, email domain or IMEI with the answer a blocked customer gets, whatever matched, and opens nothing', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    await db.insert(s.customers).values({ email: 'blocked@mail.example', status: 'blocked' });
+    const blockedCustomer = await open(valid(world, { email: 'blocked@mail.example' }));
+    expect(blockedCustomer.statusCode).toBe(403);
+    const baseline = await counts();
+    // Each kind of entry is tried alone: the three answers must be the blocked customer's answer, word for word.
+    const entries = [
+      { kind: 'email', value: 'fraud@mail.example', request: { email: 'Fraud@mail.example' } },
+      { kind: 'domain', value: 'tempbox.example', request: { email: 'anyone@tempbox.example' } },
+      { kind: 'imei', value: APPLE_IMEI, request: { email: 'clean@mail.example' } },
+    ] as const;
+    for (const entry of entries) {
+      await insertBlock(t, db, entry.kind, entry.value);
+      const res = await open(valid(world, entry.request));
+      expect(res.statusCode, entry.kind).toBe(403);
+      expect(body(res), entry.kind).toMatchObject({
+        code: 'ACCOUNT_SUSPENDED',
+        detail: 'This account cannot start a new order. Contact support.',
+      });
+      expect(body(res).detail, entry.kind).toBe(body(blockedCustomer).detail);
+      expect(JSON.stringify(body(res)), entry.kind).not.toContain(entry.value);
+    }
+    // Nothing was created for any of them (no guest customer, no session).
+    expect(await counts()).toEqual(baseline);
+  });
+
+  it('lets a checkout open again when the entry expired or when only a similar value is blocked', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    const entry = await insertBlock(t, db, 'domain', 'tempbox.example');
+    await insertBlock(t, db, 'email', 'other@mail.example');
+    // Another domain with the blocked name inside it, and a sibling address, are not the blocked values.
+    expect((await open(valid(world, { email: 'sam@nottempbox.example' }))).statusCode).toBe(201);
+    expect((await open(valid(world, { email: 'sam@sub.tempbox.example' }))).statusCode).toBe(201);
+    expect((await open(valid(world, { email: 'sam@tempbox.example' }))).statusCode).toBe(403);
+    await db
+      .update(s.blocklistEntries)
+      .set({ expiresAt: new Date(clock.nowMs() - MINUTE) })
+      .where(eq(s.blocklistEntries.id, entry.id));
+    expect((await open(valid(world, { email: 'sam@tempbox.example' }))).statusCode).toBe(201);
   });
 
   it('asks for sign-in when the shop turned guest checkout off', async () => {

@@ -3,7 +3,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
-import { DbService } from '../../../infra/db';
+import { type DbExecutor, DbService } from '../../../infra/db';
 import { OutboundHttp } from '../../../infra/http';
 import { AuditService } from '../../platform';
 import type { Payment, PaymentGateway } from '../db/schema';
@@ -11,9 +11,12 @@ import { paymentRef } from '../domain/invoice-rules';
 import { type GatewayStatus, decideAutoCredit } from '../domain/payment-rules';
 import { GatewayCredentialsVault } from '../application/gateway-credentials';
 import { PaymentCrediting } from '../application/payment-crediting';
+import { TopUpScreeningHooks } from '../application/top-up-screening-hooks';
 import { GATEWAY_HTTP_POLICY, type GatewayHttpPolicy } from '../infra/gateway-drivers/driver';
 import { driverFor } from '../infra/gateway-drivers/drivers';
+import { loadBillingMerchants } from '../infra/foreign-directory.repository';
 import { findGateway } from '../infra/gateway.repository';
+import { findInvoice } from '../infra/invoice.repository';
 import { dueAutoCreditIds, findTopupPayment, lockTopupPayment, updatePayment } from '../infra/payment.repository';
 
 /** How many due payments one tick takes (the next tick takes the rest). */
@@ -39,10 +42,13 @@ type Outcome = 'credited' | 'review' | 'deferred' | 'skipped';
  *
  * Why: user rule 6: after the gateway confirmed the payment and `payments.auto_credit_delay_minutes` (or the gateway's hold hours)
  * passed, the job asks the gateway's API again and credits the wallet only if the payment is still confirmed and risk has not
- * flagged it; otherwise the payment goes to staff review. The gateway call happens before the transaction (never hold a row lock
- * across a network call); the decision is taken under `SELECT ... FOR UPDATE` on the payment after re-checking that it is still
- * pending, so a staff decision racing the job changes nothing (the loser gets `PAYMENT_ALREADY_REVIEWED`) and the ledger key
- * `deposit:payment:<id>` makes a double credit impossible. A gateway that cannot be reached counts as "not confirmed yet".
+ * flagged it; otherwise the payment goes to staff review. Risk is asked under the lock, just before the credit, through
+ * {@link TopUpScreeningHooks} (RESOLUTIONS money-3: the blocklist's card and the merchant's email); a flagged payment gets
+ * `review_required` and the reason as its note, and nothing is posted. The gateway call happens before the transaction (never
+ * hold a row lock across a network call); the decision is taken under `SELECT ... FOR UPDATE` on the payment after re-checking
+ * that it is still pending, so a staff decision racing the job changes nothing (the loser gets `PAYMENT_ALREADY_REVIEWED`) and
+ * the ledger key `deposit:payment:<id>` makes a double credit impossible. A gateway that cannot be reached counts as "not
+ * confirmed yet".
  *
  * Side effects: calls the gateway's API; credits wallets (see {@link PaymentCrediting}); writes `payments` and `audit_logs` rows.
  */
@@ -53,6 +59,7 @@ export class PaymentAutoCredit {
   constructor(
     private readonly db: DbService,
     private readonly crediting: PaymentCrediting,
+    private readonly screening: TopUpScreeningHooks,
     private readonly vault: GatewayCredentialsVault,
     private readonly audit: AuditService,
     private readonly http: OutboundHttp,
@@ -144,12 +151,24 @@ export class PaymentAutoCredit {
     }
   }
 
-  /** Credits a payment under its lock, after re-checking it; a payment that cannot be credited goes to staff with the reason. */
+  /**
+   * Credits a payment under its lock, after re-checking it and asking risk; a payment that cannot be credited goes to staff with
+   * the reason.
+   */
   private async credit(id: number, gateway: PaymentGateway): Promise<Outcome> {
     try {
       return await this.db.runInTransaction(async (work) => {
         const locked = await lockTopupPayment(work.tx, id);
         if (!locked || locked.status !== 'pending' || locked.reviewRequired) return 'skipped';
+        // Risk looks at the same rows the credit would use. A screen that throws fails this payment (it stays due), never credits it.
+        const verdict = await this.screening.screen(work.tx, {
+          cardFingerprint: locked.cardFingerprint,
+          email: await this.merchantEmail(work.tx, locked),
+        });
+        if (verdict.flagged) {
+          await this.markForReview(work.tx, id, verdict.reason ?? 'Risk review: flagged.');
+          return 'review';
+        }
         await this.crediting.credit(work, locked, gateway, { kind: 'system' });
         return 'credited';
       });
@@ -160,20 +179,32 @@ export class PaymentAutoCredit {
     }
   }
 
+  /** The email of the merchant that owns the payment's invoice, or `null` when the payment has no merchant invoice. */
+  private async merchantEmail(tx: DbExecutor, payment: Payment): Promise<string | null> {
+    const invoice = payment.invoiceId === null ? undefined : await findInvoice(tx, payment.invoiceId);
+    if (!invoice || invoice.clientId === null) return null;
+    return (await loadBillingMerchants(tx, [invoice.clientId])).get(invoice.clientId)?.email ?? null;
+  }
+
   /** Marks a payment `review_required` with the reason; staff then approve or reject it. */
   private async sendToReview(id: number, reason: string): Promise<Outcome> {
     return this.db.runInTransaction(async ({ tx }) => {
       const locked = await lockTopupPayment(tx, id);
       if (!locked || locked.status !== 'pending' || locked.reviewRequired) return 'skipped';
-      await updatePayment(tx, id, { reviewRequired: true, reviewNote: reason, autoCreditAt: null });
-      await this.audit.record(tx, {
-        action: 'sent deposit to review',
-        entityType: 'payment',
-        entityId: id,
-        entityLabel: paymentRef(id),
-        after: { reviewRequired: true, reason },
-      });
+      await this.markForReview(tx, id, reason);
       return 'review';
+    });
+  }
+
+  /** Writes the review flag, its reason and the audit row on a payment the caller has locked and checked to be pending. */
+  private async markForReview(tx: DbExecutor, id: number, reason: string): Promise<void> {
+    await updatePayment(tx, id, { reviewRequired: true, reviewNote: reason, autoCreditAt: null });
+    await this.audit.record(tx, {
+      action: 'sent deposit to review',
+      entityType: 'payment',
+      entityId: id,
+      entityLabel: paymentRef(id),
+      after: { reviewRequired: true, reason },
     });
   }
 }

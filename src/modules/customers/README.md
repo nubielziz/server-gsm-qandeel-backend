@@ -65,12 +65,12 @@ customer routes are feature 14b; paying a session (`.../pay`) and creating the o
   **No order exists after this call**: B2C never dispatches before payment.
 - **Capture** (scenario b2c-paid steps 6 to 8): `CheckoutCaptureService` fills the money module's capture slot at boot; the signed payment confirmation calls it inside its own transaction, under the payment row's lock. It takes the session's lock, refuses a confirmation that says another amount or currency
   than the quote (the payment waits for staff), records a second confirmation for a paid session as a duplicate and refunds it, and otherwise places the order through the orders module's `CustomerOrderPlacement` (locked net, VAT and rate from the session, the IMEI decrypted with `CHECKOUT_IMEI_AAD`, a 22-character tracking token,
-  stock codes delivered at once), books the payment and marks the session `paid` with its `order_id`. An expired but unpaid session is still honoured: the buyer paid the locked price. The risk hold of feature 18 plugs in at the placement call; the buyer's `order.received` email (and `order.completed` for an order delivered from stock) is written in this transaction by the money module's `StorefrontMails`, and the receipt PDF is a `receipt.render` job queued here.
+  stock codes delivered at once), books the payment and marks the session `paid` with its `order_id`. An expired but unpaid session is still honoured: the buyer paid the locked price. Every captured payment is first screened by the risk module (`RiskScreening.assess`, feature 18): `review` places the order `held` (no dispatch, the hold sentence on the timeline), `block` places it `held` and refunds it at once as the system (`RiskDecisionsService.refundBlocked`, no `order.received` email); the buyer's `order.received` email (and `order.completed` for an order delivered from stock) is written in this transaction by the money module's `StorefrontMails`, and the receipt PDF is a `receipt.render` job queued here.
 
 
 Built: feature 14b (customers-accounts, 19 routes in this module): the storefront customer's sign-in, the account and the admin
 customer routes; the TAC catalog (4 routes) is the catalog module's and the FX refresh the money module's. Checkout sessions and
-consents are feature 14a; block, export and anonymize are feature 18 (their routes stay pending).
+consents are feature 14a; block, export and anonymize are feature 18 (below).
 
 - **Layout.** `CustomersAccountsModule` (database and cache; listed in `NEEDS_DATABASE_AND_CACHE` of `test/support/app.ts`) holds the
   three controllers (`controllers/store-auth.controller.ts`, `store-account.controller.ts`, `customers.controller.ts`) and the use
@@ -109,6 +109,31 @@ consents are feature 14a; block, export and anonymize are feature 18 (their rout
 - **Seed** (`scripts/seed/customers.ts`): the demo's 30 customers (ids `c1` to `c30`), the credentials rows of the accounts and the
   eight TACs; `seedCustomerDevCredentials` gives the accounts `demo-password` in development only. The storefront orders (and so
   `ordersCount` and `total_spent`) come with 14a and 16.
+
+### Block, export and anonymize (feature 18)
+
+`CustomerPrivacyController` (in `CustomersAccountsModule`) holds the last three admin customer routes; the use cases are
+`application/customer-block.service.ts` and `application/customer-privacy.service.ts`, the pure rules in `domain/customer-privacy.ts`
+and `domain/customer-export.ts`, and the reads and writes that reach other modules' tables in one file,
+`infra/privacy-reads.repository.ts` (decision 016 deviation, like the foreign-reads file).
+
+- **Block** (`POST /admin/customers/:id/block`, `customers:block`, RESOLUTIONS b2c-5, B48): `{ blocked: true, reason }` (one of the console's
+  four reasons) sets `blocked` and risk `high`, ends the sessions, appends `Blocked: <reason>` to the internal notes and adds, through
+  the risk module's `Blocklist`, manual entries with the reason, the caller and `customer_id`: the email, each distinct card
+  fingerprint of the customer's payments, each distinct IMEI still stored on their orders and checkout sessions
+  (`ON CONFLICT DO NOTHING`: an existing entry stays as it is and is not linked). `{ blocked: false }` sets `active`, risk `high` to
+  `medium`, and deletes only the manual entries `WHERE customer_id = :id`. `ALREADY_BLOCKED`, `NOT_BLOCKED`, `ANONYMIZED` are `409`.
+- **Export** (`GET /admin/customers/:id/export`, `customers:privacy`, RESOLUTIONS b2c-8): a `customer-<id>.json` download of the profile,
+  orders with their IMEI, payments without card data, consents, checkout sessions, support tickets with their public messages, IMEI
+  checks and data requests (what the customer gave and did: no internal notes, risk level, suspension reason or blocklist entries); closes the customer's waiting export request and is audited `exported data of`. The contract sets
+  `originCheck: true`: the CSRF guard asks for `Sec-Fetch-Site` `same-origin`/`same-site` or an exact allowed `Origin`, else `403
+  CSRF_FAILED`. No copy of the file is kept.
+- **Anonymize** (`POST /admin/customers/:id/anonymize`, `customers:privacy`, B50, RESOLUTIONS b2c-4): irreversible. Name `Deleted
+  customer`, email `deleted-<id>@redacted.invalid` (free again), phone and notes cleared, marketing off, account closed (credentials
+  deleted, sessions revoked, links voided); the IMEI of their orders and checkout sessions is cut to the TAC and a mask (the risk
+  module's `ImeiErasure` does the same for their IMEI checks); the erasure request is completed; payments and ledger entries stay.
+  The audit row names the customer by number (the log is append-only). Other modules clear what they hold through
+  `CustomerErasureHooks` (run in the same transaction; the support module registers its ticket-link hook there).
 
 ## Growth pages (feature 19)
 
@@ -163,7 +188,9 @@ Exports the checkout rules `CHECKOUT_SESSION_TTL_MINUTES`, `CHECKOUT_IMEI_AAD`, 
 storefront funnel, IMEI checks, checkouts started, paid, delivered, over the last `days` days, shared by the dashboard's storefront
 block of feature 9 and the funnel report of feature 19); the modules `CustomersModule`, `CheckoutModule`,
 `CustomersAccountsModule`, `GrowthModule` (the app's test builder replaces those that need a database when there is none), `CustomerMailModule`
-and `CheckoutRecoveryModule` with `CHECKOUT_RECOVERY_SCHEDULER` (the worker loads both), `CUSTOMER_MAIL_EVENTS` and the `CustomerMailKind` type (the mails are sent through the platform's notification delivery, decision 033).
+and `CheckoutRecoveryModule` with `CHECKOUT_RECOVERY_SCHEDULER` (the worker loads both), `CustomerErasureModule` and `CustomerErasureHooks`
+(modules that hold personal data of a customer register a hook that runs when the customer is anonymized), `CUSTOMER_MAIL_EVENTS` and the
+`CustomerMailKind` type (the mails are sent through the platform's notification delivery, decision 033).
 `CustomerDirectory` with its `CustomerRef` type (`application/customer-directory.ts`) and `CustomerDirectoryModule` (`customer-directory.module.ts`): find or make a guest
 customer by email in the caller's transaction, used by the support tickets of feature 17, so that no other module inserts into `customers`.
 Feature 16 reads a session through its own use case in this module. Add the services other modules may call here, and nothing

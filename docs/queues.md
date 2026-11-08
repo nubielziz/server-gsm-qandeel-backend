@@ -248,8 +248,8 @@ Scheduled housekeeping: group promotion, data retention, integrity checks, FX re
 - **Concurrency:** 2 per worker process.
 - **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly, and `refund.process`, event-driven (money module, below), `checkout_recovery_sweep`, every 5 minutes (customers module, below), `service_price_scan`, event-driven (catalog module, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below). The others are built by their features, each
   registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
-  `ledger_integrity` (12b, nightly 02:30 UTC, below), `data_retention` (nightly
-  03:00 UTC), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). The names are the
+  `ledger_integrity` (12b, nightly 02:30 UTC, below), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). `data_retention`
+  (nightly 03:00 UTC, risk module, below) is built. The names are the
   console's job names (`GET /admin/system/jobs`, which lists only the jobs that write `job_runs`: `ip_rule_hits_flush` does not, so it is not listed and a manual run of it is 404). `data_retention` erases `imei_checks` older than `imeiRetentionDays` by
   setting `imei_enc`, `imei_hash` and `cached_until` to NULL together (no marker column; the wire then shows the TAC followed
   by bullets up to 15 characters), the same erasure `POST /admin/customers/:id/anonymize` applies to the customer's checks.
@@ -270,6 +270,14 @@ Scheduled housekeeping: group promotion, data retention, integrity checks, FX re
   (`src/modules/customers/checkout-recovery.module.ts`); the health jobs in
   `src/modules/health/jobs/health-jobs.module.ts`; the others are registered with `JobSchedulerRegistry` by the owning
   features.
+
+### Data retention (risk module, `src/modules/risk/jobs/`)
+
+- **`data_retention`** (daily 03:00 UTC, `ImeiRetention`): reads the setting `imeiRetentionDays` (a whole number from 0 to 3650, default 180,
+  `0` means do not keep) and sets `imei_enc`, `imei_hash` and `cached_until` of every `imei_checks` row created before the cutoff (the
+  clock's time minus the days) to NULL together, in batches of 1000 by id, at most 50 batches a run (a larger backlog continues the next
+  night). Payload: none (a manual run carries `{ runId }`). Idempotent: an erased row is not matched again, a parallel run finds fewer rows.
+  Recorded in `job_runs` (`processed` is the number of checks erased). The staff log then shows the TAC and bullets.
 
 ### Health jobs (health module, `src/modules/health/jobs/`)
 
@@ -312,7 +320,7 @@ Credits the wallet of confirmed top-ups of automatic gateways by themselves (use
 
 - **Trigger:** the scheduler `payment-auto-credit` every minute. A tick lists the pending top-ups whose `auto_credit_at` has come and that are not `review_required` (at most 50, oldest due first; the partial index `payments_auto_credit_idx` covers it). `auto_credit_at` is the confirmation time plus the larger of the setting `payments.auto_credit_delay_minutes` (default 10) and the gateway's `hold_hours`.
 - **Payload:** none (a manual run carries `{ runId }`). The job reads everything it needs from Postgres.
-- **What it does, per payment:** asks the gateway's API again through the driver (no row lock is held across the call); then, under `SELECT ... FOR UPDATE` on the payment, re-checks that it is still pending and not flagged and (a) credits it (`deposit` from `gateway_clearing`, key `deposit:payment:<id>`, invoice paid, `invoice.paid` outbox row, audit `credited deposit of` by the system) when the gateway still says confirmed (a crypto gateway only after its required confirmations), (b) sets `review_required` with the reason (audit `sent deposit to review`) when the gateway no longer confirms, the invoice is no longer payable or the payment stayed unconfirmed for 24 hours, or (c) moves `auto_credit_at` 5 minutes ahead while the gateway has not confirmed yet or cannot be reached.
+- **What it does, per payment:** asks the gateway's API again through the driver (no row lock is held across the call); then, under `SELECT ... FOR UPDATE` on the payment, re-checks that it is still pending and not flagged and (a) credits it (`deposit` from `gateway_clearing`, key `deposit:payment:<id>`, invoice paid, `invoice.paid` outbox row, audit `credited deposit of` by the system) when the gateway still says confirmed (a crypto gateway only after its required confirmations), (b) sets `review_required` with the reason (audit `sent deposit to review`) when the gateway no longer confirms, the invoice is no longer payable, the payment stayed unconfirmed for 24 hours, or risk flags it (just before the credit, still under the lock, the job asks money's `TopUpScreeningHooks`, which the risk services module fills with `RiskScreening.reviewTopUp`: the payment's card fingerprint and the merchant's email against the blocklist; nothing is posted), or (c) moves `auto_credit_at` 5 minutes ahead while the gateway has not confirmed yet or cannot be reached.
 - **Idempotency:** the payment row lock plus the unique ledger key make a double credit impossible, whether two ticks overlap or a staff decision races the job (the loser changes nothing; staff get `PAYMENT_ALREADY_REVIEWED`). A failure of one payment never stops the others; it stays due for the next tick.
 - **Recorded in `job_runs`** (job `payment_auto_credit`, `processed` = payments credited, `result` = the counts) only for a tick that had payments due and for every manual run: a run every minute with nothing due would bury the jobs list (like the outbox tick, decision 020). Retry policy: the queue's (3 attempts, backoff from 1 min); the next minute's tick is the real retry.
 
@@ -478,6 +486,7 @@ Registered with `JobSchedulerRegistry.register` in `onModuleInit`; the worker up
 | `db-size-sample` | `maintenance` | `db_size_sample` | daily 03:45 UTC | health (`src/modules/health/jobs/`) |
 | `alert-evaluation` | `alerts` | `alert_evaluation` | every minute | health (`src/modules/health/jobs/`) |
 | `ledger-integrity` | `maintenance` | `ledger_integrity` | daily 02:30 UTC | health (`src/modules/health/jobs/`) |
+| `data-retention` | `maintenance` | `data_retention` | daily 03:00 UTC | risk (`src/modules/risk/jobs/`) |
 
 ## Adding a queue or a job
 

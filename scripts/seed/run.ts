@@ -15,6 +15,7 @@ import { seedMoney } from './money';
 import { seedOrders } from './orders';
 import { seedPlatform } from './platform';
 import { seedB2c } from './b2c';
+import { seedRisk } from './risk';
 import { seedStorefront } from './storefront';
 import { seedSupport } from './support';
 import { seedSupplierLogs, seedSuppliers } from './suppliers';
@@ -39,9 +40,10 @@ export interface Seeder {
  * catalogue, content pages, help articles, legal documents), which needs the services and the retail group, after it the
  * storefront money (orders, payments, refunds and disputes of the customers), which needs the services, the gateways, the ledger
  * and the legal documents, then the support tickets and reply templates (they refer to staff, merchants, customers and orders the
- * others seed; a customer or an order that is not seeded leaves the ticket's requester or order link empty, never an error), and
+ * others seed; a customer or an order that is not seeded leaves the ticket's requester or order link empty, never an error),
  * the growth pages (the demo's left checkouts with the guest customers of their emails and their marketing consent), which need
- * the currencies and the services; the customers seeder goes first, so an email both know keeps its row.
+ * the currencies and the services (the customers seeder goes first, so an email both know keeps its row), and last the risk
+ * rules, blocklist, IMEI checks and data requests (they need the customers, the TAC catalogue and the storefront orders).
  */
 export const SEEDERS: readonly Seeder[] = [
   { module: 'identity', run: seedIdentity },
@@ -59,6 +61,7 @@ export const SEEDERS: readonly Seeder[] = [
   { module: 'b2c', run: seedB2c },
   { module: 'support', run: seedSupport },
   { module: 'growth', run: seedGrowth },
+  { module: 'risk', run: seedRisk },
 ];
 
 /**

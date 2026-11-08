@@ -3,6 +3,7 @@
 // customers; feature 14b); stage 19 adds the Checkouts page (abandoned list, recovery send, funnel).
 import { Module } from '@nestjs/common';
 import { CheckoutModule } from './checkout.module';
+import { CustomerErasureModule } from './customer-erasure.module';
 import { CustomersAccountsModule } from './customers-accounts.module';
 import { GrowthModule } from './growth.module';
 
@@ -13,5 +14,5 @@ import { GrowthModule } from './growth.module';
  * (decision 016). The routes with their use cases (`CheckoutModule`, `CustomersAccountsModule`, whose providers need the database
  * and the cache) are separate so a test app built without a database can leave out what needs it.
  */
-@Module({ imports: [CheckoutModule, CustomersAccountsModule, GrowthModule] })
+@Module({ imports: [CheckoutModule, CustomersAccountsModule, GrowthModule, CustomerErasureModule] })
 export class CustomersModule {}
