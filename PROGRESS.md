@@ -77,6 +77,10 @@ worktree has it). The lead's watchdog `.lead/mem-watch.sh` (run as a Monitor) wa
 with under 1 GB swap left, stops the single largest test, lint or typecheck process. The user's instruction (13:20): full
 permission to finish the project, **at most 4 agents**, avoid crashes. Running: 16, 12b merge fixes, 17, 19 (all resumed).
 
+**20:20 state:** **6b merged** (`d2ed171`, B179; its check: 5344 pass, 1 skip, 0 fail): **every one of the 382 manifest keys has a
+contract** (`test/contract/pending.ts` is empty; console routes 269 of 269 built). P4a follow-ups still building
+(`wf_99d70d35-0b2`); then its full check and merge, and the final walk with no mocks at all.
+
 **19:55 state:** **18 merged** (`35dfcde`, B178; its check: 5302 pass, 1 skip, 0 fail; console live routes 268, frontend
 `3e7586b`: every route the console calls is built, the 269th being the Bull Board page `GET /admin/queues` it only links
 to). 18's merge-fix run passed after one refix; the lead added at the merge: a storefront settings PATCH that changes nothing
