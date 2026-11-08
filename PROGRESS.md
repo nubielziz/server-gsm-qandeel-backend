@@ -4,7 +4,7 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
-**Final state (2026-11-08, 22:30): the project is complete.** Every feature is built, reviewed (Opus), checked and squash-merged
+**Final state (2026-11-08, 22:20): the project is complete.** Every feature is built, reviewed (Opus), checked and squash-merged
 on `main`: through 9 and 14a as below, then **12a** (`4af39e9`, B170), **15** (`a9301be`, B171), **14b** (`f3a8341`, B172),
 **11** (`93bab9b`, B173), **12b** (`320404c`, B174), **17** (`3e5e775`, B175), **19** (`9df68a8`, B176), **16** (`8085f59`,
 B177), **18** (`35dfcde`, B178), **6b** supplier call contracts (`d2ed171`, B179) and **P4a** follow-ups (`6afa404`, B180).
