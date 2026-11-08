@@ -77,6 +77,12 @@ worktree has it). The lead's watchdog `.lead/mem-watch.sh` (run as a Monitor) wa
 with under 1 GB swap left, stops the single largest test, lint or typecheck process. The user's instruction (13:20): full
 permission to finish the project, **at most 4 agents**, avoid crashes. Running: 16, 12b merge fixes, 17, 19 (all resumed).
 
+**Walk of the day-2 merges (2026-11-08 16:00, Playwright, real sign-in with TOTP, `.lead/walk/walk-day2.cjs`):** Settings
+(notification templates, notification log, tax and currencies), Storefront (services on sale, landing pages, content and
+legal, help centre, TAC catalogue), Customers (list, suspended, a customer's detail), Commissions (accruals, agents, plans),
+Finance reports: 133 real API calls, no failure, no page or console error; only `GET /admin/data-requests` (feature 18)
+mocked. The commission strip's amounts show a dash by design (frontend MISMATCHES M154: no summary route in the map).
+
 **11 merged** (`93bab9b`, B173; check 4399 pass, 0 fail with the batched runner; console live routes 211, frontend
 `07c5074`). 16 merged main (`7cf5e8c`: migrations joined as `0013_b2c_payments`, to renumber after 11's `0013`; retailNet
 keeps 15's floor and rounds up to cents) and its merge-fix run `wf_27c5b76d-222` wires the customer emails through 12a, the
