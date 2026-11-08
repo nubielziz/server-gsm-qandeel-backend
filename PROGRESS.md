@@ -77,6 +77,13 @@ worktree has it). The lead's watchdog `.lead/mem-watch.sh` (run as a Monitor) wa
 with under 1 GB swap left, stops the single largest test, lint or typecheck process. The user's instruction (13:20): full
 permission to finish the project, **at most 4 agents**, avoid crashes. Running: 16, 12b merge fixes, 17, 19 (all resumed).
 
+**16:35 state:** 12b merged main (`8839974`: migrations `0014_alerts` and `0015_alert_templates`, B174) and its full check runs;
+17 passed after fix (`wf_9bbe47ba-2ea`: the ticket token is returned only on the order-token path) and waits for 12b to land
+(its `0012_support_tickets` must follow 12b's 0015; move its guest-customer insert behind a customers service; the audit
+'unassigned ticket' vs the demo's 'assigned ticket' to none; seed nt4 template; B-entry); **18** started early on main
+(`wf_13a23d14-575`, Redis 11): it exposes the risk screening and the lead wires it into 16's capture at the merge, plus
+anonymize clearing 17's ticket token. Still running: 16 fixes (`wf_27c5b76d-222`), 19 finish (`wf_1c12d204-b6b`).
+
 **Walk of the day-2 merges (2026-11-08 16:00, Playwright, real sign-in with TOTP, `.lead/walk/walk-day2.cjs`):** Settings
 (notification templates, notification log, tax and currencies), Storefront (services on sale, landing pages, content and
 legal, help centre, TAC catalogue), Customers (list, suspended, a customer's detail), Commissions (accruals, agents, plans),
