@@ -56,10 +56,10 @@ guardLargeRuns();
  * Why: a failing assertion that printed a whole database transaction grew one process to 13 GB in under a minute, and the
  * out-of-memory killer stopped the machine with every other worktree's work. The printing blocks the event loop, so a timer in
  * this process could never react: a small watcher process checks this process's memory instead, and past GSM_TEST_MAX_RSS_MB
- * (default 3000; a normal batch stays under 1 GB) it ends it with a message. The watcher ends with the process.
+ * (default 4000; a batch of a dozen integration files stays well under it) it ends it with a message. The watcher ends with the process.
  */
 function guardMemory(): void {
-  const limitMb = Number(process.env.GSM_TEST_MAX_RSS_MB ?? 3000);
+  const limitMb = Number(process.env.GSM_TEST_MAX_RSS_MB ?? 4000);
   const pid = process.pid;
   const script =
     `while kill -0 ${pid} 2>/dev/null; do ` +

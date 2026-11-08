@@ -7,7 +7,7 @@
 # bun's own summary lines (` N pass`, ` N skip`, ` N fail`) for the totals, so logs read the same as before.
 set -uo pipefail
 cd "$(dirname "$0")/.."
-batch=${GSM_TEST_BATCH:-25}
+batch=${GSM_TEST_BATCH:-12}
 roots=("$@")
 [ ${#roots[@]} -eq 0 ] && roots=(./src ./test)
 mapfile -t files < <(find "${roots[@]}" -type f \( -name '*.test.ts' -o -name '*.spec.ts' \) -not -path '*/node_modules/*' | sort)
