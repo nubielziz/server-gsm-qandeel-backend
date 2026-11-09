@@ -4,19 +4,28 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
-**Found after the final state (2026-11-08, 23:15): no first run on a fresh server.** Only the dev seed (which refuses production)
-creates the base currency USD, the 12 system ledger accounts (decision 024), the Owner role and staff who can sign in; migrations
-create none of them, so a fresh production database has no way in and cannot move money. **P4b** (`wf_12f54905-bff`, worktree
-`../backend-p4b` from `6dad4fa`, Redis 10, brief `docs/briefs/P4b-first-run.md` in the worktree) adds `bun run setup` (production-safe,
-idempotent: reference data from one definition shared with the seed, the Owner role, the first owner with a temporary password printed
-once, forced change and TOTP at the first sign-in) and `bun run db:reset` (development only: drop, migrate, empty Redis and the bucket,
-then `--seed` or `--setup`). Until it lands, a fresh development start is `docker compose down -v && docker compose up -d && bun run
-db:migrate && bun run db:seed`.
+**First run on a fresh server: P4b merged (2026-11-09, `1f18322`, B181).** Found after the final state: only the dev seed (which
+refuses production) made the base currency, the 12 system ledger accounts, the Owner role and someone who can sign in, so a fresh
+production database had no way in. Now:
+- **`bun run setup`** (production-safe, idempotent; brief `docs/briefs/P4b-first-run.md`): applies the pending migrations, creates
+  USD, the 12 system ledger accounts (one definition shared with the seed) and the Owner role, then, in a terminal with no admin yet,
+  asks for the first admin (email, full name, hidden password twice; the user chose this flow). The first sign-in goes to the TOTP
+  enrollment. Deploy scripts: `--email --name` (temporary password printed once, forced change) or `--password-stdin`.
+- **`bun run db:reset`** (development only, local servers only): drop and recreate the dev database, migrate, empty both Redis
+  databases and the files bucket, then nothing, `--seed` (the demo) or `--setup` (the same questions).
+- Review: four Opus lenses (security, correctness, CLI, tests); the two blocking claims were refuted by an adversarial check and kept
+  as hardening; merge fixes reviewed. Full `bun run check` 5554 pass, 1 skip, 0 fail. The lead's walk
+  (`.lead/walk/first-run-walk.py`: a real pseudo-terminal on scratch databases, then each kind of first admin signs in and enrolls
+  TOTP through the API): 34 of 34.
+- Also fixed: the dashboard test failed between 21:00 and 23:00 and before 05:00 UTC (clock now pinned to 12:00 UTC);
+  `suppliers-admin` read the last audit row without an order; `security-seed` left cached IP rules behind. The test runner's
+  per-process memory guard (`GSM_TEST_MAX_RSS_MB`) defaults to 6000 MB (the user's approval).
 
 **Final state (2026-11-08, 22:20): the project is complete.** Every feature is built, reviewed (Opus), checked and squash-merged
 on `main`: through 9 and 14a as below, then **12a** (`4af39e9`, B170), **15** (`a9301be`, B171), **14b** (`f3a8341`, B172),
 **11** (`93bab9b`, B173), **12b** (`320404c`, B174), **17** (`3e5e775`, B175), **19** (`9df68a8`, B176), **16** (`8085f59`,
-B177), **18** (`35dfcde`, B178), **6b** supplier call contracts (`d2ed171`, B179) and **P4a** follow-ups (`6afa404`, B180).
+B177), **18** (`35dfcde`, B178), **6b** supplier call contracts (`d2ed171`, B179), **P4a** follow-ups (`6afa404`, B180) and,
+the next day, **P4b** first run (`1f18322`, B181, above).
 `docs/COVERAGE.md`: **382 of 382** manifest entries built (routes, Dhru actions, supplier calls, events; `test/contract/pending.ts`
 is empty), the console's **269 of 269**, **13 of 13** scenario e2e tests. Last full `bun run check` (P4a, on the tree that became
 `6afa404`): 5383 pass, 1 skip, 0 fail, every step green; `contract:check`, `routes:check` and `coverage:check` rerun on `main`
