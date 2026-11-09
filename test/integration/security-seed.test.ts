@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs';
 import { demoStatePath, loadDemoState } from '../../scripts/seed/demo-state';
 import { ROLES, permissionsOf } from '../../scripts/seed/identity';
 import { runSeed } from '../../scripts/seed/run';
-import { assertOwnerTargetAllowed, isOwner } from '../../src/modules/identity';
+import { IpRuleCache, assertOwnerTargetAllowed, isOwner } from '../../src/modules/identity';
 import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches, openSession } from '../support/auth';
 import { closeTestDb, resetDb, testDb } from '../support/db';
@@ -29,7 +29,13 @@ beforeAll(async () => {
   t = await createTestApp({ controllers: [SecurityTestController] });
 });
 afterAll(async () => {
-  if (frontendPresent) await t.close();
+  if (frontendPresent) {
+    // The seed wrote the demo's IP rules (an admin allowlist) and the requests above cached them in the Redis that every test app
+    // shares: empty the rules and drop the snapshot, or the next file's `/admin` requests meet 403 IP_NOT_ALLOWED (test/README.md).
+    await resetDb();
+    await t.app.get(IpRuleCache).invalidate();
+    await t.close();
+  }
   await closeTestDb();
 });
 beforeEach(async () => {

@@ -34,7 +34,8 @@ export const CONSOLE_AUDIT_ENTITY_TYPES = [
  *
  * Why: RESOLUTIONS identity-platform-15. Table to word: `clients` is `merchant`, `staff_users` `staff`, `checkout_sessions`
  * `checkout`, `legal_documents` `legal`, blocklist entries `blocklist`, `settings` `setting`, `commission_plans` `plan`,
- * `withdrawal_requests` `withdrawal`, `support_tickets` `ticket`. The list is enforced in code with no database CHECK, so the
+ * `withdrawal_requests` `withdrawal`, `support_tickets` `ticket`, `ledger_accounts` `ledger_account` (the system accounts `bun run setup`
+ * opens, P4b). The list is enforced in code with no database CHECK, so the
  * append-only table never needs a migration for a new word; a feature that needs one adds it here in its own commit.
  */
 export const AUDIT_ENTITY_TYPES = [
@@ -62,6 +63,7 @@ export const AUDIT_ENTITY_TYPES = [
   'queue',
   'job',
   'tac_entry',
+  'ledger_account',
 ] as const;
 
 /** One value of {@link AUDIT_ENTITY_TYPES}. */

@@ -49,6 +49,12 @@ export {
   walletViewOf,
 } from './domain/accounts';
 export type { NormalSide, WalletView } from './domain/accounts';
+export {
+  BASE_CURRENCY_DEFINITION,
+  PER_OWNER_ACCOUNT_KINDS,
+  SYSTEM_LEDGER_ACCOUNT_KINDS,
+  systemLedgerAccountRows,
+} from './domain/reference-data';
 export { assertBalanced, creditLine, debitLine } from './domain/ledger-lines';
 export type { AccountRef, LedgerLine } from './domain/ledger-lines';
 export {

@@ -34,6 +34,7 @@ Exports `IdentityModule` and the security stack (`SecurityModule`, global). Othe
 | `SessionPolicy`, `SESSION_SETTING_KEYS` | the lifetimes and their settings keys |
 | `StaffAuthTokens` | `issue(work, { staffId, purpose: 'invite' \| 'reset', createdBy?, ip? })`: the one-hour, single-use link token of `POST /admin/auth/password/set` (feature 2a calls it when it adds a member by invitation or sends a reset; it voids the account's older links) |
 | `checkPasswordPolicy`, `MIN_PASSWORD_LENGTH` | the staff password policy (also for a temporary password the server generates) |
+| `OWNER_ROLE_NAME`, `OWNER_ROLE_PERMISSIONS`, `EmailField`, `NameField`, `temporaryPasswordFor` | what `bun run setup` (P4b) shares with the seed and the staff routes: the Owner role definition, the email and name rules, the temporary password |
 | `STAFF_TOTP_AAD`, `CLIENT_TOTP_AAD`, `TOTP_ISSUER` | the encryption contexts of `staff_users.totp_secret_enc` and `clients.totp_secret_enc`, and the name authenticator apps show |
 | `MerchantAuthTokens` | `issue(work, { clientId, purpose: 'verify_email' \| 'reset' \| 'invite', createdBy?, ip? })`: the one-hour, single-use link token of a merchant (feature 2a calls it with `invite` for `POST /admin/clients`); it voids the merchant's older unused links of the same family and returns `{ token, id, expiresAt }` |
 | `MerchantMailOutbox`, `MERCHANT_MAIL_EVENTS` | `enqueue(work, { kind: 'email_verification' \| 'password_reset' \| 'invited', clientId, tokenId })`: writes the outbox event of a merchant mail (ids only, never the token) in the caller's transaction; feature 2a writes `invited` with it |
@@ -224,6 +225,15 @@ pure rules in `domain/`), wired by `StaffAuthModule`. Contract: `docs/contract/A
   time), `logged out` (full sessions only), `set a new password` (entity `staff`; in link mode the account owner is the actor). Failed attempts are
   logged without the email and rate-limited, never audited. No password, token or secret reaches a log or an audit row.
 - **Development credentials** (`bun run db:seed`, development only): see the root `README.md`, "Local sign-in".
+- **First owner on a fresh server** (P4b, `bun run setup`, production included): the account is a `staff_users` row with status `invited`, no
+  creator (it is set up outside the console) and the Owner role (`OWNER_ROLE_NAME`, `OWNER_ROLE_PERMISSIONS = ['*']`, exported for the seed and
+  the setup) or any role that already grants `*`. It is created only while no staff member of any status holds a role that grants every
+  permission (checked again inside the transaction, under an advisory lock). Two ways: a password the person **chose** (typed at the prompt, or
+  read by `--password-stdin`): `mustChangePassword` false, so `POST /admin/auth/login` answers `next: totp_setup` at once; or a generated
+  **temporary** password (`--email` and `--name`, as `POST /admin/staff` in its `temporary_password` mode): `mustChangePassword`, so the first
+  sign-in answers `next: password`, then `totp_setup`. Either way two factors are mandatory (decision 018), only the argon2id hash is stored,
+  and the audit row (`added admin`) says `onboarding: chosen_password` or `temporary_password` and holds no password or hash. See the root
+  `README.md`, "First run on a server".
 
 ## Staff access, merchants and sessions (feature 2a)
 

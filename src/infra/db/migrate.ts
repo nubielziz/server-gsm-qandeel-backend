@@ -3,7 +3,7 @@
 import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { Pool } from 'pg';
+import { Pool, type PoolClient } from 'pg';
 
 /** The folder drizzle-kit writes migrations to (`drizzle/` at the repository root). */
 export const MIGRATIONS_FOLDER = fileURLToPath(new URL('../../../drizzle', import.meta.url));
@@ -21,9 +21,10 @@ const MIGRATION_LOCK_KEY = 7_315_200_001;
  *
  * @param url the Postgres connection string of the target database
  * @param folder the migrations folder (defaults to the repository's `drizzle/`)
+ * @returns how many migrations this call applied (0 when the database was up to date); `bun run setup` reports it
  * @throws {Error} when the database is unreachable or a migration fails (the failing migration is rolled back)
  */
-export async function migrateDatabase(url: string, folder: string = MIGRATIONS_FOLDER): Promise<void> {
+export async function migrateDatabase(url: string, folder: string = MIGRATIONS_FOLDER): Promise<number> {
   const pool = new Pool({ connectionString: url, max: 1, connectionTimeoutMillis: 10_000 });
   pool.on('error', () => undefined);
   try {
@@ -32,7 +33,9 @@ export async function migrateDatabase(url: string, folder: string = MIGRATIONS_F
     try {
       await client.query('select pg_advisory_lock($1)', [MIGRATION_LOCK_KEY]);
       try {
+        const before = await appliedMigrations(client);
         await migrate(drizzle(client), { migrationsFolder: folder });
+        return (await appliedMigrations(client)) - before;
       } finally {
         await client.query('select pg_advisory_unlock($1)', [MIGRATION_LOCK_KEY]);
       }
@@ -42,4 +45,14 @@ export async function migrateDatabase(url: string, folder: string = MIGRATIONS_F
   } finally {
     await pool.end();
   }
+}
+
+/** How many migrations the database has recorded (0 before the first one: the bookkeeping table does not exist yet). */
+async function appliedMigrations(client: PoolClient): Promise<number> {
+  const exists = await client.query<{ present: boolean }>(
+    `select to_regclass('drizzle.__drizzle_migrations') is not null as present`,
+  );
+  if (!exists.rows[0]?.present) return 0;
+  const { rows } = await client.query<{ n: number }>('select count(*)::int as n from drizzle.__drizzle_migrations');
+  return rows[0]?.n ?? 0;
 }

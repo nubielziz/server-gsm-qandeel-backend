@@ -49,6 +49,19 @@ afterAll(async () => {
 });
 beforeEach(() => fake.reset());
 
+/**
+ * The audit rows of one entity, oldest first.
+ *
+ * Why: a read without ORDER BY has no order (the last row of the list was sometimes not the last written), and a supplier and a
+ * service can have the same number, so the entity type is part of the filter.
+ */
+const auditOfEntity = (entityType: string, entityId: number) =>
+  world.db
+    .select()
+    .from(s.auditLogs)
+    .where(and(eq(s.auditLogs.entityType, entityType), eq(s.auditLogs.entityId, entityId)))
+    .orderBy(s.auditLogs.id);
+
 let counter = 0;
 const newBody = (overrides: Record<string, unknown> = {}) => ({
   name: `Gulf Server Hub ${(counter += 1)}`,
@@ -99,7 +112,7 @@ describe('POST /admin/suppliers', () => {
     expect(row!.apiKeyEnc).toMatch(/^v1:/);
     expect(row!.apiKeyEnc).not.toContain(fake.apiKey);
     expect(encryption.decrypt(row!.apiKeyEnc!, 'suppliers.api_key_enc')).toBe(fake.apiKey);
-    const audit = (await world.db.select().from(s.auditLogs).where(eq(s.auditLogs.entityId, res.body.id))).at(-1)!;
+    const audit = (await auditOfEntity('supplier', res.body.id)).at(-1)!;
     expect(audit).toMatchObject({ action: 'added supplier', entityType: 'supplier', actorType: 'staff' });
     expect(JSON.stringify(audit)).not.toContain(fake.apiKey);
   });
@@ -339,7 +352,7 @@ describe('PATCH /admin/suppliers/:id', () => {
     const verbs: string[] = [];
     for (const status of ['paused', 'active', 'disabled', 'active']) {
       expect((await staff.patch(`/admin/suppliers/${id}`, { status })).body.status).toBe(status);
-      verbs.push((await world.db.select().from(s.auditLogs).where(eq(s.auditLogs.entityId, id))).at(-1)!.action);
+      verbs.push((await auditOfEntity('supplier', id)).at(-1)!.action);
     }
     expect(verbs).toEqual(['paused supplier', 'resumed supplier', 'disabled supplier', 'enabled supplier']);
   });
@@ -444,7 +457,7 @@ describe('POST /admin/suppliers/:id/test', () => {
     expect(await logsOf(world.db, id)).toMatchObject([
       { action: 'accountinfo', orderId: null, httpStatus: 200, error: '', outcome: 'ok' },
     ]);
-    expect((await world.db.select().from(s.auditLogs).where(eq(s.auditLogs.entityId, id))).at(-1)).toMatchObject({
+    expect((await auditOfEntity('supplier', id)).at(-1)).toMatchObject({
       action: 'tested connection to',
     });
   });
@@ -512,7 +525,7 @@ describe('POST /admin/suppliers/:id/sync', () => {
       ['accountinfo', null, 'ok'],
     ]);
     expect(logs[0]!.response).toEqual({ services: 3 });
-    expect((await world.db.select().from(s.auditLogs).where(eq(s.auditLogs.entityId, id))).at(-1)).toMatchObject({
+    expect((await auditOfEntity('supplier', id)).at(-1)).toMatchObject({
       action: 'synced services from',
     });
   });
@@ -762,9 +775,7 @@ describe("the supplier's services and the import", () => {
     expect(fields).toMatchObject([
       { key: 'account_user', label: 'Account name', fieldType: 'text', required: true, supplierKey: 'Account User' },
     ]);
-    expect(
-      (await world.db.select().from(s.auditLogs).where(eq(s.auditLogs.entityId, supplierId))).at(-1),
-    ).toMatchObject({ action: 'imported services from' });
+    expect((await auditOfEntity('supplier', supplierId)).at(-1)).toMatchObject({ action: 'imported services from' });
     // Imported again: both match now.
     expect(
       (await staff.post(`/admin/suppliers/${supplierId}/import`, { supplierServiceIds: [remoteByRemoteId.get('a2')!] }))
@@ -896,10 +907,7 @@ describe('PUT /admin/services/:id/supplier-links', () => {
       effectiveCost: '9.0000',
     });
     // Filter by the entity type too: a supplier can have the same numeric id as the service, and its audit rows are not this one.
-    const serviceAudit = await world.db
-      .select()
-      .from(s.auditLogs)
-      .where(and(eq(s.auditLogs.entityType, 'service'), eq(s.auditLogs.entityId, serviceId)));
+    const serviceAudit = await auditOfEntity('service', serviceId);
     expect(serviceAudit.at(-1)).toMatchObject({
       action: 'changed supplier links of',
       entityType: 'service',

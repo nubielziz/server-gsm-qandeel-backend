@@ -30,6 +30,8 @@
     "db:migrate": "bun scripts/db-migrate.ts",
     "db:check": "bun scripts/db-check.ts",
     "db:seed": "bun scripts/seed/index.ts",
+    "db:reset": "bun scripts/db-reset.ts",
+    "setup": "bun scripts/setup.ts",
     "bench:argon2": "bun scripts/bench-argon2.ts",
     "check": "bun run typecheck && bun run lint && bun run format:check && bun run routes:check && bun run contract:check && bun run docs:openapi:check && bun run coverage:check && bun run db:check && bun run test",
     "contract:extract": "bun scripts/extract-frontend-contract.mjs",

@@ -161,6 +161,11 @@ for the B2C or both audiences: code, name, 3DS support). `WalletService` is expo
 (the routes and the services that read the database; a database-less test app leaves it out). Other modules import only
 `src/modules/money/index.ts` (lint rule `gsm/module-boundaries`).
 
+The reference data of a working system (P4b, `domain/reference-data.ts`): `BASE_CURRENCY_DEFINITION` (USD, rate 1, no markup, shown on the
+storefront, two decimals), `SYSTEM_LEDGER_ACCOUNT_KINDS` (the 12 system accounts of decision 024), `PER_OWNER_ACCOUNT_KINDS` and
+`systemLedgerAccountRows()`. `bun run setup` (first run on a server) and the development seed both build their rows from them, so a fresh
+production database and a seeded one hold the same currency and accounts (README "First run on a server").
+
 ## Owned tables
 
 Only this module reads and writes these 11 tables (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts` once the data layer exists.

@@ -6,6 +6,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import type { AppConfig } from '../../src/config';
 import { hashToken } from '../../src/infra/crypto';
 import { schema as s, type DbExecutor } from '../../src/infra/db';
+import { OWNER_ROLE_NAME, OWNER_ROLE_PERMISSIONS } from '../../src/modules/identity';
 import { type DemoSeed, demoNumericId, demoRows, toDate, toMoney } from './demo-state';
 import { type SeedReport, insertRows, syncIdentity } from './helpers';
 
@@ -14,7 +15,7 @@ export type RoleKey = 'owner' | 'admin' | 'finance' | 'support' | 'risk' | 'view
 
 /** The six built-in roles with the ids and names the frontend mock gives them. */
 export const ROLES: ReadonlyArray<{ key: RoleKey; id: number; name: string }> = [
-  { key: 'owner', id: 1, name: 'Owner' },
+  { key: 'owner', id: 1, name: OWNER_ROLE_NAME },
   { key: 'admin', id: 2, name: 'Admin' },
   { key: 'finance', id: 3, name: 'Finance' },
   { key: 'support', id: 4, name: 'Support' },
@@ -55,7 +56,7 @@ const AREA_PERMISSIONS: ReadonlyArray<readonly string[]> = [
  * @returns the permissions in the order the mock writes them
  */
 export function permissionsOf(key: RoleKey): string[] {
-  if (key === 'owner') return ['*'];
+  if (key === 'owner') return [...OWNER_ROLE_PERMISSIONS];
   const granted = new Set<string>(['dashboard:read']);
   ROLE_MATRIX[key].forEach((level, area) => {
     for (const permissionArea of AREA_PERMISSIONS[area] ?? []) {

@@ -24,6 +24,8 @@ modules.
 | `bun run db:migrate`                                     | apply pending migrations to `DATABASE_URL` (`NODE_ENV=test` selects `DATABASE_URL_TEST`); never runs on app boot                  |
 | `bun run db:check`                                       | fail when the schema has a change no migration contains; needs no database, part of `bun run check`                               |
 | `bun run db:seed`                                        | load the frontend demo state (roles, staff, IP rules, settings, currencies, system ledger accounts); development only, idempotent |
+| `bun run setup`                                          | the first run on a fresh server, production included: migrates, then USD, the 12 system ledger accounts, the Owner role, and the first admin (asked for in a terminal, or `--email` and `--name`; README "First run on a server") |
+| `bun run db:reset`                                       | development only: drop and recreate the database, migrate, empty both Redis databases and the files bucket, then optionally `--seed` or `--setup` (which asks for the first admin; README "Start fresh in development") |
 
 Never edit an applied migration: a fix is a new one. After changing a schema file run `bun run db:generate`, read the
 SQL, and commit it with the schema.

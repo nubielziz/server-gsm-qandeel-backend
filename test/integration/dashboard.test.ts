@@ -16,11 +16,21 @@ import { insertOrderRow, ordersWorld } from '../support/orders';
 const clock = new TestClock();
 let t: TestApp;
 
+/**
+ * Noon UTC of a date's day.
+ *
+ * Why: the dashboard groups orders by UTC day, and these tests place orders hours and days back from the clock. At the real time
+ * of day the clock starts at, two of those orders could share a UTC day (from 21:00 to 23:00 UTC) or an order from 5 hours ago could
+ * fall on the previous day (before 05:00 UTC). Noon keeps every order on the day the test expects, whenever the suite runs.
+ */
+const noonUtcOf = (date: Date): number => Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 12);
+
 beforeAll(async () => {
   t = await createTestApp({ clock });
 });
 beforeEach(async () => {
   clock.reset();
+  clock.set(noonUtcOf(clock.now()));
   await resetDb();
   await clearIdentityCaches(t);
   await t.app

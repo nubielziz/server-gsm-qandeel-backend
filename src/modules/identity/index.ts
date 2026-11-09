@@ -56,6 +56,9 @@ export { CUSTOMER_PASSWORD_LINK_PURPOSES, CUSTOMER_TOKEN_PURPOSES } from './infr
 export type { CustomerTokenPurpose } from './infra/customer-token.repository';
 export { CustomerTokensModule } from './customer-tokens.module';
 export { temporaryPasswordFor } from './domain/temporary-password';
+// The Owner role definition and the staff field rules `bun run setup` shares with the seed and the staff routes (P4b).
+export { OWNER_ROLE_NAME, OWNER_ROLE_PERMISSIONS } from './domain/owner-role';
+export { EmailField, NameField } from './contracts/shared';
 export { MERCHANT_MAIL_EVENTS, MerchantMailOutbox } from './application/mail/merchant-mail-outbox';
 export type { MerchantMailKind } from './application/mail/merchant-mail-outbox';
 export { checkPasswordPolicy, MIN_PASSWORD_LENGTH } from './domain/password-policy';

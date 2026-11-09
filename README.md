@@ -80,6 +80,105 @@ curl -s -b jar -c jar -H "$O" -H 'Content-Type: application/json' -H "X-CSRF-Tok
 curl -s -b jar $B/admin/auth/me
 ```
 
+## First run on a server
+
+A fresh database has no currency, no ledger accounts and nobody who can sign in. `bun run setup` is the one command that fixes that, in
+production too (the demo seed refuses production). Once, on a new server, in a terminal:
+
+```bash
+# The empty database, Redis (queue and cache) and the files bucket exist, and the production environment is set (see .env.example).
+bun run setup
+```
+
+```
+✓ Migrations: up to date
+✓ Base currency USD: created
+✓ 12 system ledger accounts: created
+✓ Owner role: created
+
+No admin account yet. Create the first one now? [Y/n] y
+  Email: you@example.com
+  Full name: Your Full Name
+  Password: ********
+  Repeat password: ********
+✓ First admin created: you@example.com
+  Sign in at the console; you will set up 2FA (TOTP) first.
+```
+
+`setup` applies the pending migrations first (the same as `bun run db:migrate`; nothing happens when there are none), then creates what
+is missing and says what already existed, one line per part:
+
+- the base currency USD (rate 1, active) and the 12 system ledger accounts (decision 024: the same rows the development seed creates);
+- the Owner role (permission `*`), unless a role that grants every permission exists already;
+- the first admin, only when no staff member has a role that grants every permission (otherwise it asks nothing and says the account is
+  already there; add more staff from the console, Admins & access).
+
+**The questions.** In a terminal (standard input and output both) it asks for the first admin. Enter means yes at "Create the first one
+now?"; `n` ends the run without an admin (run `bun run setup` again later). Each answer is checked as you type it, with the rules of
+`POST /admin/staff`: a valid email that no other staff member uses, a name of 2 to 100 characters, and a password of at least 10
+characters that is not trivially weak and does not contain your email or your name. A bad answer prints the rule and asks again, up to
+3 times, then the run stops with exit code 1 and creates no admin account (the base data printed above it is already saved). The password is typed twice and never shown (one `*` per character;
+backspace works). Ctrl+C at any question prints `Cancelled: no admin account was created.` and exits with code 130. Ctrl+D does the same at the
+password questions, but at a plain question (the y/n, the email and the name) only on an empty line: on a line you have started to
+type it deletes the character under the cursor, as in any shell. If someone else creates an owner while you are typing, `setup`
+refuses at the end and creates no admin account.
+
+The password is yours, so it is not temporary: it is stored only as an argon2id hash and the first sign-in is not forced to change it. It
+goes straight to the authenticator (TOTP) setup (two factors are mandatory). It is never printed, logged or written to an audit row.
+
+**For a deploy script (no terminal).** Without a terminal and without options `setup` asks nothing: it creates the base data and ends with
+the line that says how to create the first admin. To create the admin without questions:
+
+```bash
+bun run setup --email you@example.com --name "Your Full Name"                  # a temporary password is printed once
+printf '%s\n' "$ADMIN_PASSWORD" | bun run setup --email you@example.com --name "Your Full Name" --password-stdin
+```
+
+- With `--email` and `--name` the account is made the way the console makes a member with a temporary password: a strong generated
+  password, stored only as a hash, a password change forced at the first sign-in. **The password is printed once on stdout and nowhere
+  else**: copy it before you close the terminal.
+- With `--password-stdin` as well, the password is read from standard input instead (one line; the trailing newline is removed), checked
+  with the same rules, stored like a typed one (not temporary) and not printed. Standard input must be a pipe, not the keyboard.
+- Everything is created in one transaction: if an owner already exists, `setup` refuses with exit code 1 and changes nothing.
+
+Every created thing gets one audit row (actor: the system; the admin's row says `onboarding: chosen_password` or `temporary_password`,
+never a password). Run it again whenever you like: a second run creates nothing.
+
+Then, at the console:
+
+1. Start the API (`bun run start`) and the worker (`bun run start:worker`), open the console and sign in with the email and your password
+   (or the printed temporary one; the console then asks you to choose a new password and sign in again).
+2. Two-factor sign-in is mandatory: the console shows the authenticator secret and QR code. Scan it with an authenticator app and
+   type the 6-digit code. From now on every sign-in asks for a code.
+3. Set the business up from the console: more currencies and their rates (USD is there), tax rates, payment gateways, suppliers,
+   categories and services, and the other staff (Admins & access). The IP allow-list is optional and off until you add a rule.
+
+If the first admin's password is lost before the first sign-in (a temporary one that was not copied), nobody can sign in and `setup`
+refuses to make another admin (an owner exists). Remove that never-used account with SQL
+(`delete from staff_users where email = 'you@example.com';`) and run `bun run setup` again.
+
+## Start fresh in development
+
+`bun run db:reset` throws the development data away and starts again, in one command. It drops and recreates the database of
+`DATABASE_URL`, runs the migrations, empties the queue Redis and cache Redis databases of your configuration (no stale jobs that point
+at old ids) and the files bucket, and prints what it removed. Then, by flag:
+
+| Command | Result |
+|---|---|
+| `bun run db:reset` | a new, migrated, empty database (run `bun run setup` or `bun run db:seed` yourself) |
+| `bun run db:reset --seed` | the demo data, as `bun run db:seed` loads it (sign-in: "Local sign-in" above) |
+| `bun run db:reset --setup` | the first run in a terminal: the base data, then the same questions as `bun run setup` (email, full name, password twice) |
+| `bun run db:reset --setup --email you@example.com --name "Your Name" [--password-stdin]` | the first run without questions: a temporary password printed once, or the password read from standard input |
+
+`--setup` without `--email` and `--name` needs a terminal. Without one it is refused **before anything is dropped**
+(`--setup needs a terminal to ask for the first admin, or pass --email and --name`). The questions come after the reset: Ctrl+C then
+leaves the reset database without an admin (exit code 130); run `bun run setup` to create one.
+
+Stop the API and the worker first and start them again afterwards (the reset ends their database connections and deletes their
+queue data). It is for development only and refuses, before it changes anything: `NODE_ENV=production` or a production configuration,
+`NODE_ENV=test` and any database called `*_test` (it never touches the test databases), and a database, Redis server or S3 endpoint that
+is not on this machine. It also checks that Postgres, both Redis servers and the S3 endpoint answer before it drops anything.
+
 ## Scripts
 
 | Script | What it does |
@@ -99,6 +198,8 @@ curl -s -b jar $B/admin/auth/me
 | `bun run contract:extract` | Re-extract the frontend's endpoint types into `docs/contract/frontend-endpoints.json` |
 | `bun run contract:docs` | Re-render the contract docs from the extraction and `docs/contract/lead-decisions.json` |
 | `bun run contract:check` | Fail when the extract or the contract docs are stale (CI) |
+| `bun run setup [--email <address> --name "<full name>" [--password-stdin]]` | The first run on a fresh server, production included: applies the migrations, creates the base currency, system ledger accounts and Owner role, and asks for the first admin in a terminal (or takes it from the options; see "First run on a server") |
+| `bun run db:reset [--seed \| --setup [--email ... --name ... [--password-stdin]]]` | Development only: drop and recreate the database, migrate, empty Redis and the files bucket, then seed the demo or run the first run, which asks for the first admin in a terminal (see "Start fresh in development") |
 | `bun run bench:argon2` | Print the time of one argon2id hash for candidate settings (aim for 50-150 ms on the production host) |
 | `bun run check` | Everything CI runs: typecheck, lint, route manifest, contract docs, OpenAPI documents, tests |
 | `scripts/ci.sh` | The CI pipeline in one command: `bun install --frozen-lockfile`, start the Docker services, `bun run check`; exits non-zero on any failure |
