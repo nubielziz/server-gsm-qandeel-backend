@@ -2,7 +2,8 @@
 
 Written 2026-11-09, after P4b. Nothing here is built yet. Each phase becomes a feature brief in `docs/briefs/` when it starts,
 and goes through the usual flow (Sonnet builds, Opus reviews, full check, lead merge). Order matters: phase 0 unblocks
-merchants today, phase 1 to 3 build the one public site, phase 4 and 5 are needed before real customers pay. **Owner's choice
+merchants today, phase 1 to 3 build the one public site (with 2W, the customers' wallet, before phase 2 goes live), phase 4 and
+5 are needed before real customers pay. **Owner's choice
 (2026-11-09): phase 0 later; the website (phases 1 to 3) first**, in `/home/saifi/gsm-project/storefront` (the owner's Next.js
 scaffold and designs), from the handoff file `/home/saifi/gsm-project/STOREFRONT-HANDOFF.md`.
 
@@ -18,6 +19,9 @@ scaffold and designs), from the handoff file `/home/saifi/gsm-project/STOREFRONT
 4. **The whole merchant portal lives inside the site** (all 51 `/client/*` routes): prices, orders from the wallet, top-ups,
    invoices and statement, API keys, webhooks, 2FA, settings.
 5. **Arabic and English**, with a language switch; Arabic is right-to-left.
+6. **Customers get a wallet too, like merchants** (decided 2026-11-09): a regular customer tops up a balance ("Add Funds") and
+   pays orders from it, as the owner's checkout design shows. Not built: see **phase 2W**. The two account types stay apart, so
+   a merchant's wallet and a customer's wallet are separate even for one person.
 
 ## Phase 0: manage merchants from the console (small; unblocks merchants now)
 
@@ -50,11 +54,32 @@ Every item: permission `clients:update` (0.6 maybe a new one), one audit row, te
 | 1.7 | **Turnstile** on sign-up, sign-in, IMEI check, checkout and tickets | Site key in the app's build settings; the backend already checks the token |
 | 1.8 | **Hosting on one domain** | `shop.` (site), `admin.` (console), `api.` (API); `CORS_ORIGINS`, `CSRF_COOKIE_DOMAIN` and `TRUST_PROXY` set for them (cookies are SameSite=Lax) |
 
+## Phase 2W: a wallet for customers (decided 2026-11-09; backend first, before phase 2 goes live)
+
+Today a storefront customer has no balance: a checkout pays one order through a gateway, the money sits in the single system
+account `customer_funds` until delivery (`b2c_pay`, `b2c_deliver` in `src/modules/money/domain/money-events.ts`), and the
+database allows `client_wallet` / `client_hold` only for merchants (`ledger_accounts_kind_owner_check`). A customer wallet is
+therefore real money work (decision 024 rules apply: one entry point, append-only, idempotency key per move, accounts locked in id
+order). The design below is the lead's starting point, to settle in the phase's brief.
+
+| # | Item | Notes |
+|---|---|---|
+| 2W.1 | **Ledger accounts** | Per customer, opened on first use: `customer_wallet` (liability, the balance) and, if orders hold money like B2B, `customer_hold`; owner type `customer` (already in `LEDGER_OWNER_TYPES`). Migration: the kind list and `ledger_accounts_kind_owner_check`. No overdraft for customers. The nightly integrity job covers them |
+| 2W.2 | **Money events** | `customer_topup`: Dr `gateway_clearing` (or `bank` for a manual gateway) / Cr `customer_wallet` (fee as for merchants, `fee_income`). `b2c_wallet_pay`: Dr `customer_wallet` / Cr `customer_funds` net + `vat_payable` VAT, so delivery (`b2c_deliver`) and VAT stay as today; VAT is charged when the balance pays an order, not at the top-up (stored value; confirm with the accountant). Refund of a wallet-paid order: back to the wallet (reverse entry). A balance refund to the card or bank: a policy decision (default: not offered, staff adjust by hand) |
+| 2W.3 | **Customer routes** | `GET /store/v1/me/wallet` (balance, currency, limits), `GET /store/v1/me/wallet/statement` (paged, date range), `POST /store/v1/me/wallet/top-ups` (amount + payment method: opens a top-up payment through a gateway, credited by its webhook, or a manual one with a receipt like merchant invoices), and paying a checkout from the balance: a new pay method named **`balance`** (not `wallet`: `method: wallet` already means a gateway method type, `checkout-pay.contracts.ts:52`). Only a signed-in customer has a wallet (a guest checkout cannot use it). Top-up and balance pay go through the risk screening hooks like merchant top-ups |
+| 2W.4 | **Rules to decide** | Minimum and maximum top-up, maximum balance, which gateways may top up (manual bank/CliQ first), what happens when a top-up is charged back (the balance may go negative: lock the wallet), dormant balances, the display currency (the ledger stays USD; the site converts with the FX rates) |
+| 2W.5 | **Console (staff)** | A Wallet tab on the customer page like the merchant's: balance, statement, adjust (`GET /admin/customers/:id/wallet`, `POST /admin/customers/:id/wallet/adjust`, audited), and customer top-ups in the payments/invoices lists |
+| 2W.6 | **Site** | "Add Funds", the balance in the header and checkout, the statement page, for customers as for merchants (merchants keep `/client/wallet` and `/client/invoices`) |
+| 2W.7 | **Legal and payments** | A stored-value wallet may need the Central Bank of Jordan's view (keep it closed-loop: usable only for this store's services, no cash-out); Stripe restricts stored value and virtual credits, so top-ups by card may be refused: start with manual bank/CliQ top-ups. Ask a lawyer and the accountant before going live |
+
+Size: large (ledger migration, money events with their tests and the scenario e2e tests, routes, console tab, site pages). Spec
+decisions go to B-entries as usual.
+
 ## Phase 2: the customer area
 
 Checkout (`/store/v1/checkout-sessions*`: open, consents, pay), order tracking and tax receipt (`/store/v1/orders/:token*`), my
 account (`/store/v1/me*`: orders, password, language and currency, data export and deletion), support tickets
-(`/store/v1/tickets*`, rating). **Card payment depends on phase 4.**
+(`/store/v1/tickets*`, rating). **Card payment depends on phase 4; paying from the balance and "Add Funds" depend on phase 2W.**
 
 ## Phase 3: the merchant area (all `/client/*` routes)
 
