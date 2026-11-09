@@ -4,6 +4,12 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+**Next work is planned, not built: `docs/ROADMAP.md` (2026-11-09).** The owner chose one public site for merchants and regular
+customers (two account types, one smart sign-in, the whole merchant portal inside it, Arabic and English). Phase 0 comes first:
+staff cannot yet reset a merchant's password, resend an invitation or edit a merchant's details, and a merchant cannot set a
+password or create an API key without that site. Mail in development goes through Resend (`backend/.env`, git-ignored, `smtps`
+on 465 because this network blocks plain SMTP on 587).
+
 **First run on a fresh server: P4b merged (2026-11-09, `1f18322`, B181).** Found after the final state: only the dev seed (which
 refuses production) made the base currency, the 12 system ledger accounts, the Owner role and someone who can sign in, so a fresh
 production database had no way in. Now:
