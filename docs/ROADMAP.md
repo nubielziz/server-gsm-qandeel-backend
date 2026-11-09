@@ -2,7 +2,9 @@
 
 Written 2026-11-09, after P4b. Nothing here is built yet. Each phase becomes a feature brief in `docs/briefs/` when it starts,
 and goes through the usual flow (Sonnet builds, Opus reviews, full check, lead merge). Order matters: phase 0 unblocks
-merchants today, phase 1 to 3 build the one public site, phase 4 and 5 are needed before real customers pay.
+merchants today, phase 1 to 3 build the one public site, phase 4 and 5 are needed before real customers pay. **Owner's choice
+(2026-11-09): phase 0 later; the website (phases 1 to 3) first**, in `/home/saifi/gsm-project/storefront` (the owner's Next.js
+scaffold and designs), from the handoff file `/home/saifi/gsm-project/STOREFRONT-HANDOFF.md`.
 
 ## Decisions taken by the owner (2026-11-09)
 

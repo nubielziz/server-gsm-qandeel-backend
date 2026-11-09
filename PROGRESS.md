@@ -5,9 +5,11 @@ Single source of truth for status. The lead updates it after every step. Read it
 ## Resume here
 
 **Next work is planned, not built: `docs/ROADMAP.md` (2026-11-09).** The owner chose one public site for merchants and regular
-customers (two account types, one smart sign-in, the whole merchant portal inside it, Arabic and English). Phase 0 comes first:
-staff cannot yet reset a merchant's password, resend an invitation or edit a merchant's details, and a merchant cannot set a
-password or create an API key without that site. Mail in development goes through Resend (`backend/.env`, git-ignored, `smtps`
+customers (two account types, one smart sign-in, the whole merchant portal inside it, Arabic and English). Phase 0 (staff cannot
+yet reset a merchant's password, resend an invitation or edit a merchant's details) was **deferred by the owner ("later")**: the
+website comes first, in a new session, from `/home/saifi/gsm-project/STOREFRONT-HANDOFF.md`; its app is
+`/home/saifi/gsm-project/storefront` (the owner's Next.js scaffold and designs in `screenshots/`). A merchant cannot set a
+password or create an API key until that site (or phase 0) exists. Mail in development goes through Resend (`backend/.env`, git-ignored, `smtps`
 on 465 because this network blocks plain SMTP on 587).
 
 **First run on a fresh server: P4b merged (2026-11-09, `1f18322`, B181).** Found after the final state: only the dev seed (which
