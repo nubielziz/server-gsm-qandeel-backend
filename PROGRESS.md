@@ -4,6 +4,23 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+**Job of 2026-11-10 (running): finish the roadmap, merchant management, the customer wallet, the storefront's backend needs
+and a notification center** (the owner's prompt; it overrides the "phase 0 later" and "2W backend first, later" notes below).
+Roles set by the owner: Opus lead, **Fable 5.2 plans and approves every feature before code**, Sonnet implements, Opus (and Fable
+for money) reviews, the lead merges; **at most 5 agents at once, the lead included**; storefront read-only (its needs go to
+`/home/saifi/gsm-project/STOREFRONT-BACKEND-HANDOFF.md`). Binding lead decisions: `.lead/w1/LEAD-DECISIONS.md` (features W0,
+20 merchant management, 21 customer wallet, 22 store catalog, 23 notification center, 24+ the rest of the roadmap; routes beyond
+the map go to backend-owned `scripts/map-additions/<id>.mjs`; business defaults). Discovery reports: `.lead/w1/D1`…`D6`.
+Plans: `docs/briefs/W0-parallel-extensions.md` (in `../backend-w0`), `21-customer-wallet.md`, then 20, 22, 23.
+State at 17:40: discovery done (D1-D6). **Approved plans on disk:** `W0-parallel-extensions.md` (in `../backend-w0`),
+`20-merchant-management.md`, `21-customer-wallet.md`, `23-notification-center.md` (each ends with "Approved by Fable 5.2"; the
+5-hour usage cap hit twice, at 11:52 and 12:39, then the machine shut down at 17:13). **Owner's rules after the restart:** never
+relaunch a finished Fable planner; ONE Fable agent writes the remaining plans (22, 24B, 24D, 24E, 24A, 24C); Opus reviews
+Sonnet's work and decisions and writes the hard parts itself (LEAD-DECISIONS §0.1, §0.2). Running: workflow
+`wf_82c8336f-f7c` (the one Fable planner + Sonnet finishing W0 from its partial work, then Opus review). Next: merge W0, create
+the 20/21/23 worktrees (LEAD-DECISIONS §1), implementation wave (21 backend by Opus; 23 slice B by Opus; the rest Sonnet);
+apply each merged migration to the dev DB `gsm` (the owner's API runs from this checkout with `--watch`).
+
 **Next work is planned, not built: `docs/ROADMAP.md` (2026-11-09).** The owner chose one public site for merchants and regular
 customers (two account types, one smart sign-in, the whole merchant portal inside it, Arabic and English). Phase 0 (staff cannot
 yet reset a merchant's password, resend an invitation or edit a merchant's details) was **deferred by the owner ("later")**: the
