@@ -25,6 +25,15 @@ Status: accepted, 2026-10-31.
 - Errors: every problem+json answer increments `api_errors_total{surface,method,route,status,code}`; a cache-Redis hash
   keeps first seen, last seen and the last request id per (route, code) for the System health errors table. Sentry
   (optional, `SENTRY_DSN`) receives unexpected 5xx only and supplies links.
+- Sentry wiring (feature 24D, 2026-11-10): the official `@sentry/bun` SDK, errors only. `ErrorReporter`
+  (`src/infra/observability`) is a no-op, and the SDK is never initialised, without `SENTRY_DSN` (no network, no timers: tests,
+  `docs:openapi` and development stay offline). With a DSN it initialises with no default integrations, no tracing,
+  `dataCollection` switched off (user info, cookies, headers, bodies, query parameters, local variables; SDK 11's replacement of `sendDefaultPii`), `release` = `<APP_VERSION>+<GIT_SHA>` and a `beforeSend` scrubber that removes request data, user,
+  breadcrumbs, extra data and the host name and masks e-mail addresses and 12 to 19 digit runs in messages (the masks of decision
+  012). Two call sites only: the exception filter's server-fault branch (an unhandled throw or `INTERNAL_ERROR`; a deliberate
+  catalog 5xx such as `FX_PROVIDER_DOWN` or a planned `MAINTENANCE` is not sent) and the worker's final job failure (after the same
+  throttle as its log line). `@sentry/nestjs` is not used (it is built on Node preload hooks). A reporter failure is logged at
+  warn level and never reaches the caller. The System health `sentryUrl` stays `null` (B168).
 - Tracing: OpenTelemetry is not added now; request-id correlation (decision 012) covers API → outbox → worker →
   supplier. Adding OTel later needs no code change outside `src/infra`.
 

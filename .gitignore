@@ -2,6 +2,10 @@
 .env
 .env.*
 !.env.example
+!.env.production.example
+
+# Production deploy: the compose-level env file and the secret files (templates are committed)
+/deploy/secrets/
 
 # Dependencies and build or test output
 /node_modules

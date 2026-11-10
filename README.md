@@ -82,6 +82,9 @@ curl -s -b jar $B/admin/auth/me
 
 ## First run on a server
 
+Deploying to a real server (images, Caddy and TLS, the production compose file, secrets, backups, upgrades, the owner's checklists) is in
+[docs/OPERATIONS.md](docs/OPERATIONS.md); this section is only the `bun run setup` step of it.
+
 A fresh database has no currency, no ledger accounts and nobody who can sign in. `bun run setup` is the one command that fixes that, in
 production too (the demo seed refuses production). Once, on a new server, in a terminal:
 
@@ -235,6 +238,7 @@ Generated from the route contracts (decisions 008, 009, 017) and committed under
   `ANSWERS.md`, `RULES.md`, `OPEN-QUESTIONS.md`, `TESTS.md` next to it.
 - `docs/decisions/`: decision records. `CLAUDE.md`: working rules for agents. `PROGRESS.md`: status.
   `CONTRIBUTING.md`: how to run everything, add an endpoint, a job, a cache key or a money event.
+- `docs/OPERATIONS.md`: deploy, upgrade, back up and restore in production (`Dockerfile`, `deploy/`, `scripts/backup/`; decision 036).
 - `src/modules/<id>/README.md`: per module its purpose, owned tables, routes, scenarios, permissions, events, jobs and
   cache keys. `docs/contract/openapi.json` and `openapi.public.json`: the generated API documents.
 - `docs/queues.md`: every BullMQ queue with its jobs, payloads, idempotency keys, retry policy and schedules; `docs/cache-keys.md`:

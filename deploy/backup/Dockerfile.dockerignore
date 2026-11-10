@@ -1,0 +1,3 @@
+# Build context of deploy/backup/Dockerfile (built from the repository root): only the backup scripts go in.
+*
+!scripts/backup

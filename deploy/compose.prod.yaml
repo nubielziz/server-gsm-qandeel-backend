@@ -1,0 +1,268 @@
+# Production stack of the GSM backend on one host (feature 24D, decision 036, docs/OPERATIONS.md).
+# Run from the repository root:  docker compose -f deploy/compose.prod.yaml --env-file deploy/.env <command>
+# Compose-level values (hosts, image names, passwords, backup target) come from deploy/.env (template: deploy/.env.example);
+# the application's own variables come from .env.production (template: .env.production.example), read by api, worker and migrate.
+# Only Caddy publishes ports. Postgres, both Redis roles, MinIO and Prometheus are reachable inside the network `gsm` only.
+name: gsm
+
+x-app: &app
+  image: ${BACKEND_IMAGE:?set BACKEND_IMAGE in deploy/.env}
+  env_file:
+    # `required: false` lets `docker compose config` run before the file exists; a missing file stops the app at boot, because
+    # the configuration check refuses production without its required variables (decision 013).
+    - path: ../.env.production
+      required: false
+  networks: [gsm]
+
+services:
+  caddy:
+    image: caddy:2.11-alpine
+    restart: unless-stopped
+    init: true
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SHOP_HOST: ${SHOP_HOST:?}
+      ADMIN_HOST: ${ADMIN_HOST:?}
+      API_HOST: ${API_HOST:?}
+      ACME_EMAIL: ${ACME_EMAIL:?}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [gsm]
+
+  api:
+    <<: *app
+    # Only the api builds the image; worker and migrate use the same tag (`docker compose ... build api`).
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+        APP_VERSION: ${APP_VERSION:-0.0.0}
+    restart: unless-stopped
+    init: true
+    # The image's own healthcheck calls GET /health?strict=1 (503 when Postgres is down, decision 015).
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis-queue:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+    stop_grace_period: 15s
+
+  worker:
+    <<: *app
+    restart: unless-stopped
+    init: true
+    command: ["bun", "src/worker.ts"]
+    healthcheck:
+      # The worker has no /health; its metrics listener answers only with the METRICS_TOKEN, so a 200 proves the process is up.
+      test:
+        - CMD
+        - bun
+        - -e
+        - "const r = await fetch('http://127.0.0.1:' + (process.env.WORKER_METRICS_PORT ?? 9464) + '/metrics', { headers: { authorization: 'Bearer ' + process.env.METRICS_TOKEN } }); process.exit(r.ok ? 0 : 1)"
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis-queue:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+    # The worker drains in-flight jobs for up to 25 s (queue-workers.service.ts); the container must outlive that.
+    stop_grace_period: 30s
+
+  # One-off: applies the pending migrations. The API never migrates on boot (decision 027).
+  #   docker compose -f deploy/compose.prod.yaml --env-file deploy/.env run --rm migrate
+  migrate:
+    <<: *app
+    profiles: ["tools"]
+    command: ["bun", "scripts/db-migrate.ts"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:18.6-trixie
+    restart: unless-stopped
+    init: true
+    command: ["postgres", "-c", "max_connections=200"]
+    environment:
+      POSTGRES_USER: gsm
+      POSTGRES_DB: gsm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+    volumes:
+      # Postgres 18 images keep data under /var/lib/postgresql/18/docker, so the volume mounts the parent.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gsm -d gsm"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks: [gsm]
+
+  # Queue role (decision 006): BullMQ only. Nothing may be evicted, and the append-only file survives a restart.
+  redis-queue:
+    image: redis:8.10.3-alpine
+    restart: unless-stopped
+    init: true
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory-policy
+      - noeviction
+    volumes:
+      - redis-queue-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks: [gsm]
+
+  # Cache role (decision 006): cache, rate limits and locks. Eviction is wanted, persistence is not.
+  redis-cache:
+    image: redis:8.10.3-alpine
+    restart: unless-stopped
+    init: true
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks: [gsm]
+
+  # Object storage for uploaded files (decision 004). To use an external S3 instead, delete `minio` and `minio-init` and point the
+  # S3_* variables of .env.production at it (docs/OPERATIONS.md). Pinned by digest, like the development stack.
+  minio:
+    image: cgr.dev/chainguard/minio@sha256:3b6e40c30ecd5cea627e382ff0b82ca841f58c52294578787043ee80c8ef7c82
+    restart: unless-stopped
+    init: true
+    command: ["server", "/data"]
+    # The image runs as uid 65532 and a fresh named volume is root-owned, so it runs as root (as in the development stack).
+    user: "0:0"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in deploy/.env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in deploy/.env}
+    volumes:
+      - minio-data:/data
+    networks: [gsm]
+
+  # One-shot: creates the private bucket the application writes to (idempotent). The image has no shell, so the alias comes from
+  # MC_HOST_local (the root user and password must therefore contain only letters and digits).
+  minio-init:
+    image: cgr.dev/chainguard/minio-client@sha256:5b759d9e248ad9f1ab8455f8168b86a47acb1e08207d38603b504bdc5a555d7a
+    depends_on:
+      - minio
+    environment:
+      MC_HOST_local: http://${MINIO_ROOT_USER:?}:${MINIO_ROOT_PASSWORD:?}@minio:9000
+    command: ["mb", "--ignore-existing", "local/gsm-files"]
+    restart: on-failure
+    networks: [gsm]
+
+  # Scrapes the API and the worker with the METRICS_TOKEN (the System health pages query it through PROMETHEUS_URL=http://prometheus:9090).
+  prometheus:
+    image: prom/prometheus:v3.15.1@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2
+    restart: unless-stopped
+    init: true
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    secrets:
+      - metrics_token
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    networks: [gsm]
+
+  # The admin console (static bundle served by nginx), built from frontend-admin/Dockerfile with VITE_API_BASE_URL="" (same origin).
+  console:
+    image: ${CONSOLE_IMAGE:?set CONSOLE_IMAGE in deploy/.env}
+    restart: unless-stopped
+    init: true
+    networks: [gsm]
+
+  # The storefront (Next server on port 3000). Its image is the storefront session's to ship; until then it stays behind the
+  # profile `site` (enable with `--profile site`). The variable name the site reads for the API address is the storefront's to confirm.
+  site:
+    image: ${SITE_IMAGE:?set SITE_IMAGE in deploy/.env}
+    profiles: ["site"]
+    restart: unless-stopped
+    init: true
+    environment:
+      API_BASE_URL: http://api:3000
+    networks: [gsm]
+
+  # Backup tools, started by the host's cron or systemd timer (docs/OPERATIONS.md), never a long-running container:
+  #   docker compose -f deploy/compose.prod.yaml --env-file deploy/.env run --rm backup pg-backup.sh
+  backup:
+    build:
+      context: ..
+      dockerfile: deploy/backup/Dockerfile
+    image: gsm-backup:local
+    profiles: ["tools"]
+    restart: "no"
+    env_file:
+      # BACKUP_* and the files bucket (S3_*) are read from the same files as the stack; DATABASE_URL comes from .env.production.
+      - path: ./.env
+        required: false
+      - path: ../.env.production
+        required: false
+    volumes:
+      # The migration files, for the restore drill's migration count.
+      - ../drizzle:/drizzle:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [gsm]
+
+networks:
+  gsm:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+secrets:
+  # Write the same value as METRICS_TOKEN of .env.production, with no trailing newline: printf '%s' "$TOKEN" > deploy/secrets/metrics_token
+  metrics_token:
+    file: ./secrets/metrics_token
+
+volumes:
+  pgdata:
+  redis-queue-data:
+  minio-data:
+  prometheus-data:
+  caddy-data:
+  caddy-config:

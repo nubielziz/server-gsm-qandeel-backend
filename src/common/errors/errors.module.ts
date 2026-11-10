@@ -3,6 +3,7 @@
 import { Global, Module, type OnModuleInit } from '@nestjs/common';
 import { APP_FILTER } from '@nestjs/core';
 import { MetricsModule } from '../../infra/metrics/metrics.module';
+import { ObservabilityModule } from '../../infra/observability/observability.module';
 import { DhruErrorFormatter } from './dhru-formatter';
 import { ProblemExceptionFilter } from './exception.filter';
 import { ErrorFormatterRegistry } from './formatter-registry';
@@ -16,7 +17,7 @@ import { ErrorFormatterRegistry } from './formatter-registry';
  */
 @Global()
 @Module({
-  imports: [MetricsModule],
+  imports: [MetricsModule, ObservabilityModule],
   providers: [
     ErrorFormatterRegistry,
     ProblemExceptionFilter,

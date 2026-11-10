@@ -10,6 +10,7 @@ import { generateRequestId, isSafeRequestId, runWithRequestId } from '../../comm
 import { TimeoutError, withTimeout } from '../../common/timeout';
 import { APP_CONFIG, type AppConfig } from '../../config';
 import { MetricsService } from '../metrics';
+import { ErrorReporter } from '../observability/error-reporter';
 import { RedisService, withoutCredentials } from '../redis';
 import {
   COMPLETED_JOB_MAX_AGE_SECONDS,
@@ -61,7 +62,8 @@ function requestIdOf(job: Job): string {
  * BullMQ. While a job runs, the request id it carries is the current request id, so logs and follow-up outbox rows keep it.
  *
  * Side effects: reads and writes the BullMQ keys of the queues that have processors; counts
- * `queue_jobs_processed_total{queue,job,outcome}` and observes `queue_job_duration_seconds{queue,job}`; logs failures.
+ * `queue_jobs_processed_total{queue,job,outcome}` and observes `queue_job_duration_seconds{queue,job}`; logs failures and
+ * reports a job that failed for good to Sentry when `SENTRY_DSN` is set.
  *
  * @see docs/queues.md and docs/decisions/001-runtime-bun.md
  */
@@ -79,6 +81,7 @@ export class QueueWorkers implements OnApplicationBootstrap, OnModuleDestroy {
     private readonly redis: RedisService,
     private readonly discovery: DiscoveryService,
     metrics: MetricsService,
+    private readonly reporter: ErrorReporter,
   ) {
     this.processed = new Counter({
       name: 'queue_jobs_processed_total',
@@ -179,8 +182,11 @@ export class QueueWorkers implements OnApplicationBootstrap, OnModuleDestroy {
         if (allowed.suppressed > 0) more = ` (${allowed.suppressed} similar failures not logged)`;
       }
       const text = `Job ${queue}/${job?.name ?? '?'} ${job?.id ?? '?'} failed (attempt ${job?.attemptsMade ?? '?'} of ${attempts}${final ? ', no more retries' : ''}): ${error.message}${more}`;
-      if (final) this.logger.error(text);
-      else this.logger.warn(text);
+      if (final) {
+        this.logger.error(text);
+        // A job that failed for good (decision 015): reported once, after the same throttle as its log line.
+        this.reporter.capture(error, { process: 'worker', queue, job: job?.name });
+      } else this.logger.warn(text);
     });
     worker.on('stalled', (jobId: string) => {
       this.logger.warn(

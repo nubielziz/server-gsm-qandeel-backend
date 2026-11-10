@@ -1,0 +1,55 @@
+# Reverse proxy of the production stack (feature 24D, decision 036, docs/OPERATIONS.md). One browser origin per audience:
+#   SHOP_HOST   the storefront (container `site`); /client/* and /store/v1/* go straight to the API, so there is no CORS
+#   ADMIN_HOST  the console (container `console`); /admin/*, /health and the internal reference go to the API
+#   API_HOST    machine clients only: Dhru, REST v1, incoming webhooks and the public docs; every other path is a 404
+# /metrics matches no route on any host. Caddy sets X-Forwarded-For itself (it drops a client-sent value), and the API trusts
+# exactly the compose subnet (TRUST_PROXY=172.30.0.0/24). Do not add `trusted_proxies` unless a CDN is placed in front.
+{
+	email {$ACME_EMAIL}
+}
+
+(common) {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000"
+	# The API's largest upload is 25 MiB plus form fields.
+	request_body {
+		max_size 27MB
+	}
+	log {
+		output stdout
+		format json
+	}
+}
+
+{$SHOP_HOST} {
+	import common
+	@api path /client/* /store/v1/*
+	handle @api {
+		reverse_proxy api:3000
+	}
+	handle {
+		reverse_proxy site:3000
+	}
+}
+
+{$ADMIN_HOST} {
+	import common
+	@api path /admin/* /health /reference /reference/*
+	handle @api {
+		reverse_proxy api:3000
+	}
+	handle {
+		reverse_proxy console:80
+	}
+}
+
+{$API_HOST} {
+	import common
+	@api path /api/index.php /v1/* /webhooks/* /docs /docs/*
+	handle @api {
+		reverse_proxy api:3000
+	}
+	handle {
+		respond 404
+	}
+}

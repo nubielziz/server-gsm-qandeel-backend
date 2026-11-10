@@ -2,6 +2,7 @@
 // Import it in the worker process only (src/worker.module.ts); the API process must never run jobs.
 import { Module } from '@nestjs/common';
 import { DiscoveryModule } from '@nestjs/core';
+import { ObservabilityModule } from '../observability/observability.module';
 import { JobSchedulerRunner } from './job-scheduler-runner';
 import { DEFAULT_QUEUE_WORKERS_OPTIONS, QUEUE_WORKERS_OPTIONS, QueueWorkers } from './queue-workers.service';
 
@@ -13,7 +14,7 @@ import { DEFAULT_QUEUE_WORKERS_OPTIONS, QUEUE_WORKERS_OPTIONS, QueueWorkers } fr
  * and the scheduler registry), which the worker's root module imports.
  */
 @Module({
-  imports: [DiscoveryModule],
+  imports: [DiscoveryModule, ObservabilityModule],
   providers: [
     { provide: QUEUE_WORKERS_OPTIONS, useValue: DEFAULT_QUEUE_WORKERS_OPTIONS },
     QueueWorkers,

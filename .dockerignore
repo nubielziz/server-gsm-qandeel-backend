@@ -1,0 +1,30 @@
+# Keeps the image build context (and so every layer) free of secrets, tests, docs, the map and tooling (feature 24D).
+.git
+.gitignore
+node_modules
+.env
+.env.*
+test
+docs
+reference
+.lead
+.claude
+.serena
+docker
+deploy
+coverage
+tmp
+*.md
+*.log
+*.tsbuildinfo
+# Under scripts/ only the one-off tools of a deploy go in (the Dockerfile copies them by name).
+scripts/*
+!scripts/db-migrate.ts
+!scripts/setup.ts
+!scripts/first-run.ts
+!scripts/lib
+scripts/lib/*
+!scripts/lib/first-run-flow.ts
+!scripts/lib/first-admin-prompt.ts
+!scripts/lib/stdin-password.ts
+!scripts/lib/terminal-prompter.ts

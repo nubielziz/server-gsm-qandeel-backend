@@ -6,10 +6,11 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { PinoLogger } from 'nestjs-pino';
 import { APP_CONFIG, type AppConfig } from '../../config';
 import { MetricsService } from '../../infra/metrics/metrics.service';
+import { ErrorReporter } from '../../infra/observability/error-reporter';
 import { resolveRequestId } from '../request-id';
 import { surfaceOfPath } from '../surface';
 import { AlternateResponse } from './alternate-response';
-import type { AppError } from './app-error';
+import { AppError } from './app-error';
 import { type ErrorResponse, ErrorFormatterRegistry } from './formatter-registry';
 import { normalizeException } from './normalize-exception';
 import { PROBLEM_CONTENT_TYPE, buildProblem, rememberProblemCode } from './problem';
@@ -38,7 +39,8 @@ function routeTemplateOf(request: FastifyRequest | IncomingMessage): string | un
  * every route must have the same shape (decision 028, ALIGNMENT § 5). The filter also feeds the System health errors
  * page (`api_errors_total`, decision 015) and logs server faults with the request id so support can find them.
  *
- * Side effects: increments `api_errors_total{surface,method,route,status,code}`; logs 5xx at error level and a Postgres deadlock or serialization failure (answered 409) at warn level; sets
+ * Side effects: increments `api_errors_total{surface,method,route,status,code}`; reports an unexpected 5xx (an unhandled throw, or an
+ * `INTERNAL_ERROR`) to Sentry through {@link ErrorReporter} when `SENTRY_DSN` is set; logs 5xx at error level and a Postgres deadlock or serialization failure (answered 409) at warn level; sets
  * `Retry-After` on 429 (default 1 s), `Cache-Control: no-store` and `X-Request-Id` (also added by the onSend hook).
  */
 @Catch()
@@ -48,6 +50,7 @@ export class ProblemExceptionFilter implements ExceptionFilter {
     private readonly formatters: ErrorFormatterRegistry,
     private readonly metrics: MetricsService,
     private readonly logger: PinoLogger,
+    private readonly reporter: ErrorReporter,
   ) {
     this.logger.setContext(ProblemExceptionFilter.name);
   }
@@ -108,6 +111,18 @@ export class ProblemExceptionFilter implements ExceptionFilter {
         { err: exception, requestId, code: error.code, status: error.status, method, route: template ?? 'unmatched' },
         'Request failed with a server error',
       );
+      // Sentry (decision 015) gets unexpected faults only: an AppError other than INTERNAL_ERROR is a deliberate answer
+      // (an upstream is down, a dependency refused) that the log and api_errors_total already show.
+      if (!(exception instanceof AppError) || exception.code === 'INTERNAL_ERROR') {
+        this.reporter.capture(exception, {
+          process: 'api',
+          requestId,
+          surface,
+          route: template ?? 'unmatched',
+          method,
+          code: error.code,
+        });
+      }
     } else if (logAsWarning) {
       // A retryable clash (Postgres rolled the transaction back): a warning with the request id and the error.
       this.logger.warn(
