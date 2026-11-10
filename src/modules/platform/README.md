@@ -277,9 +277,15 @@ types is in `docs/queues.md` ("Outbox event types"). Consumed: none yet. The map
 
 `PdfRenderer` (`pdf/pdf-renderer.ts`, provided globally by `PdfModule`, no database or storage needed) draws a small A4 document with `pdf-lib` 1.17.1 (pure TypeScript, runs on Bun): a title and
 subtitle, then blocks (`heading`, `text`, `facts` label/value rows, `table` with relative column widths and left or right alignment, `space`), a footer with `Page n of m` on every page, automatic page breaks
-(a table repeats its header) and word wrapping. The text is English in embedded Helvetica: a character the font cannot draw (Arabic, emoji) prints as `?` instead of failing the document, and the document
-properties carry the caller's time (`createdAt`, from the injected clock: decision 031), never the wall clock. Billing renders merchant invoices with it; the client
-statement of feature 11 reuses it.
+(a table repeats its header) and word wrapping. Labels are English and the layout is left to right; Latin text is drawn in the standard Helvetica. Since feature 24E Arabic data (names, companies,
+service titles, notes) prints as Arabic: a document that holds a character Helvetica cannot encode but IBM Plex Sans Arabic can (`pdf/fonts/`, SIL OFL 1.1, source and SHA-256 in `pdf/fonts/README.md`) embeds a
+subset of that font, only in the weights it uses (`GSMArabic-Regular`, `GSMArabic-Bold`), through `@pdf-lib/fontkit`, which shapes each run (contextual forms, lam-alef). `pdf/text-runs.ts` cleans each string
+(bidi controls and invisible format characters removed, so input cannot reorder an amount; whitespace collapsed; a character neither font draws, such as emoji or CJK, prints as `?`) and splits each wrapped
+line into visual runs with `bidi-js` (UAX #9 levels, rule L2 order, brackets mirrored at odd levels, digits kept in reading order). A document without Arabic embeds nothing new and is byte-identical to before
+(a golden hash in `pdf-renderer.spec.ts`). Limits: combining marks sit at the font's default position (pdf-lib ignores GPOS), copying Arabic text out of a PDF may be imperfect, the page is not mirrored, other
+scripts print `?`; a PDF with Arabic is a few kilobytes larger and takes about 20 ms more to render (the first one in a process also reads the fonts). The document properties carry the caller's time
+(`createdAt`, from the injected clock: decision 031), never the wall clock. Billing renders merchant invoices and storefront receipts with it; the client statement (feature 11) and the dispute evidence
+reuse it.
 
 `StoredFiles` (`files/stored-files.ts`, a plain provider: it needs `StorageService` and a database executor, so the money and identity modules list it themselves) is what other modules use instead of touching `files`:
 `store(db, { ownerType, ownerId, filename, mime, bytes, area })` puts the object in the files bucket (key `<area>/<owner>/<uuid>`, never built from the file name) and inserts the row (the object goes first: a rolled-back

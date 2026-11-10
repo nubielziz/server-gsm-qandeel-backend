@@ -11,6 +11,7 @@ import { insertInvoiceRow } from '../support/billing';
 import { DAY, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 import { insertWalletMerchant } from '../support/money';
+import { pdfFontNames } from '../support/pdf';
 
 const clock = new TestClock('2026-11-01T10:00:00.000Z');
 let t: TestApp;
@@ -82,6 +83,27 @@ describe('POST /admin/invoices', () => {
     const chunks: Buffer[] = [];
     for await (const chunk of object!.body) chunks.push(Buffer.from(chunk as Uint8Array));
     expect(Buffer.concat(chunks).subarray(0, 5).toString()).toBe('%PDF-');
+  });
+
+  it('draws an Arabic merchant name and description with the embedded Arabic font (feature 24E)', async () => {
+    const { db } = await testDb();
+    const merchant = await insertWalletMerchant(db, { name: 'محمد علي للهواتف' });
+    await db.update(s.clients).set({ country: 'JO' }).where(eq(s.clients.id, merchant.id));
+    const admin = await adminWith(t, ['invoices:create', 'invoices:read']);
+    const res = await admin.post('/admin/invoices', {
+      clientId: merchant.id,
+      amount: '40',
+      description: 'دعم فني مميز',
+    });
+    expect(res.status).toBe(201);
+    const read = await admin.get(`/admin/invoices/${res.body.id}`);
+    const [file] = await db.select().from(s.files).where(eq(s.files.id, read.body.pdfFileId));
+    const object = await t.app.get(StorageService).get(file!.key);
+    const chunks: Buffer[] = [];
+    for await (const chunk of object!.body) chunks.push(Buffer.from(chunk as Uint8Array));
+    expect(await pdfFontNames(Buffer.concat(chunks))).toEqual(
+      expect.arrayContaining(['GSMArabic-Bold', 'GSMArabic-Regular', 'Helvetica']),
+    );
   });
 
   it('adds the B2B VAT rate of the setting to the total and reads a bad setting as no tax', async () => {

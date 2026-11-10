@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 import { Decimal } from 'decimal.js';
 import { eq } from 'drizzle-orm';
 import { type Database, schema as s } from '../../src/infra/db';
+import { StoredFiles } from '../../src/modules/platform';
 import { signWebhook } from '../../src/infra/crypto';
 import { type AdminApi, adminWith } from '../support/admin-api';
 import { type TestApp, createTestApp } from '../support/app';
@@ -15,6 +16,7 @@ import { DAY, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 import { ledgerTotals } from '../support/money';
 import { auditOf, eventsOf, ledgerOf, orderRow, systemBalance } from '../support/orders';
+import { pdfFontNames } from '../support/pdf';
 
 const clock = new TestClock('2026-11-07T12:00:00.000Z');
 const fake = new B2cGateway();
@@ -402,6 +404,19 @@ describe('POST /admin/disputes/:id/evidence', () => {
     // Evidence moves no money.
     expect(await chargebacks()).toHaveLength(0);
     expect((await paymentRow(paid.paymentId)).status).toBe('disputed');
+  });
+
+  it('draws an Arabic note in the evidence PDF with the embedded Arabic font (feature 24E)', async () => {
+    const paid = await order({ deliver: true });
+    const { row } = await open(paid);
+    const res = await staff.post(`/admin/disputes/${row.id}/evidence`, {
+      items: ['payment'],
+      note: 'تم تسليم النتيجة إلى صاحب البطاقة بتاريخ ٢٠٢٦/١١/٠٧.',
+    });
+    expect(res.status).toBe(200);
+    const [fileId] = (await disputeRow(row.id)).evidenceFileIds;
+    const stored = await t.app.get(StoredFiles, { strict: false }).read(db, fileId!);
+    expect(await pdfFontNames(stored!.bytes)).toEqual(expect.arrayContaining(['GSMArabic-Regular', 'Helvetica']));
   });
 
   it('refuses no items, a line that is not in the pack, a note over 1000 characters and a missing dispute', async () => {

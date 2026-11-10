@@ -15,6 +15,7 @@ import { insertInvoiceRow } from '../support/billing';
 import { TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 import { type TestMerchant, insertWalletMerchant } from '../support/money';
+import { pdfFontNames } from '../support/pdf';
 
 const clock = new TestClock('2026-11-07T12:00:00.000Z');
 let t: TestApp;
@@ -124,6 +125,19 @@ describe('GET /admin/reports/client-statement/:clientId', () => {
     const name = `statement-${merchant.id}-2026-10-05-2026-11-07.pdf`;
     expect(res.headers['content-disposition']).toBe(`attachment; filename="${name}"; filename*=UTF-8''${name}`);
     expect(res.rawPayload.subarray(0, 5).toString()).toBe('%PDF-');
+  });
+
+  it('draws a merchant named in Arabic with the embedded Arabic font (feature 24E)', async () => {
+    const { db } = await testDb();
+    await db
+      .update(s.clients)
+      .set({ name: 'محمد علي', company: 'شركة النور للاتصالات' })
+      .where(eq(s.clients.id, merchant.id));
+    await seedWallet();
+    const { status, res, document } = await download(URL(merchant.id));
+    expect(status).toBe(200);
+    expect(JSON.stringify(document)).toContain('شركة النور للاتصالات');
+    expect(await pdfFontNames(res.rawPayload)).toEqual(expect.arrayContaining(['GSMArabic-Bold', 'Helvetica']));
   });
 
   it('shows opening and closing balances and totals that match the wallet, and every line oldest first', async () => {

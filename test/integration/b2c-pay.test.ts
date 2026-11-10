@@ -25,6 +25,7 @@ import {
 import { MINUTE, SECOND, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 import { ledgerTotals } from '../support/money';
+import { pdfFontNames } from '../support/pdf';
 import { eventsOf, ledgerOf, orderRow, outboxOf, systemBalance } from '../support/orders';
 import { freshClientIp } from '../support/pipeline-routes';
 import { expectRejection } from '../support/rejection';
@@ -611,6 +612,19 @@ describe('GET /store/v1/orders/:token/receipt', () => {
     expect(Buffer.compare(first.rawPayload, Buffer.from(stored!.bytes))).toBe(0);
     expect(await store.read(db, 999_999)).toBeUndefined();
     expect(await db.select().from(s.files)).toHaveLength(1);
+  });
+
+  it('draws a customer and a service named in Arabic with the embedded Arabic font, and serves the stored copy (feature 24E)', async () => {
+    const paid = await paidOrder(t, clock, world);
+    await db.update(s.customers).set({ name: 'سارة أحمد' });
+    await db.update(s.services).set({ name: 'فك قفل آيفون ١٥' });
+    await renderReceipts(t);
+    const first = await receiptOf(paid.trackingToken);
+    expect(first.statusCode).toBe(200);
+    expect(await pdfFontNames(first.rawPayload)).toEqual(expect.arrayContaining(['GSMArabic-Bold', 'Helvetica']));
+    const [invoice] = await db.select().from(s.invoices);
+    const stored = await t.app.get(StoredFiles, { strict: false }).read(db, invoice!.pdfFileId!);
+    expect(Buffer.compare(first.rawPayload, Buffer.from(stored!.bytes))).toBe(0);
   });
 
   it('a receipt does not change after it was issued: renaming the service or the customer does not redraw it', async () => {
