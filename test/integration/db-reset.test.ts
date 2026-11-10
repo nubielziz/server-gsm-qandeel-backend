@@ -30,9 +30,11 @@ import { testInstanceEnv } from '../support/env';
 import { expectRejection } from '../support/rejection';
 import { runInTerminal } from '../support/terminal-session';
 
-// CREATE DATABASE copies the template and syncs to disk: a second or two when the machine is idle, over 15 s when several worktrees
-// run their suites at once (a timed-out test also left its create running, and the next test then met the half-made database).
-setDefaultTimeout(60_000);
+// CREATE DATABASE copies the template and syncs to disk, and DROP DATABASE waits for a checkpoint: a second or two when the machine
+// is idle, over 15 s when several worktrees run their suites at once, and past 60 s (95 to 176 s for this file) when four
+// feature worktrees run their full checks together (2026-11-10). A timed-out test also left its create running, and the next test
+// then met the half-made database, so the limit is generous.
+setDefaultTimeout(180_000);
 
 const ROOT = new URL('../..', import.meta.url).pathname;
 const config = parseEnv({ NODE_ENV: 'test', DATABASE_URL_TEST: TEST_DATABASE_URL, ...testInstanceEnv() });
