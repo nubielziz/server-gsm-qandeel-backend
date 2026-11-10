@@ -3,11 +3,18 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
-import { EXPECTED, domains, expandRow, groups, rowKey, routes, surfaces, system, tables } from './map.mjs';
+import { EXPECTED, additions, domains, expandRow, groups, mapRoutes, rowKey, routes, surfaces, system, tables } from './map.mjs';
+import { ROOT } from './paths.mjs';
 import { modules, modulesForRow } from '../module-map.mjs';
 import { descriptions, groupNames, surfaceNames } from '../route-descriptions.en.mjs';
 
-export const ROOT = resolve(import.meta.dirname, '..', '..');
+export { ROOT };
+
+// Letter of the CRUD row each endpoint kind comes from (the key of a CRUD addition's `successStatus` object).
+const CRUD_LETTER = { list: 'L', show: 'S', create: 'C', update: 'U', delete: 'D' };
+
+/** Owning module of a row: an addition names it, a map row is matched by scripts/module-map.mjs. */
+const ownersOf = (row) => (row.addition ? [row.addition.module] : modulesForRow(rowKey(row)));
 
 /** Frontend repo location (read-only input): FRONTEND_DIR env, default ../frontend-admin next to this repo. */
 export const frontendDir = () => resolve(ROOT, process.env.FRONTEND_DIR ?? '../frontend-admin');
@@ -49,11 +56,34 @@ export function scanFrontendRoutes(dir = frontendDir()) {
 }
 
 /**
- * Expands the whole map and checks it against the fixed counts.
- * @throws {Error} when a count changed, a row has no English text, a row has zero or several modules,
- *   or two endpoints share a key.
+ * Expands the whole map and the backend's additions, and checks the map against its fixed counts.
+ * Counts: the map's own numbers are compared with EXPECTED; `counts.rows` and `counts.endpoints` are map + additions.
+ * @throws {Error} when a map count changed, a row has no English text, a row has zero or several modules, two endpoints
+ *   share a key, a frontend @route is unknown, or the console calls an addition that gives no successStatus.
  */
 export function buildManifest() {
+  const frontendRoutes = scanFrontendRoutes();
+  const endpoints = [];
+  const problems = [];
+  for (const row of routes) {
+    const key = rowKey(row);
+    const owners = ownersOf(row);
+    const description = row.addition ? row.addition.en : descriptions[key];
+    if (owners.length !== 1) problems.push(`${key}: modules [${owners.join(', ')}] (need exactly one)`);
+    if (!description) problems.push(`${key}: no English description`);
+    for (const e of expandRow(row)) {
+      const fe = e.kind === 'http' ? frontendRoutes.get(e.key) ?? null : null;
+      const endpoint = { ...e, module: owners[0] ?? null, description: description ?? null, frontend: fe };
+      if (row.addition) {
+        const given = row.addition.successStatus;
+        const successStatus = typeof given === 'object' && given !== null ? given[CRUD_LETTER[e.op]] : given;
+        endpoint.addition = { file: row.addition.file, spec: row.addition.spec };
+        if (successStatus !== undefined) endpoint.successStatus = successStatus;
+        else if (fe) problems.push(`${e.key}: the console calls this addition (${fe.file}:${fe.line}); its row needs successStatus (${row.addition.file})`);
+      }
+      endpoints.push(endpoint);
+    }
+  }
   const counts = {
     rows: routes.length,
     tables: tables.length,
@@ -61,23 +91,12 @@ export function buildManifest() {
     surfaces: surfaces.length,
     moneyEvents: system.moneyEvents.length,
     accounts: system.accounts.length,
+    endpoints: endpoints.length,
   };
-  const frontendRoutes = scanFrontendRoutes();
-  const endpoints = [];
-  const problems = [];
-  for (const row of routes) {
-    const key = rowKey(row);
-    const owners = modulesForRow(key);
-    if (owners.length !== 1) problems.push(`${key}: modules [${owners.join(', ')}] (need exactly one)`);
-    if (!descriptions[key]) problems.push(`${key}: no English description`);
-    for (const e of expandRow(row)) {
-      const fe = e.kind === 'http' ? frontendRoutes.get(e.key) ?? null : null;
-      endpoints.push({ ...e, module: owners[0] ?? null, description: descriptions[key] ?? null, frontend: fe });
-    }
-  }
-  counts.endpoints = endpoints.length;
+  // The map's own numbers (what EXPECTED pins): the totals above minus the additions.
+  const mapCounts = { ...counts, rows: mapRoutes.length, endpoints: mapRoutes.reduce((n, row) => n + expandRow(row).length, 0) };
 
-  for (const [name, want] of Object.entries(EXPECTED)) if (counts[name] !== want) problems.push(`count ${name}: map has ${counts[name]}, expected ${want}`);
+  for (const [name, want] of Object.entries(EXPECTED)) if (mapCounts[name] !== want) problems.push(`count ${name}: map has ${mapCounts[name]}, expected ${want}`);
   const seen = new Set();
   for (const e of endpoints) {
     if (seen.has(e.key)) problems.push(`duplicate endpoint key ${e.key}`);
@@ -101,12 +120,16 @@ export function buildManifest() {
       access: 'normalised from the map auth text per surface (scripts/lib/map.mjs); admin "x:y" = staff permission, v1 "x:y" = API key scope',
       modules: 'every row belongs to exactly one module (scripts/module-map.mjs); table ownership follows the map domains',
       frontend: 'admin endpoints point at the frontend function carrying the same @route tag (FRONTEND_DIR)',
+      additions:
+        'rows beyond the map are backend-owned: scripts/map-additions/<feature>.mjs (decision 035); they name their module, English sentence and spec decision, and are counted on top of the map numbers',
     },
     counts: {
       ...counts,
+      map: { rows: mapCounts.rows, endpoints: mapCounts.endpoints },
+      additions: { rows: additions.length, endpoints: endpoints.filter((e) => e.addition).length },
       frontendRoutes: frontendRoutes.size,
       bySurface: tally({ row: (r) => r.s, endpoint: (e) => e.surface }),
-      byModule: tally({ row: (r) => modulesForRow(rowKey(r))[0], endpoint: (e) => e.module }),
+      byModule: tally({ row: (r) => ownersOf(r)[0], endpoint: (e) => e.module }),
     },
     surfaces: surfaces.map((s) => ({ id: s.id, name: surfaceNames[s.id], base: s.base, actor: s.actor, authRaw: s.auth })),
     groups: Object.fromEntries(Object.entries(groups).map(([s, list]) => [s, list.map((g) => ({ id: g.id, name: groupNames[s]?.[g.id] ?? g.id, nameAr: g.name }))])),

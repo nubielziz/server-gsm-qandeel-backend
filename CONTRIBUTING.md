@@ -35,7 +35,7 @@ bun run dev:worker            # worker process: queue workers, schedulers, outbo
 |---|---|
 | `typecheck` | TypeScript (strict) reports an error |
 | `lint` | ESLint reports an error: type-aware rules, TSDoc on exports, module boundaries, `process.env`, `console` and wall-clock (`Date.now()`, `new Date()`) rules |
-| `routes:check` | `docs/route-manifest.json` or `docs/slices/*` are stale against the map |
+| `routes:check` | `docs/route-manifest.json` or `docs/slices/*` are stale against the map and the additions |
 | `contract:check` | the extracted frontend contract or the contract docs are stale |
 | `docs:openapi:check` | `docs/contract/openapi.json` or `openapi.public.json` differ from what the contracts generate |
 | `test` | any unit, integration, contract (`test/contract`, see its README) or lint-rule test fails |
@@ -50,7 +50,7 @@ YAML and generated JSON are not formatted), `docs:openapi` (regenerate), `routes
 Every endpoint is a zod contract (decision 008) that drives validation, handler types, serialisation and the OpenAPI
 document. The contract layer is explained in `src/common/contract/README.md`; the order of work is:
 
-1. **Check the manifest.** The route must exist in the map: `node -e 'const m=require("./docs/route-manifest.json");
+1. **Check the manifest.** The route must exist in the map or in `scripts/map-additions`: `node -e 'const m=require("./docs/route-manifest.json");
    console.log(m.endpoints.filter(e=>e.key==="GET /admin/staff/:id"))'`. Read `docs/slices/<module>.json` (owned tables,
    scenario steps), `docs/contract/endpoints/<module>.md` (rules, errors, frontend function) and the exact shapes in
    `docs/contract/frontend-endpoints.json` (query it with node, never read it whole). A disagreement between the map and
@@ -58,8 +58,8 @@ document. The contract layer is explained in `src/common/contract/README.md`; th
 2. **Write the contract** in `src/modules/<id>/contracts/<resource>.contracts.ts` with `defineRoute`: the key is the
    manifest key; `surface`, `access` and (for staff) `permission` as in the manifest; `tags` is the route's map group
    (`docs/route-manifest.json` → `groups`; the documents group tags by surface and prefix a tag that two surfaces share);
-   every error code the route can answer, taken from `docs/contract/error-codes.md` (a new code is added to that file and
-   to `src/common/errors/catalog.ts` first); an `examples` pair for the docs (validated against the schemas). The guards
+   every error code the route can answer, taken from `docs/contract/error-codes.md` (a new code is added to `src/common/errors/catalog.ts` and, when no console screen references it, to `BACKEND_CODES` in
+   `scripts/build-contract-docs.mjs`; `bun run contract:docs` regenerates that file); an `examples` pair for the docs (validated against the schemas). The guards
    read the contract: `access` picks who authenticates, `permission` is checked against the role (`x:*` grants every action of
    `x`, `*` everything, a required `x:*` needs `x:*` or `*`; an `api-key` route names the scope the key must list, exactly), and a session route may name the sign-in stages it accepts
    (`sessionStages`, default `['active']`). A staff mutation must write an audit row; `audit: false` (with the reason in the
@@ -84,6 +84,25 @@ document. The contract layer is explained in `src/common/contract/README.md`; th
    v1, Dhru and webhook events, `GET /docs` show the result.
 8. **Update the module `README.md`** (routes built, permissions, jobs, events, cache keys) and the TSDoc, then run
    `bun run check`.
+
+### Add a route that is not in the map (decision 035)
+
+The map (`reference/gsm-map`) is read-only. A route it lacks gets a row of its own:
+
+1. Add the row to `scripts/map-additions/<feature id>.mjs` (fields and auth vocabulary: `scripts/map-additions/README.md`),
+   then `bun run routes:build`. A row that repeats a map row or endpoint, or is malformed, fails with its file and number.
+2. Build it like any endpoint (the steps above): the contract key is the row's endpoint key; `surface`, `access`,
+   `permission` and `turnstile` must equal the row (route parity compares them; a CRUD row with `area:*` means
+   `area:read|create|update|delete` per endpoint).
+3. New table: `additionalTables` of its module in `scripts/module-map.mjs`. New error code: catalog and `BACKEND_CODES`.
+4. When the console calls the route, give the row `successStatus`. Once the console change is on the console's main
+   checkout: `bun run routes:build && bun run contract:extract && bun run contract:docs`, then `bun run contract:harvest`
+   for a console GET route (or an entry in `test/contract/harvest/known-gaps.json`). The console's own manifest stays the
+   map's; its coverage report lists the tag as unknown, which is accepted.
+5. Regenerate: `bun run contract:docs`, `bun run docs:openapi`, `bun run coverage:build`, `bun run format`. On a merge
+   conflict in a generated file take `main`'s copy and regenerate in that order after `routes:build`.
+6. Never: edit `reference/`; add a `mapConflict` to an extraction record (it renumbers B1-B104); rename an existing key
+   (the storefront's types use the `operationId`); change an existing route other than additively.
 
 ### Code documentation rules
 

@@ -3,11 +3,11 @@
 // Usage: `bun run coverage:build` (write), `bun scripts/build-coverage.mjs --check` (exit 1 when the file is stale; part of
 // `bun run check`). Phase 4 completes it with the rows deliberately left out and their reasons (docs/PHASE3-PLAN.md).
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { ROOT, docsDir } from './lib/paths.mjs';
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = join(ROOT, 'docs', 'COVERAGE.md');
+const DOCS = docsDir();
+const OUT = join(DOCS, 'COVERAGE.md');
 
 /**
  * The manifest keys still owed, read from the string literals of test/contract/pending.ts.
@@ -27,7 +27,7 @@ function pendingKeys() {
  */
 function scenarios() {
   const ids = new Set();
-  const slices = join(ROOT, 'docs', 'slices');
+  const slices = join(DOCS, 'slices');
   for (const name of readdirSync(slices).filter((file) => file.endsWith('.json') && file !== 'index.json')) {
     const slice = JSON.parse(readFileSync(join(slices, name), 'utf8'));
     for (const scenario of slice.scenarios ?? []) ids.add(scenario.id);
@@ -69,7 +69,7 @@ function render(title, entries, { sort = (a, b) => b[1].total - a[1].total } = {
   return lines.join('\n');
 }
 
-const manifest = JSON.parse(readFileSync(join(ROOT, 'docs', 'route-manifest.json'), 'utf8'));
+const manifest = JSON.parse(readFileSync(join(DOCS, 'route-manifest.json'), 'utf8'));
 const rows = manifest.endpoints;
 const pending = pendingKeys();
 const unknown = [...pending].filter((key) => !rows.some((row) => row.key === key));

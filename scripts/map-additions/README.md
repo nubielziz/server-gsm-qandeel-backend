@@ -1,0 +1,105 @@
+# Map additions: routes beyond the map
+
+The API design map (`reference/gsm-map/data/*.mjs`) lives in the console repository and is read-only. A backend feature
+that needs a route the map does not have adds a **row** here instead (decision 035,
+`docs/decisions/035-routes-beyond-the-map.md`). One file per feature: `scripts/map-additions/<feature id>.mjs`
+(`20.mjs`, `21.mjs`; the name matches `^[a-z0-9][a-z0-9-]*\.mjs$`). This README is the only other file allowed here.
+
+Every tool that reads the map loads these files too: `routes:build`, `routes:check`, the module slices, route parity,
+Turnstile parity, access and permission parity, the console-tag check, `pending.ts`, `COVERAGE.md`, the contract documents
+`docs/contract/endpoints/<module>.md` and OpenAPI (which reads the contract registry, so a built route appears by itself).
+The map's own numbers stay pinned (`EXPECTED` in `scripts/lib/map.mjs`); additions are counted on top
+(`counts.additions` in `docs/route-manifest.json`), so no shared number is edited.
+
+## A file
+
+```js
+// scripts/map-additions/20.mjs
+import { R } from '../lib/map-additions.mjs';
+
+export const rows = [
+  R('admin', 'clients', 'POST', '/admin/clients/:id/password-link', 'إرسال رابط تعيين كلمة المرور للتاجر', 'clients:security', 20,
+    ['clients', 'auth_tokens', 'audit_logs'],
+    { en: 'Send the merchant a link to set a password.', module: 'identity', spec: 'B-TBD merchant-password-link', successStatus: 204 }),
+];
+```
+
+`R(s, g, m, p, f, a, st, t, extra)` is the map's helper. A plain object with the same keys is equal to an `R()` call.
+
+| Field           | Meaning                                  | Rule (a violation is an error naming the file, the row number and the row key)                                                                                                                                                                                                                                      |
+| --------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `s`             | surface                                  | `admin`, `client`, `store`, `v1`, `hooks` or `system` (HTTP only; Dhru actions, supplier calls and outgoing events are not additions: events keep `BACKEND_EVENTS` in `test/contract/route-parity.test.ts`)                                                                                                          |
+| `g`             | map group of the surface                 | an id of `groups[s]` of the map (`admin`, `client`, `store` have groups); `null` on `v1`, `hooks`, `system`. No new groups                                                                                                                                                                                          |
+| `m`             | method                                   | `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, or `CRUD` with `ops`                                                                                                                                                                                                                                                       |
+| `ops`           | CRUD letters                             | only with `CRUD`: one or more of `L S C U D`, none twice (L = `GET path`, S = `GET path/:id`, C = `POST path`, U = `PATCH path/:id`, D = `DELETE path/:id`)                                                                                                                                                          |
+| `p`             | path                                     | starts with `/`; segments are a fixed name or `:name`; no repeated parameter; starts with the prefix of the surface (`/admin`, `/client`, `/store/v1`, `/v1`, `/webhooks`; `system` = none of them and not `/api/index.php`); a `CRUD` path ends in a fixed segment and has no `:id`                              |
+| `f`             | the sentence in Arabic (the map's language) | non-empty, one line                                                                                                                                                                                                                                                                                              |
+| `a`             | auth text in the map's vocabulary        | see the next section; unknown text is an error                                                                                                                                                                                                                                                                      |
+| `st`            | stage                                    | whole number >= 0. **Use your feature number** (20, 21, ...): it becomes a row of COVERAGE "By map stage". 99 belongs to the tooling test (`test/unit/fixtures/map-additions/sample.mjs`)                                                                                                                            |
+| `t`             | tables touched                           | names of map tables or of any module's `additionalTables` in `scripts/module-map.mjs`; none twice; may be empty                                                                                                                                                                                                     |
+| `en`            | the English sentence                     | non-empty, one line (what `scripts/route-descriptions.en.mjs` holds for map rows)                                                                                                                                                                                                                                   |
+| `module`        | owning module                            | an id of `scripts/module-map.mjs`. It decides alone: the matchers of that file are not consulted for an addition                                                                                                                                                                                                    |
+| `spec`          | spec decision                            | `B<n>`, or `B-TBD <slug>` (`^B-TBD [a-z0-9]+(-[a-z0-9]+)*$`) until the lead numbers it at merge                                                                                                                                                                                                                     |
+| `successStatus` | success status the console is promised   | optional, but **required as soon as the console calls the route**. Non-CRUD: one of 200, 201, 202, 204, 302 (302 only on `GET`). CRUD: an object keyed by ops letters, e.g. `{ L: 200, S: 200, C: 201, U: 200, D: 204 }` (keys must be in `ops`)                                                                      |
+
+Any other key is an error (it catches a typo such as `sucessStatus`).
+
+## Auth text per surface
+
+`a` must be one of these (copied from `ACCESS` in `scripts/lib/map.mjs`); a combination the map never used needs a new line there,
+named in that feature's plan. `Turnstile` in the text sets the Turnstile flag of the route (decision 034), `Idempotency-Key` sets
+the idempotency flag.
+
+| Surface  | Text                                                                                                | Access                                                                                              |
+| -------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `admin`  | `area:action` or `area:*` (e.g. `clients:security`, `settings:*`)                                   | `staff-permission` with that permission (a CRUD row with `area:*` means `area:read\|create\|update\|delete` per endpoint) |
+| `admin`  | `عام` / `جلسة`                                                                                      | `public` / `staff-session`                                                                          |
+| `client` | `عام` / `جلسة`                                                                                      | `public` / `merchant-session`                                                                       |
+| `store`  | `عام`, `عام + Turnstile`                                                                            | `public`                                                                                            |
+| `store`  | `رمز الجلسة`, `رمز الجلسة + Idempotency-Key`                                                        | `checkout-token`                                                                                    |
+| `store`  | `رمز التتبع (لا يُخمَّن)`, `رمز التتبع`                                                              | `tracking-token`                                                                                    |
+| `store`  | `رمز الرابط` / `جلسة الزبون` / `رمز التذكرة`                                                        | `link-token` / `customer-session` / `ticket-token`                                                  |
+| `v1`     | `area:action` (an API key scope)                                                                    | `api-key` with that scope                                                                           |
+| `hooks`  | `توقيع البوابة` / `secret بالرابط`                                                                  | `gateway-signature` / `url-secret`                                                                  |
+| `system` | `عام` / `شبكة داخلية أو token`                                                                      | `public` / `internal-or-token`                                                                      |
+
+## Guards
+
+The loader (`scripts/lib/map-additions.mjs`) stops every tool that loads the map, naming the file, the row number and the row key:
+
+- a row that repeats a **map row** (`repeats the map row`);
+- a row with an **endpoint the map already has**, even with another parameter name (`GET /admin/clients/:clientId/api-keys`
+  against the map's `:id`), and a CRUD row whose letters expand to a map endpoint;
+- an endpoint added by two rows or two files (`is also added by <file> row <n>`);
+- any malformed field of the table above, an unknown key, an unknown module, table, group or surface, a stray file in this folder.
+
+Not guarded: a **static segment where a map route has a parameter** (`GET /admin/clients/export` beside the map's
+`GET /admin/clients/:id`). Fastify prefers the static route, so the map route can no longer be reached for that one value. That
+is harmless for numeric ids (`export` is never an id) but would hide a real slug (`/store/v1/pages/:slug`). Before adding such a
+path, check the map route's parameter type; prefer a path with another segment count or a different prefix.
+
+The manifest script adds: the console calls an addition (an `@route` tag) but the row has no `successStatus`.
+The contract tests add: a contract must carry the access and permission of its row (`test/contract/lib/manifest-parity.ts`).
+
+## What to run
+
+1. Add the row, then `bun run routes:build` (manifest and slices).
+2. Build the route like any endpoint (`CONTRIBUTING.md`): the contract key is the row's endpoint key; `surface`, `access`,
+   `permission` and `turnstile` must equal the row. A new table goes into `additionalTables` of its module in
+   `scripts/module-map.mjs`; a new error code into the catalog and `BACKEND_CODES` of `scripts/build-contract-docs.mjs`.
+3. `bun run contract:docs`, `bun run docs:openapi`, `bun run coverage:build`, `bun run format`.
+4. The files here are formatted by Prettier (they are not in `.prettierignore`): `bun run format` rewrites them.
+
+## When the console calls the route
+
+Give the row `successStatus`. Once the console change is on the console's main checkout:
+`bun run routes:build && bun run contract:extract && bun run contract:docs`, then `bun run contract:harvest` for a console `GET`
+route (or an entry in `test/contract/harvest/known-gaps.json`). The console's own manifest stays the map's; its coverage report
+lists the tag as unknown, which is accepted.
+
+## What the lead does at merge
+
+Replace each `B-TBD <slug>` by the B-number of the feature's `extra` entry in `docs/contract/lead-decisions.json`, then regenerate
+(`bun run routes:build && bun run contract:docs && bun run docs:openapi && bun run coverage:build`). Generated files
+(`route-manifest.*`, `slices/*`, `COVERAGE.md`, `contract/endpoints/*.md`, `openapi*.json`) are never hand-merged: take `main`'s
+copy and regenerate.

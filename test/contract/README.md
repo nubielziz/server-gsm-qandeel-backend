@@ -5,9 +5,9 @@ These tests keep the backend, the map and the frontend console telling the same 
 
 | Test file | What it proves | Typical failure and fix |
 |---|---|---|
-| `route-parity.test.ts` | The registry (`defineRoute`, `defineDhruAction`, `defineSupplierCall`, `defineEvent`) equals the route manifest minus `pending.ts`; Fastify serves exactly the registry plus `DOCUMENTATION_ROUTES`; every route the console calls is built or pending. | `X is built but not expected`: the key is not in the manifest (typo) or the route is still listed in `pending.ts`. `X is expected but not built`: you removed a key from `pending.ts` without defining the contract. |
+| `route-parity.test.ts` | The registry (`defineRoute`, `defineDhruAction`, `defineSupplierCall`, `defineEvent`) equals the route manifest (the map's rows and the rows of `scripts/map-additions`, decision 035) minus `pending.ts`; every built contract has the method, path, surface, Turnstile flag, access and permission of its manifest row (`lib/manifest-parity.ts`; three access deviations are listed there with their B-entries); Fastify serves exactly the registry plus `DOCUMENTATION_ROUTES`; every route the console calls is built or pending. | `X is built but not expected`: the key is not in the manifest (typo) or the route is still listed in `pending.ts`. `X is expected but not built`: you removed a key from `pending.ts` without defining the contract. `X: permission a:b, the row says c:d (expected ...)` or `X: access ..., the row says ...`: the contract and the row disagree; fix the contract (or the row of the addition). |
 | `shape-parity.test.ts` | For every built route the console calls: the response, request and success status match what the console reads and sends; the harvested fixture satisfies the response schema. Deviations only through `allowlist.ts`. | Read the line: `GET /admin/orders [response] data[].status: backend value "x" unknown to the frontend (enum)`. Fix the contract, or record a decision in `docs/contract/MISMATCHES.md` and add an allowlist entry. |
-| `error-parity.test.ts` | The error catalog equals `docs/contract/error-codes.md` (code, status); every code the console references exists with the status it expects; backend-only codes are printed. | A code was added to one side only. Add it to `error-codes.md` (via `lead-decisions.json`) and `src/common/errors/catalog.ts`. |
+| `error-parity.test.ts` | The error catalog equals `docs/contract/error-codes.md` (code, status); every code the console references exists with the status it expects; backend-only codes are printed. | A code was added to one side only. Add it to `src/common/errors/catalog.ts` and, when no console screen references it, to `BACKEND_CODES` in `scripts/build-contract-docs.mjs`; `bun run contract:docs` regenerates `error-codes.md`. |
 | `openapi-examples.test.ts` | Every example in `docs/contract/openapi.json` and `openapi.public.json` validates against the schema next to it (ajv, draft 2020-12, formats). | Fix the `examples` of the contract, then `bun run docs:openapi`. |
 | `fixtures.test.ts` | The harvest covers every console GET route; each file belongs to one route; the mock answers obey the console's own types. | Re-run `bun run contract:harvest` after the console changed. |
 | `lib/*.test.ts` | Unit tests of the comparator (every rule), of the route comparison and of the allowlist logic. | A rule changed: update the test that names it. |
@@ -43,7 +43,9 @@ values are compared as strings. The list dialect (`_start`, `_end`, `_sort`, fil
 
 ## Building a route (the Phase 3 loop)
 
-1. Write the contract as usual (`CONTRIBUTING.md`).
+1. Write the contract as usual (`CONTRIBUTING.md`). A route the map does not have gets its row first, in
+   `scripts/map-additions/<feature>.mjs` (`CONTRIBUTING.md`, "Add a route that is not in the map"), with `successStatus`
+   as soon as the console calls it; then `bun run routes:build`.
 2. Delete the route's key from `pending.ts` (every endpoint of the map is listed there under its module). Dhru actions,
    supplier calls and events are keys too (`DHRU …`, `SUPPLIER …`, `EVENT …`); their registries (`defineDhruAction`,
    `defineSupplierCall`, `defineEvent`) fill `built` in `route-parity.test.ts` through the snapshot, so a new one needs no

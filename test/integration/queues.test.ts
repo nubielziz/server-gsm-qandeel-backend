@@ -61,9 +61,8 @@ describe('producers', () => {
     queues = harness.get(QueuesService);
   });
 
-  it('has one producer for each of the ten queues, under BULL_PREFIX', async () => {
+  it('has one producer for each queue of the registry, under BULL_PREFIX', async () => {
     expect(queues.list().map(([name]) => name)).toEqual([...QUEUE_NAMES]);
-    expect(QUEUE_NAMES).toHaveLength(10);
     const redis = harness.get(RedisService).queue;
     await eventually(async () => {
       const keys = await bullKeys(redis, prefixOf('producers'));

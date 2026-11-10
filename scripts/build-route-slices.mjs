@@ -5,12 +5,13 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildManifest, ROOT } from './lib/manifest.mjs';
+import { buildManifest } from './lib/manifest.mjs';
 import { system, tables } from './lib/map.mjs';
+import { docsDir } from './lib/paths.mjs';
 import { modules } from './module-map.mjs';
 import { tableDescriptions } from './table-descriptions.en.mjs';
 
-const OUT = join(ROOT, 'docs', 'slices');
+const OUT = join(docsDir(), 'slices');
 const check = process.argv.includes('--check');
 
 /** Every table must have exactly one owner module; returns table -> module id. */
@@ -41,8 +42,22 @@ const tableView = (name) => {
   };
 };
 
+/**
+ * Owner of every table a slice may name as foreign: the map's tables (ownership()) and each module's additionalTables.
+ * Why: an addition may list a table the backend added beyond the map; `ownedTables` stays the map's tables.
+ */
+function ownersWithAdditional() {
+  const owner = ownership();
+  for (const m of modules)
+    for (const t of m.additionalTables ?? []) {
+      if (owner.has(t)) throw new Error(`table ownership problems:\n  ${t}: owned by ${owner.get(t)} and ${m.id}`);
+      owner.set(t, m.id);
+    }
+  return owner;
+}
+
 const manifest = buildManifest();
-const owner = ownership();
+const owner = ownersWithAdditional();
 const files = {};
 const index = [];
 

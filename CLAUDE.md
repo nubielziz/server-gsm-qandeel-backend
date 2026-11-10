@@ -6,7 +6,9 @@ portal, storefront, admin, incoming webhooks, outgoing events, supplier calls, s
 decisions: `docs/decisions/`; contract: `docs/contract/`.
 
 ## Sources of truth
-- What exists (routes, tables, rules): the map `reference/gsm-map/data/*.mjs`. Query `docs/route-manifest.json` and
+- What exists (routes, tables, rules): the map `reference/gsm-map/data/*.mjs` (read-only) plus the backend's own rows for
+  routes beyond it, `scripts/map-additions/<feature>.mjs` (decision 035; tables beyond the map: `additionalTables` in
+  `scripts/module-map.mjs`). Query `docs/route-manifest.json` and
   `docs/slices/<module>.json`; never load `routes.mjs`/`schema.mjs` whole; never open `reference/**/dist/**`.
 - Exact wire format (names, casing, nesting, pagination, dates, money, ids, errors, auth flow): what the frontend
   (`FRONTEND_DIR`, default `../frontend-admin`, read-only) sends and parses: `src/lib/api`, `src/features/*/{api,types,mocks}`.
@@ -68,7 +70,8 @@ decisions: `docs/decisions/`; contract: `docs/contract/`.
   One e2e test per scenario. Contract tests in `test/contract/`. Dhru fixture test per action. Seed = frontend mocks.
 
 ## Checks and git
-- Done = `bun run check` green. Branch `feat/backend`; the lead commits once per finished feature (conventional
-  message; body: routes, scenarios, queues/jobs, cache keys). Stage explicit paths. Never `--no-verify`, push,
+- Done = `bun run check` green. One branch `feat/backend-<id>` per feature in its own worktree (`../backend-<id>`),
+  squash-merged into `main` by the lead: one conventional commit per finished feature (body: routes, scenarios,
+  queues/jobs, cache keys). Stage explicit paths. Never `--no-verify`, push,
   force-push or rewrite history.
 - Code, comments, docs and commits in English; talk to the user in short Jordanian Arabic.

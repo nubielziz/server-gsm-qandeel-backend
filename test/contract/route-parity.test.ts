@@ -1,7 +1,17 @@
 // Route parity (decision 009, docs/contract/TESTS.md § 1): the application defines and serves exactly the routes of the
-// map that are not listed in pending.ts, and every route the frontend calls is built or pending.
+// map (and of scripts/map-additions, decision 035) that are not listed in pending.ts, with the access and permission of their
+// row, and every route the frontend calls is built or pending.
 import { describe, expect, it } from 'bun:test';
-import { loadFrontendEndpoints, loadManifest } from './lib/inputs';
+import { loadFrontendEndpoints, loadManifest, loadMismatchIds } from './lib/inputs';
+import {
+  ACCESS_EXCEPTIONS,
+  accessMismatches,
+  difference,
+  expectedKeys,
+  rowMismatches,
+  staleAccessExceptions,
+  turnstileMismatches,
+} from './lib/manifest-parity';
 import { appSnapshot } from './lib/snapshot';
 import { PENDING } from './pending';
 
@@ -9,8 +19,6 @@ const snapshot = await appSnapshot();
 const manifest = loadManifest();
 const pending = new Set(PENDING);
 const manifestKeys = new Set(manifest.map((endpoint) => endpoint.key));
-const keysOfKind = (kind: string): string[] =>
-  manifest.filter((endpoint) => endpoint.kind === kind).map((endpoint) => endpoint.key);
 
 /**
  * Outgoing events the backend adds to the map's three (`order.status_changed`, `wallet.low_balance`, `invoice.paid`), each tied
@@ -36,16 +44,6 @@ const built: Record<string, string[]> = {
   event: snapshot.events.map((event) => event.key),
 };
 
-/** Lists a symmetric difference as readable text, so a failure names the keys. */
-function difference(label: string, actual: Iterable<string>, expected: Iterable<string>): string[] {
-  const have = new Set(actual);
-  const want = new Set(expected);
-  return [
-    ...[...have].filter((key) => !want.has(key)).map((key) => `${label}: ${key} is built but not expected`),
-    ...[...want].filter((key) => !have.has(key)).map((key) => `${label}: ${key} is expected but not built`),
-  ].sort();
-}
-
 describe('pending.ts', () => {
   it('lists each key once and only keys of the manifest', () => {
     const repeated = PENDING.filter((key, index) => PENDING.indexOf(key) !== index);
@@ -61,46 +59,57 @@ describe('pending.ts', () => {
 
 describe('the registry against the manifest', () => {
   it('HTTP: the contract registry equals the manifest routes minus pending', () => {
-    const expected = keysOfKind('http').filter((key) => !pending.has(key));
+    const expected = expectedKeys(manifest, 'http', pending);
     expect(difference('http', built.http ?? [], expected)).toEqual([]);
   });
 
   it('Dhru actions equal the manifest DHRU keys minus pending', () => {
-    const expected = keysOfKind('dhru-action').filter((key) => !pending.has(key));
+    const expected = expectedKeys(manifest, 'dhru-action', pending);
     expect(difference('dhru', built['dhru-action'] ?? [], expected)).toEqual([]);
   });
 
   it('supplier calls equal the manifest SUPPLIER keys minus pending', () => {
-    const expected = keysOfKind('supplier-call').filter((key) => !pending.has(key));
+    const expected = expectedKeys(manifest, 'supplier-call', pending);
     expect(difference('supplier', built['supplier-call'] ?? [], expected)).toEqual([]);
   });
 
   it('outgoing event schemas equal the manifest EVENT keys minus pending, plus the backend additions of a B-entry', () => {
-    const expected = [...keysOfKind('event').filter((key) => !pending.has(key)), ...BACKEND_EVENTS];
+    const expected = [...expectedKeys(manifest, 'event', pending), ...BACKEND_EVENTS];
     expect(difference('event', built.event ?? [], expected)).toEqual([]);
   });
 
-  it('every built contract has the method and path of its manifest row', () => {
-    const rows = new Map(manifest.map((endpoint) => [endpoint.key, endpoint]));
-    const wrong = snapshot.contracts.filter((contract) => {
-      const row = rows.get(contract.key);
-      return (
-        row !== undefined &&
-        (row.method !== contract.method || row.path !== contract.path || row.surface !== contract.surface)
-      );
-    });
-    expect(wrong.map((contract) => contract.key)).toEqual([]);
+  it('every built contract has the method, path and surface of its manifest row', () => {
+    expect(rowMismatches(snapshot.contracts, manifest)).toEqual([]);
+  });
+});
+
+describe('access and permission (decision 035)', () => {
+  it('every built contract has the access and the permission of its manifest row', () => {
+    expect(accessMismatches(snapshot.contracts, manifest)).toEqual([]);
+  });
+
+  it('each access exception cites an existing B-entry and still deviates from its row', () => {
+    const ids = loadMismatchIds();
+    for (const [key, exception] of Object.entries(ACCESS_EXCEPTIONS))
+      expect(ids.has(exception.mismatch), key).toBe(true);
+    expect(staleAccessExceptions(snapshot.contracts, manifest)).toEqual([]);
+  });
+
+  it('every addition of the manifest names its spec decision: an existing B-entry, or B-TBD and a slug', () => {
+    const ids = loadMismatchIds();
+    const bad = manifest.filter(
+      (endpoint) =>
+        endpoint.addition !== undefined &&
+        !ids.has(endpoint.addition.spec) &&
+        !/^B-TBD [a-z0-9]+(-[a-z0-9]+)*$/.test(endpoint.addition.spec),
+    );
+    expect(bad.map((endpoint) => `${endpoint.key} (${endpoint.addition?.spec})`)).toEqual([]);
   });
 });
 
 describe('the anti-bot check (decision 034)', () => {
   it('a built route has the turnstile flag the map gives it', () => {
-    const rows = new Map(manifest.map((endpoint) => [endpoint.key, endpoint]));
-    const wrong = snapshot.contracts.filter((contract) => {
-      const row = rows.get(contract.key);
-      return row !== undefined && (row.turnstile ?? false) !== (contract.turnstile ?? false);
-    });
-    expect(wrong.map((contract) => `${contract.key} (contract ${contract.turnstile ?? false})`)).toEqual([]);
+    expect(turnstileMismatches(snapshot.contracts, manifest)).toEqual([]);
   });
 
   it('a turnstile route can answer TURNSTILE_FAILED, and no other route lists it', () => {

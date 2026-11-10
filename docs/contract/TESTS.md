@@ -7,8 +7,8 @@ live in `test/contract/` and run in `bun run check`; a red contract test blocks 
 
 | Input | Produced by | What it is |
 |---|---|---|
-| `docs/route-manifest.json` | `scripts/build-route-manifest.mjs` (`--check` in CI) | every map row expanded to endpoints (all 9 surfaces) |
-| `docs/contract/frontend-endpoints.json` | `scripts/extract-frontend-contract.mjs` (`--check` in CI) | the frontend's request/response shapes for its 269 `@route` functions |
+| `docs/route-manifest.json` | `scripts/build-route-manifest.mjs` (`--check` in CI) | every map row and every backend addition (`scripts/map-additions`, decision 035) expanded to endpoints (all 9 surfaces) |
+| `docs/contract/frontend-endpoints.json` | `scripts/extract-frontend-contract.mjs` (`--check` in CI) | the frontend's request/response shapes for its `@route` functions |
 | `test/contract/fixtures/frontend/*.json` | `bun run contract:harvest` (`scripts/contract-harvest.mjs`, see below) | one example response per console GET route and per mutation that answers a body, from the frontend mock layer |
 | contract registry | `src/common/contract` (imported) | every backend `defineRoute()`, Dhru action, supplier call and event schema |
 | `docs/contract/error-codes.md` + `src/common/errors/catalog.ts` | hand-written | the error catalog |
@@ -22,6 +22,9 @@ live in `test/contract/` and run in `bun run check`; a red contract test blocks 
    - Dhru actions = manifest `DHRU …` keys; supplier calls (`defineSupplierCall`, the calls the supplier client
      makes) = `SUPPLIER …`; outgoing event schemas = `EVENT …`.
    - Every key in `frontend-endpoints.json` is a backend route.
+   - Every built contract has the access and permission of its manifest row (decision 035): the same access scheme (three
+     deviations are listed with their B-entries), the same concrete permission, and for an `area:*` row the CRUD word of
+     its operation (`area:read|create|update|delete`) or, on a single route, `area:*` or one action of that area.
 2. **`shape-parity.test.ts`**: for each frontend endpoint, compare its shapes with the backend JSON Schema
    (zod → JSON Schema 2020-12) of the same route:
    - Response (2xx): every property the frontend reads as required is required in the backend schema (or has a

@@ -23,7 +23,8 @@ they are done. Read `_common.md` first.
 ## Build order inside a feature
 1. **Contracts** (`contracts/`): one `defineRoute` per route, shapes identical to the frontend types (camelCase,
    Money/IsoDateTime/Id aliases, enums ⊆ frontend), list contracts with their whitelisted filters, sorts and search
-   fields, every error code the route can answer. Non-admin routes follow ALIGNMENT § 7.
+   fields, every error code the route can answer. Non-admin routes follow ALIGNMENT § 7. A route the map lacks gets its row in
+   `scripts/map-additions/<feature>.mjs` first (CONTRIBUTING, "Add a route that is not in the map").
 2. **Repository** (`infra/`): Drizzle queries on the module's own tables only; list queries translate the parsed
    simple-rest query (filters, sort, range, search) to SQL with an exact `COUNT`; no N+1 (batch joins).
 3. **Domain** (`domain/`): pure functions for rules, transitions, prices, thresholds, ledger lines; unit tests.

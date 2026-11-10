@@ -1,13 +1,20 @@
 // Shared loader for the API design map (reference/gsm-map/data/*.mjs) used by the manifest and slices scripts.
 // Turns map rows into endpoints with normalised access rules, so every script expands rows the same way.
+// `routes` is the map's rows plus the backend's own rows of scripts/map-additions (decision 035), checked at load time.
 
-import { routes, surfaces, groups } from '../../reference/gsm-map/data/routes.mjs';
+import { routes as mapRoutes, surfaces, groups } from '../../reference/gsm-map/data/routes.mjs';
 import { tables, domains } from '../../reference/gsm-map/data/schema.mjs';
 import * as system from '../../reference/gsm-map/data/system.mjs';
+import { modules } from '../module-map.mjs';
+import { readAdditionFiles, validateAdditions } from './map-additions.mjs';
+import { ROOT, additionsDirs } from './paths.mjs';
 
-export { routes, surfaces, groups, tables, domains, system };
+export { mapRoutes, surfaces, groups, tables, domains, system };
 
-/** Counts fixed by the API design. A change in the map must be reviewed here before the docs are rebuilt. */
+/**
+ * The map's own numbers, fixed by the API design. A change in the map must be reviewed here before the docs are rebuilt.
+ * Additions are counted on top (manifest `counts.additions`), never here.
+ */
 export const EXPECTED = { rows: 274, endpoints: 382, tables: 66, scenarios: 13, surfaces: 9, moneyEvents: 13, accounts: 14 };
 
 /** Unique key of a map row: "<surface> <m> <p>" (Dhru and supplier rows share action names, so the surface is part of it). */
@@ -111,3 +118,25 @@ export function expandRow(row) {
     return { key: `${o.method} ${path}`, method: o.method, path, op: o.op, ...base };
   });
 }
+
+/**
+ * Checks addition files against the map: shape, groups, tables, modules, auth text, no repeated or overriding row.
+ * @param {{ file: string, rows: unknown[] }[]} files result of readAdditionFiles (or the same shape built in memory)
+ * @returns {object[]} the normalised addition rows
+ * @throws {Error} `map additions problems:` listing every problem with its file, row number and row key
+ */
+export const checkAdditions = (files) =>
+  validateAdditions(files, {
+    mapRoutes,
+    groups,
+    tableNames: new Set([...tables.map((t) => t.n), ...modules.flatMap((m) => m.additionalTables ?? [])]),
+    moduleIds: new Set(modules.map((m) => m.id)),
+    expandRow,
+    rowKey,
+  });
+
+/** The backend's own rows beyond the map (scripts/map-additions/*.mjs), already checked. */
+export const additions = checkAdditions(await readAdditionFiles(additionsDirs(), ROOT));
+
+/** Every row the backend serves: the map's, then the additions. */
+export const routes = [...mapRoutes, ...additions];

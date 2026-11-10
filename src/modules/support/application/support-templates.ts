@@ -1,4 +1,4 @@
-// The default templates of the support events (feature 17): English email and Telegram texts. Migration 0012 inserts the same rows; a test
+// The default templates of the support events (feature 17): English email and Telegram texts. Migration `0016_support_tickets` inserts the same rows; a test
 // keeps the two equal. The console edits them afterwards (Settings > Customer emails).
 import type { DefaultTemplate } from '../../platform';
 

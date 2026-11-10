@@ -538,11 +538,18 @@ describe('the frontend contract vocabulary', () => {
   const document = JSON.parse(
     readFileSync(join(import.meta.dir, '../../../docs/contract/frontend-endpoints.json'), 'utf8'),
   ) as {
+    count: number;
     endpoints: Endpoint[];
   };
 
   it('reads every response shape and finds no difference with the schema written from it', () => {
-    expect(document.endpoints.length).toBe(269);
+    // The file's own count and the manifest's number of tagged console functions: a tagged function the extraction cannot
+    // type would otherwise skip shape parity without a word.
+    const manifest = JSON.parse(readFileSync(join(import.meta.dir, '../../../docs/route-manifest.json'), 'utf8')) as {
+      counts: { frontendRoutes: number };
+    };
+    expect(document.endpoints.length).toBe(document.count);
+    expect(new Set(document.endpoints.map((endpoint) => endpoint.key)).size).toBe(manifest.counts.frontendRoutes);
     for (const endpoint of document.endpoints) {
       // A `void` answer has no body to compare; compareResponse checks its 204 instead.
       if (!endpoint.returns || endpoint.returns.type === 'undefined') continue;

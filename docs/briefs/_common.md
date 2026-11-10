@@ -3,15 +3,16 @@
 You implement one brief in the GSM backend. These rules apply to every brief; the brief adds the scope.
 
 ## Where you work
-- Repository: `/home/saifi/gsm-project/backend` unless the brief names a worktree path (then only that path).
-- The `CLAUDE.md` injected into your context belongs to the **frontend** repo (this session started there): ignore
-  its workflow rules. Read `/home/saifi/gsm-project/backend/CLAUDE.md` first and follow it.
-- Your Bash working directory resets to the frontend repo after every command: always run
-  `cd <repo> && <command>`.
-- Serena (`mcp__serena__serena_repl`) is bound to the frontend repo in this session: use it only to read frontend
-  code. For backend files use Read, Grep, Glob, Edit and Write.
-- Never change git state (no add, commit, checkout, stash, reset, merge), never spawn agents, never edit the frontend
-  repo or anything under `reference/`.
+- Repository: the worktree the brief names (`/home/saifi/gsm-project/backend-<id>`, branch `feat/backend-<id>`), or the main
+  checkout `/home/saifi/gsm-project/backend` when it names none. Read that checkout's `CLAUDE.md` first and follow it; the
+  `CLAUDE.md` injected into your context may belong to another repository, so ignore its workflow rules.
+- Your Bash working directory may reset after every command: use absolute paths, or `cd <worktree> && <command>`.
+- Serena (`mcp__serena__serena_repl`) may be bound to another checkout: use it only when its active project is your
+  worktree; otherwise use Read, Grep, Glob, Edit and Write.
+- Never change git state (no add, commit, checkout, stash, reset, merge), never spawn agents, never edit a repository or
+  worktree the brief does not name (the console's main checkout, the storefront) or anything under `reference/`.
+- Never run `docker compose`, `db:migrate`, `db:seed`, `db:reset`, `setup`, `src/main.ts` or `scripts/ci.sh` in a worktree:
+  it has no `.env`, so they would hit the owner's development database.
 
 ## Sources
 - Decisions: `docs/decisions/` (the brief names the ones that matter). Architecture: `docs/ARCHITECTURE.md`.
@@ -26,7 +27,9 @@ You implement one brief in the GSM backend. These rules apply to every brief; th
   (type-check only). Add packages with `bun add` (never npm); prefer packages without install scripts.
 - Local services are running (`docker compose up -d`): Postgres 5432 (`gsm`/`gsm`, databases `gsm` and `gsm_test`),
   queue Redis 6379, cache Redis 6380, MinIO 9000 (`gsm-minio`/`gsm-minio-secret`, buckets `gsm-files`,
-  `gsm-files-test`). Tests use `gsm_test` and Redis DB 1.
+  `gsm-files-test`). Tests use the instances of the worktree's untracked `.env.test` (`DATABASE_URL_TEST`,
+  `REDIS_QUEUE_URL_TEST`, `REDIS_CACHE_URL_TEST`: its own `gsm_<id>_test` database and Redis DB number, read by
+  `test/support/env.ts`); only the main checkout falls back to `gsm_test` and Redis DB 1.
 
 ## Code rules
 - TypeScript strict; no `any` without a one-line reason; no floats for money (decision 011).
@@ -43,7 +46,8 @@ You implement one brief in the GSM backend. These rules apply to every brief; th
   (`createTestApp({ clock })`) and move it with `advance`; they never `Bun.sleep` or write a time into a row to fake age.
 - `process.env` is read only in `src/config`. Modules import other modules only through their `index.ts`.
 - Errors are `AppError('<CODE>')` with codes from the catalog; never invent a code without adding it to
-  `docs/contract/error-codes.md` and the catalog (and say so in your report).
+  `src/common/errors/catalog.ts` and, when no console screen references it, to `BACKEND_CODES` in
+  `scripts/build-contract-docs.mjs` (`bun run contract:docs` regenerates `docs/contract/error-codes.md`); say so in your report.
 
 ## Finish
 - Run `bun run format`, then `bun run check` (typecheck, lint, format check, route/contract/OpenAPI checks, all tests;

@@ -5,7 +5,8 @@
     "crud": "L=GET /resource, S=GET /resource/:id, C=POST /resource, U=PATCH /resource/:id, D=DELETE /resource/:id; other rows are one endpoint",
     "access": "normalised from the map auth text per surface (scripts/lib/map.mjs); admin \"x:y\" = staff permission, v1 \"x:y\" = API key scope",
     "modules": "every row belongs to exactly one module (scripts/module-map.mjs); table ownership follows the map domains",
-    "frontend": "admin endpoints point at the frontend function carrying the same @route tag (FRONTEND_DIR)"
+    "frontend": "admin endpoints point at the frontend function carrying the same @route tag (FRONTEND_DIR)",
+    "additions": "rows beyond the map are backend-owned: scripts/map-additions/<feature>.mjs (decision 035); they name their module, English sentence and spec decision, and are counted on top of the map numbers"
   },
   "counts": {
     "rows": 274,
@@ -15,6 +16,14 @@
     "moneyEvents": 13,
     "accounts": 14,
     "endpoints": 382,
+    "map": {
+      "rows": 274,
+      "endpoints": 382
+    },
+    "additions": {
+      "rows": 0,
+      "endpoints": 0
+    },
     "frontendRoutes": 269,
     "bySurface": {
       "dhru": {

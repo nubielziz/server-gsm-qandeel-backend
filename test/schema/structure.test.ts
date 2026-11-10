@@ -136,17 +136,24 @@ describe('module ownership', () => {
     const { modules } = (await import(path)) as {
       modules: Array<{ id: string; tables: string[]; additionalTables?: string[] }>;
     };
-    expect(modules).toHaveLength(12);
+    // A module of the map without its schema import above (or the reverse) fails here by name.
+    expect(modules.map((module) => module.id).sort()).toEqual(Object.keys(moduleSchemas).sort());
     for (const module of modules) {
       const owned = tablesOf(moduleSchemas[module.id]!).map(nameOf);
       expect(owned.sort(), module.id).toEqual([...module.tables, ...(module.additionalTables ?? [])].sort());
     }
   });
 
-  it("the infra barrel re-exports all 69 tables once (the map's 66 and the backend's listed_prices, idempotency_keys and alert_streaks)", () => {
+  it("the infra barrel re-exports every table of the module map once (the map's tables and each module's additionalTables)", async () => {
+    const path = '../../scripts/module-map.mjs';
+    const { modules } = (await import(path)) as {
+      modules: Array<{ id: string; tables: string[]; additionalTables?: string[] }>;
+    };
     const names = tablesOf(barrel).map(nameOf);
-    expect(names).toHaveLength(69);
-    expect(new Set(names).size).toBe(69);
+    expect(new Set(names).size, 'the barrel exports a table twice').toBe(names.length);
+    expect([...names].sort()).toEqual(
+      modules.flatMap((module) => [...module.tables, ...(module.additionalTables ?? [])]).sort(),
+    );
   });
 });
 

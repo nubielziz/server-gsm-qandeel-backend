@@ -81,7 +81,7 @@ describe('SUPPORT_DEFAULT_TEMPLATES', () => {
   });
 });
 
-describe('migration 0012', () => {
+describe('migration 0016_support_tickets', () => {
   it('holds exactly the INSERT that supportTemplatesSql() writes', () => {
     const migration = readFileSync(new URL('../../../../drizzle/0016_support_tickets.sql', import.meta.url), 'utf8');
     const start = migration.indexOf('INSERT INTO "notification_templates"');

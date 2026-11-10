@@ -501,6 +501,11 @@ Registered with `JobSchedulerRegistry.register` in `onModuleInit`; the worker up
 | `alert-evaluation` | `alerts` | `alert_evaluation` | every minute | health (`src/modules/health/jobs/`) |
 | `ledger-integrity` | `maintenance` | `ledger_integrity` | daily 02:30 UTC | health (`src/modules/health/jobs/`) |
 | `data-retention` | `maintenance` | `data_retention` | daily 03:00 UTC | risk (`src/modules/risk/jobs/`) |
+| `fx-refresh` | `maintenance` | `fx_refresh` | every hour at minute 0 | money (`src/modules/money/jobs/`) |
+| `idempotency-purge` | `maintenance` | `idempotency_purge` | daily 04:10 UTC | orders (`src/modules/orders/jobs/`) |
+| `supplier-poll-tick` | `supplier-poll` | `supplier_poll_tick` | every minute | suppliers (`src/modules/suppliers/jobs/`) |
+| `supplier-price-sync` | `supplier-sync` | `price_sync` | every 15 minutes | suppliers (`src/modules/suppliers/jobs/`) |
+| `supplier-balance-check` | `supplier-sync` | `balance_check` | every 30 minutes | suppliers (`src/modules/suppliers/jobs/`) |
 
 ## Adding a queue or a job
 

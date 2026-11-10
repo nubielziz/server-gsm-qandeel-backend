@@ -228,7 +228,7 @@ Generated from the route contracts (decisions 008, 009, 017) and committed under
 - `reference/` → symlink to `../frontend-admin/reference`: the API design map (`gsm-map/data/*.mjs`) and the static
   demo (`gsm-admin`). Never open `reference/**/dist/**`.
 - `docs/route-manifest.json`: all 274 map rows expanded to 382 endpoints with access rules, owning module and, for
-  admin routes, the frontend function that calls them. `docs/slices/<module>.json`: the brief input per module.
+  admin routes, the frontend function that calls them (plus the rows of `scripts/map-additions`). `docs/slices/<module>.json`: the brief input per module.
 - `scripts/module-map.mjs`: which module owns each table and each route.
 - `docs/ARCHITECTURE.md`: the system on four pages. `docs/contract/ALIGNMENT.md`: the wire conventions every route
   follows; `docs/contract/endpoints/<module>.md`: per-endpoint contract; `error-codes.md`, `MISMATCHES.md`,

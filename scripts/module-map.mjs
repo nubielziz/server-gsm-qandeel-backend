@@ -6,9 +6,10 @@
  * Modules of the modular monolith, in build order of their first stage.
  * `tables`: tables the module owns (only it reads/writes them; others call its public service).
  * `additionalTables`: tables the backend adds beyond the map's 66 (MISMATCHES B116 note); owned like the others, but no map row
- * describes them, so slices and route checks ignore them.
- * `rows`: matchers on the row key "<surface> <m> <p>" (string = exact key, RegExp = pattern).
- * Every row must match exactly one module: scripts/build-route-slices.mjs fails on a gap or an overlap.
+ * describes them, so slices and route checks ignore them. A row of `scripts/map-additions` (decision 035) may list one in its tables.
+ * `rows`: matchers on the row key "<surface> <m> <p>" (string = exact key, RegExp = pattern). They decide for map rows only: a row of
+ * `scripts/map-additions` names its module itself, and the matchers are not consulted for it.
+ * Every map row must match exactly one module: scripts/build-route-manifest.mjs fails on a gap or an overlap.
  */
 export const modules = [
   {

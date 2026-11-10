@@ -14,25 +14,39 @@ export const FIXTURES_DIR = join(ROOT, 'test', 'contract', 'fixtures', 'frontend
 
 const readJson = <T>(file: string): T => JSON.parse(readFileSync(file, 'utf8')) as T;
 
+/** The committed route manifest. */
+const MANIFEST_FILE = join(ROOT, 'docs', 'route-manifest.json');
+
 /** One endpoint of `docs/route-manifest.json`. */
 export interface ManifestEndpoint {
   readonly key: string;
   readonly kind: 'http' | 'dhru-action' | 'event' | 'supplier-call';
   readonly method: string;
   readonly path: string;
+  /** What the endpoint is: `list`, `show`, `create`, `update`, `delete` for a CRUD row, `action` for any other HTTP row. */
+  readonly op: string;
   readonly surface: string;
   readonly module: string | null;
+  /** The access scheme of the row (`staff-permission`, `public`, ...), normalised from the map's auth text. */
+  readonly access: string;
+  /** The row's permission or API key scope (`area:action`, `area:*`), or null. */
+  readonly permission: string | null;
   /** The map marks the route with the anti-bot check (decision 034). */
   readonly turnstile?: boolean;
+  /** Set on an addition that gives the success status the console is promised (decision 035). */
+  readonly successStatus?: number;
+  /** Set on a row of `scripts/map-additions` (decision 035): its file and spec decision. */
+  readonly addition?: { readonly file: string; readonly spec: string };
 }
 
 /**
- * Reads the route manifest.
+ * Reads a route manifest.
  *
- * @returns every endpoint of the map (HTTP routes, Dhru actions, supplier calls and outgoing events)
+ * @param file the manifest to read; the committed one by default (the tooling test passes a generated one)
+ * @returns every endpoint of the map and of the backend's additions (HTTP routes, Dhru actions, supplier calls and outgoing events)
  */
-export function loadManifest(): readonly ManifestEndpoint[] {
-  return readJson<{ endpoints: ManifestEndpoint[] }>(join(ROOT, 'docs', 'route-manifest.json')).endpoints;
+export function loadManifest(file: string = MANIFEST_FILE): readonly ManifestEndpoint[] {
+  return readJson<{ endpoints: ManifestEndpoint[] }>(file).endpoints;
 }
 
 /** One frontend function tagged `@route`, as extracted into `docs/contract/frontend-endpoints.json`. */
@@ -49,7 +63,7 @@ export interface FrontendEndpoint {
 /**
  * Reads the frontend's endpoint shapes.
  *
- * @returns the 269 functions of the console with their parameters and resolved return types
+ * @returns the functions of the console that carry an `@route` tag, with their parameters and resolved return types
  */
 export function loadFrontendEndpoints(): readonly FrontendEndpoint[] {
   return readJson<{ endpoints: FrontendEndpoint[] }>(join(CONTRACT, 'frontend-endpoints.json')).endpoints;
@@ -82,15 +96,29 @@ function extractionFiles(): { features: { endpoints: ExtractedEndpoint[] }[]; er
  * Reads the success status the frontend contract documents for each endpoint.
  *
  * Why: ALIGNMENT § 1 fixes one success status per endpoint (`successStatus` in the extraction); the console accepts
- * any 2xx, so the frontend's TypeScript alone cannot tell 200 from 201.
+ * any 2xx, so the frontend's TypeScript alone cannot tell 200 from 201. A route beyond the map (decision 035) gives its
+ * status in its row of `scripts/map-additions`, which the manifest carries.
  *
+ * @param manifest the manifest whose additions add their statuses; the committed one by default
  * @returns a map from `METHOD /path` to the documented status
+ * @throws {Error} when an extraction record and an addition give different statuses for one key
  */
-export function loadSuccessStatuses(): ReadonlyMap<string, number> {
+export function loadSuccessStatuses(
+  manifest: readonly ManifestEndpoint[] = loadManifest(),
+): ReadonlyMap<string, number> {
   const statuses = new Map<string, number>();
   for (const file of extractionFiles()) {
     for (const feature of file.features)
       for (const endpoint of feature.endpoints) statuses.set(endpoint.key, endpoint.successStatus);
+  }
+  for (const endpoint of manifest) {
+    if (endpoint.successStatus === undefined) continue;
+    const recorded = statuses.get(endpoint.key);
+    if (recorded !== undefined && recorded !== endpoint.successStatus)
+      throw new Error(
+        `${endpoint.key}: the extraction records ${recorded}, the addition ${endpoint.addition?.file ?? ''} gives ${endpoint.successStatus}`,
+      );
+    statuses.set(endpoint.key, endpoint.successStatus);
   }
   return statuses;
 }
