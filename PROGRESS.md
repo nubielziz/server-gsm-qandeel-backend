@@ -4,6 +4,26 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+> **NOTE — PAUSED 2026-11-11 00:15 by the owner (sleep). Continue from here tomorrow.** All agents stopped; every worktree's
+> work is committed on its feature branch (WIP commits). Main has W0, 24E, 24D. Rules: `.lead/w1/LEAD-DECISIONS.md` (§0.1:
+> one Fable agent only for plans, all plans are done; Opus reviews Sonnet's decisions and writes the hard parts). Finished agent
+> results (reports, reviews) are saved in `.lead/w1/results/` (the workflow cache does not survive a new session).
+> Lane script to reuse: `~/.claude/projects/-home-saifi-gsm-project-backend/c7eb6ce5-7aa1-4d63-8590-d6d0e56256a2/workflows/scripts/gsm-lane-wf_3112862c-961.js`
+> (args: limit, base, consoleBase, features[]); start each feature at the step below, not from the beginning.
+>
+> | Feature | Where it stopped | Next step |
+> |---|---|---|
+> | **22** store catalog | backend reviewed (pass); console reviewed (pass, branch `feat/console-22` `628ec9f`); lead merge in progress: main merged in, the lead fixed a load-order cycle (`d45e8bb`: storefront popularity no longer imports the orders barrel; lint and generated checks green) | full `bun run check` in `../backend-22`, squash into main, `bun run db:migrate` (0020, 0021) on the dev DB `gsm`, then re-merge console 22 (`git revert 5e90c0c` in `frontend-admin`), then on backend main `routes:build`, `contract:extract`, `contract:harvest`, `contract:docs`, commit; console `npm run mocks:live` |
+> | **21** customer wallet | backend B1-B5 built by Opus; **Opus review pass + Fable money review pass** (`.lead/w1/results/review-21.json`, `fable-money-review-21.json`); backend `629c0d3`; console C1 partial (`feat/console-21` `9b5c4d0`) | finish console C1 (Sonnet, continue partial work) + Opus console review; then lead merge (renumber migrations after 22's 0020/0021) |
+> | **20** merchants | run 1 (A0, A, B) done; run 2 (C, D) partial (`baf428f`) | continue run 2 (Sonnet), then Opus review, console K1-K5, review; when merged: uncomment `CONSOLE_BASE_URL` in `.env.production.example` + drop its allow-list entry |
+> | **23** notifications | run 1 (A, B by Opus) done; run 2 (C, D) partial (`a76eada`) | continue run 2 (Sonnet), then Opus review, console E+F, review |
+> | 24B / 24A / 24C | planned, approved | 24B any time; 24A after 20 merges; 24C after 21 merges |
+> | Handoff | not written | `/home/saifi/gsm-project/STOREFRONT-BACKEND-HANDOFF.md` at the end, from the merged contracts |
+>
+> Lesson: merge a console part only after its backend is on main (console 22 was merged early and reverted: it broke
+> `routes:check` for the other branches). Docker: if the machine restarted, `docker compose up -d` in this checkout; the queue
+> Redis AOF may need `redis-check-aof --fix` (done once, backup in `.lead/redis-aof-backup/`).
+
 **Job of 2026-11-10 (running): finish the roadmap, merchant management, the customer wallet, the storefront's backend needs
 and a notification center** (the owner's prompt; it overrides the "phase 0 later" and "2W backend first, later" notes below).
 Roles set by the owner: Opus lead, **Fable 5.2 plans and approves every feature before code**, Sonnet implements, Opus (and Fable
@@ -16,10 +36,26 @@ State at 17:40: discovery done (D1-D6). **Approved plans on disk:** `W0-parallel
 `20-merchant-management.md`, `21-customer-wallet.md`, `23-notification-center.md` (each ends with "Approved by Fable 5.2"; the
 5-hour usage cap hit twice, at 11:52 and 12:39, then the machine shut down at 17:13). **Owner's rules after the restart:** never
 relaunch a finished Fable planner; ONE Fable agent writes the remaining plans (22, 24B, 24D, 24E, 24A, 24C); Opus reviews
-Sonnet's work and decisions and writes the hard parts itself (LEAD-DECISIONS §0.1, §0.2). Running: workflow
-`wf_82c8336f-f7c` (the one Fable planner + Sonnet finishing W0 from its partial work, then Opus review). Next: merge W0, create
-the 20/21/23 worktrees (LEAD-DECISIONS §1), implementation wave (21 backend by Opus; 23 slice B by Opus; the rest Sonnet);
-apply each merged migration to the dev DB `gsm` (the owner's API runs from this checkout with `--watch`).
+Sonnet's work and decisions and writes the hard parts itself (LEAD-DECISIONS §0.1, §0.2).
+**State at 18:45:** all ten plans approved and committed (`a05882e`, `7b468d1`). **W0 merged** (`ed5416f`; check 5635 pass,
+1 skip, 0 fail). After the shutdown the queue Redis AOF had a 77-byte corrupt tail: repaired with `redis-check-aof --fix`
+(backup in `.lead/redis-aof-backup/`). Worktrees (backend `../backend-<id>` + console `../frontend-admin-<id>`, from `7b468d1`
+and console `5d50374`): 20 (Redis 12), 21 (2), 22 (3), 23 (4); 24D (9) and 24E (11) from `a05882e`. Running: lane B
+`wf_10286de5-dee` (24E by Opus, 24D by Sonnet) and lane A `wf_3112862c-961` (21 backend by Opus + Fable money review, 22 by
+Sonnet with slice C by Opus; consoles by Sonnet; Opus reviews). Lane script (reuse with other args):
+`~/.claude/projects/-home-saifi-gsm-project-backend/c7eb6ce5-7aa1-4d63-8590-d6d0e56256a2/workflows/scripts/gsm-lane-wf_3112862c-961.js`.
+**19:45:** lane B done: 24E passed after one fix (quadratic Arabic truncation → bisection; the lead relaxed its timing bound to
+400 ms), 24D passed (lead fixes at merge: partial-dump cleanup trap in `pg-backup.sh`, the restore key copy for uid 10001 in
+`docs/OPERATIONS.md`). Both merged with main and in their full checks (`.lead/check-24e.log`, `.lead/check-24d.log`). Main gained
+`6d248f9` (the db-reset test's limit 180 s: CREATE/DROP DATABASE took 95-176 s under four parallel suites). Lanes now: A
+`wf_3112862c-961` (21, 22), C `wf_6bb09fd6-ec1` (20), D `wf_7ea696c1-b8f` (23), one agent each feature, four agents in all.
+**22:15:** **24E merged** (`4c20d45`, check 5668/1/0) and **24D merged** (`e28683b`, check 5697/1/0 before 24E's lockfile;
+after resolving `package.json`/`bun.lock` the typecheck, lint, generated checks and 195 affected tests green). Usage cap hit
+19:41-22:10; the lanes restarted their agents at 22:10 from partial work: 21 run 1 done (B1-B3), run 2 (B4-B5) running; 22 run 1
+done (A, B, D), run 2 (C images, Opus) running; 20 run 1 and 23 run 1 running again.
+**When 20 merges:** uncomment `CONSOLE_BASE_URL` in `.env.production.example` and drop its allow-list entry in
+`test/unit/env-production-example.test.ts` (24D left it commented). Then 24B; 24A after 20 is merged, 24C after 21. Apply each
+merged migration to the dev DB `gsm` (the owner's API runs from this checkout with `--watch`).
 
 **Next work is planned, not built: `docs/ROADMAP.md` (2026-11-09).** The owner chose one public site for merchants and regular
 customers (two account types, one smart sign-in, the whole merchant portal inside it, Arabic and English). Phase 0 (staff cannot
