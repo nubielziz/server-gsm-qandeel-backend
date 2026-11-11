@@ -163,11 +163,15 @@ export function contentProblems(content: CampaignContent): FieldError[] {
 }
 
 const SITE_PATH = /^\/(?!\/)[A-Za-z0-9\-._~/?#=&%]{0,199}$/;
+/** The merchant portal's part of the site: `/merchant`, then `/`, `?`, `#` or nothing. */
+const MERCHANT_PATH = /^\/merchant(?:[/?#]|$)/;
 
 /**
  * Checks the links of a campaign.
  *
  * Why: a link is a path on our own site (one leading `/`, no scheme, no host), so a campaign cannot carry a phishing URL (13.1).
+ * A merchant link must be a page of the merchant portal (`/merchant/...`): the inbox shows the path as it is and the email and
+ * Telegram join it to the site's root, so a path outside the portal (`/orders`) would be wrong on both.
  *
  * @param link the links per audience, or null
  * @returns the field errors, named `link.<audience>`
@@ -177,11 +181,18 @@ export function linkProblems(link: CampaignLink | null | undefined): FieldError[
   const errors: FieldError[] = [];
   for (const key of ['staff', 'merchant', 'customer'] as const) {
     const value = link[key];
-    if (value !== undefined && !SITE_PATH.test(value)) {
+    if (value === undefined) continue;
+    if (!SITE_PATH.test(value)) {
       errors.push({
         field: `link.${key}`,
         code: 'invalid',
         message: 'Use a path on the site that starts with one /, such as /account/orders.',
+      });
+    } else if (key === 'merchant' && !MERCHANT_PATH.test(value)) {
+      errors.push({
+        field: 'link.merchant',
+        code: 'invalid',
+        message: 'Use a page of the merchant portal, such as /merchant/orders.',
       });
     }
   }

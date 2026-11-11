@@ -20,7 +20,7 @@ export interface RenderTarget {
   readonly name: string;
   readonly audience: NotificationAudience;
   readonly channel: CampaignChannel;
-  /** The site the audience's link points into (store for customers, portal for merchants); none for staff. */
+  /** The site's root (STORE_BASE_URL) that the audience's site path is joined to, for customers and merchants; none for staff. */
   readonly baseUrl?: string | undefined;
   /** For a marketing email to a customer: the unsubscribe page and the one-click POST address (slice D builds them). */
   readonly unsubscribe?: { readonly pageUrl: string; readonly oneClickUrl: string } | undefined;

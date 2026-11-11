@@ -182,6 +182,30 @@ describe('PUT /client/notification-preferences', () => {
     expect((await clientRow(m.clientId)).notificationPrefs).toEqual({});
   });
 
+  it('saves the announcements row sent back as read while no chat is linked (Telegram on is its default), but refuses switching it on', async () => {
+    const m = await signedIn();
+    // The site's form sends a changed row with both switches as the GET showed them: Telegram stays on for announcements.
+    const echo = await m.call('PUT', '/client/notification-preferences', {
+      events: [{ event: 'broadcast.announcement', email: false, telegram: true }],
+    });
+    expect(echo.status).toBe(200);
+    expect(echo.body.events.find((e: { event: string }) => e.event === 'broadcast.announcement')).toEqual({
+      event: 'broadcast.announcement',
+      label: 'Announcements',
+      email: false,
+      telegram: true,
+    });
+    // Once off, switching it on again without a chat is a switch, so it is refused.
+    await m.call('PUT', '/client/notification-preferences', {
+      events: [{ event: 'broadcast.announcement', email: false, telegram: false }],
+    });
+    const on = await m.call('PUT', '/client/notification-preferences', {
+      events: [{ event: 'broadcast.announcement', email: false, telegram: true }],
+    });
+    expect(on.status).toBe(422);
+    expect(fieldsOf(on.body)).toEqual(['events.0.telegram']);
+  });
+
   it('refuses Telegram while no chat is linked ("Link Telegram first.") and a bad alert level, and saves nothing then', async () => {
     const m = await signedIn();
     const res = await m.call('PUT', '/client/notification-preferences', {

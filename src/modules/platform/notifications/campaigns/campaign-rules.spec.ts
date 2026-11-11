@@ -86,6 +86,21 @@ describe('linkProblems', () => {
     }
     expect(fields(linkProblems({ merchant: `/${'a'.repeat(200)}` }))).toEqual(['link.merchant']);
   });
+
+  it('keeps a merchant link inside the merchant portal: the inbox and the email both use the site path', () => {
+    for (const good of ['/merchant', '/merchant/orders', '/merchant?tab=x', '/merchant#top']) {
+      expect(linkProblems({ merchant: good }), good).toEqual([]);
+    }
+    for (const bad of ['/orders', '/merchants/x', '/account/orders', '/']) {
+      expect(linkProblems({ merchant: bad }), bad).toEqual([
+        {
+          field: 'link.merchant',
+          code: 'invalid',
+          message: 'Use a page of the merchant portal, such as /merchant/orders.',
+        },
+      ]);
+    }
+  });
 });
 
 describe('scheduleProblem', () => {

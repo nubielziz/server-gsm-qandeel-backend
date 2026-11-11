@@ -246,7 +246,7 @@ export class NotificationDelivery {
     if (!member) throw new DeliveryError('The recipient is no longer eligible.', { permanent: true });
     if (!member[row.channel]) throw new DeliveryError('The recipient turned this message off.', { permanent: true });
 
-    const { portalBaseUrl, storeBaseUrl } = this.config.http;
+    const { storeBaseUrl } = this.config.http;
     const unsubscribeToken =
       campaign.purpose === 'marketing' && recipient.audience === 'customer'
         ? marketingUnsubscribeToken(this.tokens, recipient.id)
@@ -258,15 +258,12 @@ export class NotificationDelivery {
         name: recipient.name,
         audience: recipient.audience,
         channel: row.channel,
-        // The console has no base address yet (feature 20's CONSOLE_BASE_URL): a staff message carries no link.
-        baseUrl:
-          recipient.audience === 'customer'
-            ? storeBaseUrl
-            : recipient.audience === 'merchant'
-              ? portalBaseUrl
-              : undefined,
+        // Campaign links are site paths (`/account/orders`, `/merchant/wallet`), so customers and merchants both get the site's
+        // root (STORE_BASE_URL): PORTAL_BASE_URL already ends at `/merchant` and would double it. The console has no base address
+        // yet (feature 20's CONSOLE_BASE_URL): a staff message carries no link.
+        baseUrl: recipient.audience === 'staff' ? undefined : storeBaseUrl,
         ...(recipient.audience === 'merchant'
-          ? { preferencesUrl: `${portalBaseUrl}/merchant/settings/notifications` }
+          ? { preferencesUrl: `${storeBaseUrl}/merchant/settings/notifications` }
           : {}),
         // A marketing email to a customer carries the unsubscribe page and the one-click POST address (S10, RFC 8058).
         ...(unsubscribeToken === undefined

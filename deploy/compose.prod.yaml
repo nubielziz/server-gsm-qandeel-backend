@@ -215,14 +215,14 @@ services:
     networks: [gsm]
 
   # The storefront (Next server on port 3000). Its image is the storefront session's to ship; until then it stays behind the
-  # profile `site` (enable with `--profile site`). The variable name the site reads for the API address is the storefront's to confirm.
+  # profile `site` (enable with `--profile site`). The site reads the API address from GSM_API_ORIGIN (storefront lib/api/server.ts).
   site:
     image: ${SITE_IMAGE:?set SITE_IMAGE in deploy/.env}
     profiles: ["site"]
     restart: unless-stopped
     init: true
     environment:
-      API_BASE_URL: http://api:3000
+      GSM_API_ORIGIN: http://api:3000
     networks: [gsm]
 
   # Backup tools, started by the host's cron or systemd timer (docs/OPERATIONS.md), never a long-running container:

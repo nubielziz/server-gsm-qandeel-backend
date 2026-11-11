@@ -39,8 +39,9 @@ const MAX_EVENTS = 50;
  *
  * Why: B165. The choices live in `clients.notification_prefs` (the key `lowBalanceThreshold` is the one `WalletLowBalanceWatch` reads);
  * the events a merchant may switch are the non-transactional merchant events of the platform's registry, so the screen and the delivery
- * agree. An event never saved reads as email on and Telegram off (the order results stay off until chosen); Telegram can be switched on
- * only while a chat is linked. The merchant portal writes no audit rows (B121).
+ * agree. An event never saved reads as email on and Telegram off (the order results stay off until chosen; the announcements of
+ * feature 23 start with both on); Telegram can be switched on only while a chat is linked, and sending back the value the screen
+ * showed is always accepted. The merchant portal writes no audit rows (B121).
  *
  * Side effects: `update` rewrites `clients.notification_prefs` under a row lock.
  *
@@ -74,7 +75,8 @@ export class MerchantNotificationSettings {
    * @param input the threshold and the events to replace
    * @returns the preferences after the save
    * @throws {AppError} `VALIDATION_FAILED` on `events.<n>.event` for an unknown, transactional or repeated event, on `events.<n>.telegram`
-   *   for Telegram switched on with no chat linked ("Link Telegram first."), and on `lowBalanceThreshold` for a negative or malformed amount
+   *   for Telegram switched on with no chat linked ("Link Telegram first."; the value the GET showed is accepted), and on
+   *   `lowBalanceThreshold` for a negative or malformed amount
    */
   async update(clientId: number, input: PreferencesInput): Promise<PreferencesView> {
     const errors: FieldError[] = [];
@@ -98,10 +100,13 @@ export class MerchantNotificationSettings {
     return this.db.runInTransaction(async ({ tx }) => {
       const client = await lockClient(tx, clientId);
       if (!client) throw new AppError('NOT_FOUND', { detail: 'This account no longer exists.' });
-      const allowed = new Set(this.registry.merchantPreferenceEvents().map((definition) => definition.key));
+      const definitions = new Map(
+        this.registry.merchantPreferenceEvents().map((definition) => [definition.key, definition] as const),
+      );
       const seen = new Set<string>();
       input.events.forEach((entry, index) => {
-        if (!allowed.has(entry.event)) {
+        const definition = definitions.get(entry.event);
+        if (!definition) {
           errors.push({
             field: `events.${index}.event`,
             code: 'unknown_event',
@@ -115,7 +120,10 @@ export class MerchantNotificationSettings {
           });
         }
         seen.add(entry.event);
-        if (entry.telegram && client.telegramChatId === null) {
+        // Telegram cannot be switched on without a chat. Sending back the value the screen showed is no switch: announcements
+        // start with Telegram on, and a form that echoes that row while no chat is linked must still save.
+        const shown = definition !== undefined && choiceFor(definition, client.notificationPrefs).telegram;
+        if (entry.telegram && client.telegramChatId === null && !shown) {
           errors.push({
             field: `events.${index}.telegram`,
             code: 'telegram_not_linked',

@@ -104,7 +104,7 @@ describe('the campaign branch of the delivery', () => {
     expect(rows.find((row) => row.recipientId === ar)).toBeDefined();
   });
 
-  it('sends Telegram to a merchant with a chat, with the portal link, and an email to staff without a link', async () => {
+  it('sends Telegram to a merchant with a chat, with the site link, and an email to staff without a link', async () => {
     await insertMerchant(db, { telegramChatId: '555', name: 'Zain Mobile Hub' });
     const { rows } = await fannedOut({
       channels: ['email', 'telegram'],
@@ -115,12 +115,22 @@ describe('the campaign branch of the delivery', () => {
     expect(telegramOutbox(t).sent).toEqual([
       {
         chatId: '555',
-        text: 'Maintenance for Zain Mobile Hub\n\nThe portal is read-only on Friday.\nhttp://localhost:5174/merchant/wallet',
+        // The site path joins the site's root once (PORTAL_BASE_URL already ends at /merchant in production).
+        text: 'Maintenance for Zain Mobile Hub\n\nThe portal is read-only on Friday.\nhttp://localhost:5175/merchant/wallet',
       },
     ]);
     const staff = rows.find((row) => row.recipientType === 'staff')!;
     await sendBroadcast(t, staff.id, 'email');
     expect(mailbox(t).sent.at(-1)?.text).toBe('The portal is read-only on Friday.');
+  });
+
+  it("ends a merchant's marketing email with the site's notification settings page, under /merchant once", async () => {
+    await insertMerchant(db, { name: 'Zain Mobile Hub' });
+    const { rows } = await fannedOut({ purpose: 'marketing', channels: ['email'], audience: { merchants: {} } });
+    expect(await sendBroadcast(t, rows[0]!.id, 'email')).toEqual({ outcome: 'sent' });
+    expect(mailbox(t).sent.at(-1)?.text).toEndWith(
+      'Manage notifications: http://localhost:5175/merchant/settings/notifications',
+    );
   });
 
   it('re-checks consent at send time: a customer who withdrew after the fan-out gets nothing', async () => {

@@ -43,7 +43,8 @@ export const merchantGetNotificationPreferences = defineRoute({
   summary: 'My notification preferences',
   description:
     'What the merchant is told about and how. An event never saved is `email: true, telegram: false`, except the order results ' +
-    '(`order.completed`, `order.failed`), which stay off until the merchant chooses them. A merchant waiting for approval is refused (`403 ACCOUNT_PENDING_APPROVAL`).',
+    '(`order.completed`, `order.failed`), which stay off until the merchant chooses them, and the announcements (`broadcast.announcement`), ' +
+    'which start with both on (Telegram reaches the merchant only once a chat is linked). A merchant waiting for approval is refused (`403 ACCOUNT_PENDING_APPROVAL`).',
   tags: ['notifications'],
   surface: 'client',
   access: 'merchant-session',
@@ -59,7 +60,8 @@ export const merchantPutNotificationPreferences = defineRoute({
   description:
     'Replaces the listed events; the events left out keep their value. `lowBalanceThreshold` is an amount of zero or more (`null` removes the ' +
     'alert, a missing key keeps it). `422` on `events.<n>.event` for an unknown or always-sent event, on `events.<n>.telegram` when Telegram is switched on ' +
-    'while no chat is linked ("Link Telegram first."), and on `lowBalanceThreshold` for a negative or malformed amount. Answers the same body as the GET. ' +
+    'while no chat is linked ("Link Telegram first."; sending back the value the GET showed is accepted), and on `lowBalanceThreshold` for a ' +
+    'negative or malformed amount. Answers the same body as the GET. ' +
     'The merchant portal writes no audit rows (B121).',
   tags: ['notifications'],
   surface: 'client',

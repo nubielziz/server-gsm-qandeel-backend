@@ -15,6 +15,7 @@ interface Service {
   restart?: string;
   init?: boolean;
   volumes?: string[];
+  environment?: Record<string, string>;
 }
 const compose = Bun.YAML.parse(read('deploy/compose.prod.yaml')) as { services: Record<string, Service> };
 const service = (name: string): Service => {
@@ -72,6 +73,8 @@ describe('deploy/compose.prod.yaml', () => {
     }
     expect(service('backup').profiles).toEqual(['tools']);
     expect(service('site').profiles).toEqual(['site']);
+    // The name the storefront reads (storefront lib/api/server.ts), so its server-side calls stay inside the network.
+    expect(service('site').environment).toEqual({ GSM_API_ORIGIN: 'http://api:3000' });
   });
 
   it('pins every image by tag and never uses latest', () => {

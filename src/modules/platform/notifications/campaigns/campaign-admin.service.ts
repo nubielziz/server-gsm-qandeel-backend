@@ -354,7 +354,7 @@ export class CampaignAdminService {
     const row = await findCampaign(this.db.db, id);
     if (!row) throw campaignNotFound();
     const audience = input.audience ?? 'customer';
-    const { portalBaseUrl, storeBaseUrl } = this.config.http;
+    const { storeBaseUrl } = this.config.http;
     const message = renderCampaign(
       { content: contentOf(row), link: linkOf(row), purpose: row.purpose },
       {
@@ -362,7 +362,8 @@ export class CampaignAdminService {
         name: audience === 'staff' ? staff.name : SAMPLE_NAMES[audience],
         audience,
         channel: input.channel,
-        baseUrl: audience === 'customer' ? storeBaseUrl : audience === 'merchant' ? portalBaseUrl : undefined,
+        // Site paths join the site's root for customers and merchants alike (see NotificationDelivery).
+        baseUrl: audience === 'staff' ? undefined : storeBaseUrl,
         ...(audience === 'customer'
           ? {
               unsubscribe: {
@@ -371,7 +372,7 @@ export class CampaignAdminService {
               },
             }
           : audience === 'merchant'
-            ? { preferencesUrl: `${portalBaseUrl}/merchant/settings/notifications` }
+            ? { preferencesUrl: `${storeBaseUrl}/merchant/settings/notifications` }
             : {}),
       },
     );
