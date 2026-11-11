@@ -6,7 +6,7 @@
 // here back into identity would form a cycle that breaks at class-definition time), so this file reads `clients`, `staff_users` and
 // `customers` with plain selects, like the webhook foreign reads. Writes to these tables (a merchant's preferences and chat) are
 // identity's and go through its use cases. Replace the bodies with calls to those services; nothing outside this file knows.
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
 import type { NotificationAudience, NotificationRecipientType } from '../db/schema';
 import { orderForEvent } from '../webhooks/webhook-foreign-reads';
@@ -25,8 +25,13 @@ export interface Recipient {
   readonly telegramChatId: string | null;
   /** A merchant's `notification_prefs`; empty for the others. */
   readonly prefs: Readonly<Record<string, unknown>>;
-  /** True for a suspended merchant or staff member: only transactional messages reach them. */
+  /** True for a suspended merchant or staff member, or a suspended or blocked customer: only transactional messages reach them. */
   readonly suspended: boolean;
+  /**
+   * True when the person has an inbox worth writing to: an active staff member, an active or pending merchant, an active customer
+   * with an account (feature 23, plan 9.5). A guest customer has no account to read an inbox in.
+   */
+  readonly inboxEligible: boolean;
 }
 
 /**
@@ -80,6 +85,7 @@ export async function recipientOf(
           telegramChatId: row.telegramChatId,
           prefs: row.prefs,
           suspended: row.status === 'suspended',
+          inboxEligible: row.status !== 'suspended',
         }
       );
     }
@@ -100,30 +106,59 @@ export async function recipientOf(
           telegramChatId: null,
           prefs: {},
           suspended: row.status === 'suspended',
+          inboxEligible: row.status === 'active',
         }
       );
     }
     case 'customer': {
       const [row] = await db
-        .select({ name: s.customers.name, email: s.customers.email, locale: s.customers.locale })
+        .select({
+          name: s.customers.name,
+          email: s.customers.email,
+          locale: s.customers.locale,
+          status: s.customers.status,
+          hasAccount: s.customers.hasAccount,
+        })
         .from(s.customers)
         .where(eq(s.customers.id, id))
         .limit(1);
-      return (
-        row && {
-          type,
-          id,
-          audience: 'customer',
-          name: row.name,
-          email: row.email,
-          locale: row.locale,
-          telegramChatId: null,
-          prefs: {},
-          suspended: false,
-        }
-      );
+      // An anonymized customer's address is a placeholder: nothing of any kind is sent (feature 23, plan 9.5).
+      if (!row || row.status === 'anonymized') return undefined;
+      return {
+        type,
+        id,
+        audience: 'customer',
+        name: row.name,
+        email: row.email,
+        locale: row.locale,
+        telegramChatId: null,
+        prefs: {},
+        // Suspended and blocked customers get transactional messages only; the customer events that report on their own purchase
+        // or ticket are registered transactional (S6).
+        suspended: row.status !== 'active',
+        inboxEligible: row.hasAccount && row.status === 'active',
+      };
     }
   }
+}
+
+/**
+ * Reads the names of staff members, for the "created by" of campaigns (feature 23).
+ *
+ * Why: the campaign list names its authors; one batched read for a page instead of one per row (no N+1).
+ *
+ * @param db the database or a transaction
+ * @param ids staff ids (repeats are fine)
+ * @returns id to name; a missing id is absent
+ */
+export async function staffNames(db: DbExecutor, ids: readonly number[]): Promise<Map<number, string>> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return new Map();
+  const rows = await db
+    .select({ id: s.staffUsers.id, name: s.staffUsers.name })
+    .from(s.staffUsers)
+    .where(inArray(s.staffUsers.id, unique));
+  return new Map(rows.map((row) => [row.id, row.name]));
 }
 
 /** What an order notification talks about. */

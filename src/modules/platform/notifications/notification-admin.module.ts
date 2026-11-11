@@ -1,6 +1,7 @@
 // The staff's routes of the notifications (stage 12): `/admin/notification-templates*` and `/admin/notifications*`. Separate so a test app
 // built without a database can leave it out.
 import { Module } from '@nestjs/common';
+import { NotificationCenterModule } from './campaigns/notification-center.module';
 import { NotificationLogAdminService } from './notification-log-admin.service';
 import { NotificationTemplateAdminService } from './notification-template-admin.service';
 import { NotificationTemplatesController } from './notification-templates.controller';
@@ -14,7 +15,8 @@ import { NotificationsController } from './notifications.controller';
  * the module is exported to the rest of the app only through `index.ts`.
  */
 @Module({
-  imports: [NotificationTransportModule],
+  // Feature 23: the notification center's routes ride with the other staff routes of the notifications.
+  imports: [NotificationTransportModule, NotificationCenterModule],
   controllers: [NotificationTemplatesController, NotificationsController],
   providers: [NotificationTemplateAdminService, NotificationLogAdminService],
 })

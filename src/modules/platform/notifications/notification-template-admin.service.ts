@@ -341,6 +341,18 @@ export class NotificationTemplateAdminService {
             errors: [{ field: 'event', code: 'unknown_event', message: `${event} is not an event the system sends.` }],
           };
     }
+    // Feature 23: a campaign writes its own text; a template for its events would never be read.
+    if (definition.templated === false) {
+      return {
+        errors: [
+          {
+            field: 'event',
+            code: 'not_templated',
+            message: 'Announcements are written per campaign, not as a template.',
+          },
+        ],
+      };
+    }
     if (!definition.channels.includes(channel)) {
       return {
         errors: [

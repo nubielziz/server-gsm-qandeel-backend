@@ -78,16 +78,22 @@ describe('the built-in events', () => {
     }
     const consoleEvents = registry
       .list()
-      .filter((definition) => definition.audience === 'customer' && !definition.transactional)
-      .map((definition) => definition.key);
+      .filter(
+        (definition) =>
+          definition.audience === 'customer' &&
+          !(CUSTOMER_MAIL_EVENT_KEYS as readonly string[]).includes(definition.key),
+      )
+      .map((definition) => [definition.key, definition.transactional]);
+    // Feature 23, S6: the events that report on the customer's own purchase or ticket are transactional (a suspended or blocked
+    // customer still hears about an order they paid for); the abandoned-checkout reminder is marketing and is not.
     expect(consoleEvents).toEqual([
-      'order.received',
-      'order.completed',
-      'order.failed',
-      'support.reply',
-      'checkout.abandoned',
-      'payment.failed',
-      'refund.declined',
+      ['order.received', true],
+      ['order.completed', true],
+      ['order.failed', true],
+      ['support.reply', true],
+      ['checkout.abandoned', false],
+      ['payment.failed', true],
+      ['refund.declined', true],
     ]);
   });
 

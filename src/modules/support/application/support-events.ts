@@ -17,7 +17,8 @@ const CUSTOMER_SAMPLE = {
 } as const;
 
 const customerEvent = (
-  spec: Pick<NotificationEventDefinition, 'key' | 'label' | 'description' | 'variables'>,
+  spec: Pick<NotificationEventDefinition, 'key' | 'label' | 'description' | 'variables'> &
+    Partial<Pick<NotificationEventDefinition, 'transactional'>>,
 ): NotificationEventDefinition => ({
   ...spec,
   audience: 'customer',
@@ -25,7 +26,7 @@ const customerEvent = (
   sample: Object.fromEntries(
     spec.variables.map((name) => [name, CUSTOMER_SAMPLE[name as keyof typeof CUSTOMER_SAMPLE] ?? '']),
   ),
-  transactional: false,
+  transactional: spec.transactional ?? false,
   defaultEmail: true,
   defaultTelegram: false,
 });
@@ -44,6 +45,8 @@ export const SUPPORT_EVENTS: readonly NotificationEventDefinition[] = [
     label: 'Ticket received',
     description: 'A customer opened a support ticket: the receipt with the link to follow it.',
     variables: ['customerName', 'ticketNumber', 'subject', 'link'],
+    // Feature 23, S6: the receipt holds the only link to the ticket, so a suspended or blocked customer still gets it.
+    transactional: true,
   }),
   customerEvent({
     key: SUPPORT_CSAT_SURVEY_EVENT,

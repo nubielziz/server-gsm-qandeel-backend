@@ -55,6 +55,10 @@ export {
   CUSTOMER_WALLET_SETTING_RANGES,
   IMEI_RETENTION_MAX_DAYS,
   imeiRetentionDaysProblem,
+  INBOX_READ_RETENTION_DAYS_KEY,
+  INBOX_RETENTION_DAYS_KEY,
+  LOG_RETENTION_DAYS_KEY,
+  NOTIFICATION_RETENTION,
 } from './settings/settings-registry';
 export { OutboxModule } from './outbox/outbox.module';
 export { OutboxRelayModule, OUTBOX_TICK_SCHEDULER } from './outbox/outbox-relay.module';
@@ -159,5 +163,90 @@ export {
 } from './notifications/merchant-preferences';
 export type { EventChoice } from './notifications/merchant-preferences';
 export { DEFAULT_TEMPLATES, defaultTemplatesSql } from './notifications/default-templates';
+export { ARABIC_DEFAULT_TEMPLATES, arabicTemplatesSql } from './notifications/arabic-templates';
+export type { ArabicTemplate } from './notifications/arabic-templates';
 export type { DefaultTemplate } from './notifications/default-templates';
 export { redactAddresses } from './notifications/masking';
+// Feature 23 (notification center): the registries other modules use (audience providers, in-app texts), the in-app writer, the
+// campaign engine (fan-out, sweep, bulk sender) and the job-run port that health provides.
+export { NOTIFICATION_CENTER_MIGRATION, ARABIC_TEMPLATES_MIGRATION } from './notifications/campaigns/migration-names';
+export {
+  NO_COUNTS,
+  NotificationAudiences,
+  audienceCountFields,
+  memberQuery,
+  reachableSql,
+} from './notifications/campaigns/notification-audiences';
+export type {
+  AudienceCounts,
+  AudienceFlagsSql,
+  AudienceMember,
+  AudienceProvider,
+  AudienceQuery,
+  CampaignChannel,
+} from './notifications/campaigns/notification-audiences';
+export { AUDIENCE_TYPE_ORDER, selectionsOf, zAudienceSpec } from './notifications/campaigns/audience-spec';
+export type {
+  AudienceSpec,
+  CustomerSegment,
+  MerchantSegment,
+  StaffSegment,
+  TypeSelection,
+} from './notifications/campaigns/audience-spec';
+export type {
+  NotificationCampaign,
+  NotificationCampaignPurpose,
+  NotificationCampaignStatus,
+  NotificationInboxCategory,
+  NotificationInboxItem,
+} from './db/schema';
+export {
+  BROADCAST_ANNOUNCEMENT_EVENT,
+  BROADCAST_EVENTS,
+  BROADCAST_TEST_EVENT,
+  BroadcastEvents,
+} from './notifications/campaigns/broadcast-events';
+export { CAMPAIGN_CHANNELS, CAMPAIGN_FANOUT_EVENT } from './notifications/campaigns/campaign-rules';
+export { NotificationPrivacy } from './notifications/campaigns/notification-privacy';
+export { marketingUnsubscribeToken, parseMarketingUnsubscribeToken } from './notifications/campaigns/unsubscribe-token';
+export { InboxTextRegistry, renderInboxText } from './notifications/inbox/inbox-texts';
+export type { InboxText, InboxTextDefinition } from './notifications/inbox/inbox-texts';
+export { NotificationInbox } from './notifications/inbox/notification-inbox';
+export type { EventItemInput } from './notifications/inbox/notification-inbox';
+export {
+  NotificationCampaignEngineModule,
+  CAMPAIGN_SWEEP_SCHEDULER,
+} from './notifications/campaigns/campaign-engine.module';
+export {
+  CAMPAIGN_FANOUT_OPTIONS,
+  CampaignFanOut,
+  DEFAULT_FANOUT_OPTIONS,
+} from './notifications/campaigns/campaign-fan-out';
+export type {
+  CampaignFanOutOptions,
+  FanOutResult as CampaignFanOutResult,
+} from './notifications/campaigns/campaign-fan-out';
+export { CampaignFanOutProcessor } from './notifications/campaigns/campaign-fan-out.processor';
+export { CampaignSweep } from './notifications/campaigns/campaign-sweep';
+export type { SweepResult } from './notifications/campaigns/campaign-sweep';
+export { NotificationReconcile } from './notifications/notification-reconcile';
+export type { ReconcileResult } from './notifications/notification-reconcile';
+export {
+  NOTIFICATION_RECONCILE_JOB,
+  NotificationReconcileProcessor,
+} from './notifications/notification-reconcile.processor';
+export { NotificationRetention } from './notifications/notification-retention';
+export type { RetentionResult } from './notifications/notification-retention';
+export {
+  NOTIFICATION_RETENTION_JOB,
+  NotificationRetentionProcessor,
+} from './notifications/notification-retention.processor';
+export { CAMPAIGN_SWEEP_JOB, CampaignSweepProcessor } from './notifications/campaigns/campaign-sweep.processor';
+export {
+  BROADCAST_QUEUE,
+  BROADCAST_SEND_JOB,
+  BroadcastSendProcessor,
+} from './notifications/campaigns/broadcast-send.processor';
+export { BroadcastBudget, MAX_BUDGET_WAITS } from './notifications/campaigns/broadcast-budget';
+export { JOB_RUN_RECORDER } from './jobs/job-run-recorder';
+export type { JobRunRecorder } from './jobs/job-run-recorder';

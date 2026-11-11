@@ -20,6 +20,8 @@ describe('RATE_LIMITERS', () => {
     expect(Object.keys(RATE_LIMITERS).sort()).toEqual([
       'account-mail',
       'api-key',
+      'broadcast-email',
+      'broadcast-telegram',
       'help-vote',
       'ip',
       'media',
@@ -39,6 +41,11 @@ describe('RATE_LIMITERS', () => {
 
   it('lets one email address open 3 tickets an hour on the public form', () => {
     expect(RATE_LIMITERS['ticket-email']).toMatchObject({ points: 3, windowSeconds: 3600 });
+  });
+
+  it('sends at most 5 campaign emails and 20 campaign Telegram messages a second by default (feature 23)', () => {
+    expect(RATE_LIMITERS['broadcast-email']).toMatchObject({ points: 5, windowSeconds: 1 });
+    expect(RATE_LIMITERS['broadcast-telegram']).toMatchObject({ points: 20, windowSeconds: 1 });
   });
 
   it('lets one account have 5 emails of a kind an hour, with no lock-out', () => {

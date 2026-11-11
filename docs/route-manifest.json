@@ -9,20 +9,20 @@
     "additions": "rows beyond the map are backend-owned: scripts/map-additions/<feature>.mjs (decision 035); they name their module, English sentence and spec decision, and are counted on top of the map numbers"
   },
   "counts": {
-    "rows": 304,
+    "rows": 329,
     "tables": 66,
     "scenarios": 13,
     "surfaces": 9,
     "moneyEvents": 13,
     "accounts": 14,
-    "endpoints": 412,
+    "endpoints": 437,
     "map": {
       "rows": 274,
       "endpoints": 382
     },
     "additions": {
-      "rows": 30,
-      "endpoints": 30
+      "rows": 55,
+      "endpoints": 55
     },
     "frontendRoutes": 269,
     "bySurface": {
@@ -35,12 +35,12 @@
         "endpoints": 12
       },
       "client": {
-        "rows": 53,
-        "endpoints": 53
+        "rows": 57,
+        "endpoints": 57
       },
       "admin": {
-        "rows": 174,
-        "endpoints": 282
+        "rows": 190,
+        "endpoints": 298
       },
       "hooks": {
         "rows": 3,
@@ -55,8 +55,8 @@
         "endpoints": 4
       },
       "store": {
-        "rows": 43,
-        "endpoints": 43
+        "rows": 48,
+        "endpoints": 48
       },
       "system": {
         "rows": 4,
@@ -77,8 +77,8 @@
         "endpoints": 40
       },
       "platform": {
-        "rows": 28,
-        "endpoints": 35
+        "rows": 52,
+        "endpoints": 59
       },
       "identity": {
         "rows": 53,
@@ -105,8 +105,8 @@
         "endpoints": 17
       },
       "customers": {
-        "rows": 26,
-        "endpoints": 29
+        "rows": 27,
+        "endpoints": 30
       },
       "support": {
         "rows": 8,
@@ -13944,6 +13944,868 @@
         "spec": "B-TBD listing-image"
       },
       "successStatus": 204
+    },
+    {
+      "key": "GET /admin/notification-campaigns",
+      "method": "GET",
+      "path": "/admin/notification-campaigns",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "حملات الإشعارات: القائمة",
+      "access": "staff-permission",
+      "permission": "broadcasts:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "broadcasts:read",
+      "stage": 23,
+      "tables": [
+        "notification_campaigns"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/notification-campaigns",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/notification-campaigns"
+      },
+      "module": "platform",
+      "description": "List notification campaigns.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/notification-campaigns",
+      "method": "POST",
+      "path": "/admin/notification-campaigns",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "إنشاء حملة إشعارات كمسودة",
+      "access": "staff-permission",
+      "permission": "broadcasts:send",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "broadcasts:send",
+      "stage": 23,
+      "tables": [
+        "notification_campaigns",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/notification-campaigns",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/notification-campaigns"
+      },
+      "module": "platform",
+      "description": "Create a campaign as a draft.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      },
+      "successStatus": 201
+    },
+    {
+      "key": "GET /admin/notification-campaigns/:id",
+      "method": "GET",
+      "path": "/admin/notification-campaigns/:id",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "حملة إشعارات مع أرقام التسليم",
+      "access": "staff-permission",
+      "permission": "broadcasts:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "broadcasts:read",
+      "stage": 23,
+      "tables": [
+        "notification_campaigns",
+        "notifications",
+        "notification_inbox"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/notification-campaigns/:id",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/notification-campaigns/:id"
+      },
+      "module": "platform",
+      "description": "One campaign with its delivery numbers.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "PATCH /admin/notification-campaigns/:id",
+      "method": "PATCH",
+      "path": "/admin/notification-campaigns/:id",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "تعديل حملة مسودة أو مجدولة",
+      "access": "staff-permission",
+      "permission": "broadcasts:send",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "broadcasts:send",
+      "stage": 23,
+      "tables": [
+        "notification_campaigns",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin PATCH /admin/notification-campaigns/:id",
+        "method": "PATCH",
+        "ops": null,
+        "path": "/admin/notification-campaigns/:id"
+      },
+      "module": "platform",
+      "description": "Edit a draft or scheduled campaign.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "DELETE /admin/notification-campaigns/:id",
+      "method": "DELETE",
+      "path": "/admin/notification-campaigns/:id",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "حذف حملة مسودة",
+      "access": "staff-permission",
+      "permission": "broadcasts:send",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "broadcasts:send",
+      "stage": 23,
+      "tables": [
+        "notification_campaigns",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin DELETE /admin/notification-campaigns/:id",
+        "method": "DELETE",
+        "ops": null,
+        "path": "/admin/notification-campaigns/:id"
+      },
+      "module": "platform",
+      "description": "Delete a draft campaign.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      },
+      "successStatus": 204
+    },
+    {
+      "key": "POST /admin/notification-campaigns/audience-preview",
+      "method": "POST",
+      "path": "/admin/notification-campaigns/audience-preview",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "عدد من تصلهم الحملة",
+      "access": "staff-permission",
+      "permission": "broadcasts:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "broadcasts:read",
+      "stage": 23,
+      "tables": [
+        "staff_users",
+        "clients",
+        "customers",
+        "consent_records"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/notification-campaigns/audience-preview",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/notification-campaigns/audience-preview"
+      },
+      "module": "platform",
+      "description": "Count the people an audience reaches.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/notification-campaigns/:id/preview",
+      "method": "POST",
+      "path": "/admin/notification-campaigns/:id/preview",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "معاينة الحملة بلغة وقناة",
+      "access": "staff-permission",
+      "permission": "broadcasts:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "broadcasts:read",
+      "stage": 23,
+      "tables": [
+        "notification_campaigns"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/notification-campaigns/:id/preview",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/notification-campaigns/:id/preview"
+      },
+      "module": "platform",
+      "description": "Render a campaign for one language and channel.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/notification-campaigns/:id/test",
+      "method": "POST",
+      "path": "/admin/notification-campaigns/:id/test",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "إرسال تجربة للموظف نفسه",
+      "access": "staff-permission",
+      "permission": "broadcasts:send",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "broadcasts:send",
+      "stage": 23,
+      "tables": [
+        "notification_campaigns",
+        "notification_inbox",
+        "notifications",
+        "outbox_events",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/notification-campaigns/:id/test",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/notification-campaigns/:id/test"
+      },
+      "module": "platform",
+      "description": "Send a test to yourself.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      },
+      "successStatus": 202
+    },
+    {
+      "key": "POST /admin/notification-campaigns/:id/send",
+      "method": "POST",
+      "path": "/admin/notification-campaigns/:id/send",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "إرسال حملة الآن",
+      "access": "staff-permission",
+      "permission": "broadcasts:send",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "broadcasts:send",
+      "stage": 23,
+      "tables": [
+        "notification_campaigns",
+        "outbox_events",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/notification-campaigns/:id/send",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/notification-campaigns/:id/send"
+      },
+      "module": "platform",
+      "description": "Send a campaign now.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      },
+      "successStatus": 202
+    },
+    {
+      "key": "POST /admin/notification-campaigns/:id/schedule",
+      "method": "POST",
+      "path": "/admin/notification-campaigns/:id/schedule",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "جدولة حملة أو تغيير موعدها",
+      "access": "staff-permission",
+      "permission": "broadcasts:send",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "broadcasts:send",
+      "stage": 23,
+      "tables": [
+        "notification_campaigns",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/notification-campaigns/:id/schedule",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/notification-campaigns/:id/schedule"
+      },
+      "module": "platform",
+      "description": "Schedule or reschedule a campaign.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/notification-campaigns/:id/cancel",
+      "method": "POST",
+      "path": "/admin/notification-campaigns/:id/cancel",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "إلغاء حملة مجدولة أو جارية",
+      "access": "staff-permission",
+      "permission": "broadcasts:send",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "broadcasts:send",
+      "stage": 23,
+      "tables": [
+        "notification_campaigns",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/notification-campaigns/:id/cancel",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/notification-campaigns/:id/cancel"
+      },
+      "module": "platform",
+      "description": "Cancel a scheduled or running campaign.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "GET /admin/notification-campaigns/:id/recipients",
+      "method": "GET",
+      "path": "/admin/notification-campaigns/:id/recipients",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "مستلمو الحملة على قناة",
+      "access": "staff-permission",
+      "permission": "broadcasts:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "broadcasts:read",
+      "stage": 23,
+      "tables": [
+        "notification_inbox",
+        "notifications"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/notification-campaigns/:id/recipients",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/notification-campaigns/:id/recipients"
+      },
+      "module": "platform",
+      "description": "The recipients of a campaign on one channel.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "GET /admin/inbox",
+      "method": "GET",
+      "path": "/admin/inbox",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "إشعاراتي",
+      "access": "staff-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 23,
+      "tables": [
+        "notification_inbox",
+        "notification_campaigns"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/inbox",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/inbox"
+      },
+      "module": "platform",
+      "description": "The staff member's own notifications.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "GET /admin/inbox/unread-count",
+      "method": "GET",
+      "path": "/admin/inbox/unread-count",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "عدد غير المقروء",
+      "access": "staff-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 23,
+      "tables": [
+        "notification_inbox"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/inbox/unread-count",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/inbox/unread-count"
+      },
+      "module": "platform",
+      "description": "How many are unread.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/inbox/:id/read",
+      "method": "POST",
+      "path": "/admin/inbox/:id/read",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "تعليم إشعار كمقروء",
+      "access": "staff-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 23,
+      "tables": [
+        "notification_inbox"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/inbox/:id/read",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/inbox/:id/read"
+      },
+      "module": "platform",
+      "description": "Mark one notification read.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      },
+      "successStatus": 204
+    },
+    {
+      "key": "POST /admin/inbox/read-all",
+      "method": "POST",
+      "path": "/admin/inbox/read-all",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "تعليم كل الإشعارات كمقروءة",
+      "access": "staff-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 23,
+      "tables": [
+        "notification_inbox"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/inbox/read-all",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/inbox/read-all"
+      },
+      "module": "platform",
+      "description": "Mark all notifications read.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "GET /client/notifications",
+      "method": "GET",
+      "path": "/client/notifications",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "إشعارات التاجر",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 23,
+      "tables": [
+        "notification_inbox",
+        "notification_campaigns"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/notifications",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/notifications"
+      },
+      "module": "platform",
+      "description": "The merchant's own notifications.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      }
+    },
+    {
+      "key": "GET /client/notifications/unread-count",
+      "method": "GET",
+      "path": "/client/notifications/unread-count",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "عدد إشعارات التاجر غير المقروءة",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 23,
+      "tables": [
+        "notification_inbox"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/notifications/unread-count",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/notifications/unread-count"
+      },
+      "module": "platform",
+      "description": "How many of the merchant's notifications are unread.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      }
+    },
+    {
+      "key": "POST /client/notifications/:id/read",
+      "method": "POST",
+      "path": "/client/notifications/:id/read",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "تعليم إشعار للتاجر كمقروء",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 23,
+      "tables": [
+        "notification_inbox"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/notifications/:id/read",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/notifications/:id/read"
+      },
+      "module": "platform",
+      "description": "Mark one of the merchant's notifications read.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      }
+    },
+    {
+      "key": "POST /client/notifications/read-all",
+      "method": "POST",
+      "path": "/client/notifications/read-all",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "تعليم كل إشعارات التاجر كمقروءة",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 23,
+      "tables": [
+        "notification_inbox"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/notifications/read-all",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/notifications/read-all"
+      },
+      "module": "platform",
+      "description": "Mark all of the merchant's notifications read.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      }
+    },
+    {
+      "key": "GET /store/v1/me/notifications",
+      "method": "GET",
+      "path": "/store/v1/me/notifications",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "إشعارات الزبون",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 23,
+      "tables": [
+        "notification_inbox",
+        "notification_campaigns"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/me/notifications",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/me/notifications"
+      },
+      "module": "platform",
+      "description": "The customer's own notifications.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      }
+    },
+    {
+      "key": "GET /store/v1/me/notifications/unread-count",
+      "method": "GET",
+      "path": "/store/v1/me/notifications/unread-count",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "عدد إشعارات الزبون غير المقروءة",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 23,
+      "tables": [
+        "notification_inbox"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/me/notifications/unread-count",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/me/notifications/unread-count"
+      },
+      "module": "platform",
+      "description": "How many of the customer's notifications are unread.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      }
+    },
+    {
+      "key": "POST /store/v1/me/notifications/:id/read",
+      "method": "POST",
+      "path": "/store/v1/me/notifications/:id/read",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "تعليم إشعار للزبون كمقروء",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 23,
+      "tables": [
+        "notification_inbox"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/me/notifications/:id/read",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/me/notifications/:id/read"
+      },
+      "module": "platform",
+      "description": "Mark one of the customer's notifications read.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      }
+    },
+    {
+      "key": "POST /store/v1/me/notifications/read-all",
+      "method": "POST",
+      "path": "/store/v1/me/notifications/read-all",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "تعليم كل إشعارات الزبون كمقروءة",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 23,
+      "tables": [
+        "notification_inbox"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/me/notifications/read-all",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/me/notifications/read-all"
+      },
+      "module": "platform",
+      "description": "Mark all of the customer's notifications read.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD notification-center-routes"
+      }
+    },
+    {
+      "key": "POST /store/v1/marketing/unsubscribe/:token",
+      "method": "POST",
+      "path": "/store/v1/marketing/unsubscribe/:token",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "إلغاء الاشتراك في الرسائل التسويقية",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 23,
+      "tables": [
+        "customers",
+        "consent_records"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/marketing/unsubscribe/:token",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/marketing/unsubscribe/:token"
+      },
+      "module": "customers",
+      "description": "Stop marketing email with the link of an email.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD unsubscribe"
+      }
     }
   ]
 }

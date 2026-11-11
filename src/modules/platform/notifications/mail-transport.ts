@@ -14,6 +14,8 @@ export interface MailMessage {
   readonly text: string;
   readonly html?: string;
   readonly messageId: string;
+  /** Extra headers (feature 23: `List-Unsubscribe` and `List-Unsubscribe-Post` of a marketing email). */
+  readonly headers?: Readonly<Record<string, string>>;
 }
 
 /**

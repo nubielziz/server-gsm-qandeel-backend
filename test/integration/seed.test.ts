@@ -63,7 +63,7 @@ describe.skipIf(!frontendPresent)('runSeed', () => {
       (await db.select({ n: sql<number>`count(*)::int` }).from(s.ledgerTransactions))[0]!.n,
     );
     expect(
-      reports.map((r) => (r.table === 'ledger_transactions' ? r.table : `${r.table}:${r.inserted}`)).slice(0, 11),
+      reports.map((r) => (r.table === 'ledger_transactions' ? r.table : `${r.table}:${r.inserted}`)).slice(0, 14),
     ).toEqual([
       'roles:6',
       'staff_users:6',
@@ -75,6 +75,10 @@ describe.skipIf(!frontendPresent)('runSeed', () => {
       // Feature 12a: the platform seed also writes the demo's customer email templates and the notification log.
       'notification_templates:6',
       'notifications:310',
+      // Feature 23: the notification center's three campaigns, the in-app items and the emails of the sent one.
+      'notification_campaigns:3',
+      'notification_inbox:3',
+      'notifications (campaign emails):3',
       'currencies:7',
       expect.stringMatching(/^ledger_accounts:\d+$/),
     ]);

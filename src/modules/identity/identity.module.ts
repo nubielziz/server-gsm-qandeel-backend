@@ -11,6 +11,7 @@ import { MerchantAdminModule } from './merchant-admin.module';
 import { MerchantAuthModule } from './merchant-auth.module';
 import { MerchantNotificationsModule } from './merchant-notifications.module';
 import { MerchantWebhookRoutesModule } from './merchant-webhook-routes.module';
+import { IdentityAudienceModule } from './notifications/identity-audience.module';
 import { IpRulesModule } from './security/ip-rules/ip-rules.module';
 import { SecurityModule } from './security/security.module';
 import { StaffAuthModule } from './staff-auth.module';
@@ -38,6 +39,7 @@ import { StaffAuthModule } from './staff-auth.module';
     MerchantWebhookRoutesModule,
     KycModule,
     MerchantNotificationsModule,
+    IdentityAudienceModule,
   ],
 })
 export class IdentityModule {}

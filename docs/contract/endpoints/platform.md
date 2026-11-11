@@ -42,6 +42,30 @@ Frontend features covering this module: `audit`, `settings`, `orders`, `dashboar
 | `GET /docs` | system | public | 7 |  |
 | `POST /store/v1/files` | store | customer-session | 21 |  |
 | `GET /store/v1/media/:name` | store | public | 22 |  |
+| `GET /admin/notification-campaigns` | admin | staff-permission `broadcasts:read` | 23 |  |
+| `POST /admin/notification-campaigns` | admin | staff-permission `broadcasts:send` | 23 |  |
+| `GET /admin/notification-campaigns/:id` | admin | staff-permission `broadcasts:read` | 23 |  |
+| `PATCH /admin/notification-campaigns/:id` | admin | staff-permission `broadcasts:send` | 23 |  |
+| `DELETE /admin/notification-campaigns/:id` | admin | staff-permission `broadcasts:send` | 23 |  |
+| `POST /admin/notification-campaigns/audience-preview` | admin | staff-permission `broadcasts:read` | 23 |  |
+| `POST /admin/notification-campaigns/:id/preview` | admin | staff-permission `broadcasts:read` | 23 |  |
+| `POST /admin/notification-campaigns/:id/test` | admin | staff-permission `broadcasts:send` | 23 |  |
+| `POST /admin/notification-campaigns/:id/send` | admin | staff-permission `broadcasts:send` | 23 |  |
+| `POST /admin/notification-campaigns/:id/schedule` | admin | staff-permission `broadcasts:send` | 23 |  |
+| `POST /admin/notification-campaigns/:id/cancel` | admin | staff-permission `broadcasts:send` | 23 |  |
+| `GET /admin/notification-campaigns/:id/recipients` | admin | staff-permission `broadcasts:read` | 23 |  |
+| `GET /admin/inbox` | admin | staff-session | 23 |  |
+| `GET /admin/inbox/unread-count` | admin | staff-session | 23 |  |
+| `POST /admin/inbox/:id/read` | admin | staff-session | 23 |  |
+| `POST /admin/inbox/read-all` | admin | staff-session | 23 |  |
+| `GET /client/notifications` | client | merchant-session | 23 |  |
+| `GET /client/notifications/unread-count` | client | merchant-session | 23 |  |
+| `POST /client/notifications/:id/read` | client | merchant-session | 23 |  |
+| `POST /client/notifications/read-all` | client | merchant-session | 23 |  |
+| `GET /store/v1/me/notifications` | store | customer-session | 23 |  |
+| `GET /store/v1/me/notifications/unread-count` | store | customer-session | 23 |  |
+| `POST /store/v1/me/notifications/:id/read` | store | customer-session | 23 |  |
+| `POST /store/v1/me/notifications/read-all` | store | customer-session | 23 |  |
 
 ## POST /v1/files
 
@@ -292,5 +316,125 @@ Frontend features covering this module: `audit`, `settings`, `orders`, `dashboar
 ## GET /store/v1/media/:name
 
 - **Map addition** (B-TBD store-media, `scripts/map-additions/22.mjs`): Serve a public service image (immutable, long cache). (صورة خدمة عامة (ملف ثابت يُخزَّن طويلاً)) · public · stage 22 · tables files
+- **Frontend**: none.
+
+## GET /admin/notification-campaigns
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): List notification campaigns. (حملات الإشعارات: القائمة) · staff-permission `broadcasts:read` · stage 23 · tables notification_campaigns · success 200
+- **Frontend**: none.
+
+## POST /admin/notification-campaigns
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Create a campaign as a draft. (إنشاء حملة إشعارات كمسودة) · staff-permission `broadcasts:send` · stage 23 · tables notification_campaigns, audit_logs · success 201
+- **Frontend**: none.
+
+## GET /admin/notification-campaigns/:id
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): One campaign with its delivery numbers. (حملة إشعارات مع أرقام التسليم) · staff-permission `broadcasts:read` · stage 23 · tables notification_campaigns, notifications, notification_inbox · success 200
+- **Frontend**: none.
+
+## PATCH /admin/notification-campaigns/:id
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Edit a draft or scheduled campaign. (تعديل حملة مسودة أو مجدولة) · staff-permission `broadcasts:send` · stage 23 · tables notification_campaigns, audit_logs · success 200
+- **Frontend**: none.
+
+## DELETE /admin/notification-campaigns/:id
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Delete a draft campaign. (حذف حملة مسودة) · staff-permission `broadcasts:send` · stage 23 · tables notification_campaigns, audit_logs · success 204
+- **Frontend**: none.
+
+## POST /admin/notification-campaigns/audience-preview
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Count the people an audience reaches. (عدد من تصلهم الحملة) · staff-permission `broadcasts:read` · stage 23 · tables staff_users, clients, customers, consent_records · success 200
+- **Frontend**: none.
+
+## POST /admin/notification-campaigns/:id/preview
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Render a campaign for one language and channel. (معاينة الحملة بلغة وقناة) · staff-permission `broadcasts:read` · stage 23 · tables notification_campaigns · success 200
+- **Frontend**: none.
+
+## POST /admin/notification-campaigns/:id/test
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Send a test to yourself. (إرسال تجربة للموظف نفسه) · staff-permission `broadcasts:send` · stage 23 · tables notification_campaigns, notification_inbox, notifications, outbox_events, audit_logs · success 202
+- **Frontend**: none.
+
+## POST /admin/notification-campaigns/:id/send
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Send a campaign now. (إرسال حملة الآن) · staff-permission `broadcasts:send` · stage 23 · tables notification_campaigns, outbox_events, audit_logs · success 202
+- **Frontend**: none.
+
+## POST /admin/notification-campaigns/:id/schedule
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Schedule or reschedule a campaign. (جدولة حملة أو تغيير موعدها) · staff-permission `broadcasts:send` · stage 23 · tables notification_campaigns, audit_logs · success 200
+- **Frontend**: none.
+
+## POST /admin/notification-campaigns/:id/cancel
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Cancel a scheduled or running campaign. (إلغاء حملة مجدولة أو جارية) · staff-permission `broadcasts:send` · stage 23 · tables notification_campaigns, audit_logs · success 200
+- **Frontend**: none.
+
+## GET /admin/notification-campaigns/:id/recipients
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): The recipients of a campaign on one channel. (مستلمو الحملة على قناة) · staff-permission `broadcasts:read` · stage 23 · tables notification_inbox, notifications · success 200
+- **Frontend**: none.
+
+## GET /admin/inbox
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): The staff member's own notifications. (إشعاراتي) · staff-session · stage 23 · tables notification_inbox, notification_campaigns · success 200
+- **Frontend**: none.
+
+## GET /admin/inbox/unread-count
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): How many are unread. (عدد غير المقروء) · staff-session · stage 23 · tables notification_inbox · success 200
+- **Frontend**: none.
+
+## POST /admin/inbox/:id/read
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Mark one notification read. (تعليم إشعار كمقروء) · staff-session · stage 23 · tables notification_inbox · success 204
+- **Frontend**: none.
+
+## POST /admin/inbox/read-all
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Mark all notifications read. (تعليم كل الإشعارات كمقروءة) · staff-session · stage 23 · tables notification_inbox · success 200
+- **Frontend**: none.
+
+## GET /client/notifications
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): The merchant's own notifications. (إشعارات التاجر) · merchant-session · stage 23 · tables notification_inbox, notification_campaigns
+- **Frontend**: none.
+
+## GET /client/notifications/unread-count
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): How many of the merchant's notifications are unread. (عدد إشعارات التاجر غير المقروءة) · merchant-session · stage 23 · tables notification_inbox
+- **Frontend**: none.
+
+## POST /client/notifications/:id/read
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Mark one of the merchant's notifications read. (تعليم إشعار للتاجر كمقروء) · merchant-session · stage 23 · tables notification_inbox
+- **Frontend**: none.
+
+## POST /client/notifications/read-all
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Mark all of the merchant's notifications read. (تعليم كل إشعارات التاجر كمقروءة) · merchant-session · stage 23 · tables notification_inbox
+- **Frontend**: none.
+
+## GET /store/v1/me/notifications
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): The customer's own notifications. (إشعارات الزبون) · customer-session · stage 23 · tables notification_inbox, notification_campaigns
+- **Frontend**: none.
+
+## GET /store/v1/me/notifications/unread-count
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): How many of the customer's notifications are unread. (عدد إشعارات الزبون غير المقروءة) · customer-session · stage 23 · tables notification_inbox
+- **Frontend**: none.
+
+## POST /store/v1/me/notifications/:id/read
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Mark one of the customer's notifications read. (تعليم إشعار للزبون كمقروء) · customer-session · stage 23 · tables notification_inbox
+- **Frontend**: none.
+
+## POST /store/v1/me/notifications/read-all
+
+- **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Mark all of the customer's notifications read. (تعليم كل إشعارات الزبون كمقروءة) · customer-session · stage 23 · tables notification_inbox
 - **Frontend**: none.
 

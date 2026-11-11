@@ -33,7 +33,7 @@ export async function seedPlatform(db: DbExecutor, demo: DemoSeed, config?: AppC
   await syncIdentity(db, s.settings);
   // The endpoints need the encryption key and the deliveries the token pepper (the event ids): without a configuration there are none.
   const webhooks = config ? await seedWebhooks(db, demo, config) : [];
-  return [settings, ...webhooks, ...(await seedNotifications(db, demo))];
+  return [settings, ...webhooks, ...(await seedNotifications(db, demo)), ...(await seedCampaigns(db, demo))];
 }
 
 const MINUTE_MS = 60_000;
@@ -346,4 +346,150 @@ async function seedNotifications(db: DbExecutor, demo: DemoSeed): Promise<SeedRe
   await syncIdentity(db, s.notificationTemplates);
   await syncIdentity(db, s.notifications);
   return [templateReport, notificationReport];
+}
+
+/** The seeded Owner (`staff_users` 1 of the identity seed) writes the seeded campaigns. */
+const SEED_OWNER_ID = 1;
+/** The seeded merchant who reads the sent campaign. */
+const SEED_MERCHANT_ID = 1;
+
+const SEED_CAMPAIGN_CONTENT = {
+  maintenance: {
+    en: {
+      title: 'Scheduled maintenance on Friday',
+      body: 'Hello {{name}},\nThe portal will be read-only on Friday from 02:00 to 03:00 UTC. Orders placed before then are not affected.',
+    },
+    ar: {
+      title: 'صيانة مجدولة يوم الجمعة',
+      body: 'مرحباً {{name}}،\nستكون البوابة للقراءة فقط يوم الجمعة من 02:00 إلى 03:00 بتوقيت UTC. لا تتأثر الطلبات المقدمة قبل ذلك.',
+    },
+  },
+  ramadan: {
+    en: { title: 'Ramadan offer', body: 'Hello {{name}},\nAll iPhone unlocks are 15% off during Ramadan.' },
+    ar: { title: 'عرض رمضان', body: 'مرحباً {{name}}،\nخصم 15% على جميع خدمات فك قفل الآيفون خلال شهر رمضان.' },
+  },
+  services: {
+    en: { title: 'New unlock services', body: 'Hello {{name}},\nWe added new unlock services for Samsung and Xiaomi.' },
+    ar: { title: 'خدمات فك قفل جديدة', body: 'مرحباً {{name}}،\nأضفنا خدمات فك قفل جديدة لأجهزة سامسونج وشاومي.' },
+  },
+} as const;
+
+/**
+ * Seeds the notification center (feature 23): three campaigns as the console mock shows them, with the in-app items and the
+ * emails of the sent one.
+ *
+ * Why: plan section 11: `1` "Scheduled maintenance on Friday" (service, in-app and email, everyone, sent; read by the Owner and
+ * merchant 1, unread by the first customer with an account), `2` "Ramadan offer" (marketing email to customers, scheduled 7 days
+ * ahead), `3` "New unlock services" (service, in-app to merchants, a draft). The sent campaign's emails are dated before the recent
+ * merchant log of feature 12a, so that log still lists its own 48 messages first.
+ *
+ * @param db the transaction to write with
+ * @param demo the loaded frontend demo state
+ * @returns one report per table
+ */
+async function seedCampaigns(db: DbExecutor, demo: DemoSeed): Promise<SeedReport[]> {
+  const owner = await db.select({ id: s.staffUsers.id }).from(s.staffUsers).where(eq(s.staffUsers.id, SEED_OWNER_ID));
+  // The campaigns need their author; a database without the identity seed gets none.
+  if (owner.length === 0) return [];
+  const customer = demoRows<{ id: string; hasAccount: boolean }>(demo, 'customers').find((row) => row.hasAccount);
+  const sentAt = new Date(demo.now - 3.5 * DAY_MS);
+  const createdAt = new Date(demo.now - 4 * DAY_MS);
+  const everyone = { staff: {}, merchants: {}, customers: { hasAccount: true } };
+  const people: Array<{ type: 'staff' | 'client' | 'customer'; id: number; read: boolean }> = [
+    { type: 'staff', id: SEED_OWNER_ID, read: true },
+    { type: 'client', id: SEED_MERCHANT_ID, read: true },
+    ...(customer ? [{ type: 'customer' as const, id: demoNumericId(customer.id), read: false }] : []),
+  ];
+  // The seed writes fixed ids (the console mock's), which the insert type of a generated identity column leaves out.
+  const campaignRows: Array<typeof s.notificationCampaigns.$inferInsert & { readonly id: number }> = [
+    {
+      id: 1,
+      name: 'Scheduled maintenance on Friday',
+      purpose: 'service',
+      channels: ['in_app', 'email'],
+      audience: everyone,
+      content: SEED_CAMPAIGN_CONTENT.maintenance,
+      link: { merchant: '/merchant/orders', customer: '/account/orders' },
+      status: 'sent',
+      queuedAt: sentAt,
+      startedAt: sentAt,
+      finishedAt: sentAt,
+      expectedRecipients: people.length,
+      recipients: people.length,
+      stats: {
+        planned: { inApp: people.length, email: people.length, telegram: 0 },
+        skipped: { optedOut: 0, noTelegram: 0, noAccount: 0 },
+      },
+      chunksDone: 1,
+      createdBy: SEED_OWNER_ID,
+      updatedBy: SEED_OWNER_ID,
+      createdAt,
+      updatedAt: sentAt,
+    },
+    {
+      id: 2,
+      name: 'Ramadan offer',
+      purpose: 'marketing',
+      channels: ['email'],
+      audience: { customers: {} },
+      content: SEED_CAMPAIGN_CONTENT.ramadan,
+      link: { customer: '/' },
+      status: 'scheduled',
+      scheduledAt: new Date(demo.now + 7 * DAY_MS),
+      createdBy: SEED_OWNER_ID,
+      updatedBy: SEED_OWNER_ID,
+      createdAt: new Date(demo.now - DAY_MS),
+      updatedAt: new Date(demo.now - DAY_MS),
+    },
+    {
+      id: 3,
+      name: 'New unlock services',
+      purpose: 'service',
+      channels: ['in_app'],
+      audience: { merchants: {} },
+      content: SEED_CAMPAIGN_CONTENT.services,
+      link: { merchant: '/merchant/services' },
+      status: 'draft',
+      createdBy: SEED_OWNER_ID,
+      createdAt: new Date(demo.now - 2 * HOUR_MS),
+      updatedAt: new Date(demo.now - 2 * HOUR_MS),
+    },
+  ];
+  const campaigns = await insertRows(db, s.notificationCampaigns, campaignRows);
+  const inbox = await insertRows(
+    db,
+    s.notificationInbox,
+    people.map((person, index) => ({
+      id: index + 1,
+      recipientType: person.type,
+      recipientId: person.id,
+      campaignId: 1,
+      category: 'announcement' as const,
+      readAt: person.read ? new Date(sentAt.getTime() + (index + 1) * HOUR_MS) : null,
+      createdAt: sentAt,
+      updatedAt: sentAt,
+    })),
+  );
+  const emails = await insertRows(
+    db,
+    s.notifications,
+    people.map((person) => ({
+      recipientType: person.type,
+      recipientId: person.id,
+      channel: 'email' as const,
+      event: 'broadcast.announcement',
+      payload: {},
+      status: 'sent' as const,
+      sentAt,
+      attempts: 1,
+      campaignId: 1,
+      dedupeKey: `campaign-1:email:${person.type}-${person.id}`,
+      createdAt: sentAt,
+      updatedAt: sentAt,
+    })),
+  );
+  await syncIdentity(db, s.notificationCampaigns);
+  await syncIdentity(db, s.notificationInbox);
+  await syncIdentity(db, s.notifications);
+  return [campaigns, inbox, { ...emails, table: 'notifications (campaign emails)' }];
 }

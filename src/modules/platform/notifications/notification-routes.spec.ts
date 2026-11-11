@@ -23,6 +23,7 @@ describe('NotificationRoutes', () => {
         .sort(),
     ).toEqual([
       'invoice.paid',
+      'notification.campaign_fanout',
       'notification.send',
       'order.status_changed',
       'service.price_changed',

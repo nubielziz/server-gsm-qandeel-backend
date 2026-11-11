@@ -1,6 +1,6 @@
 # Queues
 
-Every piece of asynchronous work runs on one of ten BullMQ queues on the **queue Redis** (decision 006: `noeviction`, AOF)
+Every piece of asynchronous work runs on one of eleven BullMQ queues on the **queue Redis** (decision 006: `noeviction`, AOF)
 and is processed by the **worker process** only (decision 020). The code is in `src/infra/queues/`
 (`README.md` there explains the API); this document lists every queue, job, payload, idempotency key, retry policy and
 schedule, and is extended by the feature that adds a job. A test (`src/infra/queues/queue-definitions.spec.ts`) fails
@@ -47,6 +47,7 @@ when a queue is missing here or when the numbers in a section differ from `QUEUE
 | `files` | 4 | 3 | 10 s, jitter 50 % | 1 |
 | `maintenance` | 2 | 3 | 1 min, jitter 50 % | 1 |
 | `alerts` | 2 | 3 | 10 s, jitter 50 % | 1 |
+| `notification-broadcasts` | 10 | 6 | 1 min, jitter 50 % | 1 |
 
 Concurrency is per worker process. Backoff is exponential: the first retry waits the base time, the next twice as long, and
 so on; jitter takes up to that share off each wait.
@@ -181,8 +182,16 @@ Sends emails and Telegram messages.
   - `checkout.recovery` (customers, `src/modules/customers/jobs/checkout-recovery.processors.ts`, feature 19): the one recovery email of an abandoned checkout. It re-reads the session,
     its customer and the marketing consent (consent is checked again at send time), builds the one-click link from the session token and sends the mail with the link as a secret that is never
     stored (the token is a bearer credential: it is not in the event, the job data or the `notifications` row).
+  - `notification.campaign_fanout` (platform, `CampaignFanOutProcessor`, `src/modules/platform/notifications/campaigns/campaign-fan-out.ts`, feature 23): turns a
+    queued notification campaign into in-app items (`notification_inbox`) and queued email and Telegram rows (`notifications.campaign_id`), chunk by chunk (500 people
+    per chunk transaction, keyset by id over staff, then merchants, then customers, through the audience providers identity and customers register). Each chunk locks
+    the campaign row `FOR UPDATE`, stops unless the campaign is `queued` or `sending` (a cancelled one stops at the next chunk), inserts its rows with
+    `ON CONFLICT DO NOTHING` and moves the cursor (`fanout_cursor`, `chunks_done`, counters) in the same transaction; after the commit it hands the new rows to
+    `notification-broadcasts` with `addBulk`. After 20 s it adds a continuation and ends; while the bulk queue holds more than 20 000 waiting jobs it adds a
+    continuation delayed 15 s (backpressure, so the noeviction Redis stays bounded). Added by the relay for the outbox event `notification.campaign_fanout`
+    (written by `POST /admin/notification-campaigns/:id/send` and by the `notification_campaign_sweep` job), by itself (continuations) and by the sweep (re-kick).
 - **Payload:** `OutboxJobData` of the event (ids only). `notification.send` carries the row (`aggregateId` = the `notifications.id`; a digest job carries `{ notificationId }`). The
-  merchant mail jobs carry `aggregateId` = the merchant and `payload.tokenId`; the customer mail jobs carry `aggregateId` = the customer and `payload.tokenId`; a ticket mail job carries `aggregateId` = the ticket and `payload.kind` (`received`, `reply` or `survey`), with `messageId` and `channel` for a reply; `checkout.recovery` carries `aggregateId` = the checkout session and no payload. Never a token, a link, an address or a message text: the job re-reads the row, the recipient and the
+  merchant mail jobs carry `aggregateId` = the merchant and `payload.tokenId`; the customer mail jobs carry `aggregateId` = the customer and `payload.tokenId`; a ticket mail job carries `aggregateId` = the ticket and `payload.kind` (`received`, `reply` or `survey`), with `messageId` and `channel` for a reply; `checkout.recovery` carries `aggregateId` = the checkout session and no payload. `notification.campaign_fanout` carries `aggregateId` = the campaign (from the relay) or `{ campaignId, round }` (a continuation or a re-kick). Never a token, a link, an address or a message text: the job re-reads the row, the recipient and the
   active template.
 - **Idempotency:** the outbox job id is `outbox-<event id>` (per queue). A `notifications` row has a `dedupe_key` (`outbox-<event id>:<channel>` for the planning job,
   `telegram-update-<update id>` for the bot's answer, `digest:<event>:<channel>:<merchant>:<day>` for a digest, unique where not null): a job that runs twice makes no second row.
@@ -190,11 +199,41 @@ Sends emails and Telegram messages.
   `Message-ID` of the mail (`<notification-<id>@<domain of MAIL_FROM>>`), so a provider that dedupes drops the rare repeat after a crash between the provider's answer and the update.
   A digest job has the id `notification-<id>` and a delay up to the end of its period (06:00 UTC), at least 10 seconds (`MIN_DIGEST_DELAY_MS`: a job added before its transaction commits must not run before the row is visible); the send job closes the digest first (`payload.closed`), so a change that arrives
   later joins the next period's row. A merchant or customer mail job asks the row's status before it rotates the token, so a repeat after a delivered mail never spoils the link that arrived. A `checkout.recovery` job is guarded twice: `POST /admin/checkouts/recover` and the automatic reminder claim the checkout with `UPDATE checkout_sessions SET recovery_emailed_at ... WHERE recovery_emailed_at IS NULL` in the same transaction that writes the event (so one checkout has at most one event), and the mail's row has the dedupe key `outbox-<event id>:email`, so a job that runs twice sends once; a job that ends skipped without sending (consent withdrawn, template off, customer no longer active, checkout paid) marks the row of an earlier attempt `failed` with the reason and, in one transaction and only if no row of the event was `sent`, sets `recovery_emailed_at` back to null, so the checkout is recoverable again and a later send can try again.
+- **Idempotency of the fan-out:** a chunk that runs twice makes nothing twice (the partial unique keys `notification_inbox (campaign_id, recipient_type,
+  recipient_id)` and `notifications.dedupe_key` = `campaign-<campaign>:<channel>:<type>-<recipient>`), and two fan-out jobs of one campaign are serialized by the row
+  lock, each taking the next chunk. Job ids: `outbox-<event id>`, `campaign-fanout-<campaign>-<chunks done>` (a continuation),
+  `campaign-fanout-<campaign>-<chunks done>-w<round>` (a backpressure pause), `campaign-fanout-<campaign>-r<epoch minute>` (a re-kick). A stored audience that
+  no longer parses, or a recipient type without a provider, marks the campaign `failed` and ends the job (`UnrecoverableError`).
 - **Retry policy:** 5 attempts, exponential backoff from 30 s (jitter 50 %). A transient failure (an SMTP 4xx or a dropped connection, a Telegram 429 or 5xx, a timeout) records the
   attempt on the row and throws, so the queue retries; the last attempt marks the row `failed` with the reason and throws. A refusal that cannot change (an SMTP 5xx, a Telegram
   400, 403 or 404, a missing template, no address, a recipient that is gone) marks the row `failed` at once and ends the job. The queue's own backoff applies as it is: a provider's
   `retry_after` (Telegram's is a few seconds) is shorter than the first wait, so the processors do not read it.
 - **Schedule:** none (event-driven).
+
+## notification-broadcasts
+
+Sends the emails and Telegram messages of notification campaigns (feature 23), apart from the transactional `notifications` queue: BullMQ's
+limiter is per queue, so a broadcast of 50 000 messages never slows a password reset or an order mail.
+
+- **Concurrency:** 10 per worker process.
+- **Limiter:** at most 30 jobs start per second across every worker of the queue (`QUEUES['notification-broadcasts'].limiter`, BullMQ's worker
+  `limiter`). The per-channel budget is lower: each job takes one point of the system-wide limiter `broadcast-email` (5 a second) or
+  `broadcast-telegram` (20 a second), whose size comes from the settings `notifications.broadcast_email_per_second` and
+  `notifications.broadcast_telegram_per_second` (1-30). A refused take waits `retryAfter` with the injected timers and tries again, at most 30
+  times, then throws a transient error (the queue retries); a message is never dropped for want of budget.
+- **Jobs:** `notification.send` (`BroadcastSendProcessor`, `src/modules/platform/notifications/campaigns/broadcast-send.processor.ts`): sends one campaign
+  row of `notifications` through `NotificationDelivery.deliver`, whose campaign branch re-reads the campaign (cancelled: the row fails with
+  `The campaign was cancelled.`), the recipient and its eligibility now (suspended, consent withdrawn for marketing, the merchant's announcement switch
+  turned off: the row fails with the reason), renders the campaign in the recipient's language (`ar` falls back to `en`) and sends it. Added by the
+  campaign fan-out with `QueuesService.addBulk`, after each chunk's commit.
+- **Payload:** `{ notificationId, channel }` (the row and `email` or `telegram`; never an address or a text).
+- **Idempotency:** the job id is `notification-<row id>`, so the fan-out, a repeated chunk or a later re-add makes one job per row. The send is guarded
+  (`status = 'queued'` on the update) and the mail's `Message-ID` is the row's, as on `notifications`.
+- **Retry policy:** 6 attempts, exponential backoff from 1 min (jitter 50 %). A provider's short `retry after` (30 s or less, a Telegram 429) is waited
+  for once inside the same attempt; any other transient failure goes to the queue's backoff; the last attempt marks the row `failed`. A permanent
+  refusal marks the row `failed` at once.
+- **Schedule:** none (event-driven, from the fan-out).
+- **Not recorded in `job_runs`:** event-driven; the `notifications` rows and the campaign's `delivery` counters are the record.
 
 ## supplier-sync
 
@@ -258,7 +297,7 @@ Draws the PDF tax receipt of a paid storefront order and stores it (`GET /store/
 Scheduled housekeeping: group promotion, data retention, integrity checks, FX refresh.
 
 - **Concurrency:** 2 per worker process.
-- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly, and `refund.process`, event-driven (money module, below), `checkout_recovery_sweep`, every 5 minutes (customers module, below), `service_price_scan`, event-driven (catalog module, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below). The others are built by their features, each
+- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly, and `refund.process`, event-driven (money module, below), `checkout_recovery_sweep`, every 5 minutes (customers module, below), `notification_campaign_sweep`, every minute, `notification_reconcile`, every 5 minutes, and `notification_retention`, daily at 04:20 UTC (platform module, feature 23, below), `service_price_scan`, event-driven (catalog module, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below). The others are built by their features, each
   registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
   `ledger_integrity` (12b, nightly 02:30 UTC, below), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). `idempotency_purge` (daily 04:10 UTC,
 orders module, below) is built. `storefront_popularity` (every 30 minutes, storefront module, below) is built. `data_retention`
@@ -281,7 +320,8 @@ orders module, below) is built. `storefront_popularity` (every 30 minutes, store
   `client-group-promotion` at 03:30 UTC (`src/modules/identity/jobs/group-promotion.module.ts`);
   `payment-auto-credit` every minute (`src/modules/money/jobs/payment-auto-credit.module.ts`); `fx-refresh` every hour at minute 0
   (`src/modules/money/jobs/fx-refresh.module.ts`); `checkout-recovery-sweep` every 5 minutes
-  (`src/modules/customers/checkout-recovery.module.ts`); the health jobs in
+  (`src/modules/customers/checkout-recovery.module.ts`); `notification-campaign-sweep` every minute
+  (`src/modules/platform/notifications/campaigns/campaign-engine.module.ts`); the health jobs in
   `src/modules/health/jobs/health-jobs.module.ts`; the others are registered with `JobSchedulerRegistry` by the owning
   features.
 
@@ -381,6 +421,56 @@ The automatic reminder of abandoned checkouts (feature 19, RULES checkouts 3): e
 - **Idempotency:** the claim. A checkout is mailed at most once whether the reminder, a staff send or two ticks reach it first; the loser of a race finds `recovery_emailed_at` set and skips it. A staff send after the reminder answers `already_emailed`.
 - **Recorded in `job_runs`** (job `checkout_recovery_sweep`, `processed` = emails queued, `result` = `{ due, queued, skipped }`) only for a tick that found checkouts due and for every manual run; one `audit_logs` row (`sent automatic recovery emails`, actor system) per tick that queued something. A tick with nothing due writes neither.
 - **Retry policy:** the queue's (3 attempts, backoff from 1 min); the next tick is the real retry. While the `checkout.abandoned` email has no usable template the tick selects and claims nothing.
+
+### `notification_campaign_sweep` (platform module)
+
+The minute tick of the notification center (feature 23, `CampaignSweep`, `src/modules/platform/notifications/campaigns/campaign-sweep.ts`).
+
+- **Trigger:** the scheduler `notification-campaign-sweep` every minute (`* * * * *`), or a manual run.
+- **Payload:** none (a manual run carries `{ runId }`).
+- **What it does:** (1) in one transaction, claims the scheduled campaigns that are due (`UPDATE ... SET status = 'queued' WHERE status = 'scheduled' AND
+  scheduled_at <= now RETURNING`) and writes, per campaign, one `notification.campaign_fanout` outbox event and one `audit_logs` row
+  (`sent scheduled notification campaign`, actor system); (2) marks `failed` a campaign still `queued` or `sending` 24 hours after it was queued
+  (`The fan-out did not finish within 24 hours.`); (3) re-kicks a running campaign whose row (the heartbeat, `updated_at`) has not moved for 5 minutes with a
+  fan-out job `campaign-fanout-<id>-r<epoch minute>`. Postgres is the truth: a lost queue Redis loses no scheduled campaign.
+- **Idempotency:** the claim is a guarded update, so two overlapping ticks queue a campaign once; the re-kick id allows one job per campaign per minute and
+  the fan-out itself is idempotent.
+- **Recorded in `job_runs`** (through the `JOB_RUN_RECORDER` port that health provides, since platform cannot import health; job
+  `notification_campaign_sweep`, `processed` = campaigns queued, `result` = `{ queued, rekicked, failed }`) only for a tick that had something to do and for
+  every manual run.
+- **Retry policy:** the queue's (3 attempts, backoff from 1 min); the next tick is the real retry. A scheduled campaign is sent at most about 60 s late.
+
+### `notification_reconcile` (platform module)
+
+Adds the send job again for queued notifications whose job was lost (feature 23, `NotificationReconcile`, `src/modules/platform/notifications/notification-reconcile.ts`).
+
+- **Trigger:** the scheduler `notification-reconcile` every 5 minutes (`*/5 * * * *`), or a manual run.
+- **Payload:** none (a manual run carries `{ runId }`).
+- **What it does** (at most 1 000 rows per rule per run, lowest id first): (0) fails a `queued` row created more than 48 hours ago (`The message was not sent in time.`);
+  (1) a campaign row (`campaign_id` set) not updated for 15 minutes gets `notification.send` `{ notificationId, channel }` on `notification-broadcasts` (`QueuesService.addBulk`, id
+  `notification-<row id>`); (2) an event row not updated for 30 minutes whose own `notification.send` outbox event was relayed (`processed_at` set) gets
+  `notification.send` `{ notificationId }` on `notifications` (id `notification-<row id>`) when the relay's job `outbox-<event id>` is missing or `failed`/`completed`
+  (a waiting, active or delayed job is left alone); (3) a digest row (`payload ? 'items'`) whose period (06:00 UTC to 06:00 UTC, `payload.cycle`) ended more than
+  30 minutes ago gets the same job. Rows made by `sendNow` hold a secret link and have no outbox event, so they are **never** re-sent.
+- **Idempotency:** every job id is deterministic and `QueuesService` ignores an existing id; the delivery guards the row (`markSent` only from `queued`), so a repeat or a
+  parallel run cannot send twice.
+- **Recorded in `job_runs`** (through the `JOB_RUN_RECORDER` port; job `notification_reconcile`, `processed` = rows touched, `result` = `{ campaignRows, eventRows, digests, expired }`) only
+  for a run that found a stale row and for every manual run.
+- **Retry policy:** the queue's (3 attempts, backoff from 1 min); the next run is the real retry. `UNAVAILABLE` (the queue Redis is down) fails the run.
+
+### `notification_retention` (platform module)
+
+The daily clean-up of the notification center (feature 23, `NotificationRetention`, `src/modules/platform/notifications/notification-retention.ts`).
+
+- **Trigger:** the scheduler `notification-retention` daily at 04:20 UTC (`20 4 * * *`), or a manual run.
+- **Payload:** none (a manual run carries `{ runId }`).
+- **What it does:** with the settings `notifications.inbox_read_retention_days` (7-3650, default 90), `notifications.inbox_retention_days` (30-3650, default 365) and
+  `notifications.log_retention_days` (30-3650, default 180) and the injected clock, deletes in batches of 1 000 by id (at most 50 batches per table per run) the
+  `notification_inbox` rows read longer ago than the first, then those created longer ago than the second, and the `notifications` rows with status `sent` or `failed` older
+  than the third. Campaigns are kept (history and audit): after the log retention a campaign's `delivery` counters shrink while its stored `planned` counters stay. A `queued` row is never deleted.
+- **Idempotency:** a deleted row cannot be deleted twice; a repeat or a parallel run only finds fewer rows.
+- **Recorded in `job_runs`** (job `notification_retention`, `processed` = rows deleted, `result` = `{ inboxRead, inboxOld, log }`) on every run.
+- **Retry policy:** the queue's (3 attempts, backoff from 1 min); a backlog beyond 50 000 rows a table is finished by the next nights.
 
 ### `fx_refresh` (money module)
 
@@ -503,6 +593,7 @@ none); the job id is `outbox-<event id>`.
 | `invoice.paid` | `merchant-webhooks` | `invoice.paid` | `invoiceId`, `clientId` (aggregate: `invoices`) | money (`InvoiceOutbox`, loaded by the API and the worker), written by every credit of a top-up: a staff approval (`POST /admin/payments/:id/approve`) and the automatic credit job. The fan-out re-reads the invoice (7b) |
 | `receipt.render` | `files` | `receipt.render` | `invoiceId` (aggregate: `invoices`) | money (`ReceiptOutbox`, loaded by the API and the worker), written by the capture of a storefront payment together with the receipt invoice. The processor is `ReceiptRenderProcessor` (`src/modules/money/jobs/`) |
 | `refund.process` | `maintenance` | `refund.process` | `refundId` (aggregate: `refunds`) | money (`RefundOutbox`, loaded by the API and the worker), written by the approval and the retry of a storefront refund and by the system's automatic refunds. The processor is `RefundProcessProcessor` (`src/modules/money/jobs/`) |
+| `notification.campaign_fanout` | `notifications` | `notification.campaign_fanout` | none (aggregate: `notification_campaigns`, the campaign) | platform (`NotificationRoutes`), written by `POST /admin/notification-campaigns/:id/send` and the `notification_campaign_sweep` job, in the transaction that moves the campaign to `queued` (feature 23) |
 
 `invoice.paid` (feature 8) routes to `merchant-webhooks` (`InvoiceOutbox`) and to `notifications` (`notification.plan`, registered by the platform's `NotificationRoutes` since the 12a merge): every credited top-up tells the merchant once. `deposit.approved` has a registry entry and default templates but no producer: a credited top-up already writes `invoice.paid`, and emitting both would send two messages per top-up (B-entry of 12a). A test app plans a job directly through `test/support/notifications.ts` (`eventJob`).
 
@@ -518,6 +609,9 @@ Registered with `JobSchedulerRegistry.register` in `onModuleInit`; the worker up
 | `client-group-promotion` | `maintenance` | `client_group_promotion` | daily 03:30 UTC | identity (`src/modules/identity/jobs/`) |
 | `payment-auto-credit` | `maintenance` | `payment_auto_credit` | every minute | money (`src/modules/money/jobs/`) |
 | `checkout-recovery-sweep` | `maintenance` | `checkout_recovery_sweep` | every 5 minutes | customers (`src/modules/customers/checkout-recovery.module.ts`) |
+| `notification-campaign-sweep` | `maintenance` | `notification_campaign_sweep` | every minute | platform (`src/modules/platform/notifications/campaigns/campaign-engine.module.ts`) |
+| `notification-reconcile` | `maintenance` | `notification_reconcile` | every 5 minutes | platform (`src/modules/platform/notifications/campaigns/campaign-engine.module.ts`) |
+| `notification-retention` | `maintenance` | `notification_retention` | daily 04:20 UTC | platform (`src/modules/platform/notifications/campaigns/campaign-engine.module.ts`) |
 | `service-checks` | `maintenance` | `service_checks` | every minute | health (`src/modules/health/jobs/`) |
 | `service-checks-purge` | `maintenance` | `service_checks_purge` | daily 03:30 UTC | health (`src/modules/health/jobs/`) |
 | `job-runs-reaper` | `maintenance` | `job_runs_reaper` | every 5 minutes | health (`src/modules/health/jobs/`) |

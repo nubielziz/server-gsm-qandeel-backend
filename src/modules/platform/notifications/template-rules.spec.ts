@@ -3,6 +3,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   checkLocale,
   checkTemplateFields,
+  emailHtml,
   escapeHtml,
   htmlToText,
   looksLikeHtml,
@@ -156,5 +157,21 @@ describe('checkLocale', () => {
     expect(checkLocale('en')).toBeUndefined();
     expect(checkLocale('en-GB')).toBeUndefined();
     for (const bad of ['EN', 'english', 'en_GB', 'en-gb', '']) expect(checkLocale(bad)?.field).toBe('locale');
+  });
+});
+
+describe('emailHtml', () => {
+  it('wraps Arabic text in a right-to-left div and anything else in a left-to-right one', () => {
+    expect(emailHtml('مرحباً', 'ar')).toBe('<div dir="rtl" lang="ar" style="text-align:right">مرحباً</div>');
+    expect(emailHtml('مرحباً', 'ar-JO')).toStartWith('<div dir="rtl" lang="ar"');
+    expect(emailHtml('Hello', 'en')).toBe('<div dir="ltr" lang="en">Hello</div>');
+    expect(emailHtml('Hello', 'fr')).toStartWith('<div dir="ltr" lang="en">');
+  });
+
+  it('escapes the text, so stored text can never become markup, and turns line breaks into <br>', () => {
+    expect(emailHtml('<script>alert(1)</script> & "x"', 'en')).toBe(
+      '<div dir="ltr" lang="en">&lt;script&gt;alert(1)&lt;/script&gt; &amp; &quot;x&quot;</div>',
+    );
+    expect(emailHtml('one\ntwo\r\nthree', 'ar')).toContain('one<br>\ntwo<br>\nthree');
   });
 });

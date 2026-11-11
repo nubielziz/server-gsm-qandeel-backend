@@ -16,10 +16,11 @@ import { RedisModule } from './infra/redis';
 import { StorageModule } from './infra/storage';
 import { PriceChangeScanModule } from './modules/catalog';
 import { CommissionsEngineModule } from './modules/commissions';
-import { CheckoutRecoveryModule, CustomerMailModule } from './modules/customers';
+import { CheckoutRecoveryModule, CustomerMailModule, CustomerNotificationsModule } from './modules/customers';
 import { HealthJobsModule, JobRunsModule } from './modules/health';
 import {
   GroupPromotionModule,
+  IdentityAudienceModule,
   IpRuleHitsFlushModule,
   MerchantMailModule,
   SessionPurgeModule,
@@ -90,6 +91,8 @@ import { SupportEventsModule, SupportMailModule } from './modules/support';
     CommissionsEngineModule,
     DataRetentionModule,
     RiskServicesModule,
+    IdentityAudienceModule,
+    CustomerNotificationsModule,
   ],
   providers: [WorkerMetricsServer],
 })

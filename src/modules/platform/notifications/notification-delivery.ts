@@ -3,9 +3,16 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Counter } from 'prom-client';
 import { CLOCK, type Clock } from '../../../common/clock';
+import { APP_CONFIG, type AppConfig } from '../../../config';
+import { TokenService } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
 import { MetricsService } from '../../../infra/metrics';
 import type { Notification } from '../db/schema';
+import { renderCampaign } from './campaigns/campaign-render';
+import { marketingUnsubscribeToken } from './campaigns/unsubscribe-token';
+import { findCampaign } from './campaigns/campaign.repository';
+import { contentOf, linkOf } from './campaigns/campaign-views';
+import { NotificationAudiences } from './campaigns/notification-audiences';
 import { DeliveryError } from './delivery-error';
 import { describeChanges } from './digest-rules';
 import { MailTransport } from './mail-transport';
@@ -21,9 +28,23 @@ import {
   recordAttempt,
 } from './notification.repository';
 import { findTemplateFor } from './notification-template.repository';
-import { recipientOf } from './notification-foreign-reads';
+import { type Recipient, recipientOf } from './notification-foreign-reads';
 import { TelegramClient } from './telegram-client';
-import { renderMessage } from './template-rules';
+import { emailHtml, renderMessage } from './template-rules';
+
+/**
+ * The HTML part of an event email for an Arabic reader (feature 23, plan 9.3): a text template gets an escaped HTML part, an HTML
+ * template's markup is wrapped in a right-to-left `div`. An English mail is left exactly as the template made it.
+ *
+ * @param message the rendered template
+ * @param locale the recipient's language
+ * @returns the `html` member to spread into the mail (empty for a reader of any other language)
+ */
+function rtlHtml(message: { text: string; html?: string }, locale: string): { html?: string } {
+  if (!locale.startsWith('ar')) return message.html === undefined ? {} : { html: message.html };
+  if (message.html === undefined) return { html: emailHtml(message.text, locale) };
+  return { html: `<div dir="rtl" lang="ar" style="text-align:right">${message.html}</div>` };
+}
 
 /** Where a job stands in its retries: BullMQ's `attemptsMade + 1` and the queue's `attempts`. */
 export interface AttemptContext {
@@ -70,6 +91,9 @@ export class NotificationDelivery {
     private readonly telegram: TelegramClient,
     @Inject(CLOCK) private readonly clock: Clock,
     metrics: MetricsService,
+    private readonly audiences: NotificationAudiences,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly tokens: TokenService,
   ) {
     this.counter = new Counter({
       name: 'notification_deliveries_total',
@@ -127,8 +151,26 @@ export class NotificationDelivery {
     return { outcome: 'sent' };
   }
 
+  /**
+   * Tells whether a row may still lead to a send: it is `queued` and its campaign (if any) is not cancelled.
+   *
+   * Why: feature 23: the bulk sender takes a message from the per-channel budget only for a row that can still go out, so a
+   * cancelled campaign's queued rows fail at once instead of waiting for budget they will not use.
+   *
+   * @param id the `notifications` row
+   * @returns true when a send attempt may happen
+   */
+  async mayStillSend(id: number): Promise<boolean> {
+    const row = await findNotification(this.db.db, id);
+    if (!row || row.status !== 'queued') return false;
+    if (row.campaignId === null) return true;
+    const campaign = await findCampaign(this.db.db, row.campaignId);
+    return campaign !== undefined && campaign.status !== 'cancelled';
+  }
+
   /** Renders the row's message and hands it to its channel. */
   private async send(row: Notification, secrets: Readonly<Record<string, string>>): Promise<void> {
+    if (row.campaignId !== null) return this.sendCampaign(row, row.campaignId);
     const payload = row.payload as NotificationPayload;
     // An alert's message has no person's row: it goes to the address or chat the configuration named when the row was made.
     const recipient =
@@ -148,6 +190,8 @@ export class NotificationDelivery {
       if (recipient.audience === 'merchant' && !choiceFor(definition, recipient.prefs)[row.channel])
         throw new DeliveryError('The merchant turned this message off.', { permanent: true });
     }
+    // Feature 23: an event without a template (a campaign's test) carries its text in the payload.
+    if (definition.templated === false) return this.sendInline(row, recipient, payload);
     const template = await findTemplateFor(this.db.db, {
       event: row.event,
       channel: row.channel,
@@ -175,7 +219,7 @@ export class NotificationDelivery {
         to: recipient.email,
         subject: message.subject,
         text: message.text,
-        ...(message.html === undefined ? {} : { html: message.html }),
+        ...rtlHtml(message, recipient.locale),
         messageId: this.messageId(row.id),
       });
       return;
@@ -183,6 +227,95 @@ export class NotificationDelivery {
     const chatId = asString(payload.chatId) ? payload.chatId : recipient.telegramChatId;
     if (!chatId) throw new DeliveryError('Telegram is not linked.', { permanent: true });
     await this.telegram.sendMessage(chatId, message.text);
+  }
+
+  /**
+   * Sends one email or Telegram row of a campaign (feature 23, plan 9.1).
+   *
+   * Why: the row was made by the fan-out minutes or hours ago; the campaign may have been cancelled and the person may have been
+   * suspended, withdrawn marketing consent or switched announcements off since. Each is read again here, so consent and opt-out hold
+   * at the moment of sending (the send-time twin of the fan-out's check) and a cancelled campaign's queued rows fail with the reason.
+   */
+  private async sendCampaign(row: Notification, campaignId: number): Promise<void> {
+    const campaign = await findCampaign(this.db.db, campaignId);
+    if (!campaign) throw new DeliveryError('The campaign no longer exists.', { permanent: true });
+    if (campaign.status === 'cancelled') throw new DeliveryError('The campaign was cancelled.', { permanent: true });
+    const recipient = await recipientOf(this.db.db, row.recipientType, row.recipientId);
+    if (!recipient) throw new DeliveryError('The recipient no longer exists.', { permanent: true });
+    const member = await this.audiences.get(row.recipientType).member(this.db.db, campaign.purpose, row.recipientId);
+    if (!member) throw new DeliveryError('The recipient is no longer eligible.', { permanent: true });
+    if (!member[row.channel]) throw new DeliveryError('The recipient turned this message off.', { permanent: true });
+
+    const { portalBaseUrl, storeBaseUrl } = this.config.http;
+    const unsubscribeToken =
+      campaign.purpose === 'marketing' && recipient.audience === 'customer'
+        ? marketingUnsubscribeToken(this.tokens, recipient.id)
+        : undefined;
+    const message = renderCampaign(
+      { content: contentOf(campaign), link: linkOf(campaign), purpose: campaign.purpose },
+      {
+        locale: recipient.locale,
+        name: recipient.name,
+        audience: recipient.audience,
+        channel: row.channel,
+        // The console has no base address yet (feature 20's CONSOLE_BASE_URL): a staff message carries no link.
+        baseUrl:
+          recipient.audience === 'customer'
+            ? storeBaseUrl
+            : recipient.audience === 'merchant'
+              ? portalBaseUrl
+              : undefined,
+        ...(recipient.audience === 'merchant'
+          ? { preferencesUrl: `${portalBaseUrl}/merchant/settings/notifications` }
+          : {}),
+        // A marketing email to a customer carries the unsubscribe page and the one-click POST address (S10, RFC 8058).
+        ...(unsubscribeToken === undefined
+          ? {}
+          : {
+              unsubscribe: {
+                pageUrl: `${storeBaseUrl}/unsubscribe?token=${unsubscribeToken}`,
+                oneClickUrl: `${storeBaseUrl}/store/v1/marketing/unsubscribe/${unsubscribeToken}`,
+              },
+            }),
+      },
+    );
+    if (row.channel === 'email') {
+      if (!/^[^\s@,]+@[^\s@,]+$/.test(recipient.email))
+        throw new DeliveryError('The recipient has no email address.', { permanent: true });
+      await this.mail.send({
+        to: recipient.email,
+        subject: message.subject,
+        text: message.text,
+        ...(message.html === undefined ? {} : { html: message.html }),
+        ...(message.headers === undefined ? {} : { headers: message.headers }),
+        messageId: this.messageId(row.id),
+      });
+      return;
+    }
+    if (!recipient.telegramChatId) throw new DeliveryError('Telegram is not linked.', { permanent: true });
+    await this.telegram.sendMessage(recipient.telegramChatId, message.text);
+  }
+
+  /** Sends a row whose text is in its payload (an event with `templated: false`, the test of a campaign). */
+  private async sendInline(row: Notification, recipient: Recipient, payload: NotificationPayload): Promise<void> {
+    const variables = variablesOf(payload);
+    const locale = asString(payload['locale']) ? payload['locale'] : recipient.locale;
+    const title = variables['title'] ?? '';
+    const body = variables['body'] ?? '';
+    if (row.channel === 'telegram') {
+      if (!recipient.telegramChatId) throw new DeliveryError('Telegram is not linked.', { permanent: true });
+      await this.telegram.sendMessage(recipient.telegramChatId, `${title}\n\n${body}`);
+      return;
+    }
+    if (!/^[^\s@,]+@[^\s@,]+$/.test(recipient.email))
+      throw new DeliveryError('The recipient has no email address.', { permanent: true });
+    await this.mail.send({
+      to: recipient.email,
+      subject: `[Test] ${title}`,
+      text: body,
+      html: emailHtml(body, locale),
+      messageId: this.messageId(row.id),
+    });
   }
 
   /** The `Message-ID` of a row: stable across retries, so a provider that dedupes sees one message. */

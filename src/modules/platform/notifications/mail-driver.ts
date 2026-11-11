@@ -16,6 +16,8 @@ export interface OutgoingMail {
   readonly html?: string;
   /** The `Message-ID` header: derived from the notification row, so a provider that dedupes sees a repeat as the same message. */
   readonly messageId: string;
+  /** Extra headers (feature 23: the one-click unsubscribe headers of a marketing email). */
+  readonly headers?: Readonly<Record<string, string>>;
 }
 
 /** What `MailTransport` needs from a way of sending mail. */
@@ -128,6 +130,7 @@ export class SmtpMailDriver implements MailDriver {
         text: mail.text,
         ...(mail.html === undefined ? {} : { html: mail.html }),
         messageId: mail.messageId,
+        ...(mail.headers === undefined ? {} : { headers: { ...mail.headers } }),
       });
     } catch (error) {
       throw classifyMailError(error);

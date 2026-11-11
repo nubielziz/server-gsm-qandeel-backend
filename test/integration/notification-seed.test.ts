@@ -112,7 +112,9 @@ describe.skipIf(!frontendPresent)('the 12a seed', () => {
     await seed();
     const owner = await adminWith(t, ['*']);
     const res = await owner.get('/admin/notifications?recipientType=client&_start=0&_end=48');
-    expect(res.total).toBe(48);
+    // 48 of the recent log, plus the email of the seeded campaign to merchant 1 (feature 23), dated before them.
+    expect(res.total).toBe(49);
+    expect(res.body.every((row: { event: string }) => row.event !== 'broadcast.announcement')).toBe(true);
     expect(res.body[0]).toMatchObject({ recipientType: 'client', status: 'sent', error: null });
     const created = res.body.map((row: { createdAt: string }) => row.createdAt);
     expect(created).toEqual([...created].sort().reverse());
@@ -126,6 +128,41 @@ describe.skipIf(!frontendPresent)('the 12a seed', () => {
       expect(row.recipient, row.recipient).toMatch(row.channel === 'telegram' ? /^@\d\*\*\*$/ : /^.\*\*\*@/);
       expect(row.recipient).not.toMatch(/^[^*]{4,}@/);
     }
+  });
+});
+
+describe.skipIf(!frontendPresent)('the notification center seed (feature 23)', () => {
+  it('writes the three campaigns of the console mock, the in-app items and emails of the sent one, and nothing twice', async () => {
+    const first = await seed();
+    expect(reportOf(first.platform, 'notification_campaigns')).toMatchObject({ inserted: 3, existing: 0 });
+    expect(reportOf(first.platform, 'notification_inbox')).toMatchObject({ inserted: 3, existing: 0 });
+    expect(reportOf(first.platform, 'notifications (campaign emails)')).toMatchObject({ inserted: 3, existing: 0 });
+    const owner = await adminWith(t, ['*']);
+    const list = await owner.get('/admin/notification-campaigns?_sort=id&_order=asc');
+    expect(list.total).toBe(3);
+    expect(
+      list.body.map((row: { id: number; name: string; status: string }) => [row.id, row.name, row.status]),
+    ).toEqual([
+      [1, 'Scheduled maintenance on Friday', 'sent'],
+      [2, 'Ramadan offer', 'scheduled'],
+      [3, 'New unlock services', 'draft'],
+    ]);
+    const sent = await owner.get('/admin/notification-campaigns/1');
+    expect(sent.body).toMatchObject({
+      purpose: 'service',
+      channels: ['in_app', 'email'],
+      recipients: 3,
+      createdBy: { id: 1 },
+      delivery: { inApp: { delivered: 3, read: 2 }, email: { queued: 0, sent: 3, failed: 0 } },
+    });
+    expect(sent.body.content.ar.title).toBe('صيانة مجدولة يوم الجمعة');
+    const ramadan = await owner.get('/admin/notification-campaigns/2');
+    expect(ramadan.body).toMatchObject({ purpose: 'marketing', channels: ['email'] });
+    expect(new Date(ramadan.body.scheduledAt).getTime()).toBeGreaterThan(Date.parse(list.body[0].createdAt));
+
+    const again = (await seed()).platform;
+    expect(reportOf(again, 'notification_campaigns')).toMatchObject({ inserted: 0, existing: 3 });
+    expect(reportOf(again, 'notification_inbox')).toMatchObject({ inserted: 0, existing: 3 });
   });
 });
 

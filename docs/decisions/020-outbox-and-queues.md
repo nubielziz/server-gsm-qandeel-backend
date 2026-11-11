@@ -12,7 +12,7 @@ Status: accepted, 2026-10-31.
   contain `:` or are only digits, so every deterministic id is `<kind>-<id>`: `outbox-<id>`, `manual-<run id>`.)
 - Queues (BullMQ prefix `gsm:<env>:bull`), each with its own concurrency: `outbox-relay`, `supplier-dispatch`,
   `supplier-poll`, `merchant-webhooks`, `notifications`, `supplier-sync`, `imports`, `files`, `maintenance`,
-  `alerts`. Every queue, job, payload, idempotency key, retry policy and schedule is listed in `docs/queues.md`.
+  `alerts` (and, since feature 23, `notification-broadcasts`). Every queue, job, payload, idempotency key, retry policy and schedule is listed in `docs/queues.md`.
 - Defaults: `attempts` with exponential backoff and jitter for transient errors, `UnrecoverableError` for permanent
   ones; `removeOnComplete { age: 24 h, count: 10 000 }`, `removeOnFail { age: 14 days }`. Supplier dispatch never
   retries a timed-out send (the order goes to needs-attention; map scenario `timeout`).
@@ -30,6 +30,15 @@ Status: accepted, 2026-10-31.
   `jobId = outbox-<id>` (ids are per queue), and sets `processed_at` only when every route took its job; after a crash between two routes the retry
   adds the same id again on the route that has it, which BullMQ ignores. So the consumers of one event stay independent: an order change reaches the
   merchant's webhooks (`merchant-webhooks`) and its notifications (`notifications`, job `notification.plan`) without the producer knowing either.
+
+- Amended with feature 23 (notification center): an eleventh queue, `notification-broadcasts`, carries the email and Telegram messages of
+  notification campaigns. A broadcast is **one** outbox event per campaign (`notification.campaign_fanout`), never one per recipient: the relay
+  is FIFO, 100 rows a pass, and 50 000 rows would hold order dispatch and password resets behind it. The fan-out job walks the audience in short
+  chunk transactions and hands each chunk's send jobs to the new queue with `QueuesService.addBulk` (one round trip per 1 000 jobs; an existing
+  job id is left as it is). The queue has a BullMQ **limiter** (`QueueDefinition.limiter`: 30 jobs a second across every worker); BullMQ's limiter
+  is per queue, which is why bulk mail has a queue of its own and transactional mail keeps `notifications` without a limit. Per-channel provider
+  limits are a second, lower budget (decision 021: limiters `broadcast-email`, `broadcast-telegram`). The minute sweep that sends scheduled
+  campaigns records its runs through the `JOB_RUN_RECORDER` port health provides (platform cannot import health).
 
 **Consequences.** The API stays fast and consistent: no job is enqueued for a rolled-back change, and no committed
 change loses its job.

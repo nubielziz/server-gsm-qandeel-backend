@@ -83,5 +83,6 @@ export function operationsRecipientOf(payload: NotificationPayload): Recipient {
     telegramChatId: null,
     prefs: {},
     suspended: false,
+    inboxEligible: false,
   };
 }

@@ -425,11 +425,12 @@ describe('the merchant mail events', () => {
       .filter((name) => !name.startsWith('customer.'))
       .sort();
     // The notifications queue has named processors only: the three merchant mails, the two jobs of feature 12a, the ticket mail of
-    // feature 17, the recovery mail of feature 19 and the two staff link mails of feature 20.
+    // feature 17, the recovery mail of feature 19, the two staff link mails of feature 20 and the campaign fan-out of feature 23.
     expect(named).toEqual(
       [
         ...Object.values(MERCHANT_MAIL_EVENTS),
         ...Object.values(STAFF_MAIL_EVENTS),
+        'notification.campaign_fanout',
         'notification.plan',
         'notification.send',
         'support.ticket_mail',

@@ -4,10 +4,10 @@
   "domain": "I",
   "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
   "counts": {
-    "rows": 26,
-    "endpoints": 29,
+    "rows": 27,
+    "endpoints": 30,
     "bySurface": {
-      "store": 14,
+      "store": 15,
       "admin": 15
     },
     "frontendCalled": 15
@@ -17,7 +17,8 @@
     16,
     18,
     19,
-    21
+    21,
+    23
   ],
   "ownedTables": [
     {
@@ -1227,6 +1228,40 @@
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"
+      }
+    },
+    {
+      "key": "POST /store/v1/marketing/unsubscribe/:token",
+      "method": "POST",
+      "path": "/store/v1/marketing/unsubscribe/:token",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "إلغاء الاشتراك في الرسائل التسويقية",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 23,
+      "tables": [
+        "customers",
+        "consent_records"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/marketing/unsubscribe/:token",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/marketing/unsubscribe/:token"
+      },
+      "module": "customers",
+      "description": "Stop marketing email with the link of an email.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/23.mjs",
+        "spec": "B-TBD unsubscribe"
       }
     }
   ],

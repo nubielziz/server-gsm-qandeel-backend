@@ -11,6 +11,7 @@ import type {
 } from '../db/schema';
 import { OutboxService } from '../outbox/outbox.service';
 import { type AttemptContext, NotificationDelivery } from './notification-delivery';
+import { NotificationInbox } from './inbox/notification-inbox';
 import { type NotificationEventDefinition, NotificationEventRegistry } from './notification-events';
 import { type Recipient, recipientOf } from './notification-foreign-reads';
 import { OPERATIONS_RECIPIENT_ID } from './notification-payload';
@@ -95,6 +96,7 @@ export class NotificationService {
     private readonly registry: NotificationEventRegistry,
     private readonly delivery: NotificationDelivery,
     @Inject(CLOCK) private readonly clock: Clock,
+    private readonly inbox: NotificationInbox,
   ) {}
 
   /**
@@ -104,8 +106,20 @@ export class NotificationService {
    * @param input the event, recipient, channel and variables
    * @returns the row id (and whether this call made it), or why nothing was made
    * @throws {RangeError} when the event is not registered for the recipient's audience, or the event has no such channel (a programming error)
+   *
+   * Side effects: also inserts the in-app item of the event (`notification_inbox`) when one has a registered text and the call has a dedupe key.
    */
   async enqueue(work: { readonly tx: DbExecutor }, input: NotificationInput): Promise<EnqueueResult> {
+    // Feature 23, S9: an event with an in-app text also makes the person's inbox item, in this transaction and before the template
+    // check, so the item exists even when the email template is switched off. Only an occurrence with a key can repeat safely.
+    if (input.dedupeKey !== undefined) {
+      await this.inbox.addForEvent(work.tx, {
+        recipient: input.recipient,
+        event: input.event,
+        variables: input.variables ?? {},
+        occurrence: input.dedupeKey.replace(/:(email|telegram)$/, ''),
+      });
+    }
     const checked = await this.check(work.tx, input);
     if ('skipped' in checked) return { status: 'skipped', reason: checked.skipped };
     const now = this.clock.now();
@@ -125,6 +139,54 @@ export class NotificationService {
       updatedAt: now,
     });
     // The event is written with the row, so a row made by an earlier run of this call already has its event.
+    if (created) {
+      await this.outbox.add(work.tx, {
+        type: NOTIFICATION_SEND_EVENT,
+        aggregateType: 'notifications',
+        aggregateId: row.id,
+      });
+    }
+    return { status: 'queued', id: row.id, created };
+  }
+
+  /**
+   * Writes a notification whose text travels with it (an event with `templated: false`), and the event that sends it.
+   *
+   * Why: feature 23: a campaign's test mail carries the campaign's own title and body, which no template holds; the row's payload
+   * keeps them (`variables`) with the language they are in (`locale`), and the delivery renders them without a template lookup.
+   *
+   * Side effects: inserts a `notifications` row (once per dedupe key) and its `outbox_events` row.
+   *
+   * @param work the caller's transaction
+   * @param input the event, recipient, channel, the text as variables and its language
+   * @returns the row, or why nothing was made (`recipient_gone`, `recipient_suspended`)
+   * @throws {RangeError} when the event is not registered for the recipient's audience, has a template, or lacks the channel
+   */
+  async enqueueInline(
+    work: { readonly tx: DbExecutor },
+    input: Omit<NotificationInput, 'chatId'> & { readonly locale: string },
+  ): Promise<EnqueueResult> {
+    const recipient = await recipientOf(work.tx, input.recipient.type, input.recipient.id);
+    if (!recipient) return { status: 'skipped', reason: 'recipient_gone' };
+    const definition = this.registry.get(input.event, recipient.audience);
+    if (!definition || definition.templated !== false || !definition.channels.includes(input.channel)) {
+      throw new RangeError(
+        `The event "${input.event}" cannot be sent inline by ${input.channel} to ${recipient.audience}.`,
+      );
+    }
+    if (recipient.suspended && !definition.transactional) return { status: 'skipped', reason: 'recipient_suspended' };
+    const now = this.clock.now();
+    const { row, created } = await insertNotificationOnce(work.tx, {
+      recipientType: input.recipient.type,
+      recipientId: input.recipient.id,
+      channel: input.channel,
+      event: input.event,
+      payload: { variables: { ...(input.variables ?? {}) }, locale: input.locale },
+      status: 'queued',
+      dedupeKey: input.dedupeKey ?? null,
+      createdAt: now,
+      updatedAt: now,
+    });
     if (created) {
       await this.outbox.add(work.tx, {
         type: NOTIFICATION_SEND_EVENT,

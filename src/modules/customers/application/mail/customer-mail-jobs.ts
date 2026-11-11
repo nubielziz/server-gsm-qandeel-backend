@@ -174,7 +174,8 @@ export class CustomerMailJobs {
 function skipReason(
   reason: 'recipient_gone' | 'recipient_suspended' | 'no_template' | 'template_off' | 'already_sent' | 'already_failed',
 ): NonNullable<CustomerMailJobResult['skipped']> {
-  // `recipient_suspended` is never answered for a customer (the platform reads customers as never suspended), but the type allows it.
+  // `recipient_suspended` is answered for a suspended or blocked customer by a message that is not transactional (the account mails are
+  // transactional, so they never are); an anonymized customer reads as gone (feature 23, plan 9.5).
   if (reason === 'recipient_gone') return 'customer_gone';
   if (reason === 'recipient_suspended') return 'customer_not_active';
   return reason;

@@ -9,6 +9,8 @@
 | `sign-in`  | `RateLimitService.compositeKey(email, ip)`           | 5 attempts per 15 minutes, then locked for 15 min   |
 | `token`    | client IP                                            | 30 per minute                                       |
 | `supplier` | supplier id                                          | 60 per minute, or `suppliers.rate_limit_per_min`    |
+| `broadcast-email` | `all` (system-wide) | 5 per second, or the setting `notifications.broadcast_email_per_second` (feature 23) |
+| `broadcast-telegram` | `all` (system-wide) | 20 per second, or the setting `notifications.broadcast_telegram_per_second` (feature 23) |
 | `help-vote` | `RateLimitService.compositeKey(ip, articleId)`      | 1 per day: one counted help vote per visitor and article (`POST /store/v1/help/:slug/vote`; repeats are ignored with the same `204`) |
 | `media`    | client IP                                            | 1200 per minute: the public service pictures (`GET /store/v1/media/:name`), apart from `ip` |
 | `upload`   | client IP                                            | 20 per minute: large bodies (multipart or over 1 MiB) on Dhru, REST v1, the portal, the admin console and the store (the receipt upload, feature 21) |

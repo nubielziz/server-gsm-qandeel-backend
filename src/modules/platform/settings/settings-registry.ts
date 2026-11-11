@@ -98,6 +98,87 @@ export function allowPlainHttpProblem(value: unknown): string | undefined {
   return typeof value === 'boolean' ? undefined : 'Use true or false.';
 }
 
+/** The key of the system-wide budget of campaign emails per second (feature 23). */
+export const BROADCAST_EMAIL_PER_SECOND_KEY = 'notifications.broadcast_email_per_second';
+/** The key of the system-wide budget of campaign Telegram messages per second (feature 23). */
+export const BROADCAST_TELEGRAM_PER_SECOND_KEY = 'notifications.broadcast_telegram_per_second';
+/** The default and the bounds of the two broadcast rates. */
+export const BROADCAST_RATE_BOUNDS = { min: 1, max: 30 } as const;
+
+/**
+ * Checks the value of a broadcast rate (`notifications.broadcast_email_per_second`, `notifications.broadcast_telegram_per_second`): a
+ * JSON integer from 1 to 30.
+ *
+ * Why: O8 (feature 23): campaign mail and Telegram leave at the rate the owner's providers allow (defaults 5 and 20 a second); the
+ * ceiling is the bulk queue's limiter of 30 jobs a second, so a higher number would have no effect.
+ *
+ * @param value the value as sent
+ * @returns the problem, or `undefined` when the value is acceptable
+ */
+export function broadcastRateProblem(value: unknown): string | undefined {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return 'Use a whole number of messages per second.';
+  if (value < BROADCAST_RATE_BOUNDS.min || value > BROADCAST_RATE_BOUNDS.max) return 'Use a number from 1 to 30.';
+  return undefined;
+}
+
+/** The key of how long a read inbox item is kept (feature 23). */
+export const INBOX_READ_RETENTION_DAYS_KEY = 'notifications.inbox_read_retention_days';
+/** The key of how long any inbox item is kept (feature 23). */
+export const INBOX_RETENTION_DAYS_KEY = 'notifications.inbox_retention_days';
+/** The key of how long a `sent` or `failed` row of the notification log is kept (feature 23). */
+export const LOG_RETENTION_DAYS_KEY = 'notifications.log_retention_days';
+
+/** The default and the bounds of each notification retention setting (days): O6 of feature 23. */
+export const NOTIFICATION_RETENTION = {
+  inboxRead: { fallback: 90, min: 7, max: 3650 },
+  inbox: { fallback: 365, min: 30, max: 3650 },
+  // 30 days at least: the template list's "sent in the last 30 days" counts the log (`sentLast30Days`).
+  log: { fallback: 180, min: 30, max: 3650 },
+} as const;
+
+const wholeDaysProblem = (value: unknown, min: number, max: number): string | undefined => {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return 'Use a whole number of days.';
+  if (value < min || value > max) return `Use a number from ${min} to ${max}.`;
+  return undefined;
+};
+
+/**
+ * Checks `notifications.inbox_read_retention_days`: a JSON integer from 7 to 3650.
+ *
+ * Why: O6 (feature 23): a notification the person read is deleted after this many days (default 90) by the daily retention job.
+ *
+ * @param value the value as sent
+ * @returns the problem, or `undefined` when the value is acceptable
+ */
+export function inboxReadRetentionDaysProblem(value: unknown): string | undefined {
+  return wholeDaysProblem(value, NOTIFICATION_RETENTION.inboxRead.min, NOTIFICATION_RETENTION.inboxRead.max);
+}
+
+/**
+ * Checks `notifications.inbox_retention_days`: a JSON integer from 30 to 3650.
+ *
+ * Why: O6 (feature 23): every inbox item, read or not, is deleted after this many days (default 365).
+ *
+ * @param value the value as sent
+ * @returns the problem, or `undefined` when the value is acceptable
+ */
+export function inboxRetentionDaysProblem(value: unknown): string | undefined {
+  return wholeDaysProblem(value, NOTIFICATION_RETENTION.inbox.min, NOTIFICATION_RETENTION.inbox.max);
+}
+
+/**
+ * Checks `notifications.log_retention_days`: a JSON integer from 30 to 3650.
+ *
+ * Why: O6 (feature 23): a sent or failed row of the notification log is deleted after this many days (default 180); the minimum of 30
+ * keeps the template list's "sent in the last 30 days" whole.
+ *
+ * @param value the value as sent
+ * @returns the problem, or `undefined` when the value is acceptable
+ */
+export function logRetentionDaysProblem(value: unknown): string | undefined {
+  return wholeDaysProblem(value, NOTIFICATION_RETENTION.log.min, NOTIFICATION_RETENTION.log.max);
+}
+
 /**
  * The customer wallet settings (feature 21, plan § 5.8): two switches and six whole USD numbers, with their accepted ranges.
  *
@@ -164,6 +245,11 @@ export const EDITABLE_SETTINGS: readonly EditableSetting[] = [
   { key: IMPORT_DEFAULT_SLA_KEY, validate: importDefaultSlaMinutesProblem },
   { key: POLL_SLOW_AFTER_HOURS_KEY, validate: pollSlowAfterHoursProblem },
   { key: SUPPLIERS_ALLOW_PLAIN_HTTP_KEY, validate: allowPlainHttpProblem },
+  { key: BROADCAST_EMAIL_PER_SECOND_KEY, validate: broadcastRateProblem },
+  { key: BROADCAST_TELEGRAM_PER_SECOND_KEY, validate: broadcastRateProblem },
+  { key: INBOX_READ_RETENTION_DAYS_KEY, validate: inboxReadRetentionDaysProblem },
+  { key: INBOX_RETENTION_DAYS_KEY, validate: inboxRetentionDaysProblem },
+  { key: LOG_RETENTION_DAYS_KEY, validate: logRetentionDaysProblem },
   { key: CUSTOMER_WALLET_SETTINGS.enabled, validate: booleanProblem },
   { key: CUSTOMER_WALLET_SETTINGS.cardTopUps, validate: booleanProblem },
   walletRange(CUSTOMER_WALLET_SETTINGS.minTopUp, 'dollars'),

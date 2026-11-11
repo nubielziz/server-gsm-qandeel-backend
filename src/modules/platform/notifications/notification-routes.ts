@@ -4,6 +4,7 @@ import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { OutboxRouteRegistry } from '../outbox/outbox-routes';
 import { SERVICE_PRICE_CHANGED_EVENT, WALLET_LOW_BALANCE_EVENT } from '../webhooks/merchant-event-routes';
 import { INVOICE_PAID_EVENT, NOTIFICATION_PLAN_JOB, ORDER_STATUS_CHANGED_EVENT } from './event-notifier';
+import { CAMPAIGN_FANOUT_EVENT } from './campaigns/campaign-rules';
 import { NOTIFICATION_SEND_EVENT } from './notification.service';
 
 /**
@@ -15,7 +16,7 @@ import { NOTIFICATION_SEND_EVENT } from './notification.service';
  * turns the event into the sending job. `deposit.approved` has no route: every credited top-up already writes `invoice.paid`, so a
  * second event would tell the merchant twice (B-entry of 12a).
  *
- * Side effects: registers five routes with the `notifications` queue at boot (the API and the worker both load this class).
+ * Side effects: registers six routes with the `notifications` queue at boot (the API and the worker both load this class).
  */
 @Injectable()
 export class NotificationRoutes implements OnModuleInit {
@@ -32,5 +33,7 @@ export class NotificationRoutes implements OnModuleInit {
       this.routes.register({ type, queue: 'notifications', jobName: NOTIFICATION_PLAN_JOB });
     }
     this.routes.register({ type: NOTIFICATION_SEND_EVENT, queue: 'notifications' });
+    // Feature 23: one event per sent campaign; its job fans the campaign out in chunks.
+    this.routes.register({ type: CAMPAIGN_FANOUT_EVENT, queue: 'notifications' });
   }
 }

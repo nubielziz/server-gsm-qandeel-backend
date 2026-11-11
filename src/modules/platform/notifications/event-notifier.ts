@@ -8,6 +8,7 @@ import type { OutboxJobData } from '../outbox/outbox.types';
 import { WALLET_LOW_BALANCE_EVENT, SERVICE_PRICE_CHANGED_EVENT } from '../webhooks/merchant-event-routes';
 import { invoiceForEvent, serviceNameOf } from '../webhooks/webhook-foreign-reads';
 import { addDigestItem, digestCycleOf, digestKey, digestSendDelay, shortMoney, type DigestItem } from './digest-rules';
+import { NotificationInbox } from './inbox/notification-inbox';
 import { channelsFor } from './merchant-preferences';
 import { NotificationEventRegistry } from './notification-events';
 import { orderFacts, recipientOf } from './notification-foreign-reads';
@@ -66,6 +67,7 @@ export class EventNotifier {
     private readonly registry: NotificationEventRegistry,
     private readonly queues: QueuesService,
     @Inject(CLOCK) private readonly clock: Clock,
+    private readonly inbox: NotificationInbox,
   ) {}
 
   /**
@@ -178,6 +180,14 @@ export class EventNotifier {
       if (!merchant) return { created: 0, skipped: 'merchant_gone' };
       const definition = this.registry.get(key, 'merchant');
       if (!definition) return { created: 0, skipped: 'unknown_event' };
+      // Feature 23, S9: the in-app item comes before the channel check, so a merchant who switched email and Telegram off still gets it;
+      // the same occurrence key makes the item of `NotificationService.enqueue` below a no-op.
+      await this.inbox.addForEvent(tx, {
+        recipient: { type: 'client', id: clientId },
+        event: key,
+        variables: variables(merchant.name),
+        occurrence: `outbox-${job.eventId}`,
+      });
       const channels = channelsFor(definition, merchant.prefs, merchant.telegramChatId !== null);
       if (channels.length === 0) return { created: 0, skipped: 'opted_out' };
       let created = 0;

@@ -245,3 +245,20 @@ export function renderMessage(template: TemplateFields, variables: Readonly<Reco
     format: 'text',
   };
 }
+
+/**
+ * Wraps plain text into the HTML part of an email, right to left for Arabic.
+ *
+ * Why: feature 23, plan 9.3: an Arabic message must read right to left in every mail client; the text is escaped first, so stored
+ * text can never become markup, and line breaks become `<br>`.
+ *
+ * @param text the plain text
+ * @param locale the reader's language (`ar`, `ar-JO`, `en`, ...)
+ * @returns the HTML part: a `div` with `dir` and `lang`
+ */
+export function emailHtml(text: string, locale: string): string {
+  const body = escapeHtml(text).replace(/\r?\n/g, '<br>\n');
+  return locale.startsWith('ar')
+    ? `<div dir="rtl" lang="ar" style="text-align:right">${body}</div>`
+    : `<div dir="ltr" lang="en">${body}</div>`;
+}

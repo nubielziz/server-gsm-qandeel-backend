@@ -208,6 +208,7 @@ const LOG_COLUMNS: ListColumns = {
   event: notifications.event,
   recipientType: notifications.recipientType,
   recipient: RECIPIENT_ADDRESS,
+  campaignId: notifications.campaignId,
 };
 
 /**
@@ -265,30 +266,49 @@ export async function listLogRows(
   query: ParsedListQuery<NotificationSortField>,
 ): Promise<{ rows: LogRow[]; total: number }> {
   const where = logWhere(query);
-  const [rows, [count]] = await Promise.all([
+  const [rows, total] = await Promise.all([
     logSelect(db)
       .where(where)
       .orderBy(...listOrderBy(query.sort, LOG_COLUMNS, notifications.id))
       .limit(query.range.limit)
       .offset(query.range.start),
-    db
+    countLogRows(db, where, query.search !== undefined),
+  ]);
+  return { rows, total };
+}
+
+/**
+ * Counts the log rows a filter matches, joining the recipient tables only when the search needs the address.
+ *
+ * Why: feature 23, plan 10.3: the three left joins are 1:1 by primary key, so they change no count; only `RECIPIENT_ADDRESS` (the equals
+ * search over the address) reads them. Without a search the count is `SELECT count(*) FROM notifications WHERE <filters>`, which a
+ * campaign of tens of thousands of rows would otherwise make every page of the log pay for. The total stays exact.
+ */
+async function countLogRows(db: DbExecutor, where: SQL | undefined, needsAddress: boolean): Promise<number> {
+  if (!needsAddress) {
+    const [row] = await db
       .select({ total: sql<number>`count(*)::int` })
       .from(notifications)
-      .leftJoin(
-        s.clients,
-        and(eq(notifications.recipientType, sql`'client'`), eq(s.clients.id, notifications.recipientId)),
-      )
-      .leftJoin(
-        s.staffUsers,
-        and(eq(notifications.recipientType, sql`'staff'`), eq(s.staffUsers.id, notifications.recipientId)),
-      )
-      .leftJoin(
-        s.customers,
-        and(eq(notifications.recipientType, sql`'customer'`), eq(s.customers.id, notifications.recipientId)),
-      )
-      .where(where),
-  ]);
-  return { rows, total: count?.total ?? 0 };
+      .where(where);
+    return row?.total ?? 0;
+  }
+  const [row] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(notifications)
+    .leftJoin(
+      s.clients,
+      and(eq(notifications.recipientType, sql`'client'`), eq(s.clients.id, notifications.recipientId)),
+    )
+    .leftJoin(
+      s.staffUsers,
+      and(eq(notifications.recipientType, sql`'staff'`), eq(s.staffUsers.id, notifications.recipientId)),
+    )
+    .leftJoin(
+      s.customers,
+      and(eq(notifications.recipientType, sql`'customer'`), eq(s.customers.id, notifications.recipientId)),
+    )
+    .where(where);
+  return row?.total ?? 0;
 }
 
 /**
@@ -359,4 +379,179 @@ export async function sentCountsSince(
     .groupBy(notifications.event, notifications.channel, notifications.recipientType);
   for (const row of rows) counts.set(sentCountKey(row), row.total);
   return counts;
+}
+
+/** A queued row the reconciler may add a job for. */
+export interface StaleRow {
+  readonly id: number;
+  readonly channel: NotificationChannel;
+  /** The outbox event that sent the row (event rows only). */
+  readonly eventId?: number;
+}
+
+/**
+ * Finds queued campaign rows nobody touched for a while.
+ *
+ * Why: the fan-out commits a chunk before it adds the chunk's jobs (plan 8.1), and a lost queue Redis loses the jobs: the row stays
+ * `queued` for ever. `updated_at` moves with every attempt, so a row in a retry loop is not stale.
+ *
+ * @param db the pool
+ * @param before rows not updated since this moment
+ * @param limit at most this many rows, lowest id first
+ * @returns the rows
+ */
+export async function staleCampaignRows(db: DbExecutor, before: Date, limit: number): Promise<StaleRow[]> {
+  return db
+    .select({ id: notifications.id, channel: notifications.channel })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.status, 'queued'),
+        sql`${notifications.campaignId} is not null`,
+        sql`${notifications.updatedAt} < ${before}`,
+      ),
+    )
+    .orderBy(notifications.id)
+    .limit(limit);
+}
+
+/**
+ * Finds queued event rows whose own outbox event was relayed long ago.
+ *
+ * Why: plan 8.4 rule 2: a row made with its `notification.send` outbox event may have lost its job (a lost queue Redis). Rows made by
+ * `sendNow` carry a secret link and have no such event, so they never match: a generic job has no secret and must not re-send them.
+ * Digest rows (`payload ? 'items'`) have their own rule.
+ *
+ * @param db the pool
+ * @param before rows not updated since this moment
+ * @param limit at most this many rows, lowest id first
+ * @returns the rows with the id of their latest relayed event
+ */
+export async function staleEventRows(db: DbExecutor, before: Date, limit: number): Promise<StaleRow[]> {
+  const result = await db.execute<{ id: number; channel: NotificationChannel; event_id: number }>(sql`
+    select n.id::int as id, n.channel, e.id::int as event_id
+    from ${notifications} n
+    join lateral (
+      select o.id from outbox_events o
+      where o.aggregate_type = 'notifications' and o.aggregate_id = n.id and o.type = 'notification.send'
+        and o.processed_at is not null
+      order by o.id desc limit 1
+    ) e on true
+    where n.status = 'queued' and n.campaign_id is null and n.updated_at < ${before} and not (n.payload ? 'items')
+    order by n.id
+    limit ${limit}`);
+  return result.rows.map((row) => ({ id: row.id, channel: row.channel, eventId: row.event_id }));
+}
+
+/** The SQL condition "this queued digest row's period ended before `endedBefore`" (the period ends 30 hours after its day starts at 00:00 UTC). */
+const digestPeriodEnded = (endedBefore: Date) => sql`(
+  ${notifications.payload} ? 'items' and ${notifications.payload}->>'cycle' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+  and ((${notifications.payload}->>'cycle')::date::timestamp + interval '30 hours') < (${endedBefore}::timestamptz at time zone 'UTC'))`;
+
+/**
+ * Finds queued digest rows whose period ended before a moment.
+ *
+ * Why: a digest is sent by a delayed job at the end of its period (06:00 UTC, `digest-rules.ts`); when the job was lost the row waits for
+ * ever. The period of a row is its `cycle` day, which starts at 06:00 UTC and lasts 24 hours.
+ *
+ * @param db the pool
+ * @param endedBefore periods that ended before this moment
+ * @param limit at most this many rows, lowest id first
+ * @returns the rows
+ */
+export async function staleDigestRows(db: DbExecutor, endedBefore: Date, limit: number): Promise<StaleRow[]> {
+  return db
+    .select({ id: notifications.id, channel: notifications.channel })
+    .from(notifications)
+    .where(and(eq(notifications.status, 'queued'), digestPeriodEnded(endedBefore)))
+    .orderBy(notifications.id)
+    .limit(limit);
+}
+
+/**
+ * Fails queued rows that are too old to be worth sending.
+ *
+ * @param db the pool
+ * @param createdBefore rows created before this moment
+ * @param reason the reason written on the row (no address or secret)
+ * @param now the clock's time
+ * @param limit at most this many rows
+ * @returns how many rows were failed
+ */
+export async function expireQueuedRows(
+  db: DbExecutor,
+  createdBefore: Date,
+  reason: string,
+  now: Date,
+  limit: number,
+): Promise<number> {
+  const old = db
+    .select({ id: notifications.id })
+    .from(notifications)
+    .where(and(eq(notifications.status, 'queued'), sql`${notifications.createdAt} < ${createdBefore}`))
+    .orderBy(notifications.id)
+    .limit(limit);
+  const rows = await db
+    .update(notifications)
+    .set({ status: 'failed', error: reason, updatedAt: now })
+    .where(and(eq(notifications.status, 'queued'), sql`${notifications.id} in (${old})`))
+    .returning({ id: notifications.id });
+  return rows.length;
+}
+
+/** The moments the reconciler's rules compare with. */
+export interface ReconcileCutoffs {
+  /** Campaign rows not updated since. */
+  readonly campaign: Date;
+  /** Event rows not updated since. */
+  readonly event: Date;
+  /** Digest periods ended before. */
+  readonly digest: Date;
+  /** Rows created before are too old. */
+  readonly expired: Date;
+}
+
+/**
+ * Tells whether the reconciler would find anything to do, cheaply.
+ *
+ * @param db the pool
+ * @param cutoffs the moments of the four rules
+ * @returns true when a queued row is stale (an event row may still turn out to have a live job)
+ */
+export async function reconcileHasWork(db: DbExecutor, cutoffs: ReconcileCutoffs): Promise<boolean> {
+  const n = notifications;
+  const result = await db.execute<{ found: boolean }>(sql`
+    select (
+      exists (select 1 from ${n} where ${n.status} = 'queued' and ${n.campaignId} is not null and ${n.updatedAt} < ${cutoffs.campaign})
+      or exists (select 1 from ${n} where ${n.status} = 'queued' and ${n.campaignId} is null and not (${n.payload} ? 'items')
+        and ${n.updatedAt} < ${cutoffs.event})
+      or exists (select 1 from ${n} where ${n.status} = 'queued' and ${digestPeriodEnded(cutoffs.digest)})
+      or exists (select 1 from ${n} where ${n.status} = 'queued' and ${n.createdAt} < ${cutoffs.expired})
+    ) as found`);
+  return result.rows[0]?.found === true;
+}
+
+/**
+ * Deletes one batch of log rows older than a moment.
+ *
+ * Why: retention (plan 8.4): `sent` and `failed` rows only, by creation time, in batches so one run never holds a long lock. A `queued`
+ * row is never deleted here (the reconciler ends it first).
+ *
+ * @param db the pool
+ * @param createdBefore rows created before this moment
+ * @param limit the batch size
+ * @returns how many rows were deleted
+ */
+export async function deleteLogBatch(db: DbExecutor, createdBefore: Date, limit: number): Promise<number> {
+  const old = db
+    .select({ id: notifications.id })
+    .from(notifications)
+    .where(and(sql`${notifications.status} in ('sent', 'failed')`, sql`${notifications.createdAt} < ${createdBefore}`))
+    .orderBy(notifications.id)
+    .limit(limit);
+  const rows = await db
+    .delete(notifications)
+    .where(sql`${notifications.id} in (${old})`)
+    .returning({ id: notifications.id });
+  return rows.length;
 }

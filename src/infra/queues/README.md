@@ -32,6 +32,12 @@ listed in `docs/queues.md`; a test fails when that document and `QUEUES` disagre
 - **Redis down.** `add` throws `AppError('UNAVAILABLE')` (503, `Retry-After: 5`) when the queue Redis is unreachable, full
   (`OOM`, the instance is `noeviction`) or loading. A bad call (a `:` in the job id, a payload over the size limit) stays the
   BullMQ error. A use case that must not lose the work writes an outbox row instead of calling `add` (decision 020).
+- **Many jobs at once** (feature 23): `QueuesService.addBulk(name, [{ jobName, data, options }])` adds them in slices of 1 000 (one
+  round trip each), with the request id and the queue's defaults like `add`, and the same `UNAVAILABLE` mapping. A job id that
+  is taken is left as it is, so a repeated call is harmless; when Redis fails midway, earlier slices may already be in.
+- **Rate limits** (feature 23): a queue may declare `limiter: { max, durationMs }` in `QUEUES`; the worker passes it to BullMQ's
+  `Worker` `limiter`, which caps the jobs that start per window across every worker of that queue. Only
+  `notification-broadcasts` has one (30 a second), so the transactional queues are never slowed by a broadcast.
 - **Retries.** The queue's `attempts` and exponential backoff with jitter apply to every job. Throw `UnrecoverableError`
   (re-exported here) for a permanent failure. `supplier-dispatch` jobs are never re-run after a worker died (`maxStalledCount`
   0) and its processor throws `UnrecoverableError` for a send that may have reached the supplier (decision 025).

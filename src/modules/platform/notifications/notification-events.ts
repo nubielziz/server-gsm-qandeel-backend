@@ -35,6 +35,11 @@ export interface NotificationEventDefinition {
   readonly defaultTelegram: boolean;
   /** True for an event that is collected and sent once a day (the price change digest, user rule 9). */
   readonly digest?: boolean;
+  /**
+   * False for an event whose text is not a template (feature 23: a campaign's own content, the test of a campaign): staff cannot add
+   * a template for it, and the delivery renders it without one. Default true.
+   */
+  readonly templated?: boolean;
 }
 
 /** Sample data of the merchant events: what a made-up merchant would see. */
@@ -117,6 +122,11 @@ function staffEvent(
   };
 }
 
+/**
+ * A customer event. `transactional: true` marks a message that reports on the customer's own purchase or ticket (feature 23, S6): it
+ * still reaches a suspended or blocked customer, who would otherwise stop hearing about an order they paid for. Marketing and surveys
+ * stay non-transactional.
+ */
 function customerEvent(
   spec: Omit<
     NotificationEventDefinition,
@@ -273,6 +283,7 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
   }),
   customerEvent({
     key: 'order.received',
+    transactional: true,
     label: 'Order received',
     description: 'A storefront order was paid and accepted.',
     channels: ['email'],
@@ -280,6 +291,7 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
   }),
   customerEvent({
     key: 'order.completed',
+    transactional: true,
     label: 'Order completed',
     description: 'A storefront order was completed.',
     channels: ['email'],
@@ -287,6 +299,7 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
   }),
   customerEvent({
     key: 'order.failed',
+    transactional: true,
     label: 'Order failed',
     description: 'A storefront order could not be completed and was refunded.',
     channels: ['email'],
@@ -296,6 +309,7 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
   {
     ...customerEvent({
       key: 'support.reply',
+      transactional: true,
       label: 'Support reply',
       description: 'Support answered a ticket.',
       channels: ['email'],
@@ -319,6 +333,7 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
   }),
   customerEvent({
     key: 'payment.failed',
+    transactional: true,
     label: 'Payment failed',
     description: 'The customer’s payment was declined.',
     channels: ['email'],
@@ -326,6 +341,7 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
   }),
   customerEvent({
     key: 'refund.declined',
+    transactional: true,
     label: 'Refund declined',
     description: 'Staff declined a refund request: the customer reads the reason staff gave.',
     channels: ['email'],

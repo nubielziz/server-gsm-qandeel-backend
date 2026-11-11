@@ -7,6 +7,7 @@ import { type AdminApi, adminWith } from '../support/admin-api';
 import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches, insertMerchant } from '../support/auth';
 import { TestClock } from '../support/clock';
+import { createDraft } from '../support/campaigns';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 
 const clock = new TestClock('2026-11-01T10:00:00.000Z');
@@ -110,6 +111,7 @@ describe('GET /admin/notifications', () => {
       attempts: 1,
       sentAt: '2026-11-01T06:00:00.000Z',
       error: null,
+      campaignId: null,
       createdAt: '2026-11-01T06:00:00.000Z',
       updatedAt: expect.any(String),
     });
@@ -187,6 +189,47 @@ describe('GET /admin/notifications', () => {
     expect(ids((await list(`q=${encodeURIComponent('Daniel.Whitmore@Example.com')}`)).body)).toEqual([failed]);
     expect((await list('q=ops@zainmobilehub.example')).total).toBe(2);
     expect(ids((await list('q=low_bal')).body)).toEqual([lowTelegram, lowEmail]);
+  });
+
+  it('filters by campaign and shows the campaign of each message (feature 23)', async () => {
+    const { lowEmail, lowTelegram } = await history();
+    const draft = await createDraft(owner);
+    const { db } = await testDb();
+    await db.update(s.notifications).set({ campaignId: draft.id }).where(eq(s.notifications.id, lowTelegram));
+    const list = async (query: string) => await owner.get(`/admin/notifications?${query}`);
+    const mine = await list(`campaignId=${draft.id}`);
+    expect(ids(mine.body)).toEqual([lowTelegram]);
+    expect(mine.total).toBe(1);
+    expect(mine.body[0].campaignId).toBe(draft.id);
+    expect((await list('campaignId=9999')).total).toBe(0);
+    expect((await list('campaignId=abc')).status).toBe(422);
+    expect((await owner.get(`/admin/notifications/${lowTelegram}`)).body.campaignId).toBe(draft.id);
+    expect((await owner.get(`/admin/notifications/${lowEmail}`)).body.campaignId).toBeNull();
+  });
+
+  it('keeps the total exact with and without a search, now that the count joins the recipients only for a search', async () => {
+    await history();
+    const draft = await createDraft(owner);
+    const { db } = await testDb();
+    // A pile of one campaign's messages to people that do not exist (the joins find nothing): the count is still the row count.
+    await db.insert(s.notifications).values(
+      Array.from({ length: 30 }, (_, n) => ({
+        recipientType: 'customer' as const,
+        recipientId: 900_000 + n,
+        channel: 'email' as const,
+        event: 'broadcast.announcement',
+        status: 'sent' as const,
+        campaignId: draft.id,
+        createdAt: new Date(clock.nowMs() - n),
+      })),
+    );
+    const list = async (query: string) => await owner.get(`/admin/notifications?${query}`);
+    expect((await list('_start=0&_end=5')).total).toBe(34);
+    expect((await list(`campaignId=${draft.id}&_start=0&_end=5`)).total).toBe(30);
+    expect((await list(`campaignId=${draft.id}&status=failed`)).total).toBe(0);
+    expect((await list(`q=broadcast&_start=0&_end=5`)).total).toBe(30);
+    expect((await list(`q=ops@zainmobilehub.example&campaignId=${draft.id}`)).total).toBe(0);
+    expect((await list('q=ops@zainmobilehub.example')).total).toBe(2);
   });
 
   it('needs a session and the notifications:read permission', async () => {

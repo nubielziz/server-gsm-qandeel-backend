@@ -30,7 +30,7 @@ The merchant webhooks (7b): `WebhookEventsModule` (event contracts and the outbo
 
 ## Owned tables
 
-Only this module reads and writes these 8 tables (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts` once the data layer exists.
+Only this module reads and writes these 10 tables (`scripts/module-map.mjs`; the last two are `additionalTables` of feature 23); other modules call its public service. Schema: `db/schema.ts` once the data layer exists.
 
 | Table | What it holds |
 |---|---|
@@ -42,6 +42,8 @@ Only this module reads and writes these 8 tables (`scripts/module-map.mjs`); oth
 | `outbox_events` | Events waiting to be processed by the worker. |
 | `audit_logs` | The audit log of admin actions. |
 | `files` | S3 files and their metadata. |
+| `notification_campaigns` | The campaigns of the notification center: message, audience, channels, state and fan-out progress (feature 23). |
+| `notification_inbox` | The in-app notifications of staff, merchants and customers, with read state (feature 23). |
 
 ## Routes
 
@@ -505,11 +507,105 @@ closes the row first, so a later change opens the next period's row: at most one
 Reasons are cleaned of addresses and never hold a token. The log's masks are built from the recipient's current row.
 
 **Merchant and customer mail** (identity's `MerchantMailJobs`, feature 14b's customers `CustomerMailJobs`) call `NotificationService.sendNow` with the clear link as a secret
-placeholder: it fills the template and is never stored, logged or put in the payload. The platform reads a customer as never suspended (`recipientOf`), so the customer mail
-job judges the customer's status itself (only an active customer gets a link).
+placeholder: it fills the template and is never stored, logged or put in the payload. `recipientOf` reads a customer's status (feature 23): an anonymized customer is gone (nothing is sent), a suspended or blocked one is `suspended`
+(only transactional events reach them; the order, payment, refund, ticket and account events are transactional). The customer mail job still judges the
+customer's status itself (only an active customer gets a link).
 
 **Foreign reads.** `notification-foreign-reads.ts` reads `clients`, `staff_users` and `customers` (the recipient) and the order of an order notification with plain selects:
 the documented deviation of decision 016 that the webhook reads already carry (platform imports no module, decision 032). Replace the bodies when those modules export a reader.
 
 Open points: the routes of `invoice.paid` and `deposit.approved` to `notifications` are added when feature 8 (their producer) is merged; a Telegram `retry_after` is not
 honoured beyond the queue's own 30 s first backoff (it is shorter in practice).
+
+## Notification center (feature 23)
+
+Staff write a message once and send it to an audience; people read it in their inbox, by email or by Telegram. Plan:
+`docs/briefs/23-notification-center.md`: campaigns, audiences, previews, the test send, the fan-out, the bulk queue, the campaign branch of
+the delivery, cancel and scheduling; the inbox (12 routes on three surfaces) and its event items; Arabic templates and the right-to-left
+email part; the customer status fix, the reconciler, retention, the cheaper log count and the marketing unsubscribe.
+
+**Tables.** `notification_campaigns` (the message in `en` and optional `ar`, the audience spec, channels `in_app`/`email`/`telegram`,
+purpose `service`/`marketing`, the state machine, the fan-out cursor and counters), `notification_inbox` (one in-app item per person:
+a campaign item, rendered from the campaign at read time, or an event item with its variables; read state) and
+`notifications.campaign_id` (a campaign's email and Telegram rows, event `broadcast.announcement`). The in-app channel is its own table,
+not a value of the log's channel enum.
+
+**Routes** (beyond the map, `scripts/map-additions/23.mjs`; permission area `broadcasts`, held by nobody but the Owner until a role is
+granted it): `GET|POST /admin/notification-campaigns`, `GET|PATCH|DELETE /admin/notification-campaigns/:id`,
+`POST /admin/notification-campaigns/audience-preview` (counts only), `POST .../:id/preview` (render with a sample name),
+`POST .../:id/test` (an in-app item and one email to the caller), `POST .../:id/send` (body `confirmRecipients`: a drift above
+max(5, 2 %) is `409 CONFLICT` with `recipients`), `POST .../:id/schedule` (1 minute to 90 days ahead), `POST .../:id/cancel`,
+`GET .../:id/recipients?channel=` (masked addresses). Audit entity `notification_campaign`; the actions `created`, `edited`, `deleted`,
+`scheduled`, `sent`, `sent scheduled` (system), `cancelled notification campaign` and `sent test notification`.
+
+**State machine.** `draft -> scheduled | queued`, `scheduled -> scheduled | queued | cancelled`, `queued -> sending -> sent`,
+`queued|sending -> cancelled | failed`; every transition is a guarded `UPDATE ... WHERE status = ANY(from)`. `send` and `schedule` count
+the audience on the pool and move the row only if its audience, channels and purpose are still the ones counted. `sent` means the
+fan-out finished (every in-app item exists, every message is queued); the detail's `delivery` counts what was sent since.
+
+**Audiences** (`campaigns/notification-audiences.ts`). Platform imports no module, so identity registers the staff and merchant
+providers and customers the customer provider in `NotificationAudiences` at boot. Each answers `count`, `page` (keyset by id) and
+`member` (the send-time check) from one SQL predicate: active staff (roles), merchants by status (default active; a listed one may be
+pending), group and country, with the email and Telegram flags of their `broadcast.announcement` switches (the SQL twin of
+`choiceFor`), and active customers (account, country, language; consent for marketing).
+
+**Fan-out and sending.** `send` (or the minute sweep) writes one `notification.campaign_fanout` outbox event; the worker's
+`CampaignFanOut` walks the audience in chunk transactions (row lock on the campaign, `ON CONFLICT DO NOTHING` inserts, the cursor moved in
+the same transaction), then hands each chunk's rows to the queue `notification-broadcasts` with `QueuesService.addBulk`. It pauses while
+that queue holds more than 20 000 jobs and hands over to a continuation after 20 s. `BroadcastSendProcessor` takes one point of the
+per-channel budget (`broadcast-email`, `broadcast-telegram`, sized by the settings `notifications.broadcast_email_per_second` and
+`notifications.broadcast_telegram_per_second`) and calls `NotificationDelivery.deliver`, whose campaign branch re-reads the campaign
+(cancelled: the row fails with the reason), the person's eligibility and switches, renders the campaign in the person's language (`ar`
+falls back to `en`; email has an escaped HTML part, right to left for Arabic) and sends it. Jobs, ids and retries: `docs/queues.md`.
+
+**Scheduling.** `notification_campaign_sweep` (maintenance, every minute) queues the due campaigns, re-kicks a fan-out whose row has
+not moved for 5 minutes and fails one still running a day after it was queued. It records its runs through the `JOB_RUN_RECORDER` port
+(`jobs/job-run-recorder.ts`) that health provides, since platform cannot import health.
+
+**Registries other modules use.** `NotificationAudiences` (providers), `InboxTextRegistry` (the in-app text of an event, in English
+and Arabic), `NotificationInbox.add` (an event item in the caller's transaction). The events `broadcast.announcement` (merchant:
+not transactional, email and Telegram on by default, so merchants see "Announcements" in their preferences; customer: not
+transactional; staff) and `broadcast.test` are registered by `BroadcastEvents`, have `templated: false` (a template for them is refused)
+and are not in `BUILT_IN_EVENTS`.
+
+**Inbox.** Four routes per surface, one `InboxService`: `GET /admin/inbox`, `GET /client/notifications`, `GET /store/v1/me/notifications`
+(list: `category`, `unread=true|false`, `locale=en|ar`, `_start`/`_end` up to 100, `x-total-count`, newest first), the same path plus
+`/unread-count` (capped at 100: an index probe on the partial unread index, never cached), `POST .../:id/read` (204, idempotent) and
+`POST .../read-all` (body `{ upToId? }`, so an item that arrives during the click stays unread). The person is the actor the session
+guard put in the request context (`inboxOwner`), never a parameter: every read and write carries `recipient_type` and `recipient_id`, so
+another person's id is `404`, never `403`. A pending merchant may read; a suspended one is refused (`ACCOUNT_SUSPENDED`); the two
+staff POSTs are `audit: false` (a staff member's own read state). Items of a cancelled campaign are hidden from the list and the count.
+Text is made at read time (`inbox-views.ts`): a campaign item from the campaign's content (`{{name}}`, `ar` falling back to `en`), an
+event item from the `InboxTextRegistry`, in `locale` (default: a customer's saved language, English for the others).
+
+**Event items.** `NotificationService.enqueue` (with a dedupe key) and `EventNotifier.notifyMerchant` also write the event's inbox item
+(`NotificationInbox.addForEvent`, key `inapp:<audience>:<event>:<occurrence>`), in the same transaction and before the template and
+channel checks, so a merchant who switched email and Telegram off, or a customer whose email template is off, still gets the item. Built in
+(`inbox/built-in-inbox-texts.ts`): the customer's `order.received`, `order.completed`, `order.failed`, `payment.failed`, `refund.declined`
+and the merchant's `wallet.low_balance`, `invoice.paid`. A recipient with no inbox (`Recipient.inboxEligible`: a guest customer, a
+suspended or anonymized person) gets no item. Other modules register their text with `InboxTextRegistry.register` and call
+`NotificationInbox.add`.
+
+**Recipient status (S6).** `recipientOf` reads a customer's status: anonymized is gone, suspended or blocked is `suspended`. The customer events
+that report on the customer's own purchase or ticket are transactional (`order.received`, `order.completed`, `order.failed`,
+`payment.failed`, `refund.declined`, `support.reply`, `support.ticket_received`), so a suspended or blocked customer still gets them;
+`support.csat_survey` and `checkout.abandoned` stay non-transactional.
+
+**Arabic.** `arabic-templates.ts` holds the 31 Arabic default templates (every English merchant and customer row of
+`DEFAULT_TEMPLATES` and of the support module; staff alerts stay English) and `arabicTemplatesSql()`; migration `0021` inserts them
+(`ON CONFLICT DO NOTHING`) and a spec keeps code and SQL equal. For a reader whose language starts with `ar` the delivery adds the
+right-to-left HTML part of an event mail (a text template gets `emailHtml(text, 'ar')`, an HTML template is wrapped in the `div`); an English
+mail is unchanged.
+
+**Hardening.** `notification_reconcile` (every 5 minutes) re-adds the job of a queued row whose job was lost (a campaign row after 15 minutes,
+an event row after 30 whose relayed job is gone, a digest whose period ended) and fails a row older than 48 hours; rows made by `sendNow`
+(a secret link, no outbox event) are never re-sent. `notification_retention` (daily 04:20 UTC) deletes read inbox items after 90 days, all
+items after 365 and sent or failed log rows after 180 (the three settings below), in batches. The log's `count(*)` joins the recipient
+tables only for a `q` search. `GET /admin/notifications` filters by `campaignId` and answers it. A marketing email to a customer carries
+the footer and `List-Unsubscribe` headers made from `marketingUnsubscribeToken` (a stateless keyed MAC over the customer id); the
+customers module owns the route `POST /store/v1/marketing/unsubscribe/:token`. `NotificationPrivacy.eraseRecipient` deletes a person's
+inbox and empties their log payloads (the customers module calls it from its anonymization hook). Jobs: `docs/queues.md`.
+
+**Settings.** `notifications.broadcast_email_per_second` (1-30, default 5), `notifications.broadcast_telegram_per_second` (1-30,
+default 20), `notifications.inbox_read_retention_days` (7-3650, default 90), `notifications.inbox_retention_days` (30-3650, default
+365), `notifications.log_retention_days` (30-3650, default 180). No cache key: the unread count is not cached.

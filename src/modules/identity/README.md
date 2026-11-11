@@ -447,6 +447,15 @@ Staff tools, merchant sign-in changes, the staff link mails and staff-made API k
 | Staff edit a key's limits or revoke it | none | none | that key's view dropped | none |
 | The merchant chooses a password (change, reset, invitation) | the others ended, this one rotated | password links voided | session views dropped | none |
 
+### Notification center audiences (feature 23)
+
+`notifications/` holds the staff and merchant audience providers of the platform's notification center (`StaffAudience`,
+`MerchantAudience`), registered with `NotificationAudiences` by `IdentityAudienceModule` at boot (imported by `IdentityModule` and the
+worker). Staff: active members, optionally of some roles. Merchants: by status (default active; a listed merchant may be pending),
+group and country, never suspended; their email and Telegram flags are the SQL twin of `choiceFor` for `broadcast.announcement`
+(a Telegram message also needs a linked chat). Merchants read the language of `clients.locale` (feature 20; the `arabic` flag and `page` of
+`merchant-audience.ts`); staff read English. The providers only read `staff_users` and `clients`.
+
 ## Owned tables
 
 Only this module reads and writes these 8 tables (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts` once the data layer exists.

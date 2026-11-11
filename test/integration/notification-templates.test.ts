@@ -231,6 +231,19 @@ describe('POST /admin/notification-templates', () => {
     expect(await audit()).toEqual([]);
   });
 
+  it('refuses a template for an event that a campaign writes itself (feature 23), with 422 on event', async () => {
+    const res = await owner.post('/admin/notification-templates', {
+      ...customerSupportReply,
+      event: 'broadcast.announcement',
+      body: 'Hello {{customerName}}',
+    });
+    expect(res.status).toBe(422);
+    expect(fieldsOf(res.body)).toEqual(['event']);
+    expect(res.body.errors[0].code).toBe('not_templated');
+    expect(res.body.errors[0].message).toBe('Announcements are written per campaign, not as a template.');
+    expect(await audit()).toEqual([]);
+  });
+
   it('refuses an event that is not sent to the audience or not by the channel', async () => {
     const audience = await owner.post('/admin/notification-templates', {
       ...customerSupportReply,

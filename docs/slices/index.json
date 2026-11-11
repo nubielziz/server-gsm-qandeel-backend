@@ -33,15 +33,15 @@
       "module": "platform",
       "name": "Platform (settings, audit, files, notifications, webhooks, outbox)",
       "domain": "G",
-      "rows": 28,
-      "endpoints": 35,
+      "rows": 52,
+      "endpoints": 59,
       "bySurface": {
         "v1": 2,
-        "client": 11,
-        "admin": 17,
+        "client": 15,
+        "admin": 33,
         "hooks": 1,
         "system": 2,
-        "store": 2
+        "store": 6
       },
       "frontendCalled": 17,
       "stages": [
@@ -51,7 +51,8 @@
         9,
         12,
         21,
-        22
+        22,
+        23
       ],
       "tables": 8,
       "scenarios": [
@@ -239,10 +240,10 @@
       "module": "customers",
       "name": "Storefront customers & checkout (B2C)",
       "domain": "I",
-      "rows": 26,
-      "endpoints": 29,
+      "rows": 27,
+      "endpoints": 30,
       "bySurface": {
-        "store": 14,
+        "store": 15,
         "admin": 15
       },
       "frontendCalled": 15,
@@ -251,7 +252,8 @@
         16,
         18,
         19,
-        21
+        21,
+        23
       ],
       "tables": 4,
       "scenarios": [

@@ -63,7 +63,7 @@ const fieldsOf = (body: { errors: Array<{ field: string }> }) => body.errors.map
 const clientRow = async (id: number) => (await db.select().from(s.clients).where(eq(s.clients.id, id)))[0]!;
 
 describe('GET /client/notification-preferences', () => {
-  it('lists the events a merchant may switch, with the defaults: email on, Telegram off, order results off, no alert level', async () => {
+  it('lists the events a merchant may switch, with the defaults: email on, Telegram off (on for announcements), order results off, no alert level', async () => {
     const m = await signedIn({ email: 'ops@zainmobilehub.example' });
     const res = await m.call('GET', '/client/notification-preferences');
     expect(res.status).toBe(200);
@@ -78,6 +78,8 @@ describe('GET /client/notification-preferences', () => {
         { event: 'invoice.paid', label: 'Invoice paid', email: true, telegram: false },
         { event: 'order.completed', label: 'Order completed', email: false, telegram: false },
         { event: 'order.failed', label: 'Order failed', email: false, telegram: false },
+        // Feature 23: the notification center's announcements, email and Telegram on by default (linking a chat is the opt-in).
+        { event: 'broadcast.announcement', label: 'Announcements', email: true, telegram: true },
       ],
     });
     // The mails that sign you in are always sent, so they are not listed.

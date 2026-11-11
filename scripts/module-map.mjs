@@ -31,6 +31,8 @@ export const modules = [
     name: 'Platform (settings, audit, files, notifications, webhooks, outbox)',
     domain: 'G',
     tables: ['settings', 'notification_templates', 'notifications', 'webhook_endpoints', 'webhook_deliveries', 'outbox_events', 'audit_logs', 'files'],
+    // Feature 23 (notification center): the campaigns and the in-app inbox.
+    additionalTables: ['notification_campaigns', 'notification_inbox'],
     rows: [
       /^admin \S+ \/admin\/(audit-logs|settings|files|dashboard|webhook-deliveries|notification-templates|notifications)(\/|$)/,
       /^client \S+ \/client\/(files|webhooks|notification-preferences|telegram)(\/|$)/,

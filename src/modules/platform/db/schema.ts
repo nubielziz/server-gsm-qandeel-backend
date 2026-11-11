@@ -25,7 +25,7 @@ import {
   timestampTz,
   updatedAt,
 } from '../../../infra/db/columns';
-import { clients } from '../../identity/db/schema';
+import { clients, staffUsers } from '../../identity/db/schema';
 
 /**
  * Channels a notification can be sent through.
@@ -148,6 +148,180 @@ export type NotificationTemplate = typeof notificationTemplates.$inferSelect;
 export type NewNotificationTemplate = typeof notificationTemplates.$inferInsert;
 
 /**
+ * Lifecycle of a notification campaign (feature 23).
+ *
+ * Why: the campaign state machine: a draft is edited, scheduled or sent; the minute sweep queues a scheduled one; the fan-out
+ * moves it to `sending` and `sent`; staff cancel a scheduled or running one; a fan-out that cannot finish ends `failed`.
+ */
+export const NOTIFICATION_CAMPAIGN_STATUSES = [
+  'draft',
+  'scheduled',
+  'queued',
+  'sending',
+  'sent',
+  'cancelled',
+  'failed',
+] as const;
+
+/** One value of {@link NOTIFICATION_CAMPAIGN_STATUSES}. */
+export type NotificationCampaignStatus = (typeof NOTIFICATION_CAMPAIGN_STATUSES)[number];
+
+/**
+ * Why a campaign is sent: a service announcement, or marketing (which needs a customer's consent).
+ *
+ * Why: L5 (feature 23): marketing reaches only customers who agreed, checked at fan-out and at send.
+ */
+export const NOTIFICATION_CAMPAIGN_PURPOSES = ['service', 'marketing'] as const;
+
+/** One value of {@link NOTIFICATION_CAMPAIGN_PURPOSES}. */
+export type NotificationCampaignPurpose = (typeof NOTIFICATION_CAMPAIGN_PURPOSES)[number];
+
+/**
+ * What an in-app notification is about; the list and the clients pick an icon by it.
+ *
+ * Why: feature 23: campaign items are `announcement` or `marketing`; event items name their area. `billing`, `support`, `account`
+ * and `alert` exist for later events, so adding them needs no CHECK migration.
+ */
+export const NOTIFICATION_INBOX_CATEGORIES = [
+  'announcement',
+  'marketing',
+  'order',
+  'payment',
+  'wallet',
+  'billing',
+  'support',
+  'account',
+  'alert',
+] as const;
+
+/** One value of {@link NOTIFICATION_INBOX_CATEGORIES}. */
+export type NotificationInboxCategory = (typeof NOTIFICATION_INBOX_CATEGORIES)[number];
+
+/**
+ * Messages staff write once and send to an audience (feature 23, notification center).
+ *
+ * Why: a broadcast is one row plus a chunked fan-out, never one outbox event per recipient (L5); the row keeps the audience,
+ * the content in English and Arabic, the state machine, the fan-out cursor and the planned counters.
+ */
+export const notificationCampaigns = pgTable(
+  'notification_campaigns',
+  {
+    id: pk(),
+    /** the staff-facing label, 1-120 characters */
+    name: text().notNull(),
+    purpose: text().$type<NotificationCampaignPurpose>().notNull(),
+    /** `in_app`, `email`, `telegram`; at least one (CHECK) */
+    channels: textList(),
+    /** the validated audience spec (`campaigns/audience-spec.ts`) */
+    audience: jsonb().$type<Record<string, unknown>>().notNull(),
+    /** `{ en: { title, body }, ar?: { title, body } }` */
+    content: jsonb().$type<Record<string, unknown>>().notNull(),
+    /** `{ staff?, merchant?, customer? }` site-relative paths, or null */
+    link: jsonb().$type<Record<string, unknown>>(),
+    status: text().$type<NotificationCampaignStatus>().notNull().default('draft'),
+    scheduledAt: timestampTz(),
+    queuedAt: timestampTz(),
+    startedAt: timestampTz(),
+    finishedAt: timestampTz(),
+    cancelledAt: timestampTz(),
+    /** the reachable count when staff sent or scheduled it */
+    expectedRecipients: integer(),
+    /** people the fan-out made at least one row for */
+    recipients: integer().notNull().default(0),
+    /** `{ planned: { inApp, email, telegram }, skipped: { optedOut, noTelegram, noAccount } }`, written by the fan-out only */
+    stats: jsonObject(),
+    /** `{ type, afterId }` of the next fan-out chunk; null before the start and after the end */
+    fanoutCursor: jsonb().$type<Record<string, unknown>>(),
+    /** how many chunks the fan-out committed; part of continuation job ids */
+    chunksDone: integer().notNull().default(0),
+    /** why it is `failed` */
+    error: text(),
+    createdBy: fk((): AnyPgColumn => staffUsers.id).notNull(),
+    updatedBy: fk((): AnyPgColumn => staffUsers.id),
+    cancelledBy: fk((): AnyPgColumn => staffUsers.id),
+    createdAt: createdAt(),
+    /** also the fan-out's heartbeat: the sweep re-kicks a running campaign whose row has not moved for 5 minutes */
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('notification_campaigns_status_check', inList(t.status, NOTIFICATION_CAMPAIGN_STATUSES)),
+    check('notification_campaigns_purpose_check', inList(t.purpose, NOTIFICATION_CAMPAIGN_PURPOSES)),
+    check(
+      'notification_campaigns_channels_check',
+      sql`${t.channels} <@ array['in_app','email','telegram']::text[] and cardinality(${t.channels}) > 0`,
+    ),
+    index('notification_campaigns_due_idx')
+      .on(t.scheduledAt)
+      .where(sql`${t.status} = 'scheduled'`),
+    index('notification_campaigns_status_idx').on(t.status, t.updatedAt),
+    index('notification_campaigns_created_idx').on(t.createdAt.desc()),
+    index('notification_campaigns_created_by_idx').on(t.createdBy),
+    index('notification_campaigns_updated_by_idx').on(t.updatedBy),
+    index('notification_campaigns_cancelled_by_idx').on(t.cancelledBy),
+  ],
+);
+
+/** A row read from `notification_campaigns`. */
+export type NotificationCampaign = typeof notificationCampaigns.$inferSelect;
+
+/** A row to insert into `notification_campaigns`. */
+export type NewNotificationCampaign = typeof notificationCampaigns.$inferInsert;
+
+/**
+ * The in-app notifications of staff, merchants and customers (feature 23).
+ *
+ * Why: the in-app channel is its own table (not a value of the log's channel enum): read state, an unread count and paging per
+ * person. An item comes from a campaign (rendered from the campaign's content at read time) or from an event (rendered from the
+ * in-app text registry with `variables`).
+ */
+export const notificationInbox = pgTable(
+  'notification_inbox',
+  {
+    id: pk(),
+    recipientType: text().$type<NotificationRecipientType>().notNull(),
+    /** polymorphic: staff_users, clients or customers by recipient_type */
+    recipientId: bigId().notNull(),
+    campaignId: fk((): AnyPgColumn => notificationCampaigns.id),
+    /** the registry key of an event item */
+    event: text(),
+    category: text().$type<NotificationInboxCategory>().notNull(),
+    /** placeholder values of an event item; never a secret, a token or a link with a token */
+    variables: jsonObject(),
+    readAt: timestampTz(),
+    /** the occurrence key of an event item (`inapp:<audience>:<event>:<occurrence>`) */
+    dedupeKey: text(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('notification_inbox_recipient_type_check', inList(t.recipientType, NOTIFICATION_RECIPIENT_TYPES)),
+    check('notification_inbox_category_check', inList(t.category, NOTIFICATION_INBOX_CATEGORIES)),
+    check('notification_inbox_source_check', sql`(${t.campaignId} is not null) <> (${t.event} is not null)`),
+    uniqueIndex('notification_inbox_campaign_recipient_uq')
+      .on(t.campaignId, t.recipientType, t.recipientId)
+      .where(sql`${t.campaignId} is not null`),
+    uniqueIndex('notification_inbox_dedupe_key_uq')
+      .on(t.dedupeKey)
+      .where(sql`${t.dedupeKey} is not null`),
+    index('notification_inbox_recipient_idx').on(t.recipientType, t.recipientId, t.createdAt.desc(), t.id.desc()),
+    index('notification_inbox_unread_idx')
+      .on(t.recipientType, t.recipientId)
+      .where(sql`${t.readAt} is null`),
+    index('notification_inbox_campaign_id_idx').on(t.campaignId, t.readAt),
+    index('notification_inbox_created_idx').on(t.createdAt),
+    index('notification_inbox_read_idx')
+      .on(t.readAt)
+      .where(sql`${t.readAt} is not null`),
+  ],
+);
+
+/** A row read from `notification_inbox`. */
+export type NotificationInboxItem = typeof notificationInbox.$inferSelect;
+
+/** A row to insert into `notification_inbox`. */
+export type NewNotificationInboxItem = typeof notificationInbox.$inferInsert;
+
+/**
  * A log of the notifications that were sent.
  *
  * Why: Log of the notifications sent to staff, merchants and customers (route /admin/notifications, B72).
@@ -175,6 +349,8 @@ export const notifications = pgTable(
      * twice, or an update Telegram repeats, never makes a second row; null for a row nothing repeats (feature 12a)
      */
     dedupeKey: text(),
+    /** the campaign a broadcast row belongs to (feature 23); null for an event's message */
+    campaignId: fk((): AnyPgColumn => notificationCampaigns.id),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -189,6 +365,11 @@ export const notifications = pgTable(
       .on(t.dedupeKey)
       .where(sql`${t.dedupeKey} is not null`),
     // The count of "sent in the last 30 days" per template (identity-platform-11) reads only sent rows.
+    // Feature 23: the per-campaign stats (index-only) and the per-campaign recipient list.
+    index('notifications_campaign_idx').on(t.campaignId, t.channel, t.status),
+    index('notifications_campaign_list_idx')
+      .on(t.campaignId, t.channel, t.id)
+      .where(sql`${t.campaignId} is not null`),
     index('notifications_sent_idx')
       .on(t.event, t.channel, t.recipientType, t.sentAt)
       .where(sql`${t.status} = 'sent'`),

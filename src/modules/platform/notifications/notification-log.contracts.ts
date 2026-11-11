@@ -25,6 +25,13 @@ const LogRow = z.object({
   payload: zJsonObject
     .optional()
     .describe('The data the message was built from (never a secret). Only on the single read.'),
+  // Optional like `attempts`: the console's own type (and its fixtures) have no such field; the server always sends it.
+  campaignId: zId
+    .nullable()
+    .optional()
+    .describe(
+      'The notification campaign (broadcast) this message belongs to; null for an event’s message; always sent.',
+    ),
   createdAt: zIsoDateTime,
   // Optional like the console's own type; the server always sends it.
   updatedAt: zIsoDateTime.optional().describe('When the row last changed; always sent.'),
@@ -41,6 +48,7 @@ const ROW_EXAMPLE = {
   attempts: 1,
   sentAt: '2026-11-01T10:00:04.000Z',
   error: null,
+  campaignId: null,
   createdAt: '2026-11-01T10:00:01.000Z',
   updatedAt: '2026-11-01T10:00:04.000Z',
 } as const;
@@ -52,7 +60,8 @@ export const listNotificationLog = defineRoute({
   description:
     'Every message the system sent or tried to send, newest first. `recipient` is masked by the server. `status` is `queued`, `sent` or `failed`; ' +
     '`error` says why a message failed. `recipientType` is `staff`, `client` (a merchant) or `customer`. The list leaves out `payload`. `q` is a ' +
-    'case-insensitive contains over the event; it matches the recipient’s address only when it equals the whole address (any letter case).',
+    'case-insensitive contains over the event; it matches the recipient’s address only when it equals the whole address (any letter case). ' +
+    '`campaignId` shows the messages of one notification campaign.',
   tags: ['notifications'],
   surface: 'admin',
   access: 'staff-permission',
@@ -65,6 +74,7 @@ export const listNotificationLog = defineRoute({
       channel: { type: 'enum', values: [...NOTIFICATION_CHANNELS], ops: ['eq'] },
       event: { type: 'string', ops: ['eq'] },
       recipientType: { type: 'enum', values: [...NOTIFICATION_RECIPIENT_TYPES], ops: ['eq'] },
+      campaignId: { type: 'id', ops: ['eq'] },
     },
     search: ['event', 'recipient'],
   }),

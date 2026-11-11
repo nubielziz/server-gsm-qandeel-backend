@@ -17,6 +17,7 @@ import {
   COMPLETED_JOB_MAX_COUNT,
   FAILED_JOB_MAX_AGE_SECONDS,
   QUEUES,
+  type QueueDefinition,
   type QueueName,
 } from './queue-definitions';
 import { type QueueHandlers, buildProcessorTable, findQueueProcessors, handlerFor } from './queue-processor';
@@ -149,12 +150,15 @@ export class QueueWorkers implements OnApplicationBootstrap, OnModuleDestroy {
   }
 
   private start(queue: QueueName, handlers: QueueHandlers, connection: Redis): Worker {
-    const definition = QUEUES[queue];
+    const definition: QueueDefinition = QUEUES[queue];
     const worker = new Worker(queue, (job: Job) => this.run(queue, handlers, job), {
       connection,
       prefix: this.config.redis.bullPrefix,
       concurrency: definition.concurrency,
       maxStalledCount: definition.maxStalledCount,
+      ...(definition.limiter
+        ? { limiter: { max: definition.limiter.max, duration: definition.limiter.durationMs } }
+        : {}),
       // The producer's defaults already carry these; they cover jobs that were added some other way.
       removeOnComplete: { age: COMPLETED_JOB_MAX_AGE_SECONDS, count: COMPLETED_JOB_MAX_COUNT },
       removeOnFail: { age: FAILED_JOB_MAX_AGE_SECONDS },

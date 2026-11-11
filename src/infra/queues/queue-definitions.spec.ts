@@ -29,7 +29,7 @@ function section(name: string): string | undefined {
 }
 
 describe('QUEUES', () => {
-  it('has the ten queues of decision 020', () => {
+  it('has the ten queues of decision 020 and the bulk queue of feature 23', () => {
     expect<string[]>([...QUEUE_NAMES].sort()).toEqual(
       [
         'alerts',
@@ -37,6 +37,7 @@ describe('QUEUES', () => {
         'imports',
         'maintenance',
         'merchant-webhooks',
+        'notification-broadcasts',
         'notifications',
         'outbox-relay',
         'supplier-dispatch',
@@ -60,6 +61,18 @@ describe('QUEUES', () => {
 
   it('never re-runs a supplier dispatch on its own after a worker died (decision 025)', () => {
     expect(QUEUES['supplier-dispatch'].maxStalledCount).toBe(0);
+  });
+
+  it('rate-limits only the bulk queue of the campaigns, 30 jobs a second (feature 23)', () => {
+    const limited = QUEUE_NAMES.filter((name) => 'limiter' in QUEUES[name]);
+    expect(limited).toEqual(['notification-broadcasts']);
+    expect(QUEUES['notification-broadcasts']).toMatchObject({
+      concurrency: 10,
+      attempts: 6,
+      backoff: { delayMs: 60_000, jitter: 0.5 },
+      maxStalledCount: 1,
+      limiter: { max: 30, durationMs: 1000 },
+    });
   });
 
   it('knows which names are queues', () => {

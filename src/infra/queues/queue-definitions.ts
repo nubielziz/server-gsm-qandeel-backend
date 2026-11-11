@@ -1,4 +1,4 @@
-// The BullMQ queue registry (decision 020): the ten queues, each with its concurrency, retry policy and stall rule.
+// The BullMQ queue registry (decision 020): the eleven queues, each with its concurrency, retry policy and stall rule.
 // Add a queue here and in docs/queues.md; src/infra/queues/queue-definitions.spec.ts fails when the two disagree.
 import type { JobsOptions } from 'bullmq';
 
@@ -25,6 +25,11 @@ export interface QueueDefinition {
    * job that was running when its worker died is never run again on its own.
    */
   readonly maxStalledCount: number;
+  /**
+   * The queue-wide rate limit: at most `max` jobs start per `durationMs`, across every worker of the queue (BullMQ's `limiter`).
+   * Omit for no limit. Feature 23 gives the bulk queue one, so a broadcast cannot flood the mail and Telegram providers.
+   */
+  readonly limiter?: { readonly max: number; readonly durationMs: number };
 }
 
 /** Completed jobs are kept 24 hours (or the newest 10 000): enough to look at yesterday, bounded for the noeviction Redis. */
@@ -37,7 +42,7 @@ export const FAILED_JOB_MAX_AGE_SECONDS = 14 * 24 * 60 * 60;
 /**
  * Every queue, by name.
  *
- * Why: decision 020 names the ten queues. The numbers are the starting point for one worker process; the feature that
+ * Why: decision 020 names the ten queues; feature 23 added the eleventh, `notification-broadcasts`. The numbers are the starting point for one worker process; the feature that
  * owns a queue tunes them (and its section of docs/queues.md) when it knows the real load. `supplier-dispatch` has
  * `maxStalledCount: 0` because a dispatch that was running when its worker died may already have reached the supplier,
  * so it is never re-sent automatically (decision 025, scenario `timeout`).
@@ -112,6 +117,16 @@ export const QUEUES = {
     attempts: 3,
     backoff: { delayMs: 10_000, jitter: 0.5 },
     maxStalledCount: 1,
+  },
+  // Feature 23: bulk mail and Telegram of campaigns, apart from the transactional `notifications` queue (BullMQ's limiter is per
+  // queue, so a broadcast never slows a password reset).
+  'notification-broadcasts': {
+    purpose: 'Sends the emails and Telegram messages of notification campaigns.',
+    concurrency: 10,
+    attempts: 6,
+    backoff: { delayMs: 60_000, jitter: 0.5 },
+    maxStalledCount: 1,
+    limiter: { max: 30, durationMs: 1000 },
   },
 } as const satisfies Record<string, QueueDefinition>;
 

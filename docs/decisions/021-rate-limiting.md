@@ -16,6 +16,10 @@ Status: accepted, 2026-10-31.
 - Account emails that staff or a merchant ask for (feature 20): at most 5 an hour per account and kind of mail (password
   link, verification, email change; limiter `account-mail`, key `RateLimitService.compositeKey(subject, id, kind)`), for
   merchants and staff, no lock-out; checked after the cheap refusals so a refused call spends no point.
+- Notification campaigns (feature 23): the bulk sender takes one point per message from a system-wide budget (key `all`) of
+  the limiters `broadcast-email` (5 a second) and `broadcast-telegram` (20 a second); the settings
+  `notifications.broadcast_email_per_second` and `notifications.broadcast_telegram_per_second` replace the points. A refused job
+  waits and tries again; it is never dropped.
 - Large bodies before authentication (amended 2026-11-07, feature 7a review): a multipart body or one declaring more than
   1 MiB on Dhru, REST v1 or the merchant portal is buffered and parsed (up to 25 MiB, B157) before its credentials are read,
   so it is also counted per client IP in the pipeline's limit stage (limiter `upload`, 20 a minute) before the body is read;

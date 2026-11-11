@@ -19,6 +19,8 @@ export { CustomersModule } from './customers.module';
 export { CustomersAccountsModule } from './customers-accounts.module';
 export { CustomerMailModule } from './customer-mail.module';
 export { CustomerErasureModule } from './customer-erasure.module';
+export { CustomerNotificationsModule } from './notifications/customer-notifications.module';
+export { CustomerAudience } from './notifications/customer-audience';
 export { CustomerErasureHooks } from './application/customer-erasure-hooks';
 export type { CustomerErasureHook } from './application/customer-erasure-hooks';
 export { CUSTOMER_MAIL_EVENTS } from './application/mail/customer-mail-outbox';

@@ -181,6 +181,23 @@ resolutions `b2c-10` and `b2c-14`.
 - **Seed**: `scripts/seed/growth.ts` writes the demo's 238 checkouts (ids 3000 and up, one guest customer per address, the mock's marketing answers);
   the paid ones have no order until feature 16's seed.
 
+## Notification center audience (feature 23)
+
+`notifications/customer-audience.ts` is the customer audience provider of the platform's notification center, registered with
+`NotificationAudiences` by `CustomerNotificationsModule` at boot (imported by `CustomersModule` and the worker). It selects active
+customers (suspended, blocked and anonymized ones never), by account, country and language, and for a marketing campaign only those
+whose `marketing_opt_in` is on and whose latest marketing consent record grants it (`consentSql`, the recovery mail's predicate). The
+same predicate answers the preview count, the fan-out's pages and the send-time check, so consent withdrawn after the fan-out stops the
+message. The provider only reads `customers` and `consent_records`.
+
+The same module holds the other two customer parts of the center. **Unsubscribe:** `POST /store/v1/marketing/unsubscribe/:token`
+(`notifications/unsubscribe.*`, public, no CSRF, no anti-bot token: mailbox providers call it for RFC 8058 one-click, the site's page
+with no body) verifies the token (a keyed MAC over the customer id, `marketingUnsubscribeToken` in the platform), and in one transaction
+under the customer's row lock sets `marketing_opt_in` false and adds a `consent_records` row (`granted: false`, the caller's address and
+user agent) when the customer had consented; idempotent, `204` for an unknown or anonymized customer, `410 TOKEN_INVALID` for a bad
+token. **Erasure:** `CustomerInboxErasure` registers with `CustomerErasureHooks` and calls the platform's `NotificationPrivacy` inside
+`POST /admin/customers/:id/anonymize`'s transaction: the customer's inbox items are deleted and their log rows' payloads emptied.
+
 ## Public API (`index.ts`)
 
 Exports the checkout rules `CHECKOUT_SESSION_TTL_MINUTES`, `CHECKOUT_IMEI_AAD`, `LEGAL_TYPE_OF_PURPOSE`, `effectiveStatus`,

@@ -1,10 +1,19 @@
 // Unit tests of the settings allow-list: which keys the generic settings route accepts and how it judges their values.
 import { describe, expect, it } from 'bun:test';
 import {
+  BROADCAST_EMAIL_PER_SECOND_KEY,
+  BROADCAST_TELEGRAM_PER_SECOND_KEY,
+  INBOX_READ_RETENTION_DAYS_KEY,
+  INBOX_RETENTION_DAYS_KEY,
+  LOG_RETENTION_DAYS_KEY,
   CUSTOMER_WALLET_SETTINGS,
   CUSTOMER_WALLET_SETTING_RANGES,
   PRICE_CHANGE_TOLERANCE_KEY,
+  broadcastRateProblem,
   imeiRetentionDaysProblem,
+  inboxReadRetentionDaysProblem,
+  inboxRetentionDaysProblem,
+  logRetentionDaysProblem,
   priceChangeTolerancePercentProblem,
   settingsPatchProblems,
 } from './settings-registry';
@@ -30,6 +39,55 @@ describe('priceChangeTolerancePercentProblem', () => {
     for (const value of [-1, 101, 2.5, '10', null, true, undefined, Number.NaN]) {
       expect(priceChangeTolerancePercentProblem(value)).toBeString();
     }
+  });
+});
+
+describe('broadcastRateProblem', () => {
+  it('accepts whole numbers from 1 to 30', () => {
+    for (const value of [1, 5, 20, 30]) expect(broadcastRateProblem(value)).toBeUndefined();
+  });
+
+  it('refuses anything else', () => {
+    for (const value of [0, 31, 2.5, '5', null, true, undefined, Number.NaN]) {
+      expect(broadcastRateProblem(value)).toBeString();
+    }
+  });
+
+  it('is the validator of both broadcast rate keys', () => {
+    expect(
+      settingsPatchProblems({ [BROADCAST_EMAIL_PER_SECOND_KEY]: 10, [BROADCAST_TELEGRAM_PER_SECOND_KEY]: 25 }),
+    ).toEqual([]);
+    expect(settingsPatchProblems({ [BROADCAST_EMAIL_PER_SECOND_KEY]: 0 })).toHaveLength(1);
+  });
+});
+
+describe('the notification retention settings', () => {
+  it('accept whole days inside their bounds: 7-3650 for read items, 30-3650 for all items and the log', () => {
+    for (const value of [7, 90, 3650]) expect(inboxReadRetentionDaysProblem(value)).toBeUndefined();
+    for (const value of [30, 365, 3650]) {
+      expect(inboxRetentionDaysProblem(value)).toBeUndefined();
+      expect(logRetentionDaysProblem(value)).toBeUndefined();
+    }
+  });
+
+  it('refuse a number below the minimum, above 3650, a fraction and a non-number', () => {
+    for (const value of [6, 3651, 1.5, '90', null, undefined])
+      expect(inboxReadRetentionDaysProblem(value)).toBeString();
+    for (const value of [29, 3651, 1.5, '90', null, undefined]) {
+      expect(inboxRetentionDaysProblem(value)).toBeString();
+      expect(logRetentionDaysProblem(value)).toBeString();
+    }
+  });
+
+  it('are the validators of their three keys in the settings route', () => {
+    expect(
+      settingsPatchProblems({
+        [INBOX_READ_RETENTION_DAYS_KEY]: 30,
+        [INBOX_RETENTION_DAYS_KEY]: 400,
+        [LOG_RETENTION_DAYS_KEY]: 365,
+      }),
+    ).toEqual([]);
+    expect(settingsPatchProblems({ [LOG_RETENTION_DAYS_KEY]: 7 })).toHaveLength(1);
   });
 });
 

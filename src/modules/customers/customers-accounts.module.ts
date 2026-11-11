@@ -21,10 +21,12 @@ import { StoreAccountController } from './controllers/store-account.controller';
 import { StoreAuthController } from './controllers/store-auth.controller';
 import { CustomerMailModule } from './customer-mail.module';
 import { CustomerSignInFailures } from './infra/customer-sign-in-failures';
+import { MarketingUnsubscribe } from './notifications/marketing-unsubscribe.service';
+import { UnsubscribeController } from './notifications/unsubscribe.controller';
 
 /**
  * Provides the 19 customer routes of feature 14b (7 store sign-in, 3 account, 9 admin), the 3 admin privacy routes of feature 18
- * (block, export, anonymize) and registers the customer resolvers with the security stack.
+ * (block, export, anonymize), the unsubscribe route of feature 23's marketing emails, and registers the customer resolvers with the security stack.
  *
  * Why: the routes need the global database, crypto, rate-limit, audit and outbox providers and the security stack (sessions,
  * cookies, CSRF); the customer mails and the one-time link service come from their own modules because the worker loads those
@@ -32,7 +34,14 @@ import { CustomerSignInFailures } from './infra/customer-sign-in-failures';
  */
 @Module({
   imports: [CustomerTokensModule, CustomerMailModule, RiskServicesModule, MoneyAdminModule],
-  controllers: [StoreAuthController, StoreAccountController, CustomersController, CustomerPrivacyController],
+  controllers: [
+    StoreAuthController,
+    StoreAccountController,
+    CustomersController,
+    CustomerPrivacyController,
+    // Feature 23: the unsubscribe link of marketing emails (public; the token is the credential).
+    UnsubscribeController,
+  ],
   providers: [
     CustomerSignInLimiter,
     CustomerSignInFailures,
@@ -45,6 +54,7 @@ import { CustomerSignInFailures } from './infra/customer-sign-in-failures';
     CustomerBlockService,
     CustomerPrivacyService,
     CustomerIdentityRegistrar,
+    MarketingUnsubscribe,
   ],
 })
 export class CustomersAccountsModule {}

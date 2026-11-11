@@ -18,6 +18,8 @@ export type QueuedJob = Job<object, unknown, string>;
 
 /** Queue errors repeat while Redis is down; one line per interval is logged (the Redis client logs the cause itself). */
 const ERROR_LOG_INTERVAL_MS = 30_000;
+/** `addBulk` hands at most this many jobs to Redis in one call. */
+const BULK_SLICE = 1_000;
 /** A producer left waiting this long for a close is dropped, so a dead Redis cannot hold up the shutdown. */
 const CLOSE_WAIT_MS = 2_000;
 
@@ -107,6 +109,46 @@ export class QueuesService implements OnModuleInit, OnApplicationShutdown {
         retryAfterSeconds: 5,
       });
     }
+  }
+
+  /**
+   * Adds many jobs to one queue in a few round trips.
+   *
+   * Why: feature 23: a campaign's fan-out hands up to a thousand send jobs to the bulk queue per chunk; one `add` per job would be a
+   * round trip each. Like {@link QueuesService.add} it keeps the request id, applies the queue's defaults (BullMQ merges them) and
+   * turns "Redis is down" into `UNAVAILABLE`. A job whose `jobId` already exists is left as it is (BullMQ creates nothing), so a
+   * repeated call is harmless.
+   *
+   * @param name the queue
+   * @param jobs the job name, data (ids only) and options of each job
+   * @returns how many jobs were handed over (existing ids included)
+   * @throws {AppError} `UNAVAILABLE` when the queue Redis cannot take the jobs right now (some slices may have been added already)
+   */
+  async addBulk(
+    name: QueueName,
+    jobs: ReadonlyArray<{ readonly jobName: string; readonly data: object; readonly options?: JobsOptions }>,
+  ): Promise<number> {
+    const requestId = getRequestId();
+    let handed = 0;
+    for (let start = 0; start < jobs.length; start += BULK_SLICE) {
+      const slice = jobs.slice(start, start + BULK_SLICE).map((job) => ({
+        name: job.jobName,
+        data: requestId !== undefined && !('requestId' in job.data) ? { ...job.data, requestId } : job.data,
+        ...(job.options === undefined ? {} : { opts: job.options }),
+      }));
+      try {
+        await this.queue(name).addBulk(slice);
+      } catch (error) {
+        if (!isQueueUnavailableError(error)) throw error;
+        throw new AppError('UNAVAILABLE', {
+          detail: 'The job queue is not available right now.',
+          cause: error,
+          retryAfterSeconds: 5,
+        });
+      }
+      handed += slice.length;
+    }
+    return handed;
   }
 
   /** Closes the producers; never throws, because a dead Redis must not block the shutdown. */

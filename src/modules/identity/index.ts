@@ -15,6 +15,9 @@ export { MerchantGroupMembers } from './application/merchant-group-members';
 // The gateway webhook adapter registry (no dependencies): billing's verifier injects it, so it loads before the cycle through money.
 export { GATEWAY_SLUG, WebhookVerifiers } from './security/machine/webhooks/webhook-verifiers';
 export { IdentityModule } from './identity.module';
+export { IdentityAudienceModule } from './notifications/identity-audience.module';
+export { MerchantAudience } from './notifications/merchant-audience';
+export { StaffAudience } from './notifications/staff-audience';
 export { SecurityModule } from './security/security.module';
 export { StaffAuthModule } from './staff-auth.module';
 export { AccessAdminModule } from './access-admin.module';

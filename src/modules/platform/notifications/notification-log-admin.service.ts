@@ -20,6 +20,7 @@ export interface WireNotification {
   readonly attempts: number;
   readonly sentAt: string | null;
   readonly error: string | null;
+  readonly campaignId: number | null;
   readonly payload?: JsonObject;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -117,6 +118,7 @@ function toWire(row: LogRow, withPayload: boolean): WireNotification {
     attempts: n.attempts,
     sentAt: n.sentAt?.toISOString() ?? null,
     error: n.status === 'failed' ? n.error : null,
+    campaignId: n.campaignId,
     // jsonb holds JSON by definition, so the cast only tells the compiler what Postgres guarantees.
     ...(withPayload ? { payload: publicPayload(n.payload as JsonObject) } : {}),
     createdAt: n.createdAt.toISOString(),

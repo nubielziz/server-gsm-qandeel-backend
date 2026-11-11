@@ -183,6 +183,20 @@
       "when": 1794382538585,
       "tag": "0025_merchant_management_templates",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794383961294,
+      "tag": "0026_notification_center",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1794383962035,
+      "tag": "0027_notification_arabic_templates",
+      "breakpoints": true
     }
   ]
 }

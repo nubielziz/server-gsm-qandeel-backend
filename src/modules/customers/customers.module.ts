@@ -6,6 +6,7 @@ import { CheckoutModule } from './checkout.module';
 import { CustomerErasureModule } from './customer-erasure.module';
 import { CustomersAccountsModule } from './customers-accounts.module';
 import { GrowthModule } from './growth.module';
+import { CustomerNotificationsModule } from './notifications/customer-notifications.module';
 
 /**
  * Nest module for Storefront customers & checkout (map domain I).
@@ -14,5 +15,7 @@ import { GrowthModule } from './growth.module';
  * (decision 016). The routes with their use cases (`CheckoutModule`, `CustomersAccountsModule`, whose providers need the database
  * and the cache) are separate so a test app built without a database can leave out what needs it.
  */
-@Module({ imports: [CheckoutModule, CustomersAccountsModule, GrowthModule, CustomerErasureModule] })
+@Module({
+  imports: [CheckoutModule, CustomersAccountsModule, GrowthModule, CustomerErasureModule, CustomerNotificationsModule],
+})
 export class CustomersModule {}

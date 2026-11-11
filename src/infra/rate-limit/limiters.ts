@@ -26,7 +26,8 @@ export interface LimiterConfig {
  * supplier id (the points come from `suppliers.rate_limit_per_min`); `webhook-retry` the delivery id; `upload` the client IP; `ticket-email`
  * the hashed email address of a public ticket form (`RateLimitService.compositeKey`); `wallet-topup` the customer id; `help-vote` the
  * client IP + help article id (`RateLimitService.compositeKey`); `media` the client IP; `account-mail` an account and a kind of
- * mail (`accountMailKey`).
+ * mail (`accountMailKey`); `broadcast-email` and `broadcast-telegram` the constant `all` (one budget for the whole system,
+ * feature 23).
  *
  * @see docs/decisions/021-rate-limiting.md
  */
@@ -75,6 +76,18 @@ export const RATE_LIMITERS = {
     windowSeconds: 60 * 60,
     description:
       'The public ticket form (POST /store/v1/tickets): new tickets per email address per hour, so the receipt email cannot relay spam to a stranger.',
+  },
+  'broadcast-email': {
+    points: 5,
+    windowSeconds: 1,
+    description:
+      'Emails of notification campaigns, for the whole system (key `all`): per second; the setting notifications.broadcast_email_per_second replaces the points (feature 23).',
+  },
+  'broadcast-telegram': {
+    points: 20,
+    windowSeconds: 1,
+    description:
+      'Telegram messages of notification campaigns, for the whole system (key `all`): per second; the setting notifications.broadcast_telegram_per_second replaces the points (feature 23).',
   },
   'account-mail': {
     points: 5,

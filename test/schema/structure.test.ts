@@ -117,7 +117,7 @@ const ADDITIONS: Record<string, string[]> = {
   // Feature 16 (migration 0014): which idempotency key the next gateway send of the refund uses.
   refunds: ['note', 'send_attempt'],
   data_requests: ['note'],
-  notifications: ['error', 'attempts', 'dedupe_key'],
+  notifications: ['error', 'attempts', 'dedupe_key', 'campaign_id'],
   support_tickets: ['token', 'survey_sent_at'],
   webhook_deliveries: ['response_body', 'error', 'event_id'],
   alert_rules: ['deleted_at'],
