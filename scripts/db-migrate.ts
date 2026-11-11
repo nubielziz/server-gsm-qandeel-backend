@@ -12,7 +12,11 @@ console.log(`Migrating ${target.hostname}:${target.port || '5432'}${target.pathn
 try {
   // Say what happened: "up to date" alone hid that migrations had just been applied (2026-11-11).
   const applied = await migrateDatabase(url);
-  console.log(applied === 0 ? 'Already up to date: no migration to apply.' : `Applied ${applied} migration(s); the database is up to date.`);
+  console.log(
+    applied === 0
+      ? 'Already up to date: no migration to apply.'
+      : `Applied ${applied} migration(s); the database is up to date.`,
+  );
 } catch (error) {
   console.error(`Migration failed: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
