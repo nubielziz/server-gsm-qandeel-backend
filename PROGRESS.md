@@ -4,6 +4,14 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+> **09:00:** **22 merged** (`430cf59`; its migrations 0020/0021 were already in the dev DB `gsm`, applied from the 22 branch
+> during its own run: harmless, but watch `drizzle.__drizzle_migrations` in `gsm` after each merge for rows that are not in main's
+> journal). **21** passed every review (backend Opus + Fable money, console Opus); the lead merged main into it, renumbered its
+> migrations to 0022 (generated, same SQL) and 0023 (custom; constant `CUSTOMER_WALLET_RULES_MIGRATION`), `db:check` clean, full
+> check running (`.lead/check-21.log`). Its provisional B-entry is B182 (`CUSTOMER_WALLET_MISMATCH`): write the other B-entries of
+> 22, 21, 20, 23, 24B only AFTER 21 is merged (positional numbering). Handoff started: `/home/saifi/gsm-project/STOREFRONT-BACKEND-HANDOFF.md`.
+> Console merges (22, 21) wait until the in-flight backend branches (20, 23, 24B) are merged.
+>
 > **RESUMED 2026-11-11 08:20** (machine restarted; containers up; the queue Redis loaded cleanly). Running: workflow
 > `wf_cefe6dd0-54e` (script `gsm-lane-resume-*.js`: 21 console C1 continued, 20 run 2 continued, 23 run 2 continued, 24B from
 > the start in `../backend-24b`, base `72535d6`, Redis 7); the lead's full check of 22 (`.lead/check-22b.log`). Console 22 is
