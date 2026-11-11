@@ -4,6 +4,15 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+> **11:35:** **20 merged** (`1087d98`, check 6085/1/0; migrations 0024/0025; `CONSOLE_BASE_URL` active in `.env.production.example`)
+> and **23 merged** (`620eea7`, check 6289/1/0; migrations 0026/0027; the lead wired `clients.locale` into 23's merchant audience).
+> The "migration leak" was a misleading message: `db:migrate` always printed "up to date" (fixed `ca7af73`: it now says how many
+> it applied); the diagnostic is stopped and `log_statement` reset. **24B**: renumbered 0028, full check running
+> (`.lead/check-24b.log`). **24C**: backend passed Opus and Fable reviews (follow-ups: a top-up dispute through
+> `/webhooks/payments` has no test; a same-instant refund.failed/complete race in `refund-settlement.ts`; owner: show JOD with 2
+> decimals); its console slice is being built (lane `wf_3dd6db6a-74c`). **24A** (Opus) building (lane `wf_afbe8dda-61f`).
+> Console merges (22, 21, 20, 23, 24C) wait until 24A and 24C are merged (they branched before 23). Then B-entries for every
+> merged feature (B183+), `contract:extract`/`harvest`/`docs`, console `mocks:live`.
 > **09:40:** **21 merged** (`796eeab`; check 5964/1/0). Its renumbered migrations 0022/0023 were found ALREADY applied to the dev DB
 > `gsm` before the lead ran `db:migrate` (they existed only in the 21 worktree, ~30 min old): something run from a worktree
 > migrates `gsm`. Not found yet (setup, seed, db-reset, ci-script, db-schema tests are isolated). Diagnostic running:
