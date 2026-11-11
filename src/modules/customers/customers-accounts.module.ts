@@ -8,6 +8,7 @@ import { RiskServicesModule } from '../risk';
 import { CustomerAccountAdminService } from './application/customer-account-admin.service';
 import { CustomerAccountService } from './application/customer-account.service';
 import { CustomerAdminService } from './application/customer-admin.service';
+import { CustomerProfileRules } from './application/customer-profile-rules';
 import { CustomerBlockService } from './application/customer-block.service';
 import { CustomerIdentityRegistrar } from './application/customer-identity-registrar';
 import { CustomerLinks } from './application/customer-links';
@@ -48,6 +49,7 @@ import { UnsubscribeController } from './notifications/unsubscribe.controller';
     CustomerLinks,
     CustomerSignInService,
     CustomerPasswordService,
+    CustomerProfileRules,
     CustomerAccountService,
     CustomerAdminService,
     CustomerAccountAdminService,

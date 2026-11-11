@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { defineRoute, zCursor, zCursorLimit, zCursorPage, zId, zIdParam, zMoney } from '../../../common/contract';
 import { ORDER_STATUSES } from '../db/schema';
 import { IDEMPOTENCY_WINDOW_DAYS } from '../domain/idempotency-window';
+import { IdempotencyHeaders } from './idempotency-headers';
 import { MerchantOrderSchema } from './shared';
 
 /** The most orders one `POST /v1/orders/bulk` may hold (the same limit as a Dhru bulk call). */
@@ -80,21 +81,6 @@ const PlaceItem = z.object({
     .optional()
     .describe("The values of the service's custom fields by field key (`GET /v1/services/:id`)."),
   fileId: zId.optional().describe('The uploaded input file of a File service (`POST /v1/files`).'),
-});
-
-const IdempotencyHeaders = z.object({
-  'idempotency-key': z
-    .string()
-    .trim()
-    .min(1)
-    .max(255)
-    .regex(/^[\x21-\x7e]+$/, 'Use printable characters without spaces.')
-    .optional()
-    .describe(
-      'Makes a retry safe: the first answer is stored with the key and sent again for the same request; another request with the key ' +
-        'is `409 IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS`. ' +
-        `The answer is kept ${IDEMPOTENCY_WINDOW_DAYS} days from the first request; after that the stored answer is gone and the same key places a new order.`,
-    ),
 });
 
 const PLACE_DESCRIPTION =

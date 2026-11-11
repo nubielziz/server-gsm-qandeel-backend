@@ -198207,9 +198207,23 @@
         "x-gsm-surface": "client"
       },
       "post": {
-        "description": "Orders a service at the merchant's own price (the one price resolver). The price is held from the wallet in the same transaction; an order that would cost more than the tolerance above the price the merchant last listed is refused (`PRICE_CHANGED`, with both prices), a smaller raise is charged and recorded; a second open order for the same service and input is refused under the service's `block_open` rule (`DUPLICATE_ORDER`). An IMEI service takes `imei` (15 digits, Luhn) or `imeis` (a bulk of up to 100: one order each, all placed or none); a server or remote service takes `inputs`; a File service a `fileId` and/or `inputs`. The answer is immediate: the orders are `pending`, in the manual queue or waiting for the dispatch job.",
+        "description": "Orders a service at the merchant's own price (the one price resolver). The price is held from the wallet in the same transaction; an order that would cost more than the tolerance above the price the merchant last listed is refused (`PRICE_CHANGED`, with both prices), a smaller raise is charged and recorded; a second open order for the same service and input is refused under the service's `block_open` rule (`DUPLICATE_ORDER`). An IMEI service takes `imei` (15 digits, Luhn) or `imeis` (a bulk of up to 100: one order each, all placed or none); a server or remote service takes `inputs`; a File service a `fileId` and/or `inputs`. The answer is immediate: the orders are `pending`, in the manual queue or waiting for the dispatch job. Send an `Idempotency-Key` (a new one per form submission) so that a double click or a retry never places or holds twice: the same key and body sends the first `201` again with the response header `idempotency-replayed: true` (nothing is placed); another body with the key is `409 IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS` (`Retry-After`). A refused request stores nothing, so the key may be sent again. The answer is kept 7 days; a replay is the first answer as it was (the orders may have moved on). A key used on REST v1 cannot be used here. Without the header nothing changes.",
         "operationId": "postClientOrders",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "description": "Makes a retry safe: the first answer is stored with the key and sent again for the same request; another request with the key is `409 IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS`. The answer is kept 7 days from the first request; after that the stored answer is gone and the same key places a new order.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Makes a retry safe: the first answer is stored with the key and sent again for the same request; another request with the key is `409 IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS`. The answer is kept 7 days from the first request; after that the stored answer is gone and the same key places a new order.",
+              "minLength": 1,
+              "maxLength": 255,
+              "pattern": "^[\\x21-\\x7e]+$"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -198959,7 +198973,7 @@
             }
           },
           "409": {
-            "description": "SERVICE_DISABLED: This service is disabled.\nPRICE_CHANGED: The price changed since your last service list: refresh it and order again.\nDUPLICATE_ORDER: An identical order is already open.",
+            "description": "SERVICE_DISABLED: This service is disabled.\nPRICE_CHANGED: The price changed since your last service list: refresh it and order again.\nDUPLICATE_ORDER: An identical order is already open.\nIDEMPOTENCY_KEY_REUSED: This idempotency key was already used with a different request.\nIDEMPOTENCY_IN_PROGRESS: A request with this key is still being processed.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -198991,7 +199005,9 @@
                       "enum": [
                         "SERVICE_DISABLED",
                         "PRICE_CHANGED",
-                        "DUPLICATE_ORDER"
+                        "DUPLICATE_ORDER",
+                        "IDEMPOTENCY_KEY_REUSED",
+                        "IDEMPOTENCY_IN_PROGRESS"
                       ]
                     },
                     "detail": {
@@ -199057,6 +199073,28 @@
                       "status": 409,
                       "code": "DUPLICATE_ORDER",
                       "detail": "An identical order is already open.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "IDEMPOTENCY_KEY_REUSED": {
+                    "summary": "This idempotency key was already used with a different request.",
+                    "value": {
+                      "type": "https://errors.gsm.example/idempotency-key-reused",
+                      "title": "This idempotency key was already used with a different request.",
+                      "status": 409,
+                      "code": "IDEMPOTENCY_KEY_REUSED",
+                      "detail": "This idempotency key was already used with a different request.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "IDEMPOTENCY_IN_PROGRESS": {
+                    "summary": "A request with this key is still being processed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/idempotency-in-progress",
+                      "title": "A request with this key is still being processed.",
+                      "status": 409,
+                      "code": "IDEMPOTENCY_IN_PROGRESS",
+                      "detail": "A request with this key is still being processed.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   }
@@ -220445,7 +220483,7 @@
         "x-gsm-surface": "store"
       },
       "patch": {
-        "description": "Changes the fields sent. `currency` is the code of a currency the store shows (`422` on `currency` otherwise). A changed `marketingOptIn` writes a consent record with the request address and time (a withdrawn consent is a new record).",
+        "description": "Changes the fields sent; `{}` changes nothing. `name` (2 to 120 characters), `phone` (up to 40; an empty string clears it) and `country` (ISO-2) are the customer's own details, with the staff edit's rules: a **changed** country must be one the shop sells to, i.e. with a current tax rate (`422` on `country` otherwise; offer the countries of `GET /store/v1/config` `taxRates`), and it resets `currency` to the country's default unless the same request sends `currency`. A country equal to the stored one is never checked. The email cannot be changed here. `currency` is the code of a currency the store shows (`422` on `currency` otherwise). A changed `marketingOptIn` writes a consent record with the request address and time (a withdrawn consent is a new record).",
         "operationId": "patchStoreV1Me",
         "parameters": [],
         "requestBody": {
@@ -220455,6 +220493,17 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "phone": {
+                    "type": "string",
+                    "maxLength": 40
+                  },
+                  "country": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z]{2}$"
+                  },
                   "locale": {
                     "type": "string",
                     "description": "`en` or `ar`."
@@ -220471,6 +220520,9 @@
               "examples": {
                 "example": {
                   "value": {
+                    "name": "Daniel Whitmore",
+                    "phone": "+44 7700 900123",
+                    "country": "GB",
                     "locale": "ar",
                     "currency": "GBP",
                     "marketingOptIn": false
@@ -220892,7 +220944,7 @@
             "customerSession": []
           }
         ],
-        "summary": "Change language, currency and marketing consent",
+        "summary": "Change name, phone, country, language, currency and marketing consent",
         "tags": [
           "store: account"
         ],

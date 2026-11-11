@@ -3,7 +3,15 @@
 import { Body, Controller, Param, Query, Res } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import type { Readable } from 'node:stream';
-import { type BodyOf, type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
+import {
+  type BodyOf,
+  ContractHeaders,
+  type HeadersOf,
+  type ParamsOf,
+  type QueryOf,
+  type ResultOf,
+  Route,
+} from '../../../common/contract';
 import { CurrentMerchant, type MerchantPrincipal } from '../../identity';
 import { ClientOrdersService } from '../application/client-orders.service';
 import { OrderExportService } from '../application/order-export.service';
@@ -57,15 +65,21 @@ export class ClientOrdersController {
    *
    * @param merchant the signed-in merchant
    * @param body the service and what to order
-   * @returns the placed orders
+   * @param headers the optional `Idempotency-Key`
+   * @param reply the reply, to mark a replay
+   * @returns the placed orders (`201`), or the stored answer of an earlier request with the same key
    * @route POST /client/orders
    */
   @Route(placeClientOrder)
   async place(
     @CurrentMerchant() merchant: MerchantPrincipal,
     @Body() body: BodyOf<typeof placeClientOrder>,
+    @ContractHeaders() headers: HeadersOf<typeof placeClientOrder>,
+    @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<ResultOf<typeof placeClientOrder>> {
-    return { orders: await this.orders.place(merchant.clientId, body) };
+    const placed = await this.orders.place(merchant.clientId, body, 'portal', headers['idempotency-key']);
+    if (placed.replayed) void reply.header('idempotency-replayed', 'true');
+    return { orders: placed.orders };
   }
 
   /**

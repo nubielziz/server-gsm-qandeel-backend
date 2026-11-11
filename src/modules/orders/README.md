@@ -117,7 +117,11 @@ are ISO with milliseconds, ids are numbers, lists are simple-rest with `x-total-
 - `POST /client/orders` (`201 { orders: [order] }`): body `{ serviceId, imei? | imeis? (1-100), quantity?, inputs?, fileId? }`.
   `imeis` places one order per IMEI of the same service, **all or none** in one transaction (the first refusal, including
   `INSUFFICIENT_FUNDS` or a duplicate inside the list, undoes the request). Problems are named by field: `imei`, `imeis.2`,
-  `quantity`, `inputs.<key>`, `fileId`.
+  `quantity`, `inputs.<key>`, `fileId`. Optional header `Idempotency-Key` (feature 24B, same semantics and store as REST v1, scope
+  `portal`, migration 0020): the same key and body sends the first `201` again with `idempotency-replayed: true` and places nothing;
+  another body or a key used on REST v1 is `409 IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS`; a refusal
+  stores nothing; the answer is kept 7 days. The key is not written to `orders.idempotency_key` (a bulk makes several orders). The
+  orders are read back inside the placement's transaction so the answer is stored with them.
 - `GET /client/orders`: filters `status` (and `status_ne`), `type`, `serviceId`, `createdAt_gte`/`createdAt_lte`; `q` over the input,
   the service name and the id; sorts `createdAt` (default, newest first), `totalPrice`, `status`. Another merchant's order is `404`.
 - `POST /client/orders/:id/cancel` (`204`): only while the order was never sent (`pending`, `manual`, `held`) and the service has

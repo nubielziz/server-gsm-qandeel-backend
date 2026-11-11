@@ -165,6 +165,22 @@ describe('idempotency_purge', () => {
     expect(other.headers['idempotency-replayed']).toBeUndefined();
   });
 
+  it('forgets a portal answer (scope portal) with the others: the stored answer is deleted and no order key is touched', async () => {
+    const { db } = await testDb();
+    await db.insert(s.idempotencyKeys).values({
+      clientId: world.merchant.id,
+      key: 'portal-old',
+      scope: 'portal',
+      requestHash: 'c'.repeat(64),
+      status: 201,
+      response: { orders: [] },
+      createdAt: clock.now(),
+    });
+    clock.advance(IDEMPOTENCY_WINDOW_DAYS * DAY + HOUR);
+    expect(await purge.purge()).toEqual({ answers: 1, orderKeys: 0 });
+    expect(await db.select().from(s.idempotencyKeys)).toHaveLength(0);
+  });
+
   it('touches nothing else: orders without a key, young orders and their updated_at stay as they are', async () => {
     const { db } = await testDb();
     const keyed = body(await place('keep-me'));

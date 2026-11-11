@@ -159,7 +159,8 @@ Same JSON, id, money, time, error and header conventions; the map defines the ro
   `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset` headers. Lists are cursor-paged (map): `?limit=` (1–100,
   default 50) and `?cursor=` (opaque) → `{ data: [...], nextCursor: string | null }`. `Idempotency-Key` on
   `POST /v1/orders` and `/v1/orders/bulk`: the first result is stored with the key and replayed; a different body with
-  the same key is `409 IDEMPOTENCY_KEY_REUSED`. Public OpenAPI at `/openapi.json` (decision 017).
+  the same key is `409 IDEMPOTENCY_KEY_REUSED`. The merchant portal's `POST /client/orders` accepts the same optional header
+  (scope `portal`: a key used on REST v1 is `409` there, and the reverse; a replay adds `idempotency-replayed: true`). Public OpenAPI at `/openapi.json` (decision 017).
 - **Dhru** (`/api/index.php`): decision 026 (form fields, base64 JSON parameters, SUCCESS/ERROR envelope, always 200).
 - **Incoming webhooks** (`/webhooks/*`): verified signature + 5-minute window + de-duplication by the gateway event id;
   answer `200` fast after the DB write; the processing is idempotent.

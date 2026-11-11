@@ -1,0 +1,2 @@
+ALTER TABLE "idempotency_keys" DROP CONSTRAINT "idempotency_keys_scope_check";--> statement-breakpoint
+ALTER TABLE "idempotency_keys" ADD CONSTRAINT "idempotency_keys_scope_check" CHECK ("idempotency_keys"."scope" in ('order', 'bulk', 'portal'));

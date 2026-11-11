@@ -11,8 +11,8 @@ import { CUSTOMER_TOKEN_PURPOSES, CustomerAuthTokens, type StaffPrincipal, tempo
 import { AuditService } from '../../platform';
 import { Blocklist } from '../../risk';
 import type { Customer } from '../db/schema';
-import { FALLBACK_CURRENCY, currencyCodeFor } from '../domain/country-currency';
 import type { CustomerLocale } from '../domain/customer-input';
+import { profileChanges } from '../domain/profile-edit';
 import { findCredentials, upsertCredentials } from '../infra/customer-credentials.repository';
 import { CustomerSignInFailures } from '../infra/customer-sign-in-failures';
 import {
@@ -26,15 +26,14 @@ import {
 } from '../infra/customer.repository';
 import {
   activeSessionCount,
-  currencyByCode,
   detailCounts,
-  hasCurrentTaxRate,
   lastSeenIp,
   latestConsentEvidence,
   riskOf,
 } from '../infra/foreign-reads.repository';
-import { countryNotSupported, customerNotFound, emailBlocked } from './customer-errors';
+import { customerNotFound, emailBlocked } from './customer-errors';
 import { CustomerLinks } from './customer-links';
+import { CustomerProfileRules } from './customer-profile-rules';
 import { type WireCustomer, type WireCustomerDetail, toWireCustomer, toWireDetail } from './customer-views';
 
 /** The fields of a new customer, as the request carries them (cleaned by the contract). */
@@ -89,6 +88,7 @@ export class CustomerAdminService {
     private readonly authTokens: CustomerAuthTokens,
     private readonly links: CustomerLinks,
     private readonly failures: CustomerSignInFailures,
+    private readonly rules: CustomerProfileRules,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -137,14 +137,14 @@ export class CustomerAdminService {
     const now = this.clock.now();
     await this.assertEmailFree(this.db.db, input.email);
     if (await this.blocklist.isEmailBlocked(this.db.db, input.email)) throw emailBlocked();
-    await this.assertCountryAccepted(this.db.db, input.country, now);
+    await this.rules.assertCountryAccepted(this.db.db, input.country, now);
     const temporary =
       input.mode === 'temporary_password'
         ? temporaryPasswordFor((max) => randomInt(max), { email: input.email, name: input.name })
         : undefined;
     // argon2 takes tens of milliseconds: hash before the transaction.
     const passwordHash = temporary === undefined ? null : await this.hasher.hash(temporary);
-    const currency = await this.currencyFor(input.country);
+    const currency = await this.rules.currencyFor(this.db.db, input.country);
 
     const id = await this.db
       .runInTransaction(async (work) => {
@@ -213,7 +213,7 @@ export class CustomerAdminService {
     const current = await findCustomerById(this.db.db, id);
     if (!current) throw customerNotFound();
     if (current.status === 'anonymized') throw new AppError('ANONYMIZED');
-    const currency = input.country !== undefined ? await this.currencyFor(input.country) : undefined;
+    const currency = input.country !== undefined ? await this.rules.currencyFor(this.db.db, input.country) : undefined;
 
     await this.db
       .runInTransaction(async (work) => {
@@ -232,7 +232,7 @@ export class CustomerAdminService {
         // Only a country change is checked: a form that sends the stored country again must not fail when its tax rate has ended
         // since. "Changed" is judged against the locked row: another edit may have landed since the first read.
         if (input.country !== undefined && input.country !== customer.country) {
-          await this.assertCountryAccepted(work.tx, input.country, now);
+          await this.rules.assertCountryAccepted(work.tx, input.country, now);
         }
 
         const changes = changesOf(customer, input, newEmail, currency);
@@ -280,29 +280,6 @@ export class CustomerAdminService {
   }
 
   /**
-   * Derives the currency code a customer of a country pays in.
-   *
-   * Why: ANSWERS customers Q8: the country's storefront currency (the table's code, when that currency is active and shown by
-   * the store), else USD. `null` only when USD itself is missing from `currencies`, because the column is a foreign key to it.
-   */
-  private async currencyFor(country: string): Promise<string | null> {
-    const mapped = await currencyByCode(this.db.db, currencyCodeFor(country));
-    if (mapped?.isStorefront && mapped.isActive) return mapped.code;
-    return (await currencyByCode(this.db.db, FALLBACK_CURRENCY)) ? FALLBACK_CURRENCY : null;
-  }
-
-  /**
-   * Refuses a country the storefront does not sell to.
-   *
-   * Why: ANSWERS customers Q8: only a country with a current `tax_rates` row is allowed, the list the store config serves.
-   *
-   * @throws {AppError} `VALIDATION_FAILED` (422 on `country`: "Choose a country.")
-   */
-  private async assertCountryAccepted(db: DbExecutor, country: string, now: Date): Promise<void> {
-    if (!(await hasCurrentTaxRate(db, country, now))) throw countryNotSupported();
-  }
-
-  /**
    * Refuses an email another customer already uses.
    *
    * @throws {AppError} `EMAIL_TAKEN` (409) whose detail names the owner (customers.md POST)
@@ -328,7 +305,8 @@ interface Changes {
  * Works out which fields of an edit really change.
  *
  * Why: the audit entry records the old and new value of each changed field only, and a field sent with the stored value is not a
- * change. A country change derives the currency again; a new email clears the verification.
+ * change. Name, country (with the derived currency) and phone are judged by the rule the customer's own edit shares
+ * (`profileChanges`); a new email clears the verification.
  */
 function changesOf(
   customer: Customer,
@@ -336,35 +314,20 @@ function changesOf(
   newEmail: string | undefined,
   currency: string | null | undefined,
 ): Changes {
-  const columns: Partial<Customer> = {};
-  const before: Record<string, unknown> = {};
-  const after: Record<string, unknown> = {};
+  const { columns, before, after } = profileChanges(customer, input, currency);
   const note = (field: string, from: unknown, to: unknown) => {
     before[field] = from;
     after[field] = to;
   };
-  if (input.name !== undefined && input.name !== customer.name) {
-    columns.name = input.name;
-    note('name', customer.name, input.name);
-  }
   if (newEmail !== undefined) {
     columns.email = newEmail;
     columns.emailVerifiedAt = null;
     note('email', customer.email, newEmail);
     if (customer.hasAccount && customer.emailVerifiedAt !== null) note('email_verified', true, false);
   }
-  if (input.country !== undefined && input.country !== customer.country) {
-    columns.country = input.country;
-    columns.currency = currency ?? null;
-    note('country', customer.country, input.country);
-  }
   if (input.locale !== undefined && input.locale !== customer.locale) {
     columns.locale = input.locale;
     note('locale', customer.locale, input.locale);
-  }
-  if (input.phone !== undefined && input.phone !== customer.phone) {
-    columns.phone = input.phone;
-    note('phone', customer.phone, input.phone);
   }
   if (input.internalNotes !== undefined && input.internalNotes !== customer.internalNotes) {
     columns.internalNotes = input.internalNotes;

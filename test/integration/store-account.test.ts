@@ -9,6 +9,7 @@ import { clearIdentityCaches } from '../support/auth';
 import { TestClock } from '../support/clock';
 import { insertCategory, insertService } from '../support/catalog';
 import { closeTestDb, resetDb, testDb } from '../support/db';
+import { insertStoreCurrencies, insertTaxRates } from '../support/customers';
 import { insertOrderRow } from '../support/orders';
 import { freshClientIp } from '../support/pipeline-routes';
 import { STORE_ORIGIN, StoreClient, clearStoreRateLimits, customerRow, makeCustomer } from '../support/store';
@@ -128,14 +129,133 @@ describe('PATCH /store/v1/me', () => {
     expect(klingon.json<{ errors: Array<{ field: string }> }>().errors.map((e) => e.field)).toEqual(['locale']);
   });
 
-  it('changes nothing for an empty body, never lets the customer change the name or email, and needs the CSRF token', async () => {
+  it('changes nothing for an empty body, never lets the customer change the email, and needs the CSRF token', async () => {
     const { customer, client } = await signedIn({ name: 'Original Name' });
     expect((await client.updateMe({})).statusCode).toBe(200);
-    const sneaky = await client.updateMe({ name: 'Hacker', email: 'hacker@example.com' });
+    const sneaky = await client.updateMe({ email: 'hacker@example.com' });
     expect(sneaky.statusCode).toBe(200);
     expect(await customerRow(customer.id)).toMatchObject({ name: 'Original Name', email: customer.email });
     const noToken = await client.updateMe({ locale: 'ar' }, { csrf: false });
     expect(noToken.statusCode).toBe(403);
+  });
+});
+
+describe('PATCH /store/v1/me: name, phone and country (feature 24B)', () => {
+  /** Currencies USD, GBP, EUR (shown) and SEK (not shown), and tax rates for GB, DE, SE and US. */
+  async function world() {
+    const { db } = await testDb();
+    await insertStoreCurrencies(db);
+    await insertTaxRates(db, ['GB', 'DE', 'SE', 'US']);
+    return db;
+  }
+
+  it('sets the name, the phone and the country, tidies the name, and answers the account', async () => {
+    await world();
+    const { customer, client } = await signedIn({ name: 'Original Name', phone: '', country: 'GB', currency: 'GBP' });
+    const res = await client.updateMe({ name: '  Daniel   Whitmore ', phone: ' +44 7700 900123 ', country: 'de' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      id: customer.id,
+      name: 'Daniel Whitmore',
+      phone: '+44 7700 900123',
+      country: 'DE',
+      currency: 'EUR',
+    });
+    expect(await customerRow(customer.id)).toMatchObject({
+      name: 'Daniel Whitmore',
+      phone: '+44 7700 900123',
+      country: 'DE',
+    });
+  });
+
+  it("clears the phone with '' and leaves the other fields alone", async () => {
+    await world();
+    const { customer, client } = await signedIn({ name: 'Keep Me', phone: '+447700900123' });
+    const res = await client.updateMe({ phone: '' });
+    expect(res.statusCode).toBe(200);
+    expect(await customerRow(customer.id)).toMatchObject({ name: 'Keep Me', phone: '', country: 'GB' });
+  });
+
+  it('refuses a name of 1 character, a 3-letter country and a phone over 40 characters with 422 on the field', async () => {
+    await world();
+    const { customer, client } = await signedIn({ name: 'Original Name' });
+    const fieldsOf = (res: { json: <T>() => T }) =>
+      res.json<{ errors: Array<{ field: string }> }>().errors.map((e) => e.field);
+    const name = await client.updateMe({ name: 'A' });
+    expect(name.statusCode).toBe(422);
+    expect(fieldsOf(name)).toEqual(['name']);
+    const country = await client.updateMe({ country: 'GBR' });
+    expect(country.statusCode).toBe(422);
+    expect(fieldsOf(country)).toEqual(['country']);
+    const phone = await client.updateMe({ phone: '1'.repeat(41) });
+    expect(phone.statusCode).toBe(422);
+    expect(fieldsOf(phone)).toEqual(['phone']);
+    expect(await customerRow(customer.id)).toMatchObject({ name: 'Original Name', country: 'GB' });
+  });
+
+  it('refuses a new country with no current tax rate (422 on country, nothing written), including an ended or future window', async () => {
+    const db = await world();
+    const { customer, client } = await signedIn({ name: 'Original Name', currency: 'GBP' });
+    const refused = async () => {
+      const res = await client.updateMe({ name: 'Changed Name', country: 'JO' });
+      expect(res.statusCode).toBe(422);
+      expect(res.json()).toMatchObject({
+        code: 'VALIDATION_FAILED',
+        errors: [{ field: 'country', message: 'Choose a country.' }],
+      });
+    };
+    await refused();
+    await insertTaxRates(db, ['JO'], { validTo: new Date(clock.nowMs() - 86_400_000) });
+    await refused();
+    await db.delete(s.taxRates).where(eq(s.taxRates.country, 'JO'));
+    await insertTaxRates(db, ['JO'], { validFrom: new Date(clock.nowMs() + 86_400_000) });
+    await refused();
+    // The whole request is refused: the name did not change either.
+    expect(await customerRow(customer.id)).toMatchObject({ name: 'Original Name', country: 'GB', currency: 'GBP' });
+  });
+
+  it('never checks the stored country again: it is accepted after its tax rate ended, and the currency stays', async () => {
+    const db = await world();
+    const { customer, client } = await signedIn({ country: 'GB', currency: 'USD' });
+    await db.delete(s.taxRates).where(eq(s.taxRates.country, 'GB'));
+    const res = await client.updateMe({ country: 'gb', name: 'Still Here' });
+    expect(res.statusCode).toBe(200);
+    expect(await customerRow(customer.id)).toMatchObject({ name: 'Still Here', country: 'GB', currency: 'USD' });
+  });
+
+  it('re-derives the currency from a changed country (its shown currency, else USD), and keeps an explicit one', async () => {
+    await world();
+    const { customer, client } = await signedIn({ country: 'GB', currency: 'GBP' });
+    // Germany pays in EUR; Sweden's krona is not shown by the store: USD.
+    expect((await client.updateMe({ country: 'DE' })).json()).toMatchObject({ country: 'DE', currency: 'EUR' });
+    expect((await client.updateMe({ country: 'SE' })).json()).toMatchObject({ country: 'SE', currency: 'USD' });
+    // Together with a currency the customer chose, the choice wins.
+    const both = await client.updateMe({ country: 'GB', currency: 'EUR' });
+    expect(both.json()).toMatchObject({ country: 'GB', currency: 'EUR' });
+    expect(await customerRow(customer.id)).toMatchObject({ country: 'GB', currency: 'EUR' });
+    // A currency alone does not touch the country.
+    expect((await client.updateMe({ currency: 'USD' })).json()).toMatchObject({ country: 'GB', currency: 'USD' });
+  });
+
+  it('does not change another customer, writes no audit row, and an empty body or the same values change nothing', async () => {
+    const db = await world();
+    const { customer, client } = await signedIn({ name: 'Original Name', phone: '+1', country: 'GB' });
+    const other = await makeCustomer(t, { name: 'Other Person', phone: '+2', country: 'GB' });
+    const before = await customerRow(customer.id);
+    expect((await client.updateMe({})).statusCode).toBe(200);
+    expect((await client.updateMe({ name: 'Original Name', phone: '+1', country: 'GB' })).statusCode).toBe(200);
+    expect(await customerRow(customer.id)).toEqual(before);
+    expect((await client.updateMe({ name: 'New Name', country: 'DE' })).statusCode).toBe(200);
+    expect(await customerRow(other.id)).toEqual(other.row);
+    expect(await db.select().from(s.auditLogs)).toHaveLength(0);
+  });
+
+  it('needs the CSRF token for the new fields too', async () => {
+    await world();
+    const { customer, client } = await signedIn({ name: 'Original Name' });
+    const res = await client.updateMe({ name: 'Hacker Name' }, { csrf: false });
+    expect(res.statusCode).toBe(403);
+    expect(await customerRow(customer.id)).toMatchObject({ name: 'Original Name' });
   });
 });
 

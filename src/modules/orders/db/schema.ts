@@ -265,12 +265,13 @@ export type OrderEvent = typeof orderEvents.$inferSelect;
 export type NewOrderEvent = typeof orderEvents.$inferInsert;
 
 /**
- * What an `Idempotency-Key` was used for: one order, or a bulk of orders.
+ * What an `Idempotency-Key` was used for: one order, a bulk of orders, or the merchant portal's placement.
  *
  * Why: REST v1 (ALIGNMENT § 7, decision 026): `POST /v1/orders` and `POST /v1/orders/bulk` accept the header; the scope is part of what the key
- * stands for, so the same key on the other route is a different request.
+ * stands for, so the same key on the other route is a different request. `portal` (feature 24B) is `POST /client/orders`, whose stored answer
+ * is `{ orders: [...] }` and never a v1 body.
  */
-export const IDEMPOTENCY_SCOPES = ['order', 'bulk'] as const;
+export const IDEMPOTENCY_SCOPES = ['order', 'bulk', 'portal'] as const;
 
 /** One value of {@link IDEMPOTENCY_SCOPES}. */
 export type IdempotencyScope = (typeof IDEMPOTENCY_SCOPES)[number];

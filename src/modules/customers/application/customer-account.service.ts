@@ -7,14 +7,19 @@ import { AppError } from '../../../common/errors';
 import { DbService } from '../../../infra/db';
 import type { CustomerPrincipal, RequestMeta } from '../../identity';
 import type { CustomerLocale } from '../domain/customer-input';
+import { profileChanges } from '../domain/profile-edit';
 import { findCredentials } from '../infra/customer-credentials.repository';
 import { findCustomerById, updateCustomerRow } from '../infra/customer.repository';
 import { currencyByCode, listCustomerOrders } from '../infra/foreign-reads.repository';
 import { insertConsentRecord } from '../infra/consent.repository';
+import { CustomerProfileRules } from './customer-profile-rules';
 import { type WireStoreMe, type WireStoreOrder, toStoreMe, toStoreOrder } from './customer-views';
 
 /** What `PATCH /store/v1/me` may change. */
 export interface UpdateMeInput {
+  readonly name?: string | undefined;
+  readonly phone?: string | undefined;
+  readonly country?: string | undefined;
   readonly locale?: CustomerLocale | undefined;
   readonly currency?: string | undefined;
   readonly marketingOptIn?: boolean | undefined;
@@ -28,12 +33,14 @@ export interface UpdateMeInput {
  * request address and time, and a withdrawn consent is a new row with `granted = false` (RESOLUTIONS b2c-12, b2c-14). The
  * customer reads only their own orders: the id comes from the session.
  *
- * Side effects: `updateMe` writes `customers` and, when the marketing choice changed, `consent_records`.
+ * Side effects: `updateMe` writes `customers` and, when the marketing choice changed, `consent_records`. No audit row: a customer's own
+ * edit writes none.
  */
 @Injectable()
 export class CustomerAccountService {
   constructor(
     private readonly db: DbService,
+    private readonly rules: CustomerProfileRules,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -52,13 +59,18 @@ export class CustomerAccountService {
   }
 
   /**
-   * Changes the language, the currency and the marketing consent.
+   * Changes the name, phone, country, language, currency and marketing consent.
+   *
+   * Why: feature 24B: the account page edits the customer's own details with the staff edit's rules (`profileChanges`,
+   * `CustomerProfileRules`): "changed" is judged against the locked row, a changed country must have a current tax rate and re-derives
+   * the currency unless the same request sends one, and a country equal to the stored one is never checked.
    *
    * @param principal the signed-in customer
    * @param input the fields to change
    * @param meta the caller's address and user agent (the consent record keeps them)
    * @returns the account after the change
-   * @throws {AppError} `VALIDATION_FAILED` (422 on `currency`: not a currency the store shows), `UNAUTHORIZED` (401)
+   * @throws {AppError} `VALIDATION_FAILED` (422 on `currency`: not a currency the store shows; on `country`: a new country the
+   *   storefront does not sell to), `UNAUTHORIZED` (401)
    */
   async updateMe(principal: CustomerPrincipal, input: UpdateMeInput, meta: RequestMeta): Promise<WireStoreMe> {
     if (input.currency !== undefined) {
@@ -75,7 +87,17 @@ export class CustomerAccountService {
     const updated = await this.db.runInTransaction(async (work) => {
       const customer = await findCustomerById(work.tx, principal.customerId, true);
       if (!customer) throw new AppError('UNAUTHORIZED');
+      // Only a country change is checked (a form that sends the stored country again must not fail when its tax rate has ended).
+      const countryChanged = input.country !== undefined && input.country !== customer.country;
+      if (countryChanged) await this.rules.assertCountryAccepted(work.tx, input.country, now);
+      // An explicit currency in the same request wins over the one derived from a changed country.
+      const derived =
+        countryChanged && input.currency === undefined
+          ? await this.rules.currencyFor(work.tx, input.country)
+          : undefined;
+      const profile = profileChanges(customer, input, derived);
       const changes = {
+        ...profile.columns,
         ...(input.locale !== undefined ? { locale: input.locale } : {}),
         ...(input.currency !== undefined ? { currency: input.currency } : {}),
         ...(input.marketingOptIn !== undefined ? { marketingOptIn: input.marketingOptIn } : {}),

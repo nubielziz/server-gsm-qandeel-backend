@@ -4,7 +4,7 @@
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIsoDateTime, zMoney } from '../../../common/contract';
 import { ORDER_STATUSES } from '../../orders';
-import { LocaleField } from './shared';
+import { CountryField, LocaleField, NameField, PhoneField } from './shared';
 
 /** The customer's own account. */
 export const StoreMeSchema = z.object({
@@ -75,14 +75,21 @@ export const getMe = defineRoute({
 /** `PATCH /store/v1/me`. */
 export const updateMe = defineRoute({
   key: 'PATCH /store/v1/me',
-  summary: 'Change language, currency and marketing consent',
+  summary: 'Change name, phone, country, language, currency and marketing consent',
   description:
-    'Changes the fields sent. `currency` is the code of a currency the store shows (`422` on `currency` otherwise). A changed ' +
-    '`marketingOptIn` writes a consent record with the request address and time (a withdrawn consent is a new record).',
+    'Changes the fields sent; `{}` changes nothing. `name` (2 to 120 characters), `phone` (up to 40; an empty string clears it) and ' +
+    "`country` (ISO-2) are the customer's own details, with the staff edit's rules: a **changed** country must be one the shop sells " +
+    'to, i.e. with a current tax rate (`422` on `country` otherwise; offer the countries of `GET /store/v1/config` `taxRates`), and it ' +
+    "resets `currency` to the country's default unless the same request sends `currency`. A country equal to the stored one is never " +
+    'checked. The email cannot be changed here. `currency` is the code of a currency the store shows (`422` on `currency` otherwise). A ' +
+    'changed `marketingOptIn` writes a consent record with the request address and time (a withdrawn consent is a new record).',
   tags: ['account'],
   surface: 'store',
   access: 'customer-session',
   body: z.object({
+    name: NameField.optional(),
+    phone: PhoneField.optional(),
+    country: CountryField.optional(),
     locale: LocaleField.optional(),
     currency: z
       .string()
@@ -94,7 +101,17 @@ export const updateMe = defineRoute({
   }),
   success: { status: 200, schema: StoreMeSchema },
   errors: ['VALIDATION_FAILED', 'UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'CSRF_FAILED', 'IP_NOT_ALLOWED'],
-  examples: { request: { locale: 'ar', currency: 'GBP', marketingOptIn: false }, response: STORE_ME_EXAMPLE },
+  examples: {
+    request: {
+      name: 'Daniel Whitmore',
+      phone: '+44 7700 900123',
+      country: 'GB',
+      locale: 'ar',
+      currency: 'GBP',
+      marketingOptIn: false,
+    },
+    response: STORE_ME_EXAMPLE,
+  },
 });
 
 /** `GET /store/v1/me/orders`. */

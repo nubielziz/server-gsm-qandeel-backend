@@ -5,6 +5,8 @@ import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zMoney } from '../../../common/contract';
 import { SERVICE_TYPES } from '../../catalog';
 import { ORDER_STATUSES } from '../db/schema';
+import { IDEMPOTENCY_WINDOW_DAYS } from '../domain/idempotency-window';
+import { IdempotencyHeaders } from './idempotency-headers';
 import { MerchantEventSchema, MerchantOrderSchema, ORDER_SORTS } from './shared';
 
 /** The most IMEIs one bulk order may hold (the same limit as REST v1's `POST /v1/orders/bulk`). */
@@ -118,10 +120,16 @@ export const placeClientOrder = defineRoute({
     'prices), a smaller raise is charged and recorded; a second open order for the same service and input is refused under the ' +
     "service's `block_open` rule (`DUPLICATE_ORDER`). An IMEI service takes `imei` (15 digits, Luhn) or `imeis` (a bulk of up to 100: " +
     'one order each, all placed or none); a server or remote service takes `inputs`; a File service a `fileId` and/or `inputs`. The ' +
-    'answer is immediate: the orders are `pending`, in the manual queue or waiting for the dispatch job.',
+    'answer is immediate: the orders are `pending`, in the manual queue or waiting for the dispatch job. Send an `Idempotency-Key` (a new ' +
+    'one per form submission) so that a double click or a retry never places or holds twice: the same key and body sends the first `201` ' +
+    'again with the response header `idempotency-replayed: true` (nothing is placed); another body with the key is `409 ' +
+    'IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS` (`Retry-After`). A refused request stores nothing, so the key ' +
+    `may be sent again. The answer is kept ${IDEMPOTENCY_WINDOW_DAYS} days; a replay is the first answer as it was (the orders may have moved on). ` +
+    'A key used on REST v1 cannot be used here. Without the header nothing changes.',
   tags: ['client-orders'],
   surface: 'client',
   access: 'merchant-session',
+  headers: IdempotencyHeaders,
   body: PlaceOrderBody,
   success: { status: 201, schema: z.object({ orders: z.array(MerchantOrderSchema) }) },
   errors: [
@@ -135,6 +143,8 @@ export const placeClientOrder = defineRoute({
     'DUPLICATE_ORDER',
     'INVALID_IMEI',
     'VALIDATION_FAILED',
+    'IDEMPOTENCY_KEY_REUSED',
+    'IDEMPOTENCY_IN_PROGRESS',
   ],
   examples: {
     request: { serviceId: 5, imei: '352905112490861' },

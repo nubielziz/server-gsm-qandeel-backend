@@ -94,8 +94,11 @@ consents are feature 14a; block, export and anonymize are feature 18 (below).
   registers the `customer` session subject resolver (blocked behaves like suspended, anonymized like gone). `magic-link`, `login` and
   `password/forgot` are `turnstile: true` (decision 034): without the `X-Turnstile-Token` header the answer is `403 TURNSTILE_FAILED`
   before the route does anything (the tests send the dummy token through `test/support/store.ts`).
-- **Account** (`CustomerAccountService`): `GET|PATCH /store/v1/me` (language, currency of a store-visible currency, marketing consent:
-  a change writes an immutable `consent_records` row with the request address) and `GET /store/v1/me/orders` (the session's own
+- **Account** (`CustomerAccountService`): `GET|PATCH /store/v1/me` (name, phone and country with the staff edit's rules, feature 24B:
+  `domain/profile-edit.ts` judges "changed" against the locked row, `CustomerProfileRules` refuses a changed country with no current
+  tax rate (`422` on `country`) and re-derives the currency unless the request sends one; email is not editable; no audit row;
+  language, currency of a store-visible currency, marketing consent: a change writes an immutable `consent_records` row with the
+  request address) and `GET /store/v1/me/orders` (the session's own
   orders only; foreign read of `orders` in `infra/foreign-reads.repository.ts`).
 - **Admin customers** (`CustomerAdminService`, `CustomerAccountAdminService`, scenario b2c-account): list with the order figures
   (scalar subqueries on `orders`), detail (account side, latest consent evidence, risk summary, counts), create (reset link or a
@@ -254,7 +257,7 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 |---|---|---|---|
 | `GET /store/v1/checkout-sessions/:token` | checkout-token | Session status, the locked price and the available payment methods. | 14 |
 | `GET /store/v1/me` | customer-session | My account: details, currency, language and marketing consent. | 14 |
-| `PATCH /store/v1/me` | customer-session | Change language, currency and marketing consent. | 14 |
+| `PATCH /store/v1/me` | customer-session | Change name, phone, country, language, currency and marketing consent. | 14 |
 | `POST /store/v1/auth/login` | public | Sign in with email and password; refuses a suspended account and locks temporarily after repeated failures. | 14 |
 | `POST /store/v1/auth/logout` | customer-session | End the session. | 14 |
 | `POST /store/v1/auth/magic-link` | public | Email a sign-in link instead of a password (second sign-in option). | 14 |
