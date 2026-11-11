@@ -240,11 +240,12 @@
       "module": "customers",
       "name": "Storefront customers & checkout (B2C)",
       "domain": "I",
-      "rows": 27,
-      "endpoints": 30,
+      "rows": 28,
+      "endpoints": 31,
       "bySurface": {
         "store": 15,
-        "admin": 15
+        "admin": 15,
+        "client": 1
       },
       "frontendCalled": 15,
       "stages": [
@@ -253,7 +254,8 @@
         18,
         19,
         21,
-        23
+        23,
+        24
       ],
       "tables": 4,
       "scenarios": [

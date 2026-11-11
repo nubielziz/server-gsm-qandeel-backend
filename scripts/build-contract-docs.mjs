@@ -43,7 +43,7 @@ const BACKEND_CODES = [
   ['DUPLICATE_ORDER', 409, 'Same client, service and IMEI while an earlier order is still open and the service has duplicate_rule = block_open (the map duplicate rule; the other value is allow).'],
   ['IDEMPOTENCY_KEY_REUSED', 409, 'The Idempotency-Key was already used with a different request body.'],
   ['IDEMPOTENCY_IN_PROGRESS', 409, 'A request with the same Idempotency-Key is still being processed.'],
-  ['TURNSTILE_FAILED', 403, 'The storefront anti-bot check (Turnstile) failed or is missing.'],
+  ['TURNSTILE_FAILED', 403, 'The anti-bot check (Turnstile) failed or is missing: a storefront write or a public merchant sign-in form.'],
   ['ERASURE_NOT_DONE', 409, 'An erasure request cannot be completed before the customer is anonymized.'],
   ['PAYMENT_AUTO_CREDIT_PENDING', 409, 'Approve or reject refused: an automatic-gateway top-up is credited by the auto-credit job after the gateway check (staff may decide only when the gateway is manual or review_required is set).'],
   ['ALREADY_SENT', 409, 'POST /admin/orders/:id/dispatch refused: the order was already sent to a supplier (dispatch_state sent).'],

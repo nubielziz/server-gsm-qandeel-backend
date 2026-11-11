@@ -279,7 +279,7 @@
       "descriptionAr": "تسجيل تاجر جديد وإرسال إيميل التفعيل",
       "access": "public",
       "permission": null,
-      "turnstile": false,
+      "turnstile": true,
       "idempotencyKey": false,
       "authRaw": "عام",
       "stage": 2,
@@ -295,7 +295,11 @@
       },
       "module": "identity",
       "description": "Register a new merchant and send the verification email.",
-      "frontend": null
+      "frontend": null,
+      "rowFlag": {
+        "file": "scripts/map-additions/24a.mjs",
+        "spec": "B-TBD merchant-auth-turnstile"
+      }
     },
     {
       "key": "POST /client/auth/verify-email",
@@ -337,7 +341,7 @@
       "descriptionAr": "دخول؛ يطلب كود 2FA إذا مفعّل",
       "access": "public",
       "permission": null,
-      "turnstile": false,
+      "turnstile": true,
       "idempotencyKey": false,
       "authRaw": "عام",
       "stage": 2,
@@ -354,7 +358,11 @@
       },
       "module": "identity",
       "description": "Sign in; asks for a 2FA code when 2FA is enabled.",
-      "frontend": null
+      "frontend": null,
+      "rowFlag": {
+        "file": "scripts/map-additions/24a.mjs",
+        "spec": "B-TBD merchant-auth-turnstile"
+      }
     },
     {
       "key": "POST /client/auth/2fa",
@@ -425,7 +433,7 @@
       "descriptionAr": "إرسال رابط استعادة كلمة السر",
       "access": "public",
       "permission": null,
-      "turnstile": false,
+      "turnstile": true,
       "idempotencyKey": false,
       "authRaw": "عام",
       "stage": 2,
@@ -441,7 +449,11 @@
       },
       "module": "identity",
       "description": "Send a password reset link.",
-      "frontend": null
+      "frontend": null,
+      "rowFlag": {
+        "file": "scripts/map-additions/24a.mjs",
+        "spec": "B-TBD merchant-auth-turnstile"
+      }
     },
     {
       "key": "POST /client/auth/password/reset",

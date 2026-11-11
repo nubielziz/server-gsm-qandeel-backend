@@ -1,4 +1,4 @@
-# 034: Turnstile on the public storefront writes
+# 034: Turnstile on the public storefront writes (and the public merchant sign-in forms, feature 24A)
 
 Status: accepted, 2026-11-07 (lead, before features 14a, 14b and 17). Builds on decisions 018 (pipeline, trusted proxy),
 021 (per-IP limits), 023 (outbound HTTP) and 013 (configuration).
@@ -46,3 +46,15 @@ and the OpenAPI header is `x-turnstile-token` (lower case like the other documen
 the route-parity test compares the flag with the manifest both ways. Counter: `turnstile_failures_total{reason}`. Routes flagged
 today: `POST /store/v1/imei/check` and `POST /store/v1/checkout-sessions`.
 
+**Amendment (feature 24A, 2026-11-11): public merchant routes and a rollout switch.** The check may also guard public `/client`
+routes (`defineRoute` accepts `turnstile: true` on `/store/v1` and on `/client` with `access: 'public'`; a `/client` session route,
+`/admin` and `/v1` are still refused). The smart sign-in `POST /client/auth/sign-in` (a map addition, `scripts/map-additions/24a.mjs`) is
+checked always. The map rows of `POST /client/auth/register`, `POST /client/auth/login` and `POST /client/auth/password/forgot` are
+`عام` (no Turnstile) and the map is read-only, so the same additions file **flags** them (`rowFlags`, add-only: `turnstile: true` on a
+public, non-CRUD client or store map row; `scripts/map-additions/README.md`) and their contracts declare `turnstile: true` with
+`turnstileRollout: 'merchant-auth'`: the guard enforces them only when `TURNSTILE_MERCHANT_AUTH=true` (default `false` in every
+environment), so the merge breaks no caller; with the switch on, a missing or bad token is `403 TURNSTILE_FAILED` before validation,
+counters and hashing. OpenAPI shows their header as optional (`x-gsm-turnstile-rollout: merchant-auth`). The owner switches it on once
+the site sends the token on those forms. **Remove `turnstileRollout` and the variable one release after production runs with it on**
+(the three contracts then keep plain `turnstile: true` and the header becomes required). The CORS allow list does not carry
+`X-Turnstile-Token`: the site calls the API through its same-origin proxy (feature 24D).

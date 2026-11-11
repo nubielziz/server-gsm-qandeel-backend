@@ -185463,9 +185463,21 @@
     },
     "/client/auth/login": {
       "post": {
-        "description": "Opens a session: `pending_password` (10 minutes) when staff set a temporary password that is not replaced yet (`next: password`: the portal shows a new-password form and calls `POST /client/auth/password/change`), `pending_totp` (10 minutes) when the merchant has two-factor sign-in on, a full one otherwise. A merchant waiting for approval signs in too (it can read its status and manage its own account). One `401` answers an unknown email, a wrong password and a merchant with no password yet.",
+        "description": "Opens a session: `pending_password` (10 minutes) when staff set a temporary password that is not replaced yet (`next: password`: the portal shows a new-password form and calls `POST /client/auth/password/change`), `pending_totp` (10 minutes) when the merchant has two-factor sign-in on, a full one otherwise. A merchant waiting for approval signs in too (it can read its status and manage its own account). One `401` answers an unknown email, a wrong password and a merchant with no password yet. Send `X-Turnstile-Token`: it is required once the server enforces the anti-bot check on merchant sign-up and sign-in (`TURNSTILE_MERCHANT_AUTH`).",
         "operationId": "postClientAuthLogin",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "x-turnstile-token",
+            "in": "header",
+            "description": "The Cloudflare Turnstile widget's token (its `cf-turnstile-response` value). Send it now: the server requires it once the anti-bot check on this route is switched on (`TURNSTILE_MERCHANT_AUTH`), and then a missing or failed check answers `403 TURNSTILE_FAILED`. A token is single use and valid for five minutes, so a retried write needs a new one.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -185627,7 +185639,7 @@
             }
           },
           "403": {
-            "description": "ACCOUNT_SUSPENDED: This account is suspended.\nIP_NOT_ALLOWED: Access from this network address is not allowed.\nCSRF_FAILED: The security check for this request failed.",
+            "description": "ACCOUNT_SUSPENDED: This account is suspended.\nIP_NOT_ALLOWED: Access from this network address is not allowed.\nCSRF_FAILED: The security check for this request failed.\nTURNSTILE_FAILED: The anti-bot check failed.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -185659,7 +185671,8 @@
                       "enum": [
                         "ACCOUNT_SUSPENDED",
                         "IP_NOT_ALLOWED",
-                        "CSRF_FAILED"
+                        "CSRF_FAILED",
+                        "TURNSTILE_FAILED"
                       ]
                     },
                     "detail": {
@@ -185725,6 +185738,17 @@
                       "status": 403,
                       "code": "CSRF_FAILED",
                       "detail": "The security check for this request failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "TURNSTILE_FAILED": {
+                    "summary": "The anti-bot check failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/turnstile-failed",
+                      "title": "The anti-bot check failed.",
+                      "status": 403,
+                      "code": "TURNSTILE_FAILED",
+                      "detail": "The anti-bot check failed.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   }
@@ -185934,7 +185958,9 @@
         ],
         "x-gsm-access": "public",
         "x-gsm-key": "POST /client/auth/login",
-        "x-gsm-surface": "client"
+        "x-gsm-surface": "client",
+        "x-gsm-turnstile": true,
+        "x-gsm-turnstile-rollout": "merchant-auth"
       }
     },
     "/client/auth/logout": {
@@ -187078,9 +187104,21 @@
     },
     "/client/auth/password/forgot": {
       "post": {
-        "description": "Answers `204` whether or not the email belongs to a merchant. A merchant that is not suspended, including one waiting for approval that has no password yet, gets a link valid for one hour; a newer link replaces an older one.",
+        "description": "Answers `204` whether or not the email belongs to a merchant. A merchant that is not suspended, including one waiting for approval that has no password yet, gets a link valid for one hour; a newer link replaces an older one. Send `X-Turnstile-Token`: it is required once the server enforces the anti-bot check on merchant sign-up and sign-in (`TURNSTILE_MERCHANT_AUTH`).",
         "operationId": "postClientAuthPasswordForgot",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "x-turnstile-token",
+            "in": "header",
+            "description": "The Cloudflare Turnstile widget's token (its `cf-turnstile-response` value). Send it now: the server requires it once the anti-bot check on this route is switched on (`TURNSTILE_MERCHANT_AUTH`), and then a missing or failed check answers `403 TURNSTILE_FAILED`. A token is single use and valid for five minutes, so a retried write needs a new one.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -187119,7 +187157,7 @@
             }
           },
           "403": {
-            "description": "IP_NOT_ALLOWED: Access from this network address is not allowed.\nCSRF_FAILED: The security check for this request failed.",
+            "description": "IP_NOT_ALLOWED: Access from this network address is not allowed.\nCSRF_FAILED: The security check for this request failed.\nTURNSTILE_FAILED: The anti-bot check failed.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -187150,7 +187188,8 @@
                       "type": "string",
                       "enum": [
                         "IP_NOT_ALLOWED",
-                        "CSRF_FAILED"
+                        "CSRF_FAILED",
+                        "TURNSTILE_FAILED"
                       ]
                     },
                     "detail": {
@@ -187205,6 +187244,17 @@
                       "status": 403,
                       "code": "CSRF_FAILED",
                       "detail": "The security check for this request failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "TURNSTILE_FAILED": {
+                    "summary": "The anti-bot check failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/turnstile-failed",
+                      "title": "The anti-bot check failed.",
+                      "status": 403,
+                      "code": "TURNSTILE_FAILED",
+                      "detail": "The anti-bot check failed.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   }
@@ -187414,7 +187464,9 @@
         ],
         "x-gsm-access": "public",
         "x-gsm-key": "POST /client/auth/password/forgot",
-        "x-gsm-surface": "client"
+        "x-gsm-surface": "client",
+        "x-gsm-turnstile": true,
+        "x-gsm-turnstile-rollout": "merchant-auth"
       }
     },
     "/client/auth/password/reset": {
@@ -187871,9 +187923,21 @@
     },
     "/client/auth/register": {
       "post": {
-        "description": "Answers `204` for a new and for an already registered email alike, so it cannot be used to find out who is registered. A new email creates a merchant that is `pending` until staff approve it, opens its wallet, and sends the verification email. An existing email changes nothing and sends nothing. Counted per address, whether or not the email exists.",
+        "description": "Answers `204` for a new and for an already registered email alike, so it cannot be used to find out who is registered. A new email creates a merchant that is `pending` until staff approve it, opens its wallet, and sends the verification email. An existing email changes nothing and sends nothing. Counted per address, whether or not the email exists. Send `X-Turnstile-Token`: it is required once the server enforces the anti-bot check on merchant sign-up and sign-in (`TURNSTILE_MERCHANT_AUTH`).",
         "operationId": "postClientAuthRegister",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "x-turnstile-token",
+            "in": "header",
+            "description": "The Cloudflare Turnstile widget's token (its `cf-turnstile-response` value). Send it now: the server requires it once the anti-bot check on this route is switched on (`TURNSTILE_MERCHANT_AUTH`), and then a missing or failed check answers `403 TURNSTILE_FAILED`. A token is single use and valid for five minutes, so a retried write needs a new one.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -187948,7 +188012,7 @@
             }
           },
           "403": {
-            "description": "IP_NOT_ALLOWED: Access from this network address is not allowed.\nCSRF_FAILED: The security check for this request failed.",
+            "description": "IP_NOT_ALLOWED: Access from this network address is not allowed.\nCSRF_FAILED: The security check for this request failed.\nTURNSTILE_FAILED: The anti-bot check failed.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -187979,7 +188043,8 @@
                       "type": "string",
                       "enum": [
                         "IP_NOT_ALLOWED",
-                        "CSRF_FAILED"
+                        "CSRF_FAILED",
+                        "TURNSTILE_FAILED"
                       ]
                     },
                     "detail": {
@@ -188034,6 +188099,17 @@
                       "status": 403,
                       "code": "CSRF_FAILED",
                       "detail": "The security check for this request failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "TURNSTILE_FAILED": {
+                    "summary": "The anti-bot check failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/turnstile-failed",
+                      "title": "The anti-bot check failed.",
+                      "status": 403,
+                      "code": "TURNSTILE_FAILED",
+                      "detail": "The anti-bot check failed.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   }
@@ -188255,7 +188331,519 @@
         ],
         "x-gsm-access": "public",
         "x-gsm-key": "POST /client/auth/register",
-        "x-gsm-surface": "client"
+        "x-gsm-surface": "client",
+        "x-gsm-turnstile": true,
+        "x-gsm-turnstile-rollout": "merchant-auth"
+      }
+    },
+    "/client/auth/sign-in": {
+      "post": {
+        "description": "One email and password form for both account kinds. An email that belongs to a merchant with a password always signs in as that merchant (the merchant wins, even when the email is also a customer: a wrong merchant password is `401`, and the customer area stays reachable through the emailed sign-in link); otherwise a customer account with a password signs in. The answer says which: `kind` `merchant` sets the `/client` session cookies and its `X-CSRF-Token`, `kind` `customer` the `/store/v1` ones. `next` is `password` after a temporary password (a `pending_password` session), `totp` for a merchant with two-factor sign-in on (a `pending_totp` session: continue with `POST /client/auth/2fa`), or `done`. A session of the other kind in the same browser stays signed in. One `401` answers an unknown email, a wrong password, an account with no password yet and an erased customer; `403 ACCOUNT_SUSPENDED` comes only after a correct password. Every attempt counts against the limits of both `POST /client/auth/login` and `POST /store/v1/auth/login` (5 per email and address in 15 minutes) and ten failures in a row lock the email for 15 minutes, whatever the email is: both answer `429 RATE_LIMITED` with `Retry-After`. Needs the anti-bot token (`X-Turnstile-Token`) and an `Origin` the API allows.",
+        "operationId": "postClientAuthSignIn",
+        "parameters": [
+          {
+            "name": "x-turnstile-token",
+            "in": "header",
+            "description": "The Cloudflare Turnstile widget's token (its `cf-turnstile-response` value). A missing or failed check answers `403 TURNSTILE_FAILED`; a token is single use and valid for five minutes, so a retried write needs a new one.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 254
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  }
+                },
+                "required": [
+                  "email",
+                  "password"
+                ]
+              },
+              "examples": {
+                "example": {
+                  "value": {
+                    "email": "ali@example.com",
+                    "password": "a-long-password"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "merchant",
+                        "customer"
+                      ]
+                    },
+                    "next": {
+                      "type": "string",
+                      "enum": [
+                        "password",
+                        "totp",
+                        "done"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "next"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "kind": "merchant",
+                  "next": "done"
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "ACCOUNT_SUSPENDED: This account is suspended.\nIP_NOT_ALLOWED: Access from this network address is not allowed.\nCSRF_FAILED: The security check for this request failed.\nTURNSTILE_FAILED: The anti-bot check failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "ACCOUNT_SUSPENDED",
+                        "IP_NOT_ALLOWED",
+                        "CSRF_FAILED",
+                        "TURNSTILE_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "ACCOUNT_SUSPENDED": {
+                    "summary": "This account is suspended.",
+                    "value": {
+                      "type": "https://errors.gsm.example/account-suspended",
+                      "title": "This account is suspended.",
+                      "status": 403,
+                      "code": "ACCOUNT_SUSPENDED",
+                      "detail": "This account is suspended.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "IP_NOT_ALLOWED": {
+                    "summary": "Access from this network address is not allowed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/ip-not-allowed",
+                      "title": "Access from this network address is not allowed.",
+                      "status": 403,
+                      "code": "IP_NOT_ALLOWED",
+                      "detail": "Access from this network address is not allowed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CSRF_FAILED": {
+                    "summary": "The security check for this request failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/csrf-failed",
+                      "title": "The security check for this request failed.",
+                      "status": 403,
+                      "code": "CSRF_FAILED",
+                      "detail": "The security check for this request failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "TURNSTILE_FAILED": {
+                    "summary": "The anti-bot check failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/turnstile-failed",
+                      "title": "The anti-bot check failed.",
+                      "status": 403,
+                      "code": "TURNSTILE_FAILED",
+                      "detail": "The anti-bot check failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: You are sending requests too quickly.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 429
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "RATE_LIMITED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "RATE_LIMITED": {
+                    "summary": "You are sending requests too quickly.",
+                    "value": {
+                      "type": "https://errors.gsm.example/rate-limited",
+                      "title": "You are sending requests too quickly.",
+                      "status": 429,
+                      "code": "RATE_LIMITED",
+                      "detail": "You are sending requests too quickly.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "retry-after": {
+                "description": "Seconds to wait before the next request.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        },
+        "summary": "Sign in as a merchant or a customer with one form",
+        "tags": [
+          "client: auth"
+        ],
+        "x-gsm-access": "public",
+        "x-gsm-key": "POST /client/auth/sign-in",
+        "x-gsm-surface": "client",
+        "x-gsm-turnstile": true
       }
     },
     "/client/auth/verify-email": {

@@ -31,6 +31,8 @@ export interface PortalCallOptions {
   readonly csrf?: boolean | string;
   /** Send the session cookie (default true). */
   readonly cookies?: boolean;
+  /** More request headers (an `x-turnstile-token`). */
+  readonly headers?: Readonly<Record<string, string>>;
 }
 
 type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -68,7 +70,7 @@ export class MerchantPortal {
     payload?: unknown,
     options: PortalCallOptions = {},
   ): Promise<LightMyRequestResponse> {
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...options.headers };
     const origin = options.origin ?? true;
     if (origin) headers.origin = origin === true ? PORTAL_ORIGIN : origin;
     if ((options.cookies ?? true) && this.jar.size > 0) {

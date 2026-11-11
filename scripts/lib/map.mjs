@@ -1,12 +1,13 @@
 // Shared loader for the API design map (reference/gsm-map/data/*.mjs) used by the manifest and slices scripts.
 // Turns map rows into endpoints with normalised access rules, so every script expands rows the same way.
-// `routes` is the map's rows plus the backend's own rows of scripts/map-additions (decision 035), checked at load time.
+// `routes` is the map's rows plus the backend's own rows of scripts/map-additions (decision 035), checked at load time; `rowFlags` are
+// the add-only Turnstile flags those files put on map rows (feature 24A).
 
 import { routes as mapRoutes, surfaces, groups } from '../../reference/gsm-map/data/routes.mjs';
 import { tables, domains } from '../../reference/gsm-map/data/schema.mjs';
 import * as system from '../../reference/gsm-map/data/system.mjs';
 import { modules } from '../module-map.mjs';
-import { readAdditionFiles, validateAdditions } from './map-additions.mjs';
+import { readAdditionFiles, validateAdditions, validateRowFlags } from './map-additions.mjs';
 import { ROOT, additionsDirs } from './paths.mjs';
 
 export { mapRoutes, surfaces, groups, tables, domains, system };
@@ -34,7 +35,7 @@ const PERMISSION = /^[a-z_]+:(\*|[a-z_]+)$/;
 // Raw auth text of the map (Arabic) -> normalised access per surface. Unknown text throws: decide, never guess.
 const ACCESS = {
   admin: { 'عام': 'public', 'جلسة': 'staff-session' },
-  client: { 'عام': 'public', 'جلسة': 'merchant-session' },
+  client: { 'عام': 'public', 'عام + Turnstile': 'public', 'جلسة': 'merchant-session' },
   store: {
     'عام': 'public',
     'عام + Turnstile': 'public',
@@ -135,8 +136,21 @@ export const checkAdditions = (files) =>
     rowKey,
   });
 
+/**
+ * Checks the row flags of addition files against the map (add-only Turnstile on public client and store rows, feature 24A).
+ * @param {{ file: string, rowFlags?: unknown }[]} files result of readAdditionFiles (or the same shape built in memory)
+ * @returns {{ row: string, turnstile: true, file: string, spec: string }[]} the flags
+ * @throws {Error} `map additions problems:` listing every problem with its file, flag number and row key
+ */
+export const checkRowFlags = (files) => validateRowFlags(files, { mapRoutes, rowKey, normaliseAccess });
+
+const additionFiles = await readAdditionFiles(additionsDirs(), ROOT);
+
 /** The backend's own rows beyond the map (scripts/map-additions/*.mjs), already checked. */
-export const additions = checkAdditions(await readAdditionFiles(additionsDirs(), ROOT));
+export const additions = checkAdditions(additionFiles);
+
+/** The backend's add-only flags on map rows (`rowFlags` of scripts/map-additions/*.mjs), already checked. */
+export const rowFlags = checkRowFlags(additionFiles);
 
 /** Every row the backend serves: the map's, then the additions. */
 export const routes = [...mapRoutes, ...additions];

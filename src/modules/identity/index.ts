@@ -36,6 +36,11 @@ export type { CurrentGroup, PromotionTarget } from './domain/group-promotion';
 export { SESSION_PURGE_JOB } from './jobs/session-purge.processor';
 export { PURGE_BATCH_SIZE, SESSION_RETENTION_DAYS, SessionPurge } from './jobs/session-purge';
 export { MerchantAuthModule } from './merchant-auth.module';
+// The merchant side of the smart sign-in (feature 24A): customers' POST /client/auth/sign-in verifies and opens through it.
+export { MerchantPasswordSignIn } from './application/merchant-password-sign-in';
+export type { MerchantCandidate } from './application/merchant-password-sign-in';
+export type { MerchantLoginResult } from './application/merchant-sign-in.service';
+export type { MerchantSignInStep } from './domain/merchant-sign-in-step';
 export { ApiKeysModule } from './api-keys.module';
 export { MerchantWebhookRoutesModule } from './merchant-webhook-routes.module';
 export { KycModule } from './kyc.module';

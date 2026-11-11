@@ -37,6 +37,7 @@ Frontend features covering this module: `customers`, `checkouts` (rules in `RULE
 | `GET /admin/reports/funnel` | admin | staff-permission `reports:growth` | 19 | `getFunnel` |
 | `POST /store/v1/checkout-sessions/:token/balance-payment` | store | checkout-token | 21 |  |
 | `POST /store/v1/marketing/unsubscribe/:token` | store | public | 23 |  |
+| `POST /client/auth/sign-in` | client | public | 24 |  |
 
 ## POST /store/v1/checkout-sessions
 
@@ -301,5 +302,10 @@ Writes audit_logs both ways. Card fingerprint = the gateway's card fingerprint (
 ## POST /store/v1/marketing/unsubscribe/:token
 
 - **Map addition** (B-TBD unsubscribe, `scripts/map-additions/23.mjs`): Stop marketing email with the link of an email. (إلغاء الاشتراك في الرسائل التسويقية) · public · stage 23 · tables customers, consent_records
+- **Frontend**: none.
+
+## POST /client/auth/sign-in
+
+- **Map addition** (B-TBD smart-sign-in, `scripts/map-additions/24a.mjs`): Sign in with email and password as a merchant or a customer. (تسجيل دخول موحّد: تاجر أو زبون بالبريد وكلمة المرور) · public · stage 24 · tables clients, customers, customer_credentials, sessions
 - **Frontend**: none.
 

@@ -22,6 +22,7 @@ const FIXTURES = 'test/unit/fixtures/map-additions';
 interface AdditionFile {
   file: string;
   rows: unknown;
+  rowFlags?: unknown;
 }
 interface AdditionRow {
   s: string;
@@ -35,17 +36,33 @@ interface AdditionRow {
   t: string[];
   addition: { file: string; en: string; module: string; spec: string; successStatus?: number | Record<string, number> };
 }
+interface RowFlag {
+  row: string;
+  turnstile: true;
+  file: string;
+  spec: string;
+}
 interface MapModule {
   EXPECTED: Record<string, number>;
   additions: unknown[];
+  rowFlags: RowFlag[];
   mapRoutes: object[];
   expandRow(row: object): { key: string }[];
   checkAdditions(files: AdditionFile[]): AdditionRow[];
+  checkRowFlags(files: Array<{ file: string; rowFlags?: unknown }>): RowFlag[];
 }
 interface AdditionsLib {
   ADDITION_SURFACES: Record<string, string | null>;
   SUCCESS_STATUSES: number[];
   readAdditionFiles(dirs: string[], root: string): Promise<AdditionFile[]>;
+  validateRowFlags(
+    files: Array<{ file: string; rowFlags?: unknown }>,
+    ctx: {
+      mapRoutes: object[];
+      rowKey(row: object): string;
+      normaliseAccess(row: object): { access: string; turnstile: boolean };
+    },
+  ): RowFlag[];
 }
 // Plain JavaScript, loaded at run time as test/schema/structure.test.ts loads module-map.mjs.
 const mapPath = '../../scripts/lib/map.mjs';
@@ -53,7 +70,7 @@ const libPath = '../../scripts/lib/map-additions.mjs';
 const samplePath = '../unit/fixtures/map-additions/sample.mjs';
 const map = (await import(mapPath)) as MapModule;
 const lib = (await import(libPath)) as AdditionsLib;
-const sample = (await import(samplePath)) as { rows: unknown[] };
+const sample = (await import(samplePath)) as { rows: unknown[]; rowFlags: unknown[] };
 
 const scratch: string[] = [];
 async function tempDir(): Promise<string> {
@@ -235,6 +252,102 @@ describe('the guards of the loader', () => {
   });
 });
 
+describe('the row flags (feature 24A)', () => {
+  /** A valid flag; each case changes one thing. */
+  const flag = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+    row: 'client POST /client/auth/verify-email',
+    turnstile: true,
+    spec: 'B-TBD w0-flag',
+    ...extra,
+  });
+  /** The error message of checking these flags in one file, or '' when they are accepted. */
+  const flagMessage = (...rowFlags: unknown[]): string => {
+    try {
+      map.checkRowFlags([{ file: 'scripts/map-additions/x.mjs', rowFlags }]);
+      return '';
+    } catch (error) {
+      return (error as Error).message;
+    }
+  };
+
+  it('accepts the sample flag and returns it with its file', () => {
+    expect(map.checkRowFlags([{ file: `${FIXTURES}/sample.mjs`, rowFlags: sample.rowFlags }])).toEqual([
+      {
+        row: 'client POST /client/auth/password/reset',
+        turnstile: true,
+        file: `${FIXTURES}/sample.mjs`,
+        spec: 'B-TBD w0-sample-flag',
+      },
+    ]);
+    expect(flagMessage(flag())).toBe('');
+    expect(map.checkRowFlags([{ file: 'scripts/map-additions/x.mjs' }])).toEqual([]);
+  });
+
+  it('flags exactly the three merchant auth rows from the real folder', () => {
+    expect(map.rowFlags.map((entry) => entry.row).sort()).toEqual([
+      'client POST /client/auth/login',
+      'client POST /client/auth/password/forgot',
+      'client POST /client/auth/register',
+    ]);
+  });
+
+  const refused: Array<[string, Record<string, unknown>, string]> = [
+    ['an unknown row', flag({ row: 'client POST /client/nope' }), 'is not the key of a map row'],
+    ['a row given as an endpoint key', flag({ row: 'POST /client/auth/verify-email' }), 'is not the key of a map row'],
+    ['an admin row', flag({ row: 'admin POST /admin/auth/login' }), 'only client and store rows can be flagged'],
+    ['a session row', flag({ row: 'client POST /client/auth/logout' }), 'only a public row can get Turnstile'],
+    ['a row that already has Turnstile', flag({ row: 'store POST /store/v1/auth/login' }), 'already has Turnstile'],
+    ['turnstile false', flag({ turnstile: false }), 'turnstile must be true'],
+    ['a missing turnstile', flag({ turnstile: undefined }), 'turnstile must be true'],
+    ['a missing spec', flag({ spec: undefined }), 'spec "undefined" must be'],
+    ['the spec TBD', flag({ spec: 'TBD' }), 'spec "TBD" must be'],
+    ['an unknown key', flag({ idempotencyKey: true }), 'has an unknown key "idempotencyKey"'],
+  ];
+  for (const [name, entry, expected] of refused)
+    it(`refuses ${name}, naming file, flag number and row key`, () => {
+      const text = flagMessage(entry);
+      expect(text).toContain('map additions problems:');
+      expect(text).toContain('scripts/map-additions/x.mjs flag 1 (');
+      expect(text).toContain(expected);
+    });
+
+  it('refuses a CRUD row (the map has none on client or store today, so an in-memory map stands in)', () => {
+    const crud = { s: 'client', g: 'auth', m: 'CRUD', ops: 'LC', p: '/client/w0-things', a: 'عام' };
+    const ctx = {
+      mapRoutes: [crud],
+      rowKey: (row: object) => {
+        const r = row as { s: string; m: string; p: string };
+        return `${r.s} ${r.m} ${r.p}`;
+      },
+      normaliseAccess: () => ({ access: 'public', turnstile: false }),
+    };
+    expect(() =>
+      lib.validateRowFlags([{ file: 'x.mjs', rowFlags: [flag({ row: 'client CRUD /client/w0-things' })] }], ctx),
+    ).toThrow(
+      'x.mjs flag 1 (client CRUD /client/w0-things): row is a CRUD row; only a single-endpoint row can be flagged',
+    );
+  });
+
+  it('refuses a row flagged twice, in one file and across files, naming the first', () => {
+    expect(flagMessage(flag(), flag())).toContain(
+      'x.mjs flag 2 (client POST /client/auth/verify-email): row is also flagged by scripts/map-additions/x.mjs flag 1',
+    );
+    expect(() =>
+      map.checkRowFlags([
+        { file: 'scripts/map-additions/a.mjs', rowFlags: [flag()] },
+        { file: 'scripts/map-additions/b.mjs', rowFlags: [flag()] },
+      ]),
+    ).toThrow('is also flagged by scripts/map-additions/a.mjs flag 1');
+  });
+
+  it('refuses rowFlags that are not an array, and a flag that is not an object', () => {
+    expect(() => map.checkRowFlags([{ file: 'scripts/map-additions/x.mjs', rowFlags: 'flags' }])).toThrow(
+      '"rowFlags" must be an array',
+    );
+    expect(flagMessage('text')).toContain('flag 1 (?): is not an object');
+  });
+});
+
 describe('the file reader', () => {
   it('reads the *.mjs files of a folder in name order and skips README.md', async () => {
     const dir = await tempDir();
@@ -243,8 +356,8 @@ describe('the file reader', () => {
     await writeFile(join(dir, 'a-1.mjs'), 'export const rows = [{ marker: "a" }];\n');
     const files = await lib.readAdditionFiles([dir], dir);
     expect(files).toEqual([
-      { file: 'a-1.mjs', rows: [{ marker: 'a' }] },
-      { file: 'b.mjs', rows: [{ marker: 'b' }] },
+      { file: 'a-1.mjs', rows: [{ marker: 'a' }], rowFlags: [] },
+      { file: 'b.mjs', rows: [{ marker: 'b' }], rowFlags: [] },
     ]);
   });
 
@@ -294,6 +407,8 @@ const LIST = 'GET /admin/w0-samples';
 const CREATE = 'POST /admin/w0-samples';
 const WALLET = 'GET /admin/customers/:id/w0-sample';
 const SAMPLE_KEYS = [PING, CHECK, LIST, CREATE, WALLET];
+/** The map endpoint the sample flag gives Turnstile. */
+const FLAGGED = 'POST /client/auth/password/reset';
 
 interface Run {
   code: number;
@@ -411,11 +526,41 @@ describe('the route tools pick the sample rows up', () => {
     expect(by.get('GET /health')?.addition).toBeUndefined();
     expect(by.get('GET /health')?.successStatus).toBeUndefined();
 
+    // The sample flag adds Turnstile and its origin to its own endpoint only.
+    expect(by.get(FLAGGED)).toMatchObject({
+      access: 'public',
+      turnstile: true,
+      rowFlag: { file: `${FIXTURES}/sample.mjs`, spec: 'B-TBD w0-sample-flag' },
+    });
+    expect(by.get(FLAGGED)?.addition).toBeUndefined();
+    expect(by.get('POST /client/auth/verify-email')).toMatchObject({ turnstile: false });
+    expect(by.get('POST /client/auth/verify-email')?.rowFlag).toBeUndefined();
+
     const text = await readFile(join(docs, 'route-manifest.md'), 'utf8');
     expect(text).toContain(
       `${realRows + 4} rows (${realEndpoints + 5} endpoints) are backend additions beyond the map`,
     );
+    expect(text).toContain('(Turnstile added, B-TBD w0-sample-flag)');
     expect(text).toContain('Tooling sample: ping. (addition, B-TBD w0-sample-ping)');
+  });
+
+  it('leaves every other endpoint as the committed manifest has it (the flag only adds)', async () => {
+    type Endpoint = Record<string, unknown> & { key: string };
+    const read = async (path: string) =>
+      (JSON.parse(await readFile(path, 'utf8')) as { endpoints: Endpoint[] }).endpoints.map(
+        ({ frontend: _frontend, ...rest }) => rest as Endpoint,
+      );
+    const flagged = new Map(
+      (await read(join(docs, 'route-manifest.json'))).map((endpoint) => [endpoint.key, endpoint]),
+    );
+    const committed = await read(join(ROOT, 'docs', 'route-manifest.json'));
+    for (const endpoint of committed) {
+      if (endpoint.key === FLAGGED) {
+        expect(flagged.get(FLAGGED)).toEqual({ ...endpoint, turnstile: true, rowFlag: expect.any(Object) });
+        continue;
+      }
+      expect(flagged.get(endpoint.key), endpoint.key).toEqual(endpoint);
+    }
   });
 
   it('a slice lists the additions of its module and knows the owner of an additionalTables table', async () => {

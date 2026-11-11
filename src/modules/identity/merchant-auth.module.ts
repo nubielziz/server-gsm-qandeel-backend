@@ -6,6 +6,7 @@ import { CatalogModule } from '../catalog';
 import { MerchantAccountReader } from './application/merchant-account-reader';
 import { MerchantAccountService } from './application/merchant-account.service';
 import { MerchantAuthTokens } from './application/merchant-auth-tokens';
+import { MerchantPasswordSignIn } from './application/merchant-password-sign-in';
 import { MerchantPasswordService } from './application/merchant-password.service';
 import { MerchantRegistrationService } from './application/merchant-registration.service';
 import { MerchantSessionsService } from './application/merchant-sessions.service';
@@ -18,7 +19,8 @@ import { MerchantAuthController } from './controllers/merchant-auth.controller';
 import { MerchantMailModule } from './merchant-mail.module';
 
 /**
- * Provides the 15 merchant portal routes of feature 2b, `MerchantAuthTokens` and (through `MerchantMailModule`) the mail outbox.
+ * Provides the 15 merchant portal routes of feature 2b, `MerchantAuthTokens`, (through `MerchantMailModule`) the mail outbox and
+ * `MerchantPasswordSignIn`, the merchant side of the smart sign-in of feature 24A (`POST /client/auth/sign-in`, customers module).
  *
  * Why: the routes need the global database, crypto, rate-limit, audit-free money (`MerchantAccounts.open`) and platform outbox
  * providers, the security stack (sessions, cookies, CSRF) and the catalog's group directory; the module is exported to the rest
@@ -38,7 +40,8 @@ import { MerchantMailModule } from './merchant-mail.module';
     MerchantPasswordService,
     MerchantTwoFactorService,
     MerchantSessionsService,
+    MerchantPasswordSignIn,
   ],
-  exports: [MerchantAuthTokens, MerchantMailModule],
+  exports: [MerchantAuthTokens, MerchantMailModule, MerchantPasswordSignIn],
 })
 export class MerchantAuthModule {}

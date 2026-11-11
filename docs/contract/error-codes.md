@@ -23,7 +23,7 @@ console shows through their title and detail.
 | CSRF_FAILED | 403 | A mutation with a session but a missing or mismatched X-CSRF-Token. | `POST /admin/auth/2fa`, `POST /admin/auth/2fa/setup`, `POST /admin/auth/logout` | yes |
 | FORBIDDEN | 403 | Signed in but the role lacks the permission; detail should name it ("You need the x:y permission"). | `GET /admin/staff`, `GET /admin/staff/:id`, `POST /admin/staff` +234 | yes |
 | IP_NOT_ALLOWED | 403 | The caller's IP is blocked (scope admin\|all) or not allowlisted while the console restriction is on; decided before authentication on every /admin route incl. login. Never use it for IP-rule validation errors. | `POST /admin/auth/login`, `GET /admin/auth/me` | yes |
-| TURNSTILE_FAILED | 403 | The storefront anti-bot check (Turnstile) failed or is missing. | any |  |
+| TURNSTILE_FAILED | 403 | The anti-bot check (Turnstile) failed or is missing: a storefront write or a public merchant sign-in form. | any |  |
 | NOT_FOUND | 404 | No record with this id (also unknown routes). | `GET /admin/staff/:id`, `PATCH /admin/staff/:id`, `POST /admin/staff/:id/password` +142 | yes |
 | ACCOUNT_EXISTS | 409 | POST /admin/customers/:id/account for a customer who already has an account. | `POST /admin/customers/:id/account` | yes |
 | ALERT_ACKNOWLEDGED | 409 | POST /admin/alerts/:id/ack on an alert already acknowledged. | `POST /admin/alerts/:id/ack` | yes |

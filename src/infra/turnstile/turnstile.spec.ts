@@ -3,9 +3,10 @@
 import { describe, expect, it } from 'bun:test';
 import type { ExecutionContext } from '@nestjs/common';
 import { z } from 'zod';
-import { defineRoute } from '../../common/contract';
+import { type AnyRouteContract, defineRoute } from '../../common/contract';
 import { CONTRACT_METADATA } from '../../common/contract/route.decorator';
 import { AppError } from '../../common/errors';
+import type { AppConfig } from '../../config';
 import { HttpRequestError, type HttpResult, type OutboundRequestOptions } from '../http';
 import { MetricsService } from '../metrics';
 import { DummyTurnstileVerifier } from './dummy-turnstile.verifier';
@@ -45,6 +46,11 @@ function fakeHttp(reply: () => HttpResult | Error) {
       },
     },
   };
+}
+
+/** The part of the configuration the guard reads: the rollout switches. */
+function switches(merchantAuth: boolean): Pick<AppConfig, 'turnstile'> {
+  return { turnstile: { secretKey: undefined, hostnames: [], merchantAuth } };
 }
 
 describe('DummyTurnstileVerifier', () => {
@@ -145,8 +151,22 @@ describe('TurnstileGuard', () => {
     errors: [],
   });
 
+  const rollout = defineRoute({
+    key: 'POST /client/spec-guard-rollout',
+    summary: 'With the anti-bot check behind the merchant sign-in switch',
+    tags: ['spec'],
+    surface: 'client',
+    access: 'public',
+    csrf: false,
+    turnstile: true,
+    turnstileRollout: 'merchant-auth',
+    body: z.object({ email: z.string() }),
+    success: { status: 204 },
+    errors: [],
+  });
+
   /** A context whose handler carries the contract and whose request carries the headers. */
-  function context(contract: typeof plain | typeof guarded, headers: Record<string, string | string[]>) {
+  function context(contract: AnyRouteContract, headers: Record<string, string | string[]>) {
     const handler = () => undefined;
     Reflect.defineMetadata(CONTRACT_METADATA, contract, handler);
     return {
@@ -156,7 +176,7 @@ describe('TurnstileGuard', () => {
     } as unknown as ExecutionContext;
   }
 
-  function guardWith(verify: TurnstileVerifier['verify']) {
+  function guardWith(verify: TurnstileVerifier['verify'], merchantAuth = false) {
     const calls: Array<{ token: string; ip: string }> = [];
     const verifier: TurnstileVerifier = {
       verify: (token, ip) => {
@@ -164,7 +184,7 @@ describe('TurnstileGuard', () => {
         return verify(token, ip);
       },
     };
-    return { calls, guard: new TurnstileGuard(verifier, new MetricsService()) };
+    return { calls, guard: new TurnstileGuard(verifier, new MetricsService(), switches(merchantAuth)) };
   }
 
   const refusal = async (promise: Promise<unknown>): Promise<AppError> => {
@@ -226,12 +246,45 @@ describe('TurnstileGuard', () => {
 
   it('counts the refusals by reason and never puts the token in the metric', async () => {
     const metrics = new MetricsService();
-    const guard = new TurnstileGuard({ verify: () => Promise.resolve({ ok: false, reason: 'rejected' }) }, metrics);
+    const guard = new TurnstileGuard(
+      { verify: () => Promise.resolve({ ok: false, reason: 'rejected' }) },
+      metrics,
+      switches(false),
+    );
     await refusal(guard.canActivate(context(guarded, { 'x-turnstile-token': 'secret-token-value' })));
     await refusal(guard.canActivate(context(guarded, {})));
     const text = await metrics.registry.metrics();
     expect(text).toContain('turnstile_failures_total{reason="rejected"} 1');
     expect(text).toContain('turnstile_failures_total{reason="missing"} 1');
     expect(text).not.toContain('secret-token-value');
+  });
+
+  describe('a route behind the merchant sign-in switch (feature 24A)', () => {
+    it('is let through without reading the token or asking the verifier while TURNSTILE_MERCHANT_AUTH is off', async () => {
+      const { calls, guard } = guardWith(() => Promise.resolve({ ok: false, reason: 'rejected' }), false);
+      expect(await guard.canActivate(context(rollout, {}))).toBe(true);
+      expect(await guard.canActivate(context(rollout, { 'x-turnstile-token': 'bad' }))).toBe(true);
+      expect(calls).toEqual([]);
+    });
+
+    it('is checked like any other once the switch is on', async () => {
+      const { calls, guard } = guardWith(
+        (token) => Promise.resolve(token === 'good' ? { ok: true } : { ok: false, reason: 'rejected' }),
+        true,
+      );
+      expect((await refusal(guard.canActivate(context(rollout, {})))).code).toBe('TURNSTILE_FAILED');
+      expect((await refusal(guard.canActivate(context(rollout, { 'x-turnstile-token': 'bad' })))).code).toBe(
+        'TURNSTILE_FAILED',
+      );
+      expect(await guard.canActivate(context(rollout, { 'x-turnstile-token': 'good' }))).toBe(true);
+      expect(calls.map((call) => call.token)).toEqual(['bad', 'good']);
+    });
+
+    it('never relaxes a route without the rollout field, whatever the switch says', async () => {
+      const { calls, guard } = guardWith(() => Promise.resolve({ ok: true }), false);
+      expect((await refusal(guard.canActivate(context(guarded, {})))).code).toBe('TURNSTILE_FAILED');
+      await guard.canActivate(context(guarded, { 'x-turnstile-token': 'tok' }));
+      expect(calls).toEqual([{ token: 'tok', ip: '198.51.100.7' }]);
+    });
   });
 });

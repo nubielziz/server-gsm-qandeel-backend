@@ -14,7 +14,7 @@ import {
   isUsableLink,
 } from '../../identity';
 import { Blocklist } from '../../risk';
-import type { Customer } from '../db/schema';
+import type { Customer, CustomerCredential } from '../db/schema';
 import { canSignIn } from '../domain/customer-status';
 import { normaliseEmail } from '../domain/customer-input';
 import { findCredentials, replacePasswordHash, upsertCredentials } from '../infra/customer-credentials.repository';
@@ -196,16 +196,40 @@ export class CustomerSignInService implements OnModuleInit {
       await this.failures.recordFailure(email);
       throw new AppError('UNAUTHORIZED', { detail: WRONG_CREDENTIALS });
     }
-    if (!canSignIn(customer.status)) {
-      this.logger.warn(
-        `Customer ${customer.id} signed in with a correct password but is ${customer.status} (${meta.ip})`,
-      );
-      throw new AppError('ACCOUNT_SUSPENDED', { detail: 'This account is suspended. Contact support.' });
-    }
+    this.assertCanSignIn(customer, meta);
 
     await this.limiter.resetLogin(email, meta.ip);
     await this.failures.clear(email);
-    await this.upgradeHash(customer, credentials.passwordHash!, input.password);
+    return this.startSession(customer, credentials, input.password, meta, staleToken);
+  }
+
+  /**
+   * Opens the session of a customer whose password is already proven.
+   *
+   * Why: every password-verified customer sign-in ends here, `login` and the smart sign-in of feature 24A (which verifies the password
+   * itself, once, and calls this): the status refusal, the hash upgrade, ending the stale customer session, `last_login_at`, and the
+   * session (`pending_password` after a temporary password, `active` otherwise). Rate-limit counters and the lock are the caller's.
+   *
+   * Side effects: may update `customer_credentials.password_hash`; ends the session of `staleToken`; writes `customers.last_login_at`;
+   * inserts a `sessions` row.
+   *
+   * @param customer the customer whose password was just proven
+   * @param credentials its credentials row (the hash the password matched, the temporary-password flag)
+   * @param password the proven password (for the hash upgrade)
+   * @param meta the caller's address and user agent
+   * @param staleToken the customer session cookie the request carried, ended so it cannot be fixated
+   * @returns the next step (`password` or `done`) and the session
+   * @throws {AppError} `ACCOUNT_SUSPENDED` (403: suspended or blocked customer)
+   */
+  async startSession(
+    customer: Customer,
+    credentials: Pick<CustomerCredential, 'passwordHash' | 'mustChangePassword'>,
+    password: string,
+    meta: RequestMeta,
+    staleToken?: string,
+  ): Promise<CustomerLoginResult> {
+    this.assertCanSignIn(customer, meta);
+    if (credentials.passwordHash) await this.upgradeHash(customer, credentials.passwordHash, password);
     await this.endStaleSession(staleToken);
     const now = this.clock.now();
     const session = await this.db.runInTransaction(async (work) => {
@@ -222,6 +246,15 @@ export class CustomerSignInService implements OnModuleInit {
       );
     });
     return { next: credentials.mustChangePassword ? 'password' : 'done', session };
+  }
+
+  /** Refuses a suspended or blocked customer whose password was correct (`403 ACCOUNT_SUSPENDED`, only after a correct password). */
+  private assertCanSignIn(customer: Customer, meta: RequestMeta): void {
+    if (canSignIn(customer.status)) return;
+    this.logger.warn(
+      `Customer ${customer.id} signed in with a correct password but is ${customer.status} (${meta.ip})`,
+    );
+    throw new AppError('ACCOUNT_SUSPENDED', { detail: 'This account is suspended. Contact support.' });
   }
 
   /**

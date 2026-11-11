@@ -12,13 +12,13 @@ import {
   findClientByEmail,
   findClientById,
   recordClientSignIn,
-  replaceClientPasswordHash,
 } from '../infra/merchant-auth.repository';
 import type { MerchantPrincipal } from '../security/principal';
 import { SessionService } from '../security/session.service';
 import type { IssuedSession } from '../security/session.types';
 import { MerchantAccountReader } from './merchant-account-reader';
 import { invalidCode } from './merchant-errors';
+import { upgradeClientPasswordHash } from './merchant-password-hash';
 import { MerchantSignInLimiter } from './merchant-sign-in-limiter';
 import type { RequestMeta } from './request-meta';
 import { CLIENT_TOTP_AAD, TotpService } from './totp.service';
@@ -93,15 +93,15 @@ export class MerchantSignInService implements OnModuleInit {
     this.assertNotSuspended(client, meta);
 
     await this.limiter.resetLogin(input.email, meta.ip);
-    await this.upgradeHash(client, input.password);
+    await upgradeClientPasswordHash(this.db.db, this.hasher, this.logger, client, input.password);
     return this.startSession(client, meta, staleToken);
   }
 
   /**
    * Opens the session of a merchant whose credentials are already proven.
    *
-   * Why: every password-verified sign-in ends here, the portal's login now and the smart sign-in of feature 24A later (which verifies the
-   * password itself, once, and calls this): the suspension refusal, ending the stale session, the step (`nextMerchantStep`), the session of
+   * Why: every password-verified sign-in ends here, the portal's login and the smart sign-in of feature 24A (`MerchantPasswordSignIn`,
+   * which verifies the password itself, once, and calls this): the suspension refusal, ending the stale session, the step (`nextMerchantStep`), the session of
    * that step's stage, and the last-sign-in record when the session is already full.
    *
    * Side effects: ends the session of `staleToken`; inserts a `sessions` row; writes `clients.last_login_at` and `last_login_ip` when `next` is `done`.
@@ -203,16 +203,6 @@ export class MerchantSignInService implements OnModuleInit {
     this.dummyHash ??= this.hasher.hash(this.tokens.random(32));
     await this.hasher.verify(await this.dummyHash, password);
     return false;
-  }
-
-  /** Re-hashes a correct password made at a lower cost than the configured one (decision 007); never fails the sign-in. */
-  private async upgradeHash(client: Client, password: string): Promise<void> {
-    if (!client.passwordHash || !this.hasher.needsRehash(client.passwordHash)) return;
-    try {
-      await replaceClientPasswordHash(this.db.db, client.id, await this.hasher.hash(password));
-    } catch (error) {
-      this.logger.warn(`Could not upgrade the password hash of merchant ${client.id}: ${String(error)}`);
-    }
   }
 
   /** Ends the merchant session a login request already carried (a new sign-in never continues an old session). */

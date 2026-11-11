@@ -36,7 +36,7 @@ function toMarkdown(m) {
   for (const mod of m.modules) {
     lines.push(`## ${mod.id}: ${mod.name}`, '', '| Endpoint | Access | Permission / scope | Stage | Description |', '|---|---|---|---|---|');
     for (const e of m.endpoints.filter((x) => x.module === mod.id))
-      lines.push(`| \`${e.key}\` | ${e.access} | ${e.permission ?? ''} | ${e.stage} | ${e.description.replace(/\|/g, '\\|')}${e.addition ? ` (addition, ${e.addition.spec})` : ''} |`);
+      lines.push(`| \`${e.key}\` | ${e.access} | ${e.permission ?? ''} | ${e.stage} | ${e.description.replace(/\|/g, '\\|')}${e.addition ? ` (addition, ${e.addition.spec})` : ''}${e.rowFlag ? ` (Turnstile added, ${e.rowFlag.spec})` : ''} |`);
     lines.push('');
   }
   return lines.join('\n');

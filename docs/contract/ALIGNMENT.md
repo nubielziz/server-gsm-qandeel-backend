@@ -147,7 +147,11 @@ Disagreements are B-entries; nothing is picked silently.
 
 Same JSON, id, money, time, error and header conventions; the map defines the routes and rules.
 - **Merchant portal** (`/client`): cookie session + CSRF like the console; simple-rest lists; CSV exports with
-  `Content-Disposition`.
+  `Content-Disposition`. Turnstile (`X-Turnstile-Token`, `403 TURNSTILE_FAILED`) guards the smart sign-in
+  `POST /client/auth/sign-in` always, and `POST /client/auth/register`, `/login` and `/password/forgot` once
+  `TURNSTILE_MERCHANT_AUTH` is on (feature 24A; their OpenAPI header is optional until then). The smart sign-in answers
+  `{ kind: 'merchant' | 'customer', next }` and sets the cookies and `X-CSRF-Token` of that kind's surface (`merchant` → `/client`,
+  `customer` → `/store/v1`).
 - **Storefront** (`/store/v1`): public routes protected by Turnstile (`403 TURNSTILE_FAILED`) and per-IP limits;
   capability tokens in paths (checkout, tracking, tickets); customer session cookie + CSRF for account routes;
   `Idempotency-Key` required on `…/pay` and on every store balance write (feature 21): `POST …/:token/balance-payment`,

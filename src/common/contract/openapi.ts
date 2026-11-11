@@ -99,6 +99,19 @@ const TURNSTILE_PARAMETER: OperationParameter = {
   repeatable: false,
 };
 
+/**
+ * The same header on a route whose check waits for a switch (feature 24A, `turnstileRollout`): optional, so the callers' generated
+ * types do not break before they send it.
+ */
+const TURNSTILE_ROLLOUT_PARAMETER: OperationParameter = {
+  ...TURNSTILE_PARAMETER,
+  required: false,
+  description:
+    "The Cloudflare Turnstile widget's token (its `cf-turnstile-response` value). Send it now: the server requires it once the " +
+    'anti-bot check on this route is switched on (`TURNSTILE_MERCHANT_AUTH`), and then a missing or failed check answers ' +
+    '`403 TURNSTILE_FAILED`. A token is single use and valid for five minutes, so a retried write needs a new one.',
+};
+
 /** The media type documented for each way a request body is sent. */
 const REQUEST_MEDIA_TYPES: Readonly<Record<BodyType, string>> = {
   json: 'application/json',
@@ -326,8 +339,9 @@ export function buildOperation(contract: AnyRouteContract): OperationParts {
     ...(contract.params ? objectProperties(contract.params, 'path') : []),
     ...queryParameters(contract),
     ...(contract.headers ? objectProperties(contract.headers, 'header') : []),
-    // Decision 034: a route behind the anti-bot check documents the header the storefront copies the widget's token into.
-    ...(contract.turnstile ? [TURNSTILE_PARAMETER] : []),
+    // Decision 034: a route behind the anti-bot check documents the header the caller copies the widget's token into (optional
+    // while the route's rollout switch may still be off, feature 24A).
+    ...(contract.turnstile ? [contract.turnstileRollout ? TURNSTILE_ROLLOUT_PARAMETER : TURNSTILE_PARAMETER] : []),
   ];
   const responses: Record<string, OperationResponse> = successResponses(contract);
   const byStatus = new Map<number, ErrorCode[]>();
@@ -397,8 +411,10 @@ export function openApiDecorators(contract: AnyRouteContract): MethodDecorator[]
   if (contract.access === 'merchant-session')
     decorators.push(ApiExtension('x-gsm-pending-merchant', contract.pendingMerchant));
   if (isStaffWrite(contract)) decorators.push(ApiExtension('x-gsm-audit', contract.audit));
-  // Storefront writes behind the anti-bot check say so (decision 034), for the parity test and the reader of the docs.
+  // Writes behind the anti-bot check say so (decision 034), for the parity test and the reader of the docs; a route behind a rollout
+  // switch names it (feature 24A).
   if (contract.turnstile) decorators.push(ApiExtension('x-gsm-turnstile', true));
+  if (contract.turnstileRollout) decorators.push(ApiExtension('x-gsm-turnstile-rollout', contract.turnstileRollout));
   if (parts.security) decorators.push(ApiSecurity(parts.security));
   for (const parameter of parts.parameters) {
     const common = {

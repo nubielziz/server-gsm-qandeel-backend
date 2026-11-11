@@ -135,6 +135,11 @@ export interface AppConfig {
     readonly secretKey: string | undefined;
     /** Host names a verified token may have been issued for; empty = any. */
     readonly hostnames: readonly string[];
+    /**
+     * `TURNSTILE_MERCHANT_AUTH`: enforce the check on the public merchant sign-up, sign-in and forgot-password routes (feature 24A,
+     * `turnstileRollout: 'merchant-auth'`). Default false until the site sends the token; the storefront routes are always checked.
+     */
+    readonly merchantAuth: boolean;
   };
   readonly observability: {
     /** When set, `/metrics` requires `Authorization: Bearer <token>`; when unset only private networks may read it. */
@@ -299,6 +304,7 @@ const rawSchema = z.object({
   REFERENCE_DOCS: z.enum(['open', 'staff', 'off']).optional(),
   TURNSTILE_SECRET_KEY: z.string().min(1).optional(),
   TURNSTILE_HOSTNAMES: z.string().optional(),
+  TURNSTILE_MERCHANT_AUTH: z.stringbool().optional(),
 });
 
 type RawEnv = z.output<typeof rawSchema>;
@@ -642,7 +648,11 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
       encryptionActiveKid: activeKid,
       argon2,
     },
-    turnstile: { secretKey: raw.TURNSTILE_SECRET_KEY, hostnames: turnstileHosts.ok ? turnstileHosts.value : [] },
+    turnstile: {
+      secretKey: raw.TURNSTILE_SECRET_KEY,
+      hostnames: turnstileHosts.ok ? turnstileHosts.value : [],
+      merchantAuth: raw.TURNSTILE_MERCHANT_AUTH ?? false,
+    },
     observability: {
       metricsToken: raw.METRICS_TOKEN,
       workerMetricsPort: raw.WORKER_METRICS_PORT ?? 9464,
@@ -811,7 +821,11 @@ export function summarizeConfig(config: AppConfig): Record<string, unknown> {
       encryptionActiveKid: config.security.encryptionActiveKid,
       argon2: config.security.argon2,
     },
-    turnstile: { secretKey: flag(config.turnstile.secretKey), hostnames: config.turnstile.hostnames },
+    turnstile: {
+      secretKey: flag(config.turnstile.secretKey),
+      hostnames: config.turnstile.hostnames,
+      merchantAuth: config.turnstile.merchantAuth,
+    },
     observability: {
       metricsToken: flag(config.observability.metricsToken),
       workerMetricsPort: config.observability.workerMetricsPort,

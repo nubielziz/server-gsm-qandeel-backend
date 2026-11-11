@@ -51,7 +51,7 @@ Exports `IdentityModule` and the security stack (`SecurityModule`, global). Othe
 
 One global guard, `AccessGuard`, reads each route's contract (`getContract`) and runs, in this order: **authentication by access
 kind**, the **CSRF guard**, the **permission guard**, then, for a `turnstile: true` storefront route only, the **anti-bot check**
-(`TurnstileGuard`, `src/infra/turnstile`, decision 034: `403 TURNSTILE_FAILED`). Validation, the handler and the audit follow in the
+(`TurnstileGuard`, `src/infra/turnstile`, decision 034: `403 TURNSTILE_FAILED`; also public `/client` routes since feature 24A). Validation, the handler and the audit follow in the
 route's own pipes and interceptors. A route without a contract is refused (`500`), except `DOCUMENTATION_ROUTES`, which keep their own guard.
 
 | Access kind | Who authenticates |
@@ -311,12 +311,12 @@ MISMATCHES B121 to B136 and ALIGNMENT § 7. Session cookie `gsm_client_session`,
 
 | Route | Access | What it does |
 |---|---|---|
-| `POST /client/auth/register` | public (Origin check) | the form → `204`, the same for a new and a known email. A new email creates a `pending` merchant in the `is_default` group, opens its wallet and hold (`MerchantAccounts.open`, credit limit 0), a `verify_email` link and the event `merchant.email_verification`, in one transaction |
+| `POST /client/auth/register` | public (Origin check; Turnstile while `TURNSTILE_MERCHANT_AUTH` is on) | the form → `204`, the same for a new and a known email. A new email creates a `pending` merchant in the `is_default` group, opens its wallet and hold (`MerchantAccounts.open`, credit limit 0), a `verify_email` link and the event `merchant.email_verification`, in one transaction |
 | `POST /client/auth/verify-email` | public | `{ token }` → `204`; sets `email_verified_at`, uses the link; the status stays `pending`; signs nobody in |
-| `POST /client/auth/login` | public | email + password → `{ next: 'totp' \| 'done' }`; a `pending_totp` session (10 min) when 2FA is on, an `active` one otherwise; a pending merchant signs in |
+| `POST /client/auth/login` | public (Turnstile while `TURNSTILE_MERCHANT_AUTH` is on) | email + password → `{ next: 'totp' \| 'done' }`; a `pending_totp` session (10 min) when 2FA is on, an `active` one otherwise; a pending merchant signs in |
 | `POST /client/auth/2fa` | session, `pending_totp` | six digits → `204`; rotates the session to `active` |
 | `POST /client/auth/logout` | session, `pending_totp` or `active` | revokes the session, clears both cookies, `204` |
-| `POST /client/auth/password/forgot` | public | `{ email }` → `204` for any email; a merchant that is not suspended (also one waiting for approval without a password) gets a `reset` link and the event `merchant.password_reset` |
+| `POST /client/auth/password/forgot` | public (Turnstile while `TURNSTILE_MERCHANT_AUTH` is on) | `{ email }` → `204` for any email; a merchant that is not suspended (also one waiting for approval without a password) gets a `reset` link and the event `merchant.password_reset` |
 | `POST /client/auth/password/reset` | public | `{ token, password }` with a `reset` or `invite` link → `204`; sets the password, uses the link, ends every session, signs nobody in; an invitation also sets `email_verified_at` and voids the merchant's verification link |
 | `GET /client/auth/me` | session, `active` | `Me`: id, username, email, name, company, phone, country, status, kycStatus, emailVerifiedAt, twofaEnabled, referralCode, group, createdAt; `no-store`; repeats `X-CSRF-Token` |
 | `PATCH /client/profile` | session | name, company, phone, country (partial) → `Me` |
@@ -355,6 +355,17 @@ MISMATCHES B121 to B136 and ALIGNMENT § 7. Session cookie `gsm_client_session`,
   (the same rule as 2a's `liveSessionCondition` in `security/session.repository.ts`).
 - **Audit.** Merchant routes write no `audit_logs` rows (the audit log records staff writes, and `AUDIT_ENTITY_TYPES` has no
   merchant security type yet); failed attempts are logged without the email.
+
+### Smart sign-in, the merchant side (feature 24A)
+
+`POST /client/auth/sign-in` (one form for merchants and customers) is hosted by the customers module, which may import identity (not
+the reverse, decision 032). Identity gives it one narrow class, `MerchantPasswordSignIn` (`application/merchant-password-sign-in.ts`,
+provided and exported by `MerchantAuthModule`, exported from `index.ts`): `charge` / `reset` spend and clear the same `sign-in`
+counter as `POST /client/auth/login` (one budget per email and address for both routes); `find(email)` returns a `MerchantCandidate`
+whose `verify(password)` runs one argon2 verify against the stored hash and whose `open(meta, staleToken?)` (only after a verified
+password) calls `MerchantSignInService.startSession` (suspension, stale merchant session, feature 20's step `password | totp | done`)
+and then upgrades the hash with the proven password (`upgradeClientPasswordHash`, `application/merchant-password-hash.ts`, shared
+with `login`). The hash never leaves identity. `POST /client/auth/login` keeps its own behaviour (no per-email lock).
 
 ### Merchant mail
 

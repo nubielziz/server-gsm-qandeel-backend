@@ -30,7 +30,8 @@ const CRUD_LETTERS = { L: 'GET', S: 'GET', C: 'POST', U: 'PATCH', D: 'DELETE' };
  * Why: one file per feature (`scripts/map-additions/<feature>.mjs`) lets features add routes without editing one shared list.
  * @param {string[]} dirs folders to read, in order (the real folder first)
  * @param {string} root repository root; the returned `file` is relative to it
- * @returns {Promise<{ file: string, rows: unknown[] }[]>} one entry per file, per folder in name order
+ * @returns {Promise<{ file: string, rows: unknown[], rowFlags: unknown }[]>} one entry per file, per folder in name order; `rowFlags`
+ *   is what the file exports under that name (`[]` when it exports none; checked by validateRowFlags)
  * @throws {Error} on a missing folder, a file that is neither README.md nor a valid `<feature>.mjs`, or a module without an array `rows`
  */
 export async function readAdditionFiles(dirs, root) {
@@ -49,7 +50,7 @@ export async function readAdditionFiles(dirs, root) {
       if (!FILE_NAME.test(name)) throw new Error(`map additions: unexpected file ${file} (only README.md and <feature>.mjs, e.g. 20.mjs)`);
       const mod = await import(pathToFileURL(path).href);
       if (!Array.isArray(mod.rows)) throw new Error(`map additions: ${file} must export an array "rows"`);
-      out.push({ file, rows: mod.rows });
+      out.push({ file, rows: mod.rows, rowFlags: mod.rowFlags ?? [] });
     }
   }
   return out;
@@ -214,6 +215,63 @@ export function validateAdditions(files, ctx) {
         ...(m === 'CRUD' ? { ops } : {}),
         addition: { file, en, module, spec, ...(successStatus === undefined ? {} : { successStatus }) },
       });
+    });
+  }
+  if (problems.length > 0) throw new Error(`map additions problems:\n  ${problems.join('\n  ')}`);
+  return out;
+}
+
+const FLAG_KEYS = ['row', 'turnstile', 'spec'];
+/** Surfaces whose public map rows may be flagged: the ones whose routes can carry the anti-bot check (decision 034, feature 24A). */
+const FLAG_SURFACES = ['client', 'store'];
+
+/**
+ * Checks the row flags of the addition files: add-only changes to existing map rows (feature 24A).
+ * Why: a feature may need a stricter rule on a route the map already has (Turnstile on the merchant sign-in forms) while the map stays
+ * read-only. A flag can only add protection, so the only flag is `turnstile: true`, and only on a public, non-CRUD map row of `client` or
+ * `store` that does not have it yet; a row is flagged by one file at most.
+ * @param {{ file: string, rowFlags?: unknown }[]} files what readAdditionFiles returned (or the same shape built in memory)
+ * @param {{ mapRoutes: object[], rowKey: (row: object) => string, normaliseAccess: (row: object) => { access: string, turnstile: boolean } }} ctx the map, passed in
+ * @returns {{ row: string, turnstile: true, file: string, spec: string }[]} the flags, in file order
+ * @throws {Error} `map additions problems:` followed by one line per problem, each `<file> flag <n> (<row key>): <problem>`
+ */
+export function validateRowFlags(files, ctx) {
+  const problems = [];
+  const mapRows = new Map(ctx.mapRoutes.map((r) => [ctx.rowKey(r), r]));
+  const flaggedBy = new Map(); // row key -> "<file> flag <n>"
+  const out = [];
+  for (const { file, rowFlags = [] } of files) {
+    if (!Array.isArray(rowFlags)) {
+      problems.push(`${file}: "rowFlags" must be an array`);
+      continue;
+    }
+    rowFlags.forEach((flag, index) => {
+      const n = index + 1;
+      const name = flag && typeof flag === 'object' && typeof flag.row === 'string' ? flag.row : '?';
+      const bad = [];
+      if (typeof flag !== 'object' || flag === null || Array.isArray(flag)) bad.push('is not an object');
+      else {
+        for (const key of Object.keys(flag)) if (!FLAG_KEYS.includes(key)) bad.push(`has an unknown key "${key}" (a flag has row, turnstile and spec)`);
+        if (flag.turnstile !== true) bad.push('turnstile must be true (a flag adds protection to a row, never removes it)');
+        if (typeof flag.spec !== 'string' || !SPEC.test(flag.spec)) bad.push(`spec "${String(flag.spec)}" must be B<n> or "B-TBD <slug>"`);
+        const row = typeof flag.row === 'string' ? mapRows.get(flag.row) : undefined;
+        if (!row) bad.push(`row "${String(flag.row)}" is not the key of a map row ("<surface> <method> <path>"; an addition states its own auth text)`);
+        else {
+          if (!FLAG_SURFACES.includes(row.s)) bad.push(`row is on surface ${row.s}; only ${FLAG_SURFACES.join(' and ')} rows can be flagged`);
+          if (row.m === 'CRUD') bad.push('row is a CRUD row; only a single-endpoint row can be flagged');
+          const auth = ctx.normaliseAccess(row);
+          if (auth.access !== 'public') bad.push(`row has access ${auth.access}; only a public row can get Turnstile`);
+          if (auth.turnstile) bad.push('row already has Turnstile in the map');
+        }
+        const other = typeof flag.row === 'string' ? flaggedBy.get(flag.row) : undefined;
+        if (other) bad.push(`row is also flagged by ${other}`);
+        else if (typeof flag.row === 'string') flaggedBy.set(flag.row, `${file} flag ${n}`);
+      }
+      if (bad.length > 0) {
+        for (const text of bad) problems.push(`${file} flag ${n} (${name}): ${text}`);
+        return;
+      }
+      out.push({ row: flag.row, turnstile: true, file, spec: flag.spec });
     });
   }
   if (problems.length > 0) throw new Error(`map additions problems:\n  ${problems.join('\n  ')}`);

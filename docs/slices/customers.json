@@ -4,11 +4,12 @@
   "domain": "I",
   "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
   "counts": {
-    "rows": 27,
-    "endpoints": 30,
+    "rows": 28,
+    "endpoints": 31,
     "bySurface": {
       "store": 15,
-      "admin": 15
+      "admin": 15,
+      "client": 1
     },
     "frontendCalled": 15
   },
@@ -18,7 +19,8 @@
     18,
     19,
     21,
-    23
+    23,
+    24
   ],
   "ownedTables": [
     {
@@ -206,6 +208,10 @@
     {
       "table": "blocklist_entries",
       "owner": "risk"
+    },
+    {
+      "table": "clients",
+      "owner": "identity"
     },
     {
       "table": "currencies",
@@ -1262,6 +1268,42 @@
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD unsubscribe"
+      }
+    },
+    {
+      "key": "POST /client/auth/sign-in",
+      "method": "POST",
+      "path": "/client/auth/sign-in",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "تسجيل دخول موحّد: تاجر أو زبون بالبريد وكلمة المرور",
+      "access": "public",
+      "permission": null,
+      "turnstile": true,
+      "idempotencyKey": false,
+      "authRaw": "عام + Turnstile",
+      "stage": 24,
+      "tables": [
+        "clients",
+        "customers",
+        "customer_credentials",
+        "sessions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/auth/sign-in",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/auth/sign-in"
+      },
+      "module": "customers",
+      "description": "Sign in with email and password as a merchant or a customer.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/24a.mjs",
+        "spec": "B-TBD smart-sign-in"
       }
     }
   ],

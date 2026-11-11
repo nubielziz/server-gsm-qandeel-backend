@@ -3,7 +3,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
-import { EXPECTED, additions, domains, expandRow, groups, mapRoutes, rowKey, routes, surfaces, system, tables } from './map.mjs';
+import { EXPECTED, additions, domains, expandRow, groups, mapRoutes, rowFlags, rowKey, routes, surfaces, system, tables } from './map.mjs';
 import { ROOT } from './paths.mjs';
 import { modules, modulesForRow } from '../module-map.mjs';
 import { descriptions, groupNames, surfaceNames } from '../route-descriptions.en.mjs';
@@ -63,6 +63,7 @@ export function scanFrontendRoutes(dir = frontendDir()) {
  */
 export function buildManifest() {
   const frontendRoutes = scanFrontendRoutes();
+  const flags = new Map(rowFlags.map((flag) => [flag.row, flag]));
   const endpoints = [];
   const problems = [];
   for (const row of routes) {
@@ -74,6 +75,12 @@ export function buildManifest() {
     for (const e of expandRow(row)) {
       const fe = e.kind === 'http' ? frontendRoutes.get(e.key) ?? null : null;
       const endpoint = { ...e, module: owners[0] ?? null, description: description ?? null, frontend: fe };
+      // A row flag (feature 24A) only adds: Turnstile, and where it came from. Every other map endpoint stays as the map gives it.
+      const flag = row.addition ? undefined : flags.get(key);
+      if (flag) {
+        endpoint.turnstile = true;
+        endpoint.rowFlag = { file: flag.file, spec: flag.spec };
+      }
       if (row.addition) {
         const given = row.addition.successStatus;
         const successStatus = typeof given === 'object' && given !== null ? given[CRUD_LETTER[e.op]] : given;
@@ -122,6 +129,8 @@ export function buildManifest() {
       frontend: 'admin endpoints point at the frontend function carrying the same @route tag (FRONTEND_DIR)',
       additions:
         'rows beyond the map are backend-owned: scripts/map-additions/<feature>.mjs (decision 035); they name their module, English sentence and spec decision, and are counted on top of the map numbers',
+      rowFlags:
+        'the same files may add Turnstile to a public client or store map row (rowFlags, feature 24A); the endpoint then has turnstile true and rowFlag { file, spec }',
     },
     counts: {
       ...counts,

@@ -1,6 +1,6 @@
 // Sample addition rows for test/unit/map-additions.test.ts (stage 99 belongs to the tooling test): never loaded by the real tools.
 // Four rows, five endpoints: one console-called action, one public Turnstile route, one CRUD row, and a row whose path matches
-// another module's matcher (its own `module` must win).
+// another module's matcher (its own `module` must win). One row flag (feature 24A): Turnstile added to a public map row.
 import { R } from '../../../../scripts/lib/map-additions.mjs';
 
 export const rows = [
@@ -57,4 +57,8 @@ export const rows = [
       spec: 'B-TBD w0-sample-wallet',
     },
   ),
+];
+
+export const rowFlags = [
+  { row: 'client POST /client/auth/password/reset', turnstile: true, spec: 'B-TBD w0-sample-flag' },
 ];

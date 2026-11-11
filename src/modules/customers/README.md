@@ -211,6 +211,7 @@ block of feature 9 and the funnel report of feature 19); the modules `CustomersM
 and `CheckoutRecoveryModule` with `CHECKOUT_RECOVERY_SCHEDULER` (the worker loads both), `CustomerErasureModule` and `CustomerErasureHooks`
 (modules that hold personal data of a customer register a hook that runs when the customer is anonymized), `CUSTOMER_MAIL_EVENTS` and the
 `CustomerMailKind` type (the mails are sent through the platform's notification delivery, decision 033).
+The smart sign-in (`SmartSignInService`, feature 24A) is not exported: it is a route of this module.
 `CustomerDirectory` with its `CustomerRef` type (`application/customer-directory.ts`) and `CustomerDirectoryModule` (`customer-directory.module.ts`): find or make a guest
 customer by email in the caller's transaction, used by the support tickets of feature 17, so that no other module inserts into `customers`.
 Feature 16 reads a session through its own use case in this module. Add the services other modules may call here, and nothing
@@ -269,6 +270,24 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 | `POST /store/v1/checkout-sessions/:token/pay` | checkout-token | Start payment (3DS card, wallet or crypto); the order is not created before the webhook confirms the payment. | 16 |
 | `POST /store/v1/checkout-sessions/:token/balance-payment` | checkout-token + customer session and CSRF | Pay the checkout from the signed-in customer's store balance: the order is created at once (feature 21, beyond the map: `scripts/map-additions/21.mjs`). | 21 |
 | `POST /store/v1/me/password` | customer-session | Change the password from the account by entering the current one; signs out the other devices. Used after a temporary password. | 14 |
+
+### Smart sign-in (feature 24A, route beyond the map: `scripts/map-additions/24a.mjs`)
+
+| Route | Access | What it does | Stage |
+|---|---|---|---|
+| `POST /client/auth/sign-in` | public, Turnstile, Origin check | One email + password form for merchants and customers: answers `{ kind, next }` and sets that kind's cookies and `X-CSRF-Token`. | 24 |
+
+`SmartSignInService` (`application/smart-sign-in.service.ts`), `SmartSignInController`, `contracts/smart-sign-in.contracts.ts`.
+The route sits under `/client` for the Origin check (login CSRF), the per-IP limit and no shop-maintenance scope, and lives here
+because customers may import identity (`MerchantPasswordSignIn`, the merchant side) and not the reverse. Every attempt, whatever
+the email: both login counters (the merchant one of `POST /client/auth/login` and the customer one of `POST /store/v1/auth/login`,
+always both, in that order), then the customer per-email lock, then both lookups, then **exactly one** argon2 verify: the
+merchant's hash when a merchant with a password has the email (the merchant wins, even when the email is also a customer), else the
+customer's hash (an account with a password, not anonymized), else a dummy hash made at boot. Every `401` is one answer and counts
+towards the lock; `403 ACCOUNT_SUSPENDED` only after a correct password and leaves the counters; a success opens the session through
+that side's `startSession` (`CustomerSignInService.startSession` is the part of `login` after the proven password), ends only the
+stale session of the same kind (the other kind's session stays) and clears both counters and the lock. No audit row, outbox, cache key
+or job. Tests: `test/integration/smart-sign-in.test.ts`.
 
 ### Paying from the store balance (feature 21)
 

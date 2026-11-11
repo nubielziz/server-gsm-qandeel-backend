@@ -97,11 +97,14 @@ export const merchantRegister = defineRoute({
   description:
     'Answers `204` for a new and for an already registered email alike, so it cannot be used to find out who is registered. A ' +
     'new email creates a merchant that is `pending` until staff approve it, opens its wallet, and sends the verification email. ' +
-    'An existing email changes nothing and sends nothing. Counted per address, whether or not the email exists.',
+    'An existing email changes nothing and sends nothing. Counted per address, whether or not the email exists.' +
+    ' Send `X-Turnstile-Token`: it is required once the server enforces the anti-bot check on merchant sign-up and sign-in (`TURNSTILE_MERCHANT_AUTH`).',
   tags: ['auth'],
   surface: 'client',
   access: 'public',
   csrf: false,
+  turnstile: true,
+  turnstileRollout: 'merchant-auth',
   body: RegisterBody,
   success: { status: 204 },
   errors: ['VALIDATION_FAILED', 'WEAK_PASSWORD', 'IP_NOT_ALLOWED', 'CSRF_FAILED', 'RATE_LIMITED'],
@@ -143,11 +146,14 @@ export const merchantLogin = defineRoute({
     'the portal shows a new-password form and calls `POST /client/auth/password/change`), `pending_totp` (10 minutes) when the ' +
     'merchant has two-factor sign-in on, a full one otherwise. A merchant ' +
     'waiting for approval signs in too (it can read its status and manage its own account). One `401` answers an unknown email, ' +
-    'a wrong password and a merchant with no password yet.',
+    'a wrong password and a merchant with no password yet.' +
+    ' Send `X-Turnstile-Token`: it is required once the server enforces the anti-bot check on merchant sign-up and sign-in (`TURNSTILE_MERCHANT_AUTH`).',
   tags: ['auth'],
   surface: 'client',
   access: 'public',
   csrf: false,
+  turnstile: true,
+  turnstileRollout: 'merchant-auth',
   body: LoginBody,
   success: { status: 200, schema: z.object({ next: MerchantNext }) },
   errors: ['VALIDATION_FAILED', 'UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'IP_NOT_ALLOWED', 'CSRF_FAILED', 'RATE_LIMITED'],
@@ -240,11 +246,14 @@ export const merchantForgotPassword = defineRoute({
   summary: 'Send a password reset link',
   description:
     'Answers `204` whether or not the email belongs to a merchant. A merchant that is not suspended, including one waiting for ' +
-    'approval that has no password yet, gets a link valid for one hour; a newer link replaces an older one.',
+    'approval that has no password yet, gets a link valid for one hour; a newer link replaces an older one.' +
+    ' Send `X-Turnstile-Token`: it is required once the server enforces the anti-bot check on merchant sign-up and sign-in (`TURNSTILE_MERCHANT_AUTH`).',
   tags: ['auth'],
   surface: 'client',
   access: 'public',
   csrf: false,
+  turnstile: true,
+  turnstileRollout: 'merchant-auth',
   body: z.object({ email: MerchantEmail }),
   success: { status: 204 },
   errors: ['VALIDATION_FAILED', 'IP_NOT_ALLOWED', 'CSRF_FAILED', 'RATE_LIMITED'],

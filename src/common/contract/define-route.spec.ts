@@ -462,11 +462,68 @@ describe('defineRoute turnstile option (decision 034)', () => {
     expect(store({ turnstile: true, errors: ['TURNSTILE_FAILED'] }).errors).toEqual(['TURNSTILE_FAILED']);
   });
 
-  it('is refused outside the storefront surface', () => {
-    expect(() => define({ turnstile: true })).toThrow(/only applies to \/store\/v1 routes/);
+  it('is refused outside the storefront surface and the public merchant routes', () => {
+    expect(() => define({ turnstile: true })).toThrow(/only applies to \/store\/v1 routes and public \/client routes/);
     expect(() =>
       define({ key: 'POST /admin/spec/turnstile', surface: 'admin', access: 'staff-session', turnstile: true }),
-    ).toThrow(/only applies to \/store\/v1 routes/);
+    ).toThrow(/only applies to \/store\/v1 routes and public \/client routes/);
+    expect(() =>
+      define({
+        key: 'POST /admin/spec/turnstile-public',
+        surface: 'admin',
+        access: 'public',
+        csrf: false,
+        turnstile: true,
+      }),
+    ).toThrow(/only applies to \/store\/v1 routes and public \/client routes/);
+    expect(() =>
+      define({
+        key: 'POST /v1/spec-turnstile',
+        surface: 'v1',
+        access: 'api-key',
+        permission: 'orders:read',
+        turnstile: true,
+      }),
+    ).toThrow(/only applies to \/store\/v1 routes and public \/client routes/);
+    expect(() =>
+      define({
+        key: 'POST /client/spec-turnstile-session',
+        surface: 'client',
+        access: 'merchant-session',
+        turnstile: true,
+      }),
+    ).toThrow(/only applies to \/store\/v1 routes and public \/client routes/);
+  });
+
+  const client = (override: Record<string, unknown> = {}) =>
+    define({
+      key: `POST /client/spec-turnstile-${(counter += 1)}`,
+      surface: 'client',
+      access: 'public',
+      csrf: false,
+      body: z.object({ email: z.string() }),
+      ...override,
+    });
+
+  it('is accepted on a public /client route and adds TURNSTILE_FAILED there too (feature 24A)', () => {
+    const contract = client({ turnstile: true, errors: ['CSRF_FAILED'] });
+    expect(contract.turnstile).toBe(true);
+    expect(contract.turnstileRollout).toBeUndefined();
+    expect(contract.errors).toEqual(['CSRF_FAILED', 'TURNSTILE_FAILED']);
+  });
+
+  it('takes a rollout switch only together with turnstile: true, and only a known one', () => {
+    expect(client({ turnstile: true, turnstileRollout: 'merchant-auth' }).turnstileRollout).toBe('merchant-auth');
+    expect(store({ turnstile: true, turnstileRollout: 'merchant-auth' }).turnstileRollout).toBe('merchant-auth');
+    expect(() => client({ turnstileRollout: 'merchant-auth' })).toThrow(
+      /turnstileRollout only applies to a route with turnstile: true/,
+    );
+    expect(() => client({ turnstile: false, turnstileRollout: 'merchant-auth' })).toThrow(
+      /turnstileRollout only applies to a route with turnstile: true/,
+    );
+    expect(() => client({ turnstile: true, turnstileRollout: 'everyone' })).toThrow(
+      /turnstileRollout must be one of merchant-auth/,
+    );
   });
 });
 

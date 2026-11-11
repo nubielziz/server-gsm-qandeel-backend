@@ -109,6 +109,17 @@ export type PendingMerchantPolicy = 'allow' | 'deny';
 export const DEFAULT_PENDING_MERCHANT_POLICY: PendingMerchantPolicy = 'deny';
 
 /**
+ * The switches that turn the anti-bot check on for routes whose callers are still learning to send the token.
+ *
+ * Why: feature 24A declares Turnstile on the public merchant sign-up, sign-in and forgot-password routes (decision 034 amendment) but
+ * enforces it only when `TURNSTILE_MERCHANT_AUTH` is on, so the merge breaks no caller. A closed list: one value today.
+ */
+export const TURNSTILE_ROLLOUTS = ['merchant-auth'] as const;
+
+/** One of {@link TURNSTILE_ROLLOUTS}. */
+export type TurnstileRollout = (typeof TURNSTILE_ROLLOUTS)[number];
+
+/**
  * Success statuses the API uses: 200, 201 (create), 202 (accepted), 204 (no body) and 302 (redirect to a short-lived link).
  *
  * Why: ALIGNMENT § 1 fixes one success status per endpoint (201 for creates, 204 for deletes and bodiless actions) and
@@ -212,10 +223,17 @@ export interface RouteSpec<
   readonly csrf?: boolean;
   /**
    * `true` makes the route need a passing anti-bot token in the `X-Turnstile-Token` header (decision 034): a missing or bad
-   * one is `403 TURNSTILE_FAILED`. Only for `/store/v1` routes (the public storefront writes the map flags with Turnstile).
-   * It adds `TURNSTILE_FAILED` to the route's errors and the header to its OpenAPI parameters.
+   * one is `403 TURNSTILE_FAILED`. Only for `/store/v1` routes (the public storefront writes the map flags with Turnstile) and
+   * public `/client` routes (the merchant sign-up and sign-in forms, feature 24A). It adds `TURNSTILE_FAILED` to the route's
+   * errors and the header to its OpenAPI parameters.
    */
   readonly turnstile?: boolean;
+  /**
+   * Names the switch that turns the `turnstile` check on for this route while its callers learn to send the token (feature 24A):
+   * `merchant-auth` is `TURNSTILE_MERCHANT_AUTH` (default off). While the switch is off the guard lets the route through
+   * unchecked; OpenAPI shows the header as optional. Only with `turnstile: true`. Removed once the switch is on everywhere.
+   */
+  readonly turnstileRollout?: TurnstileRollout;
   /**
    * `true` marks a session `GET` route that has a side effect or hands out a download of personal data, so the CSRF guard asks
    * for a same-site request instead of ignoring the safe method: `Sec-Fetch-Site` of `same-origin` or `same-site`, or (when the
@@ -275,6 +293,8 @@ export interface RouteContract<
   readonly csrf: boolean;
   /** True when the route needs a passing `X-Turnstile-Token` (decision 034); `TURNSTILE_FAILED` is then in `errors`. */
   readonly turnstile: boolean;
+  /** The switch that must be on for the `turnstile` check to run (feature 24A); `undefined` = always checked. */
+  readonly turnstileRollout: TurnstileRollout | undefined;
   /** True when the CSRF guard also checks the origin of this `GET` route (RESOLUTIONS b2c-8). */
   readonly originCheck: boolean;
 }
@@ -531,10 +551,18 @@ export function defineRoute<
       problem(`originCheck only applies to routes with a session (access is "${spec.access}")`);
   }
   if (spec.turnstile !== undefined && typeof spec.turnstile !== 'boolean') problem('turnstile must be true or false');
-  if (spec.turnstile === true && spec.surface !== 'store')
+  if (spec.turnstile === true && !(spec.surface === 'store' || (spec.surface === 'client' && spec.access === 'public')))
     problem(
-      'turnstile: true only applies to /store/v1 routes (the anti-bot check guards the public storefront writes)',
+      'turnstile: true only applies to /store/v1 routes and public /client routes (the anti-bot check guards the public storefront ' +
+        'writes and the merchant sign-up and sign-in forms)',
     );
+  if (spec.turnstileRollout !== undefined) {
+    if (!TURNSTILE_ROLLOUTS.includes(spec.turnstileRollout))
+      problem(
+        `turnstileRollout must be one of ${TURNSTILE_ROLLOUTS.join(', ')}, got "${String(spec.turnstileRollout)}"`,
+      );
+    if (spec.turnstile !== true) problem('turnstileRollout only applies to a route with turnstile: true');
+  }
 
   // Inputs.
   const declared = spec.params ? Object.keys(spec.params.shape) : [];
@@ -639,6 +667,7 @@ export function defineRoute<
     audit: spec.audit ?? true,
     csrf: spec.csrf ?? true,
     turnstile: spec.turnstile ?? false,
+    turnstileRollout: spec.turnstileRollout,
     originCheck: spec.originCheck ?? false,
   });
   contractRegistry.register(contract);

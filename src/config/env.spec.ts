@@ -444,7 +444,17 @@ describe('GEOIP_COUNTRY_HEADER', () => {
 
 describe('Turnstile settings (decision 034)', () => {
   it('has no secret and no host list by default, which selects the dummy verifier', () => {
-    expect(parseEnv({}).turnstile).toEqual({ secretKey: undefined, hostnames: [] });
+    expect(parseEnv({}).turnstile).toEqual({ secretKey: undefined, hostnames: [], merchantAuth: false });
+  });
+
+  it('keeps the merchant sign-in check off unless TURNSTILE_MERCHANT_AUTH is true, in every environment (feature 24A)', () => {
+    expect(parseEnv(production()).turnstile.merchantAuth).toBe(false);
+    expect(parseEnv({ TURNSTILE_MERCHANT_AUTH: 'true' }).turnstile.merchantAuth).toBe(true);
+    expect(parseEnv({ TURNSTILE_MERCHANT_AUTH: 'false' }).turnstile.merchantAuth).toBe(false);
+    expect(issuesOf({ TURNSTILE_MERCHANT_AUTH: 'maybe' }).map((i) => i.variable)).toEqual(['TURNSTILE_MERCHANT_AUTH']);
+    expect(JSON.stringify(summarizeConfig(parseEnv({ TURNSTILE_MERCHANT_AUTH: 'true' })))).toContain(
+      '"merchantAuth":true',
+    );
   });
 
   it('requires the secret in production', () => {

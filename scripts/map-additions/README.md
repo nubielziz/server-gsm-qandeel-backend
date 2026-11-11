@@ -54,7 +54,7 @@ the idempotency flag.
 | -------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `admin`  | `area:action` or `area:*` (e.g. `clients:security`, `settings:*`)                                   | `staff-permission` with that permission (a CRUD row with `area:*` means `area:read\|create\|update\|delete` per endpoint) |
 | `admin`  | `عام` / `جلسة`                                                                                      | `public` / `staff-session`                                                                          |
-| `client` | `عام` / `جلسة`                                                                                      | `public` / `merchant-session`                                                                       |
+| `client` | `عام`, `عام + Turnstile` / `جلسة`                                                                     | `public` / `merchant-session`                                                                       |
 | `store`  | `عام`, `عام + Turnstile`                                                                            | `public`                                                                                            |
 | `store`  | `رمز الجلسة`, `رمز الجلسة + Idempotency-Key`                                                        | `checkout-token`                                                                                    |
 | `store`  | `رمز التتبع (لا يُخمَّن)`, `رمز التتبع`                                                              | `tracking-token`                                                                                    |
@@ -62,6 +62,29 @@ the idempotency flag.
 | `v1`     | `area:action` (an API key scope)                                                                    | `api-key` with that scope                                                                           |
 | `hooks`  | `توقيع البوابة` / `secret بالرابط`                                                                  | `gateway-signature` / `url-secret`                                                                  |
 | `system` | `عام` / `شبكة داخلية أو token`                                                                      | `public` / `internal-or-token`                                                                      |
+
+## Row flags (feature 24A)
+
+The map is read-only, but a feature may need a **stricter** rule on a route the map already has. An additions file may export, beside
+`rows`, an array `rowFlags`:
+
+```js
+export const rowFlags = [
+  { row: 'client POST /client/auth/login', turnstile: true, spec: 'B-TBD merchant-auth-turnstile' },
+];
+```
+
+| Field       | Rule                                                                                                                  |
+| ----------- | --------------------------------------------------------------------------------------------------------------------- |
+| `row`       | the key of a **map** row (`<surface> <method> <path>`, as `origin.row` in `docs/route-manifest.json`), never an addition |
+| `turnstile` | `true`: the only flag. A flag adds protection to a row, it never removes any                                           |
+| `spec`      | `B<n>` or `B-TBD <slug>`, like a row                                                                                  |
+
+The row must be on surface `client` or `store`, not `CRUD`, `public`, and not already Turnstile in the map; a row is flagged by one
+file at most; any other key is an error (`map additions problems: <file> flag <n> (<row>): …`). The manifest then gives the row's
+endpoint `turnstile: true` and `rowFlag: { file, spec }` (every other endpoint is unchanged), and `route-manifest.md` ends its
+description with `(Turnstile added, <spec>)`; route parity then expects `turnstile: true` on the contract. A route whose callers do not
+send the token yet adds `turnstileRollout` to its contract (`src/infra/turnstile/README.md`).
 
 ## Guards
 

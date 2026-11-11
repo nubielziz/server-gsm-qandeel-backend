@@ -1,7 +1,7 @@
 # Anti-bot check (`src/infra/turnstile`)
 
 Decision 034: the public storefront writes the map marks with Turnstile are protected by Cloudflare Turnstile (or a stand-in in
-development). One guard, driven by the route contract, serves every storefront feature.
+development), and so are the public merchant sign-in forms (feature 24A). One guard, driven by the route contract, serves them all.
 
 | What | Where |
 | --- | --- |
@@ -18,7 +18,7 @@ export const openCheckoutSession = defineRoute({
   key: 'POST /store/v1/checkout-sessions',
   surface: 'store',
   access: 'public',
-  turnstile: true, // only on /store/v1 routes (else defineRoute throws)
+  turnstile: true, // only on /store/v1 routes and public /client routes (else defineRoute throws)
   // ...
 });
 ```
@@ -26,6 +26,15 @@ export const openCheckoutSession = defineRoute({
 `turnstile: true` adds `TURNSTILE_FAILED` to the route's errors and the `x-turnstile-token` header (required) and the
 `x-gsm-turnstile` extension to its OpenAPI operation. The route-parity contract test compares the flag with the manifest's
 `turnstile` column in both directions, so a route cannot be flagged or forgotten silently.
+
+### A rollout switch (feature 24A)
+
+`turnstileRollout: 'merchant-auth'` (only with `turnstile: true`) makes the guard skip the check, without reading the token or calling
+the verifier, while `TURNSTILE_MERCHANT_AUTH` is off; OpenAPI then shows the header as optional and adds
+`x-gsm-turnstile-rollout`. It is on `POST /client/auth/register`, `/login` and `/password/forgot`, whose map rows get the flag from
+`rowFlags` in `scripts/map-additions/24a.mjs`, so callers that do not send the token yet keep working until the owner switches it on.
+The smart sign-in `POST /client/auth/sign-in` has no rollout: it is always checked. Remove the field and the variable one release after
+production runs with the switch on (decision 034, amendment).
 
 ## Behaviour
 
@@ -48,6 +57,7 @@ export const openCheckoutSession = defineRoute({
 | --- | --- |
 | `TURNSTILE_SECRET_KEY` | Required when `NODE_ENV=production` (the config refuses to start without it). Unset elsewhere: the dummy verifier. |
 | `TURNSTILE_HOSTNAMES` | Optional, comma-separated host names a token may be issued for (no scheme, port or path). |
+| `TURNSTILE_MERCHANT_AUTH` | `true` enforces the check on the routes with `turnstileRollout: 'merchant-auth'`; default `false` in every environment. |
 
 Cloudflare's test secrets work with the siteverify verifier for a manual check against the real API (`1x...AA` always passes,
 `2x...AA` always fails, `3x...AA` answers `timeout-or-duplicate`); the test sitekey `1x00000000000000000000AA` makes the widget
@@ -57,4 +67,4 @@ produce the dummy token, which the dummy verifier accepts.
 
 Tests send the dummy token through `TURNSTILE_HEADERS` / `withTurnstile()` of `test/support/storefront.ts`. Unit tests of the
 verifiers and the guard: `turnstile.spec.ts`; wiring and the real routes: `test/integration/turnstile.test.ts`,
-`imei-check.test.ts`, `checkout-sessions.test.ts`.
+`imei-check.test.ts`, `checkout-sessions.test.ts`, `merchant-auth-turnstile.test.ts` (the switch on), `smart-sign-in.test.ts`.

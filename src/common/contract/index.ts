@@ -6,6 +6,7 @@ export {
   DEFAULT_SESSION_STAGES,
   SESSION_ACCESS_KINDS,
   SESSION_STAGES,
+  TURNSTILE_ROLLOUTS,
   contractRegistry,
   declaredStatuses,
   defineRoute,
@@ -29,6 +30,7 @@ export type {
   SessionStage,
   SuccessSpec,
   SuccessStatus,
+  TurnstileRollout,
 } from './define-route';
 export { EventRegistry, defineEvent, eventRegistry } from './define-event';
 export type { EventContract, EventKey, EventSpec } from './define-event';

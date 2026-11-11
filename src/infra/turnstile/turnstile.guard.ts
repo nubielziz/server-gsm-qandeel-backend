@@ -1,10 +1,12 @@
-// The Turnstile guard of decision 034: for a `turnstile: true` route it checks the X-Turnstile-Token header after authentication.
+// The Turnstile guard of decision 034: for a `turnstile: true` route it checks the X-Turnstile-Token header after authentication
+// (a route with a `turnstileRollout` only while that switch is on, feature 24A).
 import { type CanActivate, type ExecutionContext, Inject, Injectable, Logger } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { Counter } from 'prom-client';
-import { getContract } from '../../common/contract';
+import { type TurnstileRollout, getContract } from '../../common/contract';
 import { AppError } from '../../common/errors';
 import { getRequestId } from '../../common/request-id';
+import { APP_CONFIG, type AppConfig } from '../../config';
 import { MetricsService } from '../metrics';
 import {
   TURNSTILE_HEADER,
@@ -18,14 +20,16 @@ import {
 const REFUSAL_DETAIL = 'The anti-bot check failed. Refresh the page and try again.';
 
 /**
- * Refuses a storefront write whose anti-bot token is missing or bad.
+ * Refuses a public write whose anti-bot token is missing or bad.
  *
  * Why: decision 034: three storefront features (14a, 14b, 17) need the same check, so it is one guard driven by the route
  * contract (`turnstile: true`). `AccessGuard` calls it after authentication, CSRF and permission checks; the per-IP limit hook of
  * decision 021 has already run, so an outbound verification only happens inside the limits. A missing, empty, repeated or
  * over-long token is refused without an outbound call; otherwise the verifier decides. The refusal is always `403
  * TURNSTILE_FAILED` with one fixed detail; the log has the request id and the reason (and Cloudflare's error codes), never the
- * token, and `turnstile_failures_total{reason}` counts it.
+ * token, and `turnstile_failures_total{reason}` counts it. A route with a `turnstileRollout` (the merchant sign-up and sign-in forms,
+ * feature 24A) is checked only while its switch is on (`TURNSTILE_MERCHANT_AUTH`); while it is off the token is neither read nor
+ * verified.
  *
  * Side effects: possibly one outbound call (through the verifier); a counter; a warning log line per refusal.
  */
@@ -37,10 +41,11 @@ export class TurnstileGuard implements CanActivate {
   constructor(
     @Inject(TURNSTILE_VERIFIER) private readonly verifier: TurnstileVerifier,
     metrics: MetricsService,
+    @Inject(APP_CONFIG) private readonly config: Pick<AppConfig, 'turnstile'>,
   ) {
     this.failures = new Counter({
       name: 'turnstile_failures_total',
-      help: 'Storefront writes refused by the anti-bot check, by reason (missing, too_long, rejected, hostname, timeout, network, bad_response).',
+      help: 'Writes refused by the anti-bot check, by reason (missing, too_long, rejected, hostname, timeout, network, bad_response).',
       labelNames: ['reason'],
       registers: [metrics.registry],
     });
@@ -50,13 +55,14 @@ export class TurnstileGuard implements CanActivate {
    * Checks the token of a route that asks for it.
    *
    * @param context the request being handled
-   * @returns true when the route has no `turnstile` flag or the token is good
+   * @returns true when the route has no `turnstile` flag, its rollout switch is off, or the token is good
    * @throws {AppError} `TURNSTILE_FAILED` (403) when the token is missing, malformed, too long, refused or could not be checked
    */
   async canActivate(context: ExecutionContext): Promise<boolean> {
     if (context.getType() !== 'http') return true;
     const contract = getContract(context.getHandler());
     if (!contract?.turnstile) return true;
+    if (contract.turnstileRollout !== undefined && !this.rolledOut(contract.turnstileRollout)) return true;
     const request = context.switchToHttp().getRequest<FastifyRequest>();
 
     const header = request.headers[TURNSTILE_HEADER];
@@ -68,6 +74,14 @@ export class TurnstileGuard implements CanActivate {
     const verdict = await this.verifier.verify(token, request.ip);
     if (!verdict.ok) throw this.refuse(verdict.reason, verdict.errorCodes);
     return true;
+  }
+
+  /** True when the switch of a rollout is on (`TURNSTILE_MERCHANT_AUTH` for `merchant-auth`). */
+  private rolledOut(rollout: TurnstileRollout): boolean {
+    switch (rollout) {
+      case 'merchant-auth':
+        return this.config.turnstile.merchantAuth;
+    }
   }
 
   private refuse(reason: TurnstileFailureReason, errorCodes: readonly string[] = []): AppError {
