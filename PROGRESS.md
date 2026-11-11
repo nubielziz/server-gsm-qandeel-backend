@@ -4,6 +4,12 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+> **RESUMED 2026-11-11 08:20** (machine restarted; containers up; the queue Redis loaded cleanly). Running: workflow
+> `wf_cefe6dd0-54e` (script `gsm-lane-resume-*.js`: 21 console C1 continued, 20 run 2 continued, 23 run 2 continued, 24B from
+> the start in `../backend-24b`, base `72535d6`, Redis 7); the lead's full check of 22 (`.lead/check-22b.log`). Console 22 is
+> re-applied to the console's main only after the in-flight backend branches (20, 21, 23) have merged a main that contains 22's
+> additions (else their `routes:check` fails on its new `@route` tags).
+>
 > **NOTE — PAUSED 2026-11-11 00:15 by the owner (sleep). Continue from here tomorrow.** All agents stopped; every worktree's
 > work is committed on its feature branch (WIP commits). Main has W0, 24E, 24D. Rules: `.lead/w1/LEAD-DECISIONS.md` (§0.1:
 > one Fable agent only for plans, all plans are done; Opus reviews Sonnet's decisions and writes the hard parts). Finished agent
