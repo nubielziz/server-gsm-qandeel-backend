@@ -5,10 +5,11 @@ import type { DbExecutor } from '../../../infra/db';
 import { NotificationService } from '../../platform';
 import type { Payment, Refund } from '../db/schema';
 import { amountText } from '../domain/b2c-money';
-import { loadOrderFacts } from '../infra/b2c-reads.repository';
+import { loadOrderFacts, loadSessionMoney } from '../infra/b2c-reads.repository';
 import { loadBillingCustomers } from '../infra/foreign-directory.repository';
 import { findPaymentOfOrder } from '../infra/order-payment.repository';
 import { findCurrencyByCode } from '../infra/storefront-money.repository';
+import { CustomerWalletMails } from './customer-wallet-mails';
 
 /** What a mail calls a customer who gave no name (a guest checkout): "Hi there,". */
 const NAMELESS = 'there';
@@ -30,7 +31,10 @@ const NAMELESS = 'there';
  */
 @Injectable()
 export class StorefrontMails {
-  constructor(private readonly notifications: NotificationService) {}
+  constructor(
+    private readonly notifications: NotificationService,
+    private readonly wallet: CustomerWalletMails,
+  ) {}
 
   /**
    * `order.received`: a payment was captured and the order placed.
@@ -69,7 +73,8 @@ export class StorefrontMails {
    * `order.failed`: a storefront order was rejected and its money went back.
    *
    * Why: the amount is what the payment of the order was for, in the customer's currency. An order without a payment on record (feature 5's
-   * journal-only refund) has nothing to tell the customer, so no mail.
+   * journal-only refund) has nothing to tell the customer, so no mail. An order paid from the store balance got its money back on the
+   * balance, not "to your card": the customer gets `wallet.order_refunded` with the USD the session locked instead (plan 21 § 5.6.7).
    *
    * @param tx the transition's (or the refund approval's) transaction
    * @param orderId the order
@@ -78,11 +83,43 @@ export class StorefrontMails {
     const order = (await loadOrderFacts(tx, [orderId])).get(orderId);
     const payment = order?.customerId ? await findPaymentOfOrder(tx, orderId) : undefined;
     if (!order?.customerId || !payment) return;
+    if (payment.methodType === 'balance') {
+      // A rejected order goes back in full: everything the session locked (an undelivered order is never partly refunded).
+      const session = (await loadSessionMoney(tx, [orderId])).get(orderId);
+      await this.wallet.orderRefunded(tx, {
+        customerId: order.customerId,
+        orderId,
+        amount: session?.grossAmount ?? payment.amount,
+        service: order.serviceName,
+        occurrence: `order:${orderId}`,
+      });
+      return;
+    }
     await this.send(tx, order.customerId, 'order.failed', `order.failed:${orderId}`, {
       orderId: orderLabel(orderId),
       amount: await this.shown(tx, payment.amount, payment.currency),
       service: order.serviceName,
       device: '',
+    });
+  }
+
+  /**
+   * `wallet.order_refunded`: staff refunded a delivered order that was paid from the store balance, back to the balance.
+   *
+   * Why: plan 21 § 5.6.7: the money is on the balance the moment the refund is approved; the customer is told how much and for which order.
+   *
+   * @param tx the approval's transaction
+   * @param input the order, the refund and the USD that went back
+   */
+  async refundedToBalance(tx: DbExecutor, input: { orderId: number; refundId: number; amount: string }): Promise<void> {
+    const order = (await loadOrderFacts(tx, [input.orderId])).get(input.orderId);
+    if (!order?.customerId) return;
+    await this.wallet.orderRefunded(tx, {
+      customerId: order.customerId,
+      orderId: input.orderId,
+      amount: input.amount,
+      service: order.serviceName,
+      occurrence: `refund:${input.refundId}`,
     });
   }
 

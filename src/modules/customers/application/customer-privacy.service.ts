@@ -6,6 +6,7 @@ import { AppError } from '../../../common/errors';
 import { EncryptionService } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
 import { CUSTOMER_TOKEN_PURPOSES, CustomerAuthTokens, SessionService } from '../../identity';
+import { CustomerWallets } from '../../money';
 import { AuditService } from '../../platform';
 import { DataRequestService, IMEI_CHECK_AAD, ImeiErasure } from '../../risk';
 import { CHECKOUT_IMEI_AAD } from '../domain/checkout';
@@ -44,7 +45,8 @@ export interface ExportFile {
  *
  * Side effects: export updates `data_requests` and inserts `audit_logs`. Anonymize updates `customers`, `orders`, `checkout_sessions`,
  * `imei_checks`, `data_requests`; deletes `customer_credentials`; revokes `sessions`; voids `auth_tokens`; inserts `audit_logs`; clears
- * the sign-in lockout of the old address after the commit.
+ * the sign-in lockout of the old address after the commit. Feature 21: anonymize is refused while the store balance is not zero or money
+ * is in flight, and voids the unpaid top-ups; the export holds the store balance and its statement.
  */
 @Injectable()
 export class CustomerPrivacyService {
@@ -60,6 +62,7 @@ export class CustomerPrivacyService {
     private readonly failures: CustomerSignInFailures,
     private readonly hooks: CustomerErasureHooks,
     private readonly audit: AuditService,
+    private readonly wallets: CustomerWallets,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -79,7 +82,14 @@ export class CustomerPrivacyService {
       // Close the waiting request first, so the file's own data-request list already shows it as completed.
       const closed = await this.requests.completePending(tx, id, 'export', staffId);
       const rows = await exportRowsOf(tx, id);
-      const document = buildCustomerExport(customer, rows, now, (kind, ciphertext) => this.imeiOf(kind, ciphertext));
+      const wallet = await this.wallets.exportOf(tx, id);
+      const document = buildCustomerExport(
+        customer,
+        rows,
+        now,
+        (kind, ciphertext) => this.imeiOf(kind, ciphertext),
+        wallet,
+      );
       await this.audit.record(tx, {
         action: 'exported data of',
         entityType: 'customer',
@@ -97,7 +107,8 @@ export class CustomerPrivacyService {
    *
    * @param staffId the signed-in staff member
    * @param id the customer id
-   * @throws {AppError} `NOT_FOUND` (404), `ANONYMIZED` (409, already anonymized)
+   * @throws {AppError} `NOT_FOUND` (404), `ANONYMIZED` (409, already anonymized), `CONFLICT` (409, the store balance is not zero, a
+   *   top-up waits for review or a top-up dispute is open: feature 21, O12)
    */
   async anonymize(staffId: number, id: number): Promise<void> {
     const now = this.clock.now();
@@ -129,6 +140,8 @@ export class CustomerPrivacyService {
       await this.imeiErasure.forCustomer(tx, id);
       await this.requests.completePending(tx, id, 'erasure', staffId);
       await this.hooks.run(tx, id);
+      // Last before the audit row: it locks the wallet row, which must come after every other row (plan 21 § 5.7).
+      await this.wallets.closeForErasure(tx, id);
       await this.audit.record(tx, {
         action: 'anonymised customer',
         entityType: 'customer',

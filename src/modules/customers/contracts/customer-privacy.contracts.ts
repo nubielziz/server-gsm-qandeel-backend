@@ -51,7 +51,8 @@ export const exportCustomerData = defineRoute({
   description:
     'A JSON file (`Content-Disposition: attachment; filename="customer-<id>.json"`, never cached) with everything the shop holds ' +
     'about the customer: the profile, the orders with their IMEI, the payments without card data, the consents, the checkout ' +
-    'sessions, the support tickets with their public messages, the IMEI checks and the data requests. It works for an anonymized ' +
+    'sessions, the support tickets with their public messages, the IMEI checks, the data requests and the store balance with its ' +
+    'statement (`wallet`, staff reasons hidden). It works for an anonymized ' +
     'customer too. The export closes the customer’s open or in-progress export request (`completed`, handled by the caller) and is ' +
     'audited as `exported data of`; no copy of the file is kept. Because a GET has this side effect and carries no CSRF token, the ' +
     'request must come from the same site (`Sec-Fetch-Site: same-origin` or `same-site`, else an `Origin` that is one of the allowed ' +
@@ -76,12 +77,13 @@ export const anonymizeCustomer = defineRoute({
     'deleted, every session ended, outstanding links voided). The IMEI on their orders, checkout sessions and IMEI checks is cut to ' +
     'the TAC and a mask (an IMEI check loses `imei_enc`, `imei_hash` and `cached_until` together). Payments, ledger entries and ' +
     'amounts stay for accounting. The customer’s open or in-progress erasure request is completed. Audited as `anonymised customer`, ' +
-    'naming the customer by number.',
+    'naming the customer by number. Refused with `409 CONFLICT` while the customer’s store balance is not zero, a top-up waits for ' +
+    'review or a top-up dispute is open; unpaid top-ups are voided.',
   tags: ['customers'],
   surface: 'admin',
   access: 'staff-permission',
   permission: 'customers:privacy',
   params: z.object({ id: zIdParam }),
   success: { status: 204 },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'ANONYMIZED'],
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'ANONYMIZED', 'CONFLICT'],
 });

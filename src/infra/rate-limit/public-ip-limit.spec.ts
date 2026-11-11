@@ -8,6 +8,9 @@ describe('publicLimiterFor', () => {
     expect(publicLimiterFor('/store/v1/services', 'public')).toBe('ip');
     expect(publicLimiterFor('/store/v1/me', 'customer-session')).toBe('ip');
     expect(publicLimiterFor('/store/v1/nope', undefined)).toBe('ip');
+    // Feature 21: a multipart or large body on the store (the receipt upload) costs an upload point instead.
+    expect(publicLimiterFor('/store/v1/files', 'customer-session', true)).toBe('upload');
+    expect(publicLimiterFor('/store/v1/files', 'customer-session')).toBe('ip');
   });
 
   it('counts token routes against the stricter token limiter', () => {

@@ -2,7 +2,7 @@
 // merchant from the completed orders of a range of days, the wallet exposure from the ledger accounts, the supplier report from orders and the
 // supplier call log, and the top merchants. Dates are UTC days; every window ends at the injected clock.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, setDefaultTimeout, spyOn } from 'bun:test';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { Money } from '../../src/common/money';
 import { DbService, schema as s } from '../../src/infra/db';
 import { adjust, postTransaction } from '../../src/modules/money';
@@ -331,7 +331,8 @@ describe('GET /admin/reports/wallet-exposure', () => {
     await db
       .update(s.ledgerAccounts)
       .set({ overdraftLimit: '20.0000' })
-      .where(eq(s.ledgerAccounts.ownerId, lowered.id));
+      // Only a merchant wallet carries a credit limit (feature 21's ledger_accounts_overdraft_kind_check).
+      .where(and(eq(s.ledgerAccounts.ownerId, lowered.id), eq(s.ledgerAccounts.kind, 'client_wallet')));
 
     const res = await staff.get('/admin/reports/wallet-exposure');
     expect(res.status).toBe(200);

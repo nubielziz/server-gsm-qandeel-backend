@@ -82,8 +82,9 @@ export function accountRef(kind: string, ownerId: number | null): string {
  *
  * @param kind the account kind
  * @param ownerId the owner's id, or `null` for a system account
- * @param ownerName the merchant's or supplier's name, when it is known
- * @returns `Wallet · <merchant>`, `Hold · <merchant>`, `Supplier prepaid · <supplier>`, or the kind in words
+ * @param ownerName the merchant's, supplier's or storefront customer's name, when it is known
+ * @returns `Wallet · <merchant>`, `Hold · <merchant>`, `Supplier prepaid · <supplier>`, `Customer wallet · <customer>` (feature 21), or
+ *   the kind in words
  */
 export function accountLabel(kind: string, ownerId: number | null, ownerName: string | null): string {
   const owner = ownerName ?? (ownerId === null ? null : `#${ownerId}`);
@@ -91,6 +92,7 @@ export function accountLabel(kind: string, ownerId: number | null, ownerName: st
   if (kind === 'client_wallet') return `Wallet · ${owner}`;
   if (kind === 'client_hold') return `Hold · ${owner}`;
   if (kind === 'supplier_prepaid') return `Supplier prepaid · ${owner}`;
+  if (kind === 'customer_wallet') return `Customer wallet · ${owner}`;
   return `${kindInWords(kind)} · ${owner}`;
 }
 

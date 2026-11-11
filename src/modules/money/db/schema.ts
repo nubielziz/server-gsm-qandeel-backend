@@ -32,10 +32,11 @@ import { orders } from '../../orders/db/schema';
 import { files } from '../../platform/db/schema';
 
 /**
- * The 15 ledger account kinds: 11 system accounts, `owner_capital` (equity, counterpart of opening balances), and the
- * per-owner `client_wallet`, `client_hold` and `supplier_prepaid`.
+ * The 16 ledger account kinds: 11 system accounts, `owner_capital` (equity, counterpart of opening balances), and the
+ * per-owner `client_wallet`, `client_hold`, `supplier_prepaid` and `customer_wallet`.
  *
- * Why: decision 024 (the map's 14 accounts plus owner_capital, MISMATCHES B35).
+ * Why: decision 024 (the map's 14 accounts plus owner_capital, MISMATCHES B35); feature 21 adds the storefront customer's
+ * store balance `customer_wallet` (a liability, one per customer, USD).
  */
 export const LEDGER_ACCOUNT_KINDS = [
   'fee_income',
@@ -53,6 +54,7 @@ export const LEDGER_ACCOUNT_KINDS = [
   'client_wallet',
   'client_hold',
   'supplier_prepaid',
+  'customer_wallet',
 ] as const;
 
 /** One value of {@link LEDGER_ACCOUNT_KINDS}. */
@@ -72,7 +74,8 @@ export type LedgerOwnerType = (typeof LEDGER_OWNER_TYPES)[number];
  * What a ledger transaction points at through `ref_id`.
  *
  * Why: decision 024 and MISMATCHES B34: the map lists four, the console finds deposits and commission batches too.
- * RESOLUTIONS money-1 drops `ledger_transaction`: a reversal points at the original's own `ref_type` and `ref_id`.
+ * RESOLUTIONS money-1 drops `ledger_transaction`: a reversal points at the original's own `ref_type` and `ref_id`. Feature 21
+ * adds `customer` (a staff adjustment of a customer's store balance; sent as `system` like `client`).
  */
 export const LEDGER_REF_TYPES = [
   'order',
@@ -83,6 +86,7 @@ export const LEDGER_REF_TYPES = [
   'accrual',
   'supplier',
   'client',
+  'customer',
   'system',
 ] as const;
 
@@ -178,11 +182,13 @@ export const TOPUP_METHODS = ['bank', 'card', 'usdt', 'wise'] as const;
 export type TopupMethod = (typeof TOPUP_METHODS)[number];
 
 /**
- * How a storefront customer pays an order: card, wallet (Apple Pay, PayPal, ...) or crypto (any coin).
+ * How a storefront customer pays an order: card, wallet (Apple Pay, PayPal, ...), crypto (any coin), or the customer's own store
+ * balance (`balance`: no gateway).
  *
- * Why: RESOLUTIONS money-2 and b2c-6: B2C gateway drivers store only these three.
+ * Why: RESOLUTIONS money-2 and b2c-6: B2C gateway drivers store only the first three; feature 21 adds `balance`, the one method
+ * whose payment has no gateway (`payments_gateway_check`).
  */
-export const ORDER_METHODS = ['card', 'wallet', 'crypto'] as const;
+export const ORDER_METHODS = ['card', 'wallet', 'crypto', 'balance'] as const;
 
 /** One value of {@link ORDER_METHODS}. */
 export type OrderMethod = (typeof ORDER_METHODS)[number];
@@ -284,8 +290,12 @@ export const ledgerAccounts = pgTable(
       .notNull(),
     /** kept in the account's normal sign (decision 024) */
     balance: money().notNull().default('0'),
-    /** merchant credit limit on client_wallet accounts */
+    /** merchant credit limit on client_wallet accounts; zero on every other kind (`ledger_accounts_overdraft_kind_check`) */
     overdraftLimit: money().notNull().default('0'),
+    /** when a customer_wallet was put on hold (staff or a top-up dispute); null when not frozen, always null on other kinds (feature 21) */
+    frozenAt: timestampTz(),
+    /** why the customer_wallet is on hold (staff note or the dispute); empty when not frozen (feature 21) */
+    frozenReason: text().notNull().default(''),
     /** incremented with every posting */
     version: integer().notNull().default(0),
     createdAt: createdAt(),
@@ -301,10 +311,20 @@ export const ledgerAccounts = pgTable(
       'ledger_accounts_kind_owner_check',
       sql`(${t.kind} in ('client_wallet', 'client_hold') and ${t.ownerType} is not distinct from 'client')
  or (${t.kind} = 'supplier_prepaid' and ${t.ownerType} is not distinct from 'supplier')
- or (${t.kind} not in ('client_wallet', 'client_hold', 'supplier_prepaid') and ${t.ownerType} is null)`,
+ or (${t.kind} = 'customer_wallet' and ${t.ownerType} is not distinct from 'customer')
+ or (${t.kind} not in ('client_wallet', 'client_hold', 'supplier_prepaid', 'customer_wallet') and ${t.ownerType} is null)`,
     ),
     check('ledger_accounts_overdraft_check', sql`${t.overdraftLimit} >= 0`),
     index('ledger_accounts_currency_idx').on(t.currency),
+    // Feature 21: only a customer wallet can be frozen; only a merchant wallet has a credit limit.
+    check('ledger_accounts_frozen_check', sql`${t.frozenAt} is null or ${t.kind} = 'customer_wallet'`),
+    check('ledger_accounts_overdraft_kind_check', sql`${t.overdraftLimit} = 0 or ${t.kind} = 'client_wallet'`),
+    index('ledger_accounts_customer_wallet_idx')
+      .on(t.balance)
+      .where(sql`${t.kind} = 'customer_wallet'`),
+    index('ledger_accounts_frozen_idx')
+      .on(t.frozenAt)
+      .where(sql`${t.frozenAt} is not null`),
   ],
 );
 
@@ -429,11 +449,18 @@ export const invoices = pgTable(
     description: text().notNull().default(''),
     /** where the merchant pays an open top-up invoice of an automatic gateway (the hosted checkout); null otherwise (feature 8, B163) */
     checkoutUrl: text(),
+    /** the customer's `Idempotency-Key` of a store top-up: a retry with it finds the invoice (feature 21); null otherwise */
+    idempotencyKey: text(),
+    /** what that top-up asked for (gateway and amount): the same key with another request is refused (feature 21) */
+    requestFingerprint: text(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     uniqueIndex('invoices_number_uq').on(t.number),
+    uniqueIndex('invoices_customer_key_uq')
+      .on(t.customerId, t.idempotencyKey)
+      .where(sql`${t.idempotencyKey} is not null`),
     check('invoices_kind_check', inList(t.kind, INVOICE_KINDS)),
     check('invoices_status_check', inList(t.status, INVOICE_STATUSES)),
     index('invoices_client_created_idx').on(t.clientId, t.createdAt.desc()),
@@ -515,7 +542,8 @@ export const payments = pgTable(
     customerId: fk((): AnyPgColumn => customers.id),
     orderId: fk((): AnyPgColumn => orders.id),
     purpose: text().$type<PaymentPurpose>().notNull(),
-    gatewayId: fk((): AnyPgColumn => paymentGateways.id).notNull(),
+    /** null only for a payment from the customer's store balance (`method_type 'balance'`, feature 21) */
+    gatewayId: fk((): AnyPgColumn => paymentGateways.id),
     /** the gateway's reference, kept as text; unique per gateway */
     gatewayTxnId: text(),
     amount: money().notNull(),
@@ -591,6 +619,11 @@ export const payments = pgTable(
     uniqueIndex('payments_session_key_uq')
       .on(t.checkoutSessionId, t.idempotencyKey)
       .where(sql`${t.idempotencyKey} is not null`),
+    // Feature 21: a balance payment has no gateway, every other payment has one; one balance payment per checkout.
+    check('payments_gateway_check', sql`(${t.methodType} = 'balance') = (${t.gatewayId} is null)`),
+    uniqueIndex('payments_balance_session_uq')
+      .on(t.checkoutSessionId)
+      .where(sql`${t.methodType} = 'balance'`),
   ],
 );
 

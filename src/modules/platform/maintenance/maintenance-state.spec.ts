@@ -75,6 +75,7 @@ describe('scopesCovering', () => {
     expect(covers('POST', '/store/v1/checkout-sessions')).toEqual(['store', 'checkout', 'all']);
     expect(covers('POST', '/store/v1/checkout-sessions/:token/pay')).toEqual(['store', 'checkout', 'all']);
     expect(covers('POST', '/store/v1/checkout-sessions/abc123/pay')).toEqual(['store', 'checkout', 'all']);
+    expect(covers('POST', '/store/v1/checkout-sessions/:token/balance-payment')).toEqual(['store', 'checkout', 'all']);
     // Reading or consenting on a session that exists is not starting one.
     expect(covers('GET', '/store/v1/checkout-sessions/:token')).toEqual(['store', 'all']);
     expect(covers('POST', '/store/v1/checkout-sessions/:token/consents')).toEqual(['store', 'all']);

@@ -21,6 +21,12 @@ const COLUMNS = {
 };
 
 /**
+ * Only disputes of order payments: a top-up dispute (feature 21) has no order, no evidence pack and its own screens (the deposit and the
+ * customer's Wallet tab), so `/admin/disputes*` never serves one (plan 21 § 5.6.9, P4).
+ */
+const OF_ORDER_PAYMENT = sql`exists (select 1 from payments p where p.id = ${disputes.paymentId} and p.purpose = 'order')`;
+
+/**
  * Lists disputes.
  *
  * Why: ANSWERS refunds Q7: sorted by `evidenceDueAt` ascending the disputes that still need an answer come first (soonest deadline
@@ -34,7 +40,7 @@ export async function listDisputeRows(
   db: DbExecutor,
   query: ParsedListQuery<DisputeSortField>,
 ): Promise<{ rows: Dispute[]; total: number }> {
-  const where = listWhere(query, COLUMNS);
+  const where = and(listWhere(query, COLUMNS), OF_ORDER_PAYMENT);
   const first = query.sort[0];
   const open: SQL[] =
     first?.field === 'evidenceDueAt' && first.order === 'asc'
@@ -59,14 +65,18 @@ export async function listDisputeRows(
 }
 
 /**
- * Finds a dispute by id.
+ * Finds a dispute of an order payment by id (a top-up dispute reads as unknown).
  *
  * @param db the database or a transaction
  * @param id the dispute id
  * @returns the dispute, or `undefined`
  */
 export async function findDispute(db: DbExecutor, id: number): Promise<Dispute | undefined> {
-  const [row] = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
+  const [row] = await db
+    .select()
+    .from(disputes)
+    .where(and(eq(disputes.id, id), OF_ORDER_PAYMENT))
+    .limit(1);
   return row;
 }
 
@@ -158,4 +168,24 @@ export async function updateDisputeIn(
 export async function updateDispute(db: DbExecutor, id: number, changes: Partial<NewDispute>): Promise<Dispute> {
   const [updated] = await db.update(disputes).set(changes).where(eq(disputes.id, id)).returning();
   return updated!;
+}
+
+/**
+ * The newest dispute of each payment.
+ *
+ * Why: the Deposits wire shows a top-up's chargeback (feature 21, plan § 7.3) for a whole page in one query (no N+1).
+ *
+ * @param db the database or a transaction
+ * @param paymentIds the payments
+ * @returns payment id to its newest dispute
+ */
+export async function newestDisputesOf(db: DbExecutor, paymentIds: readonly number[]): Promise<Map<number, Dispute>> {
+  const unique = [...new Set(paymentIds)];
+  if (unique.length === 0) return new Map();
+  const rows = await db
+    .selectDistinctOn([disputes.paymentId])
+    .from(disputes)
+    .where(inArray(disputes.paymentId, unique))
+    .orderBy(disputes.paymentId, sql`${disputes.id} desc`);
+  return new Map(rows.map((row) => [row.paymentId, row]));
 }

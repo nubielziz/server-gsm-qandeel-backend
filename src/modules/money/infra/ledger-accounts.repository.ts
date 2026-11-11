@@ -28,6 +28,8 @@ export interface LockedAccount extends AccountRow {
   readonly balance: string;
   readonly overdraftLimit: string;
   readonly version: number;
+  /** When a customer wallet was put on hold; null when it is not frozen (always null on other kinds, feature 21). */
+  readonly frozenAt: Date | null;
 }
 
 const columns = {
@@ -97,6 +99,7 @@ export async function lockAccountsByIdentity(
       balance: ledgerAccounts.balance,
       overdraftLimit: ledgerAccounts.overdraftLimit,
       version: ledgerAccounts.version,
+      frozenAt: ledgerAccounts.frozenAt,
     })
     .from(ledgerAccounts)
     .where(or(...identities.map(identityCondition)))

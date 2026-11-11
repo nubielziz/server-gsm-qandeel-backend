@@ -6,16 +6,18 @@ import type { ParsedListQuery } from '../../../common/contract';
 import type { DbExecutor } from '../../../infra/db';
 import { escapeLike, listOrderBy, listWhere } from '../../../infra/db/list-sql';
 import { type NewPayment, type Payment, invoices, payments } from '../db/schema';
-import { findMerchantIdsByName } from './foreign-directory.repository';
+import { findCustomerIdsByNameOrEmail, findMerchantIdsByName } from './foreign-directory.repository';
 
 /** The sort fields of the top-up payment list. */
 export type PaymentSortField = 'createdAt' | 'id' | 'amount' | 'status';
 
-/** A payment with the merchant of its invoice. */
+/** A payment with the merchant or the storefront customer of its invoice. */
 export interface PaymentRow {
   readonly payment: Payment;
   /** `invoices.client_id` of the linked invoice (the merchant is reached through the invoice); `null` without an invoice. */
   readonly clientId: number | null;
+  /** `invoices.customer_id` of a store balance top-up (feature 21); `null` for a merchant deposit. */
+  readonly customerId: number | null;
 }
 
 const COLUMNS = {
@@ -25,9 +27,11 @@ const COLUMNS = {
   status: payments.status,
   purpose: payments.purpose,
   clientId: invoices.clientId,
+  customerId: invoices.customerId,
+  owner: sql`case when ${invoices.clientId} is null then 'customer' else 'merchant' end`,
 };
 
-const ROW = { payment: payments, clientId: invoices.clientId };
+const ROW = { payment: payments, clientId: invoices.clientId, customerId: invoices.customerId };
 
 /**
  * Lists top-up payments.
@@ -49,6 +53,8 @@ export async function listPaymentRows(
     alternatives.push(sql`${payments.gatewayTxnId} ilike ${pattern}`);
     const clientIds = await findMerchantIdsByName(db, pattern);
     if (clientIds.length > 0) alternatives.push(inArray(invoices.clientId, clientIds));
+    const customerIds = await findCustomerIdsByNameOrEmail(db, pattern);
+    if (customerIds.length > 0) alternatives.push(inArray(invoices.customerId, customerIds));
   }
   const where = listWhere(
     { filters: query.filters, search: undefined },
@@ -250,4 +256,29 @@ export async function clientsWithApprovedTopup(db: DbExecutor, clientIds: readon
       and(eq(payments.purpose, 'topup'), eq(payments.status, 'approved'), inArray(invoices.clientId, [...clientIds])),
     );
   return new Set(rows.flatMap((row) => (row.clientId === null ? [] : [row.clientId])));
+}
+
+/**
+ * Tells which storefront customers already have an approved store balance top-up (feature 21).
+ *
+ * Why: a pending top-up of a customer with none is a first top-up, which the reviewer is told (like a merchant's first deposit).
+ *
+ * @param db the database or a transaction
+ * @param customerIds the customers
+ * @returns the ids that have at least one approved top-up
+ */
+export async function customersWithApprovedTopup(db: DbExecutor, customerIds: readonly number[]): Promise<Set<number>> {
+  if (customerIds.length === 0) return new Set();
+  const rows = await db
+    .selectDistinct({ customerId: invoices.customerId })
+    .from(payments)
+    .innerJoin(invoices, eq(invoices.id, payments.invoiceId))
+    .where(
+      and(
+        eq(payments.purpose, 'topup'),
+        eq(payments.status, 'approved'),
+        inArray(invoices.customerId, [...customerIds]),
+      ),
+    );
+  return new Set(rows.flatMap((row) => (row.customerId === null ? [] : [row.customerId])));
 }

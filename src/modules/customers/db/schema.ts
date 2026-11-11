@@ -212,6 +212,8 @@ export const checkoutSessions = pgTable(
     /** set when the payment created the order */
     orderId: fk((): AnyPgColumn => orders.id),
     recoveryEmailedAt: timestampTz(),
+    /** true when a signed-in customer opened the checkout: only then may it be paid from the store balance (feature 21) */
+    openedSignedIn: boolean().notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

@@ -64,6 +64,20 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 | `GET /admin/reports/vat` | admin | staff-permission `reports:finance` | 16 | `getVatReport` |
 | `GET /admin/reports/payments` | admin | staff-permission `reports:finance` | 16 | `getPaymentsReport` |
 | `POST /webhooks/disputes/:gateway` | hooks | gateway-signature | 16 |  |
+| `GET /store/v1/me/wallet` | store | customer-session | 21 |  |
+| `GET /store/v1/me/wallet/statement` | store | customer-session | 21 |  |
+| `GET /store/v1/me/wallet/top-up-methods` | store | customer-session | 21 |  |
+| `POST /store/v1/me/wallet/top-ups` | store | customer-session | 21 |  |
+| `GET /store/v1/me/wallet/top-ups` | store | customer-session | 21 |  |
+| `GET /store/v1/me/wallet/top-ups/:id` | store | customer-session | 21 |  |
+| `POST /store/v1/me/wallet/top-ups/:id/receipt` | store | customer-session | 21 |  |
+| `POST /store/v1/me/wallet/top-ups/:id/cancel` | store | customer-session | 21 |  |
+| `GET /admin/customers/:id/wallet` | admin | staff-permission `wallet:read` | 21 |  |
+| `GET /admin/customers/:id/wallet/statement` | admin | staff-permission `wallet:read` | 21 |  |
+| `POST /admin/customers/:id/wallet/adjust` | admin | staff-permission `wallet:adjust` | 21 |  |
+| `POST /admin/customers/:id/wallet/freeze` | admin | staff-permission `wallet:adjust` | 21 |  |
+| `POST /admin/customers/:id/wallet/unfreeze` | admin | staff-permission `wallet:adjust` | 21 |  |
+| `GET /admin/customer-wallets` | admin | staff-permission `wallet:read` | 21 |  |
 
 ## DHRU accountinfo
 
@@ -532,5 +546,75 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 ## POST /webhooks/disputes/:gateway
 
 - **Map**: New or resolved dispute from the gateway; records the dispute with its evidence deadline and posts the loss when the dispute is lost. (نزاع جديد أو محسوم من البوابة؛ يسجل النزاع بموعد الأدلة ويقيّد الخسارة عند الخسارة) · gateway-signature · stage 16 · tables disputes, payments, ledger_entries
+- **Frontend**: none.
+
+## GET /store/v1/me/wallet
+
+- **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): The signed-in customer store balance: available amount, limits and hold state. (رصيد الزبون: المتاح والحدود وحالة التجميد) · customer-session · stage 21 · tables ledger_accounts, invoices
+- **Frontend**: none.
+
+## GET /store/v1/me/wallet/statement
+
+- **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): The signed-in customer balance statement, filtered by date. (كشف حساب رصيد الزبون مع فلترة بالتاريخ) · customer-session · stage 21 · tables ledger_entries, ledger_transactions
+- **Frontend**: none.
+
+## GET /store/v1/me/wallet/top-up-methods
+
+- **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): The payment methods the signed-in customer can top up the balance with. (طرق شحن الرصيد المتاحة للزبون) · customer-session · stage 21 · tables payment_gateways
+- **Frontend**: none.
+
+## POST /store/v1/me/wallet/top-ups
+
+- **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): Start a balance top-up: amount and payment method, with an Idempotency-Key. (طلب شحن رصيد: المبلغ وطريقة الدفع مع Idempotency-Key) · customer-session · stage 21 · tables invoices
+- **Frontend**: none.
+
+## GET /store/v1/me/wallet/top-ups
+
+- **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): The signed-in customer top-ups and their states. (عمليات شحن الزبون وحالاتها) · customer-session · stage 21 · tables invoices, payments
+- **Frontend**: none.
+
+## GET /store/v1/me/wallet/top-ups/:id
+
+- **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): One top-up with its payment instructions. (عملية شحن واحدة مع تعليمات الدفع) · customer-session · stage 21 · tables invoices, payments
+- **Frontend**: none.
+
+## POST /store/v1/me/wallet/top-ups/:id/receipt
+
+- **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): Attach the transfer receipt to a manual top-up; it then waits for staff review. (إرفاق إيصال التحويل بانتظار مراجعة الموظف) · customer-session · stage 21 · tables payments, invoices, files
+- **Frontend**: none.
+
+## POST /store/v1/me/wallet/top-ups/:id/cancel
+
+- **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): Cancel a manual top-up that has no receipt yet. (إلغاء عملية شحن يدوية لم يُرفق لها إيصال) · customer-session · stage 21 · tables invoices
+- **Frontend**: none.
+
+## GET /admin/customers/:id/wallet
+
+- **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): A customer store balance: balance, hold state and pending top-ups. (رصيد الزبون: الرصيد والتجميد والشحنات المعلّقة) · staff-permission `wallet:read` · stage 21 · tables ledger_accounts · success 200
+- **Frontend**: none.
+
+## GET /admin/customers/:id/wallet/statement
+
+- **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): A customer balance statement. (كشف حساب رصيد الزبون) · staff-permission `wallet:read` · stage 21 · tables ledger_entries, ledger_transactions · success 200
+- **Frontend**: none.
+
+## POST /admin/customers/:id/wallet/adjust
+
+- **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): Add to or deduct from a customer balance by hand, with a reason. (إضافة أو خصم يدوي على رصيد الزبون مع سبب) · staff-permission `wallet:adjust` · stage 21 · tables ledger_transactions, ledger_entries, audit_logs · success 200
+- **Frontend**: none.
+
+## POST /admin/customers/:id/wallet/freeze
+
+- **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): Put a customer balance on hold, with a reason. (تجميد رصيد الزبون مع السبب) · staff-permission `wallet:adjust` · stage 21 · tables ledger_accounts, audit_logs · success 200
+- **Frontend**: none.
+
+## POST /admin/customers/:id/wallet/unfreeze
+
+- **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): Lift the hold on a customer balance. (فك تجميد رصيد الزبون) · staff-permission `wallet:adjust` · stage 21 · tables ledger_accounts, audit_logs · success 200
+- **Frontend**: none.
+
+## GET /admin/customer-wallets
+
+- **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): Customer balances, with negative and held ones. (قائمة أرصدة الزبائن: السالب والمجمّد) · staff-permission `wallet:read` · stage 21 · tables ledger_accounts, customers · success 200
 - **Frontend**: none.
 

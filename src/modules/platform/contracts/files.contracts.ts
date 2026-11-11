@@ -140,3 +140,40 @@ export const uploadClientFile = defineRoute({
   errors: ['UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'CSRF_FAILED', 'VALIDATION_FAILED', 'PAYLOAD_TOO_LARGE', 'UNAVAILABLE'],
   examples: { response: STORED_FILE_EXAMPLE },
 });
+
+/**
+ * The largest file a storefront customer may upload (a transfer receipt): 5 MiB.
+ *
+ * Why: plan 21 § 7.1 route 9 and risk K15: the store surface is public, so its upload is small and of three media types only.
+ */
+export const STORE_UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
+
+/** `POST /store/v1/files`. */
+export const uploadStoreFile = defineRoute({
+  key: 'POST /store/v1/files',
+  summary: 'Upload a receipt',
+  description:
+    'Uploads one file from the signed-in customer’s account (`multipart/form-data` with one part named `file`): a PDF, JPEG or PNG ' +
+    'of 1 byte to 5 MiB, such as the receipt of a store balance top-up (`POST /store/v1/me/wallet/top-ups/:id/receipt` takes its id). ' +
+    'The file belongs to the customer. Another media type is `422` on `file` (`type`); an empty file `422` (`empty`); a declared body ' +
+    'over 5 MiB is refused before it is read (`413`). Counted against the `upload` limiter (20 a minute per address).',
+  tags: ['account'],
+  surface: 'store',
+  access: 'customer-session',
+  bodyType: 'multipart',
+  body: UploadBody,
+  success: { status: 201, schema: StoredFileSchema },
+  errors: [
+    'UNAUTHORIZED',
+    'ACCOUNT_SUSPENDED',
+    'IP_NOT_ALLOWED',
+    'CSRF_FAILED',
+    'VALIDATION_FAILED',
+    'PAYLOAD_TOO_LARGE',
+    'RATE_LIMITED',
+    'UNAVAILABLE',
+  ],
+  examples: {
+    response: { ...STORED_FILE_EXAMPLE, id: 9010, filename: 'cliq-receipt.pdf', size: 48213, mime: 'application/pdf' },
+  },
+});

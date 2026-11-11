@@ -3,6 +3,7 @@
 // so a test app built without a database can leave it out.
 import { Module } from '@nestjs/common';
 import { CustomerTokensModule } from '../identity';
+import { MoneyAdminModule } from '../money';
 import { RiskServicesModule } from '../risk';
 import { CustomerAccountAdminService } from './application/customer-account-admin.service';
 import { CustomerAccountService } from './application/customer-account.service';
@@ -30,7 +31,7 @@ import { CustomerSignInFailures } from './infra/customer-sign-in-failures';
  * without the routes.
  */
 @Module({
-  imports: [CustomerTokensModule, CustomerMailModule, RiskServicesModule],
+  imports: [CustomerTokensModule, CustomerMailModule, RiskServicesModule, MoneyAdminModule],
   controllers: [StoreAuthController, StoreAccountController, CustomersController, CustomerPrivacyController],
   providers: [
     CustomerSignInLimiter,

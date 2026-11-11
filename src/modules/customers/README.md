@@ -247,7 +247,21 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 | `POST /store/v1/checkout-sessions` | public | Open a checkout as a guest or from the account (service, IMEI, email, country); locks the price, tax rate and exchange rate, and refuses a suspended or blocked account. | 14 |
 | `POST /store/v1/checkout-sessions/:token/consents` | checkout-token | Record consent to the terms, the privacy policy and the waiver of the withdrawal right, with the text version, time and IP. | 14 |
 | `POST /store/v1/checkout-sessions/:token/pay` | checkout-token | Start payment (3DS card, wallet or crypto); the order is not created before the webhook confirms the payment. | 16 |
+| `POST /store/v1/checkout-sessions/:token/balance-payment` | checkout-token + customer session and CSRF | Pay the checkout from the signed-in customer's store balance: the order is created at once (feature 21, beyond the map: `scripts/map-additions/21.mjs`). | 21 |
 | `POST /store/v1/me/password` | customer-session | Change the password from the account by entering the current one; signs out the other devices. Used after a temporary password. | 14 |
+
+### Paying from the store balance (feature 21)
+
+`CheckoutBalancePayService` (route `POST /store/v1/checkout-sessions/:token/balance-payment`, plan 21 § 5.6.6): the customer id comes from
+the cookie session (`OptionalCustomerSession`, CSRF checked; none is `401`), never from the checkout row; the checkout must belong to that
+customer and have been opened signed in (`checkout_sessions.opened_signed_in`, set by `open`; else `403`). One transaction: lock the
+session → replay by `Idempotency-Key` (a `/pay` key is `IDEMPOTENCY_KEY_REUSED`) → switch (`WALLET_DISABLED`) → the `/pay` checks (paid
+or expired `INVALID_TRANSITION`, consents) → a friendly balance/hold pre-check → risk screening (`paymentMethod: 'balance'`) →
+`CustomerOrderPlacement.place` whose `onInserted` calls money's `CustomerWalletPayments.record` (payment row, `b2c_wallet_pay` guarded
+under the wallet lock, receipt) → `markSessionPaid` → mails, or `refundBlocked` (back to the balance). The checkout view has
+`balancePayable` (switch on and opened signed in; never the balance). Maintenance scope `checkout` covers the route. Anonymize calls
+`CustomerWallets.closeForErasure` last (refused while the balance is not zero, a top-up waits for review or a top-up dispute is open);
+the data export adds `wallet`.
 
 ## Scenarios
 

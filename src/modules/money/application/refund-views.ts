@@ -5,7 +5,7 @@ import type { ResultOf } from '../../../common/contract';
 import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
 import type { Refund } from '../db/schema';
-import { b2cPaymentMethod, wireUsd } from '../domain/b2c-money';
+import { storedOrderMethod, wireUsd } from '../domain/b2c-money';
 import { ledgerPartsOf, ledgerTxIdsByKeys, loadOrderFacts, loadSessionMoney } from '../infra/b2c-reads.repository';
 import { loadActorNames, loadBillingCustomers, ownerKey } from '../infra/foreign-directory.repository';
 import { loadOrderPayments } from '../infra/order-payment.repository';
@@ -113,7 +113,7 @@ export class RefundViews {
         },
         payment: {
           id: payment?.id ?? 0,
-          method: b2cPaymentMethod(payment?.methodType ?? 'card'),
+          method: storedOrderMethod(payment?.methodType ?? 'card'),
           brand: payment?.brand ?? '',
           amount: Money.of(session?.grossAmount ?? payment?.amount ?? '0').toWire(),
           taxAmount: Money.of(paymentJournal?.vat ?? session?.taxAmount ?? '0').toWire(),

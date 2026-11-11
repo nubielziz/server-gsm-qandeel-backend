@@ -23,7 +23,18 @@ export const MULTIPART_ROUTES: ReadonlySet<string> = new Set([
   '/api/index.php',
   '/v1/files',
   '/client/files',
+  '/store/v1/files',
   '/admin/service-listings/:id/image',
+]);
+
+/**
+ * Routes whose declared body may not exceed a smaller bound than {@link MULTIPART_MAX_BYTES}: the store's receipt upload (5 MiB file
+ * plus 64 KiB of form parts).
+ *
+ * Why: plan 21 § 7.1 route 9 and risk K15: the store surface is public, so a declared body over its bound is refused before it is read.
+ */
+export const MULTIPART_ROUTE_LIMITS: ReadonlyMap<string, number> = new Map([
+  ['/store/v1/files', 5 * 1024 * 1024 + 64 * 1024],
 ]);
 
 /**
@@ -121,8 +132,15 @@ export async function parseMultipart(body: Buffer, contentType: string): Promise
 export function registerMultipartBodies(fastify: FastifyInstance): void {
   fastify.addHook('preParsing', (request, _reply, payload, done) => {
     const multipart = (request.headers['content-type'] ?? '').toLowerCase().startsWith('multipart/form-data');
-    if (multipart && !MULTIPART_ROUTES.has(request.routeOptions?.url ?? requestPath(request))) {
+    const route = request.routeOptions?.url ?? requestPath(request);
+    if (multipart && !MULTIPART_ROUTES.has(route)) {
       done(new AppError('UNSUPPORTED_MEDIA_TYPE', { detail: 'This endpoint does not accept multipart/form-data.' }));
+      return;
+    }
+    const limit = MULTIPART_ROUTE_LIMITS.get(route);
+    const declared = Number(request.headers['content-length'] ?? 0);
+    if (limit !== undefined && (!Number.isFinite(declared) || declared > limit)) {
+      done(new AppError('PAYLOAD_TOO_LARGE', { detail: 'The body is larger than this endpoint takes.' }));
       return;
     }
     done(null, payload);

@@ -148,6 +148,28 @@ services as they appear (identity, catalog 4a, suppliers 6, customers 14b). Noth
   - **Customer emails.** `StorefrontMails` (`StorefrontMailsModule`, imported by the money admin module, the order engine and the checkout) writes the storefront customer's emails with `NotificationService.enqueue` in the transaction of the change: `order.received` (the capture; `order.completed` too when stock delivered the order at once), `order.completed` and `order.failed` (every order transition that delivers, or rejects and refunds, a storefront order; for a rejection that only opened a refund request, when staff approve it), `payment.failed` (the gateway's failure event for a pending payment) and `refund.declined` (`RefundService.decline`). The address and language are the customer's (`customers.email`, `customers.locale`, English when there is no template of that language); `customerName` is `there` for a guest; `device` is empty until the catalog exports a TAC reader. `order.received`, `order.completed`, `order.failed`, `payment.failed` and `refund.declined` all have a default English template in migration 0015 (the demo's texts without the receipt sentence: no mail carries a file); staff edit them in Settings, and a template switched off sends nothing. The development seed only sets the demo's on/off switch on them (the payment failed mail is off).
   - **Deviation.** `infra/b2c-reads.repository.ts` reads `orders`, `checkout_sessions`, `consent_records`, `legal_documents` and `support_tickets` with plain selects (the owners export no such reads and orders imports money: decision 032); nothing outside that file knows.
   - **Seed.** `scripts/seed/b2c.ts` (see the storefront money seed test): the storefront orders, sessions, payments, receipts, refunds and disputes of the demo, linked to the journals the money seed replayed.
+- **Customer wallet (feature 21, plan `docs/briefs/21-customer-wallet.md`).** A USD store balance per storefront customer with an account:
+  ledger kind `customer_wallet` (liability, owner `customer`, opened by its first posting or freeze), freeze state on the account row
+  (`frozen_at`, `frozen_reason`), no hold, no overdraft, closed loop. Five events beyond the map's 13 (`domain/customer-wallet-events.ts`,
+  kinds `deposit`, `b2c_payment`, `refund`, `adjustment`, `chargeback`): `customerTopup` (key `deposit:payment:<id>`), `b2cWalletPay`
+  (Dr wallet / Cr customer funds / Cr VAT, key `payment:<id>:capture`), `b2cWalletRefund` (keys `order:<id>:refund` or `refund:<id>`),
+  `customerAdjust` (stored ref type `customer`, sent as `system`; key `adjust:customer:<customerId>:<Idempotency-Key>`) and
+  `topupChargeback` (customers and merchants; key `dispute:<id>:chargeback`, ref `dispute`; `clawbackSplit` takes the fee pro rata).
+  `postTransaction` refuses a `customer_wallet` debit below zero (`INSUFFICIENT_FUNDS`) unless `allowNegativeCustomerWallet` (the clawback
+  only) and reports each account's `frozen` read under its lock; the deferred trigger `ledger_accounts_negative_customer_wallet_frozen`
+  refuses a commit that leaves a customer wallet below zero and not frozen. Lock order: a transaction that posts never locks a wallet row
+  before the posting; a freeze after a posting reuses its lock. Services: `CustomerWallets` (views, statement with staff reasons masked
+  for the customer, list, adjust with approval limit and replay check, freeze/unfreeze, the anonymize guard and the export part),
+  `CustomerTopUps` (create under a per-customer advisory lock with SQL velocity limits, receipt, cancel), `CustomerWalletPayments` (records a
+  balance payment inside the customers module's checkout transaction: `payments.method_type 'balance'`, no gateway, one per checkout),
+  `CustomerWalletMails` (five customer events, `en` and `ar`). Refunds of a balance payment go back to the balance and complete at once
+  (`settlesAtOnce`, no `refund.process` job); `ledgerPartsOf`, the VAT report and `REFUND_USD` read the `customer_wallet` line as the gross.
+  Top-up disputes (`DisputeWebhookService` top-up branch, `DisputeLedger.loseTopUp`/`winTopUp`): `created` records the dispute without an
+  order and freezes a customer's wallet (a pending top-up is sent to review so the automatic credit skips it); `lost` claws the credit back
+  (the payment stays `approved`; a never-credited one is rejected and its invoice voided); `won` leaves the hold for staff. They show on
+  the deposit (`GET /admin/payments*` field `dispute`) and the Wallet tab, never in `/admin/disputes*`. Eight settings
+  `wallet.customer.*` (master switch and card top-ups off by default). Audit: `adjusted wallet of`, `repeated wallet adjustment of`,
+  `froze wallet of`, `unfroze wallet of` (entity `customer`), `charged back deposit of` (entity `payment`). No new queue, job or cache key.
 
 ## Public API (`index.ts`)
 
@@ -187,6 +209,14 @@ Only this module reads and writes these 11 tables (`scripts/module-map.mjs`); ot
 ## Routes
 
 57 endpoints (admin 43, client 7, v1 2, dhru 1, hooks 2, events 2). Source: `docs/slices/money.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built.
+
+Beyond the map (feature 21, `scripts/map-additions/21.mjs`, built): `GET /store/v1/me/wallet`, `GET /store/v1/me/wallet/statement`,
+`GET /store/v1/me/wallet/top-up-methods`, `POST|GET /store/v1/me/wallet/top-ups`, `GET /store/v1/me/wallet/top-ups/:id`,
+`POST /store/v1/me/wallet/top-ups/:id/receipt|cancel` (customer session; writes need CSRF and `Idempotency-Key`),
+`GET /admin/customers/:id/wallet`, `GET /admin/customers/:id/wallet/statement`, `GET /admin/customer-wallets` (`wallet:read`),
+`POST /admin/customers/:id/wallet/adjust|freeze|unfreeze` (`wallet:adjust`, `Idempotency-Key`). Changed additively: `GET /admin/payments*`
+(`customer`, `dispute`, filters `owner`, `customerId`), the refund and payments-report wires (method `balance`), the dispute webhook
+(top-up disputes). `POST /store/v1/checkout-sessions/:token/balance-payment` is the customers module's (it calls `CustomerWalletPayments`).
 
 ### Admin console (43)
 

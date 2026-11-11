@@ -6,12 +6,13 @@ import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService } from '../../../infra/db';
 import { AuditService } from '../../platform';
-import { b2cPaymentMethod, fromUsd, toUsd } from '../domain/b2c-money';
+import { fromUsd, storedOrderMethod, toUsd } from '../domain/b2c-money';
 import {
   MAX_DECLINE_REASON_LENGTH,
   MIN_DECLINE_REASON_LENGTH,
   checkApproval,
   refundRoute,
+  settlesAtOnce,
   wholeCents,
 } from '../domain/refund-rules';
 import { lockOrderForRefund } from '../infra/b2c-reads.repository';
@@ -46,7 +47,7 @@ const AMOUNT_TEXT = /^\d+(\.\d{1,4})?$/;
  * of the order, the payment and the refund (lock order: order, then payment, then refund, then the ledger accounts): the amount is checked against what can
  * still go back, the journal is posted once (from revenue for a delivered order; from customer funds for an order the system rejected while
  * `autoRefundFailed` was off), an order that is still open is cancelled through the state machine, the refund
- * moves to `processing` (gateway job) or `completed` (hand payout), the timeline and the audit log say so. Decline writes the reason
+ * moves to `processing` (gateway job) or `completed` (hand payout, or a refund to the store balance: feature 21), the timeline and the audit log say so. Decline writes the reason
  * the customer reads. Retry re-queues the gateway call and posts nothing (B83). A refund that failed at the gateway still counts against what can go back (its reversal stays
  * posted), so the way out of a failure is the retry, never a second approval.
  *
@@ -147,7 +148,13 @@ export class RefundService {
       const rounded = fromUsd(check.amountUsd, left.fxRate, decimals);
       const original = everything || rounded.cmp(left.original) >= 0 ? left.original : rounded;
       const gateway = await findGateway(tx, payment.gatewayId);
-      const route = refundRoute(b2cPaymentMethod(payment.methodType), this.refunds.capability(gateway));
+      const route = refundRoute(storedOrderMethod(payment.methodType), this.refunds.capability(gateway));
+      const toBalance = payment.methodType === 'balance';
+      const destination = toBalance
+        ? ' returned to the store balance'
+        : route.method === 'manual'
+          ? ' to be paid out manually'
+          : ' sent to the original payment method';
       const now = this.clock.now();
       const updated = await updateRefundIn(tx, refund.id, ['requested'], {
         amount: original.toWire(),
@@ -166,19 +173,18 @@ export class RefundService {
         const posted = await this.refunds.postDelivered(tx, { order, payment, refund: updated, actor });
         await this.ports.get().addTimeline(tx, order.id, actor, {
           type: 'refund',
-          message: `${partial ? 'Partial refund of ' : 'Refund of '}$${wholeCents(Money.of(posted.gross))}${
-            route.method === 'manual' ? ' to be paid out manually' : ' sent to the original payment method'
-          }`,
+          message: `${partial ? 'Partial refund of ' : 'Refund of '}$${wholeCents(Money.of(posted.gross))}${destination}`,
           data: { refundId: refund.id, amount: posted.gross },
         });
+        if (toBalance) {
+          await this.mails.refundedToBalance(tx, { orderId: order.id, refundId: refund.id, amount: posted.gross });
+        }
       } else if (order.status === 'rejected') {
         // The system rejected this order while `autoRefundFailed` was off: nothing went back then, so the money is still in customer funds.
         const posted = await this.refunds.postRejected(tx, { order, payment, refund: updated, actor });
         await this.ports.get().addTimeline(tx, order.id, actor, {
           type: 'refund',
-          message: `Refund of $${wholeCents(Money.of(posted.gross))}${
-            route.method === 'manual' ? ' to be paid out manually' : ' sent to the original payment method'
-          }`,
+          message: `Refund of $${wholeCents(Money.of(posted.gross))}${destination}`,
           data: { refundId: refund.id, amount: posted.gross },
         });
         // The order was rejected without a refund (it was a request): now that the money goes back, the customer is told it failed.
@@ -191,7 +197,8 @@ export class RefundService {
           reason: `Refund approved: ${refund.reason || 'refund requested'}`,
         });
       }
-      if (route.method === 'manual') await this.refunds.complete(tx, refund.id, null);
+      // A hand payout and a refund to the store balance are done once posted; a gateway refund is the job's.
+      if (settlesAtOnce(route.method, payment.methodType)) await this.refunds.complete(tx, refund.id, null);
       else await this.outbox.refund(tx, refund.id);
       const done = (await findStorefrontRefund(tx, refund.id))!;
       const view = (await this.views.build(tx, [done]))[0]!;

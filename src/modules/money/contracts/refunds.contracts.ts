@@ -37,7 +37,9 @@ export const RefundSchema = z.object({
   }),
   payment: z.object({
     id: zId,
-    method: z.enum(ORDER_METHODS),
+    method: z
+      .enum(ORDER_METHODS)
+      .describe('`balance` for an order paid from the store balance (feature 21), refunded to it.'),
     brand: z.string().describe("`Visa •••• 4242`, `USDT TRC-20` or a wallet's name; empty when unknown."),
     amount: zMoney.describe('What the customer paid including VAT (USD).'),
     taxAmount: zMoney.describe('The VAT of the whole payment (USD), from the payment journal.'),

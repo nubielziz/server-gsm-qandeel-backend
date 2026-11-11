@@ -8,7 +8,7 @@ import { DbService } from '../../../infra/db';
 import { AuditService } from '../../platform';
 import { paymentRef } from '../domain/invoice-rules';
 import { reviewRefusal } from '../domain/payment-rules';
-import { loadBillingMerchants } from '../infra/foreign-directory.repository';
+import { findWalletCustomer, loadBillingMerchants } from '../infra/foreign-directory.repository';
 import { findGateway } from '../infra/gateway.repository';
 import { findInvoice, updateInvoice } from '../infra/invoice.repository';
 import {
@@ -19,7 +19,8 @@ import {
   updatePayment,
 } from '../infra/payment.repository';
 import type { WirePayment } from './billing-wire';
-import { PaymentCrediting } from './payment-crediting';
+import { CustomerWalletMails } from './customer-wallet-mails';
+import { PaymentCrediting, customerLabel } from './payment-crediting';
 import { PaymentViews } from './payment-views';
 
 /** The longest rejection reason (what the merchant is shown). */
@@ -47,6 +48,7 @@ export class PaymentReviewService {
     private readonly views: PaymentViews,
     private readonly crediting: PaymentCrediting,
     private readonly audit: AuditService,
+    private readonly walletMails: CustomerWalletMails,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -133,14 +135,21 @@ export class PaymentReviewService {
       const merchant = invoice?.clientId
         ? (await loadBillingMerchants(tx, [invoice.clientId])).get(invoice.clientId)
         : undefined;
+      // A storefront customer's top-up (feature 21) names the customer and tells them why.
+      const customerId = invoice?.clientId === null ? invoice.customerId : null;
+      const customer = customerId === null ? undefined : await findWalletCustomer(tx, customerId);
+      const owner = customerId === null ? (merchant?.name ?? 'a merchant') : customerLabel(customer, customerId);
       await this.audit.record(tx, {
         action: 'rejected deposit of',
         entityType: 'payment',
         entityId: id,
-        entityLabel: `${Money.of(payment.amount).toWire()} ${payment.currency} from ${merchant?.name ?? 'a merchant'}`,
+        entityLabel: `${Money.of(payment.amount).toWire()} ${payment.currency} from ${owner}`,
         before: { status: 'pending' },
         after: { status: 'rejected', reason },
       });
+      if (customerId !== null) {
+        await this.walletMails.topUpRejected(tx, { customerId, paymentId: id, amount: payment.amount, reason });
+      }
     });
     return this.get(id);
   }

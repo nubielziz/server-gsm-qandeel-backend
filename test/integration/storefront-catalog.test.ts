@@ -78,9 +78,13 @@ describe('GET /store/v1/config', () => {
     ]);
     await db.insert(s.paymentGateways).values([
       { code: 'card', driver: 'stripe', name: 'Card gateway', audience: 'b2c', supports3ds: true },
-      { code: 'crypto', driver: 'nowpayments', name: 'Crypto gateway', audience: 'both' },
+      // Feature 21 (D6): a gateway is listed only when `/pay` can use it, so it needs a known driver (`nowpayments` is none).
+      { code: 'crypto', driver: 'crypto', name: 'Crypto gateway', audience: 'both' },
       { code: 'bank', driver: 'manual', name: 'Bank transfer', audience: 'b2b', isManual: true },
       { code: 'off', driver: 'stripe', name: 'Switched off', audience: 'b2c', isActive: false },
+      // Feature 21 (D6): a manual B2C gateway (store balance top-ups) and one without a driver cannot pay a checkout: not listed.
+      { code: 'cliq', driver: 'manual', name: 'CliQ transfer', audience: 'b2c', isManual: true },
+      { code: 'mystery', driver: 'nobody', name: 'No driver', audience: 'b2c' },
     ]);
     const config = body(await get('/store/v1/config'));
     expect(config.policies).toEqual({ guestCheckout: false, withdrawalWaiver: true, imeiPrecheck: true });

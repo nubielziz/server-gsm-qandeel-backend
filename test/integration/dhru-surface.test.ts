@@ -1,7 +1,7 @@
 // Integration tests of the Dhru Fusion surface (feature 7a, decision 026) on the real application: the eight actions with their wire, the
 // refusals in the envelope, the price guard, multipart calls, the duplicate rule and concurrency on one wallet.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { schema as s } from '../../src/infra/db';
 import { DbService } from '../../src/infra/db';
 import { OrderTransitions } from '../../src/modules/orders';
@@ -148,7 +148,8 @@ describe('accountinfo', () => {
     await db
       .update(s.ledgerAccounts)
       .set({ overdraftLimit: '25.0000' })
-      .where(eq(s.ledgerAccounts.ownerId, world.merchant.id));
+      // Only a merchant wallet carries a credit limit (feature 21's ledger_accounts_overdraft_kind_check).
+      .where(and(eq(s.ledgerAccounts.ownerId, world.merchant.id), eq(s.ledgerAccounts.kind, 'client_wallet')));
     const answer = await dhru.call('accountinfo');
     const [client] = await db
       .select({ email: s.clients.email })

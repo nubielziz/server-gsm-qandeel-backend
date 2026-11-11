@@ -102,7 +102,7 @@ export interface LedgerParts {
   readonly net: string;
   /** The VAT payable part. */
   readonly vat: string;
-  /** What moved through the gateway account. */
+  /** What moved through the gateway account, or through the customer's store balance for a balance payment (feature 21). */
   readonly gross: string;
 }
 
@@ -110,7 +110,9 @@ export interface LedgerParts {
  * Reads the net, VAT and gateway parts of ledger transactions by id.
  *
  * Why: RESOLUTIONS money-4: a refund's `netAmount` and `taxAmount` and a payment's VAT are read from the posted lines (the revenue or
- * customer funds line, the `vat_payable` line and the `gateway_clearing` line), never recomputed.
+ * customer funds line, the `vat_payable` line and the `gateway_clearing` line), never recomputed. A payment from the store balance and its
+ * refunds move the gross through the `customer_wallet` line instead (plan 21 § 2.3 item 1): without it, what is left to refund on a balance
+ * payment would never shrink and a second partial refund could return the same money twice.
  *
  * @param db the database or a transaction
  * @param transactionIds the `ledger_transactions.id` values
@@ -126,7 +128,7 @@ export async function ledgerPartsOf(
     select le.transaction_id as id,
       coalesce(sum(abs(le.amount)) filter (where la.kind in ('revenue', 'customer_funds')), 0)::text as net,
       coalesce(sum(abs(le.amount)) filter (where la.kind = 'vat_payable'), 0)::text as vat,
-      coalesce(sum(abs(le.amount)) filter (where la.kind = 'gateway_clearing'), 0)::text as gross
+      coalesce(sum(abs(le.amount)) filter (where la.kind in ('gateway_clearing', 'customer_wallet')), 0)::text as gross
     from ledger_entries le join ledger_accounts la on la.id = le.account_id
     where le.transaction_id in (${sql.join(
       unique.map((id) => sql`${id}`),

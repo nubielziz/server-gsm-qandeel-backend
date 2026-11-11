@@ -367,7 +367,7 @@ export class StorefrontPayments {
     const invoice =
       input.receipt === false
         ? undefined
-        : await this.issueReceipt(tx, { gateway, order, session }, grossUsd, vat, now);
+        : await this.issueReceipt(tx, { gatewayId: gateway.id, order, session }, grossUsd, vat, now);
 
     await updateOrderPayment(tx, payment.id, {
       status: 'captured',
@@ -392,16 +392,26 @@ export class StorefrontPayments {
    * Issues the paid tax receipt invoice of an order and queues its PDF.
    *
    * Why: the receipt is in the buyer's currency: the gross and the tax are converted and the net is what is left, as the checkout shows. The PDF
-   * is not drawn here: the `receipt.render` event written with the invoice makes the worker do it after the commit.
+   * is not drawn here: the `receipt.render` event written with the invoice makes the worker do it after the commit. A payment from the store
+   * balance has no gateway (`gatewayId: null`, feature 21): its receipt is the same tax document, VAT being due at spend (plan 21 O9).
+   *
+   * Side effects: inserts one `invoices` row and one `receipt.render` outbox row on the caller's transaction.
+   *
+   * @param tx the payment's transaction
+   * @param input the gateway (`null` for the store balance), the order and what the session locked
+   * @param grossUsd the gross paid, in USD
+   * @param vat the VAT of the order, in USD
+   * @param now the clock's time
+   * @returns the paid receipt invoice
    */
-  private async issueReceipt(
+  async issueReceipt(
     tx: DbExecutor,
-    input: { gateway: PaymentGateway; order: CapturedOrder; session: CapturedSession },
+    input: { gatewayId: number | null; order: CapturedOrder; session: CapturedSession },
     grossUsd: Money,
     vat: Money,
     now: Date,
   ): Promise<Invoice> {
-    const { gateway, order, session } = input;
+    const { gatewayId, order, session } = input;
     const grossShown = fromUsd(grossUsd, session.fxRate, session.decimals);
     const taxShown = fromUsd(vat, session.fxRate, session.decimals);
     const id = await reserveInvoiceId(tx);
@@ -421,7 +431,7 @@ export class StorefrontPayments {
       total: grossShown.toWire(),
       currency: session.currency,
       status: 'paid',
-      gatewayId: gateway.id,
+      gatewayId,
       paidAt: now,
       description: `Order SF-${order.id}`,
       createdAt: now,

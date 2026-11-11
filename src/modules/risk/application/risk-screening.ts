@@ -27,8 +27,8 @@ export interface ScreeningInput {
   readonly orderId?: number | null;
   /** The captured amount in USD, VAT included (4-decimal text). */
   readonly amountUsd: string;
-  /** How the customer paid (`b2cPaymentMethod`). */
-  readonly paymentMethod: 'card' | 'wallet' | 'crypto';
+  /** How the customer paid (`b2cPaymentMethod`, or `balance` for the store balance of feature 21). */
+  readonly paymentMethod: 'card' | 'wallet' | 'crypto' | 'balance';
   /** The visitor's address (decision 018's trusted proxy address). */
   readonly ip?: string | null;
   /** The device's IMEI (or null for a service without one). */

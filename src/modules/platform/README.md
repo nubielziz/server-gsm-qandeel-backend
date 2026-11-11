@@ -153,7 +153,7 @@ The stage is the second of the request pipeline (`src/common/pipeline/README.md`
 | Scope | `503 MAINTENANCE` for | Never |
 |---|---|---|
 | `store` | every request to `/store/v1/*` | |
-| `checkout` | `POST /store/v1/checkout-sessions` (opening a checkout) and `POST /store/v1/checkout-sessions/:token/pay` (starting its payment): no session is created, nothing is held | the rest of the storefront |
+| `checkout` | `POST /store/v1/checkout-sessions` (opening a checkout), `POST /store/v1/checkout-sessions/:token/pay` (starting its payment) and `POST /store/v1/checkout-sessions/:token/balance-payment` (paying from the store balance, feature 21): no session is created, nothing is held | the rest of the storefront |
 | `api_orders` | order placement: `POST /v1/orders`, `POST /v1/orders/bulk`, and the Dhru actions `placeimeiorder`, `placeimeiorderbulk`, `placefileorder` | reads, cancels and verifies of running orders; Dhru `getimeiorder`, `getimeiorderbulk`, `accountinfo`, `imeiservicelist` |
 | `all` | the union of the three | |
 

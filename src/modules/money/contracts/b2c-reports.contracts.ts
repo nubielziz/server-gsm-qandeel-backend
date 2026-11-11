@@ -86,7 +86,7 @@ export const getPaymentsReport = defineRoute({
   key: 'GET /admin/reports/payments',
   summary: 'Storefront payments by method',
   description:
-    'One object: `methods` (card, wallet and crypto, always all three, whatever the filter and page: payments, volume, fees, fee rate, ' +
+    'One object: `methods` (card, wallet, crypto and balance (the store balance, feature 21: no fee), always all four, whatever the filter and page: payments, volume, fees, fee rate, ' +
     'refunds and disputes), `payments` (one page of storefront payments, never top-ups), `total` (payments matching the `method` filter) ' +
     "and `totals` (the strip: refunds completed in the last 30 days, their share of the same days' sales, what waits in requested and " +
     'failed refunds, and all-time chargeback losses with their fees). Only payments with money received count (captured, refunded, ' +

@@ -1,6 +1,8 @@
 // Unit tests of the settings allow-list: which keys the generic settings route accepts and how it judges their values.
 import { describe, expect, it } from 'bun:test';
 import {
+  CUSTOMER_WALLET_SETTINGS,
+  CUSTOMER_WALLET_SETTING_RANGES,
   PRICE_CHANGE_TOLERANCE_KEY,
   imeiRetentionDaysProblem,
   priceChangeTolerancePercentProblem,
@@ -79,5 +81,33 @@ describe('the supplier settings', () => {
       }).map((problem) => problem.key),
     ).toEqual(['catalog.importDefaultSlaMinutes', 'orders.poll_slow_after_hours', 'suppliers.allowPlainHttp']);
     expect(settingsPatchProblems({ 'catalog.importDefaultSlaMinutes': 1.5 })).toHaveLength(1);
+  });
+});
+
+describe('customer wallet settings (feature 21)', () => {
+  it('accept the two switches as booleans only', () => {
+    for (const key of [CUSTOMER_WALLET_SETTINGS.enabled, CUSTOMER_WALLET_SETTINGS.cardTopUps]) {
+      expect(settingsPatchProblems({ [key]: true })).toEqual([]);
+      expect(settingsPatchProblems({ [key]: false })).toEqual([]);
+      for (const value of ['true', 1, null]) expect(settingsPatchProblems({ [key]: value })).toHaveLength(1);
+    }
+  });
+
+  it('accept each whole-number setting at its bounds and refuse outside them, decimals and text', () => {
+    for (const [key, range] of Object.entries(CUSTOMER_WALLET_SETTING_RANGES)) {
+      expect(settingsPatchProblems({ [key]: range.min }), key).toEqual([]);
+      expect(settingsPatchProblems({ [key]: range.max }), key).toEqual([]);
+      for (const value of [range.min - 1, range.max + 1, 5.5, '5', null]) {
+        expect(settingsPatchProblems({ [key]: value }), `${key} ${String(value)}`).toHaveLength(1);
+      }
+    }
+    expect(Object.keys(CUSTOMER_WALLET_SETTING_RANGES)).toHaveLength(6);
+  });
+
+  it('cap the approval limit at $10,000 and allow 0', () => {
+    expect(CUSTOMER_WALLET_SETTING_RANGES[CUSTOMER_WALLET_SETTINGS.adjustApprovalLimit]).toEqual({
+      min: 0,
+      max: 10_000,
+    });
   });
 });

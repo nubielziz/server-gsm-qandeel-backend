@@ -2,7 +2,7 @@
 // `Payment` (docs/contract/endpoints/money.md, RESOLUTIONS money-2, money-3, money-8).
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime, zMoney } from '../../../common/contract';
-import { PAYMENT_PURPOSES, TOPUP_METHODS, TOPUP_PAYMENT_STATUSES } from '../db/schema';
+import { DISPUTE_STATUSES, PAYMENT_PURPOSES, TOPUP_METHODS, TOPUP_PAYMENT_STATUSES } from '../db/schema';
 
 /** A top-up (a merchant's deposit) as the console's Deposits tab shows it. */
 export const PaymentSchema = z.object({
@@ -29,6 +29,36 @@ export const PaymentSchema = z.object({
         .describe('The merchant wallet balance now (it includes this deposit once approved).'),
     })
     .nullable(),
+  customer: z
+    .object({
+      id: zId,
+      name: z.string(),
+      email: z.string(),
+      walletBalance: zMoney
+        .nullable()
+        .describe('The customer store balance now; null while the customer has no wallet.'),
+    })
+    .nullable()
+    .describe('The storefront customer of a store balance top-up (feature 21); null for a merchant deposit.'),
+  dispute: z
+    .object({
+      id: zId,
+      status: z.enum(DISPUTE_STATUSES),
+      reasonCode: z.string(),
+      amount: zMoney.describe('The disputed amount, in the payment currency.'),
+      fee: zMoney.describe("The gateway's dispute fee."),
+      evidenceDueAt: zIsoDateTime,
+      resolvedAt: zIsoDateTime.nullable(),
+      transactionId: zId
+        .nullable()
+        .describe('The chargeback journal of a lost dispute (the credit taken back from the wallet); null otherwise.'),
+    })
+    .nullable()
+    .describe(
+      'The newest chargeback of this top-up (feature 21; customers and merchants), or null. A top-up dispute is shown here, never in ' +
+        '`/admin/disputes`: `created` freezes a customer’s store balance, `lost` takes the credit back (the balance may go below zero), ' +
+        '`won` changes nothing (staff lift the hold).',
+    ),
   gateway: z.object({ id: zId, name: z.string() }).nullable(),
   reviewedBy: z
     .object({ id: zId.nullable(), name: z.string() })
@@ -58,6 +88,8 @@ const deposit = {
   invoiceId: 5,
   receiptFileId: 9004,
   client: { id: 11, name: 'Zain Mobile Hub', group: 'Wholesale', walletBalance: '1209.7500' },
+  customer: null,
+  dispute: null,
   gateway: { id: 3, name: 'Bank transfer' },
   reviewedBy: null,
   reviewedAt: null,
@@ -77,7 +109,8 @@ export const listPayments = defineRoute({
   summary: 'Payments and the manual review queue',
   description:
     'The wallet top-ups only: the list always filters `purpose=topup`, so `purpose=order` answers an empty list. Newest first. ' +
-    '`q` searches the gateway reference and the merchant name.',
+    '`q` searches the gateway reference, the merchant name and the storefront customer’s name and email. `owner` keeps merchant ' +
+    'deposits or customer store balance top-ups (feature 21); `customerId` one customer’s.',
   tags: ['finance'],
   surface: 'admin',
   access: 'staff-permission',
@@ -89,8 +122,10 @@ export const listPayments = defineRoute({
       purpose: { type: 'enum', values: PAYMENT_PURPOSES, ops: ['eq'] },
       status: { type: 'enum', values: TOPUP_PAYMENT_STATUSES },
       clientId: { type: 'id', ops: ['eq'] },
+      customerId: { type: 'id', ops: ['eq'] },
+      owner: { type: 'enum', values: ['merchant', 'customer'], ops: ['eq'] },
     },
-    search: ['gatewayTxnId', 'client.name'],
+    search: ['gatewayTxnId', 'client.name', 'customer.name', 'customer.email'],
   }),
   success: { status: 200, schema: PaymentSchema },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'VALIDATION_FAILED'],

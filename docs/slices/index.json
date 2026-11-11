@@ -32,15 +32,15 @@
       "module": "platform",
       "name": "Platform (settings, audit, files, notifications, webhooks, outbox)",
       "domain": "G",
-      "rows": 27,
-      "endpoints": 34,
+      "rows": 28,
+      "endpoints": 35,
       "bySurface": {
         "v1": 2,
         "client": 11,
         "admin": 17,
         "hooks": 1,
         "system": 2,
-        "store": 1
+        "store": 2
       },
       "frontendCalled": 17,
       "stages": [
@@ -49,6 +49,7 @@
         7,
         9,
         12,
+        21,
         22
       ],
       "tables": 8,
@@ -72,15 +73,16 @@
       "module": "money",
       "name": "Money (ledger, wallets, invoices, payments, refunds, disputes, tax, currencies)",
       "domain": "E",
-      "rows": 41,
-      "endpoints": 57,
+      "rows": 55,
+      "endpoints": 71,
       "bySurface": {
         "dhru": 1,
         "v1": 2,
         "client": 7,
-        "admin": 43,
+        "admin": 49,
         "hooks": 2,
-        "events": 2
+        "events": 2,
+        "store": 8
       },
       "frontendCalled": 43,
       "stages": [
@@ -89,7 +91,8 @@
         8,
         11,
         14,
-        16
+        16,
+        21
       ],
       "tables": 11,
       "scenarios": [
@@ -235,10 +238,10 @@
       "module": "customers",
       "name": "Storefront customers & checkout (B2C)",
       "domain": "I",
-      "rows": 25,
-      "endpoints": 28,
+      "rows": 26,
+      "endpoints": 29,
       "bySurface": {
-        "store": 13,
+        "store": 14,
         "admin": 15
       },
       "frontendCalled": 15,
@@ -246,7 +249,8 @@
         14,
         16,
         18,
-        19
+        19,
+        21
       ],
       "tables": 4,
       "scenarios": [

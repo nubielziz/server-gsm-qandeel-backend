@@ -15,7 +15,7 @@ import {
 const m = (amount: string) => Money.of(amount);
 
 describe('normal sides', () => {
-  it('cover all 15 account kinds exactly once', () => {
+  it('cover all 16 account kinds exactly once', () => {
     const all = [...DEBIT_NORMAL_KINDS, ...CREDIT_NORMAL_KINDS].sort();
     expect(all).toEqual([...LEDGER_ACCOUNT_KINDS].sort());
   });
@@ -34,6 +34,7 @@ describe('normal sides', () => {
     for (const kind of [
       'client_wallet',
       'client_hold',
+      'customer_wallet',
       'customer_funds',
       'vat_payable',
       'revenue',

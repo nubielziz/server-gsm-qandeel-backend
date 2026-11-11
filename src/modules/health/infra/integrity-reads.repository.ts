@@ -182,7 +182,8 @@ export interface UnpostedPayment {
  *
  * Why: a top-up is confirmed when staff or the automatic credit approve it, and its `deposit` entry points at the payment; a storefront
  * payment is confirmed once the gateway captured it (and stays so through refunds and disputes), and its `b2c_payment` entry points at the
- * order (resolution money-2). A confirmed payment with no entry is money the books never saw.
+ * order (resolution money-2). A confirmed payment with no entry is money the books never saw. A payment from the store balance (feature
+ * 21) has no gateway and is named `Store balance`; a customer's top-up posts `deposit` on the payment like a merchant's.
  *
  * @param db the database
  * @returns the count, the summed amount and the first {@link MAX_FINDINGS} (by id)
@@ -196,10 +197,12 @@ export async function paymentsWithoutEntry(db: DbExecutor): Promise<FoundRows<Un
     total: number;
     total_amount: string;
   }>(sql`
-    select p.id::text, p.gateway_txn_id, g.name as gateway_name, p.amount::numeric(18,4)::text as amount,
+    select p.id::text, p.gateway_txn_id, coalesce(g.name, 'Store balance') as gateway_name,
+           p.amount::numeric(18,4)::text as amount,
            (count(*) over ())::int as total, (sum(p.amount) over ())::numeric(18,4)::text as total_amount
     from payments p
-    join payment_gateways g on g.id = p.gateway_id
+    -- A payment from the store balance has no gateway (feature 21, defect D3): it must still be found.
+    left join payment_gateways g on g.id = p.gateway_id
     where (p.purpose = 'topup' and p.status = 'approved'
              and not exists (select 1 from ledger_transactions t where t.ref_type = 'payment' and t.ref_id = p.id))
        or (p.purpose = 'order' and p.status in ('captured', 'refunded', 'partial_refund', 'disputed', 'chargeback')

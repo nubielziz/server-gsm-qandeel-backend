@@ -44,6 +44,8 @@ export function publicLimiterFor(
 ): LimiterName | undefined {
   switch (surfaceOfPath(path)) {
     case 'store':
+      // A large body on the store (the receipt upload, feature 21) is buffered before the session is checked: it costs an upload point.
+      if (largeBody) return 'upload';
       if (access !== undefined && TOKEN_ACCESS.has(access)) return 'token';
       return path.startsWith(MEDIA_PATH) ? 'media' : 'ip';
     case 'admin':

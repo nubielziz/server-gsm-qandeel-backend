@@ -1,18 +1,50 @@
 // DisputeLedger: the outcomes of a dispute, shared by the staff's accept and the gateway's webhook (feature 16): a loss posts the one
-// chargeback journal and marks the payment `chargeback`; a win returns the payment to the status its refunds leave it in.
-import { Inject, Injectable } from '@nestjs/common';
+// chargeback journal and marks the payment `chargeback`; a win returns the payment to the status its refunds leave it in. A dispute of a
+// top-up (feature 21, customers and merchants) claws the credited amount back from the owner's wallet instead.
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
+import { AuditService } from '../../platform';
 import type { Dispute, Payment } from '../db/schema';
 import { statusAfterRefunds, toUsd, wireUsd } from '../domain/b2c-money';
+import { type TopUpOwner, clawbackSplit, topupChargeback } from '../domain/customer-wallet-events';
+import { paymentRef } from '../domain/invoice-rules';
 import { b2cChargeback } from '../domain/money-events';
 import { loadSessionMoney } from '../infra/b2c-reads.repository';
 import { updateDispute, updateDisputeIn } from '../infra/dispute.repository';
+import { findInvoice, updateInvoice } from '../infra/invoice.repository';
+import { updatePayment } from '../infra/payment.repository';
 import { updateOrderPayment } from '../infra/order-payment.repository';
 import { takenRefundsOfPayment } from '../infra/refund.repository';
 import { LedgerPoster } from './post-transaction';
 import type { RefundActor } from './b2c-refunds';
+import { CustomerWallets } from './customer-wallets';
+
+/**
+ * Whose wallet a top-up payment credited: the customer on the payment row, else the merchant of its invoice.
+ *
+ * @param tx the caller's transaction
+ * @param payment the top-up payment
+ * @returns the owner, or `undefined` when neither is known
+ */
+export async function topUpOwnerOf(tx: DbExecutor, payment: Payment): Promise<TopUpOwner | undefined> {
+  if (payment.customerId !== null) return { type: 'customer', id: payment.customerId };
+  const invoice = payment.invoiceId === null ? undefined : await findInvoice(tx, payment.invoiceId);
+  if (invoice?.customerId != null) return { type: 'customer', id: invoice.customerId };
+  return invoice?.clientId != null ? { type: 'client', id: invoice.clientId } : undefined;
+}
+
+/**
+ * The reason a top-up dispute writes on the wallet's hold (the staff's Wallet tab shows it).
+ *
+ * @param disputeId the dispute
+ * @param paymentId the disputed top-up payment
+ * @returns `Dispute DP-<id> on PAY-<id>`
+ */
+export function topUpDisputeHold(disputeId: number, paymentId: number): string {
+  return `Dispute DP-${disputeId} on ${paymentRef(paymentId)}`;
+}
 
 /**
  * Settles disputes.
@@ -26,8 +58,12 @@ import type { RefundActor } from './b2c-refunds';
  */
 @Injectable()
 export class DisputeLedger {
+  private readonly logger = new Logger(DisputeLedger.name);
+
   constructor(
     private readonly poster: LedgerPoster,
+    private readonly wallets: CustomerWallets,
+    private readonly audit: AuditService,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -104,4 +140,129 @@ export class DisputeLedger {
     await updateOrderPayment(tx, payment.id, { status, updatedAt: now });
     return won;
   }
+
+  /**
+   * Marks a top-up dispute lost and claws back what the top-up credited, once.
+   *
+   * Why: plan 21 § 5.6.9 and O11 (fixes merchants too, defect D4): the gateway took the disputed money and its dispute fee, so the owner's
+   * wallet gives back its share of the credit (`clawbackSplit`: the whole credit for a whole dispute; it may go below zero), our fee income
+   * on that share is reversed and the dispute fee is booked as a loss: `topup_chargeback`, key `dispute:<id>:chargeback`, ref `dispute`.
+   * The payment keeps `approved` (`payments_status_check` has no chargeback word for a top-up). A customer's wallet is frozen after the
+   * posting, on the row lock the posting took (plan § 5.7); the deferred trigger checks at commit that a wallet below zero is frozen. A
+   * payment that was never credited (pending or rejected) posts nothing: there is nothing to take back; a pending one is rejected and its
+   * invoice voided, so neither staff nor the automatic credit can credit money the gateway already took back. A dispute reported in another
+   * currency than the top-up takes the whole top-up back and books no dispute fee (it cannot be converted reliably): logged for staff.
+   *
+   * Side effects (on the caller's transaction): one ledger transaction (when credited), the wallet's hold (customer), the dispute row, one
+   * audit row (`charged back deposit of`, entity `payment`, actor from the request context: the system for a webhook).
+   *
+   * @param tx the caller's transaction (the payment, then the dispute, are locked)
+   * @param dispute the dispute (`needs_response` or `under_review`)
+   * @param payment the disputed top-up payment
+   * @param owner whose wallet the top-up credited ({@link topUpOwnerOf}); `undefined` when the invoice names nobody
+   * @returns the dispute after the change
+   */
+  async loseTopUp(tx: DbExecutor, dispute: Dispute, payment: Payment, owner: TopUpOwner | undefined): Promise<Dispute> {
+    const now = this.clock.now();
+    let ledgerTxId = dispute.ledgerTxId;
+    let clawedBack = Money.zero();
+    if (ledgerTxId === null && payment.status === 'approved' && owner) {
+      const gross = Money.of(payment.amount);
+      const sameCurrency = dispute.currency === payment.currency;
+      if (!sameCurrency) {
+        this.logger.warn(
+          `Dispute ${dispute.id} is in ${dispute.currency}, its top-up ${paymentRef(payment.id)} in ${payment.currency}: the whole top-up is taken back, no dispute fee is booked.`,
+        );
+      }
+      const disputed = sameCurrency ? minMoney(Money.of(dispute.amount), gross) : gross;
+      const split = clawbackSplit({ gross, fee: Money.of(payment.feeAmount), disputed });
+      const posting = topupChargeback({
+        owner,
+        net: split.net,
+        fee: split.fee,
+        disputeFee: sameCurrency ? Money.of(dispute.fee) : Money.zero(),
+      });
+      const posted = await this.poster.post(tx, {
+        kind: posting.kind,
+        refType: posting.refType,
+        refId: dispute.id,
+        idempotencyKey: `dispute:${dispute.id}:chargeback`,
+        currency: payment.currency,
+        lines: posting.lines,
+        memo: `Chargeback DP-${dispute.id} on top-up ${paymentRef(payment.id)} (incl. dispute fee)`,
+        createdBy: { type: 'system', id: null },
+        // The one path that may take a wallet below its floor (plan § 5.1 invariant 2); a customer's is frozen below.
+        ...(owner.type === 'customer' ? { allowNegativeCustomerWallet: true } : { allowBelowCreditLimit: true }),
+      });
+      ledgerTxId = posted.id;
+      clawedBack = split.net;
+      const wallet = posted.touched.find((account) => account.kind === 'customer_wallet');
+      if (owner.type === 'customer' && wallet && !wallet.frozen) {
+        await this.wallets.freezeAfterPosting(tx, owner.id, topUpDisputeHold(dispute.id, payment.id));
+      }
+    } else if (ledgerTxId === null) {
+      // Never credited: nothing to take back. A payment still pending must never be credited later (the gateway took the money): it
+      // is rejected and its invoice voided, under the payment lock already held (lock order: payment → invoice, as a credit).
+      if (payment.status === 'pending') {
+        await updatePayment(tx, payment.id, {
+          status: 'rejected',
+          reviewedBy: null,
+          reviewedAt: now,
+          reviewNote: `Charged back (DP-${dispute.id}) before it was credited.`,
+          autoCreditAt: null,
+          updatedAt: now,
+        });
+        const invoice = payment.invoiceId === null ? undefined : await findInvoice(tx, payment.invoiceId, true);
+        if (invoice?.status === 'open') await updateInvoice(tx, invoice.id, { status: 'void', updatedAt: now });
+      }
+      // The hold the dispute put on a customer's wallet stays (no posting follows this lock).
+      if (owner?.type === 'customer') {
+        await this.wallets.freezeInTx(tx, owner.id, topUpDisputeHold(dispute.id, payment.id));
+      }
+    }
+    const lost = (await updateDisputeIn(tx, dispute.id, ['needs_response', 'under_review'], {
+      status: 'lost',
+      resolvedAt: now,
+      ledgerTxId,
+      updatedAt: now,
+    }))!;
+    await this.audit.record(tx, {
+      action: 'charged back deposit of',
+      entityType: 'payment',
+      entityId: payment.id,
+      entityLabel: `${paymentRef(payment.id)}, dispute DP-${dispute.id}`,
+      before: { dispute: dispute.status, paymentStatus: payment.status },
+      after: {
+        dispute: 'lost',
+        transactionId: ledgerTxId,
+        clawedBack: clawedBack.toWire(),
+        currency: payment.currency,
+        owner: owner ?? null,
+      },
+    });
+    return lost;
+  }
+
+  /**
+   * Marks a top-up dispute won.
+   *
+   * Why: plan 21 P2: the money stays where it is; a customer's wallet stays frozen until staff lift the hold (a person looks first).
+   *
+   * @param tx the caller's transaction (the payment and the dispute are locked)
+   * @param dispute the dispute
+   * @returns the dispute after the change, or `undefined` when it was not open any more
+   */
+  async winTopUp(tx: DbExecutor, dispute: Dispute): Promise<Dispute | undefined> {
+    const now = this.clock.now();
+    return updateDisputeIn(tx, dispute.id, ['needs_response', 'under_review'], {
+      status: 'won',
+      resolvedAt: now,
+      updatedAt: now,
+    });
+  }
+}
+
+/** The smaller of two amounts. */
+function minMoney(a: Money, b: Money): Money {
+  return a.cmp(b) <= 0 ? a : b;
 }

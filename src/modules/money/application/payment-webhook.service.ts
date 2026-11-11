@@ -99,7 +99,9 @@ export class PaymentWebhookService {
       const existing = await findPaymentByReference(tx, gateway.id, event.reference);
       if (existing) return { received: true, duplicate: true } as const;
       const invoice = await findInvoiceByNumber(tx, event.invoiceNumber, true);
-      if (!invoice || invoice.clientId === null || invoice.kind === 'receipt' || invoice.gatewayId !== gateway.id) {
+      // A top-up of a merchant or (feature 21) of a storefront customer; a receipt never takes a confirmation.
+      const owned = invoice !== undefined && (invoice.clientId !== null || invoice.customerId !== null);
+      if (!invoice || !owned || invoice.kind === 'receipt' || invoice.gatewayId !== gateway.id) {
         this.logger.warn(`Gateway ${gateway.code}: confirmation ${event.reference} names no invoice of this gateway.`);
         return { received: true } as const;
       }
@@ -114,8 +116,10 @@ export class PaymentWebhookService {
       const row: NewPayment = {
         purpose: 'topup',
         invoiceId: invoice.id,
+        customerId: invoice.customerId,
         gatewayId: gateway.id,
         gatewayTxnId: event.reference,
+        cardFingerprint: event.details?.fingerprint ?? null,
         amount: invoice.amount,
         feeAmount: invoice.fee,
         currency: invoice.currency,

@@ -210,6 +210,9 @@ Queues, jobs and schedules: `docs/queues.md`.
   a plain function loaded through the late import `money()` (decision 032: late imports are for functions only, never providers); the other three are read in `infra/integrity-reads.repository.ts`. The run's `result` keeps counters at the top and
   the checks (first 20 findings each) under `checks` (B99); `mismatchCount` (entries, accounts and payments, not stuck holds) is what the
   `ledger.mismatch_count` rule reads, and the processor judges that rule right after recording a run. It never corrects anything.
+  Feature 21: `payments_without_entry` left-joins the gateway, so a store balance payment (no gateway) is found and named `Store balance`;
+  a customer wallet finding reads `Customer wallet · <customer>`. The dashboard's "disputes due" item counts order-payment disputes only (a
+  top-up dispute has no evidence screen to link to).
 - **Audit verbs**: `added alert rule`, `changed alert rule` (`muted alert rule`, `unmuted alert rule`, `turned on alert rule`, `turned off alert rule`),
   `deleted alert rule`, `acknowledged alert`, `opened incident`, `updated incident`, `closed incident`, `ran job` (the integrity run).
 

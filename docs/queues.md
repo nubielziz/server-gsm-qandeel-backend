@@ -163,6 +163,12 @@ Sends emails and Telegram messages.
     transition, or the approval of a refund request for an order the system rejected), `payment.failed` (the gateway's failure event) and `refund.declined` (the decline) are written with
     `NotificationService.enqueue` in the transaction of the change they report, so each is a `notifications` row (dedupe key `order.received:<order>`, `order.completed:<order>:<n>`,
     `order.failed:<order>`, `payment.failed:<payment>`, `refund.declined:<refund>`) plus a `notification.send` event that commits and rolls back with the change.
+  - The store balance mails (feature 21, `CustomerWalletMails` in the money module, events registered at boot by `CustomerWalletEventRegistration`, `en` and `ar`
+    templates) have no job of their own either: `wallet.topup_credited` (a credited top-up), `wallet.topup_rejected` (a rejected one), `wallet.adjusted` (a staff
+    adjustment), `wallet.frozen` (a hold by staff or a top-up dispute) and `wallet.order_refunded` (a balance-paid order refunded to the balance, instead of
+    `order.failed`) are written with `NotificationService.enqueue` in the transaction of the change (dedupe keys `wallet.topup_credited:<payment>`,
+    `wallet.topup_rejected:<payment>`, `wallet.adjusted:<ledger tx>`, `wallet.frozen:<customer>:<frozen at ms>`, `wallet.order_refunded:order:<order>` or
+    `…:refund:<refund>`) and go out through `notification.send`. Feature 21 adds no queue, job or outbox type.
   - `support.ticket_mail` (support, `src/modules/support/jobs/ticket-mail.processor.ts`, feature 17): sends a support ticket's receipt, a staff reply (email, or Telegram to a merchant's
     linked chat) or the satisfaction survey. It re-reads the ticket, the requester and the message, builds the ticket link from the ticket token and sends it through
     `NotificationService.sendNow` with the link as a secret that is never stored or logged (the `notifications` row has the other variables).

@@ -203,7 +203,13 @@ describe('GET /admin/reports/payments', () => {
       )
     ).rows;
     const fee = (id: number) => fees.find((row) => Number(row.id) === id)!.fee;
-    expect(res.body.methods.map((row: { method: string }) => row.method)).toEqual(['card', 'wallet', 'crypto']);
+    // Feature 21 added the store balance as a fourth row (no sale of it here).
+    expect(res.body.methods.map((row: { method: string }) => row.method)).toEqual([
+      'card',
+      'wallet',
+      'crypto',
+      'balance',
+    ]);
     // 2.9 % of 4.79 plus 0.30 = 0.4389 for a UK order; 2.9 % of 3.99 plus 0.30 = 0.4157 for the US one.
     expect(fee(card.paymentId)).toBe('0.4389');
     expect(fee(crypto.paymentId)).toBe('0.4157');
@@ -211,6 +217,7 @@ describe('GET /admin/reports/payments', () => {
       { method: 'card', payments: 2, volume: '9.5800', fees: '0.8778', feeRate: '9.16', refunds: 1, disputes: 0 },
       { method: 'wallet', payments: 1, volume: '4.7900', fees: '0.4389', feeRate: '9.16', refunds: 0, disputes: 1 },
       { method: 'crypto', payments: 1, volume: '3.9900', fees: '0.4157', feeRate: '10.42', refunds: 0, disputes: 0 },
+      { method: 'balance', payments: 0, volume: '0.0000', fees: '0.0000', feeRate: '0.00', refunds: 0, disputes: 0 },
     ]);
     expect(res.body.total).toBe(4);
     // Newest first; the unconfirmed payment is not among them.
@@ -272,7 +279,7 @@ describe('GET /admin/reports/payments', () => {
     const cards = await staff.get('/admin/reports/payments?method=card&_sort=createdAt&_order=asc');
     expect(cards.body.total).toBe(2);
     expect(cards.body.payments.map((line: { id: number }) => line.id)).toEqual([card.paymentId, refunded.paymentId]);
-    expect(cards.body.methods.map((row: { payments: number }) => row.payments)).toEqual([2, 1, 1]);
+    expect(cards.body.methods.map((row: { payments: number }) => row.payments)).toEqual([2, 1, 1, 0]);
     const page = await staff.get('/admin/reports/payments?_start=1&_end=3&_sort=amount&_order=desc');
     expect(page.body.payments).toHaveLength(2);
     expect(page.body.total).toBe(4);
@@ -303,7 +310,7 @@ describe('GET /admin/reports/payments', () => {
     const empty = await staff.get('/admin/reports/payments');
     expect(empty.status).toBe(200);
     expect(empty.body.methods).toEqual(
-      ['card', 'wallet', 'crypto'].map((method) => ({
+      ['card', 'wallet', 'crypto', 'balance'].map((method) => ({
         method,
         payments: 0,
         volume: '0.0000',

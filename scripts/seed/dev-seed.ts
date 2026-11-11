@@ -4,6 +4,7 @@ import type { AppConfig } from '../../src/config';
 import { createDrizzle, createPool } from '../../src/infra/db';
 import { databaseUrlFor } from '../../src/infra/db/url';
 import { frontendDir, loadDemoState } from './demo-state';
+import { seedCustomerWallet } from './customer-wallet';
 import { seedCustomerDevCredentials } from './customers';
 import { seedDevCredentials } from './dev-credentials';
 import { runSeed } from './run';
@@ -33,6 +34,8 @@ export async function seedDevelopmentDatabase(config: AppConfig): Promise<void> 
     if (config.env === 'development') {
       reports.push({ module: 'identity', ...(await db.transaction((tx) => seedDevCredentials(tx, config))) });
       reports.push({ module: 'customers', ...(await db.transaction((tx) => seedCustomerDevCredentials(tx, config))) });
+      // Feature 21: the store balance on, a CliQ gateway, a credited and an in-review top-up (development only, like the credentials).
+      reports.push({ module: 'money', ...(await db.transaction((tx) => seedCustomerWallet(tx, new Date()))) });
     }
     for (const report of reports) {
       console.log(

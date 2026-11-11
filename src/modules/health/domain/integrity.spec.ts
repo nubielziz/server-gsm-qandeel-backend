@@ -33,6 +33,8 @@ describe('finding labels and references (health-commissions-9)', () => {
     expect(accountLabel('client_wallet', 4, 'Basra Unlock Center')).toBe('Wallet · Basra Unlock Center');
     expect(accountLabel('client_hold', 4, 'Basra Unlock Center')).toBe('Hold · Basra Unlock Center');
     expect(accountLabel('supplier_prepaid', 2, 'Gulf Server Hub')).toBe('Supplier prepaid · Gulf Server Hub');
+    expect(accountLabel('customer_wallet', 7, 'Daniel Rivera')).toBe('Customer wallet · Daniel Rivera');
+    expect(accountLabel('customer_wallet', 7, null)).toBe('Customer wallet · #7');
     expect(accountLabel('client_wallet', 4, null)).toBe('Wallet · #4');
     expect(accountLabel('bank', null, null)).toBe('Bank');
     expect(accountLabel('gateway_clearing', null, null)).toBe('Gateway clearing');

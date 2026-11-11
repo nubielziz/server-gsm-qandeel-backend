@@ -3,6 +3,7 @@
 import { Module } from '@nestjs/common';
 import { MoneyAdminModule, StorefrontMailsModule } from '../money';
 import { RiskServicesModule } from '../risk';
+import { CheckoutBalancePayService } from './application/checkout-balance-pay.service';
 import { CheckoutCaptureService } from './application/checkout-capture.service';
 import { CheckoutPayService } from './application/checkout-pay.service';
 import { CheckoutSessionService } from './application/checkout-session.service';
@@ -12,7 +13,7 @@ import { OptionalCustomerSession } from './application/optional-customer-session
 import { CheckoutController } from './controllers/checkout.controller';
 
 /**
- * Provides `/store/v1/checkout-sessions*` (open, read, consents and pay) and the capture that turns a confirmed payment into the order.
+ * Provides `/store/v1/checkout-sessions*` (open, read, consents, pay, and pay from the store balance: feature 21) and the capture that turns a confirmed payment into the order.
  *
  * Why: these use cases need the global database, crypto, clock, catalog, money and storefront providers and the identity guard's
  * resolver registry, which a database-less test app does not have. It imports `MoneyAdminModule` for `StorefrontPayments` (the pay call and
@@ -29,6 +30,7 @@ import { CheckoutController } from './controllers/checkout.controller';
     OptionalCustomerSession,
     CheckoutPayService,
     CheckoutCaptureService,
+    CheckoutBalancePayService,
   ],
 })
 export class CheckoutModule {}

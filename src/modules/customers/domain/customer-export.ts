@@ -1,5 +1,6 @@
 // The content of a customer data export (feature 18, GET /admin/customers/:id/export, the data-subject access right): what is in the
 // file and what is never in it. Pure, no database.
+import type { WalletExport } from '../../money';
 import type { Customer } from '../db/schema';
 import type { ExportRows } from '../infra/privacy-reads.repository';
 
@@ -17,11 +18,13 @@ const iso = (date: Date | null): string | null => (date === null ? null : date.t
  * sessions and tokens are not personal data the customer can use and are never included. What staff keep to protect the shop is left out too:
  * the internal notes, the risk level, the reason of a suspension and the blocklist entries made from the customer's data. The file has
  * what the customer gave and did, not what the shop thinks of them. An IMEI is decrypted for the file, and an erased one is `null`.
+ * Feature 21 adds the store balance and its statement (`wallet`, staff reasons hidden); the format stays 1 (an added key).
  *
  * @param customer the customer row
  * @param rows the rows read about the customer
  * @param exportedAt the clock's time
  * @param imeiOf decrypts a stored IMEI (`null` stays `null`; an unreadable text becomes `null`)
+ * @param wallet the customer's store balance and its lines (money's `CustomerWallets.exportOf`); left out when not given
  * @returns a JSON-serialisable object
  */
 export function buildCustomerExport(
@@ -29,6 +32,7 @@ export function buildCustomerExport(
   rows: ExportRows,
   exportedAt: Date,
   imeiOf: (kind: 'checkout' | 'check', ciphertext: string | null) => string | null,
+  wallet?: WalletExport,
 ): Record<string, unknown> {
   return {
     format: EXPORT_FORMAT,
@@ -131,5 +135,6 @@ export function buildCustomerExport(
       dueAt: request.dueAt.toISOString(),
       completedAt: iso(request.completedAt),
     })),
+    ...(wallet ? { wallet } : {}),
   };
 }

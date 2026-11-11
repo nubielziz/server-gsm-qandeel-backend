@@ -17,7 +17,8 @@ export interface VatRowRecord {
  * VAT per country and month from the ledger.
  *
  * Why: RESOLUTIONS money-4 and the endpoint doc: the report is worked out from the posted `vat_payable` lines of the storefront's
- * `b2c_pay` journals minus its `b2c_refund` journals, never from invoices, so it matches the books. One row per tax country and month
+ * `b2c_pay` journals minus its `b2c_refund` journals, never from invoices, so it matches the books; the gross is the gateway line or, for
+ * a payment from the store balance and its refunds, the `customer_wallet` line (feature 21, defect D1). One row per tax country and month
  * (UTC), newest month first, then country; `taxable` is the net sales, `orders` the paid orders of the month, `rate` the rate of the
  * latest order of the month.
  *
@@ -38,7 +39,7 @@ export async function vatRows(db: DbExecutor, from: Date, to: Date): Promise<Vat
     with tx as (
       select lt.id, lt.kind, lt.ref_id as order_id, lt.created_at,
         abs(coalesce(sum(le.amount) filter (where la.kind = 'vat_payable'), 0)) as vat,
-        abs(coalesce(sum(le.amount) filter (where la.kind = 'gateway_clearing'), 0)) as gross
+        abs(coalesce(sum(le.amount) filter (where la.kind in ('gateway_clearing', 'customer_wallet')), 0)) as gross
       from ledger_transactions lt
       join ledger_entries le on le.transaction_id = lt.id
       join ledger_accounts la on la.id = le.account_id
@@ -132,9 +133,18 @@ const PAY = sql`
   from payments p left join checkout_sessions cs on cs.id = p.checkout_session_id
   where p.purpose = 'order' and p.status in ('captured', 'refunded', 'partial_refund', 'disputed', 'chargeback')`;
 
+/**
+ * The USD of a payment or refund journal: its `gateway_clearing` line, or its `customer_wallet` line for the store balance (feature 21,
+ * plan § 5.6.8), as a correlated subquery over the transaction id the SQL passes in.
+ */
+const fundingOf = (transactionId: SQL): SQL => sql`(
+  select abs(sum(le.amount)) from ledger_entries le
+  join ledger_accounts la on la.id = le.account_id and la.kind in ('gateway_clearing', 'customer_wallet')
+  where le.transaction_id = ${transactionId})`;
+
 /** What a refund is in USD: its journal when it has one, the whole session gross when it refunds the whole payment, else converted. */
 const REFUND_USD = sql`coalesce(
-  ${clearingOf(sql`r.ledger_tx_id`)},
+  ${fundingOf(sql`r.ledger_tx_id`)},
   case when r.amount = p.amount then cs.gross_amount end,
   round(r.amount / coalesce(cs.fx_rate, 1), 4))`;
 
@@ -208,7 +218,7 @@ export async function paymentsReport(
            where r.status in ('requested', 'failed') and r.customer_id is not null) as awaiting,
         (select coalesce(sum(${DISPUTE_LOSS_USD}), 0)::numeric(20,4)::text
            from disputes d join payments p on p.id = d.payment_id left join checkout_sessions cs on cs.id = p.checkout_session_id
-           where d.status = 'lost') as loss`),
+           where d.status = 'lost' and p.purpose = 'order') as loss`),
   ]);
   const t = totals.rows[0];
   return {

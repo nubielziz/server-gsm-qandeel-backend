@@ -1,15 +1,16 @@
 // B2cRefunds: the money side of every storefront refund (feature 16). It works out what can still go back on a payment, posts the
-// `b2c_refund` journal (from customer funds before delivery, from revenue after it), opens the refund the system creates when a paid
-// order is rejected, and moves a refund to completed or failed. Used by the order engine (a rejection), the refund routes and the
-// gateway's answers.
+// `b2c_refund` journal (from customer funds before delivery, from revenue after it; to the store balance for a balance payment, feature
+// 21), opens the refund the system creates when a paid order is rejected, and moves a refund to completed or failed. Used by the order
+// engine (a rejection), the refund routes and the gateway's answers.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
 import type { OrderMethod, Payment, PaymentGateway, Refund } from '../db/schema';
-import { b2cPaymentMethod, refundSplit, statusAfterRefunds, toUsd } from '../domain/b2c-money';
+import { refundSplit, statusAfterRefunds, storedOrderMethod, toUsd } from '../domain/b2c-money';
+import { b2cWalletRefund } from '../domain/customer-wallet-events';
 import { b2cRefund } from '../domain/money-events';
-import { AUTO_REFUND_REASON, refundRoute } from '../domain/refund-rules';
+import { AUTO_REFUND_REASON, refundRoute, settlesAtOnce } from '../domain/refund-rules';
 import { type LedgerParts, ledgerPartsOf, loadSessionMoney } from '../infra/b2c-reads.repository';
 import { driverFor } from '../infra/gateway-drivers/drivers';
 import { findGateway } from '../infra/gateway.repository';
@@ -141,7 +142,7 @@ export class B2cRefunds {
       key: input.refundId === undefined ? `order:${order.id}:refund` : `refund:${refund.id}`,
       actor,
     });
-    if (input.refundId === undefined) await this.dispatchAutomatic(tx, refund);
+    if (input.refundId === undefined) await this.dispatchAutomatic(tx, refund, payment);
     return { posted: true, amount: posted.gross, ledgerTxId: posted.id, refundId: refund.id, requested: false };
   }
 
@@ -167,7 +168,7 @@ export class B2cRefunds {
       key: `refund:${refund.id}`,
       actor: system,
     });
-    await this.dispatchAutomatic(tx, refund);
+    await this.dispatchAutomatic(tx, refund, payment);
   }
 
   /**
@@ -328,7 +329,7 @@ export class B2cRefunds {
     const left = await this.leftOn(tx, order, payment);
     if (!left.original.isPositive() || !left.usd.isPositive()) return undefined;
     const gateway = await findGateway(tx, payment.gatewayId);
-    const route = refundRoute(b2cPaymentMethod(payment.methodType), this.capability(gateway));
+    const route = refundRoute(storedOrderMethod(payment.methodType), this.capability(gateway));
     const now = this.clock.now();
     const staff = actor.type === 'staff' && actor.id !== null;
     return insertRefund(tx, {
@@ -361,7 +362,7 @@ export class B2cRefunds {
       return { posted: false, amount: Money.zero().toWire(), ledgerTxId: null, refundId: null, requested: false };
     }
     const route = refundRoute(
-      b2cPaymentMethod(payment.methodType),
+      storedOrderMethod(payment.methodType),
       this.capability(await findGateway(tx, payment.gatewayId)),
     );
     const now = this.clock.now();
@@ -382,9 +383,12 @@ export class B2cRefunds {
     return { posted: false, amount: left.usd.toWire(), ledgerTxId: null, refundId: refund.id, requested: true };
   }
 
-  /** After the journal of an automatic refund: a hand payout completes at once, a gateway refund goes to the job. */
-  private async dispatchAutomatic(tx: DbExecutor, refund: Refund): Promise<void> {
-    if (refund.method === 'manual') await this.complete(tx, refund.id, null);
+  /**
+   * After the journal of an automatic refund: a hand payout and a refund to the store balance complete at once (the posting was the
+   * refund), a gateway refund goes to the job.
+   */
+  private async dispatchAutomatic(tx: DbExecutor, refund: Refund, payment: Payment): Promise<void> {
+    if (settlesAtOnce(refund.method, payment.methodType)) await this.complete(tx, refund.id, null);
     else await this.outbox.refund(tx, refund.id);
   }
 
@@ -399,6 +403,16 @@ export class B2cRefunds {
       supportsRefunds: gateway?.supportsRefunds ?? false,
       driverRefunds: gateway ? driverFor(gateway.driver)?.refund !== undefined : false,
     };
+  }
+
+  /**
+   * The journal lines of one refund: back through the gateway (`b2c_refund`), or back to the store balance the payment came from
+   * (`b2c_wallet_refund`, plan 21 § 5.6.7); the split, the closing rule and the keys are the same.
+   */
+  private refundPosting(payment: Payment, split: { net: Money; vat: Money }, from: 'customer_funds' | 'revenue') {
+    if (payment.methodType !== 'balance') return b2cRefund({ net: split.net, vat: split.vat, from });
+    if (payment.customerId === null) throw new Error(`Balance payment ${payment.id} has no customer.`);
+    return b2cWalletRefund({ customerId: payment.customerId, net: split.net, vat: split.vat, from });
   }
 
   /** Posts the journal of one refund and links it to the refund row. */
@@ -426,7 +440,7 @@ export class B2cRefunds {
           return { net: usd.sub(safeVat), vat: safeVat, total: usd };
         })()
       : refundSplit(left.paidUsd, left.taxUsd, usd);
-    const posting = b2cRefund({ net: split.net, vat: split.vat, from: input.from });
+    const posting = this.refundPosting(payment, split, input.from);
     const posted = await this.poster.post(tx, {
       kind: posting.kind,
       refType: posting.refType,
@@ -450,8 +464,8 @@ function minMoney(a: Money, b: Money): Money {
  * The B2C method of a payment, for callers that only hold the stored row.
  *
  * @param payment the payment
- * @returns `card`, `wallet` or `crypto`
+ * @returns `card`, `wallet`, `crypto` or `balance`
  */
 export function methodOf(payment: Pick<Payment, 'methodType'>): OrderMethod {
-  return b2cPaymentMethod(payment.methodType);
+  return storedOrderMethod(payment.methodType);
 }

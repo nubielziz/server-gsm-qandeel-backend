@@ -118,3 +118,37 @@ export type { RefundSendResult } from './jobs/refund-sender';
 export { GATEWAY_HTTP_POLICY } from './infra/gateway-drivers/driver';
 export type { GatewayHttpPolicy } from './infra/gateway-drivers/driver';
 export { topupMethodOf } from './domain/gateway-rules';
+export {
+  WALLET_EVENT_IDS,
+  WALLET_EVENT_KINDS,
+  b2cWalletPay,
+  b2cWalletRefund,
+  clawbackSplit,
+  customerAdjust,
+  customerTopup,
+  customerWalletAccount,
+  topupChargeback,
+} from './domain/customer-wallet-events';
+export type { TopUpOwner, WalletEventId, WalletEventPosting } from './domain/customer-wallet-events';
+export {
+  CUSTOMER_WALLET_EVENTS,
+  CUSTOMER_WALLET_RULES_MIGRATION,
+  CUSTOMER_WALLET_TEMPLATES,
+} from './application/customer-wallet-notifications';
+export { CustomerWallets } from './application/customer-wallets';
+export type {
+  AdminWallet,
+  CustomerAdjustInput,
+  StoreWallet,
+  WalletExport,
+  WalletPeek,
+} from './application/customer-wallets';
+export { CustomerWalletMails } from './application/customer-wallet-mails';
+export { BALANCE_BRAND, CustomerWalletPayments } from './application/customer-wallet-payments';
+export type {
+  BalancePaymentInput,
+  BalancePaymentReplay,
+  BalancePaymentView,
+} from './application/customer-wallet-payments';
+export { customerWalletPolicy } from './domain/customer-wallet-policy';
+export type { CustomerWalletPolicy } from './domain/customer-wallet-policy';

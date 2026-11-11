@@ -10,7 +10,7 @@ import type {
 import type { PaymentGatewaySchema } from '../contracts/gateways.contracts';
 import type { InvoiceSchema } from '../contracts/invoices.contracts';
 import type { PaymentSchema } from '../contracts/payments.contracts';
-import type { Invoice, Payment, PaymentGateway } from '../db/schema';
+import type { Dispute, Invoice, Payment, PaymentGateway } from '../db/schema';
 import { effectiveMaxAmount, topupMethodOf } from '../domain/gateway-rules';
 import { waitingNote } from '../domain/payment-rules';
 
@@ -108,8 +108,12 @@ export interface PaymentContext {
   readonly walletBalance: string | null;
   readonly gateway: { id: number; name: string } | undefined;
   readonly reviewerName: string | undefined;
-  /** True when the merchant has no approved top-up yet (a hint for the reviewer). */
+  /** True when the merchant (or the customer) has no approved top-up yet (a hint for the reviewer). */
   readonly firstDeposit: boolean;
+  /** The storefront customer of a store balance top-up, with the balance now (feature 21); `undefined` for a merchant deposit. */
+  readonly customer?: { id: number; name: string; email: string; walletBalance: string | null } | undefined;
+  /** The newest dispute of the top-up (feature 21), or `undefined`. */
+  readonly dispute?: Dispute | undefined;
 }
 
 /**
@@ -146,6 +150,19 @@ export function paymentToWire(row: Payment, context: PaymentContext): WirePaymen
           walletBalance: context.walletBalance,
         }
       : null,
+    customer: context.customer ?? null,
+    dispute: context.dispute
+      ? {
+          id: context.dispute.id,
+          status: context.dispute.status,
+          reasonCode: context.dispute.reasonCode,
+          amount: context.dispute.amount,
+          fee: context.dispute.fee,
+          evidenceDueAt: context.dispute.evidenceDueAt.toISOString(),
+          resolvedAt: iso(context.dispute.resolvedAt),
+          transactionId: context.dispute.ledgerTxId,
+        }
+      : null,
     gateway: context.gateway ? { id: context.gateway.id, name: context.gateway.name } : null,
     reviewedBy:
       row.reviewedAt === null
@@ -154,15 +171,16 @@ export function paymentToWire(row: Payment, context: PaymentContext): WirePaymen
           ? { id: null, name: 'System' }
           : { id: row.reviewedBy, name: context.reviewerName ?? `Staff ${row.reviewedBy}` },
     reviewedAt: iso(row.reviewedAt),
-    note: noteOf(row, context.firstDeposit),
+    note: noteOf(row, context.firstDeposit, context.customer !== undefined),
   };
 }
 
-function noteOf(row: Payment, firstDeposit: boolean): string | null {
+function noteOf(row: Payment, firstDeposit: boolean, customer: boolean): string | null {
   if (row.reviewNote) return row.reviewNote;
   if (row.status !== 'pending') return null;
   if (row.autoCreditAt && !row.reviewRequired) return waitingNote(row.autoCreditAt);
-  return firstDeposit ? 'First deposit of this merchant.' : null;
+  if (!firstDeposit) return null;
+  return customer ? 'First top-up of this customer.' : 'First deposit of this merchant.';
 }
 
 /**

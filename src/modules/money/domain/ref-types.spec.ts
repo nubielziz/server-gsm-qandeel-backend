@@ -7,9 +7,10 @@ import { WIRE_REF_TYPES, storedRefTypesOf, toWireRefType } from './ref-types';
 const CONSOLE_REF_TYPES = ['order', 'payment', 'invoice', 'refund', 'dispute', 'accrual', 'supplier', 'system'];
 
 describe('toWireRefType', () => {
-  it("sends a manual adjustment's stored `client` as `system` and every other value unchanged", () => {
+  it("sends a manual adjustment's stored `client` or `customer` as `system` and every other value unchanged", () => {
     expect(toWireRefType('client')).toBe('system');
-    for (const stored of LEDGER_REF_TYPES.filter((type) => type !== 'client'))
+    expect(toWireRefType('customer')).toBe('system');
+    for (const stored of LEDGER_REF_TYPES.filter((type) => type !== 'client' && type !== 'customer'))
       expect(toWireRefType(stored)).toBe(stored);
   });
 
@@ -20,8 +21,8 @@ describe('toWireRefType', () => {
 });
 
 describe('storedRefTypesOf', () => {
-  it('matches stored `system` and `client` for the wire word `system`', () => {
-    expect(storedRefTypesOf('system')).toEqual(['system', 'client']);
+  it('matches stored `system`, `client` and `customer` for the wire word `system`', () => {
+    expect(storedRefTypesOf('system')).toEqual(['system', 'client', 'customer']);
   });
 
   it('matches itself for every other word, and every stored type is reachable from a wire word', () => {

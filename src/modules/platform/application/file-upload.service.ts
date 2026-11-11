@@ -6,6 +6,7 @@ import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { DbService, isForeignKeyViolation } from '../../../infra/db';
 import { DEFAULT_MAX_OBJECT_BYTES, StorageService } from '../../../infra/storage';
+import { PROOF_MIME_TYPES } from '../files/stored-files';
 import { deleteUnreferencedClientFile, insertFile } from '../infra/file.repository';
 
 /** The largest file a merchant may upload: 25 MiB (B157). */
@@ -71,7 +72,8 @@ export function cleanMediaType(declared: string): string {
  * Why: B157 and RESOLUTIONS identity-platform-16: the input of a File service order, the documents of a KYC submission and the
  * receipt of a bank transfer are files a merchant uploads first and refers to by id. One path keeps the limits and the owner rule in
  * one place: 1 byte to 25 MiB, any media type, the name reduced to a base name, the object in the files bucket under a key built
- * here (never from the name), a `files` row owned by the merchant (`owner_type client`) with the size and the SHA-256.
+ * here (never from the name), a `files` row owned by the merchant (`owner_type client`) with the size and the SHA-256. A storefront
+ * customer uploads a transfer receipt the same way (feature 21): proof types only, at most 5 MiB, owned by the customer.
  *
  * Side effects: one object in storage, one `files` row; the access is logged at info without the file name. An object whose row could
  * not be written is deleted again (best effort).
@@ -97,20 +99,54 @@ export class FileUploadService {
    * @throws {AppError} `VALIDATION_FAILED` on `file` (empty), `PAYLOAD_TOO_LARGE` (over 25 MiB), `UNAVAILABLE` (storage is down)
    */
   async upload(clientId: number, input: UploadInput): Promise<StoredFileView> {
+    return this.store({ type: 'client', id: clientId }, input, MAX_UPLOAD_BYTES);
+  }
+
+  /**
+   * Stores one file for a storefront customer: a receipt (PDF, JPEG or PNG) of at most 5 MiB.
+   *
+   * Why: plan 21 § 7.1 route 9: a manual top-up needs its transfer receipt, and the store surface is public, so the upload is small and
+   * of the proof types only (risk K15). The file is owned by the customer, so only that customer's top-up can use it.
+   *
+   * Side effects: puts one object into the files bucket; inserts one `files` row (`owner_type 'customer'`).
+   *
+   * @param customerId the customer who owns the file
+   * @param input the file name, media type and content
+   * @param maxBytes the largest file (the route's limit)
+   * @returns the stored file
+   * @throws {AppError} `VALIDATION_FAILED` on `file` (`empty`, `type`), `PAYLOAD_TOO_LARGE`, `UNAVAILABLE` (storage is down)
+   */
+  async uploadForCustomer(customerId: number, input: UploadInput, maxBytes: number): Promise<StoredFileView> {
+    if (input.data.length > 0 && !PROOF_MIME_TYPES.includes(cleanMediaType(input.mime))) {
+      throw new AppError('VALIDATION_FAILED', {
+        detail: 'Upload a PDF, JPEG or PNG file.',
+        errors: [{ field: 'file', code: 'type', message: 'Upload a PDF, JPEG or PNG file.' }],
+      });
+    }
+    return this.store({ type: 'customer', id: customerId }, input, maxBytes);
+  }
+
+  private async store(
+    owner: { readonly type: 'client' | 'customer'; readonly id: number },
+    input: UploadInput,
+    maxBytes: number,
+  ): Promise<StoredFileView> {
     if (input.data.length === 0) {
       throw new AppError('VALIDATION_FAILED', {
         detail: 'The file is empty.',
         errors: [{ field: 'file', code: 'empty', message: 'The file is empty.' }],
       });
     }
-    if (input.data.length > MAX_UPLOAD_BYTES) {
-      throw new AppError('PAYLOAD_TOO_LARGE', { detail: 'The file is larger than 25 MiB.' });
+    if (input.data.length > maxBytes) {
+      throw new AppError('PAYLOAD_TOO_LARGE', {
+        detail: `The file is larger than ${Math.round(maxBytes / (1024 * 1024))} MiB.`,
+      });
     }
     const filename = cleanUploadName(input.filename);
     const mime = cleanMediaType(input.mime);
     const now = this.clock.now();
     const key = `files/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${randomUUID()}`;
-    const object = await this.storage.put(key, input.data, { contentType: mime, maxBytes: MAX_UPLOAD_BYTES });
+    const object = await this.storage.put(key, input.data, { contentType: mime, maxBytes });
     try {
       const row = await insertFile(this.db.db, {
         bucket: object.bucket,
@@ -119,10 +155,10 @@ export class FileUploadService {
         mime,
         size: object.size,
         sha256: object.sha256,
-        ownerType: 'client',
-        ownerId: clientId,
+        ownerType: owner.type,
+        ownerId: owner.id,
       });
-      this.logger.log(`file ${row.id} uploaded by merchant ${clientId} (${row.size} bytes, ${row.mime})`);
+      this.logger.log(`file ${row.id} uploaded by ${owner.type} ${owner.id} (${row.size} bytes, ${row.mime})`);
       return {
         id: row.id,
         filename: row.filename,

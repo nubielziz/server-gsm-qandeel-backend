@@ -1,20 +1,23 @@
 // PaymentCrediting: credits a pending wallet top-up in the caller's transaction: the `deposit` money event, the payment and invoice
-// statuses, the `invoice.paid` outbox row and the audit entry. Staff approval and the automatic credit job both end here.
+// statuses, the `invoice.paid` outbox row and the audit entry. Staff approval and the automatic credit job both end here. A storefront
+// customer's top-up (feature 21) credits the customer's store balance instead, with its own email and no merchant outbox row or PDF.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
 import { AuditService } from '../../platform';
-import type { Payment, PaymentGateway } from '../db/schema';
+import type { Invoice, Payment, PaymentGateway } from '../db/schema';
+import { customerTopup } from '../domain/customer-wallet-events';
 import { METHOD_LABELS } from '../domain/gateway-rules';
 import { paymentRef } from '../domain/invoice-rules';
 import { confirmationMismatch } from '../domain/payment-rules';
 import { deposit } from '../domain/money-events';
 import { driverFor } from '../infra/gateway-drivers/drivers';
-import { loadBillingMerchants } from '../infra/foreign-directory.repository';
+import { findWalletCustomer, loadBillingMerchants } from '../infra/foreign-directory.repository';
 import { findInvoice, updateInvoice } from '../infra/invoice.repository';
 import { updatePayment } from '../infra/payment.repository';
+import { CustomerWalletMails } from './customer-wallet-mails';
 import { LedgerPoster } from './post-transaction';
 import { InvoiceDocuments } from './invoice-documents';
 import { InvoiceOutbox } from './invoice-outbox';
@@ -49,6 +52,7 @@ export class PaymentCrediting {
     private readonly audit: AuditService,
     private readonly outbox: InvoiceOutbox,
     private readonly documents: InvoiceDocuments,
+    private readonly walletMails: CustomerWalletMails,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -59,7 +63,7 @@ export class PaymentCrediting {
    * @param payment the payment, already locked and checked to be pending
    * @param gateway the gateway it came through
    * @param reviewer who decided
-   * @throws {AppError} `CONFLICT` when the payment has no open merchant invoice to pay, no positive net amount, or its gateway
+   * @throws {AppError} `CONFLICT` when the payment has no open merchant or customer invoice to pay, no positive net amount, or its gateway
    *   event says another amount or currency was paid than the invoice asked for (money that never arrived is never credited);
    *   `INSUFFICIENT_FUNDS` cannot happen for a credit
    */
@@ -67,8 +71,8 @@ export class PaymentCrediting {
     const { tx } = work;
     const ref = paymentRef(payment.id);
     const invoice = payment.invoiceId === null ? undefined : await findInvoice(tx, payment.invoiceId, true);
-    if (!invoice || invoice.clientId === null) {
-      throw new AppError('CONFLICT', { detail: `${ref} has no merchant invoice to credit.` });
+    if (!invoice || (invoice.clientId === null && invoice.customerId === null)) {
+      throw new AppError('CONFLICT', { detail: `${ref} has no merchant or customer invoice to credit.` });
     }
     if (invoice.status !== 'open') {
       throw new AppError('CONFLICT', { detail: `The invoice of ${ref} is already ${invoice.status}.` });
@@ -85,6 +89,10 @@ export class PaymentCrediting {
 
     const now = this.clock.now();
     const method = payment.methodType as keyof typeof METHOD_LABELS;
+    if (invoice.clientId === null) {
+      await this.creditCustomer(tx, { payment, gateway, reviewer, invoice, net, fee, now });
+      return;
+    }
     await this.poster.post(tx, {
       ...deposit({
         clientId: invoice.clientId,
@@ -122,6 +130,69 @@ export class PaymentCrediting {
   }
 
   /**
+   * Credits a storefront customer's top-up to the store balance.
+   *
+   * Why: plan 21 § 5.6.5: the same lock order and idempotency key as a merchant deposit (`deposit:payment:<id>`, payment ids are global),
+   * the `customer_topup` event (kind `deposit`); no `invoice.paid` (a merchant webhook event) and no PDF (P5: stored value is not a taxable
+   * sale). A credit is never refused, frozen wallet or switch off (plan § 5.1 invariant 4).
+   *
+   * Side effects: posts one ledger transaction (opening the wallet on its first credit); updates `payments` and `invoices`; one audit row;
+   * one `wallet.topup_credited` mail.
+   */
+  private async creditCustomer(
+    tx: DbExecutor,
+    input: {
+      payment: Payment;
+      gateway: PaymentGateway;
+      reviewer: Reviewer;
+      invoice: Invoice;
+      net: Money;
+      fee: Money;
+      now: Date;
+    },
+  ): Promise<void> {
+    const { payment, gateway, reviewer, invoice, net, fee, now } = input;
+    const customerId = invoice.customerId!;
+    const ref = paymentRef(payment.id);
+    const method = payment.methodType as keyof typeof METHOD_LABELS;
+    const posted = await this.poster.post(tx, {
+      ...customerTopup({ customerId, amount: net, fee, from: gateway.isManual ? 'bank' : 'gateway_clearing' }),
+      refId: payment.id,
+      idempotencyKey: `deposit:payment:${payment.id}`,
+      currency: payment.currency,
+      memo: `Deposit ${ref} (${METHOD_LABELS[method] ?? payment.methodType})`,
+      createdBy: reviewer.kind === 'staff' ? { type: 'staff', id: reviewer.staffId } : { type: 'system', id: null },
+    });
+    await updatePayment(tx, payment.id, {
+      status: 'approved',
+      capturedAt: payment.capturedAt ?? now,
+      reviewedBy: reviewer.kind === 'staff' ? reviewer.staffId : null,
+      reviewedAt: now,
+      autoCreditAt: null,
+      updatedAt: now,
+    });
+    await updateInvoice(tx, invoice.id, { status: 'paid', paidAt: now, updatedAt: now });
+    const customer = await findWalletCustomer(tx, customerId);
+    await this.audit.record(tx, {
+      action: reviewer.kind === 'staff' ? 'approved deposit of' : 'credited deposit of',
+      entityType: 'payment',
+      entityId: payment.id,
+      entityLabel: `${net.toWire()} ${payment.currency} from ${customerLabel(customer, customerId)}`,
+      before: { status: 'pending', invoice: invoice.number },
+      after: { status: 'approved', invoice: invoice.number, netAmount: net.toWire(), feeAmount: fee.toWire() },
+    });
+    const wallet = posted.touched.find((account) => account.kind === 'customer_wallet');
+    if (!posted.replayed && wallet) {
+      await this.walletMails.topUpCredited(tx, {
+        customerId,
+        paymentId: payment.id,
+        amount: net.toWire(),
+        balance: wallet.after,
+      });
+    }
+  }
+
+  /**
    * Checks the stored gateway event of a payment against its invoice.
    *
    * Why: a payment row carries its invoice's amount and fee, so what the gateway really reported lives only in the stored event
@@ -140,4 +211,19 @@ export class PaymentCrediting {
     if (!event) return 'The gateway event of this payment can no longer be read, so its amount cannot be checked.';
     return confirmationMismatch(event, invoice);
   }
+}
+
+/**
+ * How a deposit's audit label names a storefront customer: the name, else the email, else the number.
+ *
+ * @param customer the customer row, if it exists
+ * @param id the customer id
+ * @returns the label
+ */
+export function customerLabel(
+  customer: { name: string; email: string; status: string } | undefined,
+  id: number,
+): string {
+  if (!customer || customer.status === 'anonymized') return `customer ${id}`;
+  return customer.name.trim() || customer.email;
 }

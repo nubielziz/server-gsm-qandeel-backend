@@ -24,8 +24,8 @@ export interface LimiterConfig {
  * `api_keys.rate_limit_per_min` through the `limit` option, this is the default); `sign-in` email + IP (build the key
  * with `RateLimitService.compositeKey`), counted per attempt and reset on success; `token` the client IP; `supplier` the
  * supplier id (the points come from `suppliers.rate_limit_per_min`); `webhook-retry` the delivery id; `upload` the client IP; `ticket-email`
- * the hashed email address of a public ticket form (`RateLimitService.compositeKey`); `help-vote` the client IP + help article id
- * (`RateLimitService.compositeKey`); `media` the client IP.
+ * the hashed email address of a public ticket form (`RateLimitService.compositeKey`); `wallet-topup` the customer id; `help-vote` the
+ * client IP + help article id (`RateLimitService.compositeKey`); `media` the client IP.
  *
  * @see docs/decisions/021-rate-limiting.md
  */
@@ -74,6 +74,12 @@ export const RATE_LIMITERS = {
     windowSeconds: 60 * 60,
     description:
       'The public ticket form (POST /store/v1/tickets): new tickets per email address per hour, so the receipt email cannot relay spam to a stranger.',
+  },
+  'wallet-topup': {
+    points: 10,
+    windowSeconds: 10 * 60,
+    description:
+      'New store balance top-ups (POST /store/v1/me/wallet/top-ups): attempts per customer id; a hint only, the daily limits are SQL (feature 21).',
   },
   'help-vote': {
     points: 1,

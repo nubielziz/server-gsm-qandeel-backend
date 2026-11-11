@@ -6,10 +6,11 @@ import { type BodyOf, ContractHeaders, type HeadersOf, type ResultOf, Route } fr
 import { AppError } from '../../../common/errors';
 import { CurrentPrincipal, type CapabilityGrant, type Principal } from '../../identity';
 import { CheckoutSessionService } from '../application/checkout-session.service';
+import { CheckoutBalancePayService } from '../application/checkout-balance-pay.service';
 import { CheckoutPayService } from '../application/checkout-pay.service';
 import { ConsentService } from '../application/consent.service';
 import { OptionalCustomerSession } from '../application/optional-customer-session';
-import { payCheckoutSession } from '../contracts/checkout-pay.contracts';
+import { payCheckoutFromBalance, payCheckoutSession } from '../contracts/checkout-pay.contracts';
 import { openCheckoutSession, recordCheckoutConsents, showCheckoutSession } from '../contracts/checkout.contracts';
 
 /** The session id the capability guard found; a handler behind a `checkout-token` route always has one. */
@@ -37,6 +38,7 @@ function userAgentOf(request: FastifyRequest): string {
  * @route GET /store/v1/checkout-sessions/:token
  * @route POST /store/v1/checkout-sessions/:token/consents
  * @route POST /store/v1/checkout-sessions/:token/pay
+ * @route POST /store/v1/checkout-sessions/:token/balance-payment
  */
 @Controller()
 export class CheckoutController {
@@ -45,6 +47,7 @@ export class CheckoutController {
     private readonly consents: ConsentService,
     private readonly signedIn: OptionalCustomerSession,
     private readonly pay: CheckoutPayService,
+    private readonly balancePay: CheckoutBalancePayService,
   ) {}
 
   /**
@@ -134,5 +137,32 @@ export class CheckoutController {
     const started = await this.pay.pay(sessionIdOf(principal), body, headers['idempotency-key']);
     if (started.replayed) reply.header('idempotency-replayed', 'true');
     return started.view;
+  }
+
+  /**
+   * Pays a checkout from the signed-in customer's store balance (feature 21).
+   *
+   * @param principal the holder of the checkout token
+   * @param headers the required `Idempotency-Key`
+   * @param request the request, for the customer session cookie and its CSRF header
+   * @param reply the reply, for the cache header and the replay marker
+   * @returns the payment, the new order and the wallet after it (`201`)
+   * @throws {AppError} `CSRF_FAILED` when a customer session comes without its CSRF header; the use case's refusals
+   * @route POST /store/v1/checkout-sessions/:token/balance-payment
+   */
+  @Route(payCheckoutFromBalance)
+  async payFromBalance(
+    @CurrentPrincipal() principal: Principal | undefined,
+    @ContractHeaders() headers: HeadersOf<typeof payCheckoutFromBalance>,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<ResultOf<typeof payCheckoutFromBalance>> {
+    reply.header('cache-control', NO_STORE);
+    const sessionId = sessionIdOf(principal);
+    // The customer comes from the cookie session (CSRF checked here), never from the checkout row (plan 21 § 5.6.6, K2).
+    const customerId = await this.signedIn.customerId(request);
+    const paid = await this.balancePay.pay(sessionId, customerId, headers['idempotency-key']);
+    if (paid.replayed) reply.header('idempotency-replayed', 'true');
+    return paid.view;
   }
 }

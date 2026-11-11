@@ -150,7 +150,11 @@ Same JSON, id, money, time, error and header conventions; the map defines the ro
   `Content-Disposition`.
 - **Storefront** (`/store/v1`): public routes protected by Turnstile (`403 TURNSTILE_FAILED`) and per-IP limits;
   capability tokens in paths (checkout, tracking, tickets); customer session cookie + CSRF for account routes;
-  `Idempotency-Key` required on `…/pay`.
+  `Idempotency-Key` required on `…/pay` and on every store balance write (feature 21): `POST …/:token/balance-payment`,
+  `POST /store/v1/me/wallet/top-ups`, `…/top-ups/:id/receipt` and `…/top-ups/:id/cancel` (1 to 100 printable ASCII
+  characters; a replay answers again with `idempotency-replayed: true`, another body under the key is `409 IDEMPOTENCY_KEY_REUSED`).
+  The staff customer wallet writes (`POST /admin/customers/:id/wallet/adjust|freeze|unfreeze`) require it too; the merchant
+  wallet adjust keeps it optional.
 - **REST v1** (`/v1`): `Authorization: Bearer <key>`, scopes per route (map), allowed IPs, per-key limits with
   `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset` headers. Lists are cursor-paged (map): `?limit=` (1–100,
   default 50) and `?cursor=` (opaque) → `{ data: [...], nextCursor: string | null }`. `Idempotency-Key` on

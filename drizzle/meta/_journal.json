@@ -155,6 +155,20 @@
       "when": 1794324067655,
       "tag": "0021_store_catalog_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794376598537,
+      "tag": "0022_customer_wallet",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794376599225,
+      "tag": "0023_customer_wallet_rules",
+      "breakpoints": true
     }
   ]
 }

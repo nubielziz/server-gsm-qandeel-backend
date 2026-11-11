@@ -50,7 +50,12 @@ export {
 } from './maintenance/maintenance-state';
 export type { MaintenanceRequest, MaintenanceScope, MaintenanceState } from './maintenance/maintenance-state';
 export { SettingsService } from './settings/settings.service';
-export { IMEI_RETENTION_MAX_DAYS, imeiRetentionDaysProblem } from './settings/settings-registry';
+export {
+  CUSTOMER_WALLET_SETTINGS,
+  CUSTOMER_WALLET_SETTING_RANGES,
+  IMEI_RETENTION_MAX_DAYS,
+  imeiRetentionDaysProblem,
+} from './settings/settings-registry';
 export { OutboxModule } from './outbox/outbox.module';
 export { OutboxRelayModule, OUTBOX_TICK_SCHEDULER } from './outbox/outbox-relay.module';
 export { OutboxRelay, RELAY_BATCH_SIZE } from './outbox/outbox-relay';

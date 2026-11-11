@@ -40,6 +40,7 @@ Frontend features covering this module: `audit`, `settings`, `orders`, `dashboar
 | `POST /webhooks/telegram/:secret` | hooks | url-secret | 12 |  |
 | `GET /openapi.json` | system | public | 7 |  |
 | `GET /docs` | system | public | 7 |  |
+| `POST /store/v1/files` | store | customer-session | 21 |  |
 | `GET /store/v1/media/:name` | store | public | 22 |  |
 
 ## POST /v1/files
@@ -281,6 +282,11 @@ Frontend features covering this module: `audit`, `settings`, `orders`, `dashboar
 ## GET /docs
 
 - **Map**: REST v1 documentation page. (صفحة توثيق REST v1) · public · stage 7 · tables -
+- **Frontend**: none.
+
+## POST /store/v1/files
+
+- **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): Upload a file from the customer account (a transfer receipt). (رفع ملف من حساب الزبون (إيصال تحويل)) · customer-session · stage 21 · tables files
 - **Frontend**: none.
 
 ## GET /store/v1/media/:name

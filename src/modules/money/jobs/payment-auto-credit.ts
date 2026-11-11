@@ -14,7 +14,7 @@ import { PaymentCrediting } from '../application/payment-crediting';
 import { TopUpScreeningHooks } from '../application/top-up-screening-hooks';
 import { GATEWAY_HTTP_POLICY, type GatewayHttpPolicy } from '../infra/gateway-drivers/driver';
 import { driverFor } from '../infra/gateway-drivers/drivers';
-import { loadBillingMerchants } from '../infra/foreign-directory.repository';
+import { findWalletCustomer, loadBillingMerchants } from '../infra/foreign-directory.repository';
 import { findGateway } from '../infra/gateway.repository';
 import { findInvoice } from '../infra/invoice.repository';
 import { dueAutoCreditIds, findTopupPayment, lockTopupPayment, updatePayment } from '../infra/payment.repository';
@@ -163,7 +163,7 @@ export class PaymentAutoCredit {
         // Risk looks at the same rows the credit would use. A screen that throws fails this payment (it stays due), never credits it.
         const verdict = await this.screening.screen(work.tx, {
           cardFingerprint: locked.cardFingerprint,
-          email: await this.merchantEmail(work.tx, locked),
+          email: await this.ownerEmail(work.tx, locked),
         });
         if (verdict.flagged) {
           await this.markForReview(work.tx, id, verdict.reason ?? 'Risk review: flagged.');
@@ -179,11 +179,17 @@ export class PaymentAutoCredit {
     }
   }
 
-  /** The email of the merchant that owns the payment's invoice, or `null` when the payment has no merchant invoice. */
-  private async merchantEmail(tx: DbExecutor, payment: Payment): Promise<string | null> {
+  /**
+   * The email of the merchant or storefront customer (feature 21) that owns the payment's invoice, or `null` when it has neither.
+   */
+  private async ownerEmail(tx: DbExecutor, payment: Payment): Promise<string | null> {
     const invoice = payment.invoiceId === null ? undefined : await findInvoice(tx, payment.invoiceId);
-    if (!invoice || invoice.clientId === null) return null;
-    return (await loadBillingMerchants(tx, [invoice.clientId])).get(invoice.clientId)?.email ?? null;
+    if (!invoice) return null;
+    if (invoice.clientId !== null) {
+      return (await loadBillingMerchants(tx, [invoice.clientId])).get(invoice.clientId)?.email ?? null;
+    }
+    if (invoice.customerId !== null) return (await findWalletCustomer(tx, invoice.customerId))?.email ?? null;
+    return null;
   }
 
   /** Marks a payment `review_required` with the reason; staff then approve or reject it. */

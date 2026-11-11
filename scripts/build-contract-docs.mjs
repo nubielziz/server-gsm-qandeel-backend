@@ -48,6 +48,8 @@ const BACKEND_CODES = [
   ['PAYMENT_AUTO_CREDIT_PENDING', 409, 'Approve or reject refused: an automatic-gateway top-up is credited by the auto-credit job after the gateway check (staff may decide only when the gateway is manual or review_required is set).'],
   ['ALREADY_SENT', 409, 'POST /admin/orders/:id/dispatch refused: the order was already sent to a supplier (dispatch_state sent).'],
   ['ACCOUNT_PENDING_APPROVAL', 403, 'A merchant waiting for approval called a route that needs an approved account (orders, top-ups, API keys, price lists); it does not sign out (B153).'],
+  ['WALLET_FROZEN', 409, 'Paying from the customer store balance (or a card top-up) refused: the wallet is on hold (staff freeze or a top-up dispute; feature 21).'],
+  ['WALLET_DISABLED', 409, 'A customer top-up or balance payment refused: the store balance is switched off (setting wallet.customer.enabled; feature 21).'],
   ['PRICE_CHANGED', 409, 'The charged price is more than the tolerance above the price the merchant was last listed (B117); the Dhru surface answers "Price changed. Please refresh the service list and order again.".'],
 ];
 

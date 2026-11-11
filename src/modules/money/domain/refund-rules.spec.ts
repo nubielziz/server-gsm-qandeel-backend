@@ -9,6 +9,7 @@ import {
   refundRoute,
   refundSendKey,
   refundableLeft,
+  settlesAtOnce,
   wholeCents,
 } from './refund-rules';
 
@@ -47,6 +48,22 @@ describe('refundRoute', () => {
       method: 'manual',
       note: MANUAL_REFUND_NOTE,
     });
+  });
+
+  it('returns a store balance payment to the balance, whatever a gateway could do (plan 21 O10)', () => {
+    expect(refundRoute('balance', { supportsRefunds: false, driverRefunds: false })).toEqual({
+      method: 'original',
+      note: '',
+    });
+  });
+});
+
+describe('settlesAtOnce', () => {
+  it('completes a hand payout and a refund to the store balance at once, never a gateway refund (plan 21 § 5.6.7)', () => {
+    expect(settlesAtOnce('manual', 'card')).toBe(true);
+    expect(settlesAtOnce('original', 'balance')).toBe(true);
+    expect(settlesAtOnce('original', 'card')).toBe(false);
+    expect(settlesAtOnce('original', 'wallet')).toBe(false);
   });
 });
 

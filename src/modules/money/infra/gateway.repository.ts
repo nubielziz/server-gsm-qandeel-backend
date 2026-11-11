@@ -51,11 +51,17 @@ export async function listGatewayRows(
  * Finds a gateway by id.
  *
  * @param db the database or a transaction
- * @param id the gateway id
+ * @param id the gateway id; `null` (a payment from the store balance, feature 21) finds nothing
  * @param lock lock the row `FOR UPDATE` until the transaction ends
  * @returns the row, or `undefined`
  */
-export async function findGateway(db: DbExecutor, id: number, lock = false): Promise<PaymentGateway | undefined> {
+export async function findGateway(
+  db: DbExecutor,
+  id: number | null,
+  lock = false,
+): Promise<PaymentGateway | undefined> {
+  // A payment from the customer's store balance has no gateway (feature 21): there is nothing to find.
+  if (id === null) return undefined;
   const query = db.select().from(paymentGateways).where(eq(paymentGateways.id, id)).limit(1);
   const [row] = await (lock ? query.for('update') : query);
   return row;
@@ -80,8 +86,11 @@ export async function findGatewayByCode(db: DbExecutor, code: string): Promise<P
  * @param ids the gateway ids
  * @returns the rows by id
  */
-export async function findGatewaysByIds(db: DbExecutor, ids: readonly number[]): Promise<Map<number, PaymentGateway>> {
-  const unique = [...new Set(ids)];
+export async function findGatewaysByIds(
+  db: DbExecutor,
+  ids: readonly (number | null)[],
+): Promise<Map<number, PaymentGateway>> {
+  const unique = [...new Set(ids.filter((id): id is number => id !== null))];
   if (unique.length === 0) return new Map();
   const rows = await db.select().from(paymentGateways).where(inArray(paymentGateways.id, unique));
   return new Map(rows.map((row) => [row.id, row]));
@@ -200,7 +209,8 @@ export async function topupVolumes(db: DbExecutor, ids: readonly number[], since
       ),
     )
     .groupBy(payments.gatewayId);
-  return new Map(rows.map((row) => [row.gatewayId, row.total]));
+  // A top-up always has a gateway (`payments_gateway_check`); only a balance order payment has none.
+  return new Map(rows.flatMap((row) => (row.gatewayId === null ? [] : [[row.gatewayId, row.total] as const])));
 }
 
 /** What taking a deleted group out of the gateways did. */

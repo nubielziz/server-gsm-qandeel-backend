@@ -65,6 +65,8 @@ describe('migrations', () => {
         const triggers = await scratch.query(`select tgname from pg_trigger where not tgisinternal order by tgname`);
         expect(triggers.rows.map((row) => row.tgname)).toEqual([
           'audit_logs_append_only',
+          // Feature 21: a customer wallet below zero must be frozen at commit.
+          'ledger_accounts_negative_customer_wallet_frozen',
           'ledger_entries_append_only',
           'ledger_entries_zero_sum',
           'ledger_transactions_append_only',

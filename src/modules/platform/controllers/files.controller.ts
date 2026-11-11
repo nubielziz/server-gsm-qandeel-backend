@@ -1,5 +1,5 @@
 // HTTP controller of the file downloads (map domain G, stage 5): both routes answer 302 with the presigned link in `Location`.
-import { Body, Controller, Param, Res } from '@nestjs/common';
+import { Body, Controller, Header, Param, Res } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import { type BodyOf, type ParamsOf, type ResultOf, Route } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
@@ -11,6 +11,8 @@ import {
   openClientFile,
   openV1File,
   uploadClientFile,
+  STORE_UPLOAD_MAX_BYTES,
+  uploadStoreFile,
   uploadV1File,
 } from '../contracts/files.contracts';
 
@@ -24,7 +26,7 @@ import {
  * @returns the caller's id
  * @throws {AppError} `UNAUTHORIZED` (401) when the request was not authenticated as that kind of caller
  */
-function callerOf(type: 'staff' | 'client'): number {
+function callerOf(type: 'staff' | 'client' | 'customer'): number {
   const actor = getRequestContext()?.actor;
   if (actor?.type !== type) throw new AppError('UNAUTHORIZED');
   return actor.id;
@@ -43,6 +45,7 @@ function callerOf(type: 'staff' | 'client'): number {
  * @route POST /client/files
  * @route POST /v1/files
  * @route GET /v1/files/:id
+ * @route POST /store/v1/files
  */
 @Controller()
 export class FilesController {
@@ -97,6 +100,23 @@ export class FilesController {
       mime: body.file.mime,
       data: body.file.data,
     });
+  }
+
+  /**
+   * Stores a receipt for the signed-in storefront customer (feature 21).
+   *
+   * @param body the multipart body with the file part
+   * @returns the stored file
+   * @route POST /store/v1/files
+   */
+  @Route(uploadStoreFile)
+  @Header('Cache-Control', 'no-store')
+  uploadForCustomer(@Body() body: BodyOf<typeof uploadStoreFile>): Promise<ResultOf<typeof uploadStoreFile>> {
+    return this.uploads.uploadForCustomer(
+      callerOf('customer'),
+      { filename: body.file.filename, mime: body.file.mime, data: body.file.data },
+      STORE_UPLOAD_MAX_BYTES,
+    );
   }
 
   /**

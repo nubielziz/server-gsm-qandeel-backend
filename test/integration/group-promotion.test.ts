@@ -2,7 +2,7 @@
 // promotion on a worker-like module graph, its schedule and its job_runs row. Spend is posted with postTransaction and the
 // `order` and `complete` money event builders; reversals use the `reverse:<id>` key convention of decision 024.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { Money } from '../../src/common/money';
 import { CacheModule } from '../../src/infra/cache';
 import { CryptoModule } from '../../src/infra/crypto';
@@ -262,14 +262,20 @@ describe('GroupPromotion.run', () => {
     const groups = await insertGroups();
     // Elite has no overdraft; VIP allows it, so the merchant starts in VIP with a credit limit.
     const id = await merchantIn(groups.vip);
-    await db.update(s.ledgerAccounts).set({ overdraftLimit: '500.0000' }).where(eq(s.ledgerAccounts.ownerId, id));
+    await db
+      .update(s.ledgerAccounts)
+      .set({ overdraftLimit: '500.0000' })
+      .where(and(eq(s.ledgerAccounts.ownerId, id), eq(s.ledgerAccounts.kind, 'client_wallet')));
     await settleOrder(id, '60000');
     const refused = await promotion.run();
     expect(refused).toEqual({ checked: 1, promoted: 0, skipped: 1 });
     expect(await groupOf(id)).toBe(groups.vip);
     expect(await promotionAudits()).toEqual([]);
 
-    await db.update(s.ledgerAccounts).set({ overdraftLimit: '0.0000' }).where(eq(s.ledgerAccounts.ownerId, id));
+    await db
+      .update(s.ledgerAccounts)
+      .set({ overdraftLimit: '0.0000' })
+      .where(and(eq(s.ledgerAccounts.ownerId, id), eq(s.ledgerAccounts.kind, 'client_wallet')));
     expect(await promotion.run()).toEqual({ checked: 1, promoted: 1, skipped: 0 });
     expect(await groupOf(id)).toBe(groups.elite);
   });

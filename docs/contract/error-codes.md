@@ -8,7 +8,7 @@ codes internally. Client-only codes of the console (NETWORK_ERROR, INVALID_RESPO
 emitted. **Session-ending codes** (401 UNAUTHORIZED, 403 ACCOUNT_SUSPENDED, 403 IP_NOT_ALLOWED) are only ever about
 the caller. Titles are fixed English sentences written with the catalog in Phase 2.
 
-123 codes. "Frontend" = referenced by the console's code or mocks; other codes are backend additions the
+125 codes. "Frontend" = referenced by the console's code or mocks; other codes are backend additions the
 console shows through their title and detail.
 
 | Code | Status | Meaning | Routes | Frontend |
@@ -116,6 +116,8 @@ console shows through their title and detail.
 | TWOFA_NOT_ENABLED | 409 | proposed: 2FA already off | `POST /admin/staff/:id/reset-2fa` |  |
 | USE_REFUNDS | 409 | Order refund action on a storefront order (refunds go through /admin/refunds). | `POST /admin/orders/:id/refund`, `POST /admin/orders/:id/reject` | yes |
 | VERSION_EXISTS | 409 | POST /admin/legal-documents with a version already present. | `POST /admin/legal-documents` | yes |
+| WALLET_DISABLED | 409 | A customer top-up or balance payment refused: the store balance is switched off (setting wallet.customer.enabled; feature 21). | any |  |
+| WALLET_FROZEN | 409 | Paying from the customer store balance (or a card top-up) refused: the wallet is on hold (staff freeze or a top-up dispute; feature 21). | any |  |
 | TOKEN_INVALID | 410 | Invite/reset token unknown, expired, already used or superseded. | `POST /admin/auth/password/set` | yes |
 | PAYLOAD_TOO_LARGE | 413 | The request body is over the route limit. | any |  |
 | UNSUPPORTED_MEDIA_TYPE | 415 | The request body type is not accepted by the route. | any |  |

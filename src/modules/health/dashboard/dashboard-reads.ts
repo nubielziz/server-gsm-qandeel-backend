@@ -321,6 +321,8 @@ export async function moneyFacts(db: DbExecutor, now: Date): Promise<MoneyFacts>
       with open_disputes as (
         select d.id, d.evidence_due_at, d.amount / ${rate} as usd_amount, d.fee / ${rate} as usd_fee
         from disputes d join currencies cur on cur.code = d.currency
+        -- Order payments only: a top-up dispute (feature 21) has no evidence screen to link to.
+        join payments dp on dp.id = d.payment_id and dp.purpose = 'order'
         left join orders po on po.id = d.order_id left join checkout_sessions cs on cs.id = po.checkout_session_id
         where d.status = 'needs_response'),
       earliest as (select * from open_disputes order by evidence_due_at, id limit 1)

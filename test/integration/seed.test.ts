@@ -126,7 +126,7 @@ describe.skipIf(!frontendPresent)('runSeed', () => {
     const systemAccounts = accounts.filter((row) => row.ownerId === null);
     expect(systemAccounts.map((row) => row.kind).sort()).toEqual(
       s.LEDGER_ACCOUNT_KINDS.filter(
-        (kind) => !['client_wallet', 'client_hold', 'supplier_prepaid'].includes(kind),
+        (kind) => !['client_wallet', 'client_hold', 'supplier_prepaid', 'customer_wallet'].includes(kind),
       ).sort(),
     );
     expect(accounts.every((row) => row.currency === 'USD')).toBe(true);

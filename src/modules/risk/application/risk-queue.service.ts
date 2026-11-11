@@ -34,7 +34,7 @@ export interface HeldOrderView {
   readonly capturedAmount: string;
   readonly currency: string;
   readonly fxRate: string;
-  readonly paymentMethod: 'card' | 'wallet' | 'crypto';
+  readonly paymentMethod: 'card' | 'wallet' | 'crypto' | 'balance';
   readonly signals: string[];
   readonly customer: {
     readonly id: number;

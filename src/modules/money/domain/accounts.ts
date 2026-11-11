@@ -34,7 +34,9 @@ export const DEBIT_NORMAL_KINDS = [
 /**
  * Account kinds whose balance grows with credits (liabilities, income and equity).
  *
- * Why: decision 024: liability and income are credit-normal; `owner_capital` is equity, the counterpart of opening balances.
+ * Why: decision 024: liability and income are credit-normal; `owner_capital` is equity, the counterpart of opening balances. A
+ * customer's store balance (`customer_wallet`, feature 21) is a liability like a merchant wallet; the trial balance and the reconcile
+ * read this list, so a missing kind would flag every customer wallet.
  */
 export const CREDIT_NORMAL_KINDS = [
   'fee_income',
@@ -44,6 +46,7 @@ export const CREDIT_NORMAL_KINDS = [
   'owner_capital',
   'client_wallet',
   'client_hold',
+  'customer_wallet',
 ] as const satisfies readonly LedgerAccountKind[];
 
 const DEBIT_NORMAL = new Set<LedgerAccountKind>(DEBIT_NORMAL_KINDS);

@@ -35,6 +35,7 @@ Frontend features covering this module: `customers`, `checkouts` (rules in `RULE
 | `GET /admin/checkouts/abandoned` | admin | staff-permission `growth:read` | 19 | `listAbandonedCheckouts` |
 | `POST /admin/checkouts/recover` | admin | staff-permission `growth:send` | 19 | `recoverCheckouts` |
 | `GET /admin/reports/funnel` | admin | staff-permission `reports:growth` | 19 | `getFunnel` |
+| `POST /store/v1/checkout-sessions/:token/balance-payment` | store | checkout-token | 21 |  |
 
 ## POST /store/v1/checkout-sessions
 
@@ -290,4 +291,9 @@ Writes audit_logs both ways. Card fingerprint = the gateway's card fingerprint (
 - **Response**: {days, imeiChecks, paymentStarted, paid, delivered}, all integers. Storefront only, over the last `days` days. The console shows each step's share of the one before (display only). Window [now - days x 24 h, now]. imeiChecks = count(imei_checks) with source IN (storefront_free, pre_order) and created_at in the window. paymentStarted = count(checkout_sessions) created in the window, any status. paid = those sessions with order_id IS NOT NULL (status paid). delivered = those sessions whose order (orders.id = order_id) has status completed. One read-only function storefrontFunnel(days) in the customers module's public index; the dashboard storefront block (feature 9, fixed 30 days) calls the same function; feature 9 builds it and feature 19 reuses it.
 - **Errors**: 422 VALIDATION_FAILED (days not in 7|30|90, errors[{field: 'days'}] (mocks/handlers.ts:27-30)); 403 FORBIDDEN (caller lacks reports:growth)
 - **Mock**: src/features/checkouts/mocks/funnel.ts (Counts from demo S.imeiChecks, the orders mock (channel b2c) and the checkouts table.)
+
+## POST /store/v1/checkout-sessions/:token/balance-payment
+
+- **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): Pay a checkout from the signed-in customer balance: the order is placed and the balance debited in one transaction. (الدفع من رصيد الزبون: يُنشأ الطلب ويُخصم الرصيد في معاملة واحدة) · checkout-token · stage 21 · tables checkout_sessions, payments, orders, ledger_entries
+- **Frontend**: none.
 

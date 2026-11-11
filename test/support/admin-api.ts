@@ -29,10 +29,10 @@ export class AdminApi {
     readonly ip = '127.0.0.1',
   ) {}
 
-  /** Sends a request with this session. */
-  call(method: Method, url: string, payload?: unknown): Promise<ApiAnswer> {
+  /** Sends a request with this session (and any extra headers, such as `idempotency-key`). */
+  call(method: Method, url: string, payload?: unknown, extra: Record<string, string> = {}): Promise<ApiAnswer> {
     const headers = method === 'GET' ? { ...this.session.headers } : { ...this.session.mutationHeaders };
-    return this.send(method, url, headers, payload);
+    return this.send(method, url, { ...headers, ...extra }, payload);
   }
 
   /** Sends a mutation with the session cookie but without the CSRF token (what a forged cross-site request looks like). */
@@ -65,7 +65,7 @@ export class AdminApi {
   }
 
   get = (url: string) => this.call('GET', url);
-  post = (url: string, payload?: unknown) => this.call('POST', url, payload);
+  post = (url: string, payload?: unknown, headers?: Record<string, string>) => this.call('POST', url, payload, headers);
   patch = (url: string, payload?: unknown) => this.call('PATCH', url, payload);
   put = (url: string, payload?: unknown) => this.call('PUT', url, payload);
   delete = (url: string) => this.call('DELETE', url);

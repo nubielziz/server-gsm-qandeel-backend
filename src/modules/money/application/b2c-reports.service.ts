@@ -9,11 +9,12 @@ import { DbService } from '../../../infra/db';
 import { BASE_CURRENCY } from '../domain/accounts';
 import { type PaymentReportSort, paymentsReport, vatRows } from '../infra/b2c-reports.repository';
 import { loadBillingCustomers } from '../infra/foreign-directory.repository';
-import { b2cPaymentMethod } from '../domain/b2c-money';
+import { storedOrderMethod } from '../domain/b2c-money';
 import { REPORT_SORTS, type getPaymentsReport, type getVatReport } from '../contracts/b2c-reports.contracts';
 
 const DAY_MS = 86_400_000;
-const METHODS = ['card', 'wallet', 'crypto'] as const;
+// Feature 21 adds the store balance (no gateway fee) as a fourth row.
+const METHODS = ['card', 'wallet', 'crypto', 'balance'] as const;
 const DEFAULT_PAGE = 12;
 const MAX_PAGE = 100;
 
@@ -103,7 +104,7 @@ export class B2cReportsService {
       this.db.db,
       report.lines.flatMap((line) => (line.customerId === null ? [] : [line.customerId])),
     );
-    const figures = new Map(report.methods.map((row) => [b2cPaymentMethod(row.method), row]));
+    const figures = new Map(report.methods.map((row) => [storedOrderMethod(row.method), row]));
     return {
       methods: METHODS.map((method) => {
         const row = figures.get(method);
@@ -125,7 +126,7 @@ export class B2cReportsService {
           amount: Money.of(line.amount).toWire(),
           feeAmount: Money.of(line.feeAmount).toWire(),
           createdAt: line.paidAt.toISOString(),
-          method: b2cPaymentMethod(line.method),
+          method: storedOrderMethod(line.method),
           brand: line.brand,
           status: line.status as 'captured',
           currency: line.currency,

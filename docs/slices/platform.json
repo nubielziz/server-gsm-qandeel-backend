@@ -4,15 +4,15 @@
   "domain": "G",
   "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
   "counts": {
-    "rows": 27,
-    "endpoints": 34,
+    "rows": 28,
+    "endpoints": 35,
     "bySurface": {
       "v1": 2,
       "client": 11,
       "admin": 17,
       "hooks": 1,
       "system": 2,
-      "store": 1
+      "store": 2
     },
     "frontendCalled": 17
   },
@@ -22,6 +22,7 @@
     7,
     9,
     12,
+    21,
     22
   ],
   "ownedTables": [
@@ -1263,6 +1264,39 @@
       "module": "platform",
       "description": "REST v1 documentation page.",
       "frontend": null
+    },
+    {
+      "key": "POST /store/v1/files",
+      "method": "POST",
+      "path": "/store/v1/files",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "رفع ملف من حساب الزبون (إيصال تحويل)",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 21,
+      "tables": [
+        "files"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/files",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/files"
+      },
+      "module": "platform",
+      "description": "Upload a file from the customer account (a transfer receipt).",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/21.mjs",
+        "spec": "B-TBD customer-wallet-routes"
+      }
     },
     {
       "key": "GET /store/v1/media/:name",

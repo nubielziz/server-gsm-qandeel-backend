@@ -99,7 +99,11 @@ const ADDITIONS: Record<string, string[]> = {
     'checkout_url',
     'request_fingerprint',
   ],
-  invoices: ['description', 'checkout_url'],
+  // Feature 21 (customer wallet, migration 0020): the store top-up's Idempotency-Key and request fingerprint.
+  invoices: ['description', 'checkout_url', 'idempotency_key', 'request_fingerprint'],
+  // Feature 21: the freeze state of a customer wallet; whether a checkout was opened by a signed-in customer.
+  ledger_accounts: ['frozen_at', 'frozen_reason'],
+  checkout_sessions: ['opened_signed_in'],
   kyc_submissions: ['submitted_note'],
   // Feature 16 (migration 0014): which idempotency key the next gateway send of the refund uses.
   refunds: ['note', 'send_attempt'],
@@ -365,7 +369,7 @@ describe('audit resolutions (docs/contract/RESOLUTIONS.md, migration 0003)', () 
     expect(support.TICKET_STATUSES).not.toContain('closed');
     expect(money.TOPUP_PAYMENT_STATUSES).toEqual(['pending', 'approved', 'rejected']);
     expect(money.TOPUP_METHODS).toEqual(['bank', 'card', 'usdt', 'wise']);
-    expect(money.ORDER_METHODS).toEqual(['card', 'wallet', 'crypto']);
+    expect(money.ORDER_METHODS).toEqual(['card', 'wallet', 'crypto', 'balance']);
     expect(catalog.SERVICE_PRICE_MODES).toEqual(['fixed']);
     expect(identity.AUTH_TOKEN_PURPOSES).toEqual(['invite', 'reset', 'verify_email', 'magic_link', 'telegram_link']);
     // Every order event type the engine writes is in the list (a new one needs a migration).

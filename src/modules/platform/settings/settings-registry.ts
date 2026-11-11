@@ -99,6 +99,61 @@ export function allowPlainHttpProblem(value: unknown): string | undefined {
 }
 
 /**
+ * The customer wallet settings (feature 21, plan § 5.8): two switches and six whole USD numbers, with their accepted ranges.
+ *
+ * Why: the owner's defaults (lead rule L5) are settings so they can change without a release; the money module's
+ * `customerWalletPolicy` reads the same keys and falls back to its defaults outside these ranges. Every change is audited by the route.
+ */
+export const CUSTOMER_WALLET_SETTINGS = {
+  enabled: 'wallet.customer.enabled',
+  cardTopUps: 'wallet.customer.card_topups',
+  minTopUp: 'wallet.customer.min_topup',
+  maxTopUp: 'wallet.customer.max_topup',
+  maxBalance: 'wallet.customer.max_balance',
+  topUpsPerDay: 'wallet.customer.topups_per_day',
+  topUpAmountPerDay: 'wallet.customer.topup_amount_per_day',
+  adjustApprovalLimit: 'wallet.customer.adjust_approval_limit',
+} as const;
+
+/**
+ * The accepted range of each whole-number customer wallet setting.
+ *
+ * Why: plan 21 § 5.8; the approval limit is capped at $10,000 (risk K7: who adjusts can also raise it).
+ */
+export const CUSTOMER_WALLET_SETTING_RANGES: Readonly<Record<string, { min: number; max: number }>> = {
+  [CUSTOMER_WALLET_SETTINGS.minTopUp]: { min: 1, max: 10_000 },
+  [CUSTOMER_WALLET_SETTINGS.maxTopUp]: { min: 1, max: 100_000 },
+  [CUSTOMER_WALLET_SETTINGS.maxBalance]: { min: 1, max: 1_000_000 },
+  [CUSTOMER_WALLET_SETTINGS.topUpsPerDay]: { min: 1, max: 100 },
+  [CUSTOMER_WALLET_SETTINGS.topUpAmountPerDay]: { min: 1, max: 1_000_000 },
+  [CUSTOMER_WALLET_SETTINGS.adjustApprovalLimit]: { min: 0, max: 10_000 },
+};
+
+/**
+ * Builds the validator of a whole-number setting.
+ *
+ * @param min the smallest accepted value
+ * @param max the largest accepted value
+ * @param unit the word of the message (`dollars`, `top-ups`)
+ * @returns a validator that accepts JSON integers from `min` to `max`
+ */
+export function wholeNumberProblem(min: number, max: number, unit: string): (value: unknown) => string | undefined {
+  return (value) => {
+    if (typeof value !== 'number' || !Number.isInteger(value)) return `Use a whole number of ${unit}.`;
+    if (value < min || value > max) return `Use a number from ${min} to ${max}.`;
+    return undefined;
+  };
+}
+
+const booleanProblem = (value: unknown): string | undefined =>
+  typeof value === 'boolean' ? undefined : 'Use true or false.';
+
+const walletRange = (key: string, unit: string): EditableSetting => {
+  const range = CUSTOMER_WALLET_SETTING_RANGES[key]!;
+  return { key, validate: wholeNumberProblem(range.min, range.max, unit) };
+};
+
+/**
  * The settings `PATCH /admin/settings` accepts. A later feature that needs another key editable here adds it with its
  * validator; the keys with their own guarded routes (`adminAllowlistOnly`, `maintenance`, the risk rules, the storefront
  * policies) are deliberately not here, so `settings:update` cannot bypass them (MISMATCHES B67).
@@ -109,6 +164,14 @@ export const EDITABLE_SETTINGS: readonly EditableSetting[] = [
   { key: IMPORT_DEFAULT_SLA_KEY, validate: importDefaultSlaMinutesProblem },
   { key: POLL_SLOW_AFTER_HOURS_KEY, validate: pollSlowAfterHoursProblem },
   { key: SUPPLIERS_ALLOW_PLAIN_HTTP_KEY, validate: allowPlainHttpProblem },
+  { key: CUSTOMER_WALLET_SETTINGS.enabled, validate: booleanProblem },
+  { key: CUSTOMER_WALLET_SETTINGS.cardTopUps, validate: booleanProblem },
+  walletRange(CUSTOMER_WALLET_SETTINGS.minTopUp, 'dollars'),
+  walletRange(CUSTOMER_WALLET_SETTINGS.maxTopUp, 'dollars'),
+  walletRange(CUSTOMER_WALLET_SETTINGS.maxBalance, 'dollars'),
+  walletRange(CUSTOMER_WALLET_SETTINGS.topUpsPerDay, 'top-ups'),
+  walletRange(CUSTOMER_WALLET_SETTINGS.topUpAmountPerDay, 'dollars'),
+  walletRange(CUSTOMER_WALLET_SETTINGS.adjustApprovalLimit, 'dollars'),
 ];
 
 /** A refused key of a settings patch. */

@@ -10,6 +10,7 @@ import {
   findTaxWindowsInForce,
 } from '../infra/storefront-money.repository';
 import { BASE_CURRENCY } from '../domain/accounts';
+import { driverFor } from '../infra/gateway-drivers/drivers';
 
 /** A currency the storefront can show and charge in. */
 export interface StorefrontCurrency {
@@ -152,11 +153,17 @@ export class StorefrontMoney {
   /**
    * Lists the payment methods a storefront customer may be offered.
    *
+   * Why: plan 21 defect D6: the checkout and `/store/v1/config` offered every active B2C gateway, while `/pay` refuses a manual gateway and
+   * one without a driver; only gateways `/pay` accepts are listed now (manual ones are for store balance top-ups).
+   *
    * @param db the database or a transaction
-   * @returns the active gateways meant for B2C or both audiences
+   * @returns the active, automatic gateways with a driver, meant for B2C or both audiences
    */
   async paymentMethods(db: DbExecutor): Promise<StorefrontPaymentMethod[]> {
-    return (await findStorefrontGateways(db)).map((gateway) => ({
+    const payable = (await findStorefrontGateways(db)).filter(
+      (gateway) => !gateway.isManual && driverFor(gateway.driver) !== undefined,
+    );
+    return payable.map((gateway) => ({
       code: gateway.code,
       name: gateway.name,
       supports3ds: gateway.supports3ds,

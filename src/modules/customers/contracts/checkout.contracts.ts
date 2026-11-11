@@ -82,6 +82,13 @@ export const CheckoutSessionSchema = z.object({
     complete: z.boolean(),
   }),
   paymentMethods: z.array(z.object({ code: z.string(), name: z.string(), supports3ds: z.boolean() })),
+  balancePayable: z
+    .boolean()
+    .describe(
+      'Feature 21: true when the store balance is switched on and this checkout was opened by a signed-in customer, so ' +
+        '`POST /store/v1/checkout-sessions/:token/balance-payment` may pay it (with that customer signed in). Never the balance itself: ' +
+        'read it from `GET /store/v1/me/wallet`.',
+    ),
   trackingToken: z
     .string()
     .nullable()
@@ -110,6 +117,7 @@ const SESSION_EXAMPLE = {
   },
   consent: { required: ['terms', 'privacy', 'withdrawal_waiver'], granted: [], complete: false },
   paymentMethods: [{ code: 'card', name: 'Card gateway', supports3ds: true }],
+  balancePayable: false,
   trackingToken: null,
 } as const;
 

@@ -51,6 +51,12 @@ import { V1AccountController } from './controllers/v1-account.controller';
 import { WalletController } from './controllers/wallet.controller';
 import { FX_PROVIDER_FACTORY } from './infra/fx-provider.factory';
 import { MoneyOutboxModule } from './money-outbox.module';
+import { CustomerTopUps } from './application/customer-top-ups';
+import { CustomerWalletPayments } from './application/customer-wallet-payments';
+import { CustomerWallets } from './application/customer-wallets';
+import { CustomerTopUpsController } from './controllers/customer-topups.controller';
+import { CustomerWalletController } from './controllers/customer-wallet.controller';
+import { TopUpScreeningModule } from './top-up-screening.module';
 import { StorefrontMailsModule } from './storefront-mails.module';
 
 /**
@@ -60,14 +66,16 @@ import { StorefrontMailsModule } from './storefront-mails.module';
  * `/admin/payment-gateways`, `/admin/invoices`, `/admin/payments`, the portal's `/client/payment-methods` and `/client/invoices`,
  * and the incoming `POST /webhooks/payments/:gateway` with the gateway signature adapters behind it, and the storefront money of
  * stage 16: `/admin/refunds`, `/admin/disputes`, `/admin/reports/vat|payments` and `POST /webhooks/disputes/:gateway`; it exports
- * what the checkout and the order receipt need (`StorefrontPayments`, `OrderReceipts`).
+ * what the checkout and the order receipt need (`StorefrontPayments`, `OrderReceipts`); and the customer wallet of feature 21
+ * (`/store/v1/me/wallet*` with the top-ups, `/admin/customers/:id/wallet*`, `/admin/customer-wallets`), exporting `CustomerWallets` and `CustomerWalletPayments`
+ * for the customers module (anonymize guard, data export, balance payment).
  *
  * Why: these use cases need the global database, audit, settings and clock providers (and `job_runs` for reconciliation),
  * which a database-less test app does not have; `MerchantAccounts` and `LedgerPoster` (the global `MoneyModule`) need none
  * of them. `WalletService` is exported for the later order, billing and refund features.
  */
 @Module({
-  imports: [JobRunsModule, MoneyOutboxModule, StorefrontMailsModule],
+  imports: [JobRunsModule, MoneyOutboxModule, StorefrontMailsModule, TopUpScreeningModule],
   controllers: [
     WalletController,
     LedgerController,
@@ -84,6 +92,8 @@ import { StorefrontMailsModule } from './storefront-mails.module';
     RefundsController,
     DisputesController,
     B2cReportsController,
+    CustomerWalletController,
+    CustomerTopUpsController,
   ],
   providers: [
     WalletService,
@@ -119,7 +129,10 @@ import { StorefrontMailsModule } from './storefront-mails.module';
     DisputeService,
     DisputeWebhookService,
     B2cReportsService,
+    CustomerWallets,
+    CustomerTopUps,
+    CustomerWalletPayments,
   ],
-  exports: [WalletService, StorefrontPayments, OrderReceipts],
+  exports: [WalletService, StorefrontPayments, OrderReceipts, CustomerWallets, CustomerWalletPayments],
 })
 export class MoneyAdminModule {}

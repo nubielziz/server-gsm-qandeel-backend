@@ -5,7 +5,7 @@
 // catalog and suppliers export no directory yet (features 2a and 4a add `ClientGroupDirectory`; suppliers arrive in 6),
 // so this file reads `clients`, `client_groups`, `suppliers`, `customers` and `staff_users` with plain selects. Replace its
 // bodies with calls to those services once they exist; nothing outside this file knows.
-import { eq, ilike, inArray, sql } from 'drizzle-orm';
+import { eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
 import type { LedgerOwnerType } from '../db/schema';
 
@@ -363,4 +363,68 @@ export async function orderPaymentBaseAmounts(
       and p.status not in ('pending', 'failed', 'rejected')
   `);
   return result.rows.map((row) => ({ gatewayId: Number(row.gateway_id), base: row.base }));
+}
+
+/** A storefront customer as the wallet use cases need it (feature 21). */
+export interface WalletCustomer {
+  readonly id: number;
+  readonly name: string;
+  readonly email: string;
+  /** `active`, `suspended`, `blocked` or `anonymized`. */
+  readonly status: string;
+  /** Whether the customer has a sign-in account (only they may hold and spend a balance: O5). */
+  readonly hasAccount: boolean;
+}
+
+const walletCustomerColumns = {
+  id: s.customers.id,
+  name: s.customers.name,
+  email: s.customers.email,
+  status: s.customers.status,
+  hasAccount: s.customers.hasAccount,
+};
+
+/**
+ * Reads one storefront customer for the wallet use cases.
+ *
+ * @param db the database or a transaction
+ * @param id the customer id
+ * @returns the customer, or `undefined`
+ */
+export async function findWalletCustomer(db: DbExecutor, id: number): Promise<WalletCustomer | undefined> {
+  const [row] = await db.select(walletCustomerColumns).from(s.customers).where(eq(s.customers.id, id)).limit(1);
+  return row;
+}
+
+/**
+ * Reads storefront customers for the wallet list and the deposits screen (feature 21).
+ *
+ * @param db the database or a transaction
+ * @param ids the customer ids
+ * @returns the customers that exist, by id
+ */
+export async function loadWalletCustomers(
+  db: DbExecutor,
+  ids: readonly number[],
+): Promise<Map<number, WalletCustomer>> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return new Map();
+  const rows = await db.select(walletCustomerColumns).from(s.customers).where(inArray(s.customers.id, unique));
+  return new Map(rows.map((row) => [row.id, row]));
+}
+
+/**
+ * The customers whose name or email matches a search text (the staff wallet list and the deposits search, feature 21).
+ *
+ * @param db the database or a transaction
+ * @param pattern a `LIKE` pattern (already escaped, with the wildcards)
+ * @returns up to 200 customer ids
+ */
+export async function findCustomerIdsByNameOrEmail(db: DbExecutor, pattern: string): Promise<number[]> {
+  const rows = await db
+    .select({ id: s.customers.id })
+    .from(s.customers)
+    .where(or(ilike(s.customers.name, pattern), ilike(s.customers.email, pattern)))
+    .limit(MATCH_LIMIT);
+  return rows.map((row) => row.id);
 }

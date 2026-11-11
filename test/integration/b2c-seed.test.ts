@@ -173,7 +173,12 @@ describe.skipIf(!frontendPresent)('the storefront money seed', () => {
   it('feeds the reports from the seeded books', async () => {
     const payments = await staff.get('/admin/reports/payments');
     expect(payments.status).toBe(200);
-    expect(payments.body.methods.map((row: { method: string }) => row.method)).toEqual(['card', 'wallet', 'crypto']);
+    expect(payments.body.methods.map((row: { method: string }) => row.method)).toEqual([
+      'card',
+      'wallet',
+      'crypto',
+      'balance',
+    ]);
     expect(payments.body.total).toBe(104 - 0);
     const volume = payments.body.methods.reduce((sum: number, row: { volume: string }) => sum + Number(row.volume), 0);
     expect(volume).toBeGreaterThan(1000);

@@ -9,20 +9,20 @@
     "additions": "rows beyond the map are backend-owned: scripts/map-additions/<feature>.mjs (decision 035); they name their module, English sentence and spec decision, and are counted on top of the map numbers"
   },
   "counts": {
-    "rows": 280,
+    "rows": 296,
     "tables": 66,
     "scenarios": 13,
     "surfaces": 9,
     "moneyEvents": 13,
     "accounts": 14,
-    "endpoints": 388,
+    "endpoints": 404,
     "map": {
       "rows": 274,
       "endpoints": 382
     },
     "additions": {
-      "rows": 6,
-      "endpoints": 6
+      "rows": 22,
+      "endpoints": 22
     },
     "frontendRoutes": 269,
     "bySurface": {
@@ -39,8 +39,8 @@
         "endpoints": 51
       },
       "admin": {
-        "rows": 162,
-        "endpoints": 270
+        "rows": 168,
+        "endpoints": 276
       },
       "hooks": {
         "rows": 3,
@@ -55,8 +55,8 @@
         "endpoints": 4
       },
       "store": {
-        "rows": 33,
-        "endpoints": 33
+        "rows": 43,
+        "endpoints": 43
       },
       "system": {
         "rows": 4,
@@ -65,8 +65,8 @@
     },
     "byModule": {
       "money": {
-        "rows": 41,
-        "endpoints": 57
+        "rows": 55,
+        "endpoints": 71
       },
       "catalog": {
         "rows": 21,
@@ -77,8 +77,8 @@
         "endpoints": 40
       },
       "platform": {
-        "rows": 27,
-        "endpoints": 34
+        "rows": 28,
+        "endpoints": 35
       },
       "identity": {
         "rows": 45,
@@ -105,8 +105,8 @@
         "endpoints": 17
       },
       "customers": {
-        "rows": 25,
-        "endpoints": 28
+        "rows": 26,
+        "endpoints": 29
       },
       "support": {
         "rows": 8,
@@ -12905,6 +12905,555 @@
       "module": "platform",
       "description": "REST v1 documentation page.",
       "frontend": null
+    },
+    {
+      "key": "GET /store/v1/me/wallet",
+      "method": "GET",
+      "path": "/store/v1/me/wallet",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "رصيد الزبون: المتاح والحدود وحالة التجميد",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 21,
+      "tables": [
+        "ledger_accounts",
+        "invoices"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/me/wallet",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/me/wallet"
+      },
+      "module": "money",
+      "description": "The signed-in customer store balance: available amount, limits and hold state.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/21.mjs",
+        "spec": "B-TBD customer-wallet-routes"
+      }
+    },
+    {
+      "key": "GET /store/v1/me/wallet/statement",
+      "method": "GET",
+      "path": "/store/v1/me/wallet/statement",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "كشف حساب رصيد الزبون مع فلترة بالتاريخ",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 21,
+      "tables": [
+        "ledger_entries",
+        "ledger_transactions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/me/wallet/statement",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/me/wallet/statement"
+      },
+      "module": "money",
+      "description": "The signed-in customer balance statement, filtered by date.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/21.mjs",
+        "spec": "B-TBD customer-wallet-routes"
+      }
+    },
+    {
+      "key": "GET /store/v1/me/wallet/top-up-methods",
+      "method": "GET",
+      "path": "/store/v1/me/wallet/top-up-methods",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "طرق شحن الرصيد المتاحة للزبون",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 21,
+      "tables": [
+        "payment_gateways"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/me/wallet/top-up-methods",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/me/wallet/top-up-methods"
+      },
+      "module": "money",
+      "description": "The payment methods the signed-in customer can top up the balance with.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/21.mjs",
+        "spec": "B-TBD customer-wallet-routes"
+      }
+    },
+    {
+      "key": "POST /store/v1/me/wallet/top-ups",
+      "method": "POST",
+      "path": "/store/v1/me/wallet/top-ups",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "طلب شحن رصيد: المبلغ وطريقة الدفع مع Idempotency-Key",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 21,
+      "tables": [
+        "invoices"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/me/wallet/top-ups",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/me/wallet/top-ups"
+      },
+      "module": "money",
+      "description": "Start a balance top-up: amount and payment method, with an Idempotency-Key.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/21.mjs",
+        "spec": "B-TBD customer-wallet-routes"
+      }
+    },
+    {
+      "key": "GET /store/v1/me/wallet/top-ups",
+      "method": "GET",
+      "path": "/store/v1/me/wallet/top-ups",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "عمليات شحن الزبون وحالاتها",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 21,
+      "tables": [
+        "invoices",
+        "payments"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/me/wallet/top-ups",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/me/wallet/top-ups"
+      },
+      "module": "money",
+      "description": "The signed-in customer top-ups and their states.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/21.mjs",
+        "spec": "B-TBD customer-wallet-routes"
+      }
+    },
+    {
+      "key": "GET /store/v1/me/wallet/top-ups/:id",
+      "method": "GET",
+      "path": "/store/v1/me/wallet/top-ups/:id",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "عملية شحن واحدة مع تعليمات الدفع",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 21,
+      "tables": [
+        "invoices",
+        "payments"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/me/wallet/top-ups/:id",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/me/wallet/top-ups/:id"
+      },
+      "module": "money",
+      "description": "One top-up with its payment instructions.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/21.mjs",
+        "spec": "B-TBD customer-wallet-routes"
+      }
+    },
+    {
+      "key": "POST /store/v1/me/wallet/top-ups/:id/receipt",
+      "method": "POST",
+      "path": "/store/v1/me/wallet/top-ups/:id/receipt",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "إرفاق إيصال التحويل بانتظار مراجعة الموظف",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 21,
+      "tables": [
+        "payments",
+        "invoices",
+        "files"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/me/wallet/top-ups/:id/receipt",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/me/wallet/top-ups/:id/receipt"
+      },
+      "module": "money",
+      "description": "Attach the transfer receipt to a manual top-up; it then waits for staff review.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/21.mjs",
+        "spec": "B-TBD customer-wallet-routes"
+      }
+    },
+    {
+      "key": "POST /store/v1/me/wallet/top-ups/:id/cancel",
+      "method": "POST",
+      "path": "/store/v1/me/wallet/top-ups/:id/cancel",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "إلغاء عملية شحن يدوية لم يُرفق لها إيصال",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 21,
+      "tables": [
+        "invoices"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/me/wallet/top-ups/:id/cancel",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/me/wallet/top-ups/:id/cancel"
+      },
+      "module": "money",
+      "description": "Cancel a manual top-up that has no receipt yet.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/21.mjs",
+        "spec": "B-TBD customer-wallet-routes"
+      }
+    },
+    {
+      "key": "POST /store/v1/files",
+      "method": "POST",
+      "path": "/store/v1/files",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "رفع ملف من حساب الزبون (إيصال تحويل)",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 21,
+      "tables": [
+        "files"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/files",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/files"
+      },
+      "module": "platform",
+      "description": "Upload a file from the customer account (a transfer receipt).",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/21.mjs",
+        "spec": "B-TBD customer-wallet-routes"
+      }
+    },
+    {
+      "key": "POST /store/v1/checkout-sessions/:token/balance-payment",
+      "method": "POST",
+      "path": "/store/v1/checkout-sessions/:token/balance-payment",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "checkout",
+      "descriptionAr": "الدفع من رصيد الزبون: يُنشأ الطلب ويُخصم الرصيد في معاملة واحدة",
+      "access": "checkout-token",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": true,
+      "authRaw": "رمز الجلسة + Idempotency-Key",
+      "stage": 21,
+      "tables": [
+        "checkout_sessions",
+        "payments",
+        "orders",
+        "ledger_entries"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/checkout-sessions/:token/balance-payment",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/checkout-sessions/:token/balance-payment"
+      },
+      "module": "customers",
+      "description": "Pay a checkout from the signed-in customer balance: the order is placed and the balance debited in one transaction.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/21.mjs",
+        "spec": "B-TBD customer-wallet-routes"
+      }
+    },
+    {
+      "key": "GET /admin/customers/:id/wallet",
+      "method": "GET",
+      "path": "/admin/customers/:id/wallet",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "customers",
+      "descriptionAr": "رصيد الزبون: الرصيد والتجميد والشحنات المعلّقة",
+      "access": "staff-permission",
+      "permission": "wallet:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "wallet:read",
+      "stage": 21,
+      "tables": [
+        "ledger_accounts"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/customers/:id/wallet",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/customers/:id/wallet"
+      },
+      "module": "money",
+      "description": "A customer store balance: balance, hold state and pending top-ups.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/21.mjs",
+        "spec": "B-TBD customer-wallet-routes"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "GET /admin/customers/:id/wallet/statement",
+      "method": "GET",
+      "path": "/admin/customers/:id/wallet/statement",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "customers",
+      "descriptionAr": "كشف حساب رصيد الزبون",
+      "access": "staff-permission",
+      "permission": "wallet:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "wallet:read",
+      "stage": 21,
+      "tables": [
+        "ledger_entries",
+        "ledger_transactions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/customers/:id/wallet/statement",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/customers/:id/wallet/statement"
+      },
+      "module": "money",
+      "description": "A customer balance statement.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/21.mjs",
+        "spec": "B-TBD customer-wallet-routes"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/customers/:id/wallet/adjust",
+      "method": "POST",
+      "path": "/admin/customers/:id/wallet/adjust",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "customers",
+      "descriptionAr": "إضافة أو خصم يدوي على رصيد الزبون مع سبب",
+      "access": "staff-permission",
+      "permission": "wallet:adjust",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "wallet:adjust",
+      "stage": 21,
+      "tables": [
+        "ledger_transactions",
+        "ledger_entries",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/customers/:id/wallet/adjust",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/customers/:id/wallet/adjust"
+      },
+      "module": "money",
+      "description": "Add to or deduct from a customer balance by hand, with a reason.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/21.mjs",
+        "spec": "B-TBD customer-wallet-routes"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/customers/:id/wallet/freeze",
+      "method": "POST",
+      "path": "/admin/customers/:id/wallet/freeze",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "customers",
+      "descriptionAr": "تجميد رصيد الزبون مع السبب",
+      "access": "staff-permission",
+      "permission": "wallet:adjust",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "wallet:adjust",
+      "stage": 21,
+      "tables": [
+        "ledger_accounts",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/customers/:id/wallet/freeze",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/customers/:id/wallet/freeze"
+      },
+      "module": "money",
+      "description": "Put a customer balance on hold, with a reason.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/21.mjs",
+        "spec": "B-TBD customer-wallet-routes"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/customers/:id/wallet/unfreeze",
+      "method": "POST",
+      "path": "/admin/customers/:id/wallet/unfreeze",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "customers",
+      "descriptionAr": "فك تجميد رصيد الزبون",
+      "access": "staff-permission",
+      "permission": "wallet:adjust",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "wallet:adjust",
+      "stage": 21,
+      "tables": [
+        "ledger_accounts",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/customers/:id/wallet/unfreeze",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/customers/:id/wallet/unfreeze"
+      },
+      "module": "money",
+      "description": "Lift the hold on a customer balance.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/21.mjs",
+        "spec": "B-TBD customer-wallet-routes"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "GET /admin/customer-wallets",
+      "method": "GET",
+      "path": "/admin/customer-wallets",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "قائمة أرصدة الزبائن: السالب والمجمّد",
+      "access": "staff-permission",
+      "permission": "wallet:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "wallet:read",
+      "stage": 21,
+      "tables": [
+        "ledger_accounts",
+        "customers"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/customer-wallets",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/customer-wallets"
+      },
+      "module": "money",
+      "description": "Customer balances, with negative and held ones.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/21.mjs",
+        "spec": "B-TBD customer-wallet-routes"
+      },
+      "successStatus": 200
     },
     {
       "key": "GET /store/v1/categories",

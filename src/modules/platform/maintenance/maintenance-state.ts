@@ -103,6 +103,8 @@ const STORE = /^\/store\/v1(?:\/|$)/;
 const CHECKOUT_START: readonly RegExp[] = [
   /^\/store\/v1\/checkout-sessions$/,
   /^\/store\/v1\/checkout-sessions\/[^/]+\/pay$/,
+  // Paying from the store balance places the order at once (feature 21), so it is a checkout start too.
+  /^\/store\/v1\/checkout-sessions\/[^/]+\/balance-payment$/,
 ];
 // The upload of a File service's input is part of placing the order (B157), so scope `api_orders` refuses it too.
 const ORDER_PLACEMENT: ReadonlySet<string> = new Set(['/v1/orders', '/v1/orders/bulk', '/v1/files']);
@@ -124,7 +126,7 @@ export interface MaintenanceRequest {
  * The scopes whose maintenance refuses a request.
  *
  * Why: `store` is the whole storefront API; `checkout` is only starting a checkout (opening a session and starting the
- * payment of one, so nothing is created and nothing is held); `api_orders` is placing an order over REST v1 or Dhru;
+ * payment of one, or paying it from the store balance (feature 21), so nothing is created and nothing is held); `api_orders` is placing an order over REST v1 or Dhru;
  * `all` is the three; the upload of a File service's input (`POST /v1/files`, B157) counts as placing. Everything else (admin, merchant portal, webhooks, health, metrics, docs, reads and cancellations of
  * running orders) is in no scope. A Dhru request counts only once its action is known and is a placement.
  *

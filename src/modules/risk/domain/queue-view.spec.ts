@@ -11,6 +11,10 @@ describe('queueMethodOf', () => {
     expect(queueMethodOf('bank')).toBe('card');
     expect(queueMethodOf(null)).toBe('card');
   });
+
+  it('keeps a store balance payment as balance (feature 21)', () => {
+    expect(queueMethodOf('balance')).toBe('balance');
+  });
 });
 
 describe('deviceName', () => {

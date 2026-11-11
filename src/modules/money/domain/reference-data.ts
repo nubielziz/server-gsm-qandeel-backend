@@ -4,15 +4,17 @@ import { LEDGER_ACCOUNT_KINDS, type LedgerAccountKind } from '../db/schema';
 import { BASE_CURRENCY } from './accounts';
 
 /**
- * The account kinds that exist once per owner (merchant or supplier); every other kind is a system account.
+ * The account kinds that exist once per owner (merchant, supplier or customer); every other kind is a system account.
  *
  * Why: decision 024: per-owner accounts are opened inside the transaction that first needs them, so setup and the seed create
- * only the system ones.
+ * only the system ones. A customer's store balance (feature 21) is per owner: without it here, setup would try to open a system
+ * `customer_wallet` and fail `ledger_accounts_kind_owner_check`.
  */
 export const PER_OWNER_ACCOUNT_KINDS: ReadonlySet<LedgerAccountKind> = new Set<LedgerAccountKind>([
   'client_wallet',
   'client_hold',
   'supplier_prepaid',
+  'customer_wallet',
 ]);
 
 /**

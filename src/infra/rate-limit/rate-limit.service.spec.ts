@@ -27,6 +27,7 @@ describe('RATE_LIMITERS', () => {
       'ticket-email',
       'token',
       'upload',
+      'wallet-topup',
       'webhook-retry',
     ]);
   });

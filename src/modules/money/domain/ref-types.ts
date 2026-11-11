@@ -1,4 +1,4 @@
-// The ledger reference types on the wire (resolution money-1): the console knows eight words, the database stores nine.
+// The ledger reference types on the wire (resolution money-1): the console knows eight words, the database stores ten.
 import type { LedgerRefType } from '../db/schema';
 
 /**
@@ -26,24 +26,24 @@ export type WireRefType = (typeof WIRE_REF_TYPES)[number];
  *
  * Why: manual adjustments keep `ref_type 'client'` in the database (B34, `ref_id` = the merchant) and go out as `system`
  * with the merchant id as `refId`; the console gives no link for `system` and still shows the merchant through the line's
- * owner name. Every other value goes out unchanged.
+ * owner name. A customer balance adjustment (`customer`, feature 21) goes out the same way. Every other value goes out unchanged.
  *
  * @param stored the `ledger_transactions.ref_type`
  * @returns the wire word
  */
 export function toWireRefType(stored: LedgerRefType): WireRefType {
-  return stored === 'client' ? 'system' : stored;
+  return stored === 'client' || stored === 'customer' ? 'system' : stored;
 }
 
 /**
  * Lists the stored reference types a wire filter value matches.
  *
- * Why: resolution money-1: a wire filter `refType=system` matches stored `system` and `client`; every other value matches
- * itself.
+ * Why: resolution money-1: a wire filter `refType=system` matches stored `system`, `client` and `customer` (feature 21); every
+ * other value matches itself.
  *
  * @param wire a value of the `refType` filter
  * @returns the stored values to compare `ref_type` with
  */
 export function storedRefTypesOf(wire: WireRefType): LedgerRefType[] {
-  return wire === 'system' ? ['system', 'client'] : [wire];
+  return wire === 'system' ? ['system', 'client', 'customer'] : [wire];
 }

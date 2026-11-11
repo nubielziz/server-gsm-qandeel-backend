@@ -124,6 +124,8 @@ export const ERROR_CATALOG = {
   TWOFA_NOT_ENABLED: { status: 409, title: 'Two-factor sign-in is already off for this account.' },
   USE_REFUNDS: { status: 409, title: 'Use the refunds page for storefront orders.' },
   VERSION_EXISTS: { status: 409, title: 'This version already exists.' },
+  WALLET_DISABLED: { status: 409, title: 'The store balance is switched off.' },
+  WALLET_FROZEN: { status: 409, title: 'This store balance is on hold.' },
   TOKEN_INVALID: { status: 410, title: 'This link is invalid or has expired.' },
   PAYLOAD_TOO_LARGE: { status: 413, title: 'The request is too large.' },
   UNSUPPORTED_MEDIA_TYPE: { status: 415, title: 'This content type is not supported.' },

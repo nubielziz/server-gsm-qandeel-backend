@@ -85,6 +85,7 @@ describe('the multipart limits', () => {
       '/admin/service-listings/:id/image',
       '/api/index.php',
       '/client/files',
+      '/store/v1/files',
       '/v1/files',
     ]);
   });

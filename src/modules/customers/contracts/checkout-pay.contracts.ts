@@ -82,3 +82,76 @@ export const payCheckoutSession = defineRoute({
     },
   },
 });
+
+/** `POST /store/v1/checkout-sessions/:token/balance-payment` (feature 21, a route beyond the map: `scripts/map-additions/21.mjs`). */
+export const payCheckoutFromBalance = defineRoute({
+  key: 'POST /store/v1/checkout-sessions/:token/balance-payment',
+  summary: 'Pay a checkout from the store balance',
+  description:
+    "Pays an open checkout from the signed-in customer's store balance (USD) and creates the order **at once**, in one transaction: no " +
+    'gateway, no webhook, no polling. Besides the checkout token in the path, the request needs the customer session cookie and its ' +
+    '`X-CSRF-Token`: `401 UNAUTHORIZED` means "sign in to pay from the balance" (not an ended checkout). The checkout must belong to that ' +
+    'customer **and** have been opened while signed in (`balancePayable` on the checkout), else `403 FORBIDDEN`. A paid or expired ' +
+    'checkout is `409 INVALID_TRANSITION`, a suspended customer `403 ACCOUNT_SUSPENDED`, missing consents `422` on `consent`, a balance ' +
+    'below the gross `402 INSUFFICIENT_FUNDS`, a balance on hold `409 WALLET_FROZEN`, the store balance switched off `409 WALLET_DISABLED`. ' +
+    '`Idempotency-Key` is required: a retry with the same key answers the same payment and order (header `idempotency-replayed: true`, the ' +
+    'wallet as it is now); a key a `/pay` call already used on this checkout is `409 IDEMPOTENCY_KEY_REUSED`. The ledger posts Dr customer ' +
+    'wallet / Cr customer funds / Cr VAT payable (VAT at spend, at the rate the checkout locked).',
+  tags: ['checkout'],
+  surface: 'store',
+  access: 'checkout-token',
+  params: z.object({ token: z.string().min(16).max(128).describe('The checkout token.') }),
+  headers: IdempotencyHeaders,
+  success: {
+    status: 201,
+    schema: z.object({
+      payment: z.object({
+        id: zId,
+        reference: z.string().describe('`PAY-<id>`.'),
+        status: z
+          .string()
+          .describe('`captured`; a replay says what refunds made of it since (`refunded`, `partial_refund`).'),
+        method: z.enum(['balance']),
+        currency: z.string().describe("The checkout's currency."),
+        amount: zMoney.describe("The gross in the checkout's currency, as the checkout showed it."),
+        amountUsd: zMoney.describe('The gross in USD: what left the store balance.'),
+      }),
+      order: z.object({
+        id: zId,
+        trackingToken: z.string().describe('The public tracking token of the new order.'),
+      }),
+      wallet: z.object({
+        balance: zMoney.describe('The store balance after the payment (USD).'),
+        available: zMoney.describe('What can be spent now: `0.0000` while on hold or switched off.'),
+      }),
+    }),
+  },
+  errors: [
+    'NOT_FOUND',
+    'UNAUTHORIZED',
+    'CSRF_FAILED',
+    'FORBIDDEN',
+    'VALIDATION_FAILED',
+    'INVALID_TRANSITION',
+    'ACCOUNT_SUSPENDED',
+    'INSUFFICIENT_FUNDS',
+    'WALLET_FROZEN',
+    'WALLET_DISABLED',
+    'IDEMPOTENCY_KEY_REUSED',
+  ],
+  examples: {
+    response: {
+      payment: {
+        id: 9002,
+        reference: 'PAY-9002',
+        status: 'captured',
+        method: 'balance',
+        currency: 'GBP',
+        amount: '3.8400',
+        amountUsd: '4.8000',
+      },
+      order: { id: 70012, trackingToken: 'q8Zr2LwT5mKx9PvA' },
+      wallet: { balance: '45.2000', available: '45.2000' },
+    },
+  },
+});

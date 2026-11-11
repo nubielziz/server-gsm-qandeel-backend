@@ -11,7 +11,8 @@
 | `supplier` | supplier id                                          | 60 per minute, or `suppliers.rate_limit_per_min`    |
 | `help-vote` | `RateLimitService.compositeKey(ip, articleId)`      | 1 per day: one counted help vote per visitor and article (`POST /store/v1/help/:slug/vote`; repeats are ignored with the same `204`) |
 | `media`    | client IP                                            | 1200 per minute: the public service pictures (`GET /store/v1/media/:name`), apart from `ip` |
-| `upload`   | client IP                                            | 20 per minute: large bodies (multipart or over 1 MiB) on Dhru, REST v1, the portal and the admin console |
+| `upload`   | client IP                                            | 20 per minute: large bodies (multipart or over 1 MiB) on Dhru, REST v1, the portal, the admin console and the store (the receipt upload, feature 21) |
+| `wallet-topup` | customer id                                      | 10 per 10 minutes (feature 21: a hint; the top-up limits are SQL) |
 
 ```ts
 // A pipeline guard or a use case:

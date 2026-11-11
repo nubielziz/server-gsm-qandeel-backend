@@ -21,7 +21,9 @@ export const HeldOrderSchema = z.object({
   capturedAmount: zMoney.describe('USD, VAT included.'),
   currency: z.string().describe('The currency the customer paid in.'),
   fxRate: zDecimal.describe('The rate locked by the checkout session.'),
-  paymentMethod: z.enum(['card', 'wallet', 'crypto']),
+  paymentMethod: z
+    .enum(['card', 'wallet', 'crypto', 'balance'])
+    .describe('`balance` for an order paid from the store balance (feature 21): a refund goes back to the balance.'),
   signals: z.array(z.string()).describe('The reasons, in words; the first one seeds the refund reason.'),
   customer: z.object({
     id: zId,

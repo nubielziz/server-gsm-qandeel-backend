@@ -9,7 +9,7 @@ import { Money } from '../../../common/money';
 import { DbService, type DbExecutor } from '../../../infra/db';
 import { EncryptionService, TokenService } from '../../../infra/crypto';
 import { StorefrontServices, type SellableField } from '../../catalog';
-import { StorefrontMoney } from '../../money';
+import { CustomerWallets, StorefrontMoney } from '../../money';
 import { OrderReadService, inputProblems, isValidImei, normalizeImei, quantityProblem } from '../../orders';
 import { Blocklist } from '../../risk';
 import { StorefrontPolicies, StorefrontQuotes, inCurrency } from '../../storefront';
@@ -92,6 +92,7 @@ export class CheckoutSessionService {
     private readonly blocklist: Blocklist,
     private readonly encryption: EncryptionService,
     private readonly tokens: TokenService,
+    private readonly wallets: CustomerWallets,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -171,6 +172,9 @@ export class CheckoutSessionService {
         ip: request.ip,
         userAgent: request.userAgent.slice(0, MAX_USER_AGENT_LENGTH),
         status: 'open',
+        // Plan 21 P9: only a checkout the account itself opened may be paid from its store balance (a guest checkout typed with the
+        // account's email, or a prepared link sent to the customer, never can).
+        openedSignedIn: account !== undefined,
         // Business times come from the injected clock, not the column default (decision 031).
         expiresAt: new Date(now.getTime() + CHECKOUT_SESSION_TTL_MINUTES * MINUTE_MS),
         createdAt: now,
@@ -198,17 +202,20 @@ export class CheckoutSessionService {
    *
    * @param db the database or a transaction
    * @param row the stored session
-   * @returns the view, amounts in USD and in the locked currency, masked email and IMEI, consent state, payment methods
+   * @returns the view, amounts in USD and in the locked currency, masked email and IMEI, consent state, payment methods, and whether the
+   *   store balance may pay it (the wallet is switched on and the checkout was opened signed in; never the balance itself: the token is not
+   *   an identity)
    */
   async view(db: DbExecutor, row: CheckoutSession): Promise<CheckoutSessionView> {
     const now = this.clock.now();
-    const [names, currency, consents, switches, methods, trackingToken] = await Promise.all([
+    const [names, currency, consents, switches, methods, trackingToken, policy] = await Promise.all([
       this.services.names(db, [row.serviceId]),
       this.money.byCode(db, row.currency),
       listSessionConsents(db, row.id),
       this.policies.switches(db),
       this.money.paymentMethods(db),
       row.orderId === null ? Promise.resolve(null) : this.orders.trackingTokenOf(db, row.orderId),
+      this.wallets.policy(),
     ]);
     const service = names.get(row.serviceId);
     const usd = { net: row.netAmount, tax: row.taxAmount, gross: row.grossAmount };
@@ -241,6 +248,7 @@ export class CheckoutSessionService {
       },
       consent: consentOf(consentState(consents, requiredConsents(switches.withdrawalWaiver))),
       paymentMethods: methods,
+      balancePayable: policy.enabled && row.openedSignedIn,
       trackingToken,
     };
   }

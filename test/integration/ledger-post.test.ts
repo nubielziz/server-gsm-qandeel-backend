@@ -2,7 +2,7 @@
 // balance_after, idempotent replays, the credit-limit guard, the 13 events together, and concurrency (parallel posts on one
 // wallet never overspend, one key posts once, opposite postings do not deadlock).
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { AppError } from '../../src/common/errors';
 import { Money } from '../../src/common/money';
 import { schema as s } from '../../src/infra/db';
@@ -244,7 +244,7 @@ describe('the credit limit guard (decision 024 step 4)', () => {
     await db
       .update(s.ledgerAccounts)
       .set({ overdraftLimit: '100.0000' })
-      .where(eq(s.ledgerAccounts.ownerId, merchant.id));
+      .where(and(eq(s.ledgerAccounts.ownerId, merchant.id), eq(s.ledgerAccounts.kind, 'client_wallet')));
     await post(input(adjust({ clientId: merchant.id, amount: m('50'), direction: 'credit' }), merchant.id));
     expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id })).toMatchObject({
       balance: '-250.0000',

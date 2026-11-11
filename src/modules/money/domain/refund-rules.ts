@@ -33,7 +33,8 @@ export function refundableLeft(paid: Money, taken: Money): Money {
  * How a refund is paid out.
  *
  * Why: ANSWERS refunds Q4 and money-12: a card or wallet payment goes back through the gateway (`original`); a crypto payment, or a
- * gateway whose driver cannot refund, is paid out by hand (`manual`) and completes at once.
+ * gateway whose driver cannot refund, is paid out by hand (`manual`) and completes at once. A store balance payment goes back to the
+ * balance (`original`, plan 21 O10) and completes at once too ({@link settlesAtOnce}).
  *
  * @param method the payment's B2C method
  * @param gateway what the payment's gateway can do
@@ -43,9 +44,25 @@ export function refundRoute(
   method: OrderMethod,
   gateway: { readonly supportsRefunds: boolean; readonly driverRefunds: boolean },
 ): { method: RefundMethod; note: string } {
+  // Plan 21 § 5.6.7 (O10): a balance payment goes back to the balance it came from, at once, whatever any gateway can do.
+  if (method === 'balance') return { method: 'original', note: '' };
   if (method === 'crypto') return { method: 'manual', note: CRYPTO_REFUND_NOTE };
   if (!gateway.supportsRefunds || !gateway.driverRefunds) return { method: 'manual', note: MANUAL_REFUND_NOTE };
   return { method: 'original', note: '' };
+}
+
+/**
+ * Whether a refund is finished the moment it is posted, with no gateway call.
+ *
+ * Why: a hand payout (`manual`) is staff's business after the posting (money-12), and a refund to the store balance is the posting itself
+ * (plan 21 § 5.6.7): neither may queue a `refund.process` job.
+ *
+ * @param refundMethod the refund's method
+ * @param paymentMethodType the payment's stored `method_type`
+ * @returns true when the refund completes at once
+ */
+export function settlesAtOnce(refundMethod: RefundMethod, paymentMethodType: string): boolean {
+  return refundMethod === 'manual' || paymentMethodType === 'balance';
 }
 
 /** The sentence of an approval when the payment has nothing left to refund (everything is already promised or paid back). */

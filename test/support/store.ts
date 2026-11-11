@@ -33,6 +33,8 @@ export interface StoreCallOptions {
   readonly cookies?: boolean;
   /** Send the Turnstile token (default true); `false` leaves it out, a text sends that text. */
   readonly turnstile?: boolean | string;
+  /** More request headers (an `idempotency-key`, a content type). */
+  readonly headers?: Readonly<Record<string, string>>;
 }
 
 type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -70,7 +72,7 @@ export class StoreClient {
     payload?: unknown,
     options: StoreCallOptions = {},
   ): Promise<LightMyRequestResponse> {
-    const headers: Record<string, string> = { origin: STORE_ORIGIN };
+    const headers: Record<string, string> = { origin: STORE_ORIGIN, ...options.headers };
     const turnstile = options.turnstile ?? true;
     if (turnstile) headers['x-turnstile-token'] = turnstile === true ? TURNSTILE_TEST_TOKEN : turnstile;
     if ((options.cookies ?? true) && this.jar.size > 0) {
@@ -263,7 +265,7 @@ export function customerLinks(): CustomerLink[] {
 export async function clearStoreRateLimits(t: TestApp): Promise<void> {
   const redis = t.app.get(RedisService).cache;
   const keys = t.app.get(CacheKeys);
-  for (const limiter of ['ip', 'sign-in', 'token'] as const) {
+  for (const limiter of ['ip', 'sign-in', 'token', 'upload', 'wallet-topup'] as const) {
     const found = await redis.keys(`${keys.rateLimit(limiter)}:*`);
     if (found.length > 0) await redis.del(...found);
   }

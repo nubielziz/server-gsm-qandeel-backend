@@ -114,6 +114,17 @@ export function statusAfterRefunds(
 }
 
 /**
+ * The order payment methods a gateway reports: every `ORDER_METHODS` value but the store balance.
+ *
+ * Why: plan 21 § 5.6.7: a gateway driver never reports `balance`, so `/pay` and a capture keep these three words; the wires that show a
+ * stored payment use `ORDER_METHODS` ({@link storedOrderMethod}).
+ */
+export const GATEWAY_ORDER_METHODS = ['card', 'wallet', 'crypto'] as const satisfies readonly OrderMethod[];
+
+/** One value of {@link GATEWAY_ORDER_METHODS}. */
+export type GatewayOrderMethod = (typeof GATEWAY_ORDER_METHODS)[number];
+
+/**
  * The B2C method word of a stored or reported method.
  *
  * Why: RESOLUTIONS b2c-6: `card`, `wallet` and `crypto` as they are, `usdt` is crypto, anything else is a card.
@@ -121,9 +132,22 @@ export function statusAfterRefunds(
  * @param method the stored `method_type` or a driver's word
  * @returns `card`, `wallet` or `crypto`
  */
-export function b2cPaymentMethod(method: string): OrderMethod {
+export function b2cPaymentMethod(method: string): GatewayOrderMethod {
   if (method === 'card' || method === 'wallet' || method === 'crypto') return method;
   return method === 'usdt' ? 'crypto' : 'card';
+}
+
+/**
+ * The B2C method word of a stored order payment, the store balance included.
+ *
+ * Why: plan 21 § 5.6.7: a payment from the customer's store balance keeps `balance` on every wire that shows a stored payment (refunds,
+ * the payments report, the risk queue); a gateway's word goes through {@link b2cPaymentMethod}.
+ *
+ * @param method the stored `method_type`
+ * @returns `balance` for a balance payment, else `card`, `wallet` or `crypto`
+ */
+export function storedOrderMethod(method: string): OrderMethod {
+  return method === 'balance' ? 'balance' : b2cPaymentMethod(method);
 }
 
 /**
@@ -177,8 +201,8 @@ export function paymentFacts(
         wallet?: string | undefined;
       }
     | undefined,
-): { method: OrderMethod; brand: string } {
-  const method: OrderMethod = details?.wallet ? 'wallet' : b2cPaymentMethod(stored);
+): { method: GatewayOrderMethod; brand: string } {
+  const method: GatewayOrderMethod = details?.wallet ? 'wallet' : b2cPaymentMethod(stored);
   return { method, brand: brandLine(method, details ?? {}) };
 }
 

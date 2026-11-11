@@ -30,7 +30,7 @@ export const MAX_SCORE = 100;
 export interface ScreeningFacts {
   /** Gross USD of the payment (incl. VAT). */
   readonly amountUsd: Money;
-  readonly paymentMethod: 'card' | 'wallet' | 'crypto';
+  readonly paymentMethod: 'card' | 'wallet' | 'crypto' | 'balance';
   /** The customer has no earlier order that was not rejected. */
   readonly firstOrder: boolean;
   /** Earlier orders from this email in the last 24 hours, not counting this one. */

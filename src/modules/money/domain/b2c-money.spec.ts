@@ -11,6 +11,7 @@ import {
   paymentFacts,
   refundSplit,
   statusAfterRefunds,
+  storedOrderMethod,
   storefrontMismatch,
   toUsd,
   wireUsd,
@@ -102,6 +103,18 @@ describe('b2cPaymentMethod', () => {
     expect(b2cPaymentMethod('bank')).toBe('card');
     expect(b2cPaymentMethod('wise')).toBe('card');
     expect(b2cPaymentMethod('')).toBe('card');
+  });
+
+  it('never reports the store balance: a gateway word is never `balance`', () => {
+    expect(b2cPaymentMethod('balance')).toBe('card');
+  });
+});
+
+describe('storedOrderMethod', () => {
+  it('keeps a store balance payment as `balance` and reads every other word like a gateway method (plan 21 § 5.6.7)', () => {
+    expect(storedOrderMethod('balance')).toBe('balance');
+    expect(storedOrderMethod('card')).toBe('card');
+    expect(storedOrderMethod('usdt')).toBe('crypto');
   });
 });
 

@@ -1,19 +1,20 @@
 // Small rules of the risk queue's wire (feature 18, GET /admin/risk/queue, RESOLUTIONS b2c-6, b2c-11, b2c-17). Pure, no database.
 
 /** The payment methods the queue shows. */
-export type QueueMethod = 'card' | 'wallet' | 'crypto';
+export type QueueMethod = 'card' | 'wallet' | 'crypto' | 'balance';
 
 /**
  * The method word of the queue and the refunds.
  *
- * Why: RESOLUTIONS b2c-6: `payments.method_type` holds `card`, `wallet` or `crypto` for a storefront payment; the wire helper keeps
- * `usdt` as `crypto` and anything unknown as `card`, so a damaged row never breaks the page.
+ * Why: RESOLUTIONS b2c-6: `payments.method_type` holds `card`, `wallet` or `crypto` for a storefront payment, and `balance` for one paid
+ * from the store balance (feature 21: its refund goes back to the balance, not to a card); the wire helper keeps `usdt` as `crypto` and
+ * anything unknown as `card`, so a damaged row never breaks the page.
  *
  * @param method `payments.method_type`, or `null` when the order has no payment row
- * @returns `card`, `wallet` or `crypto`
+ * @returns `card`, `wallet`, `crypto` or `balance`
  */
 export function queueMethodOf(method: string | null): QueueMethod {
-  if (method === 'card' || method === 'wallet' || method === 'crypto') return method;
+  if (method === 'card' || method === 'wallet' || method === 'crypto' || method === 'balance') return method;
   return method === 'usdt' ? 'crypto' : 'card';
 }
 

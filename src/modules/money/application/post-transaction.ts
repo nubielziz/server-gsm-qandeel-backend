@@ -9,6 +9,7 @@ import type { DbExecutor } from '../../../infra/db';
 import type { LedgerAccountKind, LedgerActorType, LedgerOwnerType, LedgerRefType } from '../db/schema';
 import { balanceDelta } from '../domain/accounts';
 import { type LedgerLine, assertBalanced } from '../domain/ledger-lines';
+import { walletDebitRefusal } from '../domain/wallet-guard';
 import {
   type AccountIdentity,
   type LockedAccount,
@@ -39,6 +40,12 @@ export interface PostTransactionInput {
    * `wallets_negative` item shows the result). Every other posting leaves it out.
    */
   readonly allowBelowCreditLimit?: boolean;
+  /**
+   * Lets a debit take a `customer_wallet` below zero instead of refusing with `INSUFFICIENT_FUNDS`. Used only by the top-up chargeback
+   * clawback (plan 21 O11: the customer spent the disputed top-up); the same transaction must freeze the wallet, or the deferred trigger
+   * `ledger_accounts_negative_customer_wallet_frozen` refuses the commit.
+   */
+  readonly allowNegativeCustomerWallet?: boolean;
 }
 
 /** What a posting did to one account. */
@@ -53,6 +60,8 @@ export interface PostedAccount {
   readonly after: string;
   /** The credit limit of the account (`0` unless it is a merchant wallet), read under the account lock. */
   readonly overdraftLimit: string;
+  /** Whether the account (a customer wallet) was frozen, read under the account lock (feature 21: a balance payment refuses it). */
+  readonly frozen: boolean;
 }
 
 /** The result of a posting. */
@@ -156,7 +165,7 @@ async function lockPostingAccounts(
  * @returns the transaction id and whether the key was a replay
  * @throws {AppError} `LEDGER_UNBALANCED` for lines that are not a balanced set of at least two positive sides in one
  *   currency; `INSUFFICIENT_FUNDS` when a debit would take a `client_wallet` below `-overdraft_limit` (unless the input says
- *   `allowBelowCreditLimit`)
+ *   `allowBelowCreditLimit`) or a `customer_wallet` below zero (unless it says `allowNegativeCustomerWallet`)
  * @throws {RangeError} `LEDGER_REF_REQUIRED` (a programming error) for `ref_id 0` on a non-system posting
  * @see docs/decisions/024-ledger.md
  */
@@ -204,17 +213,11 @@ export async function postTransaction(
     };
   });
 
-  // Decision 024 step 4: a wallet may end below zero only down to its credit limit; credits always pass. The one named exception is
-  // `allowBelowCreditLimit` (the reversal of a paid commission).
+  // Decision 024 step 4: a merchant wallet may end below zero only down to its credit limit, a customer wallet not at all (plan 21
+  // § 5.5); credits always pass. The named exceptions are `allowBelowCreditLimit` and `allowNegativeCustomerWallet`.
   for (const account of locked.values()) {
-    if (account.kind !== 'client_wallet' || input.allowBelowCreditLimit === true) continue;
-    const before = Money.of(account.balance);
-    const after = running.get(account.id)!;
-    if (after.cmp(before) < 0 && after.cmp(Money.of(account.overdraftLimit).neg()) < 0) {
-      throw new AppError('INSUFFICIENT_FUNDS', {
-        detail: `The wallet would end at ${after.toWire()}, below its credit limit of ${Money.of(account.overdraftLimit).toWire()}.`,
-      });
-    }
+    const detail = walletDebitRefusal(account, Money.of(account.balance), running.get(account.id)!, input);
+    if (detail !== undefined) throw new AppError('INSUFFICIENT_FUNDS', { detail });
   }
 
   await insertEntries(tx, entries);
@@ -232,6 +235,7 @@ export async function postTransaction(
     before: account.balance,
     after: running.get(account.id)!.toWire(),
     overdraftLimit: account.overdraftLimit,
+    frozen: account.frozenAt !== null,
   }));
   return { id: created, replayed: false, touched };
 }
