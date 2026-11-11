@@ -1,0 +1,94 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "3"
+  },
+  "body": [
+    {
+      "error": null,
+      "id": 3,
+      "name": "New unlock services",
+      "purpose": "service",
+      "channels": [
+        "in_app"
+      ],
+      "status": "draft",
+      "scheduledAt": null,
+      "queuedAt": null,
+      "startedAt": null,
+      "finishedAt": null,
+      "cancelledAt": null,
+      "expectedRecipients": null,
+      "recipients": 0,
+      "planned": {
+        "inApp": 0,
+        "email": 0,
+        "telegram": 0
+      },
+      "createdBy": {
+        "id": 1,
+        "name": "Rami K."
+      },
+      "createdAt": "2026-10-31T09:00:00.000Z",
+      "updatedAt": "2026-10-31T09:00:00.000Z"
+    },
+    {
+      "error": null,
+      "id": 2,
+      "name": "Ramadan offer",
+      "purpose": "marketing",
+      "channels": [
+        "email"
+      ],
+      "status": "scheduled",
+      "scheduledAt": "2026-11-07T12:00:00.000Z",
+      "queuedAt": null,
+      "startedAt": null,
+      "finishedAt": null,
+      "cancelledAt": null,
+      "expectedRecipients": 56,
+      "recipients": 0,
+      "planned": {
+        "inApp": 0,
+        "email": 0,
+        "telegram": 0
+      },
+      "createdBy": {
+        "id": 1,
+        "name": "Rami K."
+      },
+      "createdAt": "2026-10-30T12:00:00.000Z",
+      "updatedAt": "2026-10-30T12:00:00.000Z"
+    },
+    {
+      "error": null,
+      "id": 1,
+      "name": "Scheduled maintenance on Friday",
+      "purpose": "service",
+      "channels": [
+        "in_app",
+        "email"
+      ],
+      "status": "sent",
+      "scheduledAt": null,
+      "queuedAt": "2026-10-29T12:00:00.000Z",
+      "startedAt": "2026-10-29T12:00:05.000Z",
+      "finishedAt": "2026-10-29T12:01:00.000Z",
+      "cancelledAt": null,
+      "expectedRecipients": 90,
+      "recipients": 90,
+      "planned": {
+        "inApp": 90,
+        "email": 90,
+        "telegram": 0
+      },
+      "createdBy": {
+        "id": 1,
+        "name": "Rami K."
+      },
+      "createdAt": "2026-10-29T11:00:00.000Z",
+      "updatedAt": "2026-10-29T12:00:00.000Z"
+    }
+  ]
+}

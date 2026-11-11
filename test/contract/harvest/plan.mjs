@@ -123,6 +123,8 @@ export const OVERRIDES = {
   'GET /admin/reports/suppliers': { query: { days: 7 } },
   'GET /admin/reports/funnel': { query: { days: 7 } },
   'GET /admin/pricing/resolve': { query: { serviceId: 1, clientId: 1 } },
+  // Feature 23: a campaign's recipients are listed per channel (the route refuses a list without one).
+  'GET /admin/notification-campaigns/:id/recipients': { query: { channel: 'in_app', _start: 0, _end: 10 } },
   'GET /admin/system/queues/:name/failed': (w) => ({ path: { name: queueName(w, true) } }),
 
   'POST /admin/system/queues/:name/pause': (w) => ({

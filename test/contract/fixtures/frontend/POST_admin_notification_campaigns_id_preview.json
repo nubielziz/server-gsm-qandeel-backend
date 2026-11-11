@@ -1,0 +1,13 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "subject": "New unlock services",
+    "body": "<html><body><p>Hello Daniel,</p><p>We added new unlock services to the catalogue. Take a look.</p></body></html>",
+    "format": "html",
+    "from": "GSM Supply <no-reply@gsm-supply.example>",
+    "note": "A sample with made-up details."
+  }
+}

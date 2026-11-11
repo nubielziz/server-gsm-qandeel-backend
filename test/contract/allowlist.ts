@@ -12,23 +12,6 @@ const CUSTOMER_CURRENCY_NULL =
   'of the currencies table is missing (customers.currency is a foreign key), as lead resolution b2c-1 says.';
 
 /**
- * The B-id of the provisional customer wallet entry (feature 21, plan lead decision conflict 1; LEAD-DECISIONS 0.2): the last `extra[]`
- * entry of docs/contract/lead-decisions.json.
- *
- * Why: B-numbers are positional and assigned at merge (lead rule L3), so every wallet entry below reads its id from this one constant; the
- * lead renumbers it at merge and removes the entries once the console slice C1 knows the new fields.
- */
-export const CUSTOMER_WALLET_MISMATCH = 'B182';
-
-const CUSTOMER_WALLET_BALANCE_METHOD =
-  'Feature 21: an order paid from the store balance has the payment method `balance` (refunded to the balance, no gateway fee); the ' +
-  'console learns the value with the console slice C1 (plan 21 lead decision conflicts 1 and 2, LEAD-DECISIONS 0.2).';
-
-const CUSTOMER_WALLET_DEPOSITS =
-  'Feature 21: a Deposits row names the storefront customer of a store balance top-up (`customer`, null for a merchant deposit); the ' +
-  'console mocks gain the field with the console slice C1.';
-
-/**
  * Deviations the contract tests accept, each tied to a decision in docs/contract/MISMATCHES.md.
  *
  * Why: the frontend decides the wire format and the map decides the rules; where the lead chose otherwise the choice
@@ -41,34 +24,15 @@ const CUSTOMER_WALLET_DEPOSITS =
  *   reason: 'The backend adds needs_attention until the console learns the status.' }
  */
 export const ALLOWLIST: readonly AllowlistEntry[] = [
-  ...[
-    { route: 'GET /admin/reports/payments', path: 'methods[].method' },
-    { route: 'GET /admin/reports/payments', path: 'payments[].method' },
-    { route: 'GET /admin/refunds', path: 'data[].payment.method' },
-    { route: 'GET /admin/refunds/:id', path: 'payment.method' },
-    { route: 'POST /admin/refunds/:id/approve', path: 'payment.method' },
-    { route: 'POST /admin/refunds/:id/decline', path: 'payment.method' },
-    { route: 'POST /admin/refunds/:id/retry', path: 'payment.method' },
-    { route: 'GET /admin/risk/queue', path: 'held[].paymentMethod' },
-  ].map((entry): AllowlistEntry => ({
-    ...entry,
-    part: 'response',
-    rule: 'enum',
-    mismatch: CUSTOMER_WALLET_MISMATCH,
-    reason: CUSTOMER_WALLET_BALANCE_METHOD,
-  })),
-  ...[
-    { route: 'GET /admin/payments', path: 'data[]' },
-    { route: 'GET /admin/payments/:id', path: '' },
-    { route: 'POST /admin/payments/:id/approve', path: '' },
-    { route: 'POST /admin/payments/:id/reject', path: '' },
-  ].map((entry): AllowlistEntry => ({
-    ...entry,
-    part: 'fixture',
-    rule: 'fixture',
-    mismatch: CUSTOMER_WALLET_MISMATCH,
-    reason: CUSTOMER_WALLET_DEPOSITS,
-  })),
+  {
+    route: 'POST /admin/service-listings/:id/image',
+    part: 'request',
+    path: 'body',
+    rule: 'required',
+    mismatch: 'B184',
+    reason:
+      'Feature 22: the picture upload is a multipart body (one part `file`); the console builds a FormData from a File, which the contract extractor cannot see as a typed body.',
+  },
   {
     route: 'GET /admin/permissions',
     part: 'fixture',

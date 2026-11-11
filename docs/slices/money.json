@@ -15,7 +15,7 @@
       "events": 2,
       "store": 8
     },
-    "frontendCalled": 43
+    "frontendCalled": 49
   },
   "stages": [
     3,
@@ -909,7 +909,7 @@
       "description": "Manually add to or deduct from the wallet, with a reason.",
       "frontend": {
         "file": "src/features/merchants/api/wallet.ts",
-        "line": 53,
+        "line": 56,
         "fn": "adjustClientWallet"
       }
     },
@@ -942,7 +942,7 @@
       "description": "Credit limit (overdraft).",
       "frontend": {
         "file": "src/features/merchants/api/wallet.ts",
-        "line": 66,
+        "line": 73,
         "fn": "setClientCreditLimit"
       }
     },
@@ -1341,7 +1341,7 @@
       "description": "Payment gateways: fees, limits and merchant groups.",
       "frontend": {
         "file": "src/features/settings/api/gateways.ts",
-        "line": 47,
+        "line": 48,
         "fn": "updateGateway"
       }
     },
@@ -1374,7 +1374,7 @@
       "description": "Payment gateways: fees, limits and merchant groups.",
       "frontend": {
         "file": "src/features/settings/api/gateways.ts",
-        "line": 56,
+        "line": 57,
         "fn": "deleteGateway"
       }
     },
@@ -1506,7 +1506,7 @@
       "description": "Payments and the manual review queue.",
       "frontend": {
         "file": "src/features/finance/api/payments.ts",
-        "line": 20,
+        "line": 22,
         "fn": "listPayments"
       }
     },
@@ -1539,7 +1539,7 @@
       "description": "Payments and the manual review queue.",
       "frontend": {
         "file": "src/features/finance/api/payments.ts",
-        "line": 30,
+        "line": 32,
         "fn": "getPayment"
       }
     },
@@ -1574,7 +1574,7 @@
       "description": "Approve a manual payment and top up the wallet.",
       "frontend": {
         "file": "src/features/finance/api/payments.ts",
-        "line": 40,
+        "line": 42,
         "fn": "approvePayment"
       }
     },
@@ -1607,7 +1607,7 @@
       "description": "Reject a payment with a reason.",
       "frontend": {
         "file": "src/features/finance/api/payments.ts",
-        "line": 49,
+        "line": 51,
         "fn": "rejectPayment"
       }
     },
@@ -1708,7 +1708,7 @@
       "description": "Official account statement for a merchant.",
       "frontend": {
         "file": "src/features/merchants/api/wallet.ts",
-        "line": 76,
+        "line": 83,
         "fn": "downloadClientStatement"
       }
     },
@@ -2678,7 +2678,11 @@
       },
       "module": "money",
       "description": "A customer store balance: balance, hold state and pending top-ups.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/customers/api/wallet.ts",
+        "line": 31,
+        "fn": "getCustomerWallet"
+      },
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"
@@ -2713,7 +2717,11 @@
       },
       "module": "money",
       "description": "A customer balance statement.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/customers/api/wallet.ts",
+        "line": 41,
+        "fn": "listCustomerWalletStatement"
+      },
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"
@@ -2749,7 +2757,11 @@
       },
       "module": "money",
       "description": "Add to or deduct from a customer balance by hand, with a reason.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/customers/api/wallet.ts",
+        "line": 60,
+        "fn": "adjustCustomerWallet"
+      },
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"
@@ -2784,7 +2796,11 @@
       },
       "module": "money",
       "description": "Put a customer balance on hold, with a reason.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/customers/api/wallet.ts",
+        "line": 78,
+        "fn": "freezeCustomerWallet"
+      },
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"
@@ -2819,7 +2835,11 @@
       },
       "module": "money",
       "description": "Lift the hold on a customer balance.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/customers/api/wallet.ts",
+        "line": 96,
+        "fn": "unfreezeCustomerWallet"
+      },
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"
@@ -2854,7 +2874,11 @@
       },
       "module": "money",
       "description": "Customer balances, with negative and held ones.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/finance/api/customerWallets.ts",
+        "line": 11,
+        "fn": "listCustomerWallets"
+      },
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"

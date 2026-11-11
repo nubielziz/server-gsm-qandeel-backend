@@ -1,0 +1,21 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "enabled": true,
+    "currency": "USD",
+    "balance": "50.0000",
+    "reserved": "0.0000",
+    "creditLimit": "0.0000",
+    "available": "50.0000",
+    "frozen": null,
+    "pendingTopUps": {
+      "count": 0,
+      "amount": "0.0000"
+    },
+    "openDisputes": 0,
+    "adjustApprovalLimit": "500.0000"
+  }
+}

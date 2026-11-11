@@ -1,0 +1,12 @@
+{
+  "status": 202,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "queued": [
+      "in_app",
+      "email"
+    ]
+  }
+}

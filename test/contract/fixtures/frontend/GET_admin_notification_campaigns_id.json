@@ -1,0 +1,71 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "link": null,
+    "skipped": {
+      "optedOut": 0,
+      "noTelegram": 0,
+      "noAccount": 0
+    },
+    "updatedBy": null,
+    "cancelledBy": null,
+    "error": null,
+    "id": 3,
+    "name": "New unlock services",
+    "purpose": "service",
+    "channels": [
+      "in_app"
+    ],
+    "status": "draft",
+    "scheduledAt": null,
+    "queuedAt": null,
+    "startedAt": null,
+    "finishedAt": null,
+    "cancelledAt": null,
+    "expectedRecipients": null,
+    "recipients": 0,
+    "planned": {
+      "inApp": 0,
+      "email": 0,
+      "telegram": 0
+    },
+    "audience": {
+      "merchants": {}
+    },
+    "content": {
+      "en": {
+        "title": "New unlock services",
+        "body": "Hello {{name}},\nWe added new unlock services to the catalogue. Take a look."
+      },
+      "ar": {
+        "title": "خدمات فك قفل جديدة",
+        "body": "مرحباً {{name}}،\nأضفنا خدمات فك قفل جديدة إلى الكتالوج. ألقِ نظرة."
+      }
+    },
+    "delivery": {
+      "inApp": {
+        "delivered": 0,
+        "read": 0
+      },
+      "email": {
+        "queued": 0,
+        "sent": 0,
+        "failed": 0
+      },
+      "telegram": {
+        "queued": 0,
+        "sent": 0,
+        "failed": 0
+      }
+    },
+    "createdBy": {
+      "id": 1,
+      "name": "Rami K."
+    },
+    "createdAt": "2026-10-31T09:00:00.000Z",
+    "updatedAt": "2026-10-31T09:00:00.000Z"
+  }
+}

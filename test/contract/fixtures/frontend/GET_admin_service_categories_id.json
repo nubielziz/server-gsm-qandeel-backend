@@ -6,11 +6,11 @@
   "body": {
     "id": 1,
     "name": "Apple",
+    "nameAr": "",
     "type": "imei",
     "allowedGroupIds": [],
     "sort": 1,
     "isActive": true,
-    "serviceCount": 4,
-    "nameAr": ""
+    "serviceCount": 4
   }
 }

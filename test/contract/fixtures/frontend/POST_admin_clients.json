@@ -16,6 +16,23 @@
     "referralCode": "GSMMVWCMTC0",
     "emailVerifiedAt": null,
     "createdAt": "2026-10-31T12:00:00.000Z",
+    "locale": "en",
+    "address": "",
+    "taxId": "",
+    "internalNotes": "",
+    "telegramLinked": false,
+    "security": {
+      "hasPassword": false,
+      "mustChangePassword": false,
+      "passwordChangedAt": null,
+      "twofaEnabled": false,
+      "lastLoginAt": null,
+      "lastLoginIp": null,
+      "activeSessions": 0,
+      "linkSentAt": "2026-10-31T12:00:00.000Z",
+      "verificationSentAt": null
+    },
+    "suspension": null,
     "stats": {
       "orders": 0,
       "spend": "0.0000",

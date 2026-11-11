@@ -6,13 +6,13 @@
   "body": {
     "id": 10,
     "name": "Harvest sample",
+    "nameAr": "",
     "type": "imei",
     "allowedGroupIds": [
       1
     ],
     "sort": 10,
     "isActive": false,
-    "serviceCount": 0,
-    "nameAr": ""
+    "serviceCount": 0
   }
 }

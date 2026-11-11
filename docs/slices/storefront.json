@@ -10,7 +10,7 @@
       "store": 9,
       "admin": 21
     },
-    "frontendCalled": 19
+    "frontendCalled": 21
   },
   "stages": [
     14,
@@ -391,7 +391,7 @@
       "description": "Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked.",
       "frontend": {
         "file": "src/features/storefront/api/listings.ts",
-        "line": 22,
+        "line": 23,
         "fn": "listListings"
       }
     },
@@ -459,7 +459,7 @@
       "description": "Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked.",
       "frontend": {
         "file": "src/features/storefront/api/listings.ts",
-        "line": 41,
+        "line": 40,
         "fn": "createListing"
       }
     },
@@ -1129,7 +1129,11 @@
       },
       "module": "storefront",
       "description": "Upload the picture of a listed service.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/listings.ts",
+        "line": 66,
+        "fn": "uploadListingImage"
+      },
       "addition": {
         "file": "scripts/map-additions/22.mjs",
         "spec": "B-TBD listing-image"
@@ -1164,7 +1168,11 @@
       },
       "module": "storefront",
       "description": "Remove the picture of a listed service.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/listings.ts",
+        "line": 76,
+        "fn": "removeListingImage"
+      },
       "addition": {
         "file": "scripts/map-additions/22.mjs",
         "spec": "B-TBD listing-image"

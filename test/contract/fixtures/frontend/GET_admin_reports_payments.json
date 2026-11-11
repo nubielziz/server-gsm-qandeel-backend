@@ -31,6 +31,15 @@
         "feeRate": "1",
         "refunds": 0,
         "disputes": 1
+      },
+      {
+        "method": "balance",
+        "payments": 0,
+        "volume": "0.0000",
+        "fees": "0.0000",
+        "feeRate": "0",
+        "refunds": 0,
+        "disputes": 0
       }
     ],
     "payments": [

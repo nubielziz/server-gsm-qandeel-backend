@@ -17,6 +17,8 @@
     "createdAt": "2026-09-27T13:00:00.000Z",
     "invoiceId": 1,
     "receiptFileId": 10000,
+    "customer": null,
+    "dispute": null,
     "client": {
       "id": 11,
       "name": "Istanbul GSM Care",

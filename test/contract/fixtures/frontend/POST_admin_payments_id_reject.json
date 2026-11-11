@@ -17,6 +17,8 @@
     "createdAt": "2026-10-30T11:22:00.000Z",
     "invoiceId": 50,
     "receiptFileId": 10049,
+    "customer": null,
+    "dispute": null,
     "client": {
       "id": 14,
       "name": "Kuwait SIM Center",

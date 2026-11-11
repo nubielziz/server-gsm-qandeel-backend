@@ -8,92 +8,92 @@
     {
       "id": 1,
       "name": "Apple",
+      "nameAr": "",
       "type": "imei",
       "allowedGroupIds": [],
       "sort": 1,
       "isActive": true,
-      "serviceCount": 4,
-      "nameAr": ""
+      "serviceCount": 4
     },
     {
       "id": 2,
       "name": "Samsung",
+      "nameAr": "",
       "type": "imei",
       "allowedGroupIds": [],
       "sort": 2,
       "isActive": true,
-      "serviceCount": 2,
-      "nameAr": ""
+      "serviceCount": 2
     },
     {
       "id": 3,
       "name": "Generic",
+      "nameAr": "",
       "type": "imei",
       "allowedGroupIds": [],
       "sort": 3,
       "isActive": true,
-      "serviceCount": 1,
-      "nameAr": ""
+      "serviceCount": 1
     },
     {
       "id": 4,
       "name": "Carrier unlock",
+      "nameAr": "",
       "type": "imei",
       "allowedGroupIds": [],
       "sort": 4,
       "isActive": true,
-      "serviceCount": 6,
-      "nameAr": ""
+      "serviceCount": 6
     },
     {
       "id": 5,
       "name": "Xiaomi",
+      "nameAr": "",
       "type": "imei",
       "allowedGroupIds": [],
       "sort": 5,
       "isActive": true,
-      "serviceCount": 1,
-      "nameAr": ""
+      "serviceCount": 1
     },
     {
       "id": 6,
       "name": "Credits",
+      "nameAr": "",
       "type": "server",
       "allowedGroupIds": [],
       "sort": 6,
       "isActive": true,
-      "serviceCount": 3,
-      "nameAr": ""
+      "serviceCount": 3
     },
     {
       "id": 7,
       "name": "Licenses",
+      "nameAr": "",
       "type": "server",
       "allowedGroupIds": [],
       "sort": 7,
       "isActive": true,
-      "serviceCount": 2,
-      "nameAr": ""
+      "serviceCount": 2
     },
     {
       "id": 8,
       "name": "Remote",
+      "nameAr": "",
       "type": "remote",
       "allowedGroupIds": [],
       "sort": 8,
       "isActive": true,
-      "serviceCount": 4,
-      "nameAr": ""
+      "serviceCount": 4
     },
     {
       "id": 9,
       "name": "Files",
+      "nameAr": "",
       "type": "file",
       "allowedGroupIds": [],
       "sort": 9,
       "isActive": true,
-      "serviceCount": 4,
-      "nameAr": ""
+      "serviceCount": 4
     }
   ]
 }

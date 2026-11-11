@@ -25,7 +25,7 @@
       "rows": 56,
       "endpoints": 56
     },
-    "frontendRoutes": 269,
+    "frontendRoutes": 299,
     "bySurface": {
       "dhru": {
         "rows": 8,
@@ -3850,7 +3850,7 @@
       "description": "Merchants: creation, group, status and blocking.",
       "frontend": {
         "file": "src/features/merchants/api/clients.ts",
-        "line": 53,
+        "line": 56,
         "fn": "updateClient"
       }
     },
@@ -3952,7 +3952,7 @@
       "description": "Manually add to or deduct from the wallet, with a reason.",
       "frontend": {
         "file": "src/features/merchants/api/wallet.ts",
-        "line": 53,
+        "line": 56,
         "fn": "adjustClientWallet"
       }
     },
@@ -3985,7 +3985,7 @@
       "description": "Credit limit (overdraft).",
       "frontend": {
         "file": "src/features/merchants/api/wallet.ts",
-        "line": 66,
+        "line": 73,
         "fn": "setClientCreditLimit"
       }
     },
@@ -4285,7 +4285,7 @@
       "description": "API keys of a merchant.",
       "frontend": {
         "file": "src/features/merchants/api/apiKeys.ts",
-        "line": 10,
+        "line": 11,
         "fn": "listClientApiKeys"
       }
     },
@@ -4319,7 +4319,7 @@
       "description": "Revoke a merchant API key.",
       "frontend": {
         "file": "src/features/merchants/api/apiKeys.ts",
-        "line": 20,
+        "line": 21,
         "fn": "revokeApiKey"
       }
     },
@@ -6550,7 +6550,7 @@
       "description": "Payment gateways: fees, limits and merchant groups.",
       "frontend": {
         "file": "src/features/settings/api/gateways.ts",
-        "line": 47,
+        "line": 48,
         "fn": "updateGateway"
       }
     },
@@ -6583,7 +6583,7 @@
       "description": "Payment gateways: fees, limits and merchant groups.",
       "frontend": {
         "file": "src/features/settings/api/gateways.ts",
-        "line": 56,
+        "line": 57,
         "fn": "deleteGateway"
       }
     },
@@ -6715,7 +6715,7 @@
       "description": "Payments and the manual review queue.",
       "frontend": {
         "file": "src/features/finance/api/payments.ts",
-        "line": 20,
+        "line": 22,
         "fn": "listPayments"
       }
     },
@@ -6748,7 +6748,7 @@
       "description": "Payments and the manual review queue.",
       "frontend": {
         "file": "src/features/finance/api/payments.ts",
-        "line": 30,
+        "line": 32,
         "fn": "getPayment"
       }
     },
@@ -6783,7 +6783,7 @@
       "description": "Approve a manual payment and top up the wallet.",
       "frontend": {
         "file": "src/features/finance/api/payments.ts",
-        "line": 40,
+        "line": 42,
         "fn": "approvePayment"
       }
     },
@@ -6816,7 +6816,7 @@
       "description": "Reject a payment with a reason.",
       "frontend": {
         "file": "src/features/finance/api/payments.ts",
-        "line": 49,
+        "line": 51,
         "fn": "rejectPayment"
       }
     },
@@ -7515,7 +7515,7 @@
       "description": "Official account statement for a merchant.",
       "frontend": {
         "file": "src/features/merchants/api/wallet.ts",
-        "line": 76,
+        "line": 83,
         "fn": "downloadClientStatement"
       }
     },
@@ -9970,7 +9970,7 @@
       "description": "Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked.",
       "frontend": {
         "file": "src/features/storefront/api/listings.ts",
-        "line": 22,
+        "line": 23,
         "fn": "listListings"
       }
     },
@@ -10038,7 +10038,7 @@
       "description": "Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked.",
       "frontend": {
         "file": "src/features/storefront/api/listings.ts",
-        "line": 41,
+        "line": 40,
         "fn": "createListing"
       }
     },
@@ -12950,7 +12950,11 @@
       },
       "module": "identity",
       "description": "Send a merchant a set-password or invitation link, or set a temporary password that must be changed at the next sign-in.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/merchants/api/security.ts",
+        "line": 12,
+        "fn": "setClientPassword"
+      },
       "addition": {
         "file": "scripts/map-additions/20.mjs",
         "spec": "B-TBD merchant-admin-security"
@@ -12986,7 +12990,11 @@
       },
       "module": "identity",
       "description": "Turn off a merchant's two-factor sign-in and end their sessions.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/merchants/api/security.ts",
+        "line": 25,
+        "fn": "resetClientTwoFactor"
+      },
       "addition": {
         "file": "scripts/map-additions/20.mjs",
         "spec": "B-TBD merchant-admin-security"
@@ -13021,7 +13029,11 @@
       },
       "module": "identity",
       "description": "Sign a merchant out of every device.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/merchants/api/security.ts",
+        "line": 34,
+        "fn": "revokeClientSessions"
+      },
       "addition": {
         "file": "scripts/map-additions/20.mjs",
         "spec": "B-TBD merchant-admin-security"
@@ -13058,7 +13070,11 @@
       },
       "module": "identity",
       "description": "Send the merchant a new email verification link.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/merchants/api/security.ts",
+        "line": 43,
+        "fn": "resendClientVerification"
+      },
       "addition": {
         "file": "scripts/map-additions/20.mjs",
         "spec": "B-TBD merchant-verification-resend"
@@ -13093,7 +13109,11 @@
       },
       "module": "identity",
       "description": "Create an API key for a merchant; the key is shown once.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/merchants/api/apiKeys.ts",
+        "line": 32,
+        "fn": "createClientApiKey"
+      },
       "addition": {
         "file": "scripts/map-additions/20.mjs",
         "spec": "B-TBD staff-api-keys"
@@ -13128,7 +13148,11 @@
       },
       "module": "identity",
       "description": "Change a merchant key's per-minute limit and allowed addresses.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/merchants/api/apiKeys.ts",
+        "line": 45,
+        "fn": "updateApiKey"
+      },
       "addition": {
         "file": "scripts/map-additions/20.mjs",
         "spec": "B-TBD staff-api-keys"
@@ -13570,7 +13594,11 @@
       },
       "module": "money",
       "description": "A customer store balance: balance, hold state and pending top-ups.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/customers/api/wallet.ts",
+        "line": 31,
+        "fn": "getCustomerWallet"
+      },
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"
@@ -13605,7 +13633,11 @@
       },
       "module": "money",
       "description": "A customer balance statement.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/customers/api/wallet.ts",
+        "line": 41,
+        "fn": "listCustomerWalletStatement"
+      },
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"
@@ -13641,7 +13673,11 @@
       },
       "module": "money",
       "description": "Add to or deduct from a customer balance by hand, with a reason.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/customers/api/wallet.ts",
+        "line": 60,
+        "fn": "adjustCustomerWallet"
+      },
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"
@@ -13676,7 +13712,11 @@
       },
       "module": "money",
       "description": "Put a customer balance on hold, with a reason.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/customers/api/wallet.ts",
+        "line": 78,
+        "fn": "freezeCustomerWallet"
+      },
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"
@@ -13711,7 +13751,11 @@
       },
       "module": "money",
       "description": "Lift the hold on a customer balance.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/customers/api/wallet.ts",
+        "line": 96,
+        "fn": "unfreezeCustomerWallet"
+      },
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"
@@ -13746,7 +13790,11 @@
       },
       "module": "money",
       "description": "Customer balances, with negative and held ones.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/finance/api/customerWallets.ts",
+        "line": 11,
+        "fn": "listCustomerWallets"
+      },
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"
@@ -13916,7 +13964,11 @@
       },
       "module": "storefront",
       "description": "Upload the picture of a listed service.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/listings.ts",
+        "line": 66,
+        "fn": "uploadListingImage"
+      },
       "addition": {
         "file": "scripts/map-additions/22.mjs",
         "spec": "B-TBD listing-image"
@@ -13951,7 +14003,11 @@
       },
       "module": "storefront",
       "description": "Remove the picture of a listed service.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/listings.ts",
+        "line": 76,
+        "fn": "removeListingImage"
+      },
       "addition": {
         "file": "scripts/map-additions/22.mjs",
         "spec": "B-TBD listing-image"
@@ -13985,7 +14041,11 @@
       },
       "module": "platform",
       "description": "List notification campaigns.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 40,
+        "fn": "listCampaigns"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -14020,7 +14080,11 @@
       },
       "module": "platform",
       "description": "Create a campaign as a draft.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 57,
+        "fn": "createCampaign"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -14056,7 +14120,11 @@
       },
       "module": "platform",
       "description": "One campaign with its delivery numbers.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 48,
+        "fn": "getCampaign"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -14091,7 +14159,11 @@
       },
       "module": "platform",
       "description": "Edit a draft or scheduled campaign.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 65,
+        "fn": "updateCampaign"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -14126,7 +14198,11 @@
       },
       "module": "platform",
       "description": "Delete a draft campaign.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 73,
+        "fn": "deleteCampaign"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -14163,7 +14239,11 @@
       },
       "module": "platform",
       "description": "Count the people an audience reaches.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 82,
+        "fn": "previewAudience"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -14197,7 +14277,11 @@
       },
       "module": "platform",
       "description": "Render a campaign for one language and channel.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 91,
+        "fn": "previewCampaign"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -14235,7 +14319,11 @@
       },
       "module": "platform",
       "description": "Send a test to yourself.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 100,
+        "fn": "sendCampaignTest"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -14271,7 +14359,11 @@
       },
       "module": "platform",
       "description": "Send a campaign now.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 114,
+        "fn": "sendCampaign"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -14306,7 +14398,11 @@
       },
       "module": "platform",
       "description": "Schedule or reschedule a campaign.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 123,
+        "fn": "scheduleCampaign"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -14341,7 +14437,11 @@
       },
       "module": "platform",
       "description": "Cancel a scheduled or running campaign.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 136,
+        "fn": "cancelCampaign"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -14376,7 +14476,11 @@
       },
       "module": "platform",
       "description": "The recipients of a campaign on one channel.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 145,
+        "fn": "listCampaignRecipients"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -14411,7 +14515,11 @@
       },
       "module": "platform",
       "description": "The staff member's own notifications.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/inbox.ts",
+        "line": 21,
+        "fn": "listInbox"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -14445,7 +14553,11 @@
       },
       "module": "platform",
       "description": "How many are unread.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/inbox.ts",
+        "line": 37,
+        "fn": "getUnreadCount"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -14479,7 +14591,11 @@
       },
       "module": "platform",
       "description": "Mark one notification read.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/inbox.ts",
+        "line": 45,
+        "fn": "markInboxRead"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -14513,7 +14629,11 @@
       },
       "module": "platform",
       "description": "Mark all notifications read.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/inbox.ts",
+        "line": 54,
+        "fn": "markAllInboxRead"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"

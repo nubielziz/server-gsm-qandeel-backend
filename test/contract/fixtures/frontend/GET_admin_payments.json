@@ -2,7 +2,7 @@
   "status": 200,
   "headers": {
     "content-type": "application/json",
-    "x-total-count": "54"
+    "x-total-count": "56"
   },
   "body": [
     {
@@ -19,6 +19,8 @@
       "createdAt": "2026-09-27T13:00:00.000Z",
       "invoiceId": 1,
       "receiptFileId": 10000,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 11,
         "name": "Istanbul GSM Care",
@@ -50,6 +52,8 @@
       "createdAt": "2026-09-27T14:00:00.000Z",
       "invoiceId": 2,
       "receiptFileId": 10001,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 6,
         "name": "Erbil Mobile Parts",
@@ -81,6 +85,8 @@
       "createdAt": "2026-09-27T14:00:00.000Z",
       "invoiceId": 3,
       "receiptFileId": 10002,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 15,
         "name": "Doha Phone Lab",
@@ -112,6 +118,8 @@
       "createdAt": "2026-09-27T15:00:00.000Z",
       "invoiceId": 4,
       "receiptFileId": 10003,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 3,
         "name": "Phone Doctor FZE",
@@ -143,6 +151,8 @@
       "createdAt": "2026-09-27T15:00:00.000Z",
       "invoiceId": 5,
       "receiptFileId": null,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 8,
         "name": "Casablanca Unlock",
@@ -174,6 +184,8 @@
       "createdAt": "2026-09-27T15:00:00.000Z",
       "invoiceId": 6,
       "receiptFileId": 10005,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 10,
         "name": "Karachi Unlock Hub",
@@ -205,6 +217,8 @@
       "createdAt": "2026-09-27T15:00:00.000Z",
       "invoiceId": 7,
       "receiptFileId": 10006,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 12,
         "name": "Jeddah Tech Bar",
@@ -236,6 +250,8 @@
       "createdAt": "2026-09-27T15:00:00.000Z",
       "invoiceId": 8,
       "receiptFileId": 10007,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 19,
         "name": "Tunis Fix Point",
@@ -267,6 +283,8 @@
       "createdAt": "2026-09-27T16:00:00.000Z",
       "invoiceId": 9,
       "receiptFileId": 10008,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 7,
         "name": "Tripoli Repair Group",
@@ -298,6 +316,8 @@
       "createdAt": "2026-09-27T16:00:00.000Z",
       "invoiceId": 10,
       "receiptFileId": null,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 9,
         "name": "Lagos Gadget Fix",
@@ -329,6 +349,8 @@
       "createdAt": "2026-09-27T18:00:00.000Z",
       "invoiceId": 11,
       "receiptFileId": 10010,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 1,
         "name": "Zain Mobile Hub",
@@ -360,6 +382,8 @@
       "createdAt": "2026-09-27T18:00:00.000Z",
       "invoiceId": 12,
       "receiptFileId": 10011,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 2,
         "name": "Al-Noor Telecom",
@@ -391,6 +415,8 @@
       "createdAt": "2026-09-27T18:00:00.000Z",
       "invoiceId": 13,
       "receiptFileId": 10012,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 4,
         "name": "Basra Unlock Center",
@@ -422,6 +448,8 @@
       "createdAt": "2026-09-27T18:00:00.000Z",
       "invoiceId": 14,
       "receiptFileId": 10013,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 5,
         "name": "Cairo GSM Lab",
@@ -453,6 +481,8 @@
       "createdAt": "2026-09-28T18:33:52.635Z",
       "invoiceId": 15,
       "receiptFileId": 10014,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 7,
         "name": "Tripoli Repair Group",
@@ -484,6 +514,8 @@
       "createdAt": "2026-09-29T01:33:17.643Z",
       "invoiceId": 16,
       "receiptFileId": 10015,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 6,
         "name": "Erbil Mobile Parts",
@@ -515,6 +547,8 @@
       "createdAt": "2026-09-30T18:08:47.726Z",
       "invoiceId": 17,
       "receiptFileId": 10016,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 2,
         "name": "Al-Noor Telecom",
@@ -546,6 +580,8 @@
       "createdAt": "2026-10-03T05:47:46.548Z",
       "invoiceId": 18,
       "receiptFileId": 10017,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 10,
         "name": "Karachi Unlock Hub",
@@ -577,6 +613,8 @@
       "createdAt": "2026-10-03T19:18:25.028Z",
       "invoiceId": 19,
       "receiptFileId": 10018,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 11,
         "name": "Istanbul GSM Care",
@@ -608,6 +646,8 @@
       "createdAt": "2026-10-04T12:28:14.727Z",
       "invoiceId": 20,
       "receiptFileId": 10019,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 3,
         "name": "Phone Doctor FZE",
@@ -639,6 +679,8 @@
       "createdAt": "2026-10-05T06:52:04.397Z",
       "invoiceId": 21,
       "receiptFileId": null,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 1,
         "name": "Zain Mobile Hub",
@@ -670,6 +712,8 @@
       "createdAt": "2026-10-06T01:11:25.618Z",
       "invoiceId": 22,
       "receiptFileId": null,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 5,
         "name": "Cairo GSM Lab",
@@ -701,6 +745,8 @@
       "createdAt": "2026-10-07T14:12:50.629Z",
       "invoiceId": 23,
       "receiptFileId": null,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 3,
         "name": "Phone Doctor FZE",
@@ -732,6 +778,8 @@
       "createdAt": "2026-10-07T18:57:44.787Z",
       "invoiceId": 24,
       "receiptFileId": null,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 5,
         "name": "Cairo GSM Lab",
@@ -763,6 +811,8 @@
       "createdAt": "2026-10-07T21:09:38.845Z",
       "invoiceId": 25,
       "receiptFileId": null,
+      "customer": null,
+      "dispute": null,
       "client": {
         "id": 1,
         "name": "Zain Mobile Hub",

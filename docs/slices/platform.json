@@ -14,7 +14,7 @@
       "system": 2,
       "store": 6
     },
-    "frontendCalled": 17
+    "frontendCalled": 33
   },
   "stages": [
     2,
@@ -1371,7 +1371,11 @@
       },
       "module": "platform",
       "description": "List notification campaigns.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 40,
+        "fn": "listCampaigns"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -1406,7 +1410,11 @@
       },
       "module": "platform",
       "description": "Create a campaign as a draft.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 57,
+        "fn": "createCampaign"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -1442,7 +1450,11 @@
       },
       "module": "platform",
       "description": "One campaign with its delivery numbers.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 48,
+        "fn": "getCampaign"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -1477,7 +1489,11 @@
       },
       "module": "platform",
       "description": "Edit a draft or scheduled campaign.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 65,
+        "fn": "updateCampaign"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -1512,7 +1528,11 @@
       },
       "module": "platform",
       "description": "Delete a draft campaign.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 73,
+        "fn": "deleteCampaign"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -1549,7 +1569,11 @@
       },
       "module": "platform",
       "description": "Count the people an audience reaches.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 82,
+        "fn": "previewAudience"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -1583,7 +1607,11 @@
       },
       "module": "platform",
       "description": "Render a campaign for one language and channel.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 91,
+        "fn": "previewCampaign"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -1621,7 +1649,11 @@
       },
       "module": "platform",
       "description": "Send a test to yourself.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 100,
+        "fn": "sendCampaignTest"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -1657,7 +1689,11 @@
       },
       "module": "platform",
       "description": "Send a campaign now.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 114,
+        "fn": "sendCampaign"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -1692,7 +1728,11 @@
       },
       "module": "platform",
       "description": "Schedule or reschedule a campaign.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 123,
+        "fn": "scheduleCampaign"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -1727,7 +1767,11 @@
       },
       "module": "platform",
       "description": "Cancel a scheduled or running campaign.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 136,
+        "fn": "cancelCampaign"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -1762,7 +1806,11 @@
       },
       "module": "platform",
       "description": "The recipients of a campaign on one channel.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/campaigns.ts",
+        "line": 145,
+        "fn": "listCampaignRecipients"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -1797,7 +1845,11 @@
       },
       "module": "platform",
       "description": "The staff member's own notifications.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/inbox.ts",
+        "line": 21,
+        "fn": "listInbox"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -1831,7 +1883,11 @@
       },
       "module": "platform",
       "description": "How many are unread.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/inbox.ts",
+        "line": 37,
+        "fn": "getUnreadCount"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -1865,7 +1921,11 @@
       },
       "module": "platform",
       "description": "Mark one notification read.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/inbox.ts",
+        "line": 45,
+        "fn": "markInboxRead"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"
@@ -1899,7 +1959,11 @@
       },
       "module": "platform",
       "description": "Mark all notifications read.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/notifications/api/inbox.ts",
+        "line": 54,
+        "fn": "markAllInboxRead"
+      },
       "addition": {
         "file": "scripts/map-additions/23.mjs",
         "spec": "B-TBD notification-center-routes"

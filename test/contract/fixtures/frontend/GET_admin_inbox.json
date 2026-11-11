@@ -1,0 +1,69 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "5"
+  },
+  "body": [
+    {
+      "id": 5,
+      "link": "/orders?order=1042",
+      "locale": "en",
+      "campaignId": null,
+      "event": "order.needs_attention",
+      "readAt": null,
+      "createdAt": "2026-10-31T07:00:00.000Z",
+      "category": "order",
+      "title": "An order needs attention",
+      "body": "Order 1042 timed out at the supplier.\nCheck it before the SLA ends."
+    },
+    {
+      "id": 4,
+      "link": "/support?filter=late",
+      "locale": "en",
+      "campaignId": null,
+      "event": "support.ticket_late",
+      "readAt": "2026-10-30T12:10:00.000Z",
+      "createdAt": "2026-10-30T12:00:00.000Z",
+      "category": "support",
+      "title": "A ticket is late",
+      "body": "Ticket 318 has waited longer than its SLA."
+    },
+    {
+      "id": 3,
+      "link": null,
+      "locale": "en",
+      "campaignId": 1,
+      "event": null,
+      "readAt": null,
+      "createdAt": "2026-10-29T12:00:00.000Z",
+      "category": "announcement",
+      "title": "Scheduled maintenance on Friday",
+      "body": "Hello Rami,\nThe portal will be read-only on Friday from 02:00 to 03:00 UTC."
+    },
+    {
+      "id": 2,
+      "link": "/system-health",
+      "locale": "en",
+      "campaignId": null,
+      "event": "maintenance.off",
+      "readAt": "2026-10-28T12:10:00.000Z",
+      "createdAt": "2026-10-28T12:00:00.000Z",
+      "category": "alert",
+      "title": "Maintenance mode was turned off",
+      "body": "Checkout is open again."
+    },
+    {
+      "id": 1,
+      "link": null,
+      "locale": "ar",
+      "campaignId": null,
+      "event": null,
+      "readAt": "2026-10-25T12:10:00.000Z",
+      "createdAt": "2026-10-25T12:00:00.000Z",
+      "category": "announcement",
+      "title": "مرحباً بك في مركز الإشعارات",
+      "body": "يمكنك الآن إرسال رسائل إلى الموظفين والتجار والعملاء من صفحة الإشعارات."
+    }
+  ]
+}

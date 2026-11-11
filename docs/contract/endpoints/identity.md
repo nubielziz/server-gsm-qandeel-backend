@@ -66,12 +66,12 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 | `GET /admin/kyc-submissions` | admin | staff-permission `kyc:read` | 8 | `listKycSubmissions` |
 | `GET /admin/kyc-submissions/:id` | admin | staff-permission `kyc:read` | 8 | `getKycSubmission` |
 | `POST /admin/kyc-submissions/:id/decide` | admin | staff-permission `kyc:decide` | 8 | `decideKycSubmission` |
-| `POST /admin/clients/:id/password` | admin | staff-permission `clients:security` | 20 |  |
-| `POST /admin/clients/:id/reset-2fa` | admin | staff-permission `clients:security` | 20 |  |
-| `POST /admin/clients/:id/sessions/revoke` | admin | staff-permission `clients:security` | 20 |  |
-| `POST /admin/clients/:id/verify-email/resend` | admin | staff-permission `clients:security` | 20 |  |
-| `POST /admin/clients/:id/api-keys` | admin | staff-permission `api_keys:create` | 20 |  |
-| `PATCH /admin/api-keys/:id` | admin | staff-permission `api_keys:update` | 20 |  |
+| `POST /admin/clients/:id/password` | admin | staff-permission `clients:security` | 20 | `setClientPassword` |
+| `POST /admin/clients/:id/reset-2fa` | admin | staff-permission `clients:security` | 20 | `resetClientTwoFactor` |
+| `POST /admin/clients/:id/sessions/revoke` | admin | staff-permission `clients:security` | 20 | `revokeClientSessions` |
+| `POST /admin/clients/:id/verify-email/resend` | admin | staff-permission `clients:security` | 20 | `resendClientVerification` |
+| `POST /admin/clients/:id/api-keys` | admin | staff-permission `api_keys:create` | 20 | `createClientApiKey` |
+| `PATCH /admin/api-keys/:id` | admin | staff-permission `api_keys:update` | 20 | `updateApiKey` |
 | `POST /client/auth/password/change` | client | merchant-session | 20 |  |
 | `POST /client/auth/verify-email/resend` | client | merchant-session | 20 |  |
 
@@ -479,7 +479,7 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 ## PATCH /admin/clients/:id
 
 - **Map**: Merchants: creation, group, status and blocking. (التجار: الإنشاء والفئة والحالة والحظر) · staff-permission `clients:*` · stage 2 · tables clients
-- **Frontend**: `updateClient` (src/features/merchants/api/clients.ts:55) · params `id: number`, `body: UpdateClientBody` · returns `Client` · success 200 · assumed contract
+- **Frontend**: `updateClient` (src/features/merchants/api/clients.ts:58) · params `id: number`, `body: UpdateClientBody` · returns `Client` · success 200 · assumed contract
 - **Request**: Partial body, one action per call: approve {status:"active"} from pending; reactivate {status:"active"} from suspended; suspend {status:"suspended", reason} from active (reason trimmed, 3-140 chars, staff-only); group move {groupId} (refused with 422 on groupId when the target group has overdraft_allowed = false while the merchant's credit limit is above 0). Server enforces pending->active, active->suspended, suspended->active; writes audit_logs (field from/to, reason). Suspension refuses new orders on Dhru, v1 and portal while open orders keep processing and the wallet is untouched; a group move prices new orders only (open orders keep pricing_snapshot). No money event.
 - **Response**: 200 with the full updated Client.
 - **Errors**: 404 NOT_FOUND (no merchant with that id); 422 VALIDATION_FAILED (errors[].field reason (missing on suspend) | groupId (unknown, b2c_retail, or a group without overdraft_allowed while the merchant's wallet overdraft_limit is above 0: user rule 2) | status); 409 INVALID_TRANSITION (status change not allowed from the current status, or a policy refusal (tests use KYC_REQUIRED / LAST_ACTIVE as examples)); 403 FORBIDDEN (caller lacks clients:update)
@@ -489,7 +489,7 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 ## GET /admin/clients/:id/api-keys
 
 - **Map**: API keys of a merchant. (مفاتيح API للتاجر) · staff-permission `api_keys:read` · stage 7 · tables api_keys
-- **Frontend**: `listClientApiKeys` (src/features/merchants/api/apiKeys.ts:12) · params `clientId: number` · returns `ApiKey[]` · success 200 · assumed contract
+- **Frontend**: `listClientApiKeys` (src/features/merchants/api/apiKeys.ts:13) · params `clientId: number` · returns `ApiKey[]` · success 200 · assumed contract
 - **Response**: Plain JSON array (no paging, no x-total-count), newest first (id desc), every key incl. revoked and expired: id, clientId, name, prefix, scopes[], allowedIps[] (CIDR strings written like ip_rules.cidr: a host prefix /32 (IPv4) or /128 (IPv6) is dropped on read, so '203.0.113.55/32' is sent as '203.0.113.55' and ranges keep their prefix; the merchant write side (/client/api-keys, 7b) accepts a bare IP and stores /32 or /128; one shared formatter, moved to an identity helper), rateLimitPerMin, lastUsedAt, lastUsedIp ('' when the key was never used: the console type is a non-null string; the same rule applies wherever an ApiKey is serialized), expiresAt, revokedAt, createdAt. Never key_hash or the secret. The console derives Active/Revoked/Expired from revokedAt and expiresAt.
 - **Errors**: 404 NOT_FOUND (no merchant with that id); 403 FORBIDDEN (caller lacks api_keys:read)
 - **Mock**: src/features/merchants/mocks/kycRoutes.ts (KYC rows are synthetic (mocks/kycSeed.ts, the demo has none); API keys from mocks/seed.ts keysOf (demo key + IPs per merchant plus extras).)
@@ -497,7 +497,7 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 ## DELETE /admin/api-keys/:id
 
 - **Map**: Revoke a merchant API key. (إلغاء مفتاح تاجر) · staff-permission `api_keys:revoke` · stage 7 · tables api_keys, audit_logs
-- **Frontend**: `revokeApiKey` (src/features/merchants/api/apiKeys.ts:22) · params `id: number` · returns `void` · success 204 · assumed contract
+- **Frontend**: `revokeApiKey` (src/features/merchants/api/apiKeys.ts:23) · params `id: number` · returns `void` · success 204 · assumed contract
 - **Request**: No body.
 - **Response**: 204 empty. Revoke = set revoked_at = now (row kept for orders.api_key_id and audit); effective at once (drop it from the key cache so Dhru/v1 calls fail); audit_logs entry.
 - **Errors**: 404 NOT_FOUND (no API key with that id); 409 ALREADY_REVOKED (the key already has revoked_at); 403 FORBIDDEN (caller lacks api_keys:revoke)
@@ -533,32 +533,32 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 ## POST /admin/clients/:id/password
 
 - **Map addition** (B-TBD merchant-admin-security, `scripts/map-additions/20.mjs`): Send a merchant a set-password or invitation link, or set a temporary password that must be changed at the next sign-in. (رابط تعيين كلمة مرور أو دعوة جديدة للتاجر، أو كلمة مؤقتة تُفرض تغييرها بأول دخول) · staff-permission `clients:security` · stage 20 · tables clients, auth_tokens, sessions, notifications, audit_logs · success 200
-- **Frontend**: none.
+- **Frontend**: `setClientPassword` (src/features/merchants/api/security.ts:14) · params `id: number`, `body: ClientPasswordBody` · returns `ClientPasswordResult`
 
 ## POST /admin/clients/:id/reset-2fa
 
 - **Map addition** (B-TBD merchant-admin-security, `scripts/map-additions/20.mjs`): Turn off a merchant's two-factor sign-in and end their sessions. (إعادة ضبط 2FA لتاجر وإنهاء جلساته) · staff-permission `clients:security` · stage 20 · tables clients, sessions, audit_logs · success 204
-- **Frontend**: none.
+- **Frontend**: `resetClientTwoFactor` (src/features/merchants/api/security.ts:27) · params `id: number` · returns `void`
 
 ## POST /admin/clients/:id/sessions/revoke
 
 - **Map addition** (B-TBD merchant-admin-security, `scripts/map-additions/20.mjs`): Sign a merchant out of every device. (إنهاء كل جلسات تاجر) · staff-permission `clients:security` · stage 20 · tables sessions, audit_logs · success 204
-- **Frontend**: none.
+- **Frontend**: `revokeClientSessions` (src/features/merchants/api/security.ts:36) · params `id: number` · returns `void`
 
 ## POST /admin/clients/:id/verify-email/resend
 
 - **Map addition** (B-TBD merchant-verification-resend, `scripts/map-additions/20.mjs`): Send the merchant a new email verification link. (إعادة إرسال إيميل تفعيل البريد للتاجر) · staff-permission `clients:security` · stage 20 · tables clients, auth_tokens, notifications, audit_logs · success 204
-- **Frontend**: none.
+- **Frontend**: `resendClientVerification` (src/features/merchants/api/security.ts:45) · params `id: number` · returns `void`
 
 ## POST /admin/clients/:id/api-keys
 
 - **Map addition** (B-TBD staff-api-keys, `scripts/map-additions/20.mjs`): Create an API key for a merchant; the key is shown once. (إنشاء مفتاح API لتاجر من اللوحة، يُعرض مرة واحدة) · staff-permission `api_keys:create` · stage 20 · tables api_keys, audit_logs · success 201
-- **Frontend**: none.
+- **Frontend**: `createClientApiKey` (src/features/merchants/api/apiKeys.ts:34) · params `clientId: number`, `body: CreateApiKeyBody` · returns `CreatedApiKey`
 
 ## PATCH /admin/api-keys/:id
 
 - **Map addition** (B-TBD staff-api-keys, `scripts/map-additions/20.mjs`): Change a merchant key's per-minute limit and allowed addresses. (تعديل حدود مفتاح تاجر: المعدّل بالدقيقة والعناوين المسموحة) · staff-permission `api_keys:update` · stage 20 · tables api_keys, audit_logs · success 200
-- **Frontend**: none.
+- **Frontend**: `updateApiKey` (src/features/merchants/api/apiKeys.ts:47) · params `id: number`, `body: UpdateApiKeyBody` · returns `ApiKey`
 
 ## POST /client/auth/password/change
 

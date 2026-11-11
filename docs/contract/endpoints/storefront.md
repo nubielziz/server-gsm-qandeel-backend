@@ -35,8 +35,8 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 | `GET /store/v1/categories` | store | public | 22 |  |
 | `GET /store/v1/pages` | store | public | 22 |  |
 | `POST /store/v1/help/:slug/vote` | store | public | 22 |  |
-| `POST /admin/service-listings/:id/image` | admin | staff-permission `storefront:update` | 22 |  |
-| `DELETE /admin/service-listings/:id/image` | admin | staff-permission `storefront:update` | 22 |  |
+| `POST /admin/service-listings/:id/image` | admin | staff-permission `storefront:update` | 22 | `uploadListingImage` |
+| `DELETE /admin/service-listings/:id/image` | admin | staff-permission `storefront:update` | 22 | `removeListingImage` |
 
 ## GET /store/v1/config
 
@@ -71,7 +71,7 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 ## GET /admin/service-listings
 
 - **Map**: Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked. (الخدمات المعروضة بالمتجر وسعر Retail لكل خدمة؛ منع البيع تحت الحد الأدنى) · staff-permission `storefront:*` · stage 15 · tables service_listings, services
-- **Frontend**: `listListings` (src/features/storefront/api/listings.ts:24) · params `query?: ListQuery` · returns `ListResult<ServiceListing>` · success 200 · assumed contract
+- **Frontend**: `listListings` (src/features/storefront/api/listings.ts:25) · params `query?: ListQuery` · returns `ListResult<ServiceListing>` · success 200 · assumed contract
 - **Query**: Paging 25. q: contains over publicTitle, slug, service.name and service.code (mocks/listingRoutes.ts:21). Filters isListed=true|false and locked=true|false. _sort publicTitle|isListed, default publicTitle asc (lib/views.ts:22-26). Counts, each with _start=0&_end=1: isListed=true; isListed=false&locked=false; locked=true (components/ListingStats.tsx:10-14; lib/counts.ts:5).
 - **Response**: JSON array + x-total-count. One row per service and locale:
 - id, serviceId, locale (en|ar), slug, publicTitle, isListed, isFeatured.
@@ -88,7 +88,7 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 ## GET /admin/service-listings/:id
 
 - **Map**: Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked. (الخدمات المعروضة بالمتجر وسعر Retail لكل خدمة؛ منع البيع تحت الحد الأدنى) · staff-permission `storefront:*` · stage 15 · tables service_listings, services
-- **Frontend**: `getListing` (src/features/storefront/api/listings.ts:33) · params `id: number` · returns `ServiceListing` · success 200 · assumed contract
+- **Frontend**: `getListing` (src/features/storefront/api/listings.ts:33) · params `id: number` · returns `ServiceListingDetail` · success 200 · assumed contract
 - **Request**: :id is the numeric listing id.
 - **Response**: Same shape as a list row.
 - **Errors**: 404 NOT_FOUND (no listing with that id)
@@ -97,7 +97,7 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 ## POST /admin/service-listings
 
 - **Map**: Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked. (الخدمات المعروضة بالمتجر وسعر Retail لكل خدمة؛ منع البيع تحت الحد الأدنى) · staff-permission `storefront:*` · stage 15 · tables service_listings, services
-- **Frontend**: `createListing` (src/features/storefront/api/listings.ts:43) · params `body: CreateListingBody` · returns `ServiceListing` · success 201 · assumed contract
+- **Frontend**: `createListing` (src/features/storefront/api/listings.ts:42) · params `body: CreateListingBody` · returns `ServiceListingDetail` · success 201 · assumed contract
 - **Request**: Body {serviceId, locale (en|ar), publicTitle, slug?}. Without slug, the server uses slugOf(publicTitle): lower case, & becomes 'and', other non-alphanumerics become '-', and '-' is trimmed at the ends (mocks/http.ts:69-76). A new listing has is_listed false and is_featured false. (service_id, locale) and (locale, slug) are unique.
 - **Response**: 201 with the ServiceListing row.
 - **Errors**: 422 VALIDATION_FAILED (errors[].field is one of serviceId|locale|publicTitle|slug); 409 LISTING_EXISTS (the service already has a listing in that locale, or the slug is used; errors[{field: 'serviceId'|'slug'}] (listingRoutes.ts:73-83)); 409 LISTING_LOCKED (the service can never be public (listingRoutes.ts:64-71)); 403 FORBIDDEN (caller lacks storefront:create (the service menu also needs catalog:read))
@@ -106,7 +106,7 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 ## PATCH /admin/service-listings/:id
 
 - **Map**: Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked. (الخدمات المعروضة بالمتجر وسعر Retail لكل خدمة؛ منع البيع تحت الحد الأدنى) · staff-permission `storefront:*` · stage 15 · tables service_listings, services
-- **Frontend**: `updateListing` (src/features/storefront/api/listings.ts:53) · params `id: number`, `body: UpdateListingBody` · returns `ServiceListing` · success 200 · assumed contract
+- **Frontend**: `updateListing` (src/features/storefront/api/listings.ts:53) · params `id: number`, `body: UpdateListingBody` · returns `ServiceListingDetail` · success 200 · assumed contract
 - **Request**: Body is any of {isListed: boolean, retailPrice: 4-dp money string, net USD before VAT (components/PriceDialog.tsx:52)}. The switch sends only isListed; the price dialog sends only retailPrice. retailPrice upserts service_group_prices(service_id, b2c_retail group), so it applies to every locale's listing of the service and only to new storefront checkouts. Refuse a price <= 0 or below floorPrice. floorPrice is the same B117 effective floor (effective cost + minimum profit for the b2c_retail group); retailPrice below it is 422 on retailPrice.
 - **Response**: 200 with the updated row; retailPrice, marginPct and floorPrice are worked out again.
 - **Errors**: 422 VALIDATION_FAILED (errors[{field: 'retailPrice'}] for a price <= 0, or below the floor, with a message naming the floor (demo text 'Below the floor...', listingRoutes.ts:106-124)); 409 LISTING_LOCKED (switching on or pricing a locked listing); 409 SERVICE_DISABLED (isListed true while the service status is not active (listingRoutes.ts:135-141)); 404 NOT_FOUND (no listing with that id); 403 FORBIDDEN (caller lacks storefront:update)
@@ -295,10 +295,10 @@ Later consents reference this version. requires_reacceptance makes signed-in cus
 ## POST /admin/service-listings/:id/image
 
 - **Map addition** (B-TBD listing-image, `scripts/map-additions/22.mjs`): Upload the picture of a listed service. (رفع صورة الخدمة) · staff-permission `storefront:update` · stage 22 · tables service_listings, files, audit_logs · success 200
-- **Frontend**: none.
+- **Frontend**: `uploadListingImage` (src/features/storefront/api/listings.ts:68) · params `id: number`, `file: File` · returns `ServiceListingDetail`
 
 ## DELETE /admin/service-listings/:id/image
 
 - **Map addition** (B-TBD listing-image, `scripts/map-additions/22.mjs`): Remove the picture of a listed service. (إزالة صورة الخدمة) · staff-permission `storefront:update` · stage 22 · tables service_listings, audit_logs · success 204
-- **Frontend**: none.
+- **Frontend**: `removeListingImage` (src/features/storefront/api/listings.ts:78) · params `id: number` · returns `void`
 

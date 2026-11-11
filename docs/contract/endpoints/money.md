@@ -72,12 +72,12 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 | `GET /store/v1/me/wallet/top-ups/:id` | store | customer-session | 21 |  |
 | `POST /store/v1/me/wallet/top-ups/:id/receipt` | store | customer-session | 21 |  |
 | `POST /store/v1/me/wallet/top-ups/:id/cancel` | store | customer-session | 21 |  |
-| `GET /admin/customers/:id/wallet` | admin | staff-permission `wallet:read` | 21 |  |
-| `GET /admin/customers/:id/wallet/statement` | admin | staff-permission `wallet:read` | 21 |  |
-| `POST /admin/customers/:id/wallet/adjust` | admin | staff-permission `wallet:adjust` | 21 |  |
-| `POST /admin/customers/:id/wallet/freeze` | admin | staff-permission `wallet:adjust` | 21 |  |
-| `POST /admin/customers/:id/wallet/unfreeze` | admin | staff-permission `wallet:adjust` | 21 |  |
-| `GET /admin/customer-wallets` | admin | staff-permission `wallet:read` | 21 |  |
+| `GET /admin/customers/:id/wallet` | admin | staff-permission `wallet:read` | 21 | `getCustomerWallet` |
+| `GET /admin/customers/:id/wallet/statement` | admin | staff-permission `wallet:read` | 21 | `listCustomerWalletStatement` |
+| `POST /admin/customers/:id/wallet/adjust` | admin | staff-permission `wallet:adjust` | 21 | `adjustCustomerWallet` |
+| `POST /admin/customers/:id/wallet/freeze` | admin | staff-permission `wallet:adjust` | 21 | `freezeCustomerWallet` |
+| `POST /admin/customers/:id/wallet/unfreeze` | admin | staff-permission `wallet:adjust` | 21 | `unfreezeCustomerWallet` |
+| `GET /admin/customer-wallets` | admin | staff-permission `wallet:read` | 21 | `listCustomerWallets` |
 
 ## DHRU accountinfo
 
@@ -150,7 +150,7 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 ## POST /admin/clients/:id/wallet/adjust
 
 - **Map**: Manually add to or deduct from the wallet, with a reason. (إضافة أو خصم يدوي مع سبب) · staff-permission `wallet:adjust` · stage 3 · tables ledger_transactions, ledger_entries, audit_logs
-- **Frontend**: `adjustClientWallet` (src/features/merchants/api/wallet.ts:55) · params `id: number`, `body: AdjustWalletBody` · returns `AdjustWalletResult` · success 200 · assumed contract
+- **Frontend**: `adjustClientWallet` (src/features/merchants/api/wallet.ts:58) · params `id: number`, `body: AdjustWalletBody`, `idempotencyKey: string` · returns `AdjustWalletResult` · success 200 · assumed contract
 - **Request**: Body {amount: positive 4-dp string in USD, direction: "credit" | "debit", reason: trimmed 5-140 chars}. No Idempotency-Key header is sent. Posts map moneyEvent "adjust": credit = Dr adjustments / Cr client_wallet; debit = the mirror (Dr client_wallet / Cr adjustments). One DB transaction: ledger_transactions (kind "adjustment", memo "Manual <direction>: <reason>", ref_type client, ref_id client id, created_by staff), two ledger_entries summing to zero with balance_after, ledger_accounts balance update under the version check, audit_logs (wallet before/after, reason). Allowed for any merchant status.
 - **Response**: 200 {transactionId, wallet} with the four wallet figures after posting (toast quotes wallet.balance; useWalletMutations.ts:17-23).
 - **Errors**: 422 VALIDATION_FAILED (errors[].field amount (<= 0, not 4-dp) | direction | reason (< 5 chars)); 409 APPROVAL_REQUIRED (amount above the approval limit (demo $10,000; detail "Adjustments over $10,000 need a second approver. Split it or ask Finance.")); 409 CREDIT_LIMIT_EXCEEDED (a debit would make balance < -creditLimit (available < 0); detail names the limit); 404 NOT_FOUND (no merchant with that id); 403 FORBIDDEN (caller lacks wallet:adjust)
@@ -160,7 +160,7 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 ## PATCH /admin/clients/:id/credit-limit
 
 - **Map**: Credit limit (overdraft). (الحد الائتماني (overdraft)) · staff-permission `wallet:credit_limit` · stage 3 · tables ledger_accounts
-- **Frontend**: `setClientCreditLimit` (src/features/merchants/api/wallet.ts:68) · params `id: number`, `body: CreditLimitBody` · returns `ClientWallet` · success 200 · assumed contract
+- **Frontend**: `setClientCreditLimit` (src/features/merchants/api/wallet.ts:75) · params `id: number`, `body: CreditLimitBody` · returns `ClientWallet` · success 200 · assumed contract
 - **Request**: Body {creditLimit: 4-dp string >= 0}; "0.0000" removes the credit. Sets client_wallet.overdraft_limit (version check) and writes audit_logs. No money event (no ledger entry).
 - **Response**: 200 with the wallet {balance, reserved, creditLimit, available} after the change.
 - **Errors**: 422 VALIDATION_FAILED (errors[].field creditLimit: negative/malformed, or > 0 while the merchant group has overdraft_allowed = false); 404 NOT_FOUND (no merchant with that id); 403 FORBIDDEN (caller lacks wallet:credit_limit)
@@ -270,7 +270,7 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 ## PATCH /admin/payment-gateways/:id
 
 - **Map**: Payment gateways: fees, limits and merchant groups. (البوابات: الرسوم والحدود والفئات) · staff-permission `payments:gateways` · stage 8 · tables payment_gateways
-- **Frontend**: `updateGateway` (src/features/settings/api/gateways.ts:49) · params `id: number`, `body: Partial<CreateGatewayBody>` · returns `PaymentGateway` · success 200 · assumed contract
+- **Frontend**: `updateGateway` (src/features/settings/api/gateways.ts:50) · params `id: number`, `body: Partial<CreateGatewayBody>` · returns `PaymentGateway` · success 200 · assumed contract
 - **Request**: Only the changed fields (GatewayDialog.tsx:56-77); the card switch sends {isActive}. code is never sent: it is immutable because it is part of /webhooks/payments/:gateway (M162); refuse a code change with 422. A non-empty secret replaces the stored one; no secret keeps it. Validate the merged row like create. Turning off the last storefront gateway is allowed (the console asks first). Audit. webhookSecret (optional, write-only) replaces webhook_secret_enc the same way; a missing key keeps the stored one. Each driver declares where its webhook signature key comes from: a driver whose provider signs with the API secret uses config_enc, otherwise a missing webhook_secret_enc makes /webhooks/payments/:code answer 400 WEBHOOK_SIGNATURE_INVALID. secretHint reads config_enc.
 - **Response**: The updated gateway (same shape as a list row).
 - **Errors**: 404 NOT_FOUND (no gateway with that id); 422 VALIDATION_FAILED (invalid field or code change); 403 FORBIDDEN (caller lacks payments:gateways)
@@ -279,7 +279,7 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 ## DELETE /admin/payment-gateways/:id
 
 - **Map**: Payment gateways: fees, limits and merchant groups. (البوابات: الرسوم والحدود والفئات) · staff-permission `payments:gateways` · stage 8 · tables payment_gateways
-- **Frontend**: `deleteGateway` (src/features/settings/api/gateways.ts:58) · params `id: number` · returns `void` · success 204 · assumed contract
+- **Frontend**: `deleteGateway` (src/features/settings/api/gateways.ts:59) · params `id: number` · returns `void` · success 204 · assumed contract
 - **Request**: No body.
 - **Response**: 204, empty body.
 - **Errors**: 409 GATEWAY_IN_USE (payments reference the gateway); 404 NOT_FOUND (no gateway with that id); 403 FORBIDDEN (caller lacks payments:gateways)
@@ -317,7 +317,7 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 ## GET /admin/payments
 
 - **Map**: Payments and the manual review queue. (الدفعات وطابور المراجعة اليدوية) · staff-permission `payments:read` · stage 8 · tables payments
-- **Frontend**: `listPayments` (src/features/finance/api/payments.ts:22) · params `query?: ListQuery` · returns `ListResult<Payment>` · success 200 · assumed contract
+- **Frontend**: `listPayments` (src/features/finance/api/payments.ts:24) · params `query?: ListQuery` · returns `ListResult<Payment>` · success 200 · assumed contract
 - **Query**: Deposits tab always sends purpose=topup (the server always adds purpose=topup: a purpose=order filter answers [] with x-total-count 0) plus status=pending|approved|rejected (omitted for All; finance/lib/paymentView.ts:41). _sort: createdAt | id | amount | status (default createdAt desc), _start/_end 25 per page. Sub-tab counts and the header "waiting for review" figure: same filters with _start=0&_end=1, refetched every 30 s. q and clientId are declared but not sent (support q over gateway reference and merchant name, as the mock does).
 - **Response**: JSON array + x-total-count: id, purpose (always topup here), status (pending|approved|rejected for top-ups; order payments use pending|captured|failed|refunded|partial_refund|disputed|chargeback and are read only through /admin/reports/payments and /admin/refunds), methodType (top-ups bank|card|usdt|wise; order payments card|wallet|crypto), amount (gross the merchant paid), feeAmount, netAmount (= amount - feeAmount, credited to the wallet), currency (ISO code), gatewayTxnId (the column stays nullable for the partial unique index; a manual bank or Wise transfer without a reference is NULL and is sent as '', a reference the merchant typed on the receipt upload is stored there), capturedAt, createdAt, invoiceId|null, receiptFileId|null (download via /admin/files/:id), client {id, name, group (the group NAME as a string), walletBalance (current client_wallet balance, merchant side) | null} | null, gateway {id, name} | null, reviewedBy {id|null, name} | null (an automatic credit is {id: null, name: 'System'}: reviewed_by NULL and reviewed_at = the credit time), reviewedAt | null, note | null (while pending: a hint for the reviewer such as a large or first deposit, or for an automatic-gateway top-up that is waiting: 'Credited automatically after the gateway check at <time>'; once rejected: the reason; when the auto-credit job sets review_required the note is the reason). Automatic-gateway top-ups (user rule 6): the gateway confirmation webhook creates or updates the payment as status pending with captured_at = the confirmation time and auto_credit_at = captured_at + max(setting payments.auto_credit_delay_minutes (10), the gateway's hold_hours h); payments.review_required (default false) and auto_credit_at are new columns. The auto-credit job locks the row (SELECT ... FOR UPDATE), re-checks the gateway API and risk, then posts the deposit (status approved, reviewed_by NULL, reviewed_at = now). If the gateway no longer says confirmed or risk flags the payment, the job sets review_required = true, note = the reason and leaves it pending for staff.
 - **Errors**: 403 FORBIDDEN (caller lacks payments:read)
@@ -327,7 +327,7 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 ## GET /admin/payments/:id
 
 - **Map**: Payments and the manual review queue. (الدفعات وطابور المراجعة اليدوية) · staff-permission `payments:read` · stage 8 · tables payments
-- **Frontend**: `getPayment` (src/features/finance/api/payments.ts:32) · params `id: number` · returns `Payment` · success 200 · assumed contract
+- **Frontend**: `getPayment` (src/features/finance/api/payments.ts:34) · params `id: number` · returns `Payment` · success 200 · assumed contract
 - **Response**: Same row as the list. An order payment is not served here: 404 NOT_FOUND. Read when the review dialog opens from a link (ledger refType payment, audit log) and again after a decision.
 - **Errors**: 404 NOT_FOUND (no top-up payment with that id, or the id belongs to an order (storefront) payment); 403 FORBIDDEN (caller lacks payments:read)
 - **Mock**: src/features/finance/mocks/paymentHandlers.ts (Demo S.payments mapped in mocks/paymentStore.ts (PAY-1000 -> id 1000, invoice id = payment id - 999, gateways 1-4); approval posts the deposit journal and pays the invoice; walletBalance joined from books.ts walletsOf.)
@@ -335,7 +335,7 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 ## POST /admin/payments/:id/approve
 
 - **Map**: Approve a manual payment and top up the wallet. (اعتماد دفعة يدوية وشحن المحفظة) · staff-permission `payments:approve` · stage 8 · tables payments, invoices, ledger_entries
-- **Frontend**: `approvePayment` (src/features/finance/api/payments.ts:42) · params `id: number` · returns `Payment` · success 200 · assumed contract
+- **Frontend**: `approvePayment` (src/features/finance/api/payments.ts:44) · params `id: number` · returns `Payment` · success 200 · assumed contract
 - **Request**: No body, no Idempotency-Key. Only a pending purpose=topup payment. One DB transaction: payment status approved with captured_at, reviewed_by, reviewed_at; map moneyEvent "deposit": Dr gateway_clearing (amount) / Cr client_wallet (netAmount) / Cr fee_income (feeAmount, omitted when 0), ledger kind "deposit", ref_type payment, ref_id payment id, memo "Deposit PAY-<id> (<method>)", idempotency_key derived from the payment id; linked invoice -> paid with paid_at; outbox EVENT invoice.paid to the merchant webhook and a notification; audit entry. Allowed only when the payment's gateway is_manual or review_required = true; otherwise 409 PAYMENT_AUTO_CREDIT_PENDING (detail 'PAY-<id> is credited automatically after the gateway check.'). The auto-credit job and approve both lock the payment row, re-check status = 'pending' and post with the same ledger idempotency key 'deposit:payment:<id>'; the loser of a race gets 409 PAYMENT_ALREADY_REVIEWED and posts nothing. An order payment answers 404 NOT_FOUND.
 - **Response**: 200 with the updated Payment; client.walletBalance must already include the credit (toast "<net> credited to <merchant>. Wallet is now <balance>.", usePaymentMutations.ts:16-31).
 - **Errors**: 409 PAYMENT_ALREADY_REVIEWED (payment not pending (detail "PAY-<id> was already approved.")); 404 NOT_FOUND (no top-up payment with that id, or an order payment); 403 FORBIDDEN (caller lacks payments:approve); 409 PAYMENT_AUTO_CREDIT_PENDING (the gateway is automatic and review_required is false: the payment is credited by the auto-credit job (detail 'PAY-<id> is credited automatically after the gateway check.'))
@@ -345,7 +345,7 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 ## POST /admin/payments/:id/reject
 
 - **Map**: Reject a payment with a reason. (رفض دفعة مع سبب) · staff-permission `payments:approve` · stage 8 · tables payments
-- **Frontend**: `rejectPayment` (src/features/finance/api/payments.ts:51) · params `id: number`, `body: RejectPaymentBody` · returns `Payment` · success 200 · assumed contract
+- **Frontend**: `rejectPayment` (src/features/finance/api/payments.ts:53) · params `id: number`, `body: RejectPaymentBody` · returns `Payment` · success 200 · assumed contract
 - **Request**: Body {reason}: one non-empty string the merchant sees, composed by the console as "<chosen reason>. <message>", the message alone for "Other", or "Rejected" (finance/lib/payments.ts rejectReason). Pending only. Sets status rejected, review note = reason, reviewed_by, reviewed_at; voids the linked top-up invoice; notifies the merchant; audit entry. No money event. Same guard as approve: allowed only when the payment's gateway is_manual or review_required = true, else 409 PAYMENT_AUTO_CREDIT_PENDING; the row is locked and re-checked as in approve; an order payment answers 404 NOT_FOUND.
 - **Response**: 200 with the updated Payment (note = reason).
 - **Errors**: 422 VALIDATION_FAILED (errors[].field reason empty); 409 PAYMENT_ALREADY_REVIEWED (payment not pending); 404 NOT_FOUND (no top-up payment with that id, or an order payment); 403 FORBIDDEN (caller lacks payments:approve); 409 PAYMENT_AUTO_CREDIT_PENDING (the gateway is automatic and review_required is false (credited by the auto-credit job))
@@ -372,7 +372,7 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 ## GET /admin/reports/client-statement/:clientId
 
 - **Map**: Official account statement for a merchant. (كشف حساب رسمي لتاجر) · staff-permission `reports:read` · stage 11 · tables ledger_entries, invoices
-- **Frontend**: `downloadClientStatement` (src/features/merchants/api/wallet.ts:78) · params `clientId: number` · returns `string` · success 200 · assumed contract
+- **Frontend**: `downloadClientStatement` (src/features/merchants/api/wallet.ts:85) · params `clientId: number` · returns `string` · success 200 · assumed contract
 - **Request**: No query parameters are sent (no period). Accept: */*. Optional from/to (YYYY-MM-DD, inclusive, in the business time-zone setting of finance Q7); the default is the whole history.
 - **Response**: The official statement as a PDF (final format), Content-Type application/pdf, Content-Disposition: attachment; filename="statement-<clientId>-<from>-<to>.pdf" with filename*=UTF-8''... (ALIGNMENT § 6), exposed through Access-Control-Expose-Headers (the console falls back to statement-<id>.pdf when the header is missing). Content: merchant header (name, company, country), period, opening balance, client_wallet lines (date, JRN-<id>, kind, memo, debit, credit, balance after), closing balance, the credit limit, then the invoices issued in the period (number, kind, status, total, paid at). Rendered synchronously and streamed, not stored, with an audit entry, by the shared PdfRenderer of the platform module (pdf-lib, decision 030; English text, Latin fonts embedded, no Arabic shaping).
 - **Errors**: 404 NOT_FOUND (no merchant with that id); 403 FORBIDDEN (caller lacks reports:read); 422 VALIDATION_FAILED (from or to is not a valid YYYY-MM-DD date, or from is after to (errors[].field = from or to))
@@ -591,30 +591,30 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 ## GET /admin/customers/:id/wallet
 
 - **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): A customer store balance: balance, hold state and pending top-ups. (رصيد الزبون: الرصيد والتجميد والشحنات المعلّقة) · staff-permission `wallet:read` · stage 21 · tables ledger_accounts · success 200
-- **Frontend**: none.
+- **Frontend**: `getCustomerWallet` (src/features/customers/api/wallet.ts:33) · params `id: number` · returns `CustomerWallet`
 
 ## GET /admin/customers/:id/wallet/statement
 
 - **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): A customer balance statement. (كشف حساب رصيد الزبون) · staff-permission `wallet:read` · stage 21 · tables ledger_entries, ledger_transactions · success 200
-- **Frontend**: none.
+- **Frontend**: `listCustomerWalletStatement` (src/features/customers/api/wallet.ts:43) · params `id: number`, `query?: ListQuery` · returns `ListResult<WalletStatementRow>`
 
 ## POST /admin/customers/:id/wallet/adjust
 
 - **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): Add to or deduct from a customer balance by hand, with a reason. (إضافة أو خصم يدوي على رصيد الزبون مع سبب) · staff-permission `wallet:adjust` · stage 21 · tables ledger_transactions, ledger_entries, audit_logs · success 200
-- **Frontend**: none.
+- **Frontend**: `adjustCustomerWallet` (src/features/customers/api/wallet.ts:62) · params `id: number`, `body: AdjustWalletBody`, `idempotencyKey: string` · returns `AdjustWalletResult`
 
 ## POST /admin/customers/:id/wallet/freeze
 
 - **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): Put a customer balance on hold, with a reason. (تجميد رصيد الزبون مع السبب) · staff-permission `wallet:adjust` · stage 21 · tables ledger_accounts, audit_logs · success 200
-- **Frontend**: none.
+- **Frontend**: `freezeCustomerWallet` (src/features/customers/api/wallet.ts:80) · params `id: number`, `body: FreezeWalletBody`, `idempotencyKey: string` · returns `CustomerWallet`
 
 ## POST /admin/customers/:id/wallet/unfreeze
 
 - **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): Lift the hold on a customer balance. (فك تجميد رصيد الزبون) · staff-permission `wallet:adjust` · stage 21 · tables ledger_accounts, audit_logs · success 200
-- **Frontend**: none.
+- **Frontend**: `unfreezeCustomerWallet` (src/features/customers/api/wallet.ts:98) · params `id: number`, `body: FreezeWalletBody`, `idempotencyKey: string` · returns `CustomerWallet`
 
 ## GET /admin/customer-wallets
 
 - **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): Customer balances, with negative and held ones. (قائمة أرصدة الزبائن: السالب والمجمّد) · staff-permission `wallet:read` · stage 21 · tables ledger_accounts, customers · success 200
-- **Frontend**: none.
+- **Frontend**: `listCustomerWallets` (src/features/finance/api/customerWallets.ts:13) · params `query?: ListQuery` · returns `ListResult<CustomerWalletRow>`
 

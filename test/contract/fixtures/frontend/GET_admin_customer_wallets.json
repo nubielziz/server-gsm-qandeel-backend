@@ -1,0 +1,20 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "1"
+  },
+  "body": [
+    {
+      "customer": {
+        "id": 1,
+        "name": "Daniel Whitmore",
+        "email": "daniel.whitmore@mail.example",
+        "status": "active"
+      },
+      "balance": "50.0000",
+      "frozen": null,
+      "updatedAt": "2026-10-25T12:00:00.000Z"
+    }
+  ]
+}

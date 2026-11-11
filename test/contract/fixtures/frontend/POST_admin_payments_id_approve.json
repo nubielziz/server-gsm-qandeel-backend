@@ -17,6 +17,8 @@
     "createdAt": "2026-10-30T06:45:00.000Z",
     "invoiceId": 49,
     "receiptFileId": null,
+    "customer": null,
+    "dispute": null,
     "client": {
       "id": 3,
       "name": "Phone Doctor FZE",

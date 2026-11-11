@@ -11,7 +11,7 @@
         "client": 23,
         "admin": 44
       },
-      "frontendCalled": 38,
+      "frontendCalled": 44,
       "stages": [
         2,
         7,
@@ -43,7 +43,7 @@
         "system": 2,
         "store": 6
       },
-      "frontendCalled": 17,
+      "frontendCalled": 33,
       "stages": [
         2,
         5,
@@ -86,7 +86,7 @@
         "events": 2,
         "store": 8
       },
-      "frontendCalled": 43,
+      "frontendCalled": 49,
       "stages": [
         3,
         7,
@@ -276,7 +276,7 @@
         "store": 9,
         "admin": 21
       },
-      "frontendCalled": 19,
+      "frontendCalled": 21,
       "stages": [
         14,
         15,

@@ -1,0 +1,74 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "link": null,
+    "skipped": {
+      "optedOut": 0,
+      "noTelegram": 0,
+      "noAccount": 0
+    },
+    "updatedBy": null,
+    "cancelledBy": {
+      "id": 1,
+      "name": "Rami K."
+    },
+    "error": null,
+    "id": 2,
+    "name": "Ramadan offer",
+    "purpose": "marketing",
+    "channels": [
+      "email"
+    ],
+    "status": "cancelled",
+    "scheduledAt": "2026-11-07T12:00:00.000Z",
+    "queuedAt": null,
+    "startedAt": null,
+    "finishedAt": null,
+    "cancelledAt": "2026-10-31T12:00:00.000Z",
+    "expectedRecipients": 56,
+    "recipients": 0,
+    "planned": {
+      "inApp": 0,
+      "email": 0,
+      "telegram": 0
+    },
+    "audience": {
+      "customers": {}
+    },
+    "content": {
+      "en": {
+        "title": "Ramadan offer: 10% off all top-ups",
+        "body": "Hello {{name}},\nTop up your wallet this month and get 10% extra."
+      },
+      "ar": {
+        "title": "عرض رمضان: خصم 10% على كل الشحنات",
+        "body": "مرحباً {{name}}،\nاشحن محفظتك هذا الشهر واحصل على 10% إضافية."
+      }
+    },
+    "delivery": {
+      "inApp": {
+        "delivered": 0,
+        "read": 0
+      },
+      "email": {
+        "queued": 0,
+        "sent": 0,
+        "failed": 0
+      },
+      "telegram": {
+        "queued": 0,
+        "sent": 0,
+        "failed": 0
+      }
+    },
+    "createdBy": {
+      "id": 1,
+      "name": "Rami K."
+    },
+    "createdAt": "2026-10-30T12:00:00.000Z",
+    "updatedAt": "2026-10-31T12:00:00.000Z"
+  }
+}

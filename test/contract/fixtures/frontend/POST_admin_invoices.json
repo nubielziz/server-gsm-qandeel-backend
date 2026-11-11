@@ -4,8 +4,8 @@
     "content-type": "application/json"
   },
   "body": {
-    "id": 70,
-    "number": "INV-2026-0070",
+    "id": 72,
+    "number": "INV-2026-0072",
     "kind": "manual",
     "status": "open",
     "amount": "10.0000",
