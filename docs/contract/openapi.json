@@ -104229,7 +104229,7 @@
     },
     "/admin/payment-gateways": {
       "get": {
-        "description": "The payment gateways with their fees, limits and merchant groups, never their secrets. `secretHint` shows that a credential is stored; `volume30d` is the money taken in the last 30 days.",
+        "description": "The payment gateways with their fees, limits and merchant groups, never their secrets. `secretHint`, `webhookSecretHint` and `secondaryWebhookSecretHint` show that a credential is stored; `volume30d` is the money taken in the last 30 days.",
         "operationId": "getAdminPaymentGateways",
         "parameters": [
           {
@@ -104458,6 +104458,20 @@
                           "null"
                         ]
                       },
+                      "webhookSecretHint": {
+                        "description": "`••••` and the last 4 characters of the stored webhook signing secret; null when none (the gateway's webhooks are then refused). Always sent.",
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "secondaryWebhookSecretHint": {
+                        "description": "The same for the second webhook secret (a second endpoint, or the new one while rotating); null when none. Always sent.",
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
                       "volume30d": {
                         "description": "Money taken through the gateway in the last 30 days, in USD (payments captured, not pending, failed or rejected).",
                         "anyOf": [
@@ -104522,6 +104536,8 @@
                     "createdAt": "2026-10-01T09:00:00.000Z",
                     "updatedAt": "2026-10-01T09:00:00.000Z",
                     "secretHint": null,
+                    "webhookSecretHint": null,
+                    "secondaryWebhookSecretHint": null,
                     "volume30d": "4350.0000"
                   }
                 ]
@@ -104832,7 +104848,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "Adds a gateway. `secret` (the API credential) and `webhookSecret` are write-only and stored encrypted. Validation (422 with the field): a non-blank name, driver and code (lower-case letters, digits, `-` and `_`); a code that no other gateway uses; audience b2c, b2b or both; a fee of 0 to 100 percent; money fields of 0 or more (a maximum above zero is not below the minimum); whole `holdHours` from 0 to 720; `allowedGroupIds` that are existing client groups. Audited.",
+        "description": "Adds a gateway. `secret` (the API credential), `webhookSecret` and `secondaryWebhookSecret` are write-only and stored encrypted. Validation (422 with the field): a non-blank name, driver and code (lower-case letters, digits, `-` and `_`); a code that no other gateway uses; audience b2c, b2b or both; a fee of 0 to 100 percent; money fields of 0 or more (a maximum above zero is not below the minimum); whole `holdHours` from 0 to 720; `allowedGroupIds` that are existing client groups; a `secondaryWebhookSecret` of 1 to 500 characters, only next to a first webhook secret. Audited.",
         "operationId": "postAdminPaymentGateways",
         "parameters": [],
         "requestBody": {
@@ -104907,8 +104923,21 @@
                     "type": "string"
                   },
                   "webhookSecret": {
-                    "description": "Write-only: the key the gateway signs its webhooks with, stored encrypted.",
+                    "description": "Write-only: the key the gateway signs its webhooks with, stored encrypted. A non-empty value replaces the first secret and keeps the second.",
                     "type": "string"
+                  },
+                  "secondaryWebhookSecret": {
+                    "description": "Write-only: a second webhook signing secret (a second endpoint at the provider, or the new secret while rotating), stored encrypted; `null` removes it. Refused (422 on this field) when the gateway has no first secret and the request sends none.",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -105093,6 +105122,20 @@
                         "null"
                       ]
                     },
+                    "webhookSecretHint": {
+                      "description": "`••••` and the last 4 characters of the stored webhook signing secret; null when none (the gateway's webhooks are then refused). Always sent.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "secondaryWebhookSecretHint": {
+                      "description": "The same for the second webhook secret (a second endpoint, or the new one while rotating); null when none. Always sent.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "volume30d": {
                       "description": "Money taken through the gateway in the last 30 days, in USD (payments captured, not pending, failed or rejected).",
                       "anyOf": [
@@ -105155,6 +105198,8 @@
                   "createdAt": "2026-10-01T09:00:00.000Z",
                   "updatedAt": "2026-10-01T09:00:00.000Z",
                   "secretHint": null,
+                  "webhookSecretHint": null,
+                  "secondaryWebhookSecretHint": null,
                   "volume30d": "4350.0000"
                 }
               }
@@ -105624,6 +105669,20 @@
                         "null"
                       ]
                     },
+                    "webhookSecretHint": {
+                      "description": "`••••` and the last 4 characters of the stored webhook signing secret; null when none (the gateway's webhooks are then refused). Always sent.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "secondaryWebhookSecretHint": {
+                      "description": "The same for the second webhook secret (a second endpoint, or the new one while rotating); null when none. Always sent.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "volume30d": {
                       "description": "Money taken through the gateway in the last 30 days, in USD (payments captured, not pending, failed or rejected).",
                       "anyOf": [
@@ -105686,6 +105745,8 @@
                   "createdAt": "2026-10-01T09:00:00.000Z",
                   "updatedAt": "2026-10-01T09:00:00.000Z",
                   "secretHint": null,
+                  "webhookSecretHint": null,
+                  "secondaryWebhookSecretHint": null,
                   "volume30d": "4350.0000"
                 }
               }
@@ -106078,7 +106139,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "Changes the fields sent (the on/off switch sends `{ isActive }`). The code never changes (it is part of the webhook address): a different code is 422 on `code`. A non-empty `secret` or `webhookSecret` replaces the stored one; leaving it out keeps it. The merged gateway is validated as on create. Validation (422 with the field): a non-blank name, driver and code (lower-case letters, digits, `-` and `_`); a code that no other gateway uses; audience b2c, b2b or both; a fee of 0 to 100 percent; money fields of 0 or more (a maximum above zero is not below the minimum); whole `holdHours` from 0 to 720; `allowedGroupIds` that are existing client groups. Audited.",
+        "description": "Changes the fields sent (the on/off switch sends `{ isActive }`). The code never changes (it is part of the webhook address): a different code is 422 on `code`. A non-empty `secret` or `webhookSecret` replaces the stored one; leaving it out keeps it. `secondaryWebhookSecret` sets the second webhook secret, `null` removes it, leaving it out keeps it. The merged gateway is validated as on create. Validation (422 with the field): a non-blank name, driver and code (lower-case letters, digits, `-` and `_`); a code that no other gateway uses; audience b2c, b2b or both; a fee of 0 to 100 percent; money fields of 0 or more (a maximum above zero is not below the minimum); whole `holdHours` from 0 to 720; `allowedGroupIds` that are existing client groups; a `secondaryWebhookSecret` of 1 to 500 characters, only next to a first webhook secret. Audited.",
         "operationId": "patchAdminPaymentGatewaysById",
         "parameters": [
           {
@@ -106166,8 +106227,21 @@
                     "type": "string"
                   },
                   "webhookSecret": {
-                    "description": "Write-only: the key the gateway signs its webhooks with, stored encrypted.",
+                    "description": "Write-only: the key the gateway signs its webhooks with, stored encrypted. A non-empty value replaces the first secret and keeps the second.",
                     "type": "string"
+                  },
+                  "secondaryWebhookSecret": {
+                    "description": "Write-only: a second webhook signing secret (a second endpoint at the provider, or the new secret while rotating), stored encrypted; `null` removes it. Refused (422 on this field) when the gateway has no first secret and the request sends none.",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 }
               },
@@ -106318,6 +106392,20 @@
                         "null"
                       ]
                     },
+                    "webhookSecretHint": {
+                      "description": "`••••` and the last 4 characters of the stored webhook signing secret; null when none (the gateway's webhooks are then refused). Always sent.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "secondaryWebhookSecretHint": {
+                      "description": "The same for the second webhook secret (a second endpoint, or the new one while rotating); null when none. Always sent.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "volume30d": {
                       "description": "Money taken through the gateway in the last 30 days, in USD (payments captured, not pending, failed or rejected).",
                       "anyOf": [
@@ -106380,6 +106468,8 @@
                   "createdAt": "2026-10-01T09:00:00.000Z",
                   "updatedAt": "2026-10-01T09:00:00.000Z",
                   "secretHint": null,
+                  "webhookSecretHint": null,
+                  "secondaryWebhookSecretHint": null,
                   "volume30d": "4350.0000"
                 }
               }
@@ -244825,7 +244915,7 @@
     },
     "/webhooks/disputes/{gateway}": {
       "post": {
-        "description": "A payment gateway reports a dispute. The delivery must carry the gateway's signature (the scheme of its driver), a signed time within 5 minutes of now and an event id not seen before; otherwise `400 WEBHOOK_SIGNATURE_INVALID`. `dispute.created` records the dispute once (the gateway id is unique per payment) with its evidence deadline and marks the payment `disputed` and the order timeline; a dispute won returns the payment to `captured` (or `partial_refund`/`refunded` when refunds completed); a dispute lost posts the chargeback journal once and marks the payment `chargeback`. A repeat of an event answers `200` and changes nothing; events the shop does not use are acknowledged with `200`.",
+        "description": "A payment gateway reports a dispute. The delivery must carry the gateway's signature (the scheme of its driver; either of the gateway's two webhook secrets), a signed time within 5 minutes of now and an event id not seen before; otherwise `400 WEBHOOK_SIGNATURE_INVALID`. `dispute.created` records the dispute once (the gateway id is unique per payment) with its evidence deadline and marks the payment `disputed` and the order timeline; a dispute won returns the payment to `captured` (or `partial_refund`/`refunded` when refunds completed); a dispute lost posts the chargeback journal once and marks the payment `chargeback`. A repeat of an event answers `200` and changes nothing; events the shop does not use are acknowledged with `200`.",
         "operationId": "postWebhooksDisputesByGateway",
         "parameters": [
           {
@@ -245103,7 +245193,7 @@
     },
     "/webhooks/payments/{gateway}": {
       "post": {
-        "description": "A payment gateway confirms a top-up. The delivery must carry the gateway's signature (the scheme of its driver), a signed time within 5 minutes of now and an event id not seen before; otherwise `400 WEBHOOK_SIGNATURE_INVALID`. A confirmed payment of an open invoice is recorded once (the gateway reference is unique): the payment waits `payments.auto_credit_delay_minutes` (at least the gateway hold hours), then a job asks the gateway again and credits the wallet. A repeat of the same event answers `200` and changes nothing. Events billing does not use are acknowledged with `200`.",
+        "description": "A payment gateway confirms a top-up. The delivery must carry the gateway's signature (the scheme of its driver), a signed time within 5 minutes of now and an event id not seen before; otherwise `400 WEBHOOK_SIGNATURE_INVALID`. A confirmed payment of an open invoice is recorded once (the gateway reference is unique): the payment waits `payments.auto_credit_delay_minutes` (at least the gateway hold hours), then a job asks the gateway again and credits the wallet. A repeat of the same event answers `200` and changes nothing. Events billing does not use are acknowledged with `200`. A gateway may keep two webhook secrets: a delivery signed with either passes. Refund results (`refund.updated` with a final status, `refund.failed`) settle the storefront refund they name, and dispute events are handled exactly as on `POST /webhooks/disputes/:gateway` (one provider endpoint with every event is enough; the same dispute on both URLs is recorded once).",
         "operationId": "postWebhooksPaymentsByGateway",
         "parameters": [
           {

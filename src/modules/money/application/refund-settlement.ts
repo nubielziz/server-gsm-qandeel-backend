@@ -1,13 +1,14 @@
 // RefundSettlement: records the gateway's final answer to a storefront refund, whether it came back from the job's call or as a
-// `refund.succeeded` / `refund.failed` event (scenario b2c-refund step 7). One place, guarded by the refund's `processing` status.
-import { Injectable, Logger } from '@nestjs/common';
+// `refund.updated` (final status) / `refund.failed` event (scenario b2c-refund step 7). One place, guarded by the refund's `processing` status.
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { CLOCK, type Clock } from '../../../common/clock';
 import { Money } from '../../../common/money';
 import { DbService } from '../../../infra/db';
 import { toUsd } from '../domain/b2c-money';
 import { wholeCents } from '../domain/refund-rules';
 import { ledgerPartsOf, loadSessionMoney } from '../infra/b2c-reads.repository';
 import type { RefundEvent } from '../infra/gateway-drivers/driver';
-import { findRefundForGateway, lockRefund } from '../infra/refund.repository';
+import { appendLateRefundFailure, findRefundForGateway, lockRefund } from '../infra/refund.repository';
 import { B2cRefunds } from './b2c-refunds';
 import { StorefrontOrderPorts } from './storefront-ports';
 
@@ -35,9 +36,12 @@ export type RefundOutcome =
  * report the same result, and a delivery can repeat, so only a refund still `processing` moves: the second report changes nothing. A failure
  * the gateway gave for good (`definite`) also moves the refund's idempotency key on, so the staff retry is not answered with the same refusal.
  * That key move is why a failure carries the send attempt it belongs to: a late or repeated `refund.failed` of the first gateway refund must not
- * fail the retry that replaced it (it would move the key again, and the next retry would refund the customer a third time).
+ * fail the retry that replaced it (it would move the key again, and the next retry would refund the customer a third time). A failure the
+ * gateway reports after the refund completed (plan 24C § 2.3: Stripe can fail a refund it first reported `succeeded`) is not undone: it is
+ * written on the refund's note for staff, once, and logged as an error.
  *
- * Side effects (in its own transaction): updates `refunds` and `payments`, adds a timeline line to the order.
+ * Side effects (in its own transaction): updates `refunds` and `payments`, adds a timeline line to the order; a late failure appends to
+ * `refunds.note`.
  */
 @Injectable()
 export class RefundSettlement {
@@ -47,6 +51,7 @@ export class RefundSettlement {
     private readonly db: DbService,
     private readonly refunds: B2cRefunds,
     private readonly ports: StorefrontOrderPorts,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   /**
@@ -110,11 +115,15 @@ export class RefundSettlement {
    *
    * @param gatewayId the gateway that signed the event
    * @param event what the driver read
-   * @returns true when a refund was moved
+   * @returns true when a refund was moved (a late failure noted on a completed refund moves nothing)
    */
   async handleEvent(gatewayId: number, event: RefundEvent): Promise<boolean> {
     const refund = await findRefundForGateway(this.db.db, gatewayId, event);
     if (!refund) return false;
+    if (event.kind === 'failed' && refund.status === 'completed') {
+      await this.noteLateFailure(refund.id, event);
+      return false;
+    }
     return this.settle(
       refund.id,
       event.kind === 'succeeded'
@@ -128,5 +137,25 @@ export class RefundSettlement {
             attempt: event.sendAttempt,
           },
     );
+  }
+
+  /**
+   * Writes a failure of a completed refund on its note (once per gateway refund) and logs it as an error.
+   *
+   * Why: the customer did not get the money although the refund shows completed; reversing the journal automatically could pay twice when
+   * staff have already acted, so staff decide (plan 24C § 8). Only the gateway refund the refund completed with counts: a late failure of an
+   * earlier send attempt's gateway refund changes nothing.
+   */
+  private async noteLateFailure(refundId: number, event: RefundEvent): Promise<void> {
+    const now = this.clock.now();
+    const marker = `that refund ${event.gatewayRefundId} failed after it was completed`;
+    const reason = event.failure ?? 'no reason given';
+    const text = `The gateway reported on ${now.toISOString()} ${marker}: ${reason}. Refund the customer another way.`;
+    const noted = await appendLateRefundFailure(this.db.db, refundId, event.gatewayRefundId, marker, text, now);
+    if (noted) {
+      this.logger.error(
+        `Refund ${refundId}: the gateway failed refund ${event.gatewayRefundId} after it completed (${reason}); staff must refund the customer another way.`,
+      );
+    }
   }
 }

@@ -15,8 +15,13 @@ export interface GatewayCredentials {
   readonly secret: string | undefined;
   /** Where the gateway's API is (`config_enc.apiBase`), when it is not the driver's default. */
   readonly apiBase: string | undefined;
-  /** The key the gateway signs its webhooks with (`webhook_secret_enc`). */
+  /** The first key the gateway signs its webhooks with (`webhook_secret_enc`): `webhookSecrets[0]`. */
   readonly webhookSecret: string | undefined;
+  /**
+   * Every stored webhook signing key, at most two (feature 24C): a second endpoint at the gateway, or the new key while rotating. A
+   * delivery is accepted when any of them verifies it.
+   */
+  readonly webhookSecrets: readonly string[];
 }
 
 /** What a driver read about how a storefront payment was made (never card data: a brand, the last digits, a fingerprint). */
@@ -33,6 +38,11 @@ export interface PaymentDetails {
   /** The coin and network of a crypto payment (`usdt`, `TRC-20`). */
   readonly coin?: string | undefined;
   readonly network?: string | undefined;
+  /**
+   * True when the driver could not read the card details from the gateway (the call failed or timed out): a storefront payment then gets a
+   * risk signal and a card top-up waits for staff review (plan 24C § 2.4).
+   */
+  readonly unavailable?: boolean | undefined;
 }
 
 /** What a driver learned from a signed webhook, in the words of billing. */
@@ -87,7 +97,7 @@ export interface RefundRequest {
 /** What the gateway answered to a refund. */
 export interface RefundAnswer {
   readonly gatewayRefundId: string;
-  /** `succeeded` is final; `pending` waits for the gateway's `refund.succeeded` or `refund.failed` event. */
+  /** `succeeded` is final; `pending` waits for the gateway's `refund.updated` (with the refund's final status) or `refund.failed` event. */
   readonly status: 'succeeded' | 'pending' | 'failed';
   /** The gateway's reason when it refused. */
   readonly failure: string | null;
@@ -197,6 +207,23 @@ export interface PaymentGatewayDriver {
    */
   checkStatus(calls: GatewayCalls, credentials: GatewayCredentials, reference: string): Promise<GatewayStatus>;
   /**
+   * Reads how a confirmed payment was made (absent when the event itself says, as for crypto).
+   *
+   * Why: plan 24C § 2.4: a Stripe checkout event does not carry the card; the payment's latest Charge does. Billing calls this before the
+   * capture transaction, with a short timeout.
+   *
+   * @param calls the HTTP client and policy
+   * @param credentials the gateway's credentials
+   * @param reference the gateway's id of the payment (`payments.gateway_txn_id`)
+   * @returns the card's brand, last digits, fingerprint, 3-D Secure and wallet, or `undefined` when the payment has no card to read
+   * @throws {AppError} `GATEWAY_ERROR` when the gateway cannot be reached, refuses or is too slow
+   */
+  paymentDetails?(
+    calls: GatewayCalls,
+    credentials: GatewayCredentials,
+    reference: string,
+  ): Promise<PaymentDetails | undefined>;
+  /**
    * Refunds a storefront payment (absent when the gateway cannot: the refund is then paid out by hand).
    *
    * @param calls the HTTP client and policy
@@ -236,6 +263,8 @@ export interface PaymentGatewayDriver {
 }
 
 const TIMEOUT_MS = 10_000;
+/** The timeout of a read the webhook waits for (the card details of a confirmation, plan 24C § 2.4). */
+export const DETAILS_TIMEOUT_MS = 3_000;
 
 /** The 4xx answers that say "not now", not "no": a timeout, a conflict with a request in flight, "too early" and a rate limit. */
 const TRANSIENT_4XX: ReadonlySet<number> = new Set([408, 409, 425, 429]);
@@ -265,21 +294,22 @@ export class GatewayRefusalError extends AppError {
  * conflict or a rate limit is the {@link GatewayRefusalError} kind of it, so a caller can tell a refusal from an answer it does not know.
  *
  * @param calls the HTTP client and policy
- * @param options the address, method, headers and body
+ * @param options the address, method, headers and body, and a shorter timeout than the default 10 seconds when the caller waits
  * @returns the JSON object the gateway answered
  * @throws {AppError} `GATEWAY_ERROR`; a {@link GatewayRefusalError} for a 4xx refusal
  */
 export async function gatewayCall(
   calls: GatewayCalls,
-  options: { url: string; method: 'GET' | 'POST'; headers: Record<string, string>; body?: string },
+  options: { url: string; method: 'GET' | 'POST'; headers: Record<string, string>; body?: string; timeoutMs?: number },
 ): Promise<JsonObject> {
+  const { timeoutMs, ...request } = options;
   let result;
   try {
     result = await calls.http.request({
-      ...options,
+      ...request,
       target: 'gateway',
       operation: 'payments',
-      timeoutMs: TIMEOUT_MS,
+      timeoutMs: timeoutMs ?? TIMEOUT_MS,
       ...(calls.policy?.allowPrivateNetwork === undefined
         ? {}
         : { allowPrivateNetwork: calls.policy.allowPrivateNetwork }),

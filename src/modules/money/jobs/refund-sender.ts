@@ -30,7 +30,7 @@ export type RefundSendResult = 'completed' | 'pending' | 'failed' | 'skipped';
  * Why: RESOLUTIONS money-11 and user rule 7: a refund is `processing` from approval until the gateway answers. The call carries an
  * idempotency key (`refund-<id>`, see {@link refundSendKey}) and the refund id and the send attempt as metadata, so a retry of the job never refunds
  * twice, the gateway's own event finds the refund, and a late event of an earlier send is told from the current one. A gateway that answers `succeeded` completes the refund; `pending` waits for its
- * `refund.succeeded` or `refund.failed` event (`POST /webhooks/payments/:gateway`); a refund object that comes back `failed` fails it with the
+ * `refund.updated` (final status) or `refund.failed` event (`POST /webhooks/payments/:gateway`); a refund object that comes back `failed` fails it with the
  * gateway's text. Two kinds of failure differ in what a staff retry may do. A refusal the gateway gave for good (a 4xx answer, a failed refund
  * object) is definite: the sender fails the refund and, for a 4xx, throws an `UnrecoverableError` (the queue does not retry it); the refund's
  * `send_attempt` moves on, so the staff retry sends under a new key (`refund-<id>-<n>`) instead of being answered with the same refusal. An

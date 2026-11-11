@@ -570,7 +570,7 @@ describe('the gateway answer and POST /admin/refunds/:id/retry', () => {
     expect(await refundRow(refund.id)).toMatchObject({ status: 'completed', sendAttempt: 1 });
   });
 
-  it('a pending answer waits for the refund.succeeded event, which completes it once', async () => {
+  it('a pending answer waits for refund.updated with status succeeded, which completes it once', async () => {
     const paid = await order({ deliver: true });
     const refund = await request(paid);
     await staff.post(`/admin/refunds/${refund.id}/approve`, {});
@@ -588,6 +588,67 @@ describe('the gateway answer and POST /admin/refunds/:id/retry', () => {
     const again = refundEvent(`evt_${crypto.randomUUID()}`, { refund: gatewayRefundId, refundId: refund.id });
     expect((await hook(t, clock, 'payments', 'card-b2c', again)).statusCode).toBe(200);
     expect((await refundRow(refund.id)).status).toBe('completed');
+  });
+
+  it('refund.updated with a status that is not final changes nothing; canceled fails it (24C)', async () => {
+    const paid = await order({ deliver: true });
+    const refund = await request(paid);
+    await staff.post(`/admin/refunds/${refund.id}/approve`, {});
+    fake.refund = { status: 'pending' };
+    await sender.send(refund.id, false);
+    const gatewayRefundId = (await refundRow(refund.id)).gatewayRefundId!;
+    for (const status of ['pending', 'requires_action']) {
+      const body = refundEvent(`evt_${crypto.randomUUID()}`, { refund: gatewayRefundId, refundId: refund.id, status });
+      expect((await hook(t, clock, 'payments', 'card-b2c', body)).statusCode).toBe(200);
+      expect(await refundRow(refund.id)).toMatchObject({ status: 'processing', sendAttempt: 1 });
+    }
+    const canceled = refundEvent(`evt_${crypto.randomUUID()}`, {
+      refund: gatewayRefundId,
+      refundId: refund.id,
+      sendAttempt: 1,
+      status: 'canceled',
+    });
+    expect((await hook(t, clock, 'payments', 'card-b2c', canceled)).statusCode).toBe(200);
+    expect(await refundRow(refund.id)).toMatchObject({ status: 'failed', note: 'canceled', sendAttempt: 2 });
+  });
+
+  it('a refund.failed after the refund completed is noted on the refund once and undoes nothing (24C)', async () => {
+    const paid = await order({ deliver: true });
+    const refund = await request(paid);
+    await staff.post(`/admin/refunds/${refund.id}/approve`, {});
+    // Stripe's late failure: the refund call answers succeeded, the refund fails minutes later.
+    expect(await sender.send(refund.id, false)).toBe('completed');
+    const completed = await refundRow(refund.id);
+    expect(completed.status).toBe('completed');
+    const journals = (await ledgerTotals(db)).transactions;
+    clock.advance(5 * 60_000);
+    const late = () =>
+      refundEvent(`evt_${crypto.randomUUID()}`, {
+        refund: completed.gatewayRefundId!,
+        refundId: refund.id,
+        sendAttempt: 1,
+        type: 'refund.failed',
+        failure: 'expired_or_canceled_card',
+      });
+    expect((await hook(t, clock, 'payments', 'card-b2c', late())).statusCode).toBe(200);
+    const noted = await refundRow(refund.id);
+    const sentence =
+      `The gateway reported on ${clock.now().toISOString()} that refund ${completed.gatewayRefundId} failed after it was completed: ` +
+      'expired_or_canceled_card. Refund the customer another way.';
+    expect(noted).toMatchObject({ status: 'completed', sendAttempt: 1, gatewayRefundId: completed.gatewayRefundId });
+    expect(noted.note).toBe(completed.note === '' ? sentence : `${completed.note}\n${sentence}`);
+    // A repeated delivery adds nothing; a failure of another gateway refund (an older attempt) is ignored.
+    expect((await hook(t, clock, 'payments', 'card-b2c', late())).statusCode).toBe(200);
+    const other = refundEvent(`evt_${crypto.randomUUID()}`, {
+      refund: 're_older',
+      refundId: refund.id,
+      type: 'refund.failed',
+      failure: 'lost_or_stolen_card',
+    });
+    expect((await hook(t, clock, 'payments', 'card-b2c', other)).statusCode).toBe(200);
+    expect((await refundRow(refund.id)).note).toBe(noted.note);
+    expect((await paymentRow(paid.paymentId)).status).toBe('refunded');
+    expect((await ledgerTotals(db)).transactions).toBe(journals);
   });
 
   it('a refund.failed event found by the gateway id fails it with the text; an unknown refund is ignored', async () => {

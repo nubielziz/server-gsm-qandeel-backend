@@ -38,6 +38,20 @@ export const PaymentGatewaySchema = z.object({
     .nullable()
     .optional()
     .describe('`••••` and the last 4 characters of the stored API credential; null when none. Never the secret.'),
+  webhookSecretHint: z
+    .string()
+    .nullable()
+    .optional()
+    .describe(
+      "`••••` and the last 4 characters of the stored webhook signing secret; null when none (the gateway's webhooks are then refused). Always sent.",
+    ),
+  secondaryWebhookSecretHint: z
+    .string()
+    .nullable()
+    .optional()
+    .describe(
+      'The same for the second webhook secret (a second endpoint, or the new one while rotating); null when none. Always sent.',
+    ),
   volume30d: zMoney
     .nullable()
     .optional()
@@ -66,10 +80,12 @@ const bank = {
   createdAt: '2026-10-01T09:00:00.000Z',
   updatedAt: '2026-10-01T09:00:00.000Z',
   secretHint: null,
+  webhookSecretHint: null,
+  secondaryWebhookSecretHint: null,
   volume30d: '4350.0000',
 };
 
-/** The body of `POST /admin/payment-gateways`: the console's `CreateGatewayBody` plus the optional `webhookSecret`. */
+/** The body of `POST /admin/payment-gateways`: the console's `CreateGatewayBody` plus the optional webhook secrets. */
 const CreateGatewayBody = z.object({
   code: z.string().trim(),
   driver: z.string().trim(),
@@ -90,21 +106,35 @@ const CreateGatewayBody = z.object({
   webhookSecret: z
     .string()
     .optional()
-    .describe('Write-only: the key the gateway signs its webhooks with, stored encrypted.'),
+    .describe(
+      'Write-only: the key the gateway signs its webhooks with, stored encrypted. A non-empty value replaces the first secret and keeps the second.',
+    ),
+  secondaryWebhookSecret: z
+    .string()
+    .trim()
+    .min(1)
+    .max(500)
+    .nullable()
+    .optional()
+    .describe(
+      'Write-only: a second webhook signing secret (a second endpoint at the provider, or the new secret while rotating), stored ' +
+        'encrypted; `null` removes it. Refused (422 on this field) when the gateway has no first secret and the request sends none.',
+    ),
 });
 
 const VALIDATION =
   'Validation (422 with the field): a non-blank name, driver and code (lower-case letters, digits, `-` and `_`); a code that ' +
   'no other gateway uses; audience b2c, b2b or both; a fee of 0 to 100 percent; money fields of 0 or more (a maximum above ' +
-  'zero is not below the minimum); whole `holdHours` from 0 to 720; `allowedGroupIds` that are existing client groups.';
+  'zero is not below the minimum); whole `holdHours` from 0 to 720; `allowedGroupIds` that are existing client groups; a ' +
+  '`secondaryWebhookSecret` of 1 to 500 characters, only next to a first webhook secret.';
 
 /** `GET /admin/payment-gateways`. */
 export const listGateways = defineRoute({
   key: 'GET /admin/payment-gateways',
   summary: 'Payment gateways',
   description:
-    'The payment gateways with their fees, limits and merchant groups, never their secrets. `secretHint` shows that a credential ' +
-    'is stored; `volume30d` is the money taken in the last 30 days.',
+    'The payment gateways with their fees, limits and merchant groups, never their secrets. `secretHint`, `webhookSecretHint` and ' +
+    '`secondaryWebhookSecretHint` show that a credential is stored; `volume30d` is the money taken in the last 30 days.',
   tags: ['settings'],
   surface: 'admin',
   access: 'staff-permission',
@@ -142,7 +172,7 @@ export const createGateway = defineRoute({
   key: 'POST /admin/payment-gateways',
   summary: 'Add a payment gateway',
   description:
-    'Adds a gateway. `secret` (the API credential) and `webhookSecret` are write-only and stored encrypted. ' +
+    'Adds a gateway. `secret` (the API credential), `webhookSecret` and `secondaryWebhookSecret` are write-only and stored encrypted. ' +
     `${VALIDATION} Audited.`,
   tags: ['settings'],
   surface: 'admin',
@@ -180,6 +210,7 @@ export const updateGateway = defineRoute({
   description:
     'Changes the fields sent (the on/off switch sends `{ isActive }`). The code never changes (it is part of the webhook address): ' +
     'a different code is 422 on `code`. A non-empty `secret` or `webhookSecret` replaces the stored one; leaving it out keeps it. ' +
+    '`secondaryWebhookSecret` sets the second webhook secret, `null` removes it, leaving it out keeps it. ' +
     `The merged gateway is validated as on create. ${VALIDATION} Audited.`,
   tags: ['settings'],
   surface: 'admin',

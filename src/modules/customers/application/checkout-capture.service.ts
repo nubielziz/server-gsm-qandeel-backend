@@ -114,6 +114,7 @@ export class CheckoutCaptureService implements StorefrontCapture, OnModuleInit {
       paymentMethod: facts.method,
       imei: imei ?? null,
       cardFingerprint: event.details?.fingerprint ?? payment.cardFingerprint,
+      cardDetailsMissing: event.details?.unavailable === true,
       country: session.taxCountry,
       ip: session.ip,
     });

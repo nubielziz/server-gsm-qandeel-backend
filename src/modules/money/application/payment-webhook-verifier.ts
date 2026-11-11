@@ -14,7 +14,9 @@ const NO_WEBHOOK = 'No webhook is set up for this gateway.';
  *
  * Why: gateways are rows staff add at run time, and `:gateway` is a row's `code` (it never changes), so the registry asks this
  * resolver at the moment of the request: it reads the gateway, takes the signing key the driver says it uses (the webhook secret
- * or the API secret, money-14), decrypts it (decision 019) and hands the delivery to the driver. A manual gateway, a driver with no
+ * or the API secret, money-14), decrypts it (decision 019) and hands the delivery to the driver. A gateway may keep two webhook secrets
+ * (feature 24C: a second endpoint, or rotation): each is tried in order and the first that verifies wins; when none does, the first
+ * refusal is answered. A manual gateway, a driver with no
  * code behind it and a gateway with no key all answer `400 WEBHOOK_SIGNATURE_INVALID` like an unknown gateway, so a caller learns
  * nothing about which gateways exist. The 5-minute window and the event-id replay filter are the guard's (P2.5c).
  *
@@ -47,9 +49,22 @@ export class PaymentWebhookVerifier implements OnModuleInit {
       gateway: slug,
       verify: (delivery) => {
         const credentials = this.vault.read(gateway);
-        const key = driver.signingKey === 'api_secret' ? credentials.secret : credentials.webhookSecret;
-        if (!key) throw new AppError('WEBHOOK_SIGNATURE_INVALID', { detail: NO_WEBHOOK });
-        return driver.verify(delivery, key);
+        const keys =
+          driver.signingKey === 'api_secret'
+            ? credentials.secret
+              ? [credentials.secret]
+              : []
+            : credentials.webhookSecrets;
+        if (keys.length === 0) throw new AppError('WEBHOOK_SIGNATURE_INVALID', { detail: NO_WEBHOOK });
+        let refusal: unknown;
+        for (const key of keys) {
+          try {
+            return driver.verify(delivery, key);
+          } catch (error) {
+            refusal ??= error;
+          }
+        }
+        throw refusal;
       },
     };
   }

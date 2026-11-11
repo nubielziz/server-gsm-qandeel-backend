@@ -88,6 +88,43 @@ export function secretHintOf(secret: string | undefined | null): string | null {
   return `••••${secret.slice(-4)}`;
 }
 
+/** A change of the webhook signing keys, as a create or update request carries it (both write-only). */
+export interface WebhookSecretChange {
+  /** A non-empty value replaces the first key and keeps the second; empty or absent keeps the first. */
+  readonly webhookSecret?: string | undefined;
+  /** A string sets the second key; `null` removes it; absent keeps it. */
+  readonly secondaryWebhookSecret?: string | null | undefined;
+}
+
+/**
+ * The webhook signing keys a gateway keeps after a change.
+ *
+ * Why: plan 24C § 3: a gateway keeps up to two keys (a second Stripe endpoint, or the new key while rotating); the second exists only next
+ * to a first, so a delivery always has the key staff set first.
+ *
+ * @param stored the keys stored now, first one first
+ * @param change what the request sent
+ * @returns the keys to store (empty = none) and whether they differ from the stored ones, or the field error when a second key would
+ *   stand alone (`secondaryWebhookSecret`, `requires_first`)
+ */
+export function nextWebhookSecrets(
+  stored: readonly string[],
+  change: WebhookSecretChange,
+): { readonly secrets: readonly string[]; readonly changed: boolean } | FieldError {
+  const first = change.webhookSecret ? change.webhookSecret : stored[0];
+  const second = change.secondaryWebhookSecret === undefined ? stored[1] : (change.secondaryWebhookSecret ?? undefined);
+  if (second !== undefined && first === undefined) {
+    return {
+      field: 'secondaryWebhookSecret',
+      code: 'requires_first',
+      message: 'Set the webhook signing secret before a second one.',
+    };
+  }
+  const secrets = [first, second].filter((secret): secret is string => secret !== undefined && secret !== '');
+  const changed = secrets.length !== stored.length || secrets.some((secret, index) => secret !== stored[index]);
+  return { secrets, changed };
+}
+
 /** The driver ids and codes whose name is the top-up method itself. */
 const METHOD_BY_NAME: Readonly<Record<string, TopupMethod>> = {
   bank: 'bank',

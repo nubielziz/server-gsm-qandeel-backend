@@ -186,7 +186,7 @@ export const disputeWebhook = defineRoute({
   key: 'POST /webhooks/disputes/:gateway',
   summary: 'Dispute event from a gateway',
   description:
-    "A payment gateway reports a dispute. The delivery must carry the gateway's signature (the scheme of its driver), a signed time within " +
+    "A payment gateway reports a dispute. The delivery must carry the gateway's signature (the scheme of its driver; either of the gateway's two webhook secrets), a signed time within " +
     '5 minutes of now and an event id not seen before; otherwise `400 WEBHOOK_SIGNATURE_INVALID`. `dispute.created` records the ' +
     'dispute once (the gateway id is unique per payment) with its evidence deadline and marks the payment `disputed` and the order ' +
     'timeline; a dispute won returns the payment to `captured` (or `partial_refund`/`refunded` when refunds completed); a dispute lost ' +

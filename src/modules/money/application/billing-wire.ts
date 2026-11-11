@@ -29,15 +29,22 @@ export type WireMerchantPayment = z.output<typeof MerchantPaymentSchema>;
 
 const iso = (date: Date | null): string | null => (date ? date.toISOString() : null);
 
+/** The hints of a gateway's stored secrets (`••••` and the last four characters, or `null`). */
+export interface GatewaySecretHints {
+  readonly secretHint: string | null;
+  readonly webhookSecretHint: string | null;
+  readonly secondaryWebhookSecretHint: string | null;
+}
+
 /**
  * Builds a gateway on the wire.
  *
  * @param row the gateway row
- * @param secretHint the hint of the stored credential, or `null`
+ * @param hints the hints of the stored credential and webhook secrets
  * @param volume30d the money taken in the last 30 days (a 4-decimal amount)
  * @returns the console's gateway
  */
-export function gatewayToWire(row: PaymentGateway, secretHint: string | null, volume30d: string): WireGateway {
+export function gatewayToWire(row: PaymentGateway, hints: GatewaySecretHints, volume30d: string): WireGateway {
   return {
     id: row.id,
     code: row.code,
@@ -57,7 +64,9 @@ export function gatewayToWire(row: PaymentGateway, secretHint: string | null, vo
     isActive: row.isActive,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
-    secretHint,
+    secretHint: hints.secretHint,
+    webhookSecretHint: hints.webhookSecretHint,
+    secondaryWebhookSecretHint: hints.secondaryWebhookSecretHint,
     volume30d,
   };
 }

@@ -167,6 +167,47 @@ export async function failProcessingRefund(
 }
 
 /**
+ * Appends the gateway's late failure of a completed refund to its note, once per gateway refund.
+ *
+ * Why: plan 24C § 2.3: Stripe can report a refund `succeeded` and fail it later (`refund.failed`). The refund stays `completed` (its journal
+ * is not undone automatically); the note is the durable trace staff act on. The update is guarded by the status, the gateway refund id
+ * and the absence of the same marker, so a repeated delivery adds nothing.
+ *
+ * @param db the database or a transaction
+ * @param id the refund id
+ * @param gatewayRefundId the gateway's id of the refund that failed: it must be the one the refund completed with
+ * @param marker text that identifies this failure inside the note (it is part of `text`)
+ * @param text the sentence to append
+ * @param at the time of the change
+ * @returns the stored row, or `undefined` when the refund is not `completed` with that gateway refund, or the note already has it
+ */
+export async function appendLateRefundFailure(
+  db: DbExecutor,
+  id: number,
+  gatewayRefundId: string,
+  marker: string,
+  text: string,
+  at: Date,
+): Promise<Refund | undefined> {
+  const [updated] = await db
+    .update(refunds)
+    .set({
+      note: sql`case when ${refunds.note} = '' then ${text} else ${refunds.note} || chr(10) || ${text} end`,
+      updatedAt: at,
+    })
+    .where(
+      and(
+        eq(refunds.id, id),
+        eq(refunds.status, 'completed'),
+        eq(refunds.gatewayRefundId, gatewayRefundId),
+        sql`strpos(${refunds.note}, ${marker}) = 0`,
+      ),
+    )
+    .returning();
+  return updated;
+}
+
+/**
  * The refunds of a payment that count against what can still go back.
  *
  * Why: ANSWERS refunds Q3: the limit is the paid amount minus the other refunds that are `completed` or `processing` (an approved

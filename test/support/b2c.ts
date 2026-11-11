@@ -4,7 +4,9 @@ import { eq } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
 import { DbService, type Database, schema as s } from '../../src/infra/db';
 import { signWebhook } from '../../src/infra/crypto';
+import { Money } from '../../src/common/money';
 import { RECEIPT_RENDER_EVENT, ReceiptRenderProcessor, type ReceiptRenderResult } from '../../src/modules/money';
+import { toMinor } from '../../src/modules/money/infra/gateway-drivers/stripe-amounts';
 import type { TestApp } from './app';
 import { type TestClock } from './clock';
 import { WEBHOOK_KEY, insertGateway, postWebhook, signedHeaders } from './billing';
@@ -19,14 +21,57 @@ export interface B2cRequest {
   readonly body: string;
 }
 
+/** The card a test says a payment was made with (what the gateway's Charge reports). */
+export interface TestCard {
+  readonly brand: string;
+  readonly last4: string;
+  readonly fingerprint?: string;
+  readonly threeDs?: boolean;
+  readonly wallet?: string;
+}
+
+/** The card of a payment when the test names none. */
+export const DEFAULT_CARD: TestCard = { brand: 'visa', last4: '4242', fingerprint: 'fp_1', threeDs: true };
+
 /**
- * A local HTTP server that plays a card gateway's API for storefront money: it opens hosted checkouts, takes refunds (answering what the
- * test scripts) and evidence for disputes, and records every call.
+ * The card each PaymentIntent was paid with, as {@link storefrontEvent} records it: the stand-in gateway answers it from
+ * `GET /v1/payment_intents/:id` (Stripe puts the card on the intent's latest Charge, not on the checkout event). Ids are unique per test.
+ */
+const cardsByIntent = new Map<string, TestCard>();
+
+/** A Stripe PaymentIntent with its latest Charge expanded, paid with a card. */
+function paymentIntentOf(id: string, card: TestCard): Record<string, unknown> {
+  return {
+    id,
+    object: 'payment_intent',
+    status: 'succeeded',
+    latest_charge: {
+      id: `ch_${id}`,
+      object: 'charge',
+      payment_method_details: {
+        type: 'card',
+        card: {
+          brand: card.brand,
+          last4: card.last4,
+          fingerprint: card.fingerprint ?? 'fp_1',
+          three_d_secure: card.threeDs === false ? null : { result: 'authenticated' },
+          wallet: card.wallet ? { type: card.wallet } : null,
+        },
+      },
+    },
+  };
+}
+
+/**
+ * A local HTTP server that plays a card gateway's API for storefront money: it opens hosted checkouts, answers PaymentIntents with their
+ * card, takes refunds (answering what the test scripts) and evidence for disputes, and records every call.
  */
 export class B2cGateway {
   readonly requests: B2cRequest[] = [];
   /** What `POST /v1/refunds` answers: a status and a failure text; `succeeded` by default. */
   refund: { status: string; failure?: string } = { status: 'succeeded' };
+  /** How `GET /v1/payment_intents/:id` fails: an HTTP status, or `hang` (never answers, so the caller's timeout runs out). */
+  failDetails: number | 'hang' | undefined;
   /** When set, every call answers this status code (a gateway that is down). */
   failWith: number | undefined;
   /** When set, only the checkout call fails with this status. */
@@ -58,6 +103,13 @@ export class B2cGateway {
           }
           const id = `cs_${this.next++}`;
           return Response.json({ id, url: `https://pay.example/${id}` });
+        }
+        const intent = /^\/v1\/payment_intents\/(.+)$/.exec(url.pathname);
+        if (request.method === 'GET' && intent) {
+          if (this.failDetails === 'hang') return new Promise<Response>(() => undefined);
+          if (this.failDetails) return new Response('{"error":"no"}', { status: this.failDetails });
+          const id = decodeURIComponent(intent[1]!);
+          return Response.json(paymentIntentOf(id, cardsByIntent.get(id) ?? DEFAULT_CARD));
         }
         if (request.method === 'POST' && url.pathname === '/v1/refunds') {
           const id = `re_${this.next++}`;
@@ -103,6 +155,7 @@ export class B2cGateway {
     this.refund = { status: 'succeeded' };
     this.failWith = undefined;
     this.failCheckout = undefined;
+    this.failDetails = undefined;
     this.hold = undefined;
   }
 
@@ -210,10 +263,19 @@ export function pay(
   });
 }
 
-/** The amount of a payment in the gateway's smallest unit. */
-const minorOf = (amount: string): number => Math.round(Number(amount) * 100);
+/**
+ * The amount of a payment in the gateway's minor units for its currency (3 digits for JOD, none for JPY).
+ *
+ * @param amount the amount as billing stores it
+ * @param currency the ISO code
+ * @returns the integer the gateway reports
+ */
+export const minorOf = (amount: string, currency = 'GBP'): number => Number(toMinor(Money.of(amount), currency).minor);
 
-/** A Stripe-style `checkout.session.completed` for a storefront payment, with what the gateway read about the card. */
+/**
+ * A Stripe-style `checkout.session.completed` for a storefront payment. The card is not on the event (Stripe puts it on the PaymentIntent's
+ * latest Charge): it is recorded for the intent, and the stand-in gateway answers it when the webhook reads the details.
+ */
 export function storefrontEvent(
   eventId: string,
   reference: string,
@@ -223,31 +285,24 @@ export function storefrontEvent(
     type?: string;
     paymentStatus?: string;
     intent?: string;
-    card?: { brand: string; last4: string; fingerprint?: string; threeDs?: boolean; wallet?: string };
+    card?: TestCard;
   },
 ): string {
-  const card = options.card ?? { brand: 'visa', last4: '4242', fingerprint: 'fp_1', threeDs: true };
+  const intent = options.intent ?? `pi_${eventId}`;
+  cardsByIntent.set(intent, options.card ?? DEFAULT_CARD);
+  const currency = options.currency ?? 'GBP';
   return JSON.stringify({
     id: eventId,
     type: options.type ?? 'checkout.session.completed',
     data: {
       object: {
         id: `cs_${eventId}`,
-        payment_intent: options.intent ?? `pi_${eventId}`,
+        object: 'checkout.session',
+        payment_intent: intent,
         payment_status: options.paymentStatus ?? 'paid',
         client_reference_id: reference,
-        amount_total: minorOf(options.amount),
-        currency: (options.currency ?? 'gbp').toLowerCase(),
-        payment_method_details: {
-          type: 'card',
-          card: {
-            brand: card.brand,
-            last4: card.last4,
-            fingerprint: card.fingerprint ?? 'fp_1',
-            ...(card.threeDs === false ? {} : { three_d_secure: { result: 'authenticated' } }),
-            ...(card.wallet ? { wallet: { type: card.wallet } } : {}),
-          },
-        },
+        amount_total: minorOf(options.amount, currency),
+        currency: currency.toLowerCase(),
       },
     },
   });
@@ -305,7 +360,10 @@ export function disputeEvent(
   });
 }
 
-/** A refund result event. */
+/**
+ * A refund result event as Stripe sends it: `refund.updated` with the refund's `status` (`succeeded` by default; Stripe sends no
+ * `refund.succeeded`), or `refund.failed` (status `failed`).
+ */
 export function refundEvent(
   eventId: string,
   options: {
@@ -313,16 +371,21 @@ export function refundEvent(
     refundId?: number;
     /** The send attempt the gateway echoes from the refund call's metadata. */
     sendAttempt?: number;
-    type?: 'refund.succeeded' | 'refund.failed';
+    type?: 'refund.updated' | 'refund.failed';
+    /** The refund object's status; by default `succeeded` for `refund.updated` and `failed` for `refund.failed`. */
+    status?: string;
     failure?: string;
   },
 ): string {
+  const type = options.type ?? 'refund.updated';
   return JSON.stringify({
     id: eventId,
-    type: options.type ?? 'refund.succeeded',
+    type,
     data: {
       object: {
         id: options.refund,
+        object: 'refund',
+        status: options.status ?? (type === 'refund.failed' ? 'failed' : 'succeeded'),
         failure_reason: options.failure,
         ...(options.refundId === undefined
           ? {}
@@ -370,7 +433,7 @@ export async function paidOrder(
     serviceId?: number;
     country?: string;
     currency?: string;
-    card?: { brand: string; last4: string; fingerprint?: string; threeDs?: boolean; wallet?: string };
+    card?: TestCard;
   } = {},
 ): Promise<PaidOrder> {
   const { token } = await openCheckout(t, world, options);

@@ -77,7 +77,11 @@ describe('POST /admin/payment-gateways', () => {
     expect(JSON.parse(encryption.decrypt(row!.configEnc!, GATEWAY_CONFIG_AAD))).toEqual({
       secret: 'sk_live_abcdef4f2a',
     });
-    expect(encryption.decrypt(row!.webhookSecretEnc!, GATEWAY_WEBHOOK_SECRET_AAD)).toBe('whsec_card_key');
+    // Since 24C the column holds a list of one or two keys (a legacy plain key is still read).
+    expect(JSON.parse(encryption.decrypt(row!.webhookSecretEnc!, GATEWAY_WEBHOOK_SECRET_AAD))).toEqual([
+      'whsec_card_key',
+    ]);
+    expect(res.body).toMatchObject({ webhookSecretHint: '••••_key', secondaryWebhookSecretHint: null });
     const [audit] = await db.select().from(s.auditLogs);
     expect(audit).toMatchObject({
       action: 'added payment method',

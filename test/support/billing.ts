@@ -38,6 +38,13 @@ export class FakeGateway {
   readonly requests: GatewayRequest[] = [];
   /** What `GET /v1/payment_intents/:id` and `GET /v1/invoices/:id` answer, by id (default: confirmed). */
   readonly status = new Map<string, { status: string; confirmations?: number; requiredConfirmations?: number }>();
+  /**
+   * The card of a PaymentIntent's latest Charge, by intent id, as `GET /v1/payment_intents/:id?expand[]=latest_charge` answers it
+   * (feature 24C); an intent without one answers no charge.
+   */
+  readonly cards = new Map<string, { brand: string; last4: string; fingerprint: string; wallet?: string }>();
+  /** When set, only the card details read (`?expand[]=latest_charge`) answers this status code. */
+  failDetails: number | undefined;
   /** When set, every call answers this status code instead (a gateway that is down). */
   failWith: number | undefined;
   private readonly server: ReturnType<typeof Bun.serve>;
@@ -65,7 +72,31 @@ export class FakeGateway {
           return json({ id, url: `https://crypto.example/${id}` });
         }
         const intent = /^\/v1\/payment_intents\/(.+)$/.exec(url.pathname);
-        if (intent) return json(this.status.get(decodeURIComponent(intent[1]!)) ?? { status: 'succeeded' });
+        if (intent) {
+          const id = decodeURIComponent(intent[1]!);
+          const status = this.status.get(id) ?? { status: 'succeeded' };
+          if (!url.searchParams.has('expand[]')) return json(status);
+          if (this.failDetails) return new Response('{"error":"no"}', { status: this.failDetails });
+          const card = this.cards.get(id);
+          return json({
+            id,
+            ...status,
+            latest_charge: card
+              ? {
+                  id: `ch_${id}`,
+                  payment_method_details: {
+                    type: 'card',
+                    card: {
+                      brand: card.brand,
+                      last4: card.last4,
+                      fingerprint: card.fingerprint,
+                      wallet: card.wallet ? { type: card.wallet } : null,
+                    },
+                  },
+                }
+              : null,
+          });
+        }
         const invoice = /^\/v1\/invoices\/(.+)$/.exec(url.pathname);
         if (invoice) {
           return json(
@@ -90,6 +121,8 @@ export class FakeGateway {
   reset(): void {
     this.requests.length = 0;
     this.status.clear();
+    this.cards.clear();
+    this.failDetails = undefined;
     this.failWith = undefined;
   }
 
@@ -98,6 +131,12 @@ export class FakeGateway {
     await this.server.stop(true);
   }
 }
+
+/**
+ * The API address of a test gateway that names none: a closed local port. A test never reaches the real gateway (without the test HTTP
+ * policy the SSRF guard refuses it at once; with it the connection is refused at once), so a card confirmation's details read fails fast.
+ */
+export const UNREACHABLE_GATEWAY = 'http://127.0.0.1:9';
 
 /** The signing key of the gateways of {@link insertGateway}. */
 export const WEBHOOK_KEY = 'whsec_test_gateway_key_0123456789';
@@ -114,7 +153,8 @@ export type GatewayOverrides = Partial<typeof s.paymentGateways.$inferInsert> & 
  *
  * @param t the running test app (for the encryption keyring)
  * @param db the test database
- * @param overrides columns to change; `secret`, `webhookSecret` and `apiBase` go into the encrypted columns
+ * @param overrides columns to change; `secret`, `webhookSecret` and `apiBase` (default {@link UNREACHABLE_GATEWAY}) go into the
+ *   encrypted columns
  * @returns the gateway id
  */
 export async function insertGateway(t: TestApp, db: Database, overrides: GatewayOverrides = {}): Promise<number> {
@@ -124,7 +164,7 @@ export async function insertGateway(t: TestApp, db: Database, overrides: Gateway
   const config =
     secret === null || isManual
       ? null
-      : { secret: secret ?? 'sk_test_gateway_secret_1234', ...(apiBase ? { apiBase } : {}) };
+      : { secret: secret ?? 'sk_test_gateway_secret_1234', apiBase: apiBase ?? UNREACHABLE_GATEWAY };
   const [row] = await db
     .insert(s.paymentGateways)
     .values({

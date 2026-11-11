@@ -18,7 +18,12 @@ export const SIGNAL_POINTS = {
   orderBurst: 20,
   blacklistedBefore: 30,
   tooManyOrders: 50,
+  /** Below every default threshold (review 50): the signal informs staff, it never holds a payment by itself (plan 24C § 2.4). */
+  cardDetailsMissing: 10,
 } as const;
+
+/** The signal of a card payment whose details the gateway did not give (feature 24C). */
+export const CARD_DETAILS_MISSING_SIGNAL = 'Card details unavailable from the gateway';
 
 /** Orders from one device (address or customer) in the last hour that make the next one a burst: it is the 4th. */
 export const BURST_EARLIER_ORDERS = 3;
@@ -42,6 +47,8 @@ export interface ScreeningFacts {
   readonly ipCountry: string | null;
   readonly cardCountry: string | null;
   readonly prepaidCard: boolean;
+  /** The gateway did not give the card's details (the read failed or timed out): the card blocklist could not be checked. */
+  readonly cardDetailsMissing?: boolean;
   readonly proxyIp: boolean;
   /** An earlier IMEI check of this IMEI said blacklisted. */
   readonly imeiBlacklistedBefore: boolean;
@@ -123,6 +130,7 @@ export function scorePayment(facts: ScreeningFacts, rules: RiskRuleSet): Screeni
     add('IP country differs from card country', SIGNAL_POINTS.ipCountryMismatch);
   }
   if (facts.prepaidCard) add('Prepaid card BIN', SIGNAL_POINTS.prepaidCard);
+  if (facts.cardDetailsMissing) add(CARD_DETAILS_MISSING_SIGNAL, SIGNAL_POINTS.cardDetailsMissing);
   if (facts.ordersLastHourByDevice >= BURST_EARLIER_ORDERS) {
     add(`${facts.ordersLastHourByDevice + 1} orders in one hour from one device`, SIGNAL_POINTS.orderBurst);
   }

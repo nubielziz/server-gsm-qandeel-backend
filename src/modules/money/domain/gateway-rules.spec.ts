@@ -7,6 +7,7 @@ import {
   checkGatewayFields,
   depositFee,
   effectiveMaxAmount,
+  nextWebhookSecrets,
   secretHintOf,
   topupMethodOf,
 } from './gateway-rules';
@@ -47,6 +48,34 @@ describe('checkGatewayFields', () => {
     expect(names({ minAmount: '50', maxAmount: '10' })).toEqual(['maxAmount']);
     expect(names({ holdHours: 721 })).toEqual(['holdHours']);
     expect(names({ holdHours: 1.5 })).toEqual(['holdHours']);
+  });
+});
+
+describe('nextWebhookSecrets', () => {
+  it('replaces the first secret and keeps the second', () => {
+    expect(nextWebhookSecrets(['a', 'b'], { webhookSecret: 'c' })).toEqual({ secrets: ['c', 'b'], changed: true });
+    expect(nextWebhookSecrets(['a'], { webhookSecret: 'c' })).toEqual({ secrets: ['c'], changed: true });
+    expect(nextWebhookSecrets([], { webhookSecret: 'c' })).toEqual({ secrets: ['c'], changed: true });
+  });
+
+  it('sets, keeps and removes the second secret', () => {
+    expect(nextWebhookSecrets(['a'], { secondaryWebhookSecret: 'b' })).toEqual({ secrets: ['a', 'b'], changed: true });
+    expect(nextWebhookSecrets(['a', 'b'], {})).toEqual({ secrets: ['a', 'b'], changed: false });
+    expect(nextWebhookSecrets(['a', 'b'], { webhookSecret: '' })).toEqual({ secrets: ['a', 'b'], changed: false });
+    expect(nextWebhookSecrets(['a', 'b'], { secondaryWebhookSecret: null })).toEqual({ secrets: ['a'], changed: true });
+    expect(nextWebhookSecrets(['a'], { secondaryWebhookSecret: null })).toEqual({ secrets: ['a'], changed: false });
+    expect(nextWebhookSecrets([], { webhookSecret: 'a', secondaryWebhookSecret: 'b' })).toEqual({
+      secrets: ['a', 'b'],
+      changed: true,
+    });
+  });
+
+  it('refuses a second secret without a first', () => {
+    expect(nextWebhookSecrets([], { secondaryWebhookSecret: 'b' })).toMatchObject({
+      field: 'secondaryWebhookSecret',
+      code: 'requires_first',
+    });
+    expect(nextWebhookSecrets([], {})).toEqual({ secrets: [], changed: false });
   });
 });
 

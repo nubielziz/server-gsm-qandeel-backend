@@ -43,6 +43,8 @@ export interface ScreeningInput {
   readonly cardCountry?: string | null;
   /** The gateway says the card is prepaid. */
   readonly prepaidCard?: boolean;
+  /** The gateway did not give the card's details (feature 24C): a signal, and the card blocklist could not be checked. */
+  readonly cardDetailsMissing?: boolean;
   /** The visitor's address is a known VPN or proxy. */
   readonly proxyIp?: boolean;
 }
@@ -135,6 +137,7 @@ export class RiskScreening {
       ipCountry: input.ipCountry ?? null,
       cardCountry: input.cardCountry ?? null,
       prepaidCard: input.prepaidCard ?? false,
+      cardDetailsMissing: input.cardDetailsMissing ?? false,
       proxyIp: input.proxyIp ?? false,
       imeiBlacklistedBefore:
         imei !== null &&

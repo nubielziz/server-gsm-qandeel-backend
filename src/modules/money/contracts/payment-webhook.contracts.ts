@@ -12,7 +12,10 @@ export const paymentWebhook = defineRoute({
     'within 5 minutes of now and an event id not seen before; otherwise `400 WEBHOOK_SIGNATURE_INVALID`. A confirmed payment of an open ' +
     'invoice is recorded once (the gateway reference is unique): the payment waits `payments.auto_credit_delay_minutes` ' +
     '(at least the gateway hold hours), then a job asks the gateway again and credits the wallet. A repeat of the same event answers ' +
-    '`200` and changes nothing. Events billing does not use are acknowledged with `200`.',
+    '`200` and changes nothing. Events billing does not use are acknowledged with `200`. A gateway may keep two webhook secrets: a ' +
+    'delivery signed with either passes. Refund results (`refund.updated` with a final status, `refund.failed`) settle the storefront ' +
+    'refund they name, and dispute events are handled exactly as on `POST /webhooks/disputes/:gateway` (one provider endpoint with ' +
+    'every event is enough; the same dispute on both URLs is recorded once).',
   tags: ['webhooks'],
   surface: 'hooks',
   access: 'gateway-signature',

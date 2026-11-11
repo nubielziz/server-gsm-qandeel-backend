@@ -156,7 +156,7 @@ describe('scenario b2c-refund: a refund before delivery', () => {
     );
   });
 
-  it('step 7: the signed refund.succeeded event completes the refund, keeps the gateway refund id and marks the payment refunded', async () => {
+  it('step 7: the signed refund.updated event (status succeeded) completes the refund, keeps the gateway refund id and marks the payment refunded', async () => {
     const before = await refundRow();
     const event = refundEvent('evt_refund_ok', { refund: before.gatewayRefundId!, refundId });
     expect((await hook(t, clock, 'payments', world.gateway.code, event)).statusCode).toBe(200);

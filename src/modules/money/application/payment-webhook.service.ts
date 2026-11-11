@@ -1,9 +1,15 @@
 // PaymentWebhookService: handles a verified payment confirmation from a gateway (map route POST /webhooks/payments/:gateway):
 // records the payment once and schedules its automatic credit. The signature, the 5-minute window and the replay filter ran in the guard.
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Counter } from 'prom-client';
 import { CLOCK, type Clock } from '../../../common/clock';
+import { AppError } from '../../../common/errors';
 import { DbService } from '../../../infra/db';
+import { OutboundHttp } from '../../../infra/http';
+import { MetricsService } from '../../../infra/metrics';
 import { SettingsReader } from '../../platform';
+import { DisputeWebhookService } from './dispute-webhook.service';
+import { GatewayCredentialsVault } from './gateway-credentials';
 import { RefundSettlement } from './refund-settlement';
 import { StorefrontMails } from './storefront-mails';
 import { StorefrontCaptures } from './storefront-ports';
@@ -17,12 +23,21 @@ import {
   autoCreditAtOf,
   confirmationMismatch,
 } from '../domain/payment-rules';
-import type { PaymentEvent } from '../infra/gateway-drivers/driver';
+import {
+  GATEWAY_HTTP_POLICY,
+  type GatewayHttpPolicy,
+  type PaymentDetails,
+  type PaymentEvent,
+  type PaymentGatewayDriver,
+} from '../infra/gateway-drivers/driver';
 import { driverFor } from '../infra/gateway-drivers/drivers';
 import { lockOrderPayment, updateOrderPaymentIn } from '../infra/order-payment.repository';
 import { findGatewayByCode } from '../infra/gateway.repository';
 import { findInvoiceByNumber } from '../infra/invoice.repository';
 import { findPaymentByReference, insertPaymentOnce } from '../infra/payment.repository';
+
+/** The review note of a card top-up whose card details the gateway did not give (plan 24C § 2.4). */
+export const CARD_DETAILS_UNAVAILABLE_NOTE = 'Card details could not be read from the gateway.';
 
 /** What the route answers. */
 export interface WebhookOutcome {
@@ -42,15 +57,22 @@ export interface WebhookOutcome {
  * automatic credit, and it can never be approved: the payment keeps the invoice's amount and fee (the quote), so crediting
  * re-reads the stored event and refuses it (409), and staff reject it and adjust the wallet by hand.
  *
+ * Feature 24C: a confirmation of a driver that reads card details (Stripe: the PaymentIntent's latest Charge) reads them first, outside any
+ * transaction, with a short timeout; when the read fails the payment is still recorded, marked "details unavailable" (a risk signal for a
+ * storefront payment, staff review for a card top-up). A dispute event delivered here (one Stripe endpoint for every event) goes to the
+ * dispute handler, which is idempotent per gateway dispute id, so the same dispute on both URLs is recorded once.
+ *
  * Side effects: inserts a `payments` row; a storefront payment that fails sends the customer a `payment.failed` email (written in the same
  * transaction); a captured storefront payment also runs the capture (order, journals, receipt invoice and the
- * `receipt.render` event that makes the worker draw and store its PDF), all in the webhook's one transaction.
+ * `receipt.render` event that makes the worker draw and store its PDF), all in the webhook's one transaction. A confirmation may call
+ * the gateway once (card details) and counts `gateway_card_details_unavailable_total{gateway}` when that fails.
  *
  * @see docs/contract/endpoints/money.md (POST /webhooks/payments/:gateway)
  */
 @Injectable()
 export class PaymentWebhookService {
   private readonly logger = new Logger(PaymentWebhookService.name);
+  private readonly detailsUnavailable: Counter<'gateway'>;
 
   constructor(
     private readonly db: DbService,
@@ -58,8 +80,20 @@ export class PaymentWebhookService {
     private readonly captures: StorefrontCaptures,
     private readonly refunds: RefundSettlement,
     private readonly mails: StorefrontMails,
+    private readonly disputes: DisputeWebhookService,
+    private readonly vault: GatewayCredentialsVault,
+    private readonly http: OutboundHttp,
     @Inject(CLOCK) private readonly clock: Clock,
-  ) {}
+    metrics: MetricsService,
+    @Optional() @Inject(GATEWAY_HTTP_POLICY) private readonly policy?: GatewayHttpPolicy,
+  ) {
+    this.detailsUnavailable = new Counter({
+      name: 'gateway_card_details_unavailable_total',
+      help: 'Confirmed card payments whose card details the gateway did not give (error or timeout), by gateway code.',
+      labelNames: ['gateway'],
+      registers: [metrics.registry],
+    });
+  }
 
   /**
    * Handles one verified delivery.
@@ -72,14 +106,18 @@ export class PaymentWebhookService {
     const gateway = await findGatewayByCode(this.db.db, gatewayCode);
     const driver = gateway ? driverFor(gateway.driver) : undefined;
     if (!gateway || !driver) return { received: true };
-    // A refund result (feature 16): `refund.succeeded` or `refund.failed` settles the storefront refund it names, once.
+    // A refund result (feature 16): `refund.updated` with a final status or `refund.failed` settles the storefront refund it names, once.
     const refundEvent = driver.parseRefund?.(body);
     if (refundEvent) {
       await this.refunds.handleEvent(gateway.id, refundEvent);
       return { received: true };
     }
-    const event = driver.parse(body);
-    if (!event) return { received: true };
+    // A dispute event (24C): the owner may register one endpoint for every event, so a chargeback sent here is never dropped.
+    if (driver.parseDispute?.(body)) return this.disputes.handle(gatewayCode, body);
+    const parsed = driver.parse(body);
+    if (!parsed) return { received: true };
+    // Read before any transaction: the call waits on the gateway and must never hold a row lock.
+    const event = await this.withDetails(gateway, driver, parsed);
     // A storefront checkout names its payment (`PAY-<id>`, the reference the pay call gave the gateway), not an invoice.
     const storefrontPaymentId = storefrontPaymentOf(event.invoiceNumber);
     if (storefrontPaymentId !== undefined) return this.handleStorefront(gateway, event, storefrontPaymentId);
@@ -112,7 +150,13 @@ export class PaymentWebhookService {
         return { received: true } as const;
       }
       const now = this.clock.now();
-      const mismatch = confirmationMismatch(event, invoice);
+      const methodType = topupMethodOf(driver.id === 'crypto' ? 'crypto' : gateway.driver, false);
+      // A card top-up whose card the gateway did not show cannot be screened (blocklist, fingerprint): staff review it instead (24C).
+      const notes = [
+        confirmationMismatch(event, invoice),
+        methodType === 'card' && event.details?.unavailable === true ? CARD_DETAILS_UNAVAILABLE_NOTE : undefined,
+      ].filter((note): note is string => note !== undefined);
+      const mismatch = notes.length === 0 ? undefined : notes.join(' ');
       const row: NewPayment = {
         purpose: 'topup',
         invoiceId: invoice.id,
@@ -124,7 +168,7 @@ export class PaymentWebhookService {
         feeAmount: invoice.fee,
         currency: invoice.currency,
         status: 'pending',
-        methodType: topupMethodOf(driver.id === 'crypto' ? 'crypto' : gateway.driver, false),
+        methodType,
         capturedAt: now,
         reviewRequired: mismatch !== undefined,
         autoCreditAt: mismatch === undefined ? autoCreditAtOf(now, delay, gateway.holdHours) : null,
@@ -140,6 +184,34 @@ export class PaymentWebhookService {
       );
       return { received: true } as const;
     });
+  }
+
+  /**
+   * Adds the card details of a confirmation from the gateway, when its driver reads them.
+   *
+   * Why: plan 24C § 2.4: never throws (the money arrived, the payment must be recorded); an error or a timeout marks the details
+   * unavailable, logs a warning (no card data) and counts it.
+   */
+  private async withDetails(
+    gateway: PaymentGateway,
+    driver: PaymentGatewayDriver,
+    event: PaymentEvent,
+  ): Promise<PaymentEvent> {
+    if (event.kind !== 'confirmed' || !driver.paymentDetails) return event;
+    let details: PaymentDetails | undefined;
+    try {
+      details = await driver.paymentDetails(
+        { http: this.http, policy: this.policy },
+        this.vault.read(gateway),
+        event.reference,
+      );
+    } catch (error) {
+      const why = error instanceof AppError ? (error.detail ?? error.message) : 'unexpected error';
+      this.logger.warn(`Gateway ${gateway.code}: the card details of ${event.reference} could not be read (${why}).`);
+      this.detailsUnavailable.inc({ gateway: gateway.code });
+      details = { unavailable: true };
+    }
+    return details === undefined ? event : { ...event, details };
   }
 
   /**

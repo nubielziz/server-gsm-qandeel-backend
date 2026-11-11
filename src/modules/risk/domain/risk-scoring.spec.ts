@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'bun:test';
 import { Money } from '../../../common/money';
 import { defaultRuleSet, mergeRules } from './risk-rules';
-import { type ScreeningFacts, holdReason, scorePayment } from './risk-scoring';
+import { SIGNAL_POINTS, type ScreeningFacts, holdReason, scorePayment } from './risk-scoring';
 
 const CALM: ScreeningFacts = {
   amountUsd: Money.of('15.0000'),
@@ -40,6 +40,15 @@ describe('scorePayment', () => {
     ]);
     expect(verdict.score).toBe(22 + 15 + 25 + 12);
     expect(verdict.decision).toBe('review');
+  });
+
+  it('adds the card-details signal (24C), which alone never holds', () => {
+    const alone = scorePayment(facts({ cardDetailsMissing: true }), rules);
+    expect(alone).toEqual({ score: 10, signals: ['Card details unavailable from the gateway'], decision: 'allow' });
+    expect(SIGNAL_POINTS.cardDetailsMissing).toBeLessThan(rules.reviewThreshold.value!);
+    // 22 + 15 + 12 = 49 is one point short of a hold; the missing details tip it over.
+    const near = facts({ disposableEmail: true, proxyIp: true, prepaidCard: true, cardDetailsMissing: true });
+    expect(scorePayment(near, rules)).toMatchObject({ score: 59, decision: 'review' });
   });
 
   it('scores the first order above the limit with the limit in the sentence, and not at or below it', () => {

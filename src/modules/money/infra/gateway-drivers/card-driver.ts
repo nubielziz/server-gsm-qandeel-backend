@@ -1,10 +1,13 @@
 // The `card` driver: a hosted card checkout that speaks the Stripe Checkout protocol (form-encoded API calls with a bearer key, and
-// webhooks signed `t=<unix>,v1=<hmac>` with the endpoint's own secret). Serves the gateways whose driver is `card` or `stripe`.
+// webhooks signed `t=<unix>,v1=<hmac>` with the endpoint's own secret). Serves the gateways whose driver is `card` or `stripe`. Amounts
+// travel in each currency's minor units (`stripe-amounts.ts`); card details come from the PaymentIntent's latest Charge (feature 24C).
+import { Logger } from '@nestjs/common';
 import { AppError } from '../../../../common/errors';
-import { Money } from '../../../../common/money';
+import type { Money } from '../../../../common/money';
 import { assertWebhookSignature } from '../../../../infra/crypto';
 import {
   type CheckoutRequest,
+  DETAILS_TIMEOUT_MS,
   type DisputeEvent,
   type GatewayCalls,
   type GatewayCredentials,
@@ -18,8 +21,13 @@ import {
   objectOf,
   textOf,
 } from './driver';
+import { fromMinor, toMinor } from './stripe-amounts';
 
 const DEFAULT_API_BASE = 'https://api.stripe.com';
+const logger = new Logger('CardDriver');
+
+/** The 3-D Secure results that mean the cardholder was authenticated (or the issuer acknowledged the attempt and took the liability). */
+const THREE_DS_PASSED: ReadonlySet<string> = new Set(['authenticated', 'attempt_acknowledged']);
 
 /** The id of a JSON event body, or a refusal when the signed body is not an event. */
 function eventIdOf(rawBody: Buffer): string {
@@ -33,26 +41,46 @@ function eventIdOf(rawBody: Buffer): string {
   throw new AppError('WEBHOOK_SIGNATURE_INVALID', { detail: 'The webhook body is not an event.' });
 }
 
-/** Stripe counts money in the currency's smallest unit; billing works in 4-decimal amounts (every currency billed here has 2 digits). */
-function fromMinorUnits(minor: unknown): string | null {
-  return typeof minor === 'number' && Number.isSafeInteger(minor) && minor >= 0
-    ? Money.of(minor).mul('0.01').toWire()
-    : null;
+/**
+ * The minor units of an outgoing amount; a rounded one is logged (never with personal data), and the exact mismatch guards of the
+ * confirmation then hold the payment for staff.
+ */
+function minorOf(amount: Money, currency: string, what: string): string {
+  const { minor, exact } = toMinor(amount, currency);
+  if (!exact) {
+    logger.warn(
+      `${what}: ${amount.toWire()} ${currency.toUpperCase()} cannot be charged exactly; the gateway is asked for ${fromMinor(Number(minor), currency)}.`,
+    );
+  }
+  return minor;
 }
 
-/** What the checkout event says about how the buyer paid: a card (brand, last digits, fingerprint, 3-D Secure) or a wallet. */
-function detailsOf(session: Record<string, unknown>): PaymentDetails | undefined {
-  const method = objectOf(session['payment_method_details']);
-  const card = objectOf(method?.['card']);
-  if (!method || !card) return undefined;
+/**
+ * How a payment was made, from the `card` of a Charge's `payment_method_details`: brand (the wallet's name for Apple Pay or Google
+ * Pay), last digits, fingerprint, 3-D Secure and wallet.
+ */
+function cardDetailsOf(charge: Record<string, unknown> | undefined): PaymentDetails | undefined {
+  const card = objectOf(objectOf(charge?.['payment_method_details'])?.['card']);
+  if (!card) return undefined;
   const wallet = textOf(objectOf(card['wallet'])?.['type']);
+  const threeDs = textOf(objectOf(card['three_d_secure'])?.['result']);
   return {
     brand: wallet ?? textOf(card['brand']),
     last4: textOf(card['last4']),
     fingerprint: textOf(card['fingerprint']),
-    threeDs: objectOf(card['three_d_secure']) !== undefined,
+    threeDs: threeDs !== undefined && THREE_DS_PASSED.has(threeDs),
     wallet,
   };
+}
+
+/** The result a refund event reports, by Stripe's event type and the refund's `status` (plan 24C § 2.3). */
+function refundResultOf(type: string | undefined, status: string | undefined): RefundEvent['kind'] | undefined {
+  if (type === 'refund.failed') return 'failed';
+  // `charge.refund.updated` is the older name of the same object's event.
+  if (type !== 'refund.updated' && type !== 'charge.refund.updated') return undefined;
+  if (status === 'succeeded') return 'succeeded';
+  if (status === 'failed' || status === 'canceled') return 'failed';
+  return undefined;
 }
 
 /** A timestamp in unix seconds as a date, or `null`. */
@@ -110,15 +138,14 @@ export const cardDriver: PaymentGatewayDriver = {
       kind,
       invoiceNumber,
       reference,
-      amount: fromMinorUnits(session['amount_total']),
+      amount: fromMinor(session['amount_total'], currency),
       currency: currency ? currency.toUpperCase() : null,
       raw: event as PaymentEvent['raw'],
-      details: detailsOf(session),
     };
   },
 
   async createCheckout(calls: GatewayCalls, credentials: GatewayCredentials, request: CheckoutRequest) {
-    const minor = request.amount.mul(100).toWire().split('.')[0]!;
+    const minor = minorOf(request.amount, request.currency, `Checkout ${request.invoiceNumber}`);
     const form = new URLSearchParams({
       mode: 'payment',
       client_reference_id: request.invoiceNumber,
@@ -155,10 +182,23 @@ export const cardDriver: PaymentGatewayDriver = {
     if (status === 'succeeded') return 'confirmed';
     return status === 'canceled' ? 'failed' : 'pending';
   },
+
+  async paymentDetails(calls, credentials, reference) {
+    // Only a PaymentIntent has a latest Charge; a checkout without one (`cs_…`) has no card to read.
+    if (!reference.startsWith('pi_')) return undefined;
+    const answer = await gatewayCall(calls, {
+      url: `${credentials.apiBase ?? DEFAULT_API_BASE}/v1/payment_intents/${encodeURIComponent(reference)}?expand[]=latest_charge`,
+      method: 'GET',
+      headers: bearer(credentials),
+      timeoutMs: DETAILS_TIMEOUT_MS,
+    });
+    return cardDetailsOf(objectOf(answer['latest_charge']));
+  },
+
   async refund(calls: GatewayCalls, credentials: GatewayCredentials, request: RefundRequest): Promise<RefundAnswer> {
     const form = new URLSearchParams({
       payment_intent: request.paymentReference,
-      amount: request.amount.mul(100).toWire().split('.')[0]!,
+      amount: minorOf(request.amount, request.currency, `Refund ${request.refundId}`),
       'metadata[refund_id]': String(request.refundId),
       'metadata[send_attempt]': String(request.sendAttempt),
     });
@@ -189,16 +229,19 @@ export const cardDriver: PaymentGatewayDriver = {
     const refund = objectOf(objectOf(event?.['data'])?.['object']);
     const gatewayRefundId = textOf(refund?.['id']);
     if (!event || !refund || !gatewayRefundId) return undefined;
-    if (type !== 'refund.succeeded' && type !== 'refund.failed') return undefined;
+    // Stripe sends no `refund.succeeded`: a result is `refund.updated` with a final status, or `refund.failed`. `refund.created` and
+    // `charge.refunded` are covered by the refund call's own answer.
+    const kind = refundResultOf(type, textOf(refund['status']));
+    if (!kind) return undefined;
     const metadata = objectOf(refund['metadata']);
     const echoed = Number(textOf(metadata?.['refund_id']));
     const attempt = Number(textOf(metadata?.['send_attempt']));
     return {
-      kind: type === 'refund.succeeded' ? 'succeeded' : 'failed',
+      kind,
       gatewayRefundId,
       refundId: Number.isSafeInteger(echoed) && echoed > 0 ? echoed : null,
       sendAttempt: Number.isSafeInteger(attempt) && attempt > 0 ? attempt : null,
-      failure: textOf(refund['failure_reason']) ?? null,
+      failure: textOf(refund['failure_reason']) ?? (refund['status'] === 'canceled' ? 'canceled' : null),
       raw: event as RefundEvent['raw'],
     };
   },
@@ -220,9 +263,9 @@ export const cardDriver: PaymentGatewayDriver = {
       kind,
       reference,
       paymentReference,
-      amount: fromMinorUnits(dispute['amount']),
+      amount: fromMinor(dispute['amount'], currency),
       currency: currency ? currency.toUpperCase() : null,
-      fee: fromMinorUnits(dispute['fee']),
+      fee: fromMinor(dispute['fee'], currency),
       reasonCode: textOf(dispute['reason']) ?? 'general',
       evidenceDueAt: dateOf(objectOf(dispute['evidence_details'])?.['due_by']),
       raw: event as DisputeEvent['raw'],
