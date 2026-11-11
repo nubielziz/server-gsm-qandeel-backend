@@ -4,6 +4,12 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+> **09:40:** **21 merged** (`796eeab`; check 5964/1/0). Its renumbered migrations 0022/0023 were found ALREADY applied to the dev DB
+> `gsm` before the lead ran `db:migrate` (they existed only in the 21 worktree, ~30 min old): something run from a worktree
+> migrates `gsm`. Not found yet (setup, seed, db-reset, ci-script, db-schema tests are isolated). Diagnostic running:
+> `.lead/gsm-watch.sh` (logs every process connected to `gsm`, its folder and command, to `.lead/gsm-watch.log`) and
+> `ALTER DATABASE gsm SET log_statement = 'ddl'` (undo with `ALTER DATABASE gsm RESET log_statement`). Until found: after each
+> merge compare `drizzle.__drizzle_migrations` of `gsm` with main's journal.
 > **09:00:** **22 merged** (`430cf59`; its migrations 0020/0021 were already in the dev DB `gsm`, applied from the 22 branch
 > during its own run: harmless, but watch `drizzle.__drizzle_migrations` in `gsm` after each merge for rows that are not in main's
 > journal). **21** passed every review (backend Opus + Fable money, console Opus); the lead merged main into it, renumbered its
