@@ -38,6 +38,16 @@ export { MerchantWebhookRoutesModule } from './merchant-webhook-routes.module';
 export { KycModule } from './kyc.module';
 export { MerchantNotificationsModule } from './merchant-notifications.module';
 export { MerchantMailModule } from './merchant-mail.module';
+export { IdentityMailEventsModule } from './identity-mail-events.module';
+export { StaffMailModule } from './staff-mail.module';
+export { STAFF_MAIL_EVENTS, StaffMailOutbox } from './application/mail/staff-mail-outbox';
+export type { StaffMailKind } from './application/mail/staff-mail-outbox';
+export { IDENTITY_MAIL_EVENTS } from './application/mail/identity-mail-events';
+export {
+  IDENTITY_DEFAULT_TEMPLATES,
+  IDENTITY_TEMPLATES_MIGRATION,
+  identityTemplatesSql,
+} from './application/mail/identity-templates';
 export { STAFF_TOKEN_TTL_MS, StaffAuthTokens } from './application/staff-auth-tokens';
 export type { IssueStaffTokenInput, IssuedStaffToken } from './application/staff-auth-tokens';
 export { STAFF_TOKEN_PURPOSES } from './infra/auth-token.repository';

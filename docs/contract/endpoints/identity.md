@@ -66,6 +66,14 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 | `GET /admin/kyc-submissions` | admin | staff-permission `kyc:read` | 8 | `listKycSubmissions` |
 | `GET /admin/kyc-submissions/:id` | admin | staff-permission `kyc:read` | 8 | `getKycSubmission` |
 | `POST /admin/kyc-submissions/:id/decide` | admin | staff-permission `kyc:decide` | 8 | `decideKycSubmission` |
+| `POST /admin/clients/:id/password` | admin | staff-permission `clients:security` | 20 |  |
+| `POST /admin/clients/:id/reset-2fa` | admin | staff-permission `clients:security` | 20 |  |
+| `POST /admin/clients/:id/sessions/revoke` | admin | staff-permission `clients:security` | 20 |  |
+| `POST /admin/clients/:id/verify-email/resend` | admin | staff-permission `clients:security` | 20 |  |
+| `POST /admin/clients/:id/api-keys` | admin | staff-permission `api_keys:create` | 20 |  |
+| `PATCH /admin/api-keys/:id` | admin | staff-permission `api_keys:update` | 20 |  |
+| `POST /client/auth/password/change` | client | merchant-session | 20 |  |
+| `POST /client/auth/verify-email/resend` | client | merchant-session | 20 |  |
 
 ## POST /client/auth/register
 
@@ -521,4 +529,44 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 - **Response**: 200 with the submission after the decision (full shape).
 - **Errors**: 409 ALREADY_DECIDED (the request is not pending (detail "This request was already approved.")); 422 VALIDATION_FAILED (errors[].field decision | note (reject without a note)); 404 NOT_FOUND (no verification request with that id); 403 FORBIDDEN (caller lacks kyc:decide)
 - **Mock**: src/features/merchants/mocks/kycRoutes.ts (KYC rows are synthetic (mocks/kycSeed.ts, the demo has none); API keys from mocks/seed.ts keysOf (demo key + IPs per merchant plus extras).)
+
+## POST /admin/clients/:id/password
+
+- **Map addition** (B-TBD merchant-admin-security, `scripts/map-additions/20.mjs`): Send a merchant a set-password or invitation link, or set a temporary password that must be changed at the next sign-in. (رابط تعيين كلمة مرور أو دعوة جديدة للتاجر، أو كلمة مؤقتة تُفرض تغييرها بأول دخول) · staff-permission `clients:security` · stage 20 · tables clients, auth_tokens, sessions, notifications, audit_logs · success 200
+- **Frontend**: none.
+
+## POST /admin/clients/:id/reset-2fa
+
+- **Map addition** (B-TBD merchant-admin-security, `scripts/map-additions/20.mjs`): Turn off a merchant's two-factor sign-in and end their sessions. (إعادة ضبط 2FA لتاجر وإنهاء جلساته) · staff-permission `clients:security` · stage 20 · tables clients, sessions, audit_logs · success 204
+- **Frontend**: none.
+
+## POST /admin/clients/:id/sessions/revoke
+
+- **Map addition** (B-TBD merchant-admin-security, `scripts/map-additions/20.mjs`): Sign a merchant out of every device. (إنهاء كل جلسات تاجر) · staff-permission `clients:security` · stage 20 · tables sessions, audit_logs · success 204
+- **Frontend**: none.
+
+## POST /admin/clients/:id/verify-email/resend
+
+- **Map addition** (B-TBD merchant-verification-resend, `scripts/map-additions/20.mjs`): Send the merchant a new email verification link. (إعادة إرسال إيميل تفعيل البريد للتاجر) · staff-permission `clients:security` · stage 20 · tables clients, auth_tokens, notifications, audit_logs · success 204
+- **Frontend**: none.
+
+## POST /admin/clients/:id/api-keys
+
+- **Map addition** (B-TBD staff-api-keys, `scripts/map-additions/20.mjs`): Create an API key for a merchant; the key is shown once. (إنشاء مفتاح API لتاجر من اللوحة، يُعرض مرة واحدة) · staff-permission `api_keys:create` · stage 20 · tables api_keys, audit_logs · success 201
+- **Frontend**: none.
+
+## PATCH /admin/api-keys/:id
+
+- **Map addition** (B-TBD staff-api-keys, `scripts/map-additions/20.mjs`): Change a merchant key's per-minute limit and allowed addresses. (تعديل حدود مفتاح تاجر: المعدّل بالدقيقة والعناوين المسموحة) · staff-permission `api_keys:update` · stage 20 · tables api_keys, audit_logs · success 200
+- **Frontend**: none.
+
+## POST /client/auth/password/change
+
+- **Map addition** (B-TBD merchant-forced-password, `scripts/map-additions/20.mjs`): Replace a temporary password during sign-in. (تغيير كلمة السر المؤقتة قبل إكمال الدخول) · merchant-session · stage 20 · tables clients, sessions
+- **Frontend**: none.
+
+## POST /client/auth/verify-email/resend
+
+- **Map addition** (B-TBD merchant-verification-resend, `scripts/map-additions/20.mjs`): Send the signed-in merchant a new email verification link. (إعادة إرسال إيميل تفعيل البريد) · merchant-session · stage 20 · tables clients, auth_tokens, notifications
+- **Frontend**: none.
 

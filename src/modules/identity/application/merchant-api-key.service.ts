@@ -3,7 +3,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
-import { TokenService } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
 import {
   type ApiKeyWire,
@@ -11,21 +10,17 @@ import {
   MAX_LIVE_KEYS,
   apiKeyToWire,
   checkAllowedIps,
-  checkScopes,
-  composeApiKey,
 } from '../domain/api-key-input';
 import {
   type ApiKeySortField,
-  countLiveKeys,
-  insertKey,
   listKeysOfClient,
   lockKey,
-  lockKeysOfClient,
   revokeKeyRow,
   updateKey,
 } from '../infra/api-key-manage.repository';
 import type { MerchantPrincipal } from '../security/principal';
 import { ApiKeyDirectory } from '../security/machine/api-keys/api-key.directory';
+import { ApiKeyIssuer } from './api-key-issuer';
 
 /** The range and sort of a list request, already parsed and checked by the contract. */
 export interface ApiKeyListRequest {
@@ -48,11 +43,6 @@ export interface CreatedApiKey {
   readonly secret: string;
 }
 
-/** A field error of the portal's forms: `422 VALIDATION_FAILED` on one request key. */
-function invalid(field: string, message: string): AppError {
-  return new AppError('VALIDATION_FAILED', { errors: [{ field, code: 'invalid', message }] });
-}
-
 /**
  * Manages the API keys of the signed-in merchant.
  *
@@ -70,7 +60,7 @@ function invalid(field: string, message: string): AppError {
 export class MerchantApiKeyService {
   constructor(
     private readonly db: DbService,
-    private readonly tokens: TokenService,
+    private readonly issuer: ApiKeyIssuer,
     private readonly directory: ApiKeyDirectory,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
@@ -97,35 +87,19 @@ export class MerchantApiKeyService {
    *   `expiresAt` (not in the future) or `name` (the merchant already holds 10 live keys)
    */
   async create(principal: MerchantPrincipal, input: CreateApiKeyInput): Promise<CreatedApiKey> {
-    const scopes = checkScopes(input.scopes);
-    const allowed = checkAllowedIps(input.allowedIps ?? []);
-    const errors = [...(scopes.ok ? [] : scopes.errors), ...(allowed.ok ? [] : allowed.errors)];
-    const now = this.clock.now();
-    const expiresAt = input.expiresAt === undefined ? null : new Date(input.expiresAt);
-    if (expiresAt !== null && expiresAt.getTime() <= now.getTime()) {
-      errors.push({ field: 'expiresAt', code: 'in_the_past', message: 'Choose a time in the future.' });
-    }
-    if (errors.length > 0 || !scopes.ok || !allowed.ok) throw new AppError('VALIDATION_FAILED', { errors });
-
-    const { key, prefix } = composeApiKey(this.tokens.random(32));
-    const row = await this.db.runInTransaction(async ({ tx }) => {
-      // Two requests at once would both see nine keys; the lock lets the second count after the first commits.
-      await lockKeysOfClient(tx, principal.clientId);
-      if ((await countLiveKeys(tx, principal.clientId, now)) >= MAX_LIVE_KEYS) {
-        throw invalid('name', `You already have ${MAX_LIVE_KEYS} active keys; revoke one first.`);
-      }
-      return insertKey(tx, {
+    const issued = await this.db.runInTransaction(({ tx }) =>
+      this.issuer.issue(tx, {
         clientId: principal.clientId,
         name: input.name,
-        prefix,
-        keyHash: this.tokens.hash(key),
-        scopes: scopes.value,
-        allowedIps: allowed.value,
+        scopes: input.scopes,
+        allowedIps: input.allowedIps ?? [],
+        expiresAt: input.expiresAt,
         rateLimitPerMin: DEFAULT_RATE_LIMIT_PER_MIN,
-        expiresAt,
-      });
-    });
-    return { key: apiKeyToWire(row), secret: key };
+        createdBy: null,
+        limitMessage: `You already have ${MAX_LIVE_KEYS} active keys; revoke one first.`,
+      }),
+    );
+    return { key: apiKeyToWire(issued.row), secret: issued.secret };
   }
 
   /**

@@ -73,6 +73,9 @@ export class MerchantAuthTokens {
       subjectId: input.clientId,
       tokenHash: this.tokens.hash(token),
       expiresAt: new Date(now.getTime() + MERCHANT_TOKEN_TTL_MS),
+      // Written from the clock, not the column default: the console shows it as "link sent at" (security.linkSentAt) and the
+      // expiry above is measured from it (decision 031, feature 20).
+      createdAt: now,
       ip: input.ip ?? null,
       createdBy: input.createdBy ?? null,
     });

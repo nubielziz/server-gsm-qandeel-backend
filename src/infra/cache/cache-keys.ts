@@ -299,7 +299,7 @@ export const CACHE_KEY_FAMILIES: readonly CacheKeyFamily[] = [
     owner: 'identity',
     ttl: '60 s (a token that matches no live session: 10 s)',
     invalidation:
-      'SessionService deletes it after the commit of a revoke or a rotation, and invalidateSubject(subjectType, subjectId) after a suspension, password change or role change',
+      'SessionService deletes it after the commit of a revoke or a rotation, and invalidateSubject(subjectType, subjectId) after a suspension, password change, role change or (feature 20) a staff edit of a merchant details or email',
   },
   {
     builder: 'apiKey',
@@ -307,7 +307,7 @@ export const CACHE_KEY_FAMILIES: readonly CacheKeyFamily[] = [
     owner: 'identity',
     ttl: '60 s (a key that matches nothing: 10 s)',
     invalidation:
-      'ApiKeyDirectory.invalidate(keyHashes) after the commit of a revoke or an edit of the key, invalidateClient(clientId) after a merchant status change',
+      'ApiKeyDirectory.invalidate(keyHashes) after the commit of a revoke or an edit of the key (the merchant rename or addresses, and the per-minute limit and addresses staff set, feature 20), invalidateClient(clientId) after a merchant status change',
   },
   {
     builder: 'webhookEvent',

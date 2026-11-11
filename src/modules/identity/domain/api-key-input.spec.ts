@@ -106,6 +106,7 @@ describe('apiKeyToWire', () => {
     expiresAt: null,
     revokedAt: null,
     createdAt: new Date('2026-10-01T08:00:00.000Z'),
+    createdBy: null,
   };
 
   it('drops /32 and /128 of a single host, keeps ranges (an IPv6 /32 is a range), and sends "" for a key never used', () => {
@@ -122,7 +123,13 @@ describe('apiKeyToWire', () => {
       expiresAt: null,
       revokedAt: null,
       createdAt: '2026-10-01T08:00:00.000Z',
+      createdByStaff: false,
     });
+  });
+
+  it('says a key was made by staff when created_by is set, and not otherwise', () => {
+    expect(apiKeyToWire({ ...row, createdBy: 3 }).createdByStaff).toBe(true);
+    expect(apiKeyToWire(row).createdByStaff).toBe(false);
   });
 
   it('writes times as ISO text and keeps the last address of a used key', () => {

@@ -18,6 +18,7 @@ describe('RATE_LIMITERS', () => {
 
   it('has the limiters decision 021 names: per IP, per API key, sign-in, token lookups, per supplier', () => {
     expect(Object.keys(RATE_LIMITERS).sort()).toEqual([
+      'account-mail',
       'api-key',
       'help-vote',
       'ip',
@@ -38,6 +39,11 @@ describe('RATE_LIMITERS', () => {
 
   it('lets one email address open 3 tickets an hour on the public form', () => {
     expect(RATE_LIMITERS['ticket-email']).toMatchObject({ points: 3, windowSeconds: 3600 });
+  });
+
+  it('lets one account have 5 emails of a kind an hour, with no lock-out', () => {
+    expect(RATE_LIMITERS['account-mail']).toMatchObject({ points: 5, windowSeconds: 3600 });
+    expect(RATE_LIMITERS['account-mail']).not.toHaveProperty('blockSeconds');
   });
 
   it('counts one help vote per visitor address and article per day', () => {

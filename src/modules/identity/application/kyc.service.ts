@@ -7,6 +7,8 @@ import { AppError, type FieldError } from '../../../common/errors';
 import { type DbExecutor, DbService } from '../../../infra/db';
 import { AuditService, PROOF_MIME_TYPES, StoredFiles } from '../../platform';
 import type { KycSubmission } from '../db/schema';
+import { findClientById } from '../infra/merchant-auth.repository';
+import { MerchantLifecycleMails } from './mail/merchant-lifecycle-mails';
 import { MAX_SUBMIT_NOTE, checkDecisionNote, checkFileIds } from '../domain/kyc-rules';
 import {
   type KycSortField,
@@ -61,11 +63,11 @@ const notFound = () => new AppError('NOT_FOUND', { detail: 'No verification requ
  *
  * Why: B161 and ANSWERS merchants Q9: a merchant uploads documents (files it owns) and submits them; one request is under review
  * at a time (a partial unique index also guarantees it); staff approve or reject, which sets the request and `clients.kyc_status`
- * to the same word and never changes `clients.status`; the rejection note is shown to the merchant. Merchant submissions write no
- * audit row (B121); staff decisions are audited.
+ * to the same word and never changes `clients.status`; the rejection note is shown to the merchant and mailed to them. Merchant submissions
+ * write no audit row (B121); staff decisions are audited under the merchant (feature 20).
  *
- * Side effects: `submit` inserts a `kyc_submissions` row and sets `clients.kyc_status` to pending; `decide` updates both and
- * writes an audit row.
+ * Side effects: `submit` inserts a `kyc_submissions` row and sets `clients.kyc_status` to pending; `decide` updates both, writes an audit
+ * row (entity `merchant`) and a `merchant.kyc_approved` or `merchant.kyc_rejected` notification with its outbox event.
  *
  * @see docs/contract/endpoints/identity.md
  */
@@ -75,6 +77,7 @@ export class KycService {
     private readonly db: DbService,
     private readonly files: StoredFiles,
     private readonly audit: AuditService,
+    private readonly lifecycleMails: MerchantLifecycleMails,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -129,15 +132,18 @@ export class KycService {
       const now = this.clock.now();
       await updateKyc(tx, id, { status, note, reviewedBy: staffId, reviewedAt: now, updatedAt: now });
       await setClientKycStatus(tx, current.clientId, status, now);
-      const party = (await loadKycParties(tx, [current.clientId], [])).clients.get(current.clientId);
+      const merchant = await findClientById(tx, current.clientId);
+      // The audit row is filed under the merchant, so the merchant page's history shows it (feature 20, O-12).
       await this.audit.record(tx, {
         action: input.decision === 'approve' ? 'approved verification of' : 'rejected verification of',
-        entityType: 'kyc_submission',
-        entityId: id,
-        entityLabel: party?.name ?? `merchant ${current.clientId}`,
-        before: { status: 'pending' },
-        after: { status, note },
+        entityType: 'merchant',
+        entityId: current.clientId,
+        entityLabel: merchant?.name ?? `merchant ${current.clientId}`,
+        before: { kycStatus: 'pending' },
+        after: { kycStatus: status, note, submissionId: id },
       });
+      // Tell the merchant (transactional email in the merchant's language); a rejection carries the note they also read in `GET /client/kyc`.
+      if (merchant) await this.lifecycleMails.kycDecided({ tx }, merchant, status, note);
     });
     return this.get(id);
   }

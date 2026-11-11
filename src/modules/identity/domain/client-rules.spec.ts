@@ -4,7 +4,7 @@ import { CLIENT_STATUSES } from '../db/schema';
 import { canMoveClient, referralCode, suspendReasonProblem, usernameBase, usernameCandidate } from './client-rules';
 
 describe('canMoveClient', () => {
-  it('allows exactly approve, reactivate and suspend', () => {
+  it('allows exactly approve, reactivate, suspend and decline (suspend a pending applicant)', () => {
     const allowed = CLIENT_STATUSES.flatMap((from) => CLIENT_STATUSES.map((to) => [from, to] as const)).filter(
       ([from, to]) => canMoveClient(from, to),
     );
@@ -12,7 +12,14 @@ describe('canMoveClient', () => {
       ['active', 'suspended'],
       ['suspended', 'active'],
       ['pending', 'active'],
+      ['pending', 'suspended'],
     ]);
+  });
+
+  it('never goes back to pending', () => {
+    expect(canMoveClient('active', 'pending')).toBe(false);
+    expect(canMoveClient('suspended', 'pending')).toBe(false);
+    expect(canMoveClient('pending', 'pending')).toBe(false);
   });
 });
 

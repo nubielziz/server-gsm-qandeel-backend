@@ -16,7 +16,12 @@ import {
   MerchantInvitedMailProcessor,
   PasswordResetMailProcessor,
 } from '../../src/modules/identity/jobs/merchant-mail.processors';
-import { MERCHANT_MAIL_EVENTS, MerchantAuthTokens } from '../../src/modules/identity';
+import {
+  MERCHANT_MAIL_EVENTS,
+  MerchantAuthTokens,
+  STAFF_MAIL_EVENTS,
+  SessionService,
+} from '../../src/modules/identity';
 import { DeliveryError, OutboxRouteRegistry, type OutboxJobData } from '../../src/modules/platform';
 import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches, productionEnvOnTestInstances } from '../support/auth';
@@ -33,7 +38,8 @@ import {
   makeMerchant,
   seedPortalBasics,
 } from '../support/merchant-portal';
-import { mailbox, seedDefaultTemplates, tokenIn } from '../support/notifications';
+import { clearAccountMailLimits, runMerchantMailJob, seedIdentityTemplates } from '../support/identity-mail';
+import { mailbox, tokenIn } from '../support/notifications';
 import { freshClientIp } from '../support/pipeline-routes';
 import { expectRejection } from '../support/rejection';
 
@@ -60,7 +66,8 @@ beforeEach(async () => {
   logSink.clear();
   captureEmailedLinks(t);
   defaultGroupId = await seedPortalBasics();
-  await seedDefaultTemplates((await testDb()).db);
+  await clearAccountMailLimits(t);
+  await seedIdentityTemplates((await testDb()).db);
   mailbox(t).reset();
 });
 
@@ -316,6 +323,96 @@ describe('POST /client/auth/verify-email', () => {
   });
 });
 
+describe('POST /client/auth/verify-email, a suspended merchant (feature 20)', () => {
+  it('answers 410 for a link that survived a suspension (the race the voiding of links does not cover)', async () => {
+    await portal().register(form());
+    const [link] = emailedLinks();
+    const { db } = await testDb();
+    // A suspension that did not void the link (for example a row changed by hand): the endpoint refuses on its own.
+    await db.update(s.clients).set({ status: 'suspended' }).where(eq(s.clients.id, link!.clientId));
+    const res = await portal().verifyEmail(link!.token);
+    expect(res.statusCode).toBe(410);
+    expect(problem(res).code).toBe('TOKEN_INVALID');
+    expect((await clientRow(link!.clientId)).emailVerifiedAt).toBeNull();
+    const rows = await db.select().from(s.authTokens).where(eq(s.authTokens.subjectId, link!.clientId));
+    expect(rows.every((row) => row.usedAt === null)).toBe(true);
+  });
+});
+
+describe('POST /client/auth/verify-email/resend (feature 20)', () => {
+  it('sends a new link that replaces the older one (410), and the new one verifies', async () => {
+    await portal().register(form());
+    const [first] = emailedLinks();
+    const p = portal();
+    const merchant = await clientRow(first!.clientId);
+    // The pending merchant signs in with the password it chose and asks again.
+    expect((await p.login(merchant.email, form().password)).statusCode).toBe(200);
+    mailbox(t).reset();
+    const res = await p.resendVerification();
+    expect(res.statusCode).toBe(204);
+    expect(res.body).toBe('');
+    expect(res.headers['cache-control']).toBe('no-store');
+
+    const { db } = await testDb();
+    const open = (await db.select().from(s.authTokens).where(eq(s.authTokens.subjectId, merchant.id))).filter(
+      (row) => row.usedAt === null,
+    );
+    expect(open).toHaveLength(1);
+    const events = await db.select().from(s.outboxEvents).where(eq(s.outboxEvents.type, 'merchant.email_verification'));
+    expect(events).toHaveLength(2);
+    expect(Object.keys(events[1]!.payload).filter((key) => key !== 'meta')).toEqual(['tokenId']);
+
+    expect((await portal().verifyEmail(first!.token)).statusCode).toBe(410);
+    await runMerchantMailJob(t, 'email_verification');
+    const delivered = tokenIn(mailbox(t).sent.at(-1)!.text);
+    expect((await portal().verifyEmail(delivered)).statusCode).toBe(204);
+    expect((await clientRow(merchant.id)).emailVerifiedAt).not.toBeNull();
+  });
+
+  it('is 409 CONFLICT when the address is already verified, 401 without a session and 403 CSRF_FAILED without the header', async () => {
+    const verified = await makeMerchant(t, { emailVerifiedAt: clock.now() });
+    const p = portal();
+    await p.login(verified.email);
+    const conflict = await p.resendVerification();
+    expect(conflict.statusCode).toBe(409);
+    expect(problem(conflict).code).toBe('CONFLICT');
+
+    const open = await makeMerchant(t, { emailVerifiedAt: null });
+    const q = portal();
+    await q.login(open.email);
+    const noHeader = await q.resendVerification({ csrf: false });
+    expect(noHeader.statusCode).toBe(403);
+    expect(problem(noHeader).code).toBe('CSRF_FAILED');
+    expect((await portal().resendVerification()).statusCode).toBe(401);
+  });
+
+  it('answers 429 on the sixth request in an hour and writes nothing for it; staff and merchant share the counter', async () => {
+    const merchant = await makeMerchant(t, { emailVerifiedAt: null });
+    const p = portal();
+    await p.login(merchant.email);
+    for (let i = 0; i < 5; i++) expect((await p.resendVerification()).statusCode).toBe(204);
+    const sixth = await p.resendVerification();
+    expect(sixth.statusCode).toBe(429);
+    expect(problem(sixth).code).toBe('RATE_LIMITED');
+    const { db } = await testDb();
+    expect(
+      await db.select().from(s.outboxEvents).where(eq(s.outboxEvents.type, 'merchant.email_verification')),
+    ).toHaveLength(5);
+  });
+
+  it('is refused for a merchant suspended after the sign-in (403 ACCOUNT_SUSPENDED)', async () => {
+    const merchant = await makeMerchant(t, { emailVerifiedAt: null });
+    const p = portal();
+    await p.login(merchant.email);
+    const { db } = await testDb();
+    await db.update(s.clients).set({ status: 'suspended' }).where(eq(s.clients.id, merchant.id));
+    await t.app.get(SessionService).invalidateSubject('client', merchant.id);
+    const res = await p.resendVerification();
+    expect(res.statusCode).toBe(403);
+    expect(problem(res).code).toBe('ACCOUNT_SUSPENDED');
+  });
+});
+
 describe('the merchant mail events', () => {
   it('are registered with the notifications queue, and each has one named processor in the worker table', () => {
     const routes = t.app.get(OutboxRouteRegistry);
@@ -328,10 +425,11 @@ describe('the merchant mail events', () => {
       .filter((name) => !name.startsWith('customer.'))
       .sort();
     // The notifications queue has named processors only: the three merchant mails, the two jobs of feature 12a, the ticket mail of
-    // feature 17 and the recovery mail of feature 19.
+    // feature 17, the recovery mail of feature 19 and the two staff link mails of feature 20.
     expect(named).toEqual(
       [
         ...Object.values(MERCHANT_MAIL_EVENTS),
+        ...Object.values(STAFF_MAIL_EVENTS),
         'notification.plan',
         'notification.send',
         'support.ticket_mail',

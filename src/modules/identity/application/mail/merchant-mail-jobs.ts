@@ -184,7 +184,14 @@ export class MerchantMailJobs {
   }
 }
 
-/** `2026-11-01 11:00 UTC`: when the link stops working, for the mail text. */
-function formatExpiry(expiresAt: Date): string {
+/**
+ * Formats the expiry of a link for the mail text.
+ *
+ * Why: the merchant and staff link mails tell the reader until when the link works.
+ *
+ * @param expiresAt when the link stops working
+ * @returns `2026-11-01 11:00 UTC`
+ */
+export function formatExpiry(expiresAt: Date): string {
   return `${expiresAt.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
 }

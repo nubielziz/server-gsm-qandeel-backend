@@ -20,6 +20,13 @@ export const MAX_LIVE_KEYS = 10;
 export const MAX_ALLOWED_IPS = 20;
 /** The per-minute limit every key a merchant creates starts with; only staff change it (B155). */
 export const DEFAULT_RATE_LIMIT_PER_MIN = 60;
+/**
+ * The per-minute limit staff may give a key when they create or edit it (feature 20, R5 and R6).
+ *
+ * Why: a key's limit is the ceiling of REST v1 calls per minute; 6000 (100 a second) is far above a normal integration and still
+ * bounded, so a typing mistake cannot switch the limit off.
+ */
+export const RATE_LIMIT_PER_MIN_RANGE = { min: 1, max: 6000 } as const;
 /** How many leading characters of the key are kept for display: decision 019 says 8. */
 export const API_KEY_PREFIX_LENGTH = 8;
 /** Every key starts with this text, so a leaked key is recognisable in a scan of public code. */
@@ -106,6 +113,8 @@ export interface ApiKeyWire {
   readonly expiresAt: string | null;
   readonly revokedAt: string | null;
   readonly createdAt: string;
+  /** True for a key staff created for the merchant (`api_keys.created_by` is set); the portal shows "made by support". */
+  readonly createdByStaff: boolean;
 }
 
 /** The columns of an `api_keys` row that the wire shows. */
@@ -122,13 +131,16 @@ export interface ApiKeyColumns {
   readonly expiresAt: Date | null;
   readonly revokedAt: Date | null;
   readonly createdAt: Date;
+  /** The staff member who created the key; null for a key the merchant made. */
+  readonly createdBy: number | null;
 }
 
 /**
  * Writes a stored key as the wire shows it.
  *
  * Why: identity-platform-5: `allowedIps` loses the `/32` or `/128` of a single host (the formatter of the IP rules), and a key
- * that was never used has `lastUsedIp` `''` because the console types it as a non-null string.
+ * that was never used has `lastUsedIp` `''` because the console types it as a non-null string. Feature 20: `createdByStaff` tells
+ * the merchant that support made the key.
  *
  * @param row the stored columns
  * @returns the wire object
@@ -147,5 +159,6 @@ export function apiKeyToWire(row: ApiKeyColumns): ApiKeyWire {
     expiresAt: row.expiresAt?.toISOString() ?? null,
     revokedAt: row.revokedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
+    createdByStaff: row.createdBy !== null,
   };
 }

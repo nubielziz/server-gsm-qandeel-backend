@@ -4,18 +4,19 @@
   "domain": "A",
   "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
   "counts": {
-    "rows": 45,
-    "endpoints": 59,
+    "rows": 53,
+    "endpoints": 67,
     "bySurface": {
-      "client": 21,
-      "admin": 38
+      "client": 23,
+      "admin": 44
     },
     "frontendCalled": 38
   },
   "stages": [
     2,
     7,
-    8
+    8,
+    20
   ],
   "ownedTables": [
     {
@@ -2163,6 +2164,291 @@
         "file": "src/features/merchants/api/kyc.ts",
         "line": 42,
         "fn": "decideKycSubmission"
+      }
+    },
+    {
+      "key": "POST /admin/clients/:id/password",
+      "method": "POST",
+      "path": "/admin/clients/:id/password",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "رابط تعيين كلمة مرور أو دعوة جديدة للتاجر، أو كلمة مؤقتة تُفرض تغييرها بأول دخول",
+      "access": "staff-permission",
+      "permission": "clients:security",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "clients:security",
+      "stage": 20,
+      "tables": [
+        "clients",
+        "auth_tokens",
+        "sessions",
+        "notifications",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/clients/:id/password",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/clients/:id/password"
+      },
+      "module": "identity",
+      "description": "Send a merchant a set-password or invitation link, or set a temporary password that must be changed at the next sign-in.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/20.mjs",
+        "spec": "B-TBD merchant-admin-security"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/clients/:id/reset-2fa",
+      "method": "POST",
+      "path": "/admin/clients/:id/reset-2fa",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "إعادة ضبط 2FA لتاجر وإنهاء جلساته",
+      "access": "staff-permission",
+      "permission": "clients:security",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "clients:security",
+      "stage": 20,
+      "tables": [
+        "clients",
+        "sessions",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/clients/:id/reset-2fa",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/clients/:id/reset-2fa"
+      },
+      "module": "identity",
+      "description": "Turn off a merchant's two-factor sign-in and end their sessions.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/20.mjs",
+        "spec": "B-TBD merchant-admin-security"
+      },
+      "successStatus": 204
+    },
+    {
+      "key": "POST /admin/clients/:id/sessions/revoke",
+      "method": "POST",
+      "path": "/admin/clients/:id/sessions/revoke",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "إنهاء كل جلسات تاجر",
+      "access": "staff-permission",
+      "permission": "clients:security",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "clients:security",
+      "stage": 20,
+      "tables": [
+        "sessions",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/clients/:id/sessions/revoke",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/clients/:id/sessions/revoke"
+      },
+      "module": "identity",
+      "description": "Sign a merchant out of every device.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/20.mjs",
+        "spec": "B-TBD merchant-admin-security"
+      },
+      "successStatus": 204
+    },
+    {
+      "key": "POST /admin/clients/:id/verify-email/resend",
+      "method": "POST",
+      "path": "/admin/clients/:id/verify-email/resend",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "إعادة إرسال إيميل تفعيل البريد للتاجر",
+      "access": "staff-permission",
+      "permission": "clients:security",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "clients:security",
+      "stage": 20,
+      "tables": [
+        "clients",
+        "auth_tokens",
+        "notifications",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/clients/:id/verify-email/resend",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/clients/:id/verify-email/resend"
+      },
+      "module": "identity",
+      "description": "Send the merchant a new email verification link.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/20.mjs",
+        "spec": "B-TBD merchant-verification-resend"
+      },
+      "successStatus": 204
+    },
+    {
+      "key": "POST /admin/clients/:id/api-keys",
+      "method": "POST",
+      "path": "/admin/clients/:id/api-keys",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "إنشاء مفتاح API لتاجر من اللوحة، يُعرض مرة واحدة",
+      "access": "staff-permission",
+      "permission": "api_keys:create",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "api_keys:create",
+      "stage": 20,
+      "tables": [
+        "api_keys",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/clients/:id/api-keys",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/clients/:id/api-keys"
+      },
+      "module": "identity",
+      "description": "Create an API key for a merchant; the key is shown once.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/20.mjs",
+        "spec": "B-TBD staff-api-keys"
+      },
+      "successStatus": 201
+    },
+    {
+      "key": "PATCH /admin/api-keys/:id",
+      "method": "PATCH",
+      "path": "/admin/api-keys/:id",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "تعديل حدود مفتاح تاجر: المعدّل بالدقيقة والعناوين المسموحة",
+      "access": "staff-permission",
+      "permission": "api_keys:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "api_keys:update",
+      "stage": 20,
+      "tables": [
+        "api_keys",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin PATCH /admin/api-keys/:id",
+        "method": "PATCH",
+        "ops": null,
+        "path": "/admin/api-keys/:id"
+      },
+      "module": "identity",
+      "description": "Change a merchant key's per-minute limit and allowed addresses.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/20.mjs",
+        "spec": "B-TBD staff-api-keys"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /client/auth/password/change",
+      "method": "POST",
+      "path": "/client/auth/password/change",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "تغيير كلمة السر المؤقتة قبل إكمال الدخول",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 20,
+      "tables": [
+        "clients",
+        "sessions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/auth/password/change",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/auth/password/change"
+      },
+      "module": "identity",
+      "description": "Replace a temporary password during sign-in.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/20.mjs",
+        "spec": "B-TBD merchant-forced-password"
+      }
+    },
+    {
+      "key": "POST /client/auth/verify-email/resend",
+      "method": "POST",
+      "path": "/client/auth/verify-email/resend",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "auth",
+      "descriptionAr": "إعادة إرسال إيميل تفعيل البريد",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 20,
+      "tables": [
+        "clients",
+        "auth_tokens",
+        "notifications"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/auth/verify-email/resend",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/auth/verify-email/resend"
+      },
+      "module": "identity",
+      "description": "Send the signed-in merchant a new email verification link.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/20.mjs",
+        "spec": "B-TBD merchant-verification-resend"
       }
     }
   ],

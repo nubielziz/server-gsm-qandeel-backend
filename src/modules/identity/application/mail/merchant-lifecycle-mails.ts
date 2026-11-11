@@ -1,0 +1,148 @@
+// MerchantLifecycleMails: the transactional emails staff actions send to a merchant (approval, suspension, reactivation, KYC decision, security
+// notice; feature 20). Each is a `notifications` row plus a `notification.send` outbox event written in the caller's transaction.
+import { Inject, Injectable } from '@nestjs/common';
+import { APP_CONFIG, type AppConfig } from '../../../../config';
+import type { TransactionContext } from '../../../../infra/db';
+import { NotificationService } from '../../../platform';
+import type { Client, ClientLocale } from '../../db/schema';
+import {
+  MERCHANT_APPROVED_EVENT,
+  MERCHANT_KYC_APPROVED_EVENT,
+  MERCHANT_KYC_REJECTED_EVENT,
+  MERCHANT_REACTIVATED_EVENT,
+  MERCHANT_SECURITY_NOTICE_EVENT,
+  MERCHANT_SUSPENDED_EVENT,
+} from './identity-mail-events';
+
+/** The staff actions a security notice names. */
+export type SecurityNoticeKind = 'temporary_password' | 'twofa_reset' | 'api_key_created';
+
+/**
+ * The fixed sentence of each security notice, by language (`{{change}}` of `merchant.security_notice`).
+ *
+ * Why: the staff action decides the words, never free text, so the notice cannot carry a secret or a staff opinion.
+ */
+export const SECURITY_NOTICE_PHRASES: Readonly<Record<SecurityNoticeKind, Readonly<Record<ClientLocale, string>>>> = {
+  temporary_password: {
+    en: 'a temporary password was set for your account; you will choose a new one when you sign in',
+    ar: 'تم تعيين كلمة مرور مؤقتة لحسابك، وستختار كلمة جديدة عند تسجيل الدخول',
+  },
+  twofa_reset: {
+    en: 'two-factor sign-in was turned off for your account',
+    ar: 'تم إيقاف التحقق بخطوتين لحسابك',
+  },
+  api_key_created: {
+    en: 'a new API key was created for your account',
+    ar: 'تم إنشاء مفتاح API جديد لحسابك',
+  },
+};
+
+/** A merchant as these mails need it. */
+type Recipient = Pick<Client, 'id' | 'name' | 'locale'>;
+
+/**
+ * Writes the lifecycle emails of a merchant.
+ *
+ * Why: LEAD-DECISIONS section 6 and O-6: a merchant is told when staff approve, suspend or reactivate the account, decide a KYC request, or
+ * change something security-relevant (a temporary password, a 2FA reset, a staff-made API key). All are transactional: always sent, whatever the
+ * preferences, and also to a suspended merchant. The language is the merchant's `locale`, picked by the notification delivery. The suspension
+ * mail does not carry the staff reason (it is an internal note); the KYC rejection carries the note the merchant already reads in `GET /client/kyc`.
+ *
+ * Side effects: each call inserts a `notifications` row and an `outbox_events` row in the caller's transaction. A missing or switched-off template
+ * sends nothing and is not an error (RULES settings 10). No dedupe key: the guarded change a mail rides on happens once.
+ */
+@Injectable()
+export class MerchantLifecycleMails {
+  constructor(
+    private readonly notifications: NotificationService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+  ) {}
+
+  /**
+   * `merchant.approved`: the account moved from `pending` to `active`.
+   *
+   * @param work the caller's transaction
+   * @param client the merchant
+   * @returns once the notification and its outbox event are written
+   */
+  approved(work: Pick<TransactionContext, 'tx'>, client: Recipient): Promise<void> {
+    return this.send(work, MERCHANT_APPROVED_EVENT, client, {
+      merchantName: client.name,
+      portalUrl: this.config.http.portalBaseUrl,
+    });
+  }
+
+  /**
+   * `merchant.suspended`: the account was suspended. The staff reason is not sent.
+   *
+   * @param work the caller's transaction
+   * @param client the merchant
+   * @returns once the notification and its outbox event are written
+   */
+  suspended(work: Pick<TransactionContext, 'tx'>, client: Recipient): Promise<void> {
+    return this.send(work, MERCHANT_SUSPENDED_EVENT, client, { merchantName: client.name });
+  }
+
+  /**
+   * `merchant.reactivated`: a suspended account is active again.
+   *
+   * @param work the caller's transaction
+   * @param client the merchant
+   * @returns once the notification and its outbox event are written
+   */
+  reactivated(work: Pick<TransactionContext, 'tx'>, client: Recipient): Promise<void> {
+    return this.send(work, MERCHANT_REACTIVATED_EVENT, client, {
+      merchantName: client.name,
+      portalUrl: this.config.http.portalBaseUrl,
+    });
+  }
+
+  /**
+   * `merchant.kyc_approved` or `merchant.kyc_rejected`, by the decision.
+   *
+   * @param work the caller's transaction
+   * @param client the merchant
+   * @param decision what staff decided
+   * @param note the staff note shown to the merchant (rejection only)
+   * @returns once the notification and its outbox event are written
+   */
+  kycDecided(
+    work: Pick<TransactionContext, 'tx'>,
+    client: Recipient,
+    decision: 'approved' | 'rejected',
+    note: string,
+  ): Promise<void> {
+    return decision === 'approved'
+      ? this.send(work, MERCHANT_KYC_APPROVED_EVENT, client, { merchantName: client.name })
+      : this.send(work, MERCHANT_KYC_REJECTED_EVENT, client, { merchantName: client.name, reason: note });
+  }
+
+  /**
+   * `merchant.security_notice`: staff changed something security-relevant.
+   *
+   * @param work the caller's transaction
+   * @param client the merchant
+   * @param kind what staff did; the sentence is chosen by the merchant's language
+   * @returns once the notification and its outbox event are written
+   */
+  securityNotice(work: Pick<TransactionContext, 'tx'>, client: Recipient, kind: SecurityNoticeKind): Promise<void> {
+    return this.send(work, MERCHANT_SECURITY_NOTICE_EVENT, client, {
+      merchantName: client.name,
+      change: SECURITY_NOTICE_PHRASES[kind][client.locale],
+    });
+  }
+
+  private async send(
+    work: Pick<TransactionContext, 'tx'>,
+    event: string,
+    client: Recipient,
+    variables: Record<string, string>,
+  ): Promise<void> {
+    await this.notifications.enqueue(work, {
+      event,
+      recipient: { type: 'client', id: client.id },
+      channel: 'email',
+      variables,
+    });
+  }
+}

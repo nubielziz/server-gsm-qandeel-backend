@@ -2,7 +2,7 @@
 // and the staff's view and revocation under /admin (identity.md). The shape is the console's ApiKey (identity-platform-5).
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime } from '../../../common/contract';
-import { MAX_ALLOWED_IPS, MAX_LIVE_KEYS, MERCHANT_KEY_SCOPES } from '../domain/api-key-input';
+import { MAX_ALLOWED_IPS, MAX_LIVE_KEYS, MERCHANT_KEY_SCOPES, RATE_LIMIT_PER_MIN_RANGE } from '../domain/api-key-input';
 
 /** An API key as the portal and the console read it: never the hash, never the key itself after creation. */
 const ApiKeyRow = z.object({
@@ -18,6 +18,8 @@ const ApiKeyRow = z.object({
   expiresAt: zIsoDateTime.nullable(),
   revokedAt: zIsoDateTime.nullable(),
   createdAt: zIsoDateTime,
+  /** True for a key staff created for the merchant (feature 20); optional in the schema, always sent by the server. */
+  createdByStaff: z.boolean().optional(),
 });
 
 /** The key name: trimmed, 1 to 60 characters. */
@@ -40,7 +42,15 @@ const KEY_EXAMPLE = {
   expiresAt: null,
   revokedAt: null,
   createdAt: '2026-10-01T08:00:00.000Z',
+  createdByStaff: false,
 } as const;
+
+/** The per-minute limit staff may set: an integer from 1 to 6000. */
+const RateLimitPerMin = z
+  .number()
+  .int('Use a whole number.')
+  .min(RATE_LIMIT_PER_MIN_RANGE.min, `Use at least ${RATE_LIMIT_PER_MIN_RANGE.min}.`)
+  .max(RATE_LIMIT_PER_MIN_RANGE.max, `Use at most ${RATE_LIMIT_PER_MIN_RANGE.max}.`);
 
 /** `GET /client/api-keys`: the merchant's own keys. */
 export const portalListApiKeys = defineRoute({
@@ -161,6 +171,69 @@ export const adminListClientApiKeys = defineRoute({
   success: { status: 200, schema: z.array(ApiKeyRow) },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND'],
   examples: { response: [KEY_EXAMPLE] },
+});
+
+/** `POST /admin/clients/:id/api-keys`: staff create a key for an active merchant, shown once. */
+export const adminCreateClientApiKey = defineRoute({
+  key: 'POST /admin/clients/:id/api-keys',
+  summary: 'Create an API key for a merchant',
+  description:
+    'Only for an `active` merchant (`409 NOT_ACTIVE` otherwise: a key of a pending or suspended merchant cannot be used). The ' +
+    `body is the merchant's own creation plus \`rateLimitPerMin\` (an integer from ${RATE_LIMIT_PER_MIN_RANGE.min} to ` +
+    `${RATE_LIMIT_PER_MIN_RANGE.max}, default 60). The answer carries the full key once as \`secret\` (\`Cache-Control: no-store\`); ` +
+    'only a keyed hash is stored, so a lost key cannot be shown again. The key is marked `createdByStaff` and `api_keys.created_by` ' +
+    'records the staff member, the merchant is sent a security notice by email, and the audit entry `created API key for <merchant>` ' +
+    `never holds the key. A merchant may hold ${MAX_LIVE_KEYS} live keys: the next one is \`422\` on \`name\`.`,
+  tags: ['clients'],
+  surface: 'admin',
+  access: 'staff-permission',
+  permission: 'api_keys:create',
+  params: z.object({ id: zIdParam }),
+  body: z.object({
+    name: KeyName,
+    scopes: z.array(z.string().trim().min(1)).min(1, 'Choose at least one scope.').max(20),
+    allowedIps: AllowedIps.optional(),
+    expiresAt: zIsoDateTime.optional(),
+    rateLimitPerMin: RateLimitPerMin.optional(),
+  }),
+  success: { status: 201, schema: z.object({ key: ApiKeyRow, secret: z.string() }) },
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'NOT_ACTIVE', 'VALIDATION_FAILED'],
+  examples: {
+    request: {
+      name: 'Production server',
+      scopes: ['orders:read', 'orders:write', 'account:read'],
+      allowedIps: ['203.0.113.55'],
+      rateLimitPerMin: 120,
+    },
+    response: {
+      key: { ...KEY_EXAMPLE, rateLimitPerMin: 120, createdByStaff: true },
+      secret: 'gsm_Qx4fD0nQ2hX8mV3vT9cKzY6bJ1aW5eRuLs7NpG4HtM0',
+    },
+  },
+});
+
+/** `PATCH /admin/api-keys/:id`: staff change a key's per-minute limit and allowed addresses. */
+export const adminUpdateApiKey = defineRoute({
+  key: 'PATCH /admin/api-keys/:id',
+  summary: "Change a merchant key's limits",
+  description:
+    'A partial body with at least one key: `rateLimitPerMin` (an integer from ' +
+    `${RATE_LIMIT_PER_MIN_RANGE.min} to ${RATE_LIMIT_PER_MIN_RANGE.max}) and \`allowedIps\` (up to ${MAX_ALLOWED_IPS} addresses or ` +
+    'ranges; `[]` removes the restriction). Takes effect on the next call with the key: its cached view is dropped after the commit. ' +
+    'A revoked key is `409 ALREADY_REVOKED`. Writes the audit entry `changed limits of API key of <merchant>` with the old and new values.',
+  tags: ['clients'],
+  surface: 'admin',
+  access: 'staff-permission',
+  permission: 'api_keys:update',
+  params: z.object({ id: zIdParam }),
+  body: z
+    .object({ rateLimitPerMin: RateLimitPerMin.optional(), allowedIps: AllowedIps.optional() })
+    .refine((body) => body.rateLimitPerMin !== undefined || body.allowedIps !== undefined, {
+      message: 'Send a limit or the allowed addresses.',
+    }),
+  success: { status: 200, schema: ApiKeyRow },
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'ALREADY_REVOKED', 'VALIDATION_FAILED'],
+  examples: { request: { rateLimitPerMin: 300 }, response: { ...KEY_EXAMPLE, rateLimitPerMin: 300 } },
 });
 
 /** `DELETE /admin/api-keys/:id`: staff revoke a merchant's key. */

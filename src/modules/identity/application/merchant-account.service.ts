@@ -6,7 +6,9 @@ import { DbService } from '../../../infra/db';
 import { ClientGroupDirectory } from '../../catalog';
 import type { Client } from '../db/schema';
 import { type ClientProfilePatch, saveClientProfile } from '../infra/merchant-auth.repository';
+import { ApiKeyDirectory } from '../security/machine/api-keys/api-key.directory';
 import type { MerchantPrincipal } from '../security/principal';
+import { SessionService } from '../security/session.service';
 import { MerchantAccountReader } from './merchant-account-reader';
 
 /** The merchant's own account, before the contract serialises it (B129). */
@@ -25,6 +27,10 @@ export interface MerchantMe {
   readonly referralCode: string;
   readonly group: { readonly id: number; readonly name: string; readonly discountPercent: string };
   readonly createdAt: Date;
+  readonly locale: Client['locale'];
+  readonly address: string;
+  readonly taxId: string;
+  readonly mustChangePassword: boolean;
 }
 
 /**
@@ -43,6 +49,8 @@ export class MerchantAccountService {
     private readonly db: DbService,
     private readonly reader: MerchantAccountReader,
     private readonly groups: ClientGroupDirectory,
+    private readonly sessions: SessionService,
+    private readonly apiKeys: ApiKeyDirectory,
   ) {}
 
   /**
@@ -57,7 +65,9 @@ export class MerchantAccountService {
   }
 
   /**
-   * Changes the name, company, phone and country of the signed-in merchant.
+   * Changes the name, company, phone, country, language, address and tax id of the signed-in merchant.
+   *
+   * Side effects: updates `clients`; a changed name drops the merchant's cached session and API key views (both hold the name).
    *
    * @param principal the signed-in merchant
    * @param patch the fields to change; a missing field stays as it is
@@ -65,9 +75,13 @@ export class MerchantAccountService {
    * @throws {AppError} `UNAUTHORIZED` (401), `ACCOUNT_SUSPENDED` (403)
    */
   async updateProfile(principal: MerchantPrincipal, patch: ClientProfilePatch): Promise<MerchantMe> {
-    await this.reader.current(principal.clientId);
+    const before = await this.reader.current(principal.clientId);
     const updated = await saveClientProfile(this.db.db, principal.clientId, patch);
     if (!updated) throw new AppError('UNAUTHORIZED');
+    if (patch.name !== undefined && patch.name !== before.name) {
+      await this.sessions.invalidateSubject('client', updated.id);
+      await this.apiKeys.invalidateClient(updated.id);
+    }
     return this.describe(updated);
   }
 
@@ -90,6 +104,10 @@ export class MerchantAccountService {
       referralCode: client.referralCode,
       group: { id: group.id, name: group.name, discountPercent: group.discountPercent },
       createdAt: client.createdAt,
+      locale: client.locale,
+      address: client.address,
+      taxId: client.taxId,
+      mustChangePassword: client.mustChangePassword,
     };
   }
 }

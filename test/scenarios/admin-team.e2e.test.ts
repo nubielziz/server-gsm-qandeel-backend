@@ -4,13 +4,15 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { and, asc, eq } from 'drizzle-orm';
 import { PasswordHasher, TokenService } from '../../src/infra/crypto';
-import { DbService, schema as s } from '../../src/infra/db';
-import { IpRuleCache, STAFF_TOKEN_TTL_MS, StaffAuthTokens } from '../../src/modules/identity';
+import { schema as s } from '../../src/infra/db';
+import { IpRuleCache, STAFF_TOKEN_TTL_MS } from '../../src/modules/identity';
 import { type AdminApi, adminFor, adminWith } from '../support/admin-api';
 import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches, clearRateLimits, insertRole, insertStaff } from '../support/auth';
 import { SECOND, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
+import { clearAccountMailLimits, runStaffMailJob, seedIdentityTemplates } from '../support/identity-mail';
+import { mailbox, tokenIn } from '../support/notifications';
 import { CONSOLE_ORIGIN, StaffConsole, codeFor } from '../support/staff-console';
 
 const clock = new TestClock();
@@ -36,8 +38,11 @@ beforeAll(async () => {
   await resetDb();
   await clearIdentityCaches(t);
   await clearRateLimits(t);
+  await clearAccountMailLimits(t);
   await t.app.get(IpRuleCache).invalidate();
   const { db } = await testDb();
+  await seedIdentityTemplates(db);
+  mailbox(t).reset();
   supportRole = await insertRole(db, ['staff:read'], 'Support');
   financeRole = await insertRole(db, ['staff:read', 'staff:update', 'roles:read'], 'Finance');
   owner = await adminWith(t, ['*'], { name: 'Rami K.', roleName: 'Owner' });
@@ -160,10 +165,13 @@ describe('scenario admin-team: add a staff member and suspend them', () => {
     expect(JSON.stringify([audit, token])).not.toMatch(/password"?:\s*"[^"]/i);
   });
 
-  it('step 3: the invitation is the token row (the mail is feature 12a); the temporary-password choice stores a hash and forces a change', async () => {
+  it('step 3: the invitation is the token row and a staff.invited mail; the temporary-password choice stores a hash and forces a change', async () => {
     const { db } = await testDb();
-    // Until the notifications feature sends the mail, nothing is written to `notifications`.
+    // The invitation wrote one outbox event (ids only); the mail job has not run, so nothing is in `notifications` yet.
     expect(await db.select().from(s.notifications)).toHaveLength(0);
+    const events = await db.select().from(s.outboxEvents).where(eq(s.outboxEvents.type, 'staff.invited'));
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ aggregateType: 'staff_users', aggregateId: nadiaId });
 
     // The Owner may choose a temporary password instead of the link for another member.
     const omar = await owner.post('/admin/staff', {
@@ -182,15 +190,24 @@ describe('scenario admin-team: add a staff member and suspend them', () => {
     expect(await tokensOf(omarId)).toHaveLength(0);
     expect(JSON.stringify(await db.select().from(s.auditLogs))).not.toContain(temporary);
 
-    // The sender of the mail holds the raw token of the newest link (only its hash is stored): a new link voids the old one.
+    // The job of the invitation sends the mail: one `notifications` row and one mail with the link of the console.
+    expect(await runStaffMailJob(t, 'invited')).toEqual({ sent: true });
+    expect(await db.select().from(s.notifications)).toMatchObject([
+      { event: 'staff.invited', recipientType: 'staff', recipientId: nadiaId, status: 'sent' },
+    ]);
+    expect(mailbox(t).sent).toHaveLength(1);
+    expect(mailbox(t).sent[0]).toMatchObject({ to: NADIA_EMAIL });
+
+    // A resend is a new link that voids the old one: only the newest works (the first mail's link is dead).
     const [first] = await tokensOf(nadiaId);
+    const firstLink = tokenIn(mailbox(t).sent[0]!.text);
     clock.advance(SECOND);
-    const issued = await t.app
-      .get(DbService)
-      .runInTransaction((work) =>
-        t.app.get(StaffAuthTokens).issue(work, { staffId: nadiaId, purpose: 'invite', createdBy: owner.staffId }),
-      );
-    inviteToken = issued.token;
+    expect(
+      (await owner.post(`/admin/staff/${nadiaId}/password`, { mode: 'reset_link', revokeSessions: false })).status,
+    ).toBe(200);
+    expect(await runStaffMailJob(t, 'invited')).toEqual({ sent: true });
+    inviteToken = tokenIn(mailbox(t).sent[1]!.text);
+    expect(inviteToken).not.toBe(firstLink);
     const [old, newest] = await tokensOf(nadiaId);
     expect(old!.id).toBe(first!.id);
     expect(old!.usedAt).not.toBeNull();

@@ -122,6 +122,16 @@ export class MerchantPortal {
     return this.call('POST', '/client/auth/logout', undefined, options);
   }
 
+  /** `POST /client/auth/password/change` (the new password during a forced change). */
+  changeTemporaryPassword(password: string, options?: PortalCallOptions): Promise<LightMyRequestResponse> {
+    return this.call('POST', '/client/auth/password/change', { password }, options);
+  }
+
+  /** `POST /client/auth/verify-email/resend`. */
+  resendVerification(options?: PortalCallOptions): Promise<LightMyRequestResponse> {
+    return this.call('POST', '/client/auth/verify-email/resend', undefined, options);
+  }
+
   /** `POST /client/auth/password/forgot`. */
   forgot(email: string, options?: PortalCallOptions): Promise<LightMyRequestResponse> {
     return this.call('POST', '/client/auth/password/forgot', { email }, options);

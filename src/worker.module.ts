@@ -23,6 +23,7 @@ import {
   IpRuleHitsFlushModule,
   MerchantMailModule,
   SessionPurgeModule,
+  StaffMailModule,
 } from './modules/identity';
 import { FxRefreshJobModule, PaymentAutoCreditModule, ReceiptRenderModule, RefundProcessModule } from './modules/money';
 import { IdempotencyPurgeModule, OrdersOutboxModule } from './modules/orders';
@@ -67,6 +68,7 @@ import { SupportEventsModule, SupportMailModule } from './modules/support';
     SessionPurgeModule,
     GroupPromotionModule,
     MerchantMailModule,
+    StaffMailModule,
     CustomerMailModule,
     OrdersOutboxModule,
     IdempotencyPurgeModule,

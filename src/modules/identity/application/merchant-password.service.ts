@@ -8,7 +8,14 @@ import { DbService } from '../../../infra/db';
 import type { Client } from '../db/schema';
 import { checkPasswordPolicy } from '../domain/password-policy';
 import { consumeAuthToken } from '../infra/auth-token.repository';
-import { findClientByEmail, findClientById, saveClientPassword } from '../infra/merchant-auth.repository';
+import { nextMerchantStep, merchantStageOfStep } from '../domain/merchant-sign-in-step';
+import {
+  findClientByEmail,
+  findClientById,
+  recordClientSignIn,
+  saveClientPassword,
+  saveForcedClientPassword,
+} from '../infra/merchant-auth.repository';
 import {
   CLIENT_TOKEN_PURPOSES,
   PASSWORD_LINK_PURPOSES,
@@ -17,6 +24,7 @@ import {
 } from '../infra/merchant-token.repository';
 import type { MerchantPrincipal } from '../security/principal';
 import { SessionService } from '../security/session.service';
+import type { IssuedSession } from '../security/session.types';
 import { MerchantMailOutbox } from './mail/merchant-mail-outbox';
 import { MerchantAccountReader } from './merchant-account-reader';
 import { MerchantAuthTokens } from './merchant-auth-tokens';
@@ -152,12 +160,68 @@ export class MerchantPasswordService {
     });
   }
 
+  /**
+   * Replaces a temporary password during the sign-in, and continues the same sign-in.
+   *
+   * Why: feature 20: staff set a temporary password (`must_change_password`), so the merchant's login opened a `pending_password` session.
+   * The password the merchant types here is the one they keep; the temporary one was proven when the session was opened. The pending
+   * session is rotated (new token, the old one dies in the same transaction: no fixation) to `pending_totp` when 2FA is on, or to a full
+   * session; every other session of the merchant ends and open password links are voided.
+   *
+   * Side effects: updates `clients` (password, `must_change_password`, and the last sign-in when the session becomes full); marks links used;
+   * revokes sessions; rotates the session; counts attempts on the `sign-in` limiter's per-account password counter.
+   *
+   * @param principal the merchant of the `pending_password` session
+   * @param password the new password
+   * @param meta the caller's address and user agent
+   * @returns the next step (`totp` or `done`) and the new session for the cookies
+   * @throws {AppError} `RATE_LIMITED` (429), `UNAUTHORIZED` (401: the session is not a pending password step, the account no longer
+   *   needs the change, or a parallel request or a suspension won), `ACCOUNT_SUSPENDED` (403), `WEAK_PASSWORD` (422 on `password`:
+   *   the policy, or the password in use)
+   */
+  async changeForced(
+    principal: MerchantPrincipal,
+    password: string,
+    meta: RequestMeta,
+  ): Promise<{ readonly next: 'totp' | 'done'; readonly session: IssuedSession }> {
+    await this.limiter.enforcePasswordChange(principal.clientId);
+    const client = await this.reader.current(principal.clientId);
+    if (principal.stage !== 'pending_password' || !client.mustChangePassword) throw new AppError('UNAUTHORIZED');
+    const passwordHash = await this.acceptableHash(password, client, 'password');
+
+    const now = this.clock.now();
+    const result = await this.db.runInTransaction(async (work) => {
+      const saved = await saveForcedClientPassword(work.tx, { id: client.id, passwordHash, now });
+      // A parallel request replaced the password first, or a suspension landed since the read.
+      if (!saved) throw new AppError('UNAUTHORIZED');
+      await voidOpenClientTokens(work.tx, client.id, PASSWORD_LINK_PURPOSES, now);
+      await this.sessions.revokeAllOf('client', client.id, { exceptSessionId: principal.session.id }, work);
+      const next = nextMerchantStep({ mustChangePassword: false, twofaEnabled: saved.twofaEnabled });
+      // `done` or `totp` here: `password` cannot come back after the flag was cleared.
+      const stepAfter = next === 'password' ? 'done' : next;
+      // Rotating ends the pending session: if it was ended meanwhile this throws `UNAUTHORIZED` and the change rolls back.
+      const session = await this.sessions.rotate(
+        principal.session,
+        { stage: merchantStageOfStep(stepAfter), ip: meta.ip, userAgent: meta.userAgent },
+        work,
+      );
+      if (stepAfter === 'done') await recordClientSignIn(work.tx, client.id, now, meta.ip);
+      return { next: stepAfter, session };
+    });
+    await this.limiter.resetPasswordChange(client.id);
+    return result;
+  }
+
   /** Applies the policy, refuses the current password, and hashes (before any transaction: argon2 takes tens of milliseconds). */
-  private async acceptableHash(password: string, client: Client): Promise<string> {
+  private async acceptableHash(
+    password: string,
+    client: Client,
+    field: 'newPassword' | 'password' = 'newPassword',
+  ): Promise<string> {
     const problem = checkPasswordPolicy(password, { email: client.email, name: client.name });
-    if (problem) throw weakPassword(problem.message, 'newPassword');
+    if (problem) throw weakPassword(problem.message, field);
     if (client.passwordHash && (await this.hasher.verify(client.passwordHash, password))) {
-      throw weakPassword('Choose a password you are not using now.', 'newPassword');
+      throw weakPassword('Choose a password you are not using now.', field);
     }
     return this.hasher.hash(password);
   }

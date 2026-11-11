@@ -159,6 +159,12 @@ Sends emails and Telegram messages.
     and sends the mail (`<STORE_BASE_URL>/sign-in`, `/set-password` or `/verify-email` with `?token=`) through `NotificationService.sendNow`
     with the clear link as a secret that is never stored or logged. One `notifications` row per mail (`outbox-<event id>:email`, with its
     attempts); a repeat after a delivered mail is skipped before it can spoil the link that arrived.
+  - `staff.invited`, `staff.password_reset` (identity, `src/modules/identity/jobs/staff-mail.processors.ts`, feature 20, handled by `StaffMailJobs`): the invitation and the
+    set-password link of a staff member. Built like the merchant mails: the job re-reads the member and the link, sends nothing when the member is gone or suspended, the link
+    was used, voided or has expired, or its template is missing or switched off (and abandons the `queued` row of an earlier attempt), rotates the link's token on its `auth_tokens`
+    row and sends the mail (`<CONSOLE_BASE_URL>/set-password?token=`) through `NotificationService.sendNow` with the clear link as a secret that is never stored or logged. One
+    `notifications` row per mail (`outbox-<event id>:email`); a repeat after a delivered mail is skipped before it can spoil the link that arrived. Written by `POST /admin/staff`
+    (onboarding `invite`) and `POST /admin/staff/:id/password` (`reset_link`, five an hour per member: limiter `account-mail`). Both processes load `StaffMailModule`.
   - The storefront money mails (feature 16, `StorefrontMails` in the money module) have no job of their own: `order.received` (the capture), `order.completed` and `order.failed` (the order
     transition, or the approval of a refund request for an order the system rejected), `payment.failed` (the gateway's failure event) and `refund.declined` (the decline) are written with
     `NotificationService.enqueue` in the transaction of the change they report, so each is a `notifications` row (dedupe key `order.received:<order>`, `order.completed:<order>:<n>`,
@@ -485,6 +491,8 @@ none); the job id is `outbox-<event id>`.
 | `merchant.email_verification` | `notifications` | `merchant.email_verification` | `tokenId` (aggregate: `clients`, the merchant) | identity (`MerchantMailOutbox`), written by `POST /client/auth/register` |
 | `merchant.password_reset` | `notifications` | `merchant.password_reset` | `tokenId` (aggregate: `clients`) | identity (`MerchantMailOutbox`), written by `POST /client/auth/password/forgot` |
 | `merchant.invited` | `notifications` | `merchant.invited` | `tokenId` (aggregate: `clients`) | identity (`MerchantMailOutbox`), written by `POST /admin/clients` (feature 2a) |
+| `staff.invited` | `notifications` | `staff.invited` | `tokenId` (aggregate: `staff_users`, the member) | identity (`StaffMailOutbox`, loaded by the API and the worker), written by `POST /admin/staff` (onboarding `invite`) and `POST /admin/staff/:id/password` while the member is `invited` (feature 20) |
+| `staff.password_reset` | `notifications` | `staff.password_reset` | `tokenId` (aggregate: `staff_users`) | identity (`StaffMailOutbox`), written by `POST /admin/staff/:id/password` (`reset_link`, member already active) (feature 20) |
 | `support.ticket_mail` | `notifications` | `support.ticket_mail` | `kind` (`received`, `reply`, `survey`), `messageId` and `channel` for a reply (aggregate: `support_tickets`) | support (`TicketMailRoutes`, loaded by the API and the worker), written by `POST /store/v1/tickets` (the receipt), `POST /admin/support-tickets/:id/reply` and `PATCH /admin/support-tickets/:id` with `status: resolved` (the survey) (feature 17) |
 | `notification.send` | `notifications` | `notification.send` | none (aggregate: `notifications`, the row) | platform (`NotificationRoutes`), written by `NotificationService.enqueue` together with the row |
 | `checkout.recovery` | `notifications` | `checkout.recovery` | none (aggregate: `checkout_sessions`, the abandoned checkout) | customers (`RecoveryOutbox`, loaded by the API and the worker), written by `POST /admin/checkouts/recover` and the `checkout_recovery_sweep` job, in the transaction that claims the checkout (`recovery_emailed_at`) |

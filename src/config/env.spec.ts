@@ -23,6 +23,7 @@ const production = (): Record<string, string> => ({
   NODE_ENV: 'production',
   ERRORS_BASE_URL: 'https://errors.gsm.example/',
   PORTAL_BASE_URL: 'https://portal.gsm.example/',
+  CONSOLE_BASE_URL: 'https://admin.gsm.example/',
   STORE_BASE_URL: 'https://shop.gsm.example/',
   DATABASE_URL: 'postgres://app:pw@db.internal:5432/gsm',
   REDIS_QUEUE_URL: 'redis://queue.internal:6379/0',
@@ -100,6 +101,17 @@ describe('parseEnv in development and test', () => {
       'https://portal.example.com',
     );
     expect(issuesOf({ PORTAL_BASE_URL: 'portal.example.com' }).map((i) => i.variable)).toEqual(['PORTAL_BASE_URL']);
+  });
+
+  it('reads CONSOLE_BASE_URL without a trailing slash, requires it in production and refuses a value that is not an http(s) URL', () => {
+    expect(parseEnv({ CONSOLE_BASE_URL: 'https://admin.example.com//' }).http.consoleBaseUrl).toBe(
+      'https://admin.example.com',
+    );
+    expect(parseEnv({}).http.consoleBaseUrl).toBe(DEV_DEFAULTS.consoleBaseUrl);
+    expect(issuesOf({ CONSOLE_BASE_URL: 'admin.example.com' }).map((i) => i.variable)).toEqual(['CONSOLE_BASE_URL']);
+    const withoutIt = production();
+    delete withoutIt.CONSOLE_BASE_URL;
+    expect(issuesOf(withoutIt).map((i) => i.variable)).toEqual(['CONSOLE_BASE_URL']);
   });
 
   it('reads STORE_BASE_URL without a trailing slash and refuses a value that is not an http(s) URL', () => {
@@ -201,6 +213,7 @@ describe('parseEnv in production', () => {
     for (const required of [
       'ERRORS_BASE_URL',
       'PORTAL_BASE_URL',
+      'CONSOLE_BASE_URL',
       'STORE_BASE_URL',
       'DATABASE_URL',
       'REDIS_QUEUE_URL',

@@ -2,9 +2,12 @@
 // No I/O, so the rules are unit-tested.
 import type { ClientStatus } from '../db/schema';
 
-/** The only allowed status changes (RULES merchants 1): approve, reactivate, suspend. */
+/**
+ * The only allowed status changes (RULES merchants 1): approve, reactivate, suspend. A pending applicant can also be suspended: that is
+ * how staff decline an application (feature 20, O-4); reactivating such a merchant makes it active.
+ */
 const TRANSITIONS: Readonly<Record<ClientStatus, readonly ClientStatus[]>> = {
-  pending: ['active'],
+  pending: ['active', 'suspended'],
   suspended: ['active'],
   active: ['suspended'],
 };
@@ -12,7 +15,8 @@ const TRANSITIONS: Readonly<Record<ClientStatus, readonly ClientStatus[]>> = {
 /**
  * Tells whether a merchant may move from one status to another.
  *
- * Why: `pending → active` (approve), `suspended → active` (reactivate), `active → suspended` (suspend); anything else is
+ * Why: `pending → active` (approve), `suspended → active` (reactivate), `active → suspended` and `pending → suspended` (suspend, or
+ * decline an application); anything else is
  * `409 INVALID_TRANSITION` (identity.md, PATCH /admin/clients/:id).
  *
  * @param from the current status

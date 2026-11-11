@@ -3,9 +3,13 @@
 // the shapes follow docs/contract/MISMATCHES.md B121 to B129 and ALIGNMENT § 7.
 import { z } from 'zod';
 import { defineRoute, zDecimal, zId, zIsoDateTime } from '../../../common/contract';
+import { CLIENT_LOCALES } from '../db/schema';
 
-/** What the portal does after the password: type a code, or the sign-in is complete (B124). */
-export const MerchantNext = z.enum(['totp', 'done']);
+/**
+ * What the portal does after the password: choose a new password (staff set a temporary one, feature 20), type a code, or the sign-in is
+ * complete (B124).
+ */
+export const MerchantNext = z.enum(['password', 'totp', 'done']);
 
 /** The email of a merchant: trimmed, lower-cased and shaped like an address (the account email is case-insensitive). */
 export const MerchantEmail = z.string().trim().toLowerCase().pipe(z.email().max(254));
@@ -56,6 +60,12 @@ export const MerchantMeShape = z.object({
   referralCode: z.string(),
   group: z.object({ id: zId, name: z.string(), discountPercent: zDecimal }),
   createdAt: zIsoDateTime,
+  /** The language of the merchant's emails (feature 20). */
+  locale: z.enum(CLIENT_LOCALES),
+  address: z.string(),
+  taxId: z.string(),
+  /** True after staff set a temporary password and until the merchant chooses one: the portal sends them to the change form. */
+  mustChangePassword: z.boolean(),
 });
 
 /** An example `Me` for the docs. */
@@ -74,6 +84,10 @@ export const MERCHANT_ME_EXAMPLE = {
   referralCode: 'GSM7K2QXD',
   group: { id: 1, name: 'Standard', discountPercent: '0.0000' },
   createdAt: '2026-11-01T09:30:00.000Z',
+  locale: 'en',
+  address: '',
+  taxId: '',
+  mustChangePassword: false,
 } as const;
 
 /** `POST /client/auth/register`: a visitor becomes a pending merchant; the answer never says whether the email was known. */
@@ -125,7 +139,9 @@ export const merchantLogin = defineRoute({
   key: 'POST /client/auth/login',
   summary: 'Sign in',
   description:
-    'Opens a session: `pending_totp` (10 minutes) when the merchant has two-factor sign-in on, a full one otherwise. A merchant ' +
+    'Opens a session: `pending_password` (10 minutes) when staff set a temporary password that is not replaced yet (`next: password`: ' +
+    'the portal shows a new-password form and calls `POST /client/auth/password/change`), `pending_totp` (10 minutes) when the ' +
+    'merchant has two-factor sign-in on, a full one otherwise. A merchant ' +
     'waiting for approval signs in too (it can read its status and manage its own account). One `401` answers an unknown email, ' +
     'a wrong password and a merchant with no password yet.',
   tags: ['auth'],
@@ -167,10 +183,55 @@ export const merchantLogout = defineRoute({
   tags: ['auth'],
   surface: 'client',
   access: 'merchant-session',
-  sessionStages: ['pending_totp', 'active'],
+  sessionStages: ['pending_password', 'pending_totp', 'active'],
   pendingMerchant: 'allow',
   success: { status: 204 },
   errors: ['UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'IP_NOT_ALLOWED', 'CSRF_FAILED'],
+});
+
+/** `POST /client/auth/password/change`: replaces a temporary password during the sign-in (feature 20). */
+export const merchantChangeTemporaryPassword = defineRoute({
+  key: 'POST /client/auth/password/change',
+  summary: 'Replace a temporary password',
+  description:
+    'The sign-in step after `next: password`: the pending session (needs its `X-CSRF-Token`) sets the password the merchant keeps. ' +
+    'It ends every other session of the merchant, cancels open password links and continues the same sign-in: the answer is ' +
+    '`{ next: totp }` when two-factor sign-in is on (continue with `POST /client/auth/2fa`) or `{ next: done }`; both come with new ' +
+    'session cookies and a new `X-CSRF-Token`. `422 WEAK_PASSWORD` on `password` also when it is the password in use; `401` when ' +
+    'the session is not a pending password step or the account no longer needs the change (sign in again).',
+  tags: ['auth'],
+  surface: 'client',
+  access: 'merchant-session',
+  sessionStages: ['pending_password'],
+  pendingMerchant: 'allow',
+  body: z.object({ password: z.string().min(1).max(1024) }),
+  success: { status: 200, schema: z.object({ next: z.enum(['totp', 'done']) }) },
+  errors: [
+    'VALIDATION_FAILED',
+    'WEAK_PASSWORD',
+    'UNAUTHORIZED',
+    'ACCOUNT_SUSPENDED',
+    'IP_NOT_ALLOWED',
+    'CSRF_FAILED',
+    'RATE_LIMITED',
+  ],
+  examples: { request: { password: 'a-long-new-password' }, response: { next: 'done' } },
+});
+
+/** `POST /client/auth/verify-email/resend`: a new verification email for the signed-in merchant (feature 20). */
+export const merchantResendVerification = defineRoute({
+  key: 'POST /client/auth/verify-email/resend',
+  summary: 'Resend the verification email',
+  description:
+    'Emails the signed-in merchant a new one-hour verification link; it replaces the older one. A merchant waiting for approval may ' +
+    'call it. `409 CONFLICT` when the email is already verified (refresh `me`), `429` after five mails an hour. There is no public ' +
+    'resend route.',
+  tags: ['auth'],
+  surface: 'client',
+  access: 'merchant-session',
+  pendingMerchant: 'allow',
+  success: { status: 204 },
+  errors: ['UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'IP_NOT_ALLOWED', 'CSRF_FAILED', 'CONFLICT', 'RATE_LIMITED'],
 });
 
 /** `POST /client/auth/password/forgot`: sends a reset link; the same answer for every email. */

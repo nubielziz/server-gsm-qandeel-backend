@@ -38,6 +38,7 @@ Exports `IdentityModule` and the security stack (`SecurityModule`, global). Othe
 | `STAFF_TOTP_AAD`, `CLIENT_TOTP_AAD`, `TOTP_ISSUER` | the encryption contexts of `staff_users.totp_secret_enc` and `clients.totp_secret_enc`, and the name authenticator apps show |
 | `MerchantAuthTokens` | `issue(work, { clientId, purpose: 'verify_email' \| 'reset' \| 'invite', createdBy?, ip? })`: the one-hour, single-use link token of a merchant (feature 2a calls it with `invite` for `POST /admin/clients`); it voids the merchant's older unused links of the same family and returns `{ token, id, expiresAt }` |
 | `MerchantMailOutbox`, `MERCHANT_MAIL_EVENTS` | `enqueue(work, { kind: 'email_verification' \| 'password_reset' \| 'invited', clientId, tokenId })`: writes the outbox event of a merchant mail (ids only, never the token) in the caller's transaction; feature 2a writes `invited` with it |
+| `StaffMailModule`, `StaffMailOutbox`, `STAFF_MAIL_EVENTS` | feature 20: `enqueue(work, { kind: 'invited' \| 'password_reset', staffId, tokenId })` writes the outbox event of a staff mail (ids only); the module is loaded by the API (through `AccessAdminModule`) and by the worker |
 | `MerchantNotificationsModule` | the merchant's notification preferences, the Telegram link and the Telegram webhook (feature 12a) |
 | `CustomerAuthTokens`, `CUSTOMER_TOKEN_TTL_MS`, `isUsableLink`, `CustomerTokenRecord` | the one-time links of storefront customers (feature 14b; `auth_tokens` rows of subject type `customer`): `issue(work, { customerId, purpose: 'magic_link' \| 'invite' \| 'reset' \| 'verify_email', createdBy?, ip? })` returns `{ token, id, expiresAt }` (256 random bits, only the keyed hash stored, valid one hour, one use; it voids the customer's older unused links of the same family: `invite` and `reset` are one family), `find(token)`, `findById(id)`, `rotate(id)` (the customer mail job: a new token's hash on the same unused, unexpired row, the clear value returned), `consume(work, id)` (false when a parallel request used it first), `voidOpen(work, customerId, purposes, exceptId?)` and `passwordLinkSentAt(customerId)`; `isUsableLink(record, nowMs)` is the unused-and-not-expired test the link resolver and the use cases share |
 | `CustomerTokensModule` | provides and exports `CustomerAuthTokens` on its own (database, token hasher, clock), so the worker loads the customer mail job without the security stack; the customers module's `CustomersAccountsModule` and `CustomerMailModule` import it |
@@ -389,6 +390,63 @@ MISMATCHES B165.
 The merchant portal writes no audit rows (B121). The link token is the platform's delivery of one more purpose of `auth_tokens` (`telegram_link`, migration
 0009); `clients.telegram_chat_id` is unique (one chat, one merchant).
 
+### Merchant management (feature 20; plan `docs/briefs/20-merchant-management.md`)
+
+Staff tools, merchant sign-in changes, the staff link mails and staff-made API keys, all inside this module.
+
+- **Row.** `ClientViews` (`application/client-views.ts`) builds the console's merchant row for the list, `GET /admin/clients/:id` and every
+  change. New keys are optional in the schema and always sent: `locale`, `address`, `taxId`, `internalNotes`, `telegramLinked`, `security`
+  (`hasPassword`, `mustChangePassword`, `passwordChangedAt`, `twofaEnabled`, `lastLoginAt`, `lastLoginIp`, `activeSessions`, `linkSentAt`,
+  `verificationSentAt`) and `suspension` (`at`, `reason`, `by`). `clients.locale` (`en|ar`) drives the language of every merchant mail
+  (`notification-foreign-reads.ts` reads it); the merchant and staff edit it.
+- **Edit details** (`PATCH /admin/clients/:id`, a third kind of change next to status and group; `domain/client-details.ts`,
+  `ClientDetailsEditor`). An email change clears `email_verified_at`, uses every open link up, sends a verification (or the invitation while there is no
+  password) to the new address, keeps the sessions, drops the session and API key cache keys, and counts on the `account-mail` limiter.
+- **Security tools** (`ClientSecurityAdminService`, permission `clients:security`): `POST /admin/clients/:id/password` (`reset_link` mails
+  an invitation or reset link, `temporary_password` shows a 14-character password once and sets `must_change_password`),
+  `POST /admin/clients/:id/reset-2fa`, `POST /admin/clients/:id/sessions/revoke`, `POST /admin/clients/:id/verify-email/resend`. Each locks the
+  `clients` row first, writes one audit row under the merchant (`credential`, never `password`) and returns no link: the outbox carries ids, the mail job rotates the token.
+- **Forced password change.** `nextMerchantStep` (`domain/merchant-sign-in-step.ts`) decides password, then code, then done;
+  `MerchantSignInService.startSession` opens the session of that step after any proven password (the portal's login, and the smart sign-in
+  of feature 24A later). A merchant with `must_change_password` gets `next: 'password'` and a `pending_password` session that only
+  `POST /client/auth/password/change` and logout accept; the change rotates the session (no fixation), ends the other sessions and voids password links.
+  Every chosen password (reset link, invitation, security page) clears the flag.
+- **Verification resend.** `POST /client/auth/verify-email/resend` (merchant session) and the staff action share the `account-mail` counter
+  (5 an hour per merchant and kind); there is no public route. `verify-email` answers `410` for a suspended merchant.
+- **Suspension.** Voids every open link, accepts `pending -> suspended` (this is how an application is declined), and mails the merchant
+  (without the staff reason). API keys are refused while suspended and work again after reactivation.
+- **Lifecycle mails** (`MerchantLifecycleMails`): `merchant.approved`, `merchant.suspended`, `merchant.reactivated`, `merchant.kyc_approved`,
+  `merchant.kyc_rejected`, `merchant.security_notice` are transactional, registered at boot by `IdentityMailEventsModule`, with English and Arabic
+  default templates in `drizzle/0025_merchant_management_templates.sql` (`application/mail/identity-templates.ts` keeps the text; a spec keeps both equal).
+  KYC decisions and the end of one merchant session are audited under `merchant`.
+- **Staff link mails** (`StaffMailModule`, loaded by the API through `AccessAdminModule` and by the worker): `POST /admin/staff` (onboarding `invite`) and
+  `POST /admin/staff/:id/password` (`reset_link`) write `staff.invited` (while the member is `invited`) or `staff.password_reset` with `StaffMailOutbox.enqueue`
+  (payload `{ tokenId }`, aggregate `staff_users`). `StaffMailJobs` does what `MerchantMailJobs` does for merchants: re-reads the member and the link,
+  skips a suspended or deleted member, a used, replaced or expired link and a missing or switched-off template, rotates the token on the same row and sends
+  `<CONSOLE_BASE_URL>/set-password?token=<token>` as a secret that is never stored or logged. The link request counts on the `account-mail` limiter
+  (five an hour per member, `429`); the temporary-password mode sends no mail.
+- **API keys by staff** (`ApiKeyAdminService`, `ApiKeyIssuer`): `POST /admin/clients/:id/api-keys` (`api_keys:create`; active merchants only, `409 NOT_ACTIVE`
+  otherwise; the key shown once with `no-store`, `api_keys.created_by` = the staff member, a `merchant.security_notice` mail, an audit row without the key) and
+  `PATCH /admin/api-keys/:id` (`api_keys:update`; per-minute limit 1-6000 and allowed addresses; drops the cached view of the key). `createdByStaff` is on every key row.
+  Lock order: the merchant's `api-keys:<id>` advisory lock, then the `clients` row (the merchant's own creation takes the advisory lock and then a shared lock on the
+  merchant row for the foreign key of the insert, so the reverse order would deadlock).
+
+### What happens when an account changes
+
+| Change | Sessions | Open links | Caches | Mail |
+|---|---|---|---|---|
+| Staff set a temporary password (`revokeSessions` on by default in the console) | ended when asked | all password links voided | session views dropped | `merchant.security_notice` |
+| Staff send a reset or invitation link | kept (or ended when asked) | the newer link voids the older | none | the link mail (rotated in the job) |
+| Staff reset 2FA | all ended | none | session views dropped | `merchant.security_notice` |
+| Staff change the email | kept | every open link voided | session and API key views dropped | verification (or invitation) to the new address |
+| Suspension | all ended | every open link voided | session and API key views dropped | `merchant.suspended` (no reason) |
+| Reactivation | none (already ended) | none | API key views dropped | `merchant.reactivated` |
+| Approval | none | none | none | `merchant.approved` |
+| KYC decision | none | none | none | `merchant.kyc_approved` / `merchant.kyc_rejected` |
+| Staff create a key | none | none | none | `merchant.security_notice` |
+| Staff edit a key's limits or revoke it | none | none | that key's view dropped | none |
+| The merchant chooses a password (change, reset, invitation) | the others ended, this one rotated | password links voided | session views dropped | none |
+
 ## Owned tables
 
 Only this module reads and writes these 8 tables (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts` once the data layer exists.
@@ -406,9 +464,9 @@ Only this module reads and writes these 8 tables (`scripts/module-map.mjs`); oth
 
 ## Routes
 
-59 endpoints (admin 38, client 21). Source: `docs/slices/identity.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built; the staff sign-in (6) and the 15 merchant portal routes of stage 2 (2b) are built.
+67 endpoints (admin 44, client 23; the map has 59: feature 20 adds 8 routes beyond it). Source: `docs/slices/identity.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built; the staff sign-in (6) and the 15 merchant portal routes of stage 2 (2b) are built.
 
-### Admin console (38)
+### Admin console (44)
 
 | Route | Access | What it does | Stage |
 |---|---|---|---|
@@ -431,6 +489,7 @@ Only this module reads and writes these 8 tables (`scripts/module-map.mjs`); oth
 | `GET /admin/staff` | staff-permission · `staff:*` | Staff members: add by invitation or temporary password, set the role, and edit details. | 2 |
 | `GET /admin/staff/:id` | staff-permission · `staff:*` | Staff members: add by invitation or temporary password, set the role, and edit details. | 2 |
 | `PATCH /admin/clients/:id` | staff-permission · `clients:*` | Merchants: creation, group, status and blocking. | 2 |
+| `PATCH /admin/api-keys/:id` | staff-permission · `api_keys:update` | Change a merchant key's per-minute limit and allowed addresses (feature 20). | 7 |
 | `PATCH /admin/roles/:id` | staff-permission · `roles:*` | Roles and their permissions. | 2 |
 | `PATCH /admin/staff/:id` | staff-permission · `staff:*` | Staff members: add by invitation or temporary password, set the role, and edit details. | 2 |
 | `POST /admin/auth/2fa` | public | Complete the sign-in with a TOTP code. | 2 |
@@ -439,6 +498,11 @@ Only this module reads and writes these 8 tables (`scripts/module-map.mjs`); oth
 | `POST /admin/auth/logout` | staff-session | Sign out. | 2 |
 | `POST /admin/auth/password/set` | public | An invited or recovering staff member chooses their own password with a one-time token. | 2 |
 | `POST /admin/clients` | staff-permission · `clients:*` | Merchants: creation, group, status and blocking. | 2 |
+| `POST /admin/clients/:id/password` | staff-permission · `clients:security` | Send a merchant a set-password or invitation link, or set a temporary password that must be changed at the next sign-in (feature 20). | 20 |
+| `POST /admin/clients/:id/reset-2fa` | staff-permission · `clients:security` | Turn off a merchant's two-factor sign-in and end their sessions (feature 20). | 20 |
+| `POST /admin/clients/:id/sessions/revoke` | staff-permission · `clients:security` | Sign a merchant out of every device (feature 20). | 20 |
+| `POST /admin/clients/:id/verify-email/resend` | staff-permission · `clients:security` | Send the merchant a new email verification link (feature 20). | 20 |
+| `POST /admin/clients/:id/api-keys` | staff-permission · `api_keys:create` | Create an API key for a merchant; the key is shown once (feature 20). | 7 |
 | `POST /admin/ip-rules` | staff-permission · `access:*` | Allowed and blocked addresses: range, audience, reason and duration. | 2 |
 | `POST /admin/ip-rules/check` | staff-permission · `access:read` | Test an address before the change; it returns the decision and the matching rule. | 2 |
 | `POST /admin/kyc-submissions/:id/decide` | staff-permission · `kyc:decide` | Approve or reject the verification. | 8 |
@@ -462,15 +526,17 @@ Only this module reads and writes these 8 tables (`scripts/module-map.mjs`); oth
 | `GET /client/kyc` | merchant-session | Verification (KYC) status. | 8 |
 | `GET /client/sessions` | merchant-session | Active devices and sessions. | 2 |
 | `PATCH /client/api-keys/:id` | merchant-session | Rename a key or change its allowed IPs. | 7 |
-| `PATCH /client/profile` | merchant-session | Update name, company, phone and country. | 2 |
+| `PATCH /client/profile` | merchant-session | Update name, company, phone, country, language, address and tax id. | 2 |
 | `POST /client/api-keys` | merchant-session | New API key, shown once, with allowed IPs. | 7 |
 | `POST /client/auth/2fa` | public | Complete the sign-in with a TOTP code. | 2 |
 | `POST /client/auth/login` | public | Sign in; asks for a 2FA code when 2FA is enabled. | 2 |
 | `POST /client/auth/logout` | merchant-session | Sign out and end the session. | 2 |
+| `POST /client/auth/password/change` | merchant-session (`pending_password`) | Replace a temporary password during sign-in (feature 20). | 20 |
 | `POST /client/auth/password/forgot` | public | Send a password reset link. | 2 |
 | `POST /client/auth/password/reset` | public | Set a new password with the reset token. | 2 |
 | `POST /client/auth/register` | public | Register a new merchant and send the verification email. | 2 |
 | `POST /client/auth/verify-email` | public | Verify the email with the token. | 2 |
+| `POST /client/auth/verify-email/resend` | merchant-session | Send the signed-in merchant a new verification link (feature 20). | 20 |
 | `POST /client/kyc` | merchant-session | Upload verification documents. | 8 |
 | `POST /client/security/2fa/disable` | merchant-session | Disable 2FA with a code. | 2 |
 | `POST /client/security/2fa/enable` | merchant-session | Enable 2FA after confirming a code. | 2 |
@@ -492,6 +558,8 @@ Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touc
 End-to-end tests: `test/scenarios/admin-team.e2e.test.ts` (steps 1 to 9) and `test/scenarios/ip-rules.e2e.test.ts` (steps 1 to 9; step 7, the risk engine's automatic block, is a row written the way feature 18 will write it). Route tests: `test/integration/{staff-admin,roles-admin,sessions-admin,ip-rules-admin,clients-admin}.test.ts`.
 
 ## Permissions
+
+Feature 20 adds `clients:security` (password links, temporary password, 2FA reset, end all sessions, verification resend) and, in slice D, `api_keys:create` and `api_keys:update`; a role that holds `clients:*` or `api_keys:*` receives them through the grammar.
 
 Staff permissions the map requires on this module's admin routes: `access:*`, `access:read`, `access:update`, `api_keys:read`, `api_keys:revoke`, `clients:*`, `kyc:decide`, `kyc:read`, `roles:*`, `roles:read`, `sessions:read`, `sessions:revoke`, `staff:*`, `staff:suspend`, `staff:update`.
 
@@ -536,6 +604,8 @@ except `/health` and `/metrics`, and refuses with **`403 IP_NOT_ALLOWED`** (prob
 
 ## Events
 
+Feature 20's merchant lifecycle mails are not outbox types of this module: they are `notifications` rows with a `notification.send` event written by `MerchantLifecycleMails` in the transaction of the staff action (events `merchant.approved`, `merchant.suspended`, `merchant.reactivated`, `merchant.kyc_approved`, `merchant.kyc_rejected`, `merchant.security_notice`).
+
 Outbox events produced (types, payload ids; all on the `notifications` queue, registered by `MerchantMailOutbox`):
 `merchant.email_verification` (`POST /client/auth/register`, token purpose `verify_email`) and `merchant.password_reset`
 (`POST /client/auth/password/forgot`, purpose `reset`), both built by feature 2b; `merchant.invited` (`POST /admin/clients`, purpose
@@ -543,7 +613,7 @@ Outbox events produced (types, payload ids; all on the `notifications` queue, re
 the merchant: ids only, never a token. Feature 12a made the mail real: the job rotates the link's token and sends the mail through the platform's
 notification delivery (see "Merchant mail"). The links are built from the config key `PORTAL_BASE_URL`
 (`<PORTAL_BASE_URL>/set-password?token=<token>`). `auth_tokens.purpose` is closed to `invite | reset | verify_email |
-magic_link | telegram_link` (exported `AUTH_TOKEN_PURPOSES`; `telegram_link` is the Telegram link of feature 12a); `POST /client/auth/password/reset` accepts `reset` and `invite`. Consumed: the three types above, by `jobs/merchant-mail.processors.ts` (worker). Record each outbox type and the queue it maps to here and in `docs/queues.md`.
+magic_link | telegram_link` (exported `AUTH_TOKEN_PURPOSES`; `telegram_link` is the Telegram link of feature 12a); `POST /client/auth/password/reset` accepts `reset` and `invite`. Consumed: the three types above, by `jobs/merchant-mail.processors.ts` (worker). Feature 20 adds `staff.invited` and `staff.password_reset` (`StaffMailOutbox`, payload `{ tokenId }`, aggregate `staff_users`; written by `POST /admin/staff` and `POST /admin/staff/:id/password`, consumed by `jobs/staff-mail.processors.ts`; links `<CONSOLE_BASE_URL>/set-password?token=`). Record each outbox type and the queue it maps to here and in `docs/queues.md`.
 
 ## Jobs and schedules
 
@@ -561,6 +631,10 @@ magic_link | telegram_link` (exported `AUTH_TOKEN_PURPOSES`; `telegram_link` is 
   schedule, no `job_runs`; safe to run twice (the job re-reads the merchant and the link and skips what is no longer worth
   sending). Retry: the queue's 5 attempts with backoff from 30 s for a failing sender, `UnrecoverableError` for a job without a
   token id. Listed in `docs/queues.md`.
+
+- `staff.invited`, `staff.password_reset` on the `notifications` queue (processors `StaffInvitedMailProcessor`, `StaffPasswordResetMailProcessor` in `StaffMailModule`,
+  imported by the API and by `src/worker.module.ts`; feature 20). Same design and retry policy as the merchant mails (`StaffMailJobs`); a suspended or deleted member, a used or
+  expired link and a missing or switched-off template send nothing and leave no `queued` row. Listed in `docs/queues.md`.
 
 - `client_group_promotion` on the `maintenance` queue, scheduler `client-group-promotion`, nightly at 03:30 UTC (`GroupPromotionModule`,
   imported by `src/worker.module.ts` only; processor `GroupPromotionProcessor`, use case `GroupPromotion`, pure decision
@@ -604,8 +678,8 @@ The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, 
 
 ## API keys (feature 7b)
 
-Six routes (contracts `contracts/api-keys.contracts.ts`, controllers `controllers/api-keys.controller.ts`, use cases `application/merchant-api-key.service.ts` and
-`application/api-key-admin.service.ts`, queries `infra/api-key-manage.repository.ts`, pure rules `domain/api-key-input.ts`), wired by `ApiKeysModule`. Spec: MISMATCHES B155
+Eight routes (contracts `contracts/api-keys.contracts.ts`, controllers `controllers/api-keys.controller.ts`, use cases `application/merchant-api-key.service.ts` and
+`application/api-key-admin.service.ts`, shared checks and insert `application/api-key-issuer.ts`, queries `infra/api-key-manage.repository.ts`, pure rules `domain/api-key-input.ts`), wired by `ApiKeysModule`. Spec: MISMATCHES B155
 (portal) and identity.md (staff).
 
 | Route | Access | What it does |
@@ -615,6 +689,8 @@ Six routes (contracts `contracts/api-keys.contracts.ts`, controllers `controller
 | `PATCH /client/api-keys/:id` | merchant | `{ name?, allowedIps? }`; a revoked key is `409 INVALID_TRANSITION`; drops the cached view after the commit |
 | `DELETE /client/api-keys/:id` | merchant | `204`, a second delete too; drops the cached view after the commit |
 | `GET /admin/clients/:id/api-keys` | `api_keys:read` | every key of the merchant, plain array, newest first |
+| `POST /admin/clients/:id/api-keys` | `api_keys:create` | feature 20: the merchant's body plus `rateLimitPerMin` (1-6000, default 60) → `201 { key, secret }`, `no-store`; active merchants only (`409 NOT_ACTIVE`); `created_by` = the staff member (`createdByStaff: true`); a `merchant.security_notice` mail; audited `created API key for <merchant>` (never the key) |
+| `PATCH /admin/api-keys/:id` | `api_keys:update` | feature 20: `{ rateLimitPerMin?, allowedIps? }` (at least one); `409 ALREADY_REVOKED`; drops the cached view; audited `changed limits of API key of <merchant>` with before and after |
 | `DELETE /admin/api-keys/:id` | `api_keys:revoke` | `204`; `409 ALREADY_REVOKED`; drops the cached view; audited `revoked API key of <merchant>` (entity `merchant`, as the demo logs it) |
 
 Scopes a merchant may give: `dhru`, `account:read`, `orders:read`, `orders:write`, `services:read` and the area wildcards `account:*`, `orders:*`, `services:*`

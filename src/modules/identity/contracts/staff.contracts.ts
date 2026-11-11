@@ -96,7 +96,8 @@ export const createStaff = defineRoute({
   key: 'POST /admin/staff',
   summary: 'Add a staff member',
   description:
-    'The account starts `invited`. `invite` creates a one-hour, single-use link token (hash only); `temporary_password` ' +
+    'The account starts `invited`. `invite` creates a one-hour, single-use link token (hash only) and emails the link ' +
+    '(`<CONSOLE_BASE_URL>/set-password?token=...`) to the new member; `temporary_password` ' +
     'generates a password, stores its hash, forces a change at the first sign-in and returns it once in this answer. ' +
     'Only an owner can give the new account a role that grants `*`.',
   tags: ['staff'],
@@ -152,7 +153,8 @@ export const setStaffPassword = defineRoute({
   key: 'POST /admin/staff/:id/password',
   summary: 'Reset a staff password',
   description:
-    '`reset_link` issues a one-hour link token (purpose `invite` while the account is still invited, else `reset`); the ' +
+    '`reset_link` issues a one-hour link token (purpose `invite` while the account is still invited, else `reset`) and ' +
+    'emails the link to the member (never returned here); at most five link mails an hour per member (`429`). The ' +
     'current password keeps working until the link is used. `temporary_password` generates and stores a password (hash ' +
     'only), forces a change at the next sign-in and returns it once. Always `200` with `Cache-Control: no-store`: `{}` for ' +
     'the link, `{temporaryPassword}` for the temporary password. `revokeSessions` ends every session of the member.',
@@ -163,7 +165,7 @@ export const setStaffPassword = defineRoute({
   params: ID_PARAMS,
   body: z.object({ mode: z.enum(['reset_link', 'temporary_password']), revokeSessions: z.boolean() }),
   success: { status: 200, schema: z.object({ temporaryPassword: z.string().optional() }) },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'VALIDATION_FAILED'],
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'VALIDATION_FAILED', 'RATE_LIMITED'],
   examples: {
     request: { mode: 'temporary_password', revokeSessions: true },
     response: { temporaryPassword: 'Kq7mT2vNb8RxHc' },

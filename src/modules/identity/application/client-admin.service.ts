@@ -6,10 +6,11 @@ import { CLOCK, type Clock } from '../../../common/clock';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { DbService, type TransactionContext, isUniqueViolation } from '../../../infra/db';
-import { ClientGroupDirectory, type ClientGroupRef, RETAIL_GROUP_KIND } from '../../catalog';
+import { ClientGroupDirectory, RETAIL_GROUP_KIND } from '../../catalog';
 import { MerchantAccounts, MerchantWallets } from '../../money';
 import { AuditService } from '../../platform';
 import type { Client, ClientStatus } from '../db/schema';
+import { type ClientChangeInput, kindOfClientChange } from '../domain/client-details';
 import {
   canMoveClient,
   referralCode,
@@ -17,46 +18,26 @@ import {
   usernameBase,
   usernameCandidate,
 } from '../domain/client-rules';
+import { findClientById } from '../infra/merchant-auth.repository';
+import { CLIENT_TOKEN_PURPOSES, voidOpenClientTokens } from '../infra/merchant-token.repository';
 import {
-  type ClientRow,
-  findClientRow,
   insertClientRow,
   listClientRows,
   lockClient,
   updateClientRow,
   usernameTaken,
 } from '../infra/client-admin.repository';
-import { grants } from '../security/permission-grammar';
 import type { StaffPrincipal } from '../security/principal';
 import { ApiKeyDirectory } from '../security/machine/api-keys/api-key.directory';
 import { SessionService } from '../security/session.service';
-import { type ClientStats, ClientStatsDirectory } from './client-stats';
+import { ClientDetailsEditor } from './client-details-editor';
+import { type ClientView, ClientViews } from './client-views';
+import { MerchantLifecycleMails } from './mail/merchant-lifecycle-mails';
 import { MERCHANT_MAIL_EVENTS, MerchantMailOutbox } from './mail/merchant-mail-outbox';
 import { MerchantInvites } from './merchant-invites';
 
 /** The outbox event written when a merchant is invited; ids only, never the token (RESOLUTIONS identity-platform-2). */
 export const MERCHANT_INVITED_EVENT = MERCHANT_MAIL_EVENTS.invited;
-
-/** A merchant as the console reads it. `wallet` and `stats` only for staff who hold `wallet:read`. */
-export interface ClientView {
-  readonly id: number;
-  readonly createdAt: string;
-  readonly name: string;
-  readonly email: string;
-  readonly country: string;
-  readonly username: string;
-  readonly company: string;
-  readonly phone: string;
-  readonly groupId: number;
-  readonly referralCode: string;
-  readonly emailVerifiedAt: string | null;
-  readonly status: ClientStatus;
-  readonly kycStatus: Client['kycStatus'];
-  readonly group: { id: number; name: string; discountPercent: string } | null;
-  readonly referredBy: { id: number; name: string } | null;
-  readonly wallet?: { balance: string; reserved: string; creditLimit: string; available: string };
-  readonly stats?: ClientStats;
-}
 
 /** The input of `POST /admin/clients`. */
 export interface CreateClientInput {
@@ -67,12 +48,8 @@ export interface CreateClientInput {
   readonly creditLimit?: string | undefined;
 }
 
-/** The input of `PATCH /admin/clients/:id`. */
-export interface UpdateClientInput {
-  readonly status?: ClientStatus | undefined;
-  readonly reason?: string | undefined;
-  readonly groupId?: number | undefined;
-}
+/** The input of `PATCH /admin/clients/:id`: a status change, a group move or details (one kind per call). */
+export type UpdateClientInput = ClientChangeInput;
 
 function invalid(field: string, message: string): AppError {
   return new AppError('VALIDATION_FAILED', { errors: [{ field, code: 'invalid', message }] });
@@ -105,12 +82,14 @@ export class ClientAdminService {
     private readonly groups: ClientGroupDirectory,
     private readonly accounts: MerchantAccounts,
     private readonly wallets: MerchantWallets,
-    private readonly stats: ClientStatsDirectory,
     private readonly invites: MerchantInvites,
     private readonly sessions: SessionService,
     private readonly apiKeys: ApiKeyDirectory,
     private readonly audit: AuditService,
     private readonly mail: MerchantMailOutbox,
+    private readonly views: ClientViews,
+    private readonly lifecycleMails: MerchantLifecycleMails,
+    private readonly details: ClientDetailsEditor,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -125,8 +104,8 @@ export class ClientAdminService {
     caller: StaffPrincipal,
     query: ParsedListQuery<'name' | 'status' | 'createdAt' | 'id'>,
   ): Promise<{ rows: ClientView[]; total: number }> {
-    const { rows, total } = await listClientRows(this.db.db, query);
-    return { rows: await this.viewsOf(this.db.db, caller, rows), total };
+    const { rows, total } = await listClientRows(this.db.db, query, this.clock.now());
+    return { rows: await this.views.many(this.db.db, caller, rows), total };
   }
 
   /**
@@ -138,7 +117,7 @@ export class ClientAdminService {
    * @throws {AppError} `NOT_FOUND` (404)
    */
   show(caller: StaffPrincipal, id: number): Promise<ClientView> {
-    return this.viewOf(this.db.db, caller, id);
+    return this.views.one(this.db.db, caller, id);
   }
 
   /**
@@ -162,25 +141,33 @@ export class ClientAdminService {
   }
 
   /**
-   * Approves, suspends or reactivates a merchant, or moves it to another group.
+   * Approves, suspends or reactivates a merchant, moves it to another group, or edits its details.
    *
    * @param caller the signed-in staff member
    * @param id the merchant id
-   * @param input a status change (with a reason when suspending) or a group move
+   * @param input a status change (with a reason when suspending), a group move, or details (several keys at once); one kind per call
    * @returns the updated merchant
-   * @throws {AppError} `NOT_FOUND` (404), `INVALID_TRANSITION` (409), `VALIDATION_FAILED` (422 on `reason`, `status` or
-   *   `groupId`)
+   * @throws {AppError} `NOT_FOUND` (404), `INVALID_TRANSITION` (409), `EMAIL_TAKEN` (409), `RATE_LIMITED` (429, an email change),
+   *   `VALIDATION_FAILED` (422 on `reason`, `status`, `groupId`, a detail key, or the first key of a second kind in the same call)
    */
   async update(caller: StaffPrincipal, id: number, input: UpdateClientInput): Promise<ClientView> {
-    if (input.status !== undefined && input.groupId !== undefined) {
-      throw invalid('status', 'Send one change at a time: a status or a group.');
+    const kind = kindOfClientChange(input);
+    if ('problem' in kind) throw invalid(kind.problem.field, kind.problem.message);
+    if (kind.kind === 'details' && input.email !== undefined) {
+      // After the cheap refusals (404), before the transaction: a refused call spends no point of the limiter.
+      const existing = await findClientById(this.db.db, id);
+      if (!existing) throw new AppError('NOT_FOUND', { detail: 'No merchant has this id.' });
+      if (input.email.toLowerCase() !== existing.email.toLowerCase()) {
+        await this.details.enforceEmailChangeLimit(id);
+      }
     }
     return this.db.runInTransaction(async (work) => {
       const client = await lockClient(work.tx, id);
       if (!client) throw new AppError('NOT_FOUND', { detail: 'No merchant has this id.' });
-      if (input.groupId !== undefined) await this.moveToGroup(work, client, input.groupId);
-      else await this.changeStatus(work, caller, client, input.status!, input.reason);
-      return this.viewOf(work.tx, caller, id);
+      if (kind.kind === 'group') await this.moveToGroup(work, client, input.groupId!);
+      else if (kind.kind === 'status') await this.changeStatus(work, caller, client, input.status!, input.reason);
+      else await this.details.apply(work, caller, client, input);
+      return this.views.one(work.tx, caller, id);
     });
   }
 
@@ -247,7 +234,7 @@ export class ClientAdminService {
           creditLimit: input.creditLimit ?? '0.0000',
         },
       });
-      return this.viewOf(work.tx, caller, client.id);
+      return this.views.one(work.tx, caller, client.id);
     });
   }
 
@@ -276,10 +263,17 @@ export class ClientAdminService {
       suspendedReason: suspending ? reason : null,
       suspendedBy: suspending ? caller.staffId : null,
     });
-    // A suspension ends the merchant's sessions; every change clears the cached views that carry the status.
-    if (suspending) await this.sessions.revokeAllOf('client', client.id, {}, work);
-    else await this.sessions.invalidateSubject('client', client.id, work);
+    // A suspension ends the merchant's sessions and cancels every open link (a link sent before it must not work after a reactivation);
+    // every change clears the cached views that carry the status.
+    if (suspending) {
+      await this.sessions.revokeAllOf('client', client.id, {}, work);
+      await voidOpenClientTokens(work.tx, client.id, CLIENT_TOKEN_PURPOSES, this.clock.now());
+    } else await this.sessions.invalidateSubject('client', client.id, work);
     await this.apiKeys.invalidateClient(client.id, work);
+    // The mail rides on the same guarded change: transactional, so a suspended merchant gets the suspension notice too.
+    if (suspending) await this.lifecycleMails.suspended(work, client);
+    else if (client.status === 'pending') await this.lifecycleMails.approved(work, client);
+    else await this.lifecycleMails.reactivated(work, client);
     await this.audit.record(work.tx, {
       action: suspending
         ? 'suspended merchant'
@@ -326,61 +320,4 @@ export class ClientAdminService {
     // Fifty merchants with the same name: a random tail keeps the signup working.
     return `${base}-${randomInt(100_000, 1_000_000)}`;
   }
-
-  private async viewOf(
-    db: Parameters<typeof findClientRow>[0],
-    caller: StaffPrincipal,
-    id: number,
-  ): Promise<ClientView> {
-    const row = await findClientRow(db, id);
-    if (!row) throw new AppError('NOT_FOUND', { detail: 'No merchant has this id.' });
-    return (await this.viewsOf(db, caller, [row]))[0]!;
-  }
-
-  private async viewsOf(
-    db: Parameters<typeof findClientRow>[0],
-    caller: StaffPrincipal,
-    rows: ClientRow[],
-  ): Promise<ClientView[]> {
-    const ids = rows.map((row) => row.client.id);
-    const finance = grants(caller.permissions, 'wallet:read');
-    const [groups, wallets, stats] = await Promise.all([
-      this.groups.refsOf(
-        db,
-        rows.map((row) => row.client.groupId),
-      ),
-      finance ? this.wallets.viewsOf(db, ids) : undefined,
-      finance ? this.stats.of(db, ids, this.clock.now()) : undefined,
-    ]);
-    return rows.map((row) =>
-      toView(row, groups.get(row.client.groupId), wallets?.get(row.client.id), stats?.get(row.client.id)),
-    );
-  }
-}
-
-function toView(
-  { client, referredBy }: ClientRow,
-  group: ClientGroupRef | undefined,
-  wallet: ClientView['wallet'],
-  stats: ClientStats | undefined,
-): ClientView {
-  return {
-    id: client.id,
-    createdAt: client.createdAt.toISOString(),
-    name: client.name,
-    email: client.email,
-    country: client.country,
-    username: client.username,
-    company: client.company,
-    phone: client.phone,
-    groupId: client.groupId,
-    referralCode: client.referralCode,
-    emailVerifiedAt: client.emailVerifiedAt?.toISOString() ?? null,
-    status: client.status,
-    kycStatus: client.kycStatus,
-    group: group ? { id: group.id, name: group.name, discountPercent: group.discountPercent } : null,
-    referredBy,
-    ...(wallet ? { wallet } : {}),
-    ...(stats ? { stats } : {}),
-  };
 }

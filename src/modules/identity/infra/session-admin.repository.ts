@@ -18,6 +18,7 @@ const listed = sql`(${sessions.stage} = 'active' and ${sessions.subjectType} in 
 
 const COLUMNS: ListColumns = {
   subjectType: sessions.subjectType,
+  subjectId: sessions.subjectId,
   lastSeenAt: sessions.lastSeenAt,
   createdAt: sessions.createdAt,
   id: sessions.id,
@@ -88,9 +89,43 @@ export async function findListedSession(
 }
 
 /**
- * Counts the live, fully signed-in sessions of several staff members.
+ * Counts the live, fully signed-in sessions of several accounts of one subject type.
  *
- * Why: `StaffMember.activeSessions` enables "Sign out all devices"; it counts what the sessions list would show.
+ * Why: `StaffMember.activeSessions` and `Client.security.activeSessions` enable "Sign out all devices"; both count what the sessions
+ * list would show.
+ *
+ * @param db the database or a transaction
+ * @param subjectType `staff` or `client`
+ * @param ids the account ids
+ * @param now the current time
+ * @param idle the idle limit of each subject type
+ * @returns the count per account id (accounts with no live session are absent)
+ */
+export async function countLiveSessionsOf(
+  db: DbExecutor,
+  subjectType: 'staff' | 'client',
+  ids: readonly number[],
+  now: Date,
+  idle: IdleLimits,
+): Promise<Map<number, number>> {
+  if (ids.length === 0) return new Map();
+  const rows = await db
+    .select({ subjectId: sessions.subjectId, total: sql<number>`count(*)::int` })
+    .from(sessions)
+    .where(
+      and(
+        eq(sessions.subjectType, subjectType),
+        inArray(sessions.subjectId, [...ids]),
+        eq(sessions.stage, 'active'),
+        liveSessionCondition(now, idle),
+      ),
+    )
+    .groupBy(sessions.subjectId);
+  return new Map(rows.map((row) => [row.subjectId, row.total]));
+}
+
+/**
+ * Counts the live, fully signed-in sessions of several staff members.
  *
  * @param db the database or a transaction
  * @param staffIds the staff members
@@ -98,24 +133,11 @@ export async function findListedSession(
  * @param idle the idle limit of each subject type
  * @returns the count per staff id (members with no live session are absent)
  */
-export async function countLiveStaffSessions(
+export function countLiveStaffSessions(
   db: DbExecutor,
   staffIds: readonly number[],
   now: Date,
   idle: IdleLimits,
 ): Promise<Map<number, number>> {
-  if (staffIds.length === 0) return new Map();
-  const rows = await db
-    .select({ staffId: sessions.subjectId, total: sql<number>`count(*)::int` })
-    .from(sessions)
-    .where(
-      and(
-        eq(sessions.subjectType, 'staff'),
-        inArray(sessions.subjectId, [...staffIds]),
-        eq(sessions.stage, 'active'),
-        liveSessionCondition(now, idle),
-      ),
-    )
-    .groupBy(sessions.subjectId);
-  return new Map(rows.map((row) => [row.staffId, row.total]));
+  return countLiveSessionsOf(db, 'staff', staffIds, now, idle);
 }

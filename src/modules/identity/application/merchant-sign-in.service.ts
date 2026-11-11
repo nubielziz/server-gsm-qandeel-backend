@@ -11,6 +11,7 @@ import {
   acceptClientSignInStep,
   findClientByEmail,
   findClientById,
+  recordClientSignIn,
   replaceClientPasswordHash,
 } from '../infra/merchant-auth.repository';
 import type { MerchantPrincipal } from '../security/principal';
@@ -22,7 +23,7 @@ import { MerchantSignInLimiter } from './merchant-sign-in-limiter';
 import type { RequestMeta } from './request-meta';
 import { CLIENT_TOTP_AAD, TotpService } from './totp.service';
 
-/** The answer of `login`: the next step and the session to put in the cookies. */
+/** The answer of `login` and `startSession`: the next step and the session to put in the cookies. */
 export interface MerchantLoginResult {
   readonly next: MerchantSignInStep;
   readonly session: IssuedSession;
@@ -35,10 +36,11 @@ const WRONG_CREDENTIALS = 'The email or password is not correct.';
  *
  * Why: B124 to B126 and decision 018. The order of `login` is part of the contract: rate limit, then credentials (one
  * indistinguishable `401` for an unknown email, a wrong password and a merchant with no password yet, with the same work done in
- * each case), then suspension, then a session: pending when a code is still needed, active otherwise. A merchant waiting for
- * approval signs in like any other (B153); what it may then call is decided by the routes' `pendingMerchant` field.
+ * each case), then suspension, then a session: pending when a new password or a code is still needed, active otherwise (the step logic
+ * is `nextMerchantStep`; `startSession` holds everything after a proven password, for the smart sign-in of feature 24A to reuse). A
+ * merchant waiting for approval signs in like any other (B153); what it may then call is decided by the routes' `pendingMerchant` field.
  *
- * Side effects: reads and writes `clients` and `sessions`; counts rate-limit attempts; a failed attempt is logged without the
+ * Side effects: reads and writes `clients` (the last sign-in time and address when a session becomes full) and `sessions`; counts rate-limit attempts; a failed attempt is logged without the
  * email. Merchant sign-ins write no audit rows (the audit log records staff writes).
  *
  * @see docs/contract/MISMATCHES.md (B124, B125, B126)
@@ -70,7 +72,7 @@ export class MerchantSignInService implements OnModuleInit {
    * @param input the credentials as typed
    * @param meta the caller's address and user agent
    * @param staleToken the session cookie the request already carried, ended here so it cannot be fixated
-   * @returns the next step (`totp` or `done`) and the session
+   * @returns the next step (`password`, `totp` or `done`) and the session
    * @throws {AppError} `RATE_LIMITED` (429), `UNAUTHORIZED` (401: unknown email, wrong password or no password yet),
    *   `ACCOUNT_SUSPENDED` (403: correct password, suspended merchant)
    */
@@ -88,15 +90,35 @@ export class MerchantSignInService implements OnModuleInit {
       );
       throw new AppError('UNAUTHORIZED', { detail: WRONG_CREDENTIALS });
     }
-    if (client.status === 'suspended') {
-      this.logger.warn(`Merchant ${client.id} signed in with a correct password but is suspended (${meta.ip})`);
-      throw new AppError('ACCOUNT_SUSPENDED', { detail: 'This account is suspended. Contact support.' });
-    }
+    this.assertNotSuspended(client, meta);
 
     await this.limiter.resetLogin(input.email, meta.ip);
     await this.upgradeHash(client, input.password);
+    return this.startSession(client, meta, staleToken);
+  }
+
+  /**
+   * Opens the session of a merchant whose credentials are already proven.
+   *
+   * Why: every password-verified sign-in ends here, the portal's login now and the smart sign-in of feature 24A later (which verifies the
+   * password itself, once, and calls this): the suspension refusal, ending the stale session, the step (`nextMerchantStep`), the session of
+   * that step's stage, and the last-sign-in record when the session is already full.
+   *
+   * Side effects: ends the session of `staleToken`; inserts a `sessions` row; writes `clients.last_login_at` and `last_login_ip` when `next` is `done`.
+   *
+   * @param client the merchant whose password was just proven
+   * @param meta the caller's address and user agent
+   * @param staleToken the session cookie the request already carried, ended here so it cannot be fixated
+   * @returns the next step and the session
+   * @throws {AppError} `ACCOUNT_SUSPENDED` (403)
+   */
+  async startSession(client: Client, meta: RequestMeta, staleToken?: string): Promise<MerchantLoginResult> {
+    this.assertNotSuspended(client, meta);
     await this.endStaleSession(staleToken);
-    const next = nextMerchantStep(client.twofaEnabled);
+    const next = nextMerchantStep({
+      mustChangePassword: client.mustChangePassword,
+      twofaEnabled: client.twofaEnabled,
+    });
     const session = await this.sessions.create({
       subjectType: 'client',
       subjectId: client.id,
@@ -104,7 +126,14 @@ export class MerchantSignInService implements OnModuleInit {
       ip: meta.ip,
       userAgent: meta.userAgent,
     });
+    if (next === 'done') await recordClientSignIn(this.db.db, client.id, this.clock.now(), meta.ip);
     return { next, session };
+  }
+
+  private assertNotSuspended(client: Client, meta: RequestMeta): void {
+    if (client.status !== 'suspended') return;
+    this.logger.warn(`Merchant ${client.id} signed in with a correct password but is suspended (${meta.ip})`);
+    throw new AppError('ACCOUNT_SUSPENDED', { detail: 'This account is suspended. Contact support.' });
   }
 
   /**
@@ -138,6 +167,7 @@ export class MerchantSignInService implements OnModuleInit {
       if (!(await acceptClientSignInStep(work.tx, { id: client.id, step, secretEnc }))) {
         throw invalidCode('That code was already used. Wait for the next code and try again.');
       }
+      await recordClientSignIn(work.tx, client.id, this.clock.now(), meta.ip);
       return this.sessions.rotate(principal.session, { stage: 'active', ip: meta.ip, userAgent: meta.userAgent }, work);
     });
     await this.limiter.resetCode(client.id);

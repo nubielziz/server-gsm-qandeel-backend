@@ -120,7 +120,7 @@ export async function insertKey(db: DbExecutor, values: NewApiKey): Promise<ApiK
 }
 
 /**
- * Changes the name or the allowed addresses of a key.
+ * Changes the name, the allowed addresses or the per-minute limit of a key.
  *
  * @param db the transaction that holds the key
  * @param id the key id
@@ -130,13 +130,14 @@ export async function insertKey(db: DbExecutor, values: NewApiKey): Promise<ApiK
 export async function updateKey(
   db: DbExecutor,
   id: number,
-  changes: { readonly name?: string; readonly allowedIps?: readonly string[] },
+  changes: { readonly name?: string; readonly allowedIps?: readonly string[]; readonly rateLimitPerMin?: number },
 ): Promise<ApiKey> {
   const [row] = await db
     .update(apiKeys)
     .set({
       ...(changes.name === undefined ? {} : { name: changes.name }),
       ...(changes.allowedIps === undefined ? {} : { allowedIps: [...changes.allowedIps] }),
+      ...(changes.rateLimitPerMin === undefined ? {} : { rateLimitPerMin: changes.rateLimitPerMin }),
       updatedAt: sql`now()`,
     })
     .where(eq(apiKeys.id, id))

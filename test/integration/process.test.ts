@@ -112,6 +112,7 @@ describe('configuration failure', () => {
       'ENCRYPTION_KEYS',
       'ERRORS_BASE_URL',
       'PORTAL_BASE_URL',
+      'CONSOLE_BASE_URL',
       'STORE_BASE_URL',
       'TURNSTILE_SECRET_KEY',
     ]) {

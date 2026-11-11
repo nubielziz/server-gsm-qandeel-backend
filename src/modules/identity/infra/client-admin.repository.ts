@@ -4,14 +4,21 @@ import { eq, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../infra/db';
-import { type Client, type NewClient, clients } from '../db/schema';
+import { type Client, type NewClient, authTokens, clients, staffUsers } from '../db/schema';
 
 const referrers = alias(clients, 'referrers');
+const suspenders = alias(staffUsers, 'suspenders');
 
-/** A merchant with the merchant who referred it. */
+/** A merchant with the merchant who referred it, the staff member who suspended it and the age of its newest open links. */
 export interface ClientRow {
   readonly client: Client;
   readonly referredBy: { readonly id: number; readonly name: string } | null;
+  /** Who suspended the merchant; null when nobody did, or the staff member is gone. */
+  readonly suspendedBy: { readonly id: number; readonly name: string } | null;
+  /** `created_at` of the newest open (unused, unexpired) invite or reset link. */
+  readonly linkSentAt: Date | null;
+  /** `created_at` of the newest open `verify_email` link. */
+  readonly verificationSentAt: Date | null;
 }
 
 const COLUMNS: ListColumns = {
@@ -26,17 +33,56 @@ const COLUMNS: ListColumns = {
   createdAt: clients.createdAt,
 };
 
-function selectRows(db: DbExecutor) {
-  return db
-    .select({ client: clients, referrerId: referrers.id, referrerName: referrers.name })
-    .from(clients)
-    .leftJoin(referrers, eq(referrers.id, clients.referredById));
+/**
+ * The newest `created_at` among the merchant's open links of some purposes: unused and not expired at `now`.
+ *
+ * Why: `security.linkSentAt` and `security.verificationSentAt` tell staff whether a link is still out there; the clock's `now` decides
+ * expiry (decision 031). Served by `auth_tokens_subject_idx`.
+ */
+function newestOpenLink(purposes: readonly string[], now: Date) {
+  const list = sql.join(
+    purposes.map((purpose) => sql`${purpose}`),
+    sql`, `,
+  );
+  return sql<Date | null>`(
+    select max(${authTokens.createdAt}) from ${authTokens}
+    where ${authTokens.subjectType} = 'client' and ${authTokens.subjectId} = ${clients.id}
+      and ${authTokens.purpose} in (${list}) and ${authTokens.usedAt} is null
+      and ${authTokens.expiresAt} > ${now.toISOString()}::timestamptz
+  )`.mapWith(authTokens.createdAt);
 }
 
-function toRow(row: { client: Client; referrerId: number | null; referrerName: string | null }): ClientRow {
+function selectRows(db: DbExecutor, now: Date) {
+  return db
+    .select({
+      client: clients,
+      referrerId: referrers.id,
+      referrerName: referrers.name,
+      suspenderId: suspenders.id,
+      suspenderName: suspenders.name,
+      linkSentAt: newestOpenLink(['invite', 'reset'], now),
+      verificationSentAt: newestOpenLink(['verify_email'], now),
+    })
+    .from(clients)
+    .leftJoin(referrers, eq(referrers.id, clients.referredById))
+    .leftJoin(suspenders, eq(suspenders.id, clients.suspendedBy));
+}
+
+function toRow(row: {
+  client: Client;
+  referrerId: number | null;
+  referrerName: string | null;
+  suspenderId: number | null;
+  suspenderName: string | null;
+  linkSentAt: Date | null;
+  verificationSentAt: Date | null;
+}): ClientRow {
   return {
     client: row.client,
     referredBy: row.referrerId === null ? null : { id: row.referrerId, name: row.referrerName ?? '' },
+    suspendedBy: row.suspenderId === null ? null : { id: row.suspenderId, name: row.suspenderName ?? '' },
+    linkSentAt: row.linkSentAt,
+    verificationSentAt: row.verificationSentAt,
   };
 }
 
@@ -45,15 +91,17 @@ function toRow(row: { client: Client; referrerId: number | null; referrerName: s
  *
  * @param db the database or a transaction
  * @param query the parsed list request
+ * @param now the current time (the injected clock): decides which links are still open
  * @returns the page of merchants and the exact total
  */
 export async function listClientRows(
   db: DbExecutor,
   query: ParsedListQuery<'name' | 'status' | 'createdAt' | 'id'>,
+  now: Date,
 ): Promise<{ rows: ClientRow[]; total: number }> {
   const where = listWhere(query, COLUMNS);
   const [rows, [count]] = await Promise.all([
-    selectRows(db)
+    selectRows(db, now)
       .where(where)
       .orderBy(...listOrderBy(query.sort, COLUMNS, clients.id))
       .limit(query.range.limit)
@@ -71,10 +119,11 @@ export async function listClientRows(
  *
  * @param db the database or a transaction
  * @param id the merchant id
- * @returns the merchant with its referrer, or `undefined`
+ * @param now the current time (the injected clock)
+ * @returns the merchant with its referrer, suspender and open-link ages, or `undefined`
  */
-export async function findClientRow(db: DbExecutor, id: number): Promise<ClientRow | undefined> {
-  const [row] = await selectRows(db).where(eq(clients.id, id)).limit(1);
+export async function findClientRow(db: DbExecutor, id: number, now: Date): Promise<ClientRow | undefined> {
+  const [row] = await selectRows(db, now).where(eq(clients.id, id)).limit(1);
   return row ? toRow(row) : undefined;
 }
 

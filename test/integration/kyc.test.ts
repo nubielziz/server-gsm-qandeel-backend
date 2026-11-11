@@ -9,6 +9,8 @@ import { clearIdentityCaches, insertMerchant } from '../support/auth';
 import { insertProofFile } from '../support/billing';
 import { MINUTE, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
+import { seedIdentityTemplates } from '../support/identity-mail';
+import { mailbox, sendAllQueued } from '../support/notifications';
 import { type PortalClient, portalFor } from '../support/webhooks';
 
 const clock = new TestClock('2026-11-01T10:00:00.000Z');
@@ -28,6 +30,8 @@ beforeEach(async () => {
   clock.set('2026-11-01T10:00:00.000Z');
   await resetDb();
   await clearIdentityCaches(t);
+  await seedIdentityTemplates(db);
+  mailbox(t).reset();
 });
 
 async function merchant(
@@ -220,9 +224,47 @@ describe('POST /admin/kyc-submissions/:id/decide', () => {
     const [audit] = await db.select().from(s.auditLogs);
     expect(audit).toMatchObject({
       action: 'approved verification of',
-      entityType: 'kyc_submission',
-      entityId: submission.id,
+      // Filed under the merchant (feature 20, O-12), with the request id in the row.
+      entityType: 'merchant',
+      entityId: id,
       entityLabel: 'Gulf Digital',
+      before: { kycStatus: 'pending' },
+      after: { kycStatus: 'approved', note: 'Documents match.', submissionId: submission.id },
+    });
+  });
+
+  it('mails the merchant on approval, and on rejection with the staff note, in the merchant language (feature 20)', async () => {
+    const approved = await pending();
+    const admin = await adminWith(t, ['kyc:decide']);
+    await admin.post(`/admin/kyc-submissions/${approved.submission.id}/decide`, { decision: 'approve' });
+    await sendAllQueued(t);
+    expect(mailbox(t).sent).toMatchObject([
+      { to: 'ops@gulf.example', subject: 'Your identity verification is approved' },
+    ]);
+    expect(mailbox(t).sent[0]!.text).toContain('Hi Gulf Digital,');
+
+    mailbox(t).reset();
+    await resetDb();
+    await seedIdentityTemplates(db);
+    const rejected = await merchant({ locale: 'ar', email: 'ops@gulf-ar.example' });
+    await rejected.portal.call('POST', '/client/kyc', { fileIds: [await insertProofFile(db, rejected.id)] });
+    const [submission] = await db.select().from(s.kycSubmissions);
+    const rejectedAs = await adminWith(t, ['kyc:decide']);
+    const res = await rejectedAs.post(`/admin/kyc-submissions/${submission!.id}/decide`, {
+      decision: 'reject',
+      note: 'The photo is not readable.',
+    });
+    expect(res.status).toBe(200);
+    await sendAllQueued(t);
+    const [mail] = mailbox(t).sent;
+    expect(mail).toMatchObject({ to: 'ops@gulf-ar.example', subject: 'توثيق هويتك يحتاج إلى مراجعة' });
+    expect(mail!.text).toContain('The photo is not readable.');
+    const [audit] = await db.select().from(s.auditLogs);
+    expect(audit).toMatchObject({
+      action: 'rejected verification of',
+      entityType: 'merchant',
+      entityId: rejected.id,
+      after: { kycStatus: 'rejected', note: 'The photo is not readable.', submissionId: submission!.id },
     });
   });
 

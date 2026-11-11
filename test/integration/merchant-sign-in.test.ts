@@ -3,9 +3,16 @@
 // the flow the portal runs, every refusal the contracts list, and the rule for merchants waiting for approval both ways.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { asc, eq } from 'drizzle-orm';
-import { TokenService } from '../../src/infra/crypto';
+import { contractRegistry } from '../../src/common/contract';
+import { PasswordHasher, TokenService } from '../../src/infra/crypto';
 import { schema as s } from '../../src/infra/db';
-import { CSRF_COOKIE_NAMES, SESSION_COOKIE_NAMES, SessionService, csrfTokenFor } from '../../src/modules/identity';
+import {
+  ApiKeyDirectory,
+  CSRF_COOKIE_NAMES,
+  SESSION_COOKIE_NAMES,
+  SessionService,
+  csrfTokenFor,
+} from '../../src/modules/identity';
 import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches } from '../support/auth';
 import { DAY, SECOND, TestClock } from '../support/clock';
@@ -21,6 +28,7 @@ import {
   seedPortalBasics,
 } from '../support/merchant-portal';
 import { freshClientIp } from '../support/pipeline-routes';
+import { insertApiKey } from '../support/machine-auth';
 import { SecurityTestController } from '../support/security-routes';
 import { codeFor } from '../support/staff-console';
 
@@ -371,6 +379,10 @@ describe('GET /client/auth/me', () => {
       referralCode: merchant.row.referralCode,
       group: { id: defaultGroupId, name: 'Standard', discountPercent: '5.0000' },
       createdAt: merchant.row.createdAt.toISOString(),
+      locale: 'en',
+      address: '',
+      taxId: '',
+      mustChangePassword: false,
     });
     expect(JSON.stringify(res.json())).not.toMatch(/passwordHash|totp|argon2/i);
   });
@@ -428,6 +440,50 @@ describe('PATCH /client/profile', () => {
     // Empty strings are allowed for company and phone; an empty body changes nothing.
     expect((await p.profile({ company: '', phone: '' })).json()).toMatchObject({ company: '', phone: '' });
     expect((await p.profile({})).statusCode).toBe(200);
+  });
+
+  it('saves the language, address and tax id, shows them on me, and refuses values the contract does not allow (feature 20)', async () => {
+    const merchant = await makeMerchant(t);
+    const p = portal();
+    await p.login(merchant.email);
+    const res = await p.profile({ locale: 'ar', address: '  12 Abdali Blvd, Amman ', taxId: ' JO-998877 ' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      locale: 'ar',
+      address: '12 Abdali Blvd, Amman',
+      taxId: 'JO-998877',
+      mustChangePassword: false,
+    });
+    expect(await clientRow(merchant.id)).toMatchObject({
+      locale: 'ar',
+      address: '12 Abdali Blvd, Amman',
+      taxId: 'JO-998877',
+    });
+    expect((await p.me()).json()).toMatchObject({ locale: 'ar', address: '12 Abdali Blvd, Amman', taxId: 'JO-998877' });
+
+    const bad = await p.profile({ locale: 'fr', address: 'x'.repeat(301), taxId: 'x'.repeat(41) });
+    expect(bad.statusCode).toBe(422);
+    expect(
+      problem(bad)
+        .errors?.map((e) => e.field)
+        .sort(),
+    ).toEqual(['address', 'locale', 'taxId']);
+    // Staff-only text never appears on a merchant route.
+    expect(JSON.stringify((await p.me()).json())).not.toContain('internalNotes');
+  });
+
+  it('a name change drops the cached session and API key views of the merchant', async () => {
+    const merchant = await makeMerchant(t);
+    const { db } = await testDb();
+    const key = await insertApiKey(t, db, merchant.id);
+    const p = portal();
+    await p.login(merchant.email);
+    await t.app.get(ApiKeyDirectory).findByKey(key.key);
+    expect((await p.profile({ name: 'Renamed Shop' })).statusCode).toBe(200);
+    expect((await t.app.get(ApiKeyDirectory).findByKey(key.key))!.client.name).toBe('Renamed Shop');
+    // The session view carries the name too: the next request reads the new one.
+    const token = p.sessionToken!;
+    expect((await t.app.get(SessionService).lookup(token))!.subject).toMatchObject({ name: 'Renamed Shop' });
   });
 
   it('never changes the email, username, group or status, even when they are sent', async () => {
@@ -517,4 +573,237 @@ describe('a merchant waiting for approval (user decision B153)', () => {
     await p.login(merchant.email);
     expect((await p.call('GET', '/client/t/sec/session')).statusCode).toBe(200);
   });
+});
+
+describe('the forced password change (feature 20: POST /client/auth/password/change)', () => {
+  const TEMPORARY = 'Temporary-Pass-42';
+  const CHOSEN = 'a-brand-new-password';
+  const temporaryMerchant = (overrides: Parameters<typeof makeMerchant>[1] = {}) =>
+    makeMerchant(t, { mustChangePassword: true, password: TEMPORARY, ...overrides });
+
+  it('answers next "password" with a pending_password session that can call nothing but the change and logout', async () => {
+    const merchant = await temporaryMerchant();
+    const p = portal();
+    const login = await p.login(merchant.email, TEMPORARY);
+    expect(login.statusCode).toBe(200);
+    expect(login.json()).toEqual({ next: 'password' });
+    expect(await sessionsOf(merchant.id)).toMatchObject([{ stage: 'pending_password' }]);
+    // A step in progress is not a sign-in: nothing is recorded yet.
+    expect((await clientRow(merchant.id)).lastLoginAt).toBeNull();
+
+    expect((await p.me()).statusCode).toBe(401);
+    expect((await p.call('GET', '/client/wallet')).statusCode).toBe(401);
+    expect((await p.call('GET', '/client/sessions')).statusCode).toBe(401);
+    expect((await p.logout()).statusCode).toBe(204);
+    expect(await sessionsOf(merchant.id)).toMatchObject([{ stage: 'pending_password', revokedAt: expect.any(Date) }]);
+  });
+
+  it('without 2FA: rotates to a full session, kills the old token, clears the flag, records the sign-in, ends the other sessions and voids password links', async () => {
+    const merchant = await temporaryMerchant();
+    // An older full session of the same merchant (staff did not end it) and an open reset link.
+    await makeSession(merchant.id);
+    const { db } = await testDb();
+    await db.insert(s.authTokens).values({
+      subjectType: 'client',
+      subjectId: merchant.id,
+      purpose: 'reset',
+      tokenHash: 'a'.repeat(64),
+      expiresAt: new Date(clock.nowMs() + 3600_000),
+    });
+    const p = portal('203.0.113.50');
+    await p.login(merchant.email, TEMPORARY);
+    const oldToken = p.sessionToken!;
+
+    const res = await p.changeTemporaryPassword(CHOSEN);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ next: 'done' });
+    expect(res.headers['cache-control']).toBe('no-store');
+    expect(p.sessionToken).not.toBe(oldToken);
+    expect(res.headers['x-csrf-token']).toBeDefined();
+
+    const row = await clientRow(merchant.id);
+    expect(row.mustChangePassword).toBe(false);
+    expect(row.passwordChangedAt).toEqual(clock.now());
+    expect(row.lastLoginAt).toEqual(clock.now());
+    expect(row.lastLoginIp).toBe('203.0.113.50');
+    expect(await t.app.get(PasswordHasher).verify(row.passwordHash!, CHOSEN)).toBe(true);
+
+    expect((await p.me()).statusCode).toBe(200);
+    // The pending token is dead: a browser that kept it is signed out.
+    const stale = portal();
+    stale.setSessionToken(oldToken);
+    expect((await stale.me()).statusCode).toBe(401);
+
+    const live = (await sessionsOf(merchant.id)).filter((session) => session.revokedAt === null);
+    expect(live).toHaveLength(1);
+    expect(live[0]).toMatchObject({ stage: 'active' });
+    const tokens = await db.select().from(s.authTokens).where(eq(s.authTokens.subjectId, merchant.id));
+    expect(tokens.every((token) => token.usedAt !== null)).toBe(true);
+    // The old password is gone, the new one signs in with no further step.
+    expect((await portal().login(merchant.email, TEMPORARY)).statusCode).toBe(401);
+    expect((await portal().login(merchant.email, CHOSEN)).json()).toEqual({ next: 'done' });
+  });
+
+  it('with 2FA: continues as pending_totp, then the code opens the full session', async () => {
+    const merchant = await temporaryMerchant({ twofa: true });
+    const p = portal();
+    expect((await p.login(merchant.email, TEMPORARY)).json()).toEqual({ next: 'password' });
+    const res = await p.changeTemporaryPassword(CHOSEN);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ next: 'totp' });
+    expect(await sessionsOf(merchant.id)).toMatchObject([{ stage: 'pending_password' }, { stage: 'pending_totp' }]);
+    expect((await p.me()).statusCode).toBe(401);
+    // The flag is cleared at once, but the sign-in is recorded only when the code is accepted.
+    expect((await clientRow(merchant.id)).mustChangePassword).toBe(false);
+    expect((await clientRow(merchant.id)).lastLoginAt).toBeNull();
+
+    const done = await p.code(await codeNow(merchant.secret));
+    expect(done.statusCode).toBe(204);
+    expect((await p.me()).statusCode).toBe(200);
+    expect((await clientRow(merchant.id)).lastLoginAt).toEqual(clock.now());
+  });
+
+  it('refuses a weak password and the temporary one with 422 WEAK_PASSWORD on password, and keeps the flag', async () => {
+    const merchant = await temporaryMerchant();
+    const p = portal();
+    await p.login(merchant.email, TEMPORARY);
+    for (const password of ['short', TEMPORARY]) {
+      const res = await p.changeTemporaryPassword(password);
+      expect(res.statusCode).toBe(422);
+      expect(problem(res).code).toBe('WEAK_PASSWORD');
+      expect(problem(res).errors?.[0]?.field).toBe('password');
+    }
+    expect((await clientRow(merchant.id)).mustChangePassword).toBe(true);
+    expect((await p.changeTemporaryPassword('')).statusCode).toBe(422);
+    expect((await p.changeTemporaryPassword(CHOSEN)).statusCode).toBe(200);
+  });
+
+  it('needs the CSRF header of the pending session (403 CSRF_FAILED) and a session at all (401)', async () => {
+    const merchant = await temporaryMerchant();
+    const p = portal();
+    await p.login(merchant.email, TEMPORARY);
+    const noHeader = await p.changeTemporaryPassword(CHOSEN, { csrf: false });
+    expect(noHeader.statusCode).toBe(403);
+    expect(problem(noHeader).code).toBe('CSRF_FAILED');
+    expect((await clientRow(merchant.id)).mustChangePassword).toBe(true);
+    expect((await portal().changeTemporaryPassword(CHOSEN)).statusCode).toBe(401);
+  });
+
+  it('answers 401 for a full session, a pending_totp session and an account whose flag was cleared meanwhile', async () => {
+    const full = await makeMerchant(t);
+    const fullPortal = portal();
+    await fullPortal.login(full.email);
+    expect((await fullPortal.changeTemporaryPassword(CHOSEN)).statusCode).toBe(401);
+
+    const withCode = await makeMerchant(t, { twofa: true });
+    const codePortal = portal();
+    expect((await codePortal.login(withCode.email)).json()).toEqual({ next: 'totp' });
+    expect((await codePortal.changeTemporaryPassword(CHOSEN)).statusCode).toBe(401);
+
+    const merchant = await temporaryMerchant();
+    const p = portal();
+    await p.login(merchant.email, TEMPORARY);
+    const { db } = await testDb();
+    await db.update(s.clients).set({ mustChangePassword: false }).where(eq(s.clients.id, merchant.id));
+    await t.app.get(SessionService).invalidateSubject('client', merchant.id);
+    expect((await p.changeTemporaryPassword(CHOSEN)).statusCode).toBe(401);
+  });
+
+  it('answers 403 ACCOUNT_SUSPENDED for a merchant suspended after the login, and changes nothing', async () => {
+    const merchant = await temporaryMerchant();
+    const p = portal();
+    await p.login(merchant.email, TEMPORARY);
+    const { db } = await testDb();
+    await db.update(s.clients).set({ status: 'suspended' }).where(eq(s.clients.id, merchant.id));
+    await t.app.get(SessionService).invalidateSubject('client', merchant.id);
+    const res = await p.changeTemporaryPassword(CHOSEN);
+    expect(res.statusCode).toBe(403);
+    expect(problem(res).code).toBe('ACCOUNT_SUSPENDED');
+    expect((await clientRow(merchant.id)).mustChangePassword).toBe(true);
+  });
+
+  it('counts tries per account: the sixth in 15 minutes is 429 and changes nothing', async () => {
+    const merchant = await temporaryMerchant();
+    const p = portal();
+    await p.login(merchant.email, TEMPORARY);
+    for (let i = 0; i < 5; i++) expect((await p.changeTemporaryPassword('short')).statusCode).toBe(422);
+    const sixth = await p.changeTemporaryPassword(CHOSEN);
+    expect(sixth.statusCode).toBe(429);
+    expect(problem(sixth).code).toBe('RATE_LIMITED');
+    expect((await clientRow(merchant.id)).mustChangePassword).toBe(true);
+  });
+
+  it('lets only one of two parallel changes win', async () => {
+    const merchant = await temporaryMerchant();
+    const p = portal();
+    await p.login(merchant.email, TEMPORARY);
+    const csrf = p.csrf!;
+    const token = p.sessionToken!;
+    const attempt = (password: string) => {
+      const same = portal();
+      same.setSessionToken(token);
+      same.csrf = csrf;
+      return same.changeTemporaryPassword(password);
+    };
+    const answers = await Promise.all([attempt(CHOSEN), attempt('another-new-password')]);
+    expect(answers.map((res) => res.statusCode).sort()).toEqual([200, 401]);
+    expect((await clientRow(merchant.id)).mustChangePassword).toBe(false);
+  });
+
+  it('is ended by every way a merchant chooses a password: a reset link, an invitation link and the security page', async () => {
+    const { db } = await testDb();
+    const flagged = async (id: number) => (await clientRow(id)).mustChangePassword;
+
+    // A reset link.
+    const viaReset = await temporaryMerchant();
+    await db.insert(s.authTokens).values({
+      subjectType: 'client',
+      subjectId: viaReset.id,
+      purpose: 'reset',
+      tokenHash: t.app.get(TokenService).hash('reset-token-1'),
+      expiresAt: new Date(clock.nowMs() + 3600_000),
+    });
+    expect((await portal().reset('reset-token-1', CHOSEN)).statusCode).toBe(204);
+    expect(await flagged(viaReset.id)).toBe(false);
+
+    // An invitation link (a merchant with no password cannot also hold a temporary one, but the flag must clear regardless).
+    const viaInvite = await temporaryMerchant({ noPassword: true, status: 'pending' });
+    await db.insert(s.authTokens).values({
+      subjectType: 'client',
+      subjectId: viaInvite.id,
+      purpose: 'invite',
+      tokenHash: t.app.get(TokenService).hash('invite-token-1'),
+      expiresAt: new Date(clock.nowMs() + 3600_000),
+    });
+    expect((await portal().reset('invite-token-1', CHOSEN)).statusCode).toBe(204);
+    expect(await flagged(viaInvite.id)).toBe(false);
+
+    // The security page, from a full session (the flag set after the sign-in, as a late staff action would).
+    const viaSecurity = await makeMerchant(t);
+    const p = portal();
+    await p.login(viaSecurity.email);
+    await db.update(s.clients).set({ mustChangePassword: true }).where(eq(s.clients.id, viaSecurity.id));
+    expect((await p.changePassword(MERCHANT_PASSWORD, CHOSEN)).statusCode).toBe(204);
+    expect(await flagged(viaSecurity.id)).toBe(false);
+  });
+
+  it('is the only route besides logout that accepts a pending_password merchant session', () => {
+    const accepting = contractRegistry
+      .all()
+      .filter((contract) => contract.surface === 'client' && contract.sessionStages.includes('pending_password'))
+      .map((contract) => contract.key)
+      .sort();
+    expect(accepting).toEqual(['POST /client/auth/logout', 'POST /client/auth/password/change']);
+  });
+
+  /** A full session of the merchant (as an earlier sign-in on another device left it). */
+  async function makeSession(clientId: number): Promise<void> {
+    await t.app.get(SessionService).create({
+      subjectType: 'client',
+      subjectId: clientId,
+      stage: 'active',
+      ip: '198.51.100.9',
+      userAgent: 'other-device',
+    });
+  }
 });

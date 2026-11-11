@@ -63,6 +63,7 @@ export async function recipientOf(
           status: s.clients.status,
           telegramChatId: s.clients.telegramChatId,
           prefs: s.clients.notificationPrefs,
+          locale: s.clients.locale,
         })
         .from(s.clients)
         .where(eq(s.clients.id, id))
@@ -74,7 +75,8 @@ export async function recipientOf(
           audience: 'merchant',
           name: row.name,
           email: row.email,
-          locale: 'en',
+          // The merchant's own language (feature 20); `findTemplateFor` falls back to English when it has no template in it.
+          locale: row.locale,
           telegramChatId: row.telegramChatId,
           prefs: row.prefs,
           suspended: row.status === 'suspended',

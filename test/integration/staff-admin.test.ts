@@ -10,6 +10,7 @@ import { type AdminApi, adminFor, adminWith } from '../support/admin-api';
 import { clearIdentityCaches, insertRole, insertStaff, openSession } from '../support/auth';
 import { HOUR, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
+import { clearAccountMailLimits } from '../support/identity-mail';
 
 const clock = new TestClock();
 let t: TestApp;
@@ -25,6 +26,7 @@ beforeEach(async () => {
   clock.reset();
   await resetDb();
   await clearIdentityCaches(t);
+  await clearAccountMailLimits(t);
 });
 
 const staffRow = async (id: number) => {

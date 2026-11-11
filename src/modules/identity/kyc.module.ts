@@ -4,6 +4,7 @@ import { Module } from '@nestjs/common';
 import { StoredFiles } from '../platform';
 import { KycService } from './application/kyc.service';
 import { KycAdminController, MerchantKycController } from './controllers/kyc.controller';
+import { MerchantMailModule } from './merchant-mail.module';
 
 /**
  * Provides `/admin/kyc-submissions*` and `/client/kyc`.
@@ -12,6 +13,7 @@ import { KycAdminController, MerchantKycController } from './controllers/kyc.con
  * the object store), which a database-less test app does not have.
  */
 @Module({
+  imports: [MerchantMailModule],
   controllers: [KycAdminController, MerchantKycController],
   providers: [StoredFiles, KycService],
 })

@@ -169,6 +169,20 @@
       "when": 1794376599225,
       "tag": "0023_customer_wallet_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794382537880,
+      "tag": "0024_merchant_management",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794382538585,
+      "tag": "0025_merchant_management_templates",
+      "breakpoints": true
     }
   ]
 }

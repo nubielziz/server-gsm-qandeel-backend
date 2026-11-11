@@ -23,7 +23,8 @@ export const listSessions = defineRoute({
   description:
     'Fully signed-in staff and merchant sessions that are live: not revoked, not past `expiresAt`, and used within the idle ' +
     'limit of their subject type (decision 018). Storefront customer sessions and sign-in steps are not listed (B9). ' +
-    '`current` marks the session that made the request.',
+    "`current` marks the session that made the request. `subjectId` lists one account's sessions (the merchant page); it needs " +
+    '`subjectType` in the same request because staff and merchant ids overlap (`422` on `subjectId` otherwise).',
   tags: ['sessions'],
   surface: 'admin',
   access: 'staff-permission',
@@ -31,7 +32,10 @@ export const listSessions = defineRoute({
   query: listQuery({
     sorts: ['lastSeenAt', 'createdAt', 'id'],
     defaultSort: { field: 'lastSeenAt', order: 'desc' },
-    filters: { subjectType: { type: 'enum', values: ['staff', 'client'], ops: ['eq'] } },
+    filters: {
+      subjectType: { type: 'enum', values: ['staff', 'client'], ops: ['eq'] },
+      subjectId: { type: 'id', ops: ['eq'] },
+    },
   }),
   success: { status: 200, schema: SessionRow },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'VALIDATION_FAILED'],

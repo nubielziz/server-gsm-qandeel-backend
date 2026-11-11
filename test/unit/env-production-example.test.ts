@@ -44,9 +44,7 @@ describe('.env.production.example', () => {
 
   it('only names variables that src/config/env.ts reads (and none the image sets)', () => {
     const names = [...Object.keys(productionVars), ...commentedVariables(production)];
-    // CONSOLE_BASE_URL is added by feature 20 (merchant management); the template carries it commented until that merges.
-    const pendingFeature20 = ['CONSOLE_BASE_URL'];
-    const unknown = names.filter((name) => !ENV_VARIABLES.includes(name) && !pendingFeature20.includes(name));
+    const unknown = names.filter((name) => !ENV_VARIABLES.includes(name));
     expect(unknown).toEqual([]);
     for (const imageSet of ['PORT', 'APP_VERSION', 'GIT_SHA']) expect(names).not.toContain(imageSet);
   });

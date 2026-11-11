@@ -8,8 +8,10 @@ import { AppError } from '../../../common/errors';
 import { PasswordHasher } from '../../../infra/crypto';
 import { DbService, isForeignKeyViolation, isUniqueViolation } from '../../../infra/db';
 import type { TransactionContext } from '../../../infra/db';
+import { RateLimitService } from '../../../infra/rate-limit';
 import { AuditService } from '../../platform';
 import type { StaffUser } from '../db/schema';
+import { accountMailKey } from '../domain/account-mail';
 import { temporaryPasswordFor } from '../domain/temporary-password';
 import { voidOpenStaffTokens } from '../infra/auth-token.repository';
 import { countActiveOwners, lockOwnerChanges } from '../infra/owner.repository';
@@ -29,6 +31,7 @@ import { assertOwnerTargetAllowed } from '../security/principal';
 import type { StaffPrincipal } from '../security/principal';
 import { SessionPolicy } from '../security/session-policy';
 import { SessionService } from '../security/session.service';
+import { StaffMailOutbox } from './mail/staff-mail-outbox';
 import { StaffAuthTokens } from './staff-auth-tokens';
 import { idleLimitsOf } from './idle-limits';
 
@@ -89,7 +92,7 @@ function invalid(field: string, message: string): AppError {
  * password reset with `revokeSessions`, "end all sessions" and a 2FA reset end the member's sessions in the same transaction.
  * Sensitive actions re-check the caller's account in the database, not the cached session.
  *
- * Side effects: writes `staff_users`, `auth_tokens`, `sessions` and `audit_logs`; deletes cached session views after the
+ * Side effects: writes `staff_users`, `auth_tokens`, `sessions`, `outbox_events` (the invitation and reset mails, ids only) and `audit_logs`; deletes cached session views after the
  * commit; never writes a password, token or secret to the audit log.
  *
  * @see docs/contract/endpoints/identity.md (the `/admin/staff` sections)
@@ -102,7 +105,9 @@ export class StaffAdminService {
     private readonly sessions: SessionService,
     private readonly policy: SessionPolicy,
     private readonly tokens: StaffAuthTokens,
+    private readonly mail: StaffMailOutbox,
     private readonly audit: AuditService,
+    private readonly limits: RateLimitService,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -177,12 +182,14 @@ export class StaffAdminService {
         throw error;
       }
       if (temporary === undefined) {
-        await this.tokens.issue(work, {
+        // The clear token is dropped on purpose: the mail job rotates the row's token and sends the real link (feature 12a design).
+        const issued = await this.tokens.issue(work, {
           staffId: created.id,
           purpose: 'invite',
           createdBy: caller.staffId,
           ip: caller.ip,
         });
+        await this.mail.enqueue(work, { kind: 'invited', staffId: created.id, tokenId: issued.id });
       }
       await this.audit.record(work.tx, {
         action: 'added admin',
@@ -264,7 +271,8 @@ export class StaffAdminService {
    * @param id the member
    * @param input the mode and whether to end the member's sessions
    * @returns `{ temporaryPassword }` for the temporary mode (shown once), `{}` for the link
-   * @throws {AppError} `NOT_FOUND` (404), `FORBIDDEN` (403: an Owner account needs an Owner)
+   * @throws {AppError} `NOT_FOUND` (404), `FORBIDDEN` (403: an Owner account needs an Owner), `RATE_LIMITED` (429: the link mode,
+   *   five mails an hour per member)
    */
   async setPassword(
     caller: StaffPrincipal,
@@ -273,6 +281,9 @@ export class StaffAdminService {
   ): Promise<{ temporaryPassword?: string }> {
     const existing = await findStaffRow(this.db.db, id);
     if (!existing) throw new AppError('NOT_FOUND', { detail: 'No staff member has this id.' });
+    // Mail bombing guard: five link mails an hour per member (O-11); the temporary mode sends no mail.
+    if (input.mode === 'reset_link')
+      await this.limits.enforce('account-mail', accountMailKey('staff', id, 'password_link'));
     const temporary =
       input.mode === 'temporary_password'
         ? temporaryPasswordFor((max) => randomInt(max), { email: existing.staff.email, name: existing.staff.name })
@@ -289,11 +300,17 @@ export class StaffAdminService {
         // An older link must not undo the temporary password.
         await voidOpenStaffTokens(work.tx, id, now);
       } else {
-        await this.tokens.issue(work, {
+        const purpose = target.staff.status === 'invited' ? 'invite' : 'reset';
+        const issued = await this.tokens.issue(work, {
           staffId: id,
-          purpose: target.staff.status === 'invited' ? 'invite' : 'reset',
+          purpose,
           createdBy: caller.staffId,
           ip: caller.ip,
+        });
+        await this.mail.enqueue(work, {
+          kind: purpose === 'invite' ? 'invited' : 'password_reset',
+          staffId: id,
+          tokenId: issued.id,
         });
       }
       if (input.revokeSessions) await this.sessions.revokeAllOf('staff', id, {}, work);

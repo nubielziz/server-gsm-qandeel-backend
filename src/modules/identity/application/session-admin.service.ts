@@ -52,17 +52,23 @@ export class SessionAdminService {
    * @param caller the signed-in staff member (their own session is marked `current`)
    * @param query the parsed list request
    * @returns the page of sessions and the exact total
+   * @throws {AppError} `VALIDATION_FAILED` (422 on `subjectId` when `subjectType` is missing: ids of staff and merchants overlap)
    */
   async list(
     caller: StaffPrincipal,
     query: ParsedListQuery<'lastSeenAt' | 'createdAt' | 'id'>,
   ): Promise<{ rows: SessionRowView[]; total: number }> {
+    if (query.filters.some((f) => f.field === 'subjectId') && !query.filters.some((f) => f.field === 'subjectType')) {
+      throw new AppError('VALIDATION_FAILED', {
+        errors: [{ field: 'subjectId', code: 'invalid', message: 'Send subjectType together with subjectId.' }],
+      });
+    }
     const { rows, total } = await listLiveSessions(this.db.db, query, this.clock.now(), await this.idleLimits());
     return { rows: rows.map((row) => toView(row, caller.session.id)), total };
   }
 
   /**
-   * Ends a live session.
+   * Ends a live session. The audit row of a merchant's session is filed under the merchant (`merchant`), a staff session keeps `session`.
    *
    * @param caller the signed-in staff member
    * @param id the session id
@@ -75,6 +81,18 @@ export class SessionAdminService {
       if (!found) throw new AppError('NOT_FOUND', { detail: 'No live session has this id.' });
       // False only when a parallel request ended it first: the end state is the one asked for.
       await this.sessions.revoke(id, work);
+      // A merchant's session is filed under the merchant, so the merchant page's audit history shows it (feature 20, O-12).
+      if (found.session.subjectType === 'client') {
+        await this.audit.record(work.tx, {
+          action: 'ended a session of',
+          entityType: 'merchant',
+          entityId: found.session.subjectId,
+          entityLabel: found.subjectName ?? `client ${found.session.subjectId}`,
+          before: { sessionId: id, ip: found.session.ip },
+          after: { ended: true },
+        });
+        return;
+      }
       await this.audit.record(work.tx, {
         action: 'ended session of',
         entityType: 'session',

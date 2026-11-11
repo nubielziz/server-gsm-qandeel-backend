@@ -2,6 +2,8 @@
 // approve, suspend, reactivate and move to another group. Shapes match the console's Client (docs/contract/endpoints/identity.md).
 import { z } from 'zod';
 import { defineRoute, listQuery, zDecimal, zId, zIdParam, zIsoDateTime, zMoney } from '../../../common/contract';
+import { CLIENT_LOCALES } from '../db/schema';
+import { MerchantCountry } from './merchant-auth.contracts';
 import { EmailField, NameField, PersonRef } from './shared';
 
 /** Wallet figures; only for staff who hold `wallet:read`. */
@@ -17,7 +19,28 @@ const Stats = z.object({
   lastOrderAt: zIsoDateTime.nullable(),
 });
 
-/** A merchant as the console reads it. Never carries a password hash, TOTP data, Telegram id or preferences. */
+/** How the merchant signs in and what staff can still do about it (feature 20). */
+const Security = z.object({
+  hasPassword: z.boolean(),
+  mustChangePassword: z.boolean(),
+  passwordChangedAt: zIsoDateTime.nullable(),
+  twofaEnabled: z.boolean(),
+  lastLoginAt: zIsoDateTime.nullable(),
+  lastLoginIp: z.string().nullable(),
+  activeSessions: z.number().int().min(0),
+  linkSentAt: zIsoDateTime.nullable(),
+  verificationSentAt: zIsoDateTime.nullable(),
+});
+
+/** Why, when and by whom the merchant was suspended (feature 20). */
+const Suspension = z.object({ at: zIsoDateTime.nullable(), reason: z.string().nullable(), by: PersonRef.nullable() });
+
+/**
+ * A merchant as the console reads it. Never carries a password hash, TOTP data, Telegram chat id or preferences.
+ *
+ * The keys of feature 20 (`locale` to `suspension`) are optional in the schema, because the console's recorded fixtures are
+ * validated against it, and always sent by the server.
+ */
 const ClientRow = z.object({
   id: zId,
   createdAt: zIsoDateTime,
@@ -34,6 +57,13 @@ const ClientRow = z.object({
   kycStatus: z.enum(['none', 'pending', 'approved', 'rejected']),
   group: z.object({ id: zId, name: z.string(), discountPercent: zDecimal }).nullable(),
   referredBy: PersonRef.nullable(),
+  locale: z.enum(CLIENT_LOCALES).optional(),
+  address: z.string().optional(),
+  taxId: z.string().optional(),
+  internalNotes: z.string().optional(),
+  telegramLinked: z.boolean().optional(),
+  security: Security.optional(),
+  suspension: Suspension.nullable().optional(),
   wallet: Wallet.optional(),
   stats: Stats.optional(),
 });
@@ -54,6 +84,23 @@ const CLIENT_EXAMPLE = {
   kycStatus: 'approved',
   group: { id: 3, name: 'VIP', discountPercent: '8.0000' },
   referredBy: null,
+  locale: 'en',
+  address: 'Abdali Boulevard, Amman',
+  taxId: 'JO-1234567',
+  internalNotes: 'Pays by bank transfer on Sundays.',
+  telegramLinked: false,
+  security: {
+    hasPassword: true,
+    mustChangePassword: false,
+    passwordChangedAt: '2025-09-01T10:35:00.000Z',
+    twofaEnabled: true,
+    lastLoginAt: '2026-11-01T09:30:00.000Z',
+    lastLoginIp: '203.0.113.24',
+    activeSessions: 2,
+    linkSentAt: null,
+    verificationSentAt: null,
+  },
+  suspension: null,
   wallet: { balance: '1480.0000', reserved: '0.0000', creditLimit: '2000.0000', available: '3480.0000' },
 } as const;
 
@@ -135,20 +182,42 @@ export const createClient = defineRoute({
       creditLimit: '2000.0000',
       invite: true,
     },
-    response: { ...CLIENT_EXAMPLE, status: 'pending', kycStatus: 'none', emailVerifiedAt: null },
+    response: {
+      ...CLIENT_EXAMPLE,
+      status: 'pending',
+      kycStatus: 'none',
+      emailVerifiedAt: null,
+      security: {
+        hasPassword: false,
+        mustChangePassword: false,
+        passwordChangedAt: null,
+        twofaEnabled: false,
+        lastLoginAt: null,
+        lastLoginIp: null,
+        activeSessions: 0,
+        linkSentAt: '2026-11-01T09:30:00.000Z',
+        verificationSentAt: null,
+      },
+    },
   },
 });
 
-/** `PATCH /admin/clients/:id`: approve, suspend, reactivate or move a merchant to another group. */
+/** `PATCH /admin/clients/:id`: approve, suspend, reactivate, move to another group, or edit the details. */
 export const updateClient = defineRoute({
   key: 'PATCH /admin/clients/:id',
   summary: 'Change a merchant',
   description:
-    'One action per call. `status`: `active` from `pending` (approve) or `suspended` (reactivate); `suspended` from `active` ' +
-    "with a `reason` of 3 to 140 characters; any other change is `409 INVALID_TRANSITION`. A suspension ends the merchant's " +
-    'sessions and refuses new orders; open orders keep processing and the wallet is untouched. `groupId` moves the merchant ' +
-    '(never to the storefront retail group, and not to a group without credit while the credit limit is above zero: ' +
-    '`422` on `groupId`); it prices new orders only.',
+    'One kind of change per call: a status, a group or details (a mix is `422` on the first key of the second kind). ' +
+    '`status`: `active` from `pending` (approve) or `suspended` (reactivate); `suspended` from `active` or `pending` ' +
+    '(declining an application) with a `reason` of 3 to 140 characters; any other change is `409 INVALID_TRANSITION`. A suspension ' +
+    "ends the merchant's sessions, cancels every open link and refuses new orders; open orders keep processing and the wallet is " +
+    'untouched; the staff reason stays internal. Approval, suspension and reactivation email the merchant. `groupId` moves the ' +
+    'merchant (never to the storefront retail group, and not to a group without credit while the credit limit is above zero: ' +
+    '`422` on `groupId`); it prices new orders only. Details (`name`, `company`, `phone`, `country`, `email`, `locale`, `address`, ' +
+    '`taxId`, `internalNotes`; several at once, a value equal to the stored one is not a change): changing the `email` cancels ' +
+    'every open link, clears `emailVerifiedAt` and emails a new verification link (or the invitation while the merchant has no ' +
+    'password) to the new address; the merchant stays signed in (`409 EMAIL_TAKEN` for an address in use, `429` after five ' +
+    'email changes of one merchant in an hour).',
   tags: ['clients'],
   surface: 'admin',
   access: 'staff-permission',
@@ -159,9 +228,30 @@ export const updateClient = defineRoute({
       status: z.enum(['active', 'suspended', 'pending']).optional(),
       reason: z.string().trim().max(500).optional(),
       groupId: zId.optional(),
+      name: z.string().trim().min(1, 'Enter a name.').max(120, 'Use at most 120 characters.').optional(),
+      company: z.string().trim().max(160, 'Use at most 160 characters.').optional(),
+      phone: z.string().trim().max(40, 'Use at most 40 characters.').optional(),
+      country: MerchantCountry.optional(),
+      email: EmailField.optional(),
+      locale: z.enum(CLIENT_LOCALES).optional(),
+      address: z.string().trim().max(300, 'Use at most 300 characters.').optional(),
+      taxId: z.string().trim().max(40, 'Use at most 40 characters.').optional(),
+      internalNotes: z.string().trim().max(2000, 'Use at most 2000 characters.').optional(),
     })
-    .refine((body) => body.status !== undefined || body.groupId !== undefined, 'Send a status or a group.'),
+    .refine(
+      (body) => Object.entries(body).some(([key, value]) => key !== 'reason' && value !== undefined),
+      'Send a status, a group or details.',
+    ),
   success: { status: 200, schema: ClientRow },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'VALIDATION_FAILED', 'INVALID_TRANSITION'],
+  errors: [
+    'UNAUTHORIZED',
+    'FORBIDDEN',
+    'CSRF_FAILED',
+    'NOT_FOUND',
+    'VALIDATION_FAILED',
+    'INVALID_TRANSITION',
+    'EMAIL_TAKEN',
+    'RATE_LIMITED',
+  ],
   examples: { request: { status: 'active' }, response: CLIENT_EXAMPLE },
 });

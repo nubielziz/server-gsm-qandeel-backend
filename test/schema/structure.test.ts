@@ -83,7 +83,16 @@ const ADDITIONS: Record<string, string[]> = {
     'twofa_enabled',
     'totp_last_step',
     'password_changed_at',
+    // Feature 20 (merchant management, migration 0020).
+    'must_change_password',
+    'last_login_at',
+    'last_login_ip',
+    'locale',
+    'address',
+    'tax_id',
+    'internal_notes',
   ],
+  api_keys: ['created_by'],
   staff_users: ['totp_last_step'],
   payments: [
     'reviewed_at',

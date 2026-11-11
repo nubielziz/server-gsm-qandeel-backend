@@ -3,7 +3,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { schema as s } from '../../src/infra/db';
-import { ApiKeyDirectory, MERCHANT_INVITED_EVENT } from '../../src/modules/identity';
+import { ApiKeyDirectory, MERCHANT_INVITED_EVENT, SessionService } from '../../src/modules/identity';
 import { MERCHANT_INVITE_TTL_MS } from '../../src/modules/identity/application/merchant-invites';
 import { MerchantAccounts } from '../../src/modules/money';
 import { type AdminApi, adminWith } from '../support/admin-api';
@@ -13,6 +13,8 @@ import { HOUR, MINUTE, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 import { insertUsd } from '../support/fixtures';
 import { insertApiKey } from '../support/machine-auth';
+import { clearAccountMailLimits } from '../support/identity-mail';
+import { makeMerchant } from '../support/merchant-portal';
 
 const clock = new TestClock();
 let t: TestApp;
@@ -25,6 +27,7 @@ beforeEach(async () => {
   clock.reset();
   await resetDb();
   await clearIdentityCaches(t);
+  await clearAccountMailLimits(t);
 });
 afterAll(async () => {
   await resetDb();
@@ -109,10 +112,27 @@ describe('POST /admin/clients', () => {
       kycStatus: 'none',
       group: { id: vip, name: 'VIP', discountPercent: '8.0000' },
       referredBy: null,
+      locale: 'en',
+      address: '',
+      taxId: '',
+      internalNotes: '',
+      telegramLinked: false,
+      security: {
+        hasPassword: false,
+        mustChangePassword: false,
+        passwordChangedAt: null,
+        twofaEnabled: false,
+        lastLoginAt: null,
+        lastLoginIp: null,
+        activeSessions: 0,
+        linkSentAt: clock.now().toISOString(),
+        verificationSentAt: null,
+      },
+      suspension: null,
       wallet: { balance: '0.0000', reserved: '0.0000', creditLimit: '2000.0000', available: '2000.0000' },
       stats: { orders: 0, spend: '0.0000', profit: '0.0000', margin: null, successRate: null, lastOrderAt: null },
     });
-    expect(JSON.stringify(res.body)).not.toMatch(/passwordHash|totp|telegram|notificationPrefs/i);
+    expect(JSON.stringify(res.body)).not.toMatch(/passwordHash|totp|telegramChatId|notificationPrefs/i);
     expect(await clientRows()).toHaveLength(1);
   });
 
@@ -410,7 +430,7 @@ describe('GET /admin/clients and /admin/clients/:id', () => {
     const alpha = res.body.find((row: { id: number }) => row.id === m.alpha);
     expect(alpha.referredBy).toEqual({ id: m.zain, name: 'Zain Mobile Hub' });
     expect(alpha.wallet).toEqual({ balance: '0.0000', reserved: '0.0000', creditLimit: '0.0000', available: '0.0000' });
-    expect(JSON.stringify(res.body)).not.toMatch(/passwordHash|totp|telegram|notificationPrefs/i);
+    expect(JSON.stringify(res.body)).not.toMatch(/passwordHash|totp|telegramChatId|notificationPrefs/i);
   });
 
   it('filters by status (equal and not equal), group and id, searches name, email, company, username and country, sorts and pages', async () => {
@@ -585,8 +605,7 @@ describe('PATCH /admin/clients/:id', () => {
       expect(res.body.code).toBe('INVALID_TRANSITION');
       expect(res.body.errors[0].field).toBe('status');
     };
-    // Pending can only be approved.
-    await refused({ status: 'suspended', reason: 'Not allowed yet' });
+    // Pending can be approved or declined (suspended), never pending again.
     await refused({ status: 'pending' });
     await rami.patch(`/admin/clients/${id}`, { status: 'active' });
     // Active can only be suspended.
@@ -662,7 +681,8 @@ describe('PATCH /admin/clients/:id', () => {
     const { rami, id, standard } = await pending();
     const both = await rami.patch(`/admin/clients/${id}`, { status: 'active', groupId: standard });
     expect(both.status).toBe(422);
-    expect(both.body.errors[0].field).toBe('status');
+    // The first key of the second kind.
+    expect(both.body.errors[0].field).toBe('groupId');
     expect((await rami.patch(`/admin/clients/${id}`, {})).status).toBe(422);
     expect((await rami.patch(`/admin/clients/${id}`, { status: 'dormant' })).body.errors[0].field).toBe('status');
     const missing = await rami.patch('/admin/clients/999999', { status: 'active' });
@@ -690,5 +710,200 @@ describe('PATCH /admin/clients/:id', () => {
     const noCsrf = await rami.withoutCsrf('PATCH', `/admin/clients/${id}`, { status: 'active' });
     expect(noCsrf.body.code).toBe('CSRF_FAILED');
     expect((await clientRow(id)).status).toBe('pending');
+  });
+});
+
+describe('PATCH /admin/clients/:id, details (feature 20)', () => {
+  const editor = () => adminWith(t, ['clients:read', 'clients:update'], { name: 'Rami K.', ip: CALLER_IP });
+
+  it('edits several keys in one call, answers the updated row, and audits only the keys that changed', async () => {
+    const merchant = await makeMerchant(t, { company: 'Zain', phone: '+962 6', country: 'JO' });
+    const api = await editor();
+    const res = await api.patch(`/admin/clients/${merchant.id}`, {
+      name: '  Zain   Mobile  ',
+      company: 'Zain', // unchanged
+      phone: '+962 7 9999',
+      country: 'ae',
+      locale: 'ar',
+      address: 'Abdali Boulevard, Amman',
+      taxId: 'JO-123',
+      internalNotes: 'Pays on Sundays.',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      name: 'Zain Mobile',
+      company: 'Zain',
+      phone: '+962 7 9999',
+      country: 'AE',
+      locale: 'ar',
+      address: 'Abdali Boulevard, Amman',
+      taxId: 'JO-123',
+      internalNotes: 'Pays on Sundays.',
+    });
+    const [audit] = await auditRows();
+    expect(audit).toMatchObject({
+      action: 'edited details of',
+      entityType: 'merchant',
+      entityId: merchant.id,
+      entityLabel: 'Zain Mobile',
+      actorName: 'Rami K.',
+    });
+    expect(Object.keys(audit!.before as object).sort()).toEqual(
+      ['address', 'country', 'internalNotes', 'locale', 'name', 'phone', 'taxId'].sort(),
+    );
+    expect(audit!.after).toMatchObject({ name: 'Zain Mobile', country: 'AE', locale: 'ar' });
+    expect(audit!.before).toMatchObject({ name: 'Test Merchant', country: 'JO', locale: 'en' });
+  });
+
+  it('still writes an audit row, with nothing in before and after, when nothing changes', async () => {
+    const merchant = await makeMerchant(t, { company: 'Zain' });
+    const api = await editor();
+    const res = await api.patch(`/admin/clients/${merchant.id}`, { company: 'Zain', name: 'Test Merchant' });
+    expect(res.status).toBe(200);
+    const [audit] = await auditRows();
+    expect(audit).toMatchObject({ action: 'edited details of', before: {}, after: {} });
+  });
+
+  it('refuses a mixed body (422 on the first key of the second kind), a bad value (422 on its field) and an unknown merchant (404)', async () => {
+    const merchant = await makeMerchant(t);
+    const api = await editor();
+    const mixed = await api.patch(`/admin/clients/${merchant.id}`, {
+      status: 'suspended',
+      reason: 'Fraud',
+      phone: '1',
+    });
+    expect(mixed.status).toBe(422);
+    expect(mixed.body.errors[0]).toMatchObject({ field: 'phone' });
+    for (const [key, value] of [
+      ['name', '   '],
+      ['country', 'JOR'],
+      ['email', 'not-an-email'],
+      ['locale', 'fr'],
+      ['address', 'x'.repeat(301)],
+      ['taxId', 'x'.repeat(41)],
+      ['internalNotes', 'x'.repeat(2001)],
+    ] as const) {
+      const res = await api.patch(`/admin/clients/${merchant.id}`, { [key]: value });
+      expect(res.status, key).toBe(422);
+      expect(res.body.errors[0].field, key).toBe(key);
+    }
+    expect((await api.patch('/admin/clients/999999', { phone: '1' })).status).toBe(404);
+    expect(await auditRows()).toHaveLength(0);
+  });
+
+  it('needs clients:update and a CSRF token', async () => {
+    const merchant = await makeMerchant(t);
+    const reader = await adminWith(t, ['clients:read'], { ip: CALLER_IP });
+    expect((await reader.patch(`/admin/clients/${merchant.id}`, { phone: '1' })).status).toBe(403);
+    const api = await editor();
+    expect((await api.withoutCsrf('PATCH', `/admin/clients/${merchant.id}`, { phone: '1' })).body.code).toBe(
+      'CSRF_FAILED',
+    );
+  });
+
+  it('an email change clears the verification, uses every open link up, mails the new address once (ids only), keeps the sessions and drops the cached views', async () => {
+    const merchant = await makeMerchant(t, { emailVerifiedAt: clock.now() });
+    const { db } = await testDb();
+    const key = await insertApiKey(t, db, merchant.id);
+    const session = await openSession(t, { type: 'client', id: merchant.id });
+    const api = await editor();
+    // Prime both cached views, and leave a reset link and a verification link open.
+    expect((await t.app.get(SessionService).lookup(session.token))!.subject).toMatchObject({ name: 'Test Merchant' });
+    expect((await t.app.get(ApiKeyDirectory).findByKey(key.key))!.client.name).toBe('Test Merchant');
+    await db.insert(s.authTokens).values([
+      {
+        purpose: 'reset',
+        subjectType: 'client',
+        subjectId: merchant.id,
+        tokenHash: 'reset-hash',
+        expiresAt: new Date(clock.nowMs() + HOUR),
+      },
+      {
+        purpose: 'verify_email',
+        subjectType: 'client',
+        subjectId: merchant.id,
+        tokenHash: 'verify-hash',
+        expiresAt: new Date(clock.nowMs() + HOUR),
+      },
+    ]);
+
+    const res = await api.patch(`/admin/clients/${merchant.id}`, { email: 'New.Address@Example.com' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ email: 'new.address@example.com', emailVerifiedAt: null });
+    expect((await clientRow(merchant.id)).emailVerifiedAt).toBeNull();
+
+    const tokens = await tokensOf(merchant.id);
+    const open = tokens.filter((row) => row.usedAt === null);
+    expect(open).toHaveLength(1);
+    expect(open[0]).toMatchObject({ purpose: 'verify_email', createdBy: api.staffId });
+    expect(tokens.filter((row) => row.tokenHash === 'reset-hash')[0]!.usedAt).not.toBeNull();
+    const events = (await outboxRows()).filter((row) => row.type.startsWith('merchant.'));
+    expect(events.map((row) => row.type)).toEqual(['merchant.email_verification']);
+    expect(Object.keys(events[0]!.payload).filter((k) => k !== 'meta')).toEqual(['tokenId']);
+    expect(events[0]!.payload).toMatchObject({ tokenId: open[0]!.id });
+
+    // The session still works (the merchant stays signed in).
+    expect((await t.app.get(SessionService).lookup(session.token))!.id).toBe(session.sessionId);
+    const audit = (await auditRows()).at(-1)!;
+    expect(audit.after).toMatchObject({ email: 'new.address@example.com', emailVerified: false });
+    expect(audit.before).toMatchObject({ email: merchant.email });
+  });
+
+  it('a name change drops the cached session and API key views', async () => {
+    const merchant = await makeMerchant(t);
+    const { db } = await testDb();
+    const key = await insertApiKey(t, db, merchant.id);
+    const session = await openSession(t, { type: 'client', id: merchant.id });
+    await t.app.get(SessionService).lookup(session.token);
+    await t.app.get(ApiKeyDirectory).findByKey(key.key);
+    const api = await editor();
+    expect((await api.patch(`/admin/clients/${merchant.id}`, { name: 'Renamed Hub' })).status).toBe(200);
+    expect((await t.app.get(SessionService).lookup(session.token))!.subject).toMatchObject({ name: 'Renamed Hub' });
+    expect((await t.app.get(ApiKeyDirectory).findByKey(key.key))!.client.name).toBe('Renamed Hub');
+  });
+
+  it('mails the invitation, not a verification, when the merchant has no password yet; a suspended merchant gets no mail', async () => {
+    const invited = await makeMerchant(t, { noPassword: true, status: 'pending' });
+    const api = await editor();
+    await api.patch(`/admin/clients/${invited.id}`, { email: 'other@example.com' });
+    expect((await outboxRows()).map((row) => row.type)).toEqual(['merchant.invited']);
+    expect((await tokensOf(invited.id)).filter((row) => row.usedAt === null)[0]).toMatchObject({ purpose: 'invite' });
+
+    const suspended = await makeMerchant(t, { status: 'suspended' });
+    await api.patch(`/admin/clients/${suspended.id}`, { email: 'third@example.com' });
+    expect((await outboxRows()).map((row) => row.type)).toEqual(['merchant.invited']);
+    expect((await tokensOf(suspended.id)).filter((row) => row.usedAt === null)).toHaveLength(0);
+  });
+
+  it('refuses an address another merchant uses, case-insensitively (409 EMAIL_TAKEN on email), and lets only one of two parallel edits win', async () => {
+    const taken = await makeMerchant(t, { email: 'Taken@Example.com' });
+    const one = await makeMerchant(t);
+    const two = await makeMerchant(t);
+    const api = await editor();
+    const refused = await api.patch(`/admin/clients/${one.id}`, { email: 'taken@example.COM' });
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('EMAIL_TAKEN');
+    expect(refused.body.errors[0].field).toBe('email');
+    expect(taken.id).not.toBe(one.id);
+    expect((await clientRow(one.id)).email).toBe(one.email);
+
+    const answers = await Promise.all([
+      api.patch(`/admin/clients/${one.id}`, { email: 'race@example.com' }),
+      api.patch(`/admin/clients/${two.id}`, { email: 'race@example.com' }),
+    ]);
+    expect(answers.map((a) => a.status).sort()).toEqual([200, 409]);
+  });
+
+  it('answers 429 on the sixth email change of one merchant in an hour', async () => {
+    const merchant = await makeMerchant(t);
+    const api = await editor();
+    for (let i = 0; i < 5; i++) {
+      expect((await api.patch(`/admin/clients/${merchant.id}`, { email: `change-${i}@example.com` })).status).toBe(200);
+    }
+    const sixth = await api.patch(`/admin/clients/${merchant.id}`, { email: 'change-6@example.com' });
+    expect(sixth.status).toBe(429);
+    expect((await clientRow(merchant.id)).email).toBe('change-4@example.com');
+    // The same address again is not a change: it spends no point.
+    expect((await api.patch(`/admin/clients/${merchant.id}`, { email: 'change-4@example.com' })).status).toBe(200);
   });
 });

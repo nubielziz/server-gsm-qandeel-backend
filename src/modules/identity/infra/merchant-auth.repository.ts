@@ -3,7 +3,7 @@
 import { and, eq, isNull, lt, or, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
 import { lower } from '../../../infra/db/columns';
-import { type Client, type NewClient, clients } from '../db/schema';
+import { type Client, type ClientLocale, type NewClient, clients } from '../db/schema';
 
 /**
  * Finds a merchant by email, ignoring case.
@@ -107,11 +107,49 @@ export async function saveClientPassword(db: DbExecutor, input: SaveClientPasswo
     .set({
       passwordHash: input.passwordHash,
       passwordChangedAt: input.now,
+      // Any chosen password (reset link, invitation, change) ends a forced change (feature 20).
+      mustChangePassword: false,
       ...(input.verifyEmail ? { emailVerifiedAt: sql`coalesce(${clients.emailVerifiedAt}, ${input.now})` } : {}),
     })
     .where(and(eq(clients.id, input.id), sql`${clients.status} <> 'suspended'`))
     .returning({ id: clients.id });
   return rows.length > 0;
+}
+
+/**
+ * Stores the password a merchant chose in the forced-change step of the sign-in (feature 20).
+ *
+ * Why: staff set a temporary password (`must_change_password`); the merchant replaces it before anything else. The guards are in the write:
+ * a parallel request that already replaced it, or a suspension that landed meanwhile, leaves no row (the caller answers `401`).
+ *
+ * @param db the database or a transaction
+ * @param input the merchant, the hash and the time
+ * @returns whether the merchant has two-factor sign-in on (the next step), or `undefined` when nothing was written
+ */
+export async function saveForcedClientPassword(
+  db: DbExecutor,
+  input: { readonly id: number; readonly passwordHash: string; readonly now: Date },
+): Promise<{ readonly twofaEnabled: boolean } | undefined> {
+  const [row] = await db
+    .update(clients)
+    .set({ passwordHash: input.passwordHash, passwordChangedAt: input.now, mustChangePassword: false })
+    .where(and(eq(clients.id, input.id), sql`${clients.status} <> 'suspended'`, eq(clients.mustChangePassword, true)))
+    .returning({ twofaEnabled: clients.twofaEnabled });
+  return row;
+}
+
+/**
+ * Records a completed sign-in.
+ *
+ * Why: `security.lastLoginAt` and `lastLoginIp` on the merchant page: written when a session of the merchant becomes fully signed in (feature 20).
+ *
+ * @param db the database or a transaction
+ * @param id the merchant id
+ * @param now the time from the injected clock
+ * @param ip the address of the request
+ */
+export async function recordClientSignIn(db: DbExecutor, id: number, now: Date, ip: string): Promise<void> {
+  await db.update(clients).set({ lastLoginAt: now, lastLoginIp: ip }).where(eq(clients.id, id));
 }
 
 /**
@@ -136,12 +174,16 @@ export interface ClientProfilePatch {
   readonly company?: string;
   readonly phone?: string;
   readonly country?: string;
+  readonly locale?: ClientLocale;
+  readonly address?: string;
+  readonly taxId?: string;
 }
 
 /**
  * Updates the profile fields the merchant may edit.
  *
- * Why: B130: name, company, phone and country; the email, username and group are never editable here.
+ * Why: B130: name, company, phone and country, and (feature 20) language, address and tax id; the email, username and group are never
+ * editable here.
  *
  * @param db the database or a transaction
  * @param id the merchant id
@@ -158,6 +200,9 @@ export async function saveClientProfile(
     ...(patch.company === undefined ? {} : { company: patch.company }),
     ...(patch.phone === undefined ? {} : { phone: patch.phone }),
     ...(patch.country === undefined ? {} : { country: patch.country }),
+    ...(patch.locale === undefined ? {} : { locale: patch.locale }),
+    ...(patch.address === undefined ? {} : { address: patch.address }),
+    ...(patch.taxId === undefined ? {} : { taxId: patch.taxId }),
   };
   if (Object.keys(values).length === 0) return findClientById(db, id);
   const [row] = await db.update(clients).set(values).where(eq(clients.id, id)).returning();

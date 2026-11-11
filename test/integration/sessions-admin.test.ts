@@ -184,6 +184,37 @@ describe('GET /admin/sessions', () => {
     expect((await rami.get('/admin/sessions?_sort=ip')).status).toBe(422);
   });
 
+  it('lists the sessions of one account with subjectType and subjectId, with the exact total (feature 20)', async () => {
+    const rami = await viewer();
+    const { db } = await testDb();
+    const first = await insertMerchant(db, { name: 'Zain Mobile Hub' });
+    const second = await insertMerchant(db, { name: 'Other Shop' });
+    const a1 = await openSession(t, { type: 'client', id: first });
+    const a2 = await openSession(t, { type: 'client', id: first });
+    await openSession(t, { type: 'client', id: second });
+    // A staff member whose id equals the merchant's: the id alone would mix them up.
+    const support = await insertRole(db, ['staff:read']);
+    const staffSameId = await insertStaff(db, support, { name: 'Lina S.' });
+    await openSession(t, { type: 'staff', id: staffSameId });
+
+    const res = await rami.get(`/admin/sessions?subjectType=client&subjectId=${first}&_sort=id&_order=asc`);
+    expect(res.status).toBe(200);
+    expect(res.total).toBe(2);
+    expect(ids(res.body)).toEqual([a1.sessionId, a2.sessionId]);
+    expect(res.body.every((row: { subject: { id: number } }) => row.subject.id === first)).toBe(true);
+    const none = await rami.get('/admin/sessions?subjectType=client&subjectId=999999');
+    expect(none.total).toBe(0);
+    expect(none.body).toEqual([]);
+  });
+
+  it('answers 422 on subjectId when subjectType is missing (ids of staff and merchants overlap)', async () => {
+    const rami = await viewer();
+    const res = await rami.get('/admin/sessions?subjectId=7');
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe('VALIDATION_FAILED');
+    expect(res.body.errors).toMatchObject([{ field: 'subjectId' }]);
+  });
+
   it("shows the account's current name (a rename is visible at once) and needs sessions:read", async () => {
     const rami = await viewer();
     const { db } = await testDb();
@@ -232,7 +263,16 @@ describe('DELETE /admin/sessions/:id', () => {
     });
     expect(first!.before).toEqual({ subjectType: 'staff', subjectId: lina, ip: '203.0.113.7' });
     expect(first!.after).toEqual({ ended: true, own: false });
-    expect(second).toMatchObject({ entityLabel: 'Zain Mobile Hub' });
+    // A merchant's session is filed under the merchant (feature 20, O-12), so the merchant page's history shows it.
+    expect(second).toMatchObject({
+      action: 'ended a session of',
+      entityType: 'merchant',
+      entityId: merchant,
+      entityLabel: 'Zain Mobile Hub',
+      actorId: rami.staffId,
+    });
+    expect(second!.before).toEqual({ sessionId: merchantSession.sessionId, ip: '203.0.113.7' });
+    expect(second!.after).toEqual({ ended: true });
     expect((await rami.get('/admin/sessions')).body.map((row: { id: number }) => row.id)).toEqual([
       rami.session.sessionId,
     ]);

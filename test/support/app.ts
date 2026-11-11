@@ -54,6 +54,7 @@ export const PRODUCTION_ENV: Record<string, string> = {
   NODE_ENV: 'production',
   ERRORS_BASE_URL: 'https://errors.gsm.example',
   PORTAL_BASE_URL: 'https://portal.gsm.example',
+  CONSOLE_BASE_URL: 'https://admin.gsm.example',
   STORE_BASE_URL: 'https://shop.gsm.example',
   DATABASE_URL: 'postgres://app:pw@db.internal:5432/gsm',
   REDIS_QUEUE_URL: 'redis://queue.internal:6379/0',

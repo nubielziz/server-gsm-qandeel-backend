@@ -89,3 +89,50 @@ export async function voidOpenStaffTokens(
     .returning({ id: authTokens.id });
   return rows.length;
 }
+
+/**
+ * Finds a staff token by its id.
+ *
+ * Why: the staff mail job gets the token id from the outbox row and checks that the link is still worth sending.
+ *
+ * @param db the database or a transaction
+ * @param id the `auth_tokens` id
+ * @returns the row, or `undefined`
+ */
+export async function findStaffTokenById(db: DbExecutor, id: number): Promise<AuthToken | undefined> {
+  const [row] = await db
+    .select()
+    .from(authTokens)
+    .where(and(eq(authTokens.id, id), eq(authTokens.subjectType, 'staff')))
+    .limit(1);
+  return row;
+}
+
+/**
+ * Replaces the secret of a staff link that is still usable, keeping the row.
+ *
+ * Why: the request makes a placeholder token nobody receives; the mail job rotates it to the token that goes into the mail (feature 12a
+ * design). The guard is the usability rule itself (unused, not expired), so a link used or expired since the job read it never gets a new
+ * secret. The row id and expiry stay, so the outbox event still names it.
+ *
+ * @param db the database or a transaction
+ * @param id the `auth_tokens` id
+ * @param tokenHash the keyed hash of the new token
+ * @param now the time from the injected clock
+ * @returns true when the row was usable and now has the new hash
+ */
+export async function rotateStaffToken(db: DbExecutor, id: number, tokenHash: string, now: Date): Promise<boolean> {
+  const rows = await db
+    .update(authTokens)
+    .set({ tokenHash, updatedAt: now })
+    .where(
+      and(
+        eq(authTokens.id, id),
+        eq(authTokens.subjectType, 'staff'),
+        isNull(authTokens.usedAt),
+        gt(authTokens.expiresAt, now),
+      ),
+    )
+    .returning({ id: authTokens.id });
+  return rows.length > 0;
+}

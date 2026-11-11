@@ -3,6 +3,7 @@
 // approval (B153) because it manages the merchant's own account.
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime } from '../../../common/contract';
+import { CLIENT_LOCALES } from '../db/schema';
 import { MERCHANT_ME_EXAMPLE, MerchantCode, MerchantCountry, MerchantMeShape } from './merchant-auth.contracts';
 
 /** The fields of the profile; a missing key stays as it is. */
@@ -11,6 +12,9 @@ const ProfileBody = z.object({
   company: z.string().trim().max(160).optional(),
   phone: z.string().trim().max(40).optional(),
   country: MerchantCountry.optional(),
+  locale: z.enum(CLIENT_LOCALES).optional(),
+  address: z.string().trim().max(300).optional(),
+  taxId: z.string().trim().max(40).optional(),
 });
 
 const ChangePasswordBody = z.object({
@@ -32,11 +36,13 @@ const SessionRow = z.object({
   current: z.boolean(),
 });
 
-/** `PATCH /client/profile`: name, company, phone and country. */
+/** `PATCH /client/profile`: name, company, phone, country, language, address and tax id. */
 export const merchantUpdateProfile = defineRoute({
   key: 'PATCH /client/profile',
-  summary: 'Update name, company, phone and country',
-  description: 'A partial body: a missing key stays as it is. The email, username and group cannot be changed here.',
+  summary: 'Update the merchant profile',
+  description:
+    "A partial body: a missing key stays as it is. `locale` (`en` or `ar`) is the language of the merchant's emails. The email, " +
+    'username and group cannot be changed here.',
   tags: ['auth'],
   surface: 'client',
   access: 'merchant-session',

@@ -589,6 +589,7 @@ const productionEnv = (databaseUrl: string): Record<string, string> => ({
   NODE_ENV: 'production',
   ERRORS_BASE_URL: 'https://errors.gsm.example',
   PORTAL_BASE_URL: 'https://portal.gsm.example',
+  CONSOLE_BASE_URL: 'https://admin.gsm.example',
   STORE_BASE_URL: 'https://shop.gsm.example',
   DATABASE_URL: databaseUrl,
   REDIS_QUEUE_URL: 'redis://127.0.0.1:1/0',

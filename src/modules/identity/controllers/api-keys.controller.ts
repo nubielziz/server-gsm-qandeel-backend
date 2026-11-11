@@ -5,15 +5,17 @@ import { type BodyOf, type ParamsOf, type QueryOf, type ResultOf, Route } from '
 import { ApiKeyAdminService } from '../application/api-key-admin.service';
 import { MerchantApiKeyService } from '../application/merchant-api-key.service';
 import {
+  adminCreateClientApiKey,
   adminListClientApiKeys,
   adminRevokeApiKey,
+  adminUpdateApiKey,
   portalCreateApiKey,
   portalListApiKeys,
   portalRevokeApiKey,
   portalUpdateApiKey,
 } from '../contracts/api-keys.contracts';
-import { CurrentMerchant } from '../security/access-state';
-import type { MerchantPrincipal } from '../security/principal';
+import { CurrentMerchant, CurrentStaff } from '../security/access-state';
+import type { MerchantPrincipal, StaffPrincipal } from '../security/principal';
 
 /**
  * The merchant portal's API key routes.
@@ -101,9 +103,12 @@ export class MerchantApiKeysController {
 /**
  * The admin API key routes.
  *
- * Why: the merchants tab of the console reads a merchant's keys and revokes one (MISMATCHES B31, M45).
+ * Why: the merchants tab of the console reads a merchant's keys, creates one (shown once, `Cache-Control: no-store`), changes a key's
+ * limits and revokes one (MISMATCHES B31, M45; feature 20, R5 and R6).
  *
  * @route GET /admin/clients/:id/api-keys
+ * @route POST /admin/clients/:id/api-keys
+ * @route PATCH /admin/api-keys/:id
  * @route DELETE /admin/api-keys/:id
  */
 @Controller()
@@ -120,6 +125,41 @@ export class ApiKeysAdminController {
   @Route(adminListClientApiKeys)
   list(@Param() params: ParamsOf<typeof adminListClientApiKeys>): Promise<ResultOf<typeof adminListClientApiKeys>> {
     return this.keys.list(params.id);
+  }
+
+  /**
+   * Creates a key for a merchant and answers the full key once.
+   *
+   * @param staff the signed-in staff member
+   * @param params the merchant id
+   * @param body the name, scopes, allowed addresses, expiry and limit
+   * @returns the key and its secret
+   * @route POST /admin/clients/:id/api-keys
+   */
+  @Route(adminCreateClientApiKey)
+  @Header('Cache-Control', 'no-store')
+  create(
+    @CurrentStaff() staff: StaffPrincipal,
+    @Param() params: ParamsOf<typeof adminCreateClientApiKey>,
+    @Body() body: BodyOf<typeof adminCreateClientApiKey>,
+  ): Promise<ResultOf<typeof adminCreateClientApiKey>> {
+    return this.keys.create(staff, params.id, body);
+  }
+
+  /**
+   * Changes a key's per-minute limit and allowed addresses.
+   *
+   * @param params the key id
+   * @param body the fields to change
+   * @returns the key after the change
+   * @route PATCH /admin/api-keys/:id
+   */
+  @Route(adminUpdateApiKey)
+  update(
+    @Param() params: ParamsOf<typeof adminUpdateApiKey>,
+    @Body() body: BodyOf<typeof adminUpdateApiKey>,
+  ): Promise<ResultOf<typeof adminUpdateApiKey>> {
+    return this.keys.update(params.id, body);
   }
 
   /**

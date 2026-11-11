@@ -13,6 +13,9 @@ Status: accepted, 2026-10-31.
 - The public ticket form (`POST /store/v1/tickets`, feature 17): besides Turnstile and the per-IP limit, at most 3 new tickets
   per email address per hour (limiter `ticket-email`, keyed by the hashed lower-case address), because the receipt email
   repeats the visitor's subject to any address and the form could relay spam.
+- Account emails that staff or a merchant ask for (feature 20): at most 5 an hour per account and kind of mail (password
+  link, verification, email change; limiter `account-mail`, key `RateLimitService.compositeKey(subject, id, kind)`), for
+  merchants and staff, no lock-out; checked after the cheap refusals so a refused call spends no point.
 - Large bodies before authentication (amended 2026-11-07, feature 7a review): a multipart body or one declaring more than
   1 MiB on Dhru, REST v1 or the merchant portal is buffered and parsed (up to 25 MiB, B157) before its credentials are read,
   so it is also counted per client IP in the pipeline's limit stage (limiter `upload`, 20 a minute) before the body is read;

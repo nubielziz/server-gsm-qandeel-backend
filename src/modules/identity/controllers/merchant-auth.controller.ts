@@ -10,10 +10,12 @@ import { MerchantSignInService } from '../application/merchant-sign-in.service';
 import { requestMetaOf } from '../application/request-meta';
 import {
   merchantForgotPassword,
+  merchantChangeTemporaryPassword,
   merchantLogin,
   merchantLogout,
   merchantMe,
   merchantRegister,
+  merchantResendVerification,
   merchantResetPassword,
   merchantVerifyEmail,
   merchantVerifyTwoFactor,
@@ -47,6 +49,8 @@ export function wireMe(me: MerchantMe): ResultOf<typeof merchantMe> {
  * @route POST /client/auth/login
  * @route POST /client/auth/2fa
  * @route POST /client/auth/logout
+ * @route POST /client/auth/password/change
+ * @route POST /client/auth/verify-email/resend
  * @route POST /client/auth/password/forgot
  * @route POST /client/auth/password/reset
  * @route GET /client/auth/me
@@ -149,6 +153,45 @@ export class MerchantAuthController {
   ): Promise<void> {
     await this.signIn.logout(merchant);
     this.cookies.clear(reply, 'client');
+  }
+
+  /**
+   * Replaces a temporary password during the sign-in and continues it.
+   *
+   * @param merchant the `pending_password` session's merchant
+   * @param body the new password
+   * @param request the request
+   * @param reply the reply, to set the rotated session's cookies and the CSRF header
+   * @returns the next step (`totp` or `done`)
+   * @route POST /client/auth/password/change
+   */
+  @Route(merchantChangeTemporaryPassword)
+  @Header('Cache-Control', 'no-store')
+  async changeTemporaryPassword(
+    @CurrentMerchant() merchant: MerchantPrincipal,
+    @Body() body: BodyOf<typeof merchantChangeTemporaryPassword>,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<ResultOf<typeof merchantChangeTemporaryPassword>> {
+    const { next, session } = await this.passwords.changeForced(merchant, body.password, requestMetaOf(request));
+    this.cookies.set(reply, 'client', session.token, session.session.expiresAt);
+    return { next };
+  }
+
+  /**
+   * Sends the signed-in merchant a new verification email.
+   *
+   * @param merchant the session's merchant
+   * @param request the request
+   * @route POST /client/auth/verify-email/resend
+   */
+  @Route(merchantResendVerification)
+  @Header('Cache-Control', 'no-store')
+  async resendVerification(
+    @CurrentMerchant() merchant: MerchantPrincipal,
+    @Req() request: FastifyRequest,
+  ): Promise<void> {
+    await this.registration.resendVerification(merchant, requestMetaOf(request));
   }
 
   /**

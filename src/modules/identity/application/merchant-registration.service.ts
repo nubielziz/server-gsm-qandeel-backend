@@ -6,13 +6,16 @@ import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { PasswordHasher, TokenService } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
+import { RateLimitService } from '../../../infra/rate-limit';
 import { ClientGroupDirectory } from '../../catalog';
 import { MerchantAccounts } from '../../money';
+import { accountMailKey } from '../domain/account-mail';
 import { checkPasswordPolicy } from '../domain/password-policy';
 import { referralCodeFor, usernameFor } from '../domain/merchant-codes';
 import { consumeAuthToken } from '../infra/auth-token.repository';
 import {
   findClientByEmail,
+  findClientById,
   findClientIdByReferralCode,
   insertClient,
   markClientEmailVerified,
@@ -20,6 +23,8 @@ import {
 } from '../infra/merchant-auth.repository';
 import { findClientTokenByHash } from '../infra/merchant-token.repository';
 import { MerchantMailOutbox } from './mail/merchant-mail-outbox';
+import type { MerchantPrincipal } from '../security/principal';
+import { MerchantAccountReader } from './merchant-account-reader';
 import { MerchantAuthTokens } from './merchant-auth-tokens';
 import { weakPassword } from './merchant-errors';
 import { MerchantSignInLimiter } from './merchant-sign-in-limiter';
@@ -64,6 +69,8 @@ export class MerchantRegistrationService {
     private readonly groups: ClientGroupDirectory,
     private readonly accounts: MerchantAccounts,
     private readonly mail: MerchantMailOutbox,
+    private readonly reader: MerchantAccountReader,
+    private readonly limits: RateLimitService,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -113,7 +120,8 @@ export class MerchantRegistrationService {
    *
    * @param token the token of the emailed link
    * @param meta the caller's address
-   * @throws {AppError} `RATE_LIMITED` (429), `TOKEN_INVALID` (410: unknown, used, expired or superseded)
+   * @throws {AppError} `RATE_LIMITED` (429), `TOKEN_INVALID` (410: unknown, used, expired or superseded, or the merchant is gone or
+   *   suspended)
    */
   async verifyEmail(token: string, meta: RequestMeta): Promise<void> {
     await this.limiter.enforceLink(meta.limitKey);
@@ -122,10 +130,38 @@ export class MerchantRegistrationService {
     if (link?.purpose !== 'verify_email' || link.usedAt !== null || link.expiresAt.getTime() <= now.getTime()) {
       throw new AppError('TOKEN_INVALID');
     }
+    // A suspended merchant's link is as dead as an unknown one (a suspension also voids the open links; this closes the race).
+    const client = await findClientById(this.db.db, link.subjectId);
+    if (!client || client.status === 'suspended') throw new AppError('TOKEN_INVALID');
     await this.db.runInTransaction(async (work) => {
       // A parallel request used the link first.
       if (!(await consumeAuthToken(work.tx, link.id, now))) throw new AppError('TOKEN_INVALID');
       await markClientEmailVerified(work.tx, link.subjectId, now);
+    });
+  }
+
+  /**
+   * Sends the signed-in merchant a new verification link.
+   *
+   * Why: feature 20 (H-1): the portal said "contact support" when the first mail was lost. It is a session route, so it reveals nothing about
+   * other accounts; the newest link replaces the older one. The limiter key is shared with the staff action.
+   *
+   * Side effects: inserts an `auth_tokens` row (a placeholder the mail job rotates), voids the older verification link, writes the outbox
+   * event `merchant.email_verification` (ids only); counts one point of `account-mail`.
+   *
+   * @param principal the signed-in merchant (a pending merchant is fine)
+   * @param meta the caller's address, kept on the link row
+   * @throws {AppError} `UNAUTHORIZED` (401), `ACCOUNT_SUSPENDED` (403), `CONFLICT` (409: already verified), `RATE_LIMITED` (429)
+   */
+  async resendVerification(principal: MerchantPrincipal, meta: RequestMeta): Promise<void> {
+    const client = await this.reader.current(principal.clientId);
+    if (client.emailVerifiedAt !== null) {
+      throw new AppError('CONFLICT', { detail: 'This email address is already verified.' });
+    }
+    await this.limits.enforce('account-mail', accountMailKey('client', client.id, 'verification'));
+    await this.db.runInTransaction(async (work) => {
+      const issued = await this.authTokens.issue(work, { clientId: client.id, purpose: 'verify_email', ip: meta.ip });
+      await this.mail.enqueue(work, { kind: 'email_verification', clientId: client.id, tokenId: issued.id });
     });
   }
 

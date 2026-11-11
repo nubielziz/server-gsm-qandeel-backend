@@ -2,6 +2,8 @@
 // the API (it writes the events) and by the worker (src/worker.module.ts: it handles them).
 import { Module } from '@nestjs/common';
 import { NotificationDeliveryModule } from '../platform';
+import { IdentityMailEventsModule } from './identity-mail-events.module';
+import { MerchantLifecycleMails } from './application/mail/merchant-lifecycle-mails';
 import { MerchantMailJobs } from './application/mail/merchant-mail-jobs';
 import { MerchantMailOutbox } from './application/mail/merchant-mail-outbox';
 import {
@@ -18,14 +20,15 @@ import {
  * by the platform's notification delivery (`NotificationService.sendNow`): templates, the mail transport, retries and the log row.
  */
 @Module({
-  imports: [NotificationDeliveryModule],
+  imports: [NotificationDeliveryModule, IdentityMailEventsModule],
   providers: [
     MerchantMailOutbox,
+    MerchantLifecycleMails,
     MerchantMailJobs,
     EmailVerificationMailProcessor,
     PasswordResetMailProcessor,
     MerchantInvitedMailProcessor,
   ],
-  exports: [MerchantMailOutbox],
+  exports: [MerchantMailOutbox, MerchantLifecycleMails],
 })
 export class MerchantMailModule {}
