@@ -14,7 +14,11 @@
         "serviceName": "iCloud Clean / Lost Check",
         "cost": "0.5864",
         "previousCost": null,
-        "suggestedPrice": null
+        "suggestedPrice": null,
+        "minQty": 1,
+        "maxQty": 1,
+        "qtyOptions": [],
+        "quantityDiffers": false
       },
       {
         "supplierServiceId": 4,
@@ -25,7 +29,11 @@
         "serviceName": "Apple Warranty & Activation Date",
         "cost": "0.0540",
         "previousCost": null,
-        "suggestedPrice": null
+        "suggestedPrice": null,
+        "minQty": 1,
+        "maxQty": 1,
+        "qtyOptions": [],
+        "quantityDiffers": false
       }
     ]
   }

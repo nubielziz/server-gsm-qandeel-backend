@@ -25,6 +25,9 @@
       "marginPct": "38.4615",
       "belowFloor": false,
       "slaMinutes": 2,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 3,
         "name": "Rapid IMEI"
@@ -54,6 +57,9 @@
       "marginPct": "50.0000",
       "belowFloor": false,
       "slaMinutes": 1,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 3,
         "name": "Rapid IMEI"
@@ -83,6 +89,9 @@
       "marginPct": "41.6667",
       "belowFloor": false,
       "slaMinutes": 2,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 3,
         "name": "Rapid IMEI"
@@ -112,6 +121,9 @@
       "marginPct": "55.5556",
       "belowFloor": false,
       "slaMinutes": 1,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 3,
         "name": "Rapid IMEI"
@@ -141,6 +153,9 @@
       "marginPct": "21.8750",
       "belowFloor": false,
       "slaMinutes": 2880,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 1,
         "name": "Nordic GSM"
@@ -170,6 +185,9 @@
       "marginPct": "23.0769",
       "belowFloor": false,
       "slaMinutes": 1440,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 1,
         "name": "Nordic GSM"
@@ -199,6 +217,9 @@
       "marginPct": "25.9259",
       "belowFloor": false,
       "slaMinutes": 720,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 6,
         "name": "Bosphorus Unlock"
@@ -228,6 +249,9 @@
       "marginPct": "23.0769",
       "belowFloor": false,
       "slaMinutes": 1440,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 6,
         "name": "Bosphorus Unlock"
@@ -257,6 +281,9 @@
       "marginPct": "23.6277",
       "belowFloor": false,
       "slaMinutes": 1440,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 6,
         "name": "Bosphorus Unlock"
@@ -286,6 +313,9 @@
       "marginPct": "21.2377",
       "belowFloor": false,
       "slaMinutes": 2880,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 1,
         "name": "Nordic GSM"
@@ -315,6 +345,9 @@
       "marginPct": "20.0000",
       "belowFloor": false,
       "slaMinutes": 4320,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 1,
         "name": "Nordic GSM"
@@ -344,6 +377,9 @@
       "marginPct": "18.0328",
       "belowFloor": false,
       "slaMinutes": 2880,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 1,
         "name": "Nordic GSM"
@@ -373,6 +409,9 @@
       "marginPct": "24.8497",
       "belowFloor": false,
       "slaMinutes": 60,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 1,
         "name": "Nordic GSM"
@@ -402,6 +441,9 @@
       "marginPct": "28.5714",
       "belowFloor": false,
       "slaMinutes": 180,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 6,
         "name": "Bosphorus Unlock"
@@ -431,6 +473,9 @@
       "marginPct": "9.0909",
       "belowFloor": false,
       "slaMinutes": 5,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 2,
         "name": "Gulf Server Hub"
@@ -457,6 +502,9 @@
       "marginPct": "20.0000",
       "belowFloor": false,
       "slaMinutes": 5,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 2,
         "name": "Gulf Server Hub"
@@ -483,6 +531,9 @@
       "marginPct": "-1.5385",
       "belowFloor": true,
       "slaMinutes": 10,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 2,
         "name": "Gulf Server Hub"
@@ -509,6 +560,9 @@
       "marginPct": "18.0221",
       "belowFloor": false,
       "slaMinutes": 5,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 2,
         "name": "Gulf Server Hub"
@@ -535,6 +589,9 @@
       "marginPct": "20.6762",
       "belowFloor": false,
       "slaMinutes": 5,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 2,
         "name": "Gulf Server Hub"
@@ -561,6 +618,9 @@
       "marginPct": "31.0345",
       "belowFloor": false,
       "slaMinutes": 30,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 4,
         "name": "RemoteDesk Pro"
@@ -587,6 +647,9 @@
       "marginPct": "27.5362",
       "belowFloor": false,
       "slaMinutes": 45,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 4,
         "name": "RemoteDesk Pro"
@@ -613,6 +676,9 @@
       "marginPct": "23.0769",
       "belowFloor": false,
       "slaMinutes": 90,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 4,
         "name": "RemoteDesk Pro"
@@ -639,6 +705,9 @@
       "marginPct": "25.9259",
       "belowFloor": false,
       "slaMinutes": 60,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 4,
         "name": "RemoteDesk Pro"
@@ -665,6 +734,9 @@
       "marginPct": "35.7143",
       "belowFloor": false,
       "slaMinutes": 3,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 5,
         "name": "FileForge"
@@ -691,6 +763,9 @@
       "marginPct": "33.3333",
       "belowFloor": false,
       "slaMinutes": 15,
+      "minQty": 1,
+      "maxQty": 1,
+      "qtyOptions": [],
       "supplier": {
         "id": 5,
         "name": "FileForge"

@@ -71,29 +71,17 @@ const ServiceRow = z.object({
     .int()
     .min(1)
     .max(MAX_QUANTITY)
-    .optional()
-    .describe(
-      'The smallest quantity of one order; with `qtyOptions` the smallest pack. Always sent; optional in the schema only ' +
-        "until the console's types and fixtures carry it.",
-    ),
+    .describe('The smallest quantity of one order; with `qtyOptions` the smallest pack.'),
   maxQty: z
     .number()
     .int()
     .min(1)
     .max(MAX_QUANTITY)
-    .optional()
-    .describe(
-      'The largest quantity of one order; with `qtyOptions` the largest pack. Always sent; optional in the schema only ' +
-        "until the console's types and fixtures carry it.",
-    ),
+    .describe('The largest quantity of one order; with `qtyOptions` the largest pack.'),
   qtyOptions: z
     .array(z.number().int().min(1).max(MAX_QUANTITY))
     .max(MAX_QTY_OPTIONS)
-    .optional()
-    .describe(
-      'Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`. Always sent; optional in the ' +
-        "schema only until the console's types and fixtures carry it.",
-    ),
+    .describe('Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`.'),
 });
 
 /** One custom field of a service (Dhru `Requires.Custom`). */

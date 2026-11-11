@@ -663,7 +663,7 @@
    "key": "DELETE /admin/services/:id",
    "fn": "deleteService",
    "file": "src/features/services/api/services.ts",
-   "line": 66,
+   "line": 70,
    "params": [
     {
      "name": "id",
@@ -16313,6 +16313,17 @@
          "type": "string",
          "alias": "Money"
         },
+        "minQty": {
+         "type": "number"
+        },
+        "maxQty": {
+         "type": "number"
+        },
+        "qtyOptions": {
+         "array": {
+          "type": "number"
+         }
+        },
         "code": {
          "type": "string"
         },
@@ -16461,6 +16472,17 @@
      "cost": {
       "type": "string",
       "alias": "Money"
+     },
+     "minQty": {
+      "type": "number"
+     },
+     "maxQty": {
+      "type": "number"
+     },
+     "qtyOptions": {
+      "array": {
+       "type": "number"
+      }
      },
      "code": {
       "type": "string"
@@ -26915,7 +26937,7 @@
    "key": "PATCH /admin/services/:id",
    "fn": "updateService",
    "file": "src/features/services/api/services.ts",
-   "line": 56,
+   "line": 60,
    "params": [
     {
      "name": "id",
@@ -26961,6 +26983,20 @@
        "basePrice": {
         "type": "string",
         "alias": "Money",
+        "optional": true
+       },
+       "minQty": {
+        "type": "number",
+        "optional": true
+       },
+       "maxQty": {
+        "type": "number",
+        "optional": true
+       },
+       "qtyOptions": {
+        "array": {
+         "type": "number"
+        },
         "optional": true
        },
        "minProfit": {
@@ -27023,6 +27059,17 @@
      "cost": {
       "type": "string",
       "alias": "Money"
+     },
+     "minQty": {
+      "type": "number"
+     },
+     "maxQty": {
+      "type": "number"
+     },
+     "qtyOptions": {
+      "array": {
+       "type": "number"
+      }
      },
      "code": {
       "type": "string"
@@ -38229,7 +38276,7 @@
    "key": "POST /admin/services",
    "fn": "createService",
    "file": "src/features/services/api/services.ts",
-   "line": 45,
+   "line": 47,
    "params": [
     {
      "name": "body",
@@ -38261,6 +38308,20 @@
        "basePrice": {
         "type": "string",
         "alias": "Money"
+       },
+       "minQty": {
+        "type": "number",
+        "optional": true
+       },
+       "maxQty": {
+        "type": "number",
+        "optional": true
+       },
+       "qtyOptions": {
+        "array": {
+         "type": "number"
+        },
+        "optional": true
        }
       }
      }
@@ -38303,6 +38364,17 @@
      "cost": {
       "type": "string",
       "alias": "Money"
+     },
+     "minQty": {
+      "type": "number"
+     },
+     "maxQty": {
+      "type": "number"
+     },
+     "qtyOptions": {
+      "array": {
+       "type": "number"
+      }
      },
      "code": {
       "type": "string"
@@ -39450,6 +39522,20 @@
          "type": "string",
          "nullable": true,
          "alias": "Money"
+        },
+        "minQty": {
+         "type": "number"
+        },
+        "maxQty": {
+         "type": "number"
+        },
+        "qtyOptions": {
+         "array": {
+          "type": "number"
+         }
+        },
+        "quantityDiffers": {
+         "type": "boolean"
         }
        }
       }

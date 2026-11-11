@@ -23,6 +23,9 @@
     "marginPct": "38.4615",
     "belowFloor": false,
     "slaMinutes": 2,
+    "minQty": 1,
+    "maxQty": 1,
+    "qtyOptions": [],
     "supplier": {
       "id": 3,
       "name": "Rapid IMEI"

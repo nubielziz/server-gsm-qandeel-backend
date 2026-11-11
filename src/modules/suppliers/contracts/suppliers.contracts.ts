@@ -8,10 +8,6 @@ import { SUPPLIER_DRIVERS, SUPPLIER_STATUSES } from '../db/schema';
 
 const id = z.object({ id: zIdParam });
 
-/** The "Always sent" sentence of the quantity keys of an import preview item (optional in the schema until the console carries them). */
-const PREVIEW_QUANTITY_NOTE = (what: string): string =>
-  `${what} Always sent; optional in the schema only until the console's types and fixtures carry it.`;
-
 /** The switch of a supplier. */
 const Status = z.enum(SUPPLIER_STATUSES);
 
@@ -481,33 +477,21 @@ export const previewImport = defineRoute({
             .int()
             .min(1)
             .max(MAX_QUANTITY)
-            .optional()
-            .describe(
-              PREVIEW_QUANTITY_NOTE(
-                'The smallest quantity the supplier states (the smallest pack when it lists packs).',
-              ),
-            ),
+            .describe('The smallest quantity the supplier states (the smallest pack when it lists packs).'),
           maxQty: z
             .number()
             .int()
             .min(1)
             .max(MAX_QUANTITY)
-            .optional()
-            .describe(
-              PREVIEW_QUANTITY_NOTE('The largest quantity the supplier states (the largest pack when it lists packs).'),
-            ),
+            .describe('The largest quantity the supplier states (the largest pack when it lists packs).'),
           qtyOptions: z
             .array(z.number().int().min(1).max(MAX_QUANTITY))
             .max(MAX_QTY_OPTIONS)
-            .optional()
-            .describe(PREVIEW_QUANTITY_NOTE("The supplier's pack sizes, ascending; empty when it sells a range.")),
+            .describe("The supplier's pack sizes, ascending; empty when it sells a range."),
           quantityDiffers: z
             .boolean()
-            .optional()
             .describe(
-              PREVIEW_QUANTITY_NOTE(
-                "True when a live linked service sells a quantity rule other than the supplier's; false for a new item and for an archived link.",
-              ),
+              "True when a live linked service sells a quantity rule other than the supplier's; false for a new item and for an archived link.",
             ),
         }),
       ),

@@ -137924,26 +137924,26 @@
                         "maximum": 720
                       },
                       "minQty": {
-                        "description": "The smallest quantity of one order; with `qtyOptions` the smallest pack. Always sent; optional in the schema only until the console's types and fixtures carry it.",
                         "type": "integer",
                         "minimum": 1,
-                        "maximum": 100000
+                        "maximum": 100000,
+                        "description": "The smallest quantity of one order; with `qtyOptions` the smallest pack."
                       },
                       "maxQty": {
-                        "description": "The largest quantity of one order; with `qtyOptions` the largest pack. Always sent; optional in the schema only until the console's types and fixtures carry it.",
                         "type": "integer",
                         "minimum": 1,
-                        "maximum": 100000
+                        "maximum": 100000,
+                        "description": "The largest quantity of one order; with `qtyOptions` the largest pack."
                       },
                       "qtyOptions": {
-                        "description": "Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`. Always sent; optional in the schema only until the console's types and fixtures carry it.",
                         "maxItems": 50,
                         "type": "array",
                         "items": {
                           "type": "integer",
                           "minimum": 1,
                           "maximum": 100000
-                        }
+                        },
+                        "description": "Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`."
                       }
                     },
                     "required": [
@@ -137964,7 +137964,10 @@
                       "belowFloor",
                       "slaMinutes",
                       "supplier",
-                      "fallbackSupplier"
+                      "fallbackSupplier",
+                      "minQty",
+                      "maxQty",
+                      "qtyOptions"
                     ],
                     "additionalProperties": false
                   }
@@ -138643,26 +138646,26 @@
                       "maximum": 720
                     },
                     "minQty": {
-                      "description": "The smallest quantity of one order; with `qtyOptions` the smallest pack. Always sent; optional in the schema only until the console's types and fixtures carry it.",
                       "type": "integer",
                       "minimum": 1,
-                      "maximum": 100000
+                      "maximum": 100000,
+                      "description": "The smallest quantity of one order; with `qtyOptions` the smallest pack."
                     },
                     "maxQty": {
-                      "description": "The largest quantity of one order; with `qtyOptions` the largest pack. Always sent; optional in the schema only until the console's types and fixtures carry it.",
                       "type": "integer",
                       "minimum": 1,
-                      "maximum": 100000
+                      "maximum": 100000,
+                      "description": "The largest quantity of one order; with `qtyOptions` the largest pack."
                     },
                     "qtyOptions": {
-                      "description": "Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`. Always sent; optional in the schema only until the console's types and fixtures carry it.",
                       "maxItems": 50,
                       "type": "array",
                       "items": {
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 100000
-                      }
+                      },
+                      "description": "Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`."
                     }
                   },
                   "required": [
@@ -138683,7 +138686,10 @@
                     "belowFloor",
                     "slaMinutes",
                     "supplier",
-                    "fallbackSupplier"
+                    "fallbackSupplier",
+                    "minQty",
+                    "maxQty",
+                    "qtyOptions"
                   ],
                   "additionalProperties": false
                 },
@@ -140270,26 +140276,26 @@
                       "maximum": 720
                     },
                     "minQty": {
-                      "description": "The smallest quantity of one order; with `qtyOptions` the smallest pack. Always sent; optional in the schema only until the console's types and fixtures carry it.",
                       "type": "integer",
                       "minimum": 1,
-                      "maximum": 100000
+                      "maximum": 100000,
+                      "description": "The smallest quantity of one order; with `qtyOptions` the smallest pack."
                     },
                     "maxQty": {
-                      "description": "The largest quantity of one order; with `qtyOptions` the largest pack. Always sent; optional in the schema only until the console's types and fixtures carry it.",
                       "type": "integer",
                       "minimum": 1,
-                      "maximum": 100000
+                      "maximum": 100000,
+                      "description": "The largest quantity of one order; with `qtyOptions` the largest pack."
                     },
                     "qtyOptions": {
-                      "description": "Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`. Always sent; optional in the schema only until the console's types and fixtures carry it.",
                       "maxItems": 50,
                       "type": "array",
                       "items": {
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 100000
-                      }
+                      },
+                      "description": "Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`."
                     },
                     "fields": {
                       "type": "array",
@@ -140426,6 +140432,9 @@
                     "slaMinutes",
                     "supplier",
                     "fallbackSupplier",
+                    "minQty",
+                    "maxQty",
+                    "qtyOptions",
                     "fields",
                     "options",
                     "groupPrices"
@@ -141152,26 +141161,26 @@
                       "maximum": 720
                     },
                     "minQty": {
-                      "description": "The smallest quantity of one order; with `qtyOptions` the smallest pack. Always sent; optional in the schema only until the console's types and fixtures carry it.",
                       "type": "integer",
                       "minimum": 1,
-                      "maximum": 100000
+                      "maximum": 100000,
+                      "description": "The smallest quantity of one order; with `qtyOptions` the smallest pack."
                     },
                     "maxQty": {
-                      "description": "The largest quantity of one order; with `qtyOptions` the largest pack. Always sent; optional in the schema only until the console's types and fixtures carry it.",
                       "type": "integer",
                       "minimum": 1,
-                      "maximum": 100000
+                      "maximum": 100000,
+                      "description": "The largest quantity of one order; with `qtyOptions` the largest pack."
                     },
                     "qtyOptions": {
-                      "description": "Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`. Always sent; optional in the schema only until the console's types and fixtures carry it.",
                       "maxItems": 50,
                       "type": "array",
                       "items": {
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 100000
-                      }
+                      },
+                      "description": "Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`."
                     }
                   },
                   "required": [
@@ -141192,7 +141201,10 @@
                     "belowFloor",
                     "slaMinutes",
                     "supplier",
-                    "fallbackSupplier"
+                    "fallbackSupplier",
+                    "minQty",
+                    "maxQty",
+                    "qtyOptions"
                   ],
                   "additionalProperties": false
                 },
@@ -157123,30 +157135,30 @@
                             ]
                           },
                           "minQty": {
-                            "description": "The smallest quantity the supplier states (the smallest pack when it lists packs). Always sent; optional in the schema only until the console's types and fixtures carry it.",
                             "type": "integer",
                             "minimum": 1,
-                            "maximum": 100000
+                            "maximum": 100000,
+                            "description": "The smallest quantity the supplier states (the smallest pack when it lists packs)."
                           },
                           "maxQty": {
-                            "description": "The largest quantity the supplier states (the largest pack when it lists packs). Always sent; optional in the schema only until the console's types and fixtures carry it.",
                             "type": "integer",
                             "minimum": 1,
-                            "maximum": 100000
+                            "maximum": 100000,
+                            "description": "The largest quantity the supplier states (the largest pack when it lists packs)."
                           },
                           "qtyOptions": {
-                            "description": "The supplier's pack sizes, ascending; empty when it sells a range. Always sent; optional in the schema only until the console's types and fixtures carry it.",
                             "maxItems": 50,
                             "type": "array",
                             "items": {
                               "type": "integer",
                               "minimum": 1,
                               "maximum": 100000
-                            }
+                            },
+                            "description": "The supplier's pack sizes, ascending; empty when it sells a range."
                           },
                           "quantityDiffers": {
-                            "description": "True when a live linked service sells a quantity rule other than the supplier's; false for a new item and for an archived link. Always sent; optional in the schema only until the console's types and fixtures carry it.",
-                            "type": "boolean"
+                            "type": "boolean",
+                            "description": "True when a live linked service sells a quantity rule other than the supplier's; false for a new item and for an archived link."
                           }
                         },
                         "required": [
@@ -157158,7 +157170,11 @@
                           "serviceName",
                           "cost",
                           "previousCost",
-                          "suggestedPrice"
+                          "suggestedPrice",
+                          "minQty",
+                          "maxQty",
+                          "qtyOptions",
+                          "quantityDiffers"
                         ],
                         "additionalProperties": false
                       }
