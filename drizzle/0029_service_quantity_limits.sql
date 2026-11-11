@@ -1,0 +1,1 @@
+ALTER TABLE "services" ADD CONSTRAINT "services_qty_limits_check" CHECK ("services"."max_qty" <= 100000 and cardinality("services"."qty_options") <= 50 and array_position("services"."qty_options", null) is null and 1 <= all ("services"."qty_options") and 100000 >= all ("services"."qty_options"));

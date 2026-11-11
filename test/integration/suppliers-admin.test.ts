@@ -700,6 +700,10 @@ describe("the supplier's services and the import", () => {
         cost: '10.0000',
         previousCost: null,
         suggestedPrice: null,
+        minQty: 1,
+        maxQty: 1,
+        qtyOptions: [],
+        quantityDiffers: false,
       },
     ]);
     await world.db.update(s.services).set({ cost: '9.0000' }).where(eq(s.services.id, linked!.id));
@@ -855,6 +859,146 @@ describe("the supplier's services and the import", () => {
     });
     expect(foreign.status).toBe(422);
     expect((await staff.post('/admin/suppliers/999999/import', { supplierServiceIds: [1] })).status).toBe(404);
+  });
+});
+
+describe("the supplier's quantity rule (feature 25)", () => {
+  let supplierId: number;
+  let remote: Map<string, number>;
+  const entry = (id: string, extra: Partial<(typeof fake.services)[number]> = {}) => ({
+    id,
+    group: 'Bulk',
+    type: 'IMEI',
+    name: `Bulk ${id}`,
+    credit: '5.0000',
+    time: '1-2 hours',
+    ...extra,
+  });
+  const serviceOf = async (remoteId: string) =>
+    (
+      await world.db
+        .select()
+        .from(s.services)
+        .where(eq(s.services.code, `IMP-${remote.get(remoteId)}`))
+    )[0]!;
+  const preview = async (...remoteIds: string[]) =>
+    (
+      await staff.post(`/admin/suppliers/${supplierId}/import/preview`, {
+        supplierServiceIds: remoteIds.map((id) => remote.get(id)!),
+      })
+    ).body.items;
+  const importIds = async (...remoteIds: string[]) =>
+    (
+      await staff.post(`/admin/suppliers/${supplierId}/import`, {
+        supplierServiceIds: remoteIds.map((id) => remote.get(id)!),
+      })
+    ).body;
+  const sync = async () => {
+    expect((await staff.post(`/admin/suppliers/${supplierId}/sync`)).status).toBe(200);
+    const rows = await world.db.select().from(s.supplierServices).where(eq(s.supplierServices.supplierId, supplierId));
+    remote = new Map(rows.map((row) => [row.remoteId, row.id]));
+  };
+
+  beforeEach(async () => {
+    fake.services = [
+      entry('q1', { qnt: '1', minQnt: '2', maxQnt: '50' }),
+      entry('q2', { qnt: 1, qntOptions: '25, 5;10' }),
+      entry('q3', { qnt: '1', minQnt: 'abc', maxQnt: '-3', qntOptions: 'x,0' }),
+      entry('q4'),
+    ];
+    supplierId = (await createSupplier({ name: `Quantity Source ${(counter += 1)}` })).id;
+    await sync();
+  });
+
+  it('keeps the four fields of a synced entry in raw', async () => {
+    const [row] = await world.db
+      .select()
+      .from(s.supplierServices)
+      .where(eq(s.supplierServices.id, remote.get('q1')!));
+    expect(row!.raw).toMatchObject({ QNT: '1', MINQNT: '2', MAXQNT: '50' });
+    const [packs] = await world.db
+      .select()
+      .from(s.supplierServices)
+      .where(eq(s.supplierServices.id, remote.get('q2')!));
+    expect(packs!.raw).toMatchObject({ QNT: 1, QNTOPTIONS: '25, 5;10' });
+  });
+
+  it('previews the supplier rule of each item, as the service would get it, with quantityDiffers false for new items', async () => {
+    const items = await preview('q1', 'q2', 'q3', 'q4');
+    expect(
+      items.map((item: Record<string, unknown>) => [item.minQty, item.maxQty, item.qtyOptions, item.quantityDiffers]),
+    ).toEqual([
+      [2, 50, [], false],
+      [5, 25, [5, 10, 25], false],
+      [1, 1, [], false],
+      [1, 1, [], false],
+    ]);
+  });
+
+  it('imports the range and the packs (smallest and largest derived), garbage as one per order, and counts them in the audit', async () => {
+    expect(await importIds('q1', 'q2', 'q3', 'q4')).toEqual({ created: 4, updated: 0, unchanged: 0 });
+    expect(await serviceOf('q1')).toMatchObject({ minQty: 2, maxQty: 50, qtyOptions: [] });
+    expect(await serviceOf('q2')).toMatchObject({ minQty: 5, maxQty: 25, qtyOptions: [5, 10, 25] });
+    expect(await serviceOf('q3')).toMatchObject({ minQty: 1, maxQty: 1, qtyOptions: [] });
+    expect(await serviceOf('q4')).toMatchObject({ minQty: 1, maxQty: 1, qtyOptions: [] });
+    const audit = (await auditOfEntity('supplier', supplierId)).at(-1)!;
+    expect(audit).toMatchObject({ action: 'imported services from', actorId: staff.staffId });
+    expect(audit.after).toEqual({ created: 4, updated: 0, unchanged: 0, createdWithQuantity: 2 });
+  });
+
+  it('never applies a supplier rule after creation: staff edits win over a new sync and a second import', async () => {
+    await importIds('q1', 'q2');
+    const q1 = await serviceOf('q1');
+    // Staff change the rule of q1 (a range 1..10).
+    expect((await staff.patch(`/admin/services/${q1.id}`, { minQty: 1, maxQty: 10 })).status).toBe(200);
+
+    // The supplier changes its rules and its price, and the services are synced again.
+    fake.services = [
+      entry('q1', { qnt: '1', minQnt: '3', maxQnt: '99', credit: '7.0000' }),
+      entry('q2', { qnt: '1', qntOptions: '100,200' }),
+      entry('q3'),
+      entry('q4'),
+    ];
+    await sync();
+    const [raw] = await world.db
+      .select()
+      .from(s.supplierServices)
+      .where(eq(s.supplierServices.id, remote.get('q1')!));
+    expect(raw!.raw).toMatchObject({ MINQNT: '3', MAXQNT: '99' });
+
+    const items = await preview('q1', 'q2');
+    expect(items[0]).toMatchObject({ state: 'changed', minQty: 3, maxQty: 99, qtyOptions: [], quantityDiffers: true });
+    expect(items[1]).toMatchObject({
+      state: 'matching',
+      minQty: 100,
+      maxQty: 200,
+      qtyOptions: [100, 200],
+      quantityDiffers: true,
+    });
+
+    // A second import updates the cost of q1 and nothing else.
+    expect(await importIds('q1', 'q2')).toEqual({ created: 0, updated: 1, unchanged: 1 });
+    expect(await serviceOf('q1')).toMatchObject({ cost: '7.0000', minQty: 1, maxQty: 10, qtyOptions: [] });
+    expect(await serviceOf('q2')).toMatchObject({ minQty: 5, maxQty: 25, qtyOptions: [5, 10, 25] });
+    const audit = (await auditOfEntity('supplier', supplierId)).at(-1)!;
+    expect(audit.after).toEqual({ created: 0, updated: 1, unchanged: 1, createdWithQuantity: 0 });
+  });
+
+  it('says quantityDiffers false when the service already sells the supplier rule, and for an archived link', async () => {
+    await importIds('q1', 'q4');
+    expect((await preview('q1', 'q4')).map((item: { quantityDiffers: boolean }) => item.quantityDiffers)).toEqual([
+      false,
+      false,
+    ]);
+    const q4 = await serviceOf('q4');
+    await world.db
+      .update(s.services)
+      .set({ status: 'disabled', archivedAt: new Date() })
+      .where(eq(s.services.id, q4.id));
+    fake.services = [entry('q1', { qnt: '1', minQnt: '2', maxQnt: '50' }), entry('q4', { qnt: '1', maxQnt: '9' })];
+    await sync();
+    const [archived] = await preview('q4');
+    expect(archived).toMatchObject({ maxQty: 9, quantityDiffers: false });
   });
 });
 

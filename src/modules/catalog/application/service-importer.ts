@@ -5,6 +5,7 @@ import { Injectable } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
 import { type ServiceFieldType, type ServiceType, serviceCategories, services } from '../db/schema';
+import { type QuantityRule, quantityRuleProblems } from '../domain/quantity-rule';
 import { deliveryTimeText } from '../domain/service-figures';
 import { insertCategoryRow, nextCategorySort } from '../infra/category.repository';
 import { findServiceByCode, insertServiceRow, replaceFieldRows } from '../infra/service.repository';
@@ -24,6 +25,8 @@ export interface ImportedServiceInput {
   /** The suggested price: the effective cost plus the default minimum profit (catalog-9). */
   readonly basePrice: string;
   readonly slaMinutes: number;
+  /** The quantity rule the service starts with (feature 25): the supplier's, already normalised by the suppliers module. */
+  readonly quantity: QuantityRule;
   readonly fields: ReadonlyArray<{
     readonly key: string;
     readonly label: string;
@@ -42,8 +45,9 @@ const MAX_DELIVERY_TEXT = 80;
  *
  * Why: orders-suppliers-10 (with B24 and catalog-9): a new item becomes an active, automatic, fixed-price service with the
  * `POST /admin/services` defaults, a category found or created by (type, name), the suggested price as `base_price` and the
- * supplier's custom fields as service fields. The caller recomputes the effective cost and moves the catalog price version
- * afterwards. A changed item only has its cost set here.
+ * supplier's custom fields as service fields. It also starts with the quantity rule the supplier states (feature 25, B213), written
+ * at creation only: a later import or sync never touches a service's quantities. The caller recomputes the effective cost and
+ * moves the catalog price version afterwards. A changed item only has its cost set here.
  *
  * Side effects: inserts `service_categories` (when the group has none yet), `services` and `service_fields`; updates
  * `services.cost`. No audit row: the import's use case writes one for the whole import.
@@ -56,8 +60,11 @@ export class ServiceImporter {
    * @param tx the import's transaction
    * @param input what the supplier service says
    * @returns the new service's id and the code it got
+   * @throws {Error} when `input.quantity` breaks the quantity rule (a programming error: the caller normalises it)
    */
   async create(tx: DbExecutor, input: ImportedServiceInput): Promise<{ serviceId: number; code: string }> {
+    const problems = quantityRuleProblems(input.quantity);
+    if (problems.length > 0) throw new Error(`The imported quantity rule is invalid: ${problems.join('; ')}`);
     const categoryId = await this.categoryFor(
       tx,
       input.type,
@@ -79,6 +86,9 @@ export class ServiceImporter {
       effectiveCost: input.cost,
       code,
       slaMinutes: input.slaMinutes,
+      minQty: input.quantity.minQty,
+      maxQty: input.quantity.maxQty,
+      qtyOptions: input.quantity.qtyOptions,
     });
     if (input.fields.length > 0) {
       await replaceFieldRows(

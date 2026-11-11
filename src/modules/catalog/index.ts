@@ -66,6 +66,8 @@ export type {
   TacRef,
 } from './application/storefront-services';
 export { coversSmallestOrder, smallestOrder } from './domain/storefront-availability';
+export { MAX_QTY_OPTIONS, MAX_QUANTITY, quantityRuleProblems, resolveQuantityRule } from './domain/quantity-rule';
+export type { QuantityRule } from './domain/quantity-rule';
 export { InventoryStock } from './application/inventory-stock';
 export type { StockClaim } from './application/inventory-stock';
 export { SERVICE_DUPLICATE_RULES, SERVICE_PRICE_MODES, SERVICE_TYPES } from './db/schema';

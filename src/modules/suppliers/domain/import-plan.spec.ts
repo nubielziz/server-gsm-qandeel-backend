@@ -1,6 +1,6 @@
 // Unit tests of the import rules: classification of a picked item, the type check and the mapping of custom fields.
 import { describe, expect, it } from 'bun:test';
-import { classifyImportItem, importableType, importedFields } from './import-plan';
+import { classifyImportItem, importableType, importedFields, quantityDiffers } from './import-plan';
 
 describe('classifyImportItem', () => {
   const item = { credit: '19.8000' };
@@ -11,7 +11,15 @@ describe('classifyImportItem', () => {
   });
 
   it('is matching when the linked service costs the same, changed (with the previous cost) when it differs', () => {
-    const linked = { serviceId: 17, name: 'SRV Chimera', cost: '19.8000', archived: false };
+    const linked = {
+      serviceId: 17,
+      name: 'SRV Chimera',
+      cost: '19.8000',
+      archived: false,
+      minQty: 1,
+      maxQty: 1,
+      qtyOptions: [],
+    };
     expect(classifyImportItem(item, '1.00000000', linked).state).toBe('matching');
     const changed = classifyImportItem(item, '1.00000000', { ...linked, cost: '17.0000' });
     expect(changed.state).toBe('changed');
@@ -20,6 +28,23 @@ describe('classifyImportItem', () => {
 
   it('applies the credit rate', () => {
     expect(classifyImportItem(item, '0.50000000', null).cost.toWire()).toBe('9.9000');
+  });
+});
+
+describe('quantityDiffers', () => {
+  const linked = { serviceId: 17, name: 'SRV', cost: '1.0000', archived: false, minQty: 1, maxQty: 50, qtyOptions: [] };
+  it('is false for a new item and for an archived link', () => {
+    expect(quantityDiffers(null, { minQty: 5, maxQty: 5, qtyOptions: [] })).toBe(false);
+    expect(quantityDiffers({ ...linked, archived: true }, { minQty: 5, maxQty: 5, qtyOptions: [] })).toBe(false);
+  });
+  it('is false when the three values are equal and true when any differs', () => {
+    expect(quantityDiffers(linked, { minQty: 1, maxQty: 50, qtyOptions: [] })).toBe(false);
+    expect(quantityDiffers(linked, { minQty: 2, maxQty: 50, qtyOptions: [] })).toBe(true);
+    expect(quantityDiffers(linked, { minQty: 1, maxQty: 60, qtyOptions: [] })).toBe(true);
+    expect(quantityDiffers(linked, { minQty: 1, maxQty: 50, qtyOptions: [1, 50] })).toBe(true);
+    const packs = { ...linked, qtyOptions: [1, 10, 50] };
+    expect(quantityDiffers(packs, { minQty: 1, maxQty: 50, qtyOptions: [1, 10, 50] })).toBe(false);
+    expect(quantityDiffers(packs, { minQty: 1, maxQty: 50, qtyOptions: [1, 20, 50] })).toBe(true);
   });
 });
 

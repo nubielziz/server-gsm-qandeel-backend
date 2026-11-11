@@ -12,6 +12,7 @@ import { insertCategory, insertService, insertSupplierLink } from '../support/ca
 import { MINUTE, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 import { insertOrder, insertUsd } from '../support/fixtures';
+import { catalogVersionOf } from '../support/pricing';
 
 const clock = new TestClock();
 let t: TestApp;
@@ -93,6 +94,9 @@ describe('GET /admin/services', () => {
       allowCancel: false,
       allowVerify: false,
       verifyWindowH: 0,
+      minQty: 1,
+      maxQty: 1,
+      qtyOptions: [],
     });
     // No own minimum profit: max(round(6 % of 19.80, 2), 0.02) = 1.19, so the floor is 20.99 and the price 19.50 is under it.
     expect(res.body[1]).toMatchObject({
@@ -772,5 +776,175 @@ describe('recomputeEffectiveCost', () => {
     await insertSupplierLink(db, id, { credit: '1.0001', creditRate: '1.5' });
     await recomputeEffectiveCost(db, [id]);
     expect((await serviceRow(id))!.effectiveCost).toBe('1.5002');
+  });
+});
+
+describe('the quantity rule of a service (feature 25)', () => {
+  const body = (categoryId: number, quantity: Record<string, unknown> = {}) => ({
+    name: 'Bulk Check',
+    code: 'IMEI-BULK-1',
+    categoryId,
+    type: 'imei',
+    slaMinutes: 90,
+    basePrice: '2.5000',
+    ...quantity,
+  });
+  const errorsOf = (res: { body: { errors?: Array<{ field: string; code: string }> } }) =>
+    (res.body.errors ?? []).map((error) => `${error.field}:${error.code}`);
+
+  it('sends the three keys in the list, the show and the POST and PATCH answers', async () => {
+    const { db } = await testDb();
+    const category = await insertCategory(db);
+    const id = await insertAtt(category, { minQty: 5, maxQty: 10, qtyOptions: [5, 10] });
+    const list = await admin.get('/admin/services?_start=0&_end=25');
+    expect(list.body[0]).toMatchObject({ minQty: 5, maxQty: 10, qtyOptions: [5, 10] });
+    expect((await admin.get(`/admin/services/${id}`)).body).toMatchObject({
+      minQty: 5,
+      maxQty: 10,
+      qtyOptions: [5, 10],
+    });
+    const created = await admin.post('/admin/services', body(category));
+    expect(created.body).toMatchObject({ minQty: 1, maxQty: 1, qtyOptions: [] });
+    const patched = await admin.patch(`/admin/services/${id}`, { name: 'Renamed' });
+    expect(patched.body).toMatchObject({ minQty: 5, maxQty: 10, qtyOptions: [5, 10] });
+  });
+
+  it('POST stores a range, sorts the packs and derives the smallest and largest from them', async () => {
+    const { db } = await testDb();
+    const category = await insertCategory(db);
+    const range = await admin.post('/admin/services', body(category, { minQty: 2, maxQty: 50 }));
+    expect(range.status).toBe(201);
+    expect(range.body).toMatchObject({ minQty: 2, maxQty: 50, qtyOptions: [] });
+    expect(await serviceRow(range.body.id)).toMatchObject({ minQty: 2, maxQty: 50, qtyOptions: [] });
+
+    const packs = await admin.post('/admin/services', {
+      ...body(category, { qtyOptions: [25, 5, 10] }),
+      code: 'IMEI-BULK-2',
+    });
+    expect(packs.status).toBe(201);
+    expect(packs.body).toMatchObject({ minQty: 5, maxQty: 25, qtyOptions: [5, 10, 25] });
+    expect(await serviceRow(packs.body.id)).toMatchObject({ minQty: 5, maxQty: 25, qtyOptions: [5, 10, 25] });
+  });
+
+  it('POST refuses each broken rule on its field with the rule code', async () => {
+    const { db } = await testDb();
+    const category = await insertCategory(db);
+    const refuse = async (quantity: Record<string, unknown>) => {
+      const res = await admin.post('/admin/services', body(category, quantity));
+      expect(res.status, JSON.stringify(quantity)).toBe(422);
+      expect(res.body.code ?? res.body.type).toBeDefined();
+      return errorsOf(res);
+    };
+    expect(await refuse({ minQty: 8, maxQty: 3 })).toEqual(['maxQty:below_min']);
+    expect(await refuse({ minQty: 5 })).toEqual(['minQty:above_max']);
+    expect(await refuse({ qtyOptions: [5, 0] })).toEqual(['qtyOptions:invalid_pack']);
+    expect(await refuse({ qtyOptions: [5, 2.5] })).toEqual(['qtyOptions:invalid_pack']);
+    expect(await refuse({ qtyOptions: [5, 100_001] })).toEqual(['qtyOptions:invalid_pack']);
+    expect(await refuse({ qtyOptions: [5, 10, 5] })).toEqual(['qtyOptions:duplicate_pack']);
+    expect(await refuse({ minQty: 1, qtyOptions: [5, 10] })).toEqual(['minQty:packs_set']);
+    expect(await refuse({ minQty: 1, maxQty: 99, qtyOptions: [5, 10] })).toEqual([
+      'minQty:packs_set',
+      'maxQty:packs_set',
+    ]);
+    // The pipeline's own checks: limits and a whole number.
+    expect((await refuse({ minQty: 0 }))[0]).toStartWith('minQty:');
+    expect((await refuse({ maxQty: 100_001 }))[0]).toStartWith('maxQty:');
+    expect((await refuse({ minQty: 1.5 }))[0]).toStartWith('minQty:');
+    expect((await refuse({ qtyOptions: Array.from({ length: 51 }, (_, i) => i + 1) }))[0]).toStartWith('qtyOptions:');
+    expect((await (await testDb()).db.select().from(s.services)).length).toBe(0);
+  });
+
+  it('PATCH leaves the rule alone when no quantity key is sent, even a stored shape the rule would not produce', async () => {
+    const { db } = await testDb();
+    const category = await insertCategory(db);
+    const id = await insertAtt(category, { minQty: 1, maxQty: 1, qtyOptions: [10, 5, 20] });
+    const res = await admin.patch(`/admin/services/${id}`, { name: 'Renamed' });
+    expect(res.status).toBe(200);
+    expect(await serviceRow(id)).toMatchObject({ minQty: 1, maxQty: 1, qtyOptions: [10, 5, 20] });
+  });
+
+  it('PATCH changes one key, writes all three columns, heals a stored shape and clears the packs with []', async () => {
+    const { db } = await testDb();
+    const category = await insertCategory(db);
+    const id = await insertAtt(category, { minQty: 2, maxQty: 9 });
+    const wider = await admin.patch(`/admin/services/${id}`, { maxQty: 20 });
+    expect(wider.body).toMatchObject({ minQty: 2, maxQty: 20, qtyOptions: [] });
+    expect(errorsOf(await admin.patch(`/admin/services/${id}`, { maxQty: 1 }))).toEqual(['maxQty:below_min']);
+    expect(errorsOf(await admin.patch(`/admin/services/${id}`, { minQty: 30 }))).toEqual(['minQty:above_max']);
+
+    const packs = await admin.patch(`/admin/services/${id}`, { qtyOptions: [10, 5] });
+    expect(packs.body).toMatchObject({ minQty: 5, maxQty: 10, qtyOptions: [5, 10] });
+    expect(errorsOf(await admin.patch(`/admin/services/${id}`, { maxQty: 99 }))).toEqual(['maxQty:packs_set']);
+    expect((await admin.patch(`/admin/services/${id}`, { minQty: 5, maxQty: 10 })).status).toBe(200);
+
+    const cleared = await admin.patch(`/admin/services/${id}`, { qtyOptions: [] });
+    expect(cleared.body).toMatchObject({ minQty: 5, maxQty: 10, qtyOptions: [] });
+    const range = await admin.patch(`/admin/services/${id}`, { minQty: 1, maxQty: 100, qtyOptions: [] });
+    expect(range.body).toMatchObject({ minQty: 1, maxQty: 100, qtyOptions: [] });
+
+    // A stored shape the rule never produces (a pack list whose smallest is not the minimum) is healed by any quantity key.
+    const odd = await insertAtt(category, { code: 'IMEI-ODD', minQty: 1, maxQty: 1, qtyOptions: [20, 10] });
+    const healed = await admin.patch(`/admin/services/${odd}`, { qtyOptions: [20, 10] });
+    expect(healed.body).toMatchObject({ minQty: 10, maxQty: 20, qtyOptions: [10, 20] });
+  });
+
+  it('audits the rule: the created row in after, the edited row before and after, with the actor', async () => {
+    const { db } = await testDb();
+    const category = await insertCategory(db);
+    const created = await admin.post('/admin/services', body(category, { qtyOptions: [10, 5] }));
+    await admin.patch(`/admin/services/${created.body.id}`, { qtyOptions: [5, 10, 25] });
+    const [first, second] = await auditRows();
+    expect(first).toMatchObject({ action: 'created service', actorId: admin.staffId });
+    expect(first!.after).toMatchObject({ minQty: 5, maxQty: 10, qtyOptions: [5, 10] });
+    expect(second).toMatchObject({ action: 'edited service', actorId: admin.staffId });
+    expect(second!.before).toMatchObject({ minQty: 5, maxQty: 10, qtyOptions: [5, 10] });
+    expect(second!.after).toMatchObject({ minQty: 5, maxQty: 25, qtyOptions: [5, 10, 25] });
+    await admin.delete(`/admin/services/${created.body.id}`);
+    const deleted = (await auditRows()).at(-1)!;
+    expect(deleted.action).toBe('deleted service');
+    expect(deleted.before).toMatchObject({ minQty: 5, maxQty: 25, qtyOptions: [5, 10, 25] });
+  });
+
+  it('moves the catalog version after the commit of a change that carries the rule', async () => {
+    const { db } = await testDb();
+    const category = await insertCategory(db);
+    const id = await insertAtt(category);
+    const before = await catalogVersionOf(t);
+    expect((await admin.patch(`/admin/services/${id}`, { maxQty: 5 })).status).toBe(200);
+    const after = await catalogVersionOf(t);
+    expect(after).not.toBe(before);
+    // A refused change moves nothing.
+    expect((await admin.patch(`/admin/services/${id}`, { maxQty: 0 })).status).toBe(422);
+    expect(await catalogVersionOf(t)).toBe(after);
+  });
+
+  it('the database refuses a pack of 0, 51 packs and a largest of 100001 (services_qty_limits_check)', async () => {
+    const { db } = await testDb();
+    const category = await insertCategory(db);
+    const id = await insertAtt(category);
+    const refused = async (set: Partial<typeof s.services.$inferInsert>) => {
+      let message = '';
+      try {
+        await db.update(s.services).set(set).where(eq(s.services.id, id));
+      } catch (error) {
+        message = JSON.stringify(error, Object.getOwnPropertyNames(error));
+      }
+      expect(message, JSON.stringify(set)).toContain('services_qty_limits_check');
+    };
+    await refused({ qtyOptions: [5, 0] });
+    await refused({ qtyOptions: [5, 100_001] });
+    await refused({ qtyOptions: Array.from({ length: 51 }, (_, i) => i + 1) });
+    await refused({ maxQty: 100_001 });
+    // The shapes the readers' tests write on purpose still pass.
+    await db
+      .update(s.services)
+      .set({ qtyOptions: [10, 5, 20] })
+      .where(eq(s.services.id, id));
+    await db.update(s.services).set({ minQty: 1, maxQty: 100_000, qtyOptions: [] }).where(eq(s.services.id, id));
+  });
+
+  it('still needs catalog:update to change the rule', async () => {
+    const other = await adminWith(t, ['catalog:read', 'catalog:create']);
+    expect((await other.patch('/admin/services/1', { maxQty: 5 })).status).toBe(403);
   });
 });

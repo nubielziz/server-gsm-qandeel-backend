@@ -104,6 +104,21 @@ sent as `0` (sorted as 0); a body year is a whole number from 1990 to next year 
   `allowVerify` (booleans) and `verifyWindowH` (integer 0 to 720, `0` = no window); the three start off, the reads return them, and
   the change is audited with the service's own verb phrases (`created service`, `edited service`, the switches in `before`/`after`).
   The console does not send them, so its writes keep the stored values.
+- **Quantity rule** (feature 25, MISMATCHES B212): `POST /admin/services` and `PATCH /admin/services/:id` accept the optional
+  `minQty` and `maxQty` (whole, 1 to `MAX_QUANTITY` = 100000) and `qtyOptions` (at most `MAX_QTY_OPTIONS` = 50 whole pack sizes
+  from 1 to 100000, no repeats); the list, the show and both answers always send the three. A service sells a range or packs: the
+  pure `resolveQuantityRule(current, change)` (`domain/quantity-rule.ts`) is the only writer besides the import. With packs it stores
+  them ascending and sets `minQty` to the smallest and `maxQty` to the largest pack (so the default quantity, the stock test and
+  Dhru's MINQNT and MAXQNT agree with placement), and a sent `minQty` or `maxQty` that disagrees is `422 packs_set`; without packs a
+  `maxQty` under `minQty` is `422 below_min` on `maxQty` (`above_max` on `minQty` when only `minQty` was sent); every pack problem
+  (`invalid_pack`, `duplicate_pack`) is on `qtyOptions`; all problems of a request come back together. `PATCH` writes the three
+  columns only when it sends one of the keys; `qtyOptions: []` clears the packs and the service then sells `minQty..maxQty`
+  (send both with it; left out, the stored ones, the former smallest and largest pack, stay). The audit rows carry the three
+  values (`created service` in `after`, `edited service` before and after). The CHECK `services_qty_limits_check` bounds the values
+  (`max_qty <= 100000`, at most 50 packs, each 1 to 100000); order, uniqueness and "min/max are the packs' bounds" are the domain
+  rule's, and the readers stay defensive. No cache key: the catalog version already moves on every service write, and no view of the
+  rule is cached. `ServiceImporter.create` takes the rule (`ImportedServiceInput.quantity`) and refuses, with a plain `Error`, one
+  that `quantityRuleProblems` rejects (a programming error: the suppliers module normalises it first).
 - **Price protection** (user rule 9, MISMATCHES B117): `ListedPrices.record(db, clientId, entries, at)` remembers the last price
   listed to a merchant (table `listed_prices`, written only when the price changes); the three portal routes call it, and so do 7a's
   lists (`GET /v1/services[/:id]`, `imeiservicelist`). `checkPriceChange(listed, current, tolerance, { floorRaised? })` is the pure guard feature 5 calls at placement: above the

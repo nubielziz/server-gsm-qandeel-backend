@@ -40,6 +40,11 @@ export interface FakeService {
   readonly name: string;
   credit: string;
   readonly time: string;
+  /** The quantity fields of a Dhru list entry (feature 25); each is sent (as `QNT`, `MINQNT`, `MAXQNT`, `QNTOPTIONS`) only when set. */
+  qnt?: string | number;
+  minQnt?: string | number;
+  maxQnt?: string | number;
+  qntOptions?: string | number;
 }
 
 const DEFAULT_SERVICES: FakeService[] = [
@@ -187,6 +192,10 @@ export class FakeDhruSupplier {
         SERVICENAME: service.name,
         CREDIT: service.credit,
         TIME: service.time,
+        ...(service.qnt === undefined ? {} : { QNT: service.qnt }),
+        ...(service.minQnt === undefined ? {} : { MINQNT: service.minQnt }),
+        ...(service.maxQnt === undefined ? {} : { MAXQNT: service.maxQnt }),
+        ...(service.qntOptions === undefined ? {} : { QNTOPTIONS: service.qntOptions }),
         'Requires.Network': 'None',
       };
     }

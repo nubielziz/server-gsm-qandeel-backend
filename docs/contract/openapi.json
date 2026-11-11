@@ -137922,6 +137922,28 @@
                         "type": "integer",
                         "minimum": 0,
                         "maximum": 720
+                      },
+                      "minQty": {
+                        "description": "The smallest quantity of one order; with `qtyOptions` the smallest pack. Always sent; optional in the schema only until the console's types and fixtures carry it.",
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100000
+                      },
+                      "maxQty": {
+                        "description": "The largest quantity of one order; with `qtyOptions` the largest pack. Always sent; optional in the schema only until the console's types and fixtures carry it.",
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100000
+                      },
+                      "qtyOptions": {
+                        "description": "Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`. Always sent; optional in the schema only until the console's types and fixtures carry it.",
+                        "maxItems": 50,
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 100000
+                        }
                       }
                     },
                     "required": [
@@ -137975,7 +137997,10 @@
                     "fallbackSupplier": null,
                     "allowCancel": false,
                     "allowVerify": false,
-                    "verifyWindowH": 0
+                    "verifyWindowH": 0,
+                    "minQty": 1,
+                    "maxQty": 1,
+                    "qtyOptions": []
                   }
                 ]
               }
@@ -138285,7 +138310,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "Starts `active`, `auto`, with a fixed price mode, the `block_open` duplicate rule, no minimum profit of its own and a cost of 0 until a supplier is linked or imported. The type must be the type of the category: `422` on `categoryId` otherwise. A code that another live service has (ignoring case) is `409 CODE_TAKEN` on `code`. `basePrice` must be above zero. The optional `allowCancel`, `allowVerify` and `verifyWindowH` (0 to 720 hours, `0` = no window) switch on the merchant's cancel and verification of this service's orders; all three start off.",
+        "description": "Starts `active`, `auto`, with a fixed price mode, the `block_open` duplicate rule, no minimum profit of its own and a cost of 0 until a supplier is linked or imported. The type must be the type of the category: `422` on `categoryId` otherwise. A code that another live service has (ignoring case) is `409 CODE_TAKEN` on `code`. `basePrice` must be above zero. The optional `allowCancel`, `allowVerify` and `verifyWindowH` (0 to 720 hours, `0` = no window) switch on the merchant's cancel and verification of this service's orders; all three start off. The optional `minQty`, `maxQty` (whole, 1 to 100000) and `qtyOptions` (at most 50 whole pack sizes, no repeats) say what one order may buy; they start at 1, 1 and none. A service sells a range or packs: with `qtyOptions` the server stores `minQty` as the smallest and `maxQty` as the largest pack and refuses a different one sent (`422` `packs_set`); without packs a `maxQty` under `minQty` is `422` `below_min` on `maxQty` (`above_max` on `minQty` when only `minQty` was sent). Every pack problem (`invalid_pack`, `duplicate_pack`) is on `qtyOptions`. The values are in the audit row `created service`.",
         "operationId": "postAdminServices",
         "parameters": [],
         "requestBody": {
@@ -138351,6 +138376,26 @@
                     "minimum": 0,
                     "maximum": 720,
                     "description": "Hours after completion in which a merchant may ask for verification; `0` means no window (default `0`)."
+                  },
+                  "minQty": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100000,
+                    "description": "The smallest quantity of one order (default `1`)."
+                  },
+                  "maxQty": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100000,
+                    "description": "The largest quantity of one order (default `1`)."
+                  },
+                  "qtyOptions": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "description": "Fixed pack sizes: at most 50 whole numbers from 1 to 100000, no repeats; stored ascending. When set, `minQty` is the smallest and `maxQty` the largest pack (default `[]`)."
                   }
                 },
                 "required": [
@@ -138596,6 +138641,28 @@
                       "type": "integer",
                       "minimum": 0,
                       "maximum": 720
+                    },
+                    "minQty": {
+                      "description": "The smallest quantity of one order; with `qtyOptions` the smallest pack. Always sent; optional in the schema only until the console's types and fixtures carry it.",
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100000
+                    },
+                    "maxQty": {
+                      "description": "The largest quantity of one order; with `qtyOptions` the largest pack. Always sent; optional in the schema only until the console's types and fixtures carry it.",
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100000
+                    },
+                    "qtyOptions": {
+                      "description": "Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`. Always sent; optional in the schema only until the console's types and fixtures carry it.",
+                      "maxItems": 50,
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100000
+                      }
                     }
                   },
                   "required": [
@@ -138647,7 +138714,10 @@
                   "fallbackSupplier": null,
                   "allowCancel": false,
                   "allowVerify": false,
-                  "verifyWindowH": 0
+                  "verifyWindowH": 0,
+                  "minQty": 1,
+                  "maxQty": 1,
+                  "qtyOptions": []
                 }
               }
             },
@@ -140199,6 +140269,28 @@
                       "minimum": 0,
                       "maximum": 720
                     },
+                    "minQty": {
+                      "description": "The smallest quantity of one order; with `qtyOptions` the smallest pack. Always sent; optional in the schema only until the console's types and fixtures carry it.",
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100000
+                    },
+                    "maxQty": {
+                      "description": "The largest quantity of one order; with `qtyOptions` the largest pack. Always sent; optional in the schema only until the console's types and fixtures carry it.",
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100000
+                    },
+                    "qtyOptions": {
+                      "description": "Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`. Always sent; optional in the schema only until the console's types and fixtures carry it.",
+                      "maxItems": 50,
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100000
+                      }
+                    },
                     "fields": {
                       "type": "array",
                       "items": {
@@ -140368,6 +140460,9 @@
                   "allowCancel": false,
                   "allowVerify": false,
                   "verifyWindowH": 0,
+                  "minQty": 1,
+                  "maxQty": 1,
+                  "qtyOptions": [],
                   "fields": [
                     {
                       "key": "imei",
@@ -140694,7 +140789,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "Only the keys sent change. Saving `basePrice` clears `costChangedFrom`; a `minProfit`-only change does not; `minProfit: null` goes back to the default policy. A `basePrice` under the floor (effective cost plus the minimum profit being saved) or not above zero is `422` on `basePrice`. The category and type must agree (`422` on `categoryId`, or on `type` when only the type was sent). A code another live service has is `409 CODE_TAKEN`. `allowCancel`, `allowVerify` and `verifyWindowH` (0 to 720 hours, `0` = no window) set what a merchant may do with this service's orders.",
+        "description": "Only the keys sent change. Saving `basePrice` clears `costChangedFrom`; a `minProfit`-only change does not; `minProfit: null` goes back to the default policy. A `basePrice` under the floor (effective cost plus the minimum profit being saved) or not above zero is `422` on `basePrice`. The category and type must agree (`422` on `categoryId`, or on `type` when only the type was sent). A code another live service has is `409 CODE_TAKEN`. `allowCancel`, `allowVerify` and `verifyWindowH` (0 to 720 hours, `0` = no window) set what a merchant may do with this service's orders. `minQty`, `maxQty` and `qtyOptions` set what one order may buy; a key left out keeps its stored value, and when any of them is sent the whole rule is checked again (the same refusals as on create: `below_min`, `above_max`, `invalid_pack`, `duplicate_pack`, `packs_set`, all `422`). Packs are stored ascending and set `minQty` and `maxQty` to the smallest and largest pack. `qtyOptions: []` clears the packs; the service then sells the range `minQty..maxQty`, so send both in the same request (left out, the stored ones, the former smallest and largest pack, stay). Example body: `{ \"qtyOptions\": [5, 10, 25] }`. The audit row `edited service` holds the three values before and after.",
         "operationId": "patchAdminServicesById",
         "parameters": [
           {
@@ -140803,6 +140898,26 @@
                     "minimum": 0,
                     "maximum": 720,
                     "description": "Hours after completion in which a merchant may ask for verification; `0` means no window (default `0`)."
+                  },
+                  "minQty": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100000,
+                    "description": "The smallest quantity of one order (default `1`)."
+                  },
+                  "maxQty": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100000,
+                    "description": "The largest quantity of one order (default `1`)."
+                  },
+                  "qtyOptions": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "description": "Fixed pack sizes: at most 50 whole numbers from 1 to 100000, no repeats; stored ascending. When set, `minQty` is the smallest and `maxQty` the largest pack (default `[]`)."
                   }
                 }
               },
@@ -141035,6 +141150,28 @@
                       "type": "integer",
                       "minimum": 0,
                       "maximum": 720
+                    },
+                    "minQty": {
+                      "description": "The smallest quantity of one order; with `qtyOptions` the smallest pack. Always sent; optional in the schema only until the console's types and fixtures carry it.",
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100000
+                    },
+                    "maxQty": {
+                      "description": "The largest quantity of one order; with `qtyOptions` the largest pack. Always sent; optional in the schema only until the console's types and fixtures carry it.",
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100000
+                    },
+                    "qtyOptions": {
+                      "description": "Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`. Always sent; optional in the schema only until the console's types and fixtures carry it.",
+                      "maxItems": 50,
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100000
+                      }
                     }
                   },
                   "required": [
@@ -141086,7 +141223,10 @@
                   "fallbackSupplier": null,
                   "allowCancel": false,
                   "allowVerify": false,
-                  "verifyWindowH": 0
+                  "verifyWindowH": 0,
+                  "minQty": 1,
+                  "maxQty": 1,
+                  "qtyOptions": []
                 }
               }
             },
@@ -156826,7 +156966,7 @@
     },
     "/admin/suppliers/{id}/import/preview": {
       "post": {
-        "description": "For each picked service of this supplier: `new` (no service links it), `matching` (linked, and the service cost equals `credit x credit_rate`) or `changed` (linked, the cost differs: `previousCost` is the service's current cost). `suggestedPrice` (new and changed) is the cost plus the default minimum profit. Changes nothing, so it writes no audit row.",
+        "description": "For each picked service of this supplier: `new` (no service links it), `matching` (linked, and the service cost equals `credit x credit_rate`) or `changed` (linked, the cost differs: `previousCost` is the service's current cost). `suggestedPrice` (new and changed) is the cost plus the default minimum profit. `minQty`, `maxQty` and `qtyOptions` are the supplier's quantity rule as the import reads it (a Dhru supplier's QNT, MINQNT, MAXQNT and QNTOPTIONS; unreadable values mean one per order): for a `new` item, what the service will get. `quantityDiffers` is true when the item is linked to a live service whose own rule is another one; the service keeps its own rule, and staff edit it to follow the supplier. Changes nothing, so it writes no audit row.",
         "operationId": "postAdminSuppliersByIdImportPreview",
         "parameters": [
           {
@@ -156981,6 +157121,32 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "minQty": {
+                            "description": "The smallest quantity the supplier states (the smallest pack when it lists packs). Always sent; optional in the schema only until the console's types and fixtures carry it.",
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100000
+                          },
+                          "maxQty": {
+                            "description": "The largest quantity the supplier states (the largest pack when it lists packs). Always sent; optional in the schema only until the console's types and fixtures carry it.",
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100000
+                          },
+                          "qtyOptions": {
+                            "description": "The supplier's pack sizes, ascending; empty when it sells a range. Always sent; optional in the schema only until the console's types and fixtures carry it.",
+                            "maxItems": 50,
+                            "type": "array",
+                            "items": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 100000
+                            }
+                          },
+                          "quantityDiffers": {
+                            "description": "True when a live linked service sells a quantity rule other than the supplier's; false for a new item and for an archived link. Always sent; optional in the schema only until the console's types and fixtures carry it.",
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -157014,7 +157180,11 @@
                       "serviceName": "SRV Chimera Tool 1M",
                       "cost": "19.8000",
                       "previousCost": "17.0000",
-                      "suggestedPrice": "20.9900"
+                      "suggestedPrice": "20.9900",
+                      "minQty": 1,
+                      "maxQty": 1,
+                      "qtyOptions": [],
+                      "quantityDiffers": false
                     }
                   ]
                 }
@@ -246495,6 +246665,34 @@
                           "number"
                         ]
                       },
+                      "QNT": {
+                        "description": "`1` when the service takes a quantity, `0` when it does not. Kept in the synced entry; the import reads it (B213).",
+                        "type": [
+                          "string",
+                          "number"
+                        ]
+                      },
+                      "MINQNT": {
+                        "description": "The smallest quantity of one order. Kept in the synced entry; the import reads it.",
+                        "type": [
+                          "string",
+                          "number"
+                        ]
+                      },
+                      "MAXQNT": {
+                        "description": "The largest quantity of one order. Kept in the synced entry; the import reads it.",
+                        "type": [
+                          "string",
+                          "number"
+                        ]
+                      },
+                      "QNTOPTIONS": {
+                        "description": "Pack sizes, comma separated (for example `5,10,25`); empty when the service sells a range. Kept in the synced entry; the import reads it and copies the rule into a service only when it creates that service.",
+                        "type": [
+                          "string",
+                          "number"
+                        ]
+                      },
                       "Requires.Custom": {
                         "description": "The custom fields the service needs: `{ type, fieldname, fieldtype, description, fieldoptions, required }` each.",
                         "type": "array",
@@ -246540,6 +246738,10 @@
                       "SERVICENAME": "AT&T USA Premier",
                       "CREDIT": "13.5000",
                       "TIME": "1-2 hours",
+                      "QNT": "0",
+                      "MINQNT": "1",
+                      "MAXQNT": "1",
+                      "QNTOPTIONS": "",
                       "Requires.Network": "None"
                     }
                   }

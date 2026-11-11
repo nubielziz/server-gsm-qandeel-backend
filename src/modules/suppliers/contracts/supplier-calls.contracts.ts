@@ -76,6 +76,15 @@ const ServiceEntry = z.looseObject({
   SERVICENAME: Loose.describe('The name (kept to 300 characters). A service without a name is left out.'),
   CREDIT: Loose.describe('The price in supplier credits. A service without a readable price is left out.'),
   TIME: Loose.describe('The delivery time as text, for example `1-2 hours`.'),
+  QNT: Loose.describe(
+    '`1` when the service takes a quantity, `0` when it does not. Kept in the synced entry; the import reads it (B213).',
+  ),
+  MINQNT: Loose.describe('The smallest quantity of one order. Kept in the synced entry; the import reads it.'),
+  MAXQNT: Loose.describe('The largest quantity of one order. Kept in the synced entry; the import reads it.'),
+  QNTOPTIONS: Loose.describe(
+    'Pack sizes, comma separated (for example `5,10,25`); empty when the service sells a range. Kept in the synced entry; the ' +
+      'import reads it and copies the rule into a service only when it creates that service.',
+  ),
   'Requires.Custom': z
     .array(z.unknown())
     .optional()
@@ -130,6 +139,10 @@ export const serviceListCall = defineSupplierCall({
               SERVICENAME: 'AT&T USA Premier',
               CREDIT: '13.5000',
               TIME: '1-2 hours',
+              QNT: '0',
+              MINQNT: '1',
+              MAXQNT: '1',
+              QNTOPTIONS: '',
               'Requires.Network': 'None',
             },
           },

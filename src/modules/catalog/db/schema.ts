@@ -290,6 +290,12 @@ export const services = pgTable(
       .on(t.type, t.status)
       .where(sql`${t.archivedAt} is null`),
     check('services_qty_check', sql`${t.minQty} >= 1 and ${t.maxQty} >= ${t.minQty}`),
+    // Feature 25: the limits of the quantity rule. Order, uniqueness and "min/max equal the smallest/largest pack" are the
+    // domain rule's (domain/quantity-rule.ts); readers stay defensive about them.
+    check(
+      'services_qty_limits_check',
+      sql`${t.maxQty} <= 100000 and cardinality(${t.qtyOptions}) <= 50 and array_position(${t.qtyOptions}, null) is null and 1 <= all (${t.qtyOptions}) and 100000 >= all (${t.qtyOptions})`,
+    ),
     check('services_prices_check', sql`${t.cost} >= 0 and ${t.basePrice} > 0`),
     check('services_effective_cost_check', sql`${t.effectiveCost} >= ${t.cost}`),
     check('services_archived_check', sql`${t.archivedAt} is null or ${t.status} = 'disabled'`),

@@ -204,6 +204,13 @@
       "when": 1794385496834,
       "tag": "0028_idempotency_portal_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794407760414,
+      "tag": "0029_service_quantity_limits",
+      "breakpoints": true
     }
   ]
 }

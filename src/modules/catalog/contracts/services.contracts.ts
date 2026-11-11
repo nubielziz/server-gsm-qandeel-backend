@@ -3,6 +3,7 @@
 // (docs/contract/endpoints/catalog.md, RESOLUTIONS catalog-1, -2, -3, -9, -11, -13 and -14).
 import { z } from 'zod';
 import { defineRoute, listQuery, zDecimal, zId, zIdParam, zMoney } from '../../../common/contract';
+import { MAX_QTY_OPTIONS, MAX_QUANTITY } from '../domain/quantity-rule';
 import { SERVICE_FIELD_TYPES, SERVICE_OPTION_LISTS, SERVICE_TYPES } from '../db/schema';
 import { NamedRef, NonNegativeMoney, PositiveMoney } from './shared';
 
@@ -65,6 +66,34 @@ const ServiceRow = z.object({
       'How many hours after completion the merchant may ask for verification; `0` means no window. Always sent; optional in ' +
         'the schema only because the console does not read it yet.',
     ),
+  minQty: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_QUANTITY)
+    .optional()
+    .describe(
+      'The smallest quantity of one order; with `qtyOptions` the smallest pack. Always sent; optional in the schema only ' +
+        "until the console's types and fixtures carry it.",
+    ),
+  maxQty: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_QUANTITY)
+    .optional()
+    .describe(
+      'The largest quantity of one order; with `qtyOptions` the largest pack. Always sent; optional in the schema only ' +
+        "until the console's types and fixtures carry it.",
+    ),
+  qtyOptions: z
+    .array(z.number().int().min(1).max(MAX_QUANTITY))
+    .max(MAX_QTY_OPTIONS)
+    .optional()
+    .describe(
+      'Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`. Always sent; optional in the ' +
+        "schema only until the console's types and fixtures carry it.",
+    ),
 });
 
 /** One custom field of a service (Dhru `Requires.Custom`). */
@@ -114,6 +143,9 @@ const SERVICE_EXAMPLE = {
   allowCancel: false,
   allowVerify: false,
   verifyWindowH: 0,
+  minQty: 1,
+  maxQty: 1,
+  qtyOptions: [],
 } as const;
 const FIELD_EXAMPLE = {
   key: 'imei',
@@ -141,6 +173,20 @@ const VerifyWindowH = z
   .min(0, 'Enter 0 or more hours.')
   .max(MAX_VERIFY_WINDOW_H, `Use at most ${MAX_VERIFY_WINDOW_H} hours.`)
   .describe('Hours after completion in which a merchant may ask for verification; `0` means no window (default `0`).');
+const QuantityBound = z
+  .number()
+  .int('Enter a whole number.')
+  .min(1, 'Enter 1 or more.')
+  .max(MAX_QUANTITY, `Use at most ${MAX_QUANTITY}.`);
+const MinQty = QuantityBound.describe('The smallest quantity of one order (default `1`).');
+const MaxQty = QuantityBound.describe('The largest quantity of one order (default `1`).');
+const QtyOptions = z
+  .array(z.number())
+  .max(MAX_QTY_OPTIONS, `Use at most ${MAX_QTY_OPTIONS} pack sizes.`)
+  .describe(
+    `Fixed pack sizes: at most ${MAX_QTY_OPTIONS} whole numbers from 1 to ${MAX_QUANTITY}, no repeats; stored ascending. When ` +
+      'set, `minQty` is the smallest and `maxQty` the largest pack (default `[]`).',
+  );
 
 /** `GET /admin/services`: the catalog with its worked-out figures. */
 export const listServices = defineRoute({
@@ -204,7 +250,12 @@ export const createService = defineRoute({
     'of 0 until a supplier is linked or imported. The type must be the type of the category: `422` on `categoryId` ' +
     'otherwise. A code that another live service has (ignoring case) is `409 CODE_TAKEN` on `code`. `basePrice` must be above ' +
     'zero. The optional `allowCancel`, `allowVerify` and `verifyWindowH` (0 to 720 hours, `0` = no window) switch on the ' +
-    "merchant's cancel and verification of this service's orders; all three start off.",
+    "merchant's cancel and verification of this service's orders; all three start off. The optional `minQty`, `maxQty` (whole, 1 " +
+    'to 100000) and `qtyOptions` (at most 50 whole pack sizes, no repeats) say what one order may buy; they start at 1, 1 and ' +
+    'none. A service sells a range or packs: with `qtyOptions` the server stores `minQty` as the smallest and `maxQty` as the ' +
+    'largest pack and refuses a different one sent (`422` `packs_set`); without packs a `maxQty` under `minQty` is `422` ' +
+    '`below_min` on `maxQty` (`above_max` on `minQty` when only `minQty` was sent). Every pack problem (`invalid_pack`, ' +
+    '`duplicate_pack`) is on `qtyOptions`. The values are in the audit row `created service`.',
   tags: ['services'],
   surface: 'admin',
   access: 'staff-permission',
@@ -219,6 +270,9 @@ export const createService = defineRoute({
     allowCancel: AllowCancel.optional(),
     allowVerify: AllowVerify.optional(),
     verifyWindowH: VerifyWindowH.optional(),
+    minQty: MinQty.optional(),
+    maxQty: MaxQty.optional(),
+    qtyOptions: QtyOptions.optional(),
   }),
   success: { status: 201, schema: ServiceRow },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'VALIDATION_FAILED', 'CODE_TAKEN'],
@@ -244,7 +298,13 @@ export const updateService = defineRoute({
     'null` goes back to the default policy. A `basePrice` under the floor (effective cost plus the minimum profit being ' +
     'saved) or not above zero is `422` on `basePrice`. The category and type must agree (`422` on `categoryId`, or on `type` ' +
     'when only the type was sent). A code another live service has is `409 CODE_TAKEN`. `allowCancel`, `allowVerify` and ' +
-    "`verifyWindowH` (0 to 720 hours, `0` = no window) set what a merchant may do with this service's orders.",
+    "`verifyWindowH` (0 to 720 hours, `0` = no window) set what a merchant may do with this service's orders. `minQty`, " +
+    '`maxQty` and `qtyOptions` set what one order may buy; a key left out keeps its stored value, and when any of them is sent ' +
+    'the whole rule is checked again (the same refusals as on create: `below_min`, `above_max`, `invalid_pack`, ' +
+    '`duplicate_pack`, `packs_set`, all `422`). Packs are stored ascending and set `minQty` and `maxQty` to the smallest and ' +
+    'largest pack. `qtyOptions: []` clears the packs; the service then sells the range `minQty..maxQty`, so send both in the ' +
+    'same request (left out, the stored ones, the former smallest and largest pack, stay). Example body: `{ "qtyOptions": [5, ' +
+    '10, 25] }`. The audit row `edited service` holds the three values before and after.',
   tags: ['services'],
   surface: 'admin',
   access: 'staff-permission',
@@ -264,6 +324,9 @@ export const updateService = defineRoute({
       allowCancel: AllowCancel.optional(),
       allowVerify: AllowVerify.optional(),
       verifyWindowH: VerifyWindowH.optional(),
+      minQty: MinQty.optional(),
+      maxQty: MaxQty.optional(),
+      qtyOptions: QtyOptions.optional(),
     })
     .refine((body) => Object.values(body).some((value) => value !== undefined), 'Send at least one field to change.'),
   success: { status: 200, schema: ServiceRow },

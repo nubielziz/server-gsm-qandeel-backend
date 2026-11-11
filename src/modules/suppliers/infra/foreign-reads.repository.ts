@@ -84,6 +84,9 @@ export async function linkedServicesOf(
       name: s.services.name,
       cost: s.services.cost,
       archivedAt: s.services.archivedAt,
+      minQty: s.services.minQty,
+      maxQty: s.services.maxQty,
+      qtyOptions: s.services.qtyOptions,
     })
     .from(s.serviceSupplierLinks)
     .innerJoin(s.services, eq(s.services.id, s.serviceSupplierLinks.serviceId))
@@ -95,6 +98,9 @@ export async function linkedServicesOf(
       name: row.name,
       cost: row.cost,
       archived: row.archivedAt !== null,
+      minQty: row.minQty,
+      maxQty: row.maxQty,
+      qtyOptions: row.qtyOptions,
     });
   }
   return found;

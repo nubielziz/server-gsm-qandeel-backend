@@ -13,6 +13,32 @@ export interface LinkedService {
   /** `services.cost` (not the effective cost). */
   readonly cost: string;
   readonly archived: boolean;
+  /** The service's quantity rule (feature 25), to tell whether it differs from the supplier's. */
+  readonly minQty: number;
+  readonly maxQty: number;
+  readonly qtyOptions: readonly number[];
+}
+
+/**
+ * Tells whether a live linked service sells another quantity rule than the supplier states.
+ *
+ * Why: the import preview shows staff the difference (B213); a service keeps its own rule, nothing is applied or alerted.
+ *
+ * @param linked the linked service, or `null` for a new item
+ * @param rule the supplier's rule as `supplierQuantityRule` reads it
+ * @returns false for a new item and for an archived link; else whether any of the three values differs
+ */
+export function quantityDiffers(
+  linked: LinkedService | null,
+  rule: { readonly minQty: number; readonly maxQty: number; readonly qtyOptions: readonly number[] },
+): boolean {
+  if (linked === null || linked.archived) return false;
+  return (
+    linked.minQty !== rule.minQty ||
+    linked.maxQty !== rule.maxQty ||
+    linked.qtyOptions.length !== rule.qtyOptions.length ||
+    linked.qtyOptions.some((pack, index) => pack !== rule.qtyOptions[index])
+  );
 }
 
 /**

@@ -3,9 +3,14 @@
 // (docs/contract/endpoints/suppliers.md and the resolutions orders-suppliers-3 to -10, -13, -16, -20, catalog-9).
 import { z } from 'zod';
 import { defineRoute, listQuery, zDecimal, zId, zIdParam, zIsoDateTime, zMoney } from '../../../common/contract';
+import { MAX_QTY_OPTIONS, MAX_QUANTITY } from '../../catalog';
 import { SUPPLIER_DRIVERS, SUPPLIER_STATUSES } from '../db/schema';
 
 const id = z.object({ id: zIdParam });
+
+/** The "Always sent" sentence of the quantity keys of an import preview item (optional in the schema until the console carries them). */
+const PREVIEW_QUANTITY_NOTE = (what: string): string =>
+  `${what} Always sent; optional in the schema only until the console's types and fixtures carry it.`;
 
 /** The switch of a supplier. */
 const Status = z.enum(SUPPLIER_STATUSES);
@@ -445,7 +450,11 @@ export const previewImport = defineRoute({
   description:
     'For each picked service of this supplier: `new` (no service links it), `matching` (linked, and the service cost equals ' +
     "`credit x credit_rate`) or `changed` (linked, the cost differs: `previousCost` is the service's current cost). `suggestedPrice` " +
-    '(new and changed) is the cost plus the default minimum profit. Changes nothing, so it writes no audit row.',
+    "(new and changed) is the cost plus the default minimum profit. `minQty`, `maxQty` and `qtyOptions` are the supplier's quantity " +
+    "rule as the import reads it (a Dhru supplier's QNT, MINQNT, MAXQNT and QNTOPTIONS; unreadable values mean one per order): for a " +
+    '`new` item, what the service will get. `quantityDiffers` is true when the item is linked to a live service whose own rule is ' +
+    'another one; the service keeps its own rule, and staff edit it to follow the supplier. Changes nothing, so it writes no ' +
+    'audit row.',
   tags: ['suppliers'],
   surface: 'admin',
   access: 'staff-permission',
@@ -467,6 +476,39 @@ export const previewImport = defineRoute({
           cost: zMoney,
           previousCost: zMoney.nullable(),
           suggestedPrice: zMoney.nullable(),
+          minQty: z
+            .number()
+            .int()
+            .min(1)
+            .max(MAX_QUANTITY)
+            .optional()
+            .describe(
+              PREVIEW_QUANTITY_NOTE(
+                'The smallest quantity the supplier states (the smallest pack when it lists packs).',
+              ),
+            ),
+          maxQty: z
+            .number()
+            .int()
+            .min(1)
+            .max(MAX_QUANTITY)
+            .optional()
+            .describe(
+              PREVIEW_QUANTITY_NOTE('The largest quantity the supplier states (the largest pack when it lists packs).'),
+            ),
+          qtyOptions: z
+            .array(z.number().int().min(1).max(MAX_QUANTITY))
+            .max(MAX_QTY_OPTIONS)
+            .optional()
+            .describe(PREVIEW_QUANTITY_NOTE("The supplier's pack sizes, ascending; empty when it sells a range.")),
+          quantityDiffers: z
+            .boolean()
+            .optional()
+            .describe(
+              PREVIEW_QUANTITY_NOTE(
+                "True when a live linked service sells a quantity rule other than the supplier's; false for a new item and for an archived link.",
+              ),
+            ),
         }),
       ),
     }),
@@ -486,6 +528,10 @@ export const previewImport = defineRoute({
           cost: '19.8000',
           previousCost: '17.0000',
           suggestedPrice: '20.9900',
+          minQty: 1,
+          maxQty: 1,
+          qtyOptions: [],
+          quantityDiffers: false,
         },
       ],
     },

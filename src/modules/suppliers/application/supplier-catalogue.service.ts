@@ -8,8 +8,9 @@ import { DbService } from '../../../infra/db';
 import { CatalogPriceVersion, ServiceImporter, defaultMinProfit, recomputeEffectiveCost } from '../../catalog';
 import { AuditService, SettingsReader } from '../../platform';
 import type { SupplierService } from '../db/schema';
-import { classifyImportItem, importableType, importedFields } from '../domain/import-plan';
+import { classifyImportItem, importableType, importedFields, quantityDiffers } from '../domain/import-plan';
 import { slaMinutesOf } from '../domain/sla-time';
+import { supplierQuantityRule } from '../domain/supplier-quantity';
 import { lockLiveServiceRow, linkedServicesOf, liveServiceInfo } from '../infra/foreign-reads.repository';
 import {
   type SupplierServiceListField,
@@ -38,6 +39,12 @@ export interface ImportPreviewItem {
   readonly cost: string;
   readonly previousCost: string | null;
   readonly suggestedPrice: string | null;
+  /** The supplier's quantity rule as `supplierQuantityRule` reads it; for a `new` item, what the service will get. */
+  readonly minQty: number;
+  readonly maxQty: number;
+  readonly qtyOptions: number[];
+  /** A live linked service sells another rule than the supplier's (a `new` item and an archived link: false). */
+  readonly quantityDiffers: boolean;
 }
 
 /** A synced supplier service as the catalogue tab reads it. */
@@ -131,7 +138,7 @@ export class SupplierCatalogueService {
    *
    * @param supplierId the supplier
    * @param ids the picked supplier services
-   * @returns one item per picked service of this supplier
+   * @returns one item per picked service of this supplier, with the supplier's quantity rule and whether the linked service's differs
    * @throws {AppError} `NOT_FOUND`
    */
   async preview(supplierId: number, ids: readonly number[]): Promise<{ items: ImportPreviewItem[] }> {
@@ -146,6 +153,7 @@ export class SupplierCatalogueService {
       items: picked.map((row) => {
         const found = linked.get(row.id) ?? null;
         const { state, cost, previousCost } = classifyImportItem(row, supplier.creditRate, found);
+        const rule = supplierQuantityRule(row.raw);
         return {
           supplierServiceId: row.id,
           name: row.name,
@@ -156,6 +164,8 @@ export class SupplierCatalogueService {
           cost: cost.toWire(),
           previousCost: previousCost?.toWire() ?? null,
           suggestedPrice: state === 'matching' ? null : suggestedPrice(cost).toWire(),
+          ...rule,
+          quantityDiffers: quantityDiffers(found, rule),
         };
       }),
     };
@@ -166,7 +176,8 @@ export class SupplierCatalogueService {
    *
    * @param supplierId the supplier
    * @param ids the picked supplier services
-   * @returns how many services were created, updated and left as they were
+   * @returns how many services were created, updated and left as they were; a new service starts with the supplier's quantity rule
+   *   (feature 25, B213), and the audit row `imported services from` also counts `createdWithQuantity`
    * @throws {AppError} `NOT_FOUND`; `VALIDATION_FAILED` (422 on `supplierServiceIds`: none belongs to this supplier, or a new item
    *   has a type that is not imei, server, remote or file; nothing is imported then)
    */
@@ -203,6 +214,7 @@ export class SupplierCatalogueService {
       }
 
       let created = 0;
+      let createdWithQuantity = 0;
       let updated = 0;
       let unchanged = 0;
       const touched: number[] = [];
@@ -211,6 +223,11 @@ export class SupplierCatalogueService {
           unchanged += 1;
         } else if (item.state === 'new') {
           const type = importableType(item.row.type)!;
+          // The supplier's rule is copied here, at creation only; a later import or sync never touches the quantities (B213).
+          const quantity = supplierQuantityRule(item.row.raw);
+          if (quantity.minQty !== 1 || quantity.maxQty !== 1 || quantity.qtyOptions.length > 0) {
+            createdWithQuantity += 1;
+          }
           const made = await this.importer.create(tx, {
             supplierServiceId: item.row.id,
             type,
@@ -220,6 +237,7 @@ export class SupplierCatalogueService {
             cost: item.cost.toWire(),
             basePrice: suggestedPrice(item.cost).toWire(),
             slaMinutes: slaMinutesOf(item.row.time, defaultSla),
+            quantity,
             fields: importedFields(item.row.customFields),
           });
           await insertFirstLink(tx, made.serviceId, item.row.id);
@@ -240,7 +258,7 @@ export class SupplierCatalogueService {
         entityType: 'supplier',
         entityId: supplier.id,
         entityLabel: supplier.name,
-        after: { created, updated, unchanged },
+        after: { created, updated, unchanged, createdWithQuantity },
       });
       return { created, updated, unchanged };
     });

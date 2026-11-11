@@ -108,6 +108,20 @@ Idempotency keys, retry policies and the claim rule: `docs/queues.md`. Settings 
 
 None of its own. The per-supplier semaphore and limiter use the general keys of `docs/cache-keys.md` (rate limits); the catalog price version is moved after a sync, an import and a change of a chain (`CatalogPriceVersion.bumpAfterCommit`).
 
+## Supplier quantity rule (feature 25, MISMATCHES B213)
+
+A Dhru supplier states a service's quantity in four fields of its `imeiservicelist` entry: `QNT` (`1` = takes a quantity), `MINQNT`,
+`MAXQNT` and `QNTOPTIONS` (pack sizes, comma separated). Every sync already keeps the whole entry in `supplier_services.raw`, so
+nothing new is stored. `supplierQuantityRule(raw)` (`domain/supplier-quantity.ts`) reads them and always returns a rule that the
+catalog accepts (`quantityRuleProblems`): unreadable values fall back to one per order, repeats are dropped, at most the 50 smallest
+packs are kept and a largest above 100000 is capped, so our rule is always a subset of the supplier's. The import copies it **only
+when it creates a service** (`ImportedServiceInput.quantity`; the audit row `imported services from` gains `createdWithQuantity`).
+A later import, a price sync or a change of the supplier's rule never writes a service's quantities, so staff edits win. The import
+preview sends, per item, `minQty`, `maxQty`, `qtyOptions` (the supplier's rule; for a `new` item what the service will get) and
+`quantityDiffers` (a live linked service whose own three values differ; `false` for `new` and for an archived link). The REST driver
+has no service list, so there is nothing to copy. An order's quantity is still sent to the supplier as `QNT`; a rule staff set wider
+than the supplier's is not refused here: the supplier refuses the order and the rejection path refunds it.
+
 ## Audit resolutions
 
 The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, machine-readable `docs/contract/resolutions.json`) settled the points below for this module's routes. Where they differ from older text in this README or the endpoint docs, the resolution wins; the endpoint docs, `RULES.md`, `ANSWERS.md` and `MISMATCHES.md` were updated to match.

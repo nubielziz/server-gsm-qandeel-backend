@@ -16,6 +16,7 @@ import type {
   ServiceStatus,
   ServiceType,
 } from '../db/schema';
+import { type QuantityChange, type QuantityRule, resolveQuantityRule } from '../domain/quantity-rule';
 import { deliveryTimeText, dollars } from '../domain/service-figures';
 import { lockCategoryRow } from '../infra/category.repository';
 import {
@@ -66,6 +67,10 @@ export interface ServiceView {
   readonly allowCancel: boolean;
   readonly allowVerify: boolean;
   readonly verifyWindowH: number;
+  /** What one order may buy: a range `minQty..maxQty`, or only the packs in `qtyOptions` (ascending) when it is not empty. */
+  readonly minQty: number;
+  readonly maxQty: number;
+  readonly qtyOptions: number[];
 }
 
 /** A custom field as the console reads it. */
@@ -106,6 +111,10 @@ export interface CreateServiceInput {
   readonly allowCancel?: boolean | undefined;
   readonly allowVerify?: boolean | undefined;
   readonly verifyWindowH?: number | undefined;
+  /** What one order may buy (feature 25); left out = one per order. See `resolveQuantityRule`. */
+  readonly minQty?: number | undefined;
+  readonly maxQty?: number | undefined;
+  readonly qtyOptions?: readonly number[] | undefined;
 }
 
 /** The fields `PATCH /admin/services/:id` may change; `minProfit: null` goes back to the default policy. */
@@ -122,6 +131,10 @@ export interface UpdateServiceInput {
   readonly allowCancel?: boolean | undefined;
   readonly allowVerify?: boolean | undefined;
   readonly verifyWindowH?: number | undefined;
+  /** The quantity rule; a key left out stays, and when any is sent all three columns are written (`resolveQuantityRule`). */
+  readonly minQty?: number | undefined;
+  readonly maxQty?: number | undefined;
+  readonly qtyOptions?: readonly number[] | undefined;
 }
 
 /**
@@ -170,6 +183,16 @@ function invalid(field: string, message: string, code = 'invalid'): AppError {
   return new AppError('VALIDATION_FAILED', { errors: [{ field, code, message }] });
 }
 
+/** The quantity rule a service starts with: one per order. */
+const NEW_SERVICE_QUANTITY: QuantityRule = { minQty: 1, maxQty: 1, qtyOptions: [] };
+
+/** The rule after a change, or `VALIDATION_FAILED` with every problem (feature 25, B212). */
+function quantityOf(current: QuantityRule, change: QuantityChange): QuantityRule {
+  const outcome = resolveQuantityRule(current, change);
+  if (!outcome.ok) throw new AppError('VALIDATION_FAILED', { errors: outcome.errors });
+  return outcome.rule;
+}
+
 function codeTaken(code: string, owner: string | undefined): AppError {
   const message =
     owner === undefined ? `The code ${code} is already used.` : `The code ${code} is already used by ${owner}.`;
@@ -189,6 +212,9 @@ const snapshot = (service: Service) => ({
   allowCancel: service.allowCancel,
   allowVerify: service.allowVerify,
   verifyWindowH: service.verifyWindowH,
+  minQty: service.minQty,
+  maxQty: service.maxQty,
+  qtyOptions: service.qtyOptions,
 });
 
 function toView(row: ServiceRow, chain: SupplierChain | undefined): ServiceView {
@@ -215,6 +241,9 @@ function toView(row: ServiceRow, chain: SupplierChain | undefined): ServiceView 
     allowCancel: service.allowCancel,
     allowVerify: service.allowVerify,
     verifyWindowH: service.verifyWindowH,
+    minQty: service.minQty,
+    maxQty: service.maxQty,
+    qtyOptions: service.qtyOptions,
   };
 }
 
@@ -226,6 +255,9 @@ function toView(row: ServiceRow, chain: SupplierChain | undefined): ServiceView 
  * a saved base price clears the "cost changed" mark (catalog-14). A service's type equals its category's (catalog-13). Deleting
  * a service archives it when anything refers to it and deletes it otherwise (catalog-3); an archived service is gone for every
  * reader, and its code is free again.
+ *
+ * A service sells a range or fixed packs (feature 25): the quantity rule is checked by `resolveQuantityRule`, and the audit rows hold
+ * `minQty`, `maxQty` and `qtyOptions` before and after.
  *
  * Side effects: writes `services` (and, on delete, the service's `pricing_rules` and children) and `audit_logs` (entity
  * `service`); recomputes `services.effective_cost` on create and change.
@@ -287,10 +319,10 @@ export class ServiceAdminService {
   /**
    * Creates a service.
    *
-   * @param input name, code, category, type, SLA and base price
+   * @param input name, code, category, type, SLA, base price and, optionally, the quantity rule
    * @returns the new service
-   * @throws {AppError} `VALIDATION_FAILED` (422 on `categoryId` for an unknown category or one of another type), `CODE_TAKEN`
-   *   (409 on `code`)
+   * @throws {AppError} `VALIDATION_FAILED` (422 on `categoryId` for an unknown category or one of another type; on `minQty`,
+   *   `maxQty` or `qtyOptions` for a quantity rule that breaks `resolveQuantityRule`), `CODE_TAKEN` (409 on `code`)
    */
   async create(input: CreateServiceInput): Promise<ServiceView> {
     return this.db.runInTransaction(async (work) => {
@@ -302,6 +334,7 @@ export class ServiceAdminService {
       }
       const owner = await findServiceByCode(tx, input.code);
       if (owner) throw codeTaken(input.code, owner.name);
+      const quantity = quantityOf(NEW_SERVICE_QUANTITY, input);
 
       let service: Service;
       try {
@@ -324,6 +357,9 @@ export class ServiceAdminService {
           ...(input.allowCancel === undefined ? {} : { allowCancel: input.allowCancel }),
           ...(input.allowVerify === undefined ? {} : { allowVerify: input.allowVerify }),
           ...(input.verifyWindowH === undefined ? {} : { verifyWindowH: input.verifyWindowH }),
+          minQty: quantity.minQty,
+          maxQty: quantity.maxQty,
+          qtyOptions: quantity.qtyOptions,
         });
       } catch (error) {
         throw this.translateWriteError(error, input.code);
@@ -348,7 +384,8 @@ export class ServiceAdminService {
    * @param changes the keys to change
    * @returns the updated service with its figures worked out again
    * @throws {AppError} `NOT_FOUND` (404: unknown or archived); `VALIDATION_FAILED` (422 on `basePrice` under the floor, on
-   *   `categoryId` or `type` when they disagree); `CODE_TAKEN` (409)
+   *   `categoryId` or `type` when they disagree, on `minQty`, `maxQty` or `qtyOptions` for a quantity rule that breaks
+   *   `resolveQuantityRule`); `CODE_TAKEN` (409)
    */
   async update(id: number, changes: UpdateServiceInput): Promise<ServiceView> {
     return this.db.runInTransaction(async (work) => {
@@ -377,6 +414,11 @@ export class ServiceAdminService {
         if (owner) throw codeTaken(changes.code, owner.name);
       }
       if (changes.basePrice !== undefined) await this.assertAboveFloor(tx, current, changes);
+      // Only a request that sends a quantity key touches (and re-checks) the rule; it then writes all three columns.
+      const quantity =
+        changes.minQty === undefined && changes.maxQty === undefined && changes.qtyOptions === undefined
+          ? undefined
+          : quantityOf(current, changes);
 
       let after: Service | undefined;
       try {
@@ -396,6 +438,7 @@ export class ServiceAdminService {
           ...(changes.allowCancel === undefined ? {} : { allowCancel: changes.allowCancel }),
           ...(changes.allowVerify === undefined ? {} : { allowVerify: changes.allowVerify }),
           ...(changes.verifyWindowH === undefined ? {} : { verifyWindowH: changes.verifyWindowH }),
+          ...(quantity === undefined ? {} : quantity),
         });
       } catch (error) {
         throw this.translateWriteError(error, changes.code);
