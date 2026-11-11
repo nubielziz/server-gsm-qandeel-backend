@@ -1,4 +1,4 @@
-# Roadmap: what comes after the console port (planned, not built)
+# Roadmap: what comes after the console port
 
 Written 2026-11-09, after P4b. Nothing here is built yet. Each phase becomes a feature brief in `docs/briefs/` when it starts,
 and goes through the usual flow (Sonnet builds, Opus reviews, full check, lead merge). Order matters: phase 0 unblocks
@@ -6,6 +6,27 @@ merchants today, phase 1 to 3 build the one public site (with 2W, the customers'
 5 are needed before real customers pay. **Owner's choice
 (2026-11-09): phase 0 later; the website (phases 1 to 3) first**, in `/home/saifi/gsm-project/storefront` (the owner's Next.js
 scaffold and designs), from the handoff file `/home/saifi/gsm-project/STOREFRONT-HANDOFF.md`.
+
+## Status (2026-11-11): backend and console work done; what is left is the owner's
+
+Built, reviewed and merged on `main` in the job of 2026-11-10/11 (plans by Fable 5.2 in `docs/briefs/`, reviews by Opus and, for
+money, Fable; site changes for the storefront session in `/home/saifi/gsm-project/STOREFRONT-BACKEND-HANDOFF.md`):
+
+| Phase / item | State | Commit (backend) |
+|---|---|---|
+| 0.1-0.6 merchant management (plus the owner's list: forced password change, profile and business info, suspension hardening, lifecycle mails, staff mails with `CONSOLE_BASE_URL`, staff-made API keys, the console's merchant page) | **done** | `1087d98` (console `5e844ab`) |
+| 1.3 smart sign-in; 1.4/1.7 Turnstile on merchant register, login, forgot (behind `TURNSTILE_MERCHANT_AUTH`) | **done** | `dc747c0` |
+| 2W customer wallet (2W.1-2W.5; 2W.6 is the site's; 2W.7 is the owner's legal and accounting check: the switch `wallet.customer.enabled` stays off until then) | **done** | `796eeab` (console `faed3fb`) |
+| Storefront catalog needs (`storefront/docs/BACKEND-NEEDS.md` 1-8, page list, slug alternates, help vote) | **done** | `430cf59` (console `de1b819`) |
+| Notification center (broadcasts, in-app inbox on three surfaces, scheduling, Arabic) | **done** | `620eea7` (console `1011fd7`) |
+| Site API gaps: Idempotency-Key on portal orders, customer profile edit | **done** | `8a501b0` |
+| Phase 4 payments: Stripe defects, three-decimal currencies, two webhook secrets, the console secret fields | **done** (the provider choice stays the owner's) | `d4c7ce5` (console `dbb33fb`) |
+| Phase 5: Dockerfile, production compose, Caddy, env template, backups and restore drill, Sentry | **done** (accounts, DNS, backup storage, key custody: owner checklists in `docs/OPERATIONS.md`) | `e28683b` |
+| Phase 5: Arabic in PDFs | **done** | `4c20d45` |
+| Phases 1-3 (the site itself) | the storefront session's work | handoff |
+| Still the owner's: payment provider (Stripe via a UAE/US entity or a local driver), mail domain (SPF, DKIM, DMARC), Sentry account, backup bucket and key holders, JoFotara, the wallet's legal sign-off, data-export delivery, customer self-service email change, orderable model/network/MEP options | open | |
+
+The sections below are the original plan (2026-11-09), kept as written.
 
 ## Decisions taken by the owner (2026-11-09)
 

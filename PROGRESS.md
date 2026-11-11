@@ -4,87 +4,43 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
-> **11:35:** **20 merged** (`1087d98`, check 6085/1/0; migrations 0024/0025; `CONSOLE_BASE_URL` active in `.env.production.example`)
-> and **23 merged** (`620eea7`, check 6289/1/0; migrations 0026/0027; the lead wired `clients.locale` into 23's merchant audience).
-> The "migration leak" was a misleading message: `db:migrate` always printed "up to date" (fixed `ca7af73`: it now says how many
-> it applied); the diagnostic is stopped and `log_statement` reset. **24B**: renumbered 0028, full check running
-> (`.lead/check-24b.log`). **24C**: backend passed Opus and Fable reviews (follow-ups: a top-up dispute through
-> `/webhooks/payments` has no test; a same-instant refund.failed/complete race in `refund-settlement.ts`; owner: show JOD with 2
-> decimals); its console slice is being built (lane `wf_3dd6db6a-74c`). **24A** (Opus) building (lane `wf_afbe8dda-61f`).
-> Console merges (22, 21, 20, 23, 24C) wait until 24A and 24C are merged (they branched before 23). Then B-entries for every
-> merged feature (B183+), `contract:extract`/`harvest`/`docs`, console `mocks:live`.
-> **09:40:** **21 merged** (`796eeab`; check 5964/1/0). Its renumbered migrations 0022/0023 were found ALREADY applied to the dev DB
-> `gsm` before the lead ran `db:migrate` (they existed only in the 21 worktree, ~30 min old): something run from a worktree
-> migrates `gsm`. Not found yet (setup, seed, db-reset, ci-script, db-schema tests are isolated). Diagnostic running:
-> `.lead/gsm-watch.sh` (logs every process connected to `gsm`, its folder and command, to `.lead/gsm-watch.log`) and
-> `ALTER DATABASE gsm SET log_statement = 'ddl'` (undo with `ALTER DATABASE gsm RESET log_statement`). Until found: after each
-> merge compare `drizzle.__drizzle_migrations` of `gsm` with main's journal.
-> **09:00:** **22 merged** (`430cf59`; its migrations 0020/0021 were already in the dev DB `gsm`, applied from the 22 branch
-> during its own run: harmless, but watch `drizzle.__drizzle_migrations` in `gsm` after each merge for rows that are not in main's
-> journal). **21** passed every review (backend Opus + Fable money, console Opus); the lead merged main into it, renumbered its
-> migrations to 0022 (generated, same SQL) and 0023 (custom; constant `CUSTOMER_WALLET_RULES_MIGRATION`), `db:check` clean, full
-> check running (`.lead/check-21.log`). Its provisional B-entry is B182 (`CUSTOMER_WALLET_MISMATCH`): write the other B-entries of
-> 22, 21, 20, 23, 24B only AFTER 21 is merged (positional numbering). Handoff started: `/home/saifi/gsm-project/STOREFRONT-BACKEND-HANDOFF.md`.
-> Console merges (22, 21) wait until the in-flight backend branches (20, 23, 24B) are merged.
->
-> **RESUMED 2026-11-11 08:20** (machine restarted; containers up; the queue Redis loaded cleanly). Running: workflow
-> `wf_cefe6dd0-54e` (script `gsm-lane-resume-*.js`: 21 console C1 continued, 20 run 2 continued, 23 run 2 continued, 24B from
-> the start in `../backend-24b`, base `72535d6`, Redis 7); the lead's full check of 22 (`.lead/check-22b.log`). Console 22 is
-> re-applied to the console's main only after the in-flight backend branches (20, 21, 23) have merged a main that contains 22's
-> additions (else their `routes:check` fails on its new `@route` tags).
->
-> **NOTE — PAUSED 2026-11-11 00:15 by the owner (sleep). Continue from here tomorrow.** All agents stopped; every worktree's
-> work is committed on its feature branch (WIP commits). Main has W0, 24E, 24D. Rules: `.lead/w1/LEAD-DECISIONS.md` (§0.1:
-> one Fable agent only for plans, all plans are done; Opus reviews Sonnet's decisions and writes the hard parts). Finished agent
-> results (reports, reviews) are saved in `.lead/w1/results/` (the workflow cache does not survive a new session).
-> Lane script to reuse: `~/.claude/projects/-home-saifi-gsm-project-backend/c7eb6ce5-7aa1-4d63-8590-d6d0e56256a2/workflows/scripts/gsm-lane-wf_3112862c-961.js`
-> (args: limit, base, consoleBase, features[]); start each feature at the step below, not from the beginning.
->
-> | Feature | Where it stopped | Next step |
-> |---|---|---|
-> | **22** store catalog | backend reviewed (pass); console reviewed (pass, branch `feat/console-22` `628ec9f`); lead merge in progress: main merged in, the lead fixed a load-order cycle (`d45e8bb`: storefront popularity no longer imports the orders barrel; lint and generated checks green) | full `bun run check` in `../backend-22`, squash into main, `bun run db:migrate` (0020, 0021) on the dev DB `gsm`, then re-merge console 22 (`git revert 5e90c0c` in `frontend-admin`), then on backend main `routes:build`, `contract:extract`, `contract:harvest`, `contract:docs`, commit; console `npm run mocks:live` |
-> | **21** customer wallet | backend B1-B5 built by Opus; **Opus review pass + Fable money review pass** (`.lead/w1/results/review-21.json`, `fable-money-review-21.json`); backend `629c0d3`; console C1 partial (`feat/console-21` `9b5c4d0`) | finish console C1 (Sonnet, continue partial work) + Opus console review; then lead merge (renumber migrations after 22's 0020/0021) |
-> | **20** merchants | run 1 (A0, A, B) done; run 2 (C, D) partial (`baf428f`) | continue run 2 (Sonnet), then Opus review, console K1-K5, review; when merged: uncomment `CONSOLE_BASE_URL` in `.env.production.example` + drop its allow-list entry |
-> | **23** notifications | run 1 (A, B by Opus) done; run 2 (C, D) partial (`a76eada`) | continue run 2 (Sonnet), then Opus review, console E+F, review |
-> | 24B / 24A / 24C | planned, approved | 24B any time; 24A after 20 merges; 24C after 21 merges |
-> | Handoff | not written | `/home/saifi/gsm-project/STOREFRONT-BACKEND-HANDOFF.md` at the end, from the merged contracts |
->
-> Lesson: merge a console part only after its backend is on main (console 22 was merged early and reverted: it broke
-> `routes:check` for the other branches). Docker: if the machine restarted, `docker compose up -d` in this checkout; the queue
-> Redis AOF may need `redis-check-aof --fix` (done once, backup in `.lead/redis-aof-backup/`).
+**Job of 2026-11-10/11: DONE (2026-11-11, 13:00).** The owner's prompt (finish the roadmap, merchant management, a customer
+wallet, the storefront's backend needs and a notification center; backend and console only; the storefront read-only) is built,
+reviewed and merged. Flow per feature: Opus discovery (`.lead/w1/D1`…`D6`) → **Fable 5.2 plan, approved before any code**
+(`docs/briefs/W0`, `20`-`24E`) → Sonnet or, for the hard parts, Opus implementation in `../backend-<id>` / `../frontend-admin-<id>`
+worktrees → Opus review of the code **and of every implementer decision** (+ an independent Fable money review for 21 and 24C) →
+the lead's merge (migrations renumbered, full check). Binding rules: `.lead/w1/LEAD-DECISIONS.md`; agent reports and reviews:
+`.lead/w1/results/`. At most 5 agents at once (the owner's limit); one Fable agent wrote the last six plans (the owner's cost rule).
 
-**Job of 2026-11-10 (running): finish the roadmap, merchant management, the customer wallet, the storefront's backend needs
-and a notification center** (the owner's prompt; it overrides the "phase 0 later" and "2W backend first, later" notes below).
-Roles set by the owner: Opus lead, **Fable 5.2 plans and approves every feature before code**, Sonnet implements, Opus (and Fable
-for money) reviews, the lead merges; **at most 5 agents at once, the lead included**; storefront read-only (its needs go to
-`/home/saifi/gsm-project/STOREFRONT-BACKEND-HANDOFF.md`). Binding lead decisions: `.lead/w1/LEAD-DECISIONS.md` (features W0,
-20 merchant management, 21 customer wallet, 22 store catalog, 23 notification center, 24+ the rest of the roadmap; routes beyond
-the map go to backend-owned `scripts/map-additions/<id>.mjs`; business defaults). Discovery reports: `.lead/w1/D1`…`D6`.
-Plans: `docs/briefs/W0-parallel-extensions.md` (in `../backend-w0`), `21-customer-wallet.md`, then 20, 22, 23.
-State at 17:40: discovery done (D1-D6). **Approved plans on disk:** `W0-parallel-extensions.md` (in `../backend-w0`),
-`20-merchant-management.md`, `21-customer-wallet.md`, `23-notification-center.md` (each ends with "Approved by Fable 5.2"; the
-5-hour usage cap hit twice, at 11:52 and 12:39, then the machine shut down at 17:13). **Owner's rules after the restart:** never
-relaunch a finished Fable planner; ONE Fable agent writes the remaining plans (22, 24B, 24D, 24E, 24A, 24C); Opus reviews
-Sonnet's work and decisions and writes the hard parts itself (LEAD-DECISIONS §0.1, §0.2).
-**State at 18:45:** all ten plans approved and committed (`a05882e`, `7b468d1`). **W0 merged** (`ed5416f`; check 5635 pass,
-1 skip, 0 fail). After the shutdown the queue Redis AOF had a 77-byte corrupt tail: repaired with `redis-check-aof --fix`
-(backup in `.lead/redis-aof-backup/`). Worktrees (backend `../backend-<id>` + console `../frontend-admin-<id>`, from `7b468d1`
-and console `5d50374`): 20 (Redis 12), 21 (2), 22 (3), 23 (4); 24D (9) and 24E (11) from `a05882e`. Running: lane B
-`wf_10286de5-dee` (24E by Opus, 24D by Sonnet) and lane A `wf_3112862c-961` (21 backend by Opus + Fable money review, 22 by
-Sonnet with slice C by Opus; consoles by Sonnet; Opus reviews). Lane script (reuse with other args):
-`~/.claude/projects/-home-saifi-gsm-project-backend/c7eb6ce5-7aa1-4d63-8590-d6d0e56256a2/workflows/scripts/gsm-lane-wf_3112862c-961.js`.
-**19:45:** lane B done: 24E passed after one fix (quadratic Arabic truncation → bisection; the lead relaxed its timing bound to
-400 ms), 24D passed (lead fixes at merge: partial-dump cleanup trap in `pg-backup.sh`, the restore key copy for uid 10001 in
-`docs/OPERATIONS.md`). Both merged with main and in their full checks (`.lead/check-24e.log`, `.lead/check-24d.log`). Main gained
-`6d248f9` (the db-reset test's limit 180 s: CREATE/DROP DATABASE took 95-176 s under four parallel suites). Lanes now: A
-`wf_3112862c-961` (21, 22), C `wf_6bb09fd6-ec1` (20), D `wf_7ea696c1-b8f` (23), one agent each feature, four agents in all.
-**22:15:** **24E merged** (`4c20d45`, check 5668/1/0) and **24D merged** (`e28683b`, check 5697/1/0 before 24E's lockfile;
-after resolving `package.json`/`bun.lock` the typecheck, lint, generated checks and 195 affected tests green). Usage cap hit
-19:41-22:10; the lanes restarted their agents at 22:10 from partial work: 21 run 1 done (B1-B3), run 2 (B4-B5) running; 22 run 1
-done (A, B, D), run 2 (C images, Opus) running; 20 run 1 and 23 run 1 running again.
-**When 20 merges:** uncomment `CONSOLE_BASE_URL` in `.env.production.example` and drop its allow-list entry in
-`test/unit/env-production-example.test.ts` (24D left it commented). Then 24B; 24A after 20 is merged, 24C after 21. Apply each
-merged migration to the dev DB `gsm` (the owner's API runs from this checkout with `--watch`).
+| Feature | Backend commit | Console commit | Migrations | Reviews |
+|---|---|---|---|---|
+| W0 routes beyond the map (decision 035) | `ed5416f` | | | Opus |
+| 22 storefront catalog | `430cf59` | `de1b819` | 0020, 0021 | Opus (backend, console) |
+| 21 customer wallet | `796eeab` | `faed3fb` | 0022, 0023 | Opus + Fable money (backend), Opus (console) |
+| 20 merchant management | `1087d98` | `5e844ab` | 0024, 0025 | Opus (backend, console) |
+| 23 notification center | `620eea7` | `1011fd7` | 0026, 0027 | Opus (backend, console) |
+| 24B site API gaps | `8a501b0` | | 0028 | Opus |
+| 24C payment fixes | `d4c7ce5` | `dbb33fb` | | Opus + Fable money (backend), Opus (console) |
+| 24A smart sign-in | `dc747c0` | | | Opus |
+| 24D production readiness | `e28683b` | | | Opus |
+| 24E Arabic in PDFs | `4c20d45` | | | Opus |
+
+Then: the console contract and fixtures re-harvested, B-entries **B183-B211** (`58dd931`), console `mocks:live` (298 routes,
+`6048fd9`). Coverage: **438 of 438** endpoints (382 map + 56 additions). Dev DB `gsm` migrated to 0028 (the owner's data intact).
+Handoff for the site: `/home/saifi/gsm-project/STOREFRONT-BACKEND-HANDOFF.md` (every section from merged code). ROADMAP has a status
+table. **Final full check on `main` (`7b54cc6`, 13:40): typecheck, lint, format, routes, contract, OpenAPI, coverage and db checks green; tests 6429 pass, 9 skip, 0 fail** (the 9 skips are expected in the main checkout: 8 Redis-flush cases of `db-reset.test.ts` run only with a worktree's own Redis DBs, 1 needs `GSM_TEST_DOCKER=1`). Console `main` (`6048fd9`): typecheck, lint, build (`VITE_API_MOCKS=false`) green; 4704 of 4705 tests, the one failure a load flake that passes alone.
+
+**Follow-ups (not blocking):** a test of a top-up dispute through `/webhooks/payments`; a same-instant refund.failed/complete race in
+`refund-settlement.ts`; `closeForErasure` should also refuse while a balance-paid order is not final (B191); no per-email lock on the
+old `POST /client/auth/login` (B208); remove `TURNSTILE_MERCHANT_AUTH` one release after production runs with it on; harvest
+overrides for `PATCH /admin/clients/:id` and `PATCH /admin/service-listings/:id` (their fixtures fell out of the re-harvest); the
+merchant inbox list defaults to English when no `locale` is sent (the site always sends it); `test/integration/db-reset.test.ts` times
+out (240-340 s) only while several full suites run at once (passes alone); the console's `npm run build` refuses the owner's local
+`VITE_API_MOCKS=true` (build with `VITE_API_MOCKS=false`). **Owner decisions:** payment provider, JOD display decimals (2), the wallet's
+legal sign-off before `wallet.customer.enabled`, mail domain, Sentry account, backup storage and key holders, JoFotara, customer email
+self-change, data-export delivery, orderable model/network/MEP options. Lesson recorded: merge a console part only after its backend
+is on `main` and no backend branch that lacks it is still in flight. The queue Redis AOF was repaired once after a power loss (backup
+in `~/gsm-redis-aof-backup-2026-11-10/`); `db:migrate` now says how many migrations it applied (`ca7af73`).
 
 **Next work is planned, not built: `docs/ROADMAP.md` (2026-11-09).** The owner chose one public site for merchants and regular
 customers (two account types, one smart sign-in, the whole merchant portal inside it, Arabic and English). Phase 0 (staff cannot
