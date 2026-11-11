@@ -20,3 +20,5 @@ scripts/lib/*.mjs
 .serena
 # Fixtures recorded by `bun run contract:harvest`: written as the harvest wrote them, so a re-harvest shows a clean diff.
 test/contract/fixtures
+# The lead's private tools, logs and agent reports (git-excluded through .git/info/exclude).
+.lead

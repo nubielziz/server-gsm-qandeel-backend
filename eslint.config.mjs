@@ -44,6 +44,8 @@ export default defineConfig(
     // Generated SQL migrations and the committed OpenAPI/contract documents are data, not code.
     'drizzle/',
     'docs/',
+    // The lead's private tools and logs (git-excluded through .git/info/exclude): walk scripts and backups, never project code.
+    '.lead/',
   ]),
 
   {
