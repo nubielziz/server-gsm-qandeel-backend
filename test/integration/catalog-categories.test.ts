@@ -42,8 +42,26 @@ describe('GET /admin/service-categories', () => {
     expect(res.status).toBe(200);
     expect(res.total).toBe(2);
     expect(res.body).toEqual([
-      { id: samsung, name: 'Samsung', type: 'imei', allowedGroupIds: [], sort: 1, isActive: true, serviceCount: 0 },
-      { id: apple, name: 'Apple', type: 'imei', allowedGroupIds: [], sort: 2, isActive: true, serviceCount: 2 },
+      {
+        id: samsung,
+        name: 'Samsung',
+        nameAr: '',
+        type: 'imei',
+        allowedGroupIds: [],
+        sort: 1,
+        isActive: true,
+        serviceCount: 0,
+      },
+      {
+        id: apple,
+        name: 'Apple',
+        nameAr: '',
+        type: 'imei',
+        allowedGroupIds: [],
+        sort: 2,
+        isActive: true,
+        serviceCount: 2,
+      },
     ]);
     expect((await admin.get('/admin/service-categories?q=app')).total).toBe(1);
     expect((await admin.get('/admin/service-categories?_sort=type')).status).toBe(422);
@@ -251,5 +269,38 @@ describe('DELETE /admin/service-categories/:id', () => {
     const id = await insertCategory(db);
     const other = await adminWith(t, ['catalog:read', 'catalog:update']);
     expect((await other.delete(`/admin/service-categories/${id}`)).status).toBe(403);
+  });
+});
+
+describe('the Arabic name of a category (feature 22)', () => {
+  it('is empty by default, set at creation, changed, cleared with an empty text, and audited', async () => {
+    const plain = await admin.post('/admin/service-categories', { name: 'Plain', type: 'imei' });
+    expect(plain.status).toBe(201);
+    expect(plain.body.nameAr).toBe('');
+
+    const created = await admin.post('/admin/service-categories', {
+      name: 'Carrier unlock',
+      nameAr: '  فك الشبكات ',
+      type: 'imei',
+    });
+    expect(created.body.nameAr).toBe('فك الشبكات');
+    const id = created.body.id as number;
+
+    const changed = await admin.patch(`/admin/service-categories/${id}`, { nameAr: 'فك شبكات المشغّلين' });
+    expect(changed.body).toMatchObject({ name: 'Carrier unlock', nameAr: 'فك شبكات المشغّلين' });
+    const [, , edit] = await auditRows();
+    expect(edit).toMatchObject({ action: 'edited category' });
+    expect(edit!.before).toMatchObject({ nameAr: 'فك الشبكات' });
+    expect(edit!.after).toMatchObject({ nameAr: 'فك شبكات المشغّلين' });
+
+    const cleared = await admin.patch(`/admin/service-categories/${id}`, { nameAr: '' });
+    expect(cleared.body.nameAr).toBe('');
+    expect((await admin.get(`/admin/service-categories/${id}`)).body.nameAr).toBe('');
+  });
+
+  it('refuses more than 80 characters with 422 on nameAr', async () => {
+    const res = await admin.post('/admin/service-categories', { name: 'X', nameAr: 'ن'.repeat(81), type: 'imei' });
+    expect(res.status).toBe(422);
+    expect(res.body.errors[0]).toMatchObject({ field: 'nameAr' });
   });
 });

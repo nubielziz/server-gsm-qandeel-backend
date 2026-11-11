@@ -120,3 +120,27 @@ export async function updateArticle(
   const [row] = await db.update(helpArticles).set(changes).where(eq(helpArticles.id, id)).returning();
   return row!;
 }
+
+/**
+ * Counts one visitor's "was this helpful?" vote on a published article.
+ *
+ * Why: `helpful_yes` / `helpful_no` are the public counters (feature 22, D-15c). The increment is one statement, so parallel votes
+ * never lose one; `updated_at` is set to itself, because a vote is not an edit of the article.
+ *
+ * @param db the database or a transaction
+ * @param id the article id
+ * @param helpful true counts a "yes", false a "no"
+ * @returns true when a published article was counted, false when it is unknown or not published
+ */
+export async function addHelpVote(db: DbExecutor, id: number, helpful: boolean): Promise<boolean> {
+  const rows = await db
+    .update(helpArticles)
+    .set(
+      helpful
+        ? { helpfulYes: sql`${helpArticles.helpfulYes} + 1`, updatedAt: sql`${helpArticles.updatedAt}` }
+        : { helpfulNo: sql`${helpArticles.helpfulNo} + 1`, updatedAt: sql`${helpArticles.updatedAt}` },
+    )
+    .where(and(eq(helpArticles.id, id), eq(helpArticles.isPublished, true)))
+    .returning({ id: helpArticles.id });
+  return rows.length > 0;
+}

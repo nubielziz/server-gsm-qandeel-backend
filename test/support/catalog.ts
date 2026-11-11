@@ -75,3 +75,38 @@ export async function insertSupplierLink(
     .returning({ id: s.serviceSupplierLinks.id });
   return { linkId: link!.id, supplierId: supplier!.id, supplierServiceId: remote!.id };
 }
+
+/**
+ * Inserts inventory codes straight into the table (no encryption: the tests that use this read statuses and counts only).
+ *
+ * @param db the test database
+ * @param serviceId the service the codes belong to
+ * @param count how many rows
+ * @param values columns to override on every row (`status`, `orderId`, ...)
+ * @returns the new row ids, oldest first
+ */
+export async function insertInventoryCodes(
+  db: Database,
+  serviceId: number,
+  count: number,
+  values: Partial<typeof s.inventoryCodes.$inferInsert> = {},
+): Promise<number[]> {
+  if (count === 0) return [];
+  const rows = await db
+    .insert(s.inventoryCodes)
+    .values(
+      Array.from({ length: count }, () => {
+        const unique = crypto.randomUUID();
+        return {
+          serviceId,
+          codeEnc: `enc-${unique}`,
+          codeHash: `hash-${unique}`,
+          codeLast4: 'abcd',
+          batchRef: 'B-TEST',
+          ...values,
+        };
+      }),
+    )
+    .returning({ id: s.inventoryCodes.id });
+  return rows.map((row) => row.id).sort((a, b) => a - b);
+}

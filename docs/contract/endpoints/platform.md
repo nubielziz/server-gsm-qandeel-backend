@@ -40,6 +40,7 @@ Frontend features covering this module: `audit`, `settings`, `orders`, `dashboar
 | `POST /webhooks/telegram/:secret` | hooks | url-secret | 12 |  |
 | `GET /openapi.json` | system | public | 7 |  |
 | `GET /docs` | system | public | 7 |  |
+| `GET /store/v1/media/:name` | store | public | 22 |  |
 
 ## POST /v1/files
 
@@ -280,5 +281,10 @@ Frontend features covering this module: `audit`, `settings`, `orders`, `dashboar
 ## GET /docs
 
 - **Map**: REST v1 documentation page. (صفحة توثيق REST v1) · public · stage 7 · tables -
+- **Frontend**: none.
+
+## GET /store/v1/media/:name
+
+- **Map addition** (B-TBD store-media, `scripts/map-additions/22.mjs`): Serve a public service image (immutable, long cache). (صورة خدمة عامة (ملف ثابت يُخزَّن طويلاً)) · public · stage 22 · tables files
 - **Frontend**: none.
 

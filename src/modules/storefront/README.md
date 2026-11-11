@@ -12,7 +12,9 @@ Built: the public catalog (feature 14a, storefront-checkout: 3 of the 6 storefro
 `GET /store/v1/services`, `GET /store/v1/services/:slug`) and the admin and content parts (feature 15: the admin routes of the
 listings, content pages, help articles and legal documents and the three public content routes, 20 routes), with the one demo seed
 (`scripts/seed/storefront.ts`), and the page generator (feature 19: `POST /admin/content-pages/generate`). Feature 16 built
-`PATCH /admin/storefront/settings` (below).
+`PATCH /admin/storefront/settings` (below). Feature 22 (the storefront catalog backend) added the listing content editor, the
+catalog filters and sorts, `GET /store/v1/categories`, the availability flag, the popularity job, the public page list, the slug
+alternates, the help vote and the service picture (upload, removal, `imageUrl`; section "Feature 22" below).
 
 Layout: `contracts/` (one file per route group, `shared.ts` for the field schemas), `controllers/` (thin), `application/` (one
 service per group, `storefront-catalog.service.ts`, `storefront-quotes.ts`, `storefront-policies.ts`, `legal-documents.ts`,
@@ -91,7 +93,7 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 
 | Table | What it holds |
 |---|---|
-| `service_listings` | The public service page in the storefront: title, slug and SEO fields per language. |
+| `service_listings` | The public service page in the storefront: title, slug, content and SEO fields per language; the facts of the service (brand, carrier, country, featured, position) are kept equal on every language row; `listed_at`, `sales_30d` (job only) and `image_file_id` (feature 22). |
 | `content_pages` | Landing pages, static pages and the blog, in several languages. |
 | `help_articles` | The help centre and FAQ; an article can be linked to a service. |
 | `legal_documents` | Terms, privacy, refund and cookie documents, with archived versions. |
@@ -102,14 +104,16 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 `GET /store/v1/config`, `GET /store/v1/services`, `GET /store/v1/services/:slug` (described above); built by feature 19:
 `POST /admin/content-pages/generate` (below, "Landing-page generator"). Not built: `PATCH /admin/storefront/settings` (16).
 
-### Admin console (17 of 19)
+### Admin console (17 of 19, plus the two picture routes of feature 22)
 
 | Route | Permission | What it does |
 |---|---|---|
-| `GET /admin/service-listings` | `storefront:read` | Listings with the service join, retail price, storefront floor, margin, 30-day storefront sales and the lock; filters `isListed`, `locked`. |
-| `GET /admin/service-listings/:id` | `storefront:read` | One listing. |
-| `POST /admin/service-listings` | `storefront:create` | A service on the storefront in one language, not on the site yet (`LISTING_EXISTS`, `LISTING_LOCKED`). |
-| `PATCH /admin/service-listings/:id` | `storefront:update` | The "On the site" switch and the retail price (floor 422, `SERVICE_DISABLED`, `LISTING_LOCKED`). |
+| `GET /admin/service-listings` | `storefront:read` | Listings with the service join, retail price, storefront floor, margin, 30-day storefront sales, the lock and the content fields (no Markdown bodies); filters `isListed`, `locked`, `isFeatured`; sorts include `listedAt`, `sort`. |
+| `GET /admin/service-listings/:id` | `storefront:read` | One listing with `descriptionMd` and `requirementsMd`. |
+| `POST /admin/service-listings` | `storefront:create` | A service on the storefront in one language, not on the site yet, with optional content (`LISTING_EXISTS`, `LISTING_LOCKED`). |
+| `PATCH /admin/service-listings/:id` | `storefront:update` | The "On the site" switch, the retail price (floor 422, `SERVICE_DISABLED`, `LISTING_LOCKED`) and the content: title, slug (`LISTING_EXISTS` on `slug`), summary, description, requirements, delivery note, SEO (this language) and brand, carrier, country, featured, position (every language of the service). |
+| `POST /admin/service-listings/:id/image` | `storefront:update` | (22) Multipart part `file`: a JPEG, PNG or WebP of at most 2 MiB, 200 to 4096 px, checked and cleaned by `PublicImages`; becomes the picture of the service in every language. `422` on `file` with the refusal code, `413` over 2 MiB. Audited `uploaded image for`. |
+| `DELETE /admin/service-listings/:id/image` | `storefront:update` | (22) Removes the picture from every language (`204`, also when there was none); the file stays. Audited `removed image of`. |
 | `GET /admin/content-pages` | `storefront:read` | Landing and content pages; filters `kind` (repeatable), `status`, `locale`; `q` over title and slug. |
 | `GET /admin/content-pages/:id` | `storefront:read` | One page. |
 | `POST /admin/content-pages` | `storefront:create` | A draft written by the signed-in staff member (`SLUG_TAKEN`). |
@@ -125,13 +129,16 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 | `POST /admin/legal-documents` | `legal:create` | A draft version (`VERSION_EXISTS`); a version's text is never edited. |
 | `POST /admin/legal-documents/:id/publish` | `legal:publish` | Makes a draft the version in force (`ALREADY_CURRENT`, `NOT_A_DRAFT`). |
 
-### Storefront (B2C), public reads (3 of 6)
+### Storefront (B2C), public reads (3 of 6, plus the three of feature 22)
 
 | Route | What it does |
 |---|---|
 | `GET /store/v1/pages/:slug?locale=` | A live content page (`published`, or `noindex` with `noindex: true`), or the legal document in force for the slugs `terms`, `privacy`, `refund`, `cookies` (`kind: legal`, with the version a consent references). A draft is 404. |
 | `GET /store/v1/help?locale=&q=&category=` | The published articles of one language, in staff order, with the derived slug and the votes. |
 | `GET /store/v1/help/:slug` | One published article; only the id at the start of the slug counts. |
+| `GET /store/v1/pages?locale=&kind=&q=&_sort=` | (22) The live pages of a language without their bodies (`published`, or `noindex` with `noindex: true`); never drafts or legal documents; sorts `publishedAt` (default, newest first), `title`; up to 100 rows. |
+| `POST /store/v1/help/:slug/vote` | (22) `{ helpful }` -> `204`; one counted vote per visitor IP and article per day, repeats accepted and ignored with the same `204`; `updatedAt` does not move. |
+| `GET /store/v1/categories?locale=` | (22) The catalog categories that hold a listed, sellable, priced service in the language, with `serviceCount`, in category order. |
 
 ## Rules built
 
@@ -159,13 +166,50 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
   serialised by an advisory lock per type and language (`ALREADY_CURRENT`, `NOT_A_DRAFT`); `acceptedCount` counts granted consents
   and is null for a version never published.
 - **Audit** (demo phrases, ANSWERS audit Q3): `created listing for`, `listed on storefront`, `unlisted from storefront`, `changed
-  retail price of` (entity `listing`); `created page`, `edited page`, `published page`, `unpublished page` (`content_page`);
+  retail price of`, `edited listing of` (entity `listing`); `created page`, `edited page`, `published page`, `unpublished page` (`content_page`);
   `created help article`, `edited help article`, `published help article`, `unpublished help article` (`help_article`);
   `created legal document`, `published legal document` (`legal`, label `Terms of service (EN) 3.2`); `generated landing pages` (`content_page`,
   label `12 drafts`, feature 19).
 - **Seed** (`scripts/seed/storefront.ts`, last in the order; one seeder, reports in this order): the 14 retail prices, the mock's 14
   listings (ids 1 to 14), the 8 TAC catalogue entries, 14 landing and 6 content pages, 12 help articles and 7 legal versions (one
   draft refund policy 1.5).
+
+## Feature 22: the storefront catalog backend (`docs/briefs/22-store-catalog.md`)
+
+- **Listing content.** `PATCH /admin/service-listings/:id` and `POST` write the content of a listing. Per language: `publicTitle`,
+  `slug`, `summary`, `descriptionMd`, `requirementsMd`, `etaText`, `seoTitle`, `seoDescription`. Facts of the service, written to
+  **every language row** under the service lock (like `retailPrice`): `brand`, `carrier`, `country` (upper case), `isFeatured`, `sort`;
+  a new listing copies them from the service's oldest listing. Lock order: the service row, then every listing row of the service in id
+  order (the popularity job locks rows in the same order). Every refusal is decided before the first write. The audit row
+  `edited listing of` keeps the fields that changed; Markdown bodies are recorded as `{ length }`, never as text. Changing the slug
+  changes the public address (staff are told in the console).
+- **`listed_at`** is the first publication: set by the first switch-on (`coalesce`), never reset by off and on. The migration back-fills
+  rows already on the site with `created_at`.
+- **Cards** gain `category { id, slug, name }` (`<id>-<words>` from the English name, the Arabic name for `ar` when staff set one),
+  `availability`, `deliveryMinutes` (`services.sla_minutes`), `etaText` (the listing's delivery note), `listedAt`. The service page also
+  carries `alternates` (listed pages of the same service in the other language).
+- **Availability** is a flag, never a count: `in_stock` when the available inventory codes cover the smallest order (the smallest pack,
+  else `min_qty`), else `on_request`; both can be bought. The SQL test `IN_STOCK_SQL` (catalog, bounded by the smallest order on the
+  partial index) is the twin of `coversSmallestOrder`; the `availability` filter narrows the sellable ids in SQL.
+- **Filters and sorts** of `GET /store/v1/services`: `type`, `categoryId` (repeatable), `availability`, `minPrice`/`maxPrice`
+  (inclusive, against `price.gross` in the chosen currency; `minPrice` above `maxPrice` is 422 on `maxPrice`), sorts `popular`,
+  `listedAt`, `price`. A request without a price bound or price sort is one SQL page. One with them reads all matches (at most
+  10 000), prices them with `StorefrontQuotes` (so the filtered price is the shown and charged one), filters, sorts by price (stable;
+  rows tied on the keys before `price` are re-ordered) and slices the page itself, so `x-total-count` stays exact.
+- **Popularity** (`jobs/popularity*.ts`): queue `maintenance`, job `storefront_popularity`, scheduler `storefront-popularity`, every 30
+  minutes. It stores the non-rejected orders of the last 30 days (every channel, counted by `salesCountsByService` in `infra/foreign-reads.repository.ts`, a documented foreign read: importing the orders barrel from here closed a load-order cycle, decision 032) in
+  `service_listings.sales_30d`, in one statement that writes only the rows whose value changed and never moves `updated_at`. The
+  shop shows the order only (`_sort=popular`), never the number.
+- **Page list, alternates, vote.** See the routes above. The vote consumes the limiter `help-vote` first; a refused point does nothing
+  and answers `204` like a counted one.
+- **Service picture** (slice C). `service_listings.image_file_id` points at a `files` row the platform's `PublicImages` stored
+  (`media/<sha256>.<ext>` in the private bucket, owner `staff`). Like the other facts it describes the service: an upload or a removal
+  writes every language row under the service lock and the rows' locks (id order); a new listing copies it from the oldest one.
+  `uploadImage` checks the listing, stores the picture outside the transaction (object, then the row; the same bytes are one object and
+  one row), then links it. A replaced or removed picture's file stays (content-addressed; another service may show it; a purge job is
+  out of scope). The audit rows carry the picture's name (`before`/`after`), its dimensions and size. Rows, cards and the service page
+  carry `imageUrl` (`/store/v1/media/<name>` or `null`), read with one batched query per page (`PublicImages.urlsOf`). The bytes are
+  served by the platform's `GET /store/v1/media/:name` (platform README).
 
 ## Landing-page generator (feature 19)
 
@@ -208,7 +252,9 @@ Outbox events produced (types, payload ids): none. Consumed: none.
 
 ## Jobs and schedules
 
-None.
+`storefront_popularity` (queue `maintenance`, scheduler `storefront-popularity`, every 30 minutes, `jobs/popularity.ts`): refreshes
+`service_listings.sales_30d`. Idempotent, written to `job_runs` (`processed` = rows changed, `result` = `{ services, changed }`).
+Documented in `docs/queues.md`.
 
 ## Cache keys
 

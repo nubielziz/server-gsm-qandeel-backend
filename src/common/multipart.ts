@@ -1,5 +1,5 @@
-// Multipart form bodies (decision 026 note, B157): the three routes that accept them (a Dhru call, `POST /v1/files` and `POST /client/files`)
-// get their text fields and uploaded files as one plain object before the guards run, so Dhru credentials in a multipart body are read like
+// Multipart form bodies (decision 026 note, B157): the routes that accept them (a Dhru call, `POST /v1/files`, `POST /client/files` and the
+// service picture of feature 22, `POST /admin/service-listings/:id/image`) get their text fields and uploaded files as one plain object before the guards run, so Dhru credentials in a multipart body are read like
 // those of a form body, and the maintenance stage sees the Dhru `action`.
 import type { FastifyInstance } from 'fastify';
 import { AppError } from './errors';
@@ -19,7 +19,12 @@ export const MULTIPART_MAX_BYTES = 25 * 1024 * 1024 + 256 * 1024;
  * Why: only these routes read uploads or Dhru fields from a multipart body; refusing the rest before the body is read keeps the
  * big buffer to the routes that need it.
  */
-export const MULTIPART_ROUTES: ReadonlySet<string> = new Set(['/api/index.php', '/v1/files', '/client/files']);
+export const MULTIPART_ROUTES: ReadonlySet<string> = new Set([
+  '/api/index.php',
+  '/v1/files',
+  '/client/files',
+  '/admin/service-listings/:id/image',
+]);
 
 /**
  * A file part of a multipart body.

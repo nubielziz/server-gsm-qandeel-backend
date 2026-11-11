@@ -198,6 +198,8 @@ export const serviceCategories = pgTable(
   {
     id: pk(),
     name: text().notNull(),
+    /** the Arabic name the storefront shows; `''` falls back to `name` (feature 22) */
+    nameAr: text().notNull().default(''),
     type: text().$type<ServiceType>().notNull(),
     /** client_groups.id; empty means every group */
     allowedGroupIds: bigintList(),

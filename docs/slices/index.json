@@ -32,14 +32,15 @@
       "module": "platform",
       "name": "Platform (settings, audit, files, notifications, webhooks, outbox)",
       "domain": "G",
-      "rows": 26,
-      "endpoints": 33,
+      "rows": 27,
+      "endpoints": 34,
       "bySurface": {
         "v1": 2,
         "client": 11,
         "admin": 17,
         "hooks": 1,
-        "system": 2
+        "system": 2,
+        "store": 1
       },
       "frontendCalled": 17,
       "stages": [
@@ -47,7 +48,8 @@
         5,
         7,
         9,
-        12
+        12,
+        22
       ],
       "tables": 8,
       "scenarios": [
@@ -259,18 +261,19 @@
       "module": "storefront",
       "name": "Storefront & content",
       "domain": "H",
-      "rows": 14,
-      "endpoints": 25,
+      "rows": 19,
+      "endpoints": 30,
       "bySurface": {
-        "store": 6,
-        "admin": 19
+        "store": 9,
+        "admin": 21
       },
       "frontendCalled": 19,
       "stages": [
         14,
         15,
         16,
-        19
+        19,
+        22
       ],
       "tables": 4,
       "scenarios": []

@@ -5,6 +5,9 @@ import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
 import type { ServiceFieldType, ServiceType } from '../db/schema';
 import {
+  type SellableFilter,
+  countServicesByCategory,
+  findInStockIds,
   findPricedServiceIds,
   findSellableServices,
   findServiceNames,
@@ -17,7 +20,10 @@ export interface SellableService {
   readonly id: number;
   readonly name: string;
   readonly type: ServiceType;
+  readonly categoryId: number;
   readonly categoryName: string;
+  /** The Arabic category name; `''` when staff set none. */
+  readonly categoryNameAr: string;
   /** The service's own text, shown on its page. */
   readonly info: string;
   /** The delivery time as text (`'1 day'`). */
@@ -29,6 +35,19 @@ export interface SellableService {
   readonly maxQty: number;
   readonly qtyOptions: readonly number[];
 }
+
+/** A category of the storefront with the number of public services in it. */
+export interface SellableCategory {
+  readonly id: number;
+  readonly name: string;
+  /** The Arabic name; `''` when staff set none. */
+  readonly nameAr: string;
+  readonly type: ServiceType;
+  readonly sort: number;
+  readonly serviceCount: number;
+}
+
+export type { SellableFilter };
 
 /** A service as a buyer's own record names it: no price, no visibility rule. */
 export interface ServiceName {
@@ -68,10 +87,35 @@ export class StorefrontServices {
    *
    * @param db the database or a transaction
    * @param groupId the storefront's retail group
+   * @param filter optional narrowing by service type, category and stock (feature 22); none restricts nothing
    * @returns the ids in ascending order
    */
-  priced(db: DbExecutor, groupId: number): Promise<number[]> {
-    return findPricedServiceIds(db, groupId);
+  priced(db: DbExecutor, groupId: number, filter?: SellableFilter): Promise<number[]> {
+    return findPricedServiceIds(db, groupId, filter);
+  }
+
+  /**
+   * Tells which of some services have enough available inventory codes for their smallest order.
+   *
+   * Why: the storefront card says `in_stock` or `on_request` and never a number (feature 22).
+   *
+   * @param db the database or a transaction
+   * @param ids the service ids
+   * @returns the ids among them that are in stock
+   */
+  inStockIds(db: DbExecutor, ids: readonly number[]): Promise<Set<number>> {
+    return findInStockIds(db, ids);
+  }
+
+  /**
+   * Counts some services per category.
+   *
+   * @param db the database or a transaction
+   * @param serviceIds the services that are public in the caller's view
+   * @returns the categories that hold at least one of them, in category order
+   */
+  async categoriesOf(db: DbExecutor, serviceIds: readonly number[]): Promise<SellableCategory[]> {
+    return countServicesByCategory(db, serviceIds);
   }
 
   /**
@@ -85,13 +129,15 @@ export class StorefrontServices {
   async sellable(db: DbExecutor, ids: readonly number[], groupId: number): Promise<Map<number, SellableService>> {
     const rows = await findSellableServices(db, ids, groupId);
     return new Map(
-      rows.map(({ service, categoryName }) => [
+      rows.map(({ service, categoryId, categoryName, categoryNameAr }) => [
         service.id,
         {
           id: service.id,
           name: service.name,
           type: service.type,
+          categoryId,
           categoryName,
+          categoryNameAr,
           info: service.info,
           deliveryTime: service.deliveryTime,
           slaMinutes: service.slaMinutes,

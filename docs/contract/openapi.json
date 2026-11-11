@@ -108997,6 +108997,10 @@
                       "name": {
                         "type": "string"
                       },
+                      "nameAr": {
+                        "type": "string",
+                        "description": "The Arabic name the storefront shows; `''` when none (the storefront then shows `name`)."
+                      },
                       "type": {
                         "type": "string",
                         "enum": [
@@ -109038,6 +109042,7 @@
                     "required": [
                       "id",
                       "name",
+                      "nameAr",
                       "type",
                       "allowedGroupIds",
                       "sort",
@@ -109050,6 +109055,7 @@
                   {
                     "id": 4,
                     "name": "Carrier unlock",
+                    "nameAr": "فك شبكات المشغّلين",
                     "type": "imei",
                     "allowedGroupIds": [],
                     "sort": 4,
@@ -109364,7 +109370,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "A name is unique within its type, ignoring case and surrounding spaces: a repeat is `422` on `name` (also when two requests race). Unknown group ids are `422` on `allowedGroupIds`. Fields left out: `allowedGroupIds` empty, `sort` last, `isActive` true.",
+        "description": "A name is unique within its type, ignoring case and surrounding spaces: a repeat is `422` on `name` (also when two requests race). Unknown group ids are `422` on `allowedGroupIds`. Fields left out: `nameAr` empty (the storefront shows `name`), `allowedGroupIds` empty, `sort` last, `isActive` true.",
         "operationId": "postAdminServiceCategories",
         "parameters": [],
         "requestBody": {
@@ -109377,6 +109383,10 @@
                   "name": {
                     "type": "string",
                     "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "nameAr": {
+                    "type": "string",
                     "maxLength": 80
                   },
                   "type": {
@@ -109420,6 +109430,7 @@
                 "example": {
                   "value": {
                     "name": "Carrier unlock",
+                    "nameAr": "فك شبكات المشغّلين",
                     "type": "imei",
                     "allowedGroupIds": [],
                     "sort": 4,
@@ -109450,6 +109461,10 @@
                     },
                     "name": {
                       "type": "string"
+                    },
+                    "nameAr": {
+                      "type": "string",
+                      "description": "The Arabic name the storefront shows; `''` when none (the storefront then shows `name`)."
                     },
                     "type": {
                       "type": "string",
@@ -109492,6 +109507,7 @@
                   "required": [
                     "id",
                     "name",
+                    "nameAr",
                     "type",
                     "allowedGroupIds",
                     "sort",
@@ -109502,6 +109518,7 @@
                 "example": {
                   "id": 4,
                   "name": "Carrier unlock",
+                  "nameAr": "فك شبكات المشغّلين",
                   "type": "imei",
                   "allowedGroupIds": [],
                   "sort": 4,
@@ -109859,6 +109876,10 @@
                     "name": {
                       "type": "string"
                     },
+                    "nameAr": {
+                      "type": "string",
+                      "description": "The Arabic name the storefront shows; `''` when none (the storefront then shows `name`)."
+                    },
                     "type": {
                       "type": "string",
                       "enum": [
@@ -109900,6 +109921,7 @@
                   "required": [
                     "id",
                     "name",
+                    "nameAr",
                     "type",
                     "allowedGroupIds",
                     "sort",
@@ -109910,6 +109932,7 @@
                 "example": {
                   "id": 4,
                   "name": "Carrier unlock",
+                  "nameAr": "فك شبكات المشغّلين",
                   "type": "imei",
                   "allowedGroupIds": [],
                   "sort": 4,
@@ -110216,7 +110239,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "Only the keys sent change. The name stays unique within the type (the new type too when only the type changes). A type change is `422` on `type` while live services are in the category: they must move first (archived services follow the change).",
+        "description": "Only the keys sent change (`nameAr` is the optional Arabic name of the storefront; an empty text clears it). The name stays unique within the type (the new type too when only the type changes). A type change is `422` on `type` while live services are in the category: they must move first (archived services follow the change).",
         "operationId": "patchAdminServiceCategoriesById",
         "parameters": [
           {
@@ -110242,6 +110265,10 @@
                   "name": {
                     "type": "string",
                     "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "nameAr": {
+                    "type": "string",
                     "maxLength": 80
                   },
                   "type": {
@@ -110308,6 +110335,10 @@
                     "name": {
                       "type": "string"
                     },
+                    "nameAr": {
+                      "type": "string",
+                      "description": "The Arabic name the storefront shows; `''` when none (the storefront then shows `name`)."
+                    },
                     "type": {
                       "type": "string",
                       "enum": [
@@ -110349,6 +110380,7 @@
                   "required": [
                     "id",
                     "name",
+                    "nameAr",
                     "type",
                     "allowedGroupIds",
                     "sort",
@@ -110359,6 +110391,7 @@
                 "example": {
                   "id": 4,
                   "name": "Carrier unlock",
+                  "nameAr": "فك شبكات المشغّلين",
                   "type": "imei",
                   "allowedGroupIds": [],
                   "sort": 4,
@@ -111190,7 +111223,7 @@
     },
     "/admin/service-listings": {
       "get": {
-        "description": "One row per service and language. Archived services are gone (RESOLUTIONS catalog-3). `q` is a contains over the public title, the slug, the service name and the service code. Filters: `isListed` and `locked`. The counts above the table ask with `_start=0&_end=1` and read `x-total-count`. Default order: public title.",
+        "description": "One row per service and language. Archived services are gone (RESOLUTIONS catalog-3). `q` is a contains over the public title, the slug, the service name and the service code. Filters: `isListed`, `locked` and `isFeatured`. Sorts: public title, `isListed`, `slug`, `id`, `listedAt` (first publication; never-listed rows last) and `sort`. The counts above the table ask with `_start=0&_end=1` and read `x-total-count`. Rows leave out the two Markdown bodies (`GET /admin/service-listings/:id` has them). Default order: public title.",
         "operationId": "getAdminServiceListings",
         "parameters": [
           {
@@ -111218,7 +111251,7 @@
             "name": "_sort",
             "required": false,
             "in": "query",
-            "description": "Comma-separated sort fields. Allowed: publicTitle, isListed, slug, id. Default: publicTitle asc.",
+            "description": "Comma-separated sort fields. Allowed: publicTitle, isListed, slug, id, listedAt, sort. Default: publicTitle asc.",
             "schema": {
               "type": "string"
             }
@@ -111277,6 +111310,24 @@
             },
             "style": "form",
             "explode": true
+          },
+          {
+            "name": "isFeatured",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where isFeatured equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "true",
+                  "false"
+                ]
+              }
+            },
+            "style": "form",
+            "explode": true
           }
         ],
         "responses": {
@@ -111318,11 +111369,77 @@
                       "publicTitle": {
                         "type": "string"
                       },
+                      "summary": {
+                        "type": "string",
+                        "description": "One line under the title (this language)."
+                      },
+                      "etaText": {
+                        "type": "string",
+                        "description": "The delivery note shown instead of the service delivery time (this language); empty for none."
+                      },
+                      "brand": {
+                        "type": "string",
+                        "description": "Shared by every language of the service."
+                      },
+                      "carrier": {
+                        "type": "string",
+                        "description": "The network the service unlocks; shared by every language of the service."
+                      },
+                      "country": {
+                        "type": "string",
+                        "description": "ISO-2 country or empty; shared by every language of the service."
+                      },
+                      "sort": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "The position in the shop; shared by every language of the service."
+                      },
+                      "seoTitle": {
+                        "type": "string"
+                      },
+                      "seoDescription": {
+                        "type": "string"
+                      },
                       "isListed": {
                         "type": "boolean"
                       },
                       "isFeatured": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "description": "Shared by every language of the service."
+                      },
+                      "listedAt": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "date-time",
+                            "x-gsm-alias": "IsoDateTime",
+                            "description": "ISO 8601 UTC time with milliseconds.",
+                            "examples": [
+                              "2026-03-01T09:30:00.000Z"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "When the listing first went on the site (set once, never reset); `null` until then."
+                      },
+                      "updatedAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "x-gsm-alias": "IsoDateTime",
+                        "description": "ISO 8601 UTC time with milliseconds.",
+                        "examples": [
+                          "2026-03-01T09:30:00.000Z"
+                        ]
+                      },
+                      "imageUrl": {
+                        "description": "The picture of the service, shared by every language: a root-relative `/store/v1/media/<sha256>.<ext>` path; `null` when none.",
+                        "type": [
+                          "string",
+                          "null"
+                        ]
                       },
                       "service": {
                         "type": "object",
@@ -111447,8 +111564,19 @@
                       "locale",
                       "slug",
                       "publicTitle",
+                      "summary",
+                      "etaText",
+                      "brand",
+                      "carrier",
+                      "country",
+                      "sort",
+                      "seoTitle",
+                      "seoDescription",
                       "isListed",
                       "isFeatured",
+                      "listedAt",
+                      "updatedAt",
+                      "imageUrl",
                       "service",
                       "retailPrice",
                       "floorPrice",
@@ -111468,8 +111596,19 @@
                     "locale": "en",
                     "slug": "atandt-usa-premier-unlock",
                     "publicTitle": "AT&T USA Premier Unlock",
+                    "summary": "Unlock an AT&T iPhone.",
+                    "etaText": "",
+                    "brand": "Apple",
+                    "carrier": "AT&T",
+                    "country": "US",
+                    "sort": 2,
+                    "seoTitle": "",
+                    "seoDescription": "",
                     "isListed": true,
                     "isFeatured": true,
+                    "listedAt": "2026-10-01T09:00:00.000Z",
+                    "updatedAt": "2026-10-01T09:00:00.000Z",
+                    "imageUrl": "/store/v1/media/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08.webp",
                     "service": {
                       "id": 5,
                       "name": "AT&T USA Premier Unlock",
@@ -111793,7 +111932,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "A new listing is not on the site yet (`isListed` false) and not featured. Without `slug` the server makes one from the title (lower case, `&` becomes `and`, other characters become `-`); a typed slug must already be lower-case words joined by hyphens. `serviceId` that names no live service (or an archived one) is `422` on `serviceId`. A service that can never be public (B2B only category, or disabled) is `409 LISTING_LOCKED`. A second listing of the same service in the same language, or a slug already used in that language, is `409 LISTING_EXISTS` (also when two requests race).",
+        "description": "A new listing is not on the site yet (`isListed` false) and not featured. Without `slug` the server makes one from the title (lower case, `&` becomes `and`, other characters become `-`); a typed slug must already be lower-case words joined by hyphens. `serviceId` that names no live service (or an archived one) is `422` on `serviceId`. A service that can never be public (B2B only category, or disabled) is `409 LISTING_LOCKED`. A second listing of the same service in the same language, or a slug already used in that language, is `409 LISTING_EXISTS` (also when two requests race). The content fields of `PATCH` (`summary`, `descriptionMd`, `requirementsMd`, `etaText`, `seoTitle`, `seoDescription`, and the service-wide `brand`, `carrier`, `country`, `isFeatured`, `sort`) may be sent too. Service-wide facts not sent are copied from the service's oldest listing (another language); sent ones are written to every language of the service.",
         "operationId": "postAdminServiceListings",
         "parameters": [],
         "requestBody": {
@@ -111828,6 +111967,55 @@
                   "slug": {
                     "type": "string",
                     "maxLength": 120
+                  },
+                  "summary": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "descriptionMd": {
+                    "type": "string",
+                    "maxLength": 20000
+                  },
+                  "requirementsMd": {
+                    "type": "string",
+                    "maxLength": 10000
+                  },
+                  "etaText": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "seoTitle": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "seoDescription": {
+                    "type": "string",
+                    "maxLength": 400
+                  },
+                  "brand": {
+                    "description": "Every language of the service.",
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "carrier": {
+                    "description": "Every language of the service.",
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "country": {
+                    "description": "Empty or two letters; every language of the service.",
+                    "type": "string",
+                    "pattern": "^([A-Za-z]{2})?$"
+                  },
+                  "isFeatured": {
+                    "description": "Every language of the service.",
+                    "type": "boolean"
+                  },
+                  "sort": {
+                    "description": "Every language of the service.",
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
                   }
                 },
                 "required": [
@@ -111885,11 +112073,77 @@
                     "publicTitle": {
                       "type": "string"
                     },
+                    "summary": {
+                      "type": "string",
+                      "description": "One line under the title (this language)."
+                    },
+                    "etaText": {
+                      "type": "string",
+                      "description": "The delivery note shown instead of the service delivery time (this language); empty for none."
+                    },
+                    "brand": {
+                      "type": "string",
+                      "description": "Shared by every language of the service."
+                    },
+                    "carrier": {
+                      "type": "string",
+                      "description": "The network the service unlocks; shared by every language of the service."
+                    },
+                    "country": {
+                      "type": "string",
+                      "description": "ISO-2 country or empty; shared by every language of the service."
+                    },
+                    "sort": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "The position in the shop; shared by every language of the service."
+                    },
+                    "seoTitle": {
+                      "type": "string"
+                    },
+                    "seoDescription": {
+                      "type": "string"
+                    },
                     "isListed": {
                       "type": "boolean"
                     },
                     "isFeatured": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "Shared by every language of the service."
+                    },
+                    "listedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "x-gsm-alias": "IsoDateTime",
+                          "description": "ISO 8601 UTC time with milliseconds.",
+                          "examples": [
+                            "2026-03-01T09:30:00.000Z"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "When the listing first went on the site (set once, never reset); `null` until then."
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "x-gsm-alias": "IsoDateTime",
+                      "description": "ISO 8601 UTC time with milliseconds.",
+                      "examples": [
+                        "2026-03-01T09:30:00.000Z"
+                      ]
+                    },
+                    "imageUrl": {
+                      "description": "The picture of the service, shared by every language: a root-relative `/store/v1/media/<sha256>.<ext>` path; `null` when none.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "service": {
                       "type": "object",
@@ -112006,6 +112260,14 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "descriptionMd": {
+                      "type": "string",
+                      "description": "Markdown (this language)."
+                    },
+                    "requirementsMd": {
+                      "type": "string",
+                      "description": "Markdown (this language)."
                     }
                   },
                   "required": [
@@ -112014,8 +112276,19 @@
                     "locale",
                     "slug",
                     "publicTitle",
+                    "summary",
+                    "etaText",
+                    "brand",
+                    "carrier",
+                    "country",
+                    "sort",
+                    "seoTitle",
+                    "seoDescription",
                     "isListed",
                     "isFeatured",
+                    "listedAt",
+                    "updatedAt",
+                    "imageUrl",
                     "service",
                     "retailPrice",
                     "floorPrice",
@@ -112023,7 +112296,9 @@
                     "orders30d",
                     "revenue30d",
                     "locked",
-                    "lockedReason"
+                    "lockedReason",
+                    "descriptionMd",
+                    "requirementsMd"
                   ],
                   "additionalProperties": false
                 },
@@ -112033,8 +112308,19 @@
                   "locale": "en",
                   "slug": "atandt-usa-premier-unlock",
                   "publicTitle": "AT&T USA Premier Unlock",
+                  "summary": "Unlock an AT&T iPhone.",
+                  "etaText": "",
+                  "brand": "Apple",
+                  "carrier": "AT&T",
+                  "country": "US",
+                  "sort": 2,
+                  "seoTitle": "",
+                  "seoDescription": "",
                   "isListed": false,
                   "isFeatured": false,
+                  "listedAt": null,
+                  "updatedAt": "2026-10-01T09:00:00.000Z",
+                  "imageUrl": null,
                   "service": {
                     "id": 5,
                     "name": "AT&T USA Premier Unlock",
@@ -112048,7 +112334,9 @@
                   "orders30d": 12,
                   "revenue30d": "311.8800",
                   "locked": false,
-                  "lockedReason": null
+                  "lockedReason": null,
+                  "descriptionMd": "We unlock the phone from the IMEI.",
+                  "requirementsMd": ""
                 }
               }
             },
@@ -112467,6 +112755,7 @@
     },
     "/admin/service-listings/{id}": {
       "get": {
+        "description": "The listing with its description and requirements (Markdown).",
         "operationId": "getAdminServiceListingsById",
         "parameters": [
           {
@@ -112519,11 +112808,77 @@
                     "publicTitle": {
                       "type": "string"
                     },
+                    "summary": {
+                      "type": "string",
+                      "description": "One line under the title (this language)."
+                    },
+                    "etaText": {
+                      "type": "string",
+                      "description": "The delivery note shown instead of the service delivery time (this language); empty for none."
+                    },
+                    "brand": {
+                      "type": "string",
+                      "description": "Shared by every language of the service."
+                    },
+                    "carrier": {
+                      "type": "string",
+                      "description": "The network the service unlocks; shared by every language of the service."
+                    },
+                    "country": {
+                      "type": "string",
+                      "description": "ISO-2 country or empty; shared by every language of the service."
+                    },
+                    "sort": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "The position in the shop; shared by every language of the service."
+                    },
+                    "seoTitle": {
+                      "type": "string"
+                    },
+                    "seoDescription": {
+                      "type": "string"
+                    },
                     "isListed": {
                       "type": "boolean"
                     },
                     "isFeatured": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "Shared by every language of the service."
+                    },
+                    "listedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "x-gsm-alias": "IsoDateTime",
+                          "description": "ISO 8601 UTC time with milliseconds.",
+                          "examples": [
+                            "2026-03-01T09:30:00.000Z"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "When the listing first went on the site (set once, never reset); `null` until then."
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "x-gsm-alias": "IsoDateTime",
+                      "description": "ISO 8601 UTC time with milliseconds.",
+                      "examples": [
+                        "2026-03-01T09:30:00.000Z"
+                      ]
+                    },
+                    "imageUrl": {
+                      "description": "The picture of the service, shared by every language: a root-relative `/store/v1/media/<sha256>.<ext>` path; `null` when none.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "service": {
                       "type": "object",
@@ -112640,6 +112995,14 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "descriptionMd": {
+                      "type": "string",
+                      "description": "Markdown (this language)."
+                    },
+                    "requirementsMd": {
+                      "type": "string",
+                      "description": "Markdown (this language)."
                     }
                   },
                   "required": [
@@ -112648,8 +113011,19 @@
                     "locale",
                     "slug",
                     "publicTitle",
+                    "summary",
+                    "etaText",
+                    "brand",
+                    "carrier",
+                    "country",
+                    "sort",
+                    "seoTitle",
+                    "seoDescription",
                     "isListed",
                     "isFeatured",
+                    "listedAt",
+                    "updatedAt",
+                    "imageUrl",
                     "service",
                     "retailPrice",
                     "floorPrice",
@@ -112657,7 +113031,9 @@
                     "orders30d",
                     "revenue30d",
                     "locked",
-                    "lockedReason"
+                    "lockedReason",
+                    "descriptionMd",
+                    "requirementsMd"
                   ],
                   "additionalProperties": false
                 },
@@ -112667,8 +113043,19 @@
                   "locale": "en",
                   "slug": "atandt-usa-premier-unlock",
                   "publicTitle": "AT&T USA Premier Unlock",
+                  "summary": "Unlock an AT&T iPhone.",
+                  "etaText": "",
+                  "brand": "Apple",
+                  "carrier": "AT&T",
+                  "country": "US",
+                  "sort": 2,
+                  "seoTitle": "",
+                  "seoDescription": "",
                   "isListed": true,
                   "isFeatured": true,
+                  "listedAt": "2026-10-01T09:00:00.000Z",
+                  "updatedAt": "2026-10-01T09:00:00.000Z",
+                  "imageUrl": "/store/v1/media/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08.webp",
                   "service": {
                     "id": 5,
                     "name": "AT&T USA Premier Unlock",
@@ -112682,7 +113069,9 @@
                   "orders30d": 12,
                   "revenue30d": "311.8800",
                   "locked": false,
-                  "lockedReason": null
+                  "lockedReason": null,
+                  "descriptionMd": "We unlock the phone from the IMEI.",
+                  "requirementsMd": ""
                 }
               }
             },
@@ -112984,7 +113373,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "Any of `isListed` and `retailPrice` (4-decimal net USD before VAT). `retailPrice` writes the retail group price of the service, so it applies to the listing of every language and only to new storefront checkouts; a price of zero or less, or under `floorPrice`, is `422` on `retailPrice` (\"Below the storefront floor of $X.\"). Switching a disabled service on is `409 SERVICE_DISABLED`; switching on or pricing a service that can never be public is `409 LISTING_LOCKED`. Switching off is always allowed. Each change is audited (`listed on storefront`, `unlisted from storefront`, `changed retail price of`).",
+        "description": "Any of the fields below; at least one. `isListed` and `retailPrice` (4-decimal net USD before VAT) work as before: `retailPrice` writes the retail group price of the service, so it applies to the listing of every language and only to new storefront checkouts; a price of zero or less, or under `floorPrice`, is `422` on `retailPrice` (\"Below the storefront floor of $X.\"). Switching a disabled service on is `409 SERVICE_DISABLED`; switching on or pricing a service that can never be public is `409 LISTING_LOCKED`. Switching off is always allowed. Switching on for the first time sets `listedAt`; it never resets. Content of this language only: `publicTitle`, `slug` (a form that is not lower-case words joined by hyphens is `422` on `slug`; one used by another listing of the language is `409 LISTING_EXISTS` on `slug`; changing it changes the public link), `summary`, `descriptionMd`, `requirementsMd`, `etaText`, `seoTitle`, `seoDescription`. Facts of the service, written to the listing of every language: `brand`, `carrier`, `country` (empty or two letters), `isFeatured`, `sort`. Every refusal is decided before the first write. Each change is audited (`listed on storefront`, `unlisted from storefront`, `changed retail price of`, `edited listing of`; the audit row keeps the length of the Markdown bodies, not their text).",
         "operationId": "patchAdminServiceListingsById",
         "parameters": [
           {
@@ -113018,6 +113407,64 @@
                     "examples": [
                       "12.4900"
                     ]
+                  },
+                  "publicTitle": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "slug": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "summary": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "descriptionMd": {
+                    "type": "string",
+                    "maxLength": 20000
+                  },
+                  "requirementsMd": {
+                    "type": "string",
+                    "maxLength": 10000
+                  },
+                  "etaText": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "seoTitle": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "seoDescription": {
+                    "type": "string",
+                    "maxLength": 400
+                  },
+                  "brand": {
+                    "description": "Every language of the service.",
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "carrier": {
+                    "description": "Every language of the service.",
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "country": {
+                    "description": "Empty or two letters; every language of the service.",
+                    "type": "string",
+                    "pattern": "^([A-Za-z]{2})?$"
+                  },
+                  "isFeatured": {
+                    "description": "Every language of the service.",
+                    "type": "boolean"
+                  },
+                  "sort": {
+                    "description": "Every language of the service.",
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
                   }
                 }
               },
@@ -113068,11 +113515,77 @@
                     "publicTitle": {
                       "type": "string"
                     },
+                    "summary": {
+                      "type": "string",
+                      "description": "One line under the title (this language)."
+                    },
+                    "etaText": {
+                      "type": "string",
+                      "description": "The delivery note shown instead of the service delivery time (this language); empty for none."
+                    },
+                    "brand": {
+                      "type": "string",
+                      "description": "Shared by every language of the service."
+                    },
+                    "carrier": {
+                      "type": "string",
+                      "description": "The network the service unlocks; shared by every language of the service."
+                    },
+                    "country": {
+                      "type": "string",
+                      "description": "ISO-2 country or empty; shared by every language of the service."
+                    },
+                    "sort": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "The position in the shop; shared by every language of the service."
+                    },
+                    "seoTitle": {
+                      "type": "string"
+                    },
+                    "seoDescription": {
+                      "type": "string"
+                    },
                     "isListed": {
                       "type": "boolean"
                     },
                     "isFeatured": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "Shared by every language of the service."
+                    },
+                    "listedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "x-gsm-alias": "IsoDateTime",
+                          "description": "ISO 8601 UTC time with milliseconds.",
+                          "examples": [
+                            "2026-03-01T09:30:00.000Z"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "When the listing first went on the site (set once, never reset); `null` until then."
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "x-gsm-alias": "IsoDateTime",
+                      "description": "ISO 8601 UTC time with milliseconds.",
+                      "examples": [
+                        "2026-03-01T09:30:00.000Z"
+                      ]
+                    },
+                    "imageUrl": {
+                      "description": "The picture of the service, shared by every language: a root-relative `/store/v1/media/<sha256>.<ext>` path; `null` when none.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "service": {
                       "type": "object",
@@ -113189,6 +113702,14 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "descriptionMd": {
+                      "type": "string",
+                      "description": "Markdown (this language)."
+                    },
+                    "requirementsMd": {
+                      "type": "string",
+                      "description": "Markdown (this language)."
                     }
                   },
                   "required": [
@@ -113197,8 +113718,19 @@
                     "locale",
                     "slug",
                     "publicTitle",
+                    "summary",
+                    "etaText",
+                    "brand",
+                    "carrier",
+                    "country",
+                    "sort",
+                    "seoTitle",
+                    "seoDescription",
                     "isListed",
                     "isFeatured",
+                    "listedAt",
+                    "updatedAt",
+                    "imageUrl",
                     "service",
                     "retailPrice",
                     "floorPrice",
@@ -113206,7 +113738,9 @@
                     "orders30d",
                     "revenue30d",
                     "locked",
-                    "lockedReason"
+                    "lockedReason",
+                    "descriptionMd",
+                    "requirementsMd"
                   ],
                   "additionalProperties": false
                 },
@@ -113216,8 +113750,19 @@
                   "locale": "en",
                   "slug": "atandt-usa-premier-unlock",
                   "publicTitle": "AT&T USA Premier Unlock",
+                  "summary": "Unlock an AT&T iPhone.",
+                  "etaText": "",
+                  "brand": "Apple",
+                  "carrier": "AT&T",
+                  "country": "US",
+                  "sort": 2,
+                  "seoTitle": "",
+                  "seoDescription": "",
                   "isListed": true,
                   "isFeatured": true,
+                  "listedAt": "2026-10-01T09:00:00.000Z",
+                  "updatedAt": "2026-10-01T09:00:00.000Z",
+                  "imageUrl": "/store/v1/media/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08.webp",
                   "service": {
                     "id": 5,
                     "name": "AT&T USA Premier Unlock",
@@ -113231,7 +113776,9 @@
                   "orders30d": 12,
                   "revenue30d": "311.8800",
                   "locked": false,
-                  "lockedReason": null
+                  "lockedReason": null,
+                  "descriptionMd": "We unlock the phone from the IMEI.",
+                  "requirementsMd": ""
                 }
               }
             },
@@ -113527,7 +114074,7 @@
             }
           },
           "409": {
-            "description": "LISTING_LOCKED: This listing is locked to business customers.\nSERVICE_DISABLED: This service is disabled.",
+            "description": "LISTING_LOCKED: This listing is locked to business customers.\nLISTING_EXISTS: This service is already listed.\nSERVICE_DISABLED: This service is disabled.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -113558,6 +114105,7 @@
                       "type": "string",
                       "enum": [
                         "LISTING_LOCKED",
+                        "LISTING_EXISTS",
                         "SERVICE_DISABLED"
                       ]
                     },
@@ -113602,6 +114150,17 @@
                       "status": 409,
                       "code": "LISTING_LOCKED",
                       "detail": "This listing is locked to business customers.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "LISTING_EXISTS": {
+                    "summary": "This service is already listed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/listing-exists",
+                      "title": "This service is already listed.",
+                      "status": 409,
+                      "code": "LISTING_EXISTS",
+                      "detail": "This service is already listed.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   },
@@ -113731,6 +114290,1446 @@
         "x-gsm-access": "staff-permission",
         "x-gsm-audit": true,
         "x-gsm-key": "PATCH /admin/service-listings/:id",
+        "x-gsm-permission": "storefront:update",
+        "x-gsm-session-stages": [
+          "active"
+        ],
+        "x-gsm-surface": "admin"
+      }
+    },
+    "/admin/service-listings/{id}/image": {
+      "post": {
+        "description": "`multipart/form-data` with one part named `file`: a JPEG, PNG or WebP picture, at most 2 MiB, 200 to 4096 pixels on each side. The type is read from the content (the declared type and the file name are ignored). The picture is cleaned before it is stored (EXIF, XMP, IPTC, comments and text chunks are removed, anything after the end of the picture is cut) and stored once under the SHA-256 of the cleaned bytes. It becomes the picture of the service in every language (replacing the previous one) and the `imageUrl` of the answer and of the public service cards. Refusals are `422` on `file` with the code: `empty`, `unsupported_type`, `corrupt`, `animated`, `too_small`, `too_large_dimensions`, `rotated` (a JPEG whose EXIF turns it: save it upright); more than 2 MiB is `413`. A JSON or form body has no file part, so it is `422` on `file`; a body of a type the API does not read is `415`. Audited (`uploaded image for`).",
+        "operationId": "postAdminServiceListingsByIdImage",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Numeric record id.",
+            "schema": {
+              "x-gsm-alias": "Id",
+              "description": "Numeric record id.",
+              "type": "string",
+              "pattern": "^[1-9]\\d{0,15}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The file to upload (one multipart form part)."
+                  }
+                },
+                "required": [
+                  "file"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "x-gsm-alias": "Id",
+                      "description": "Numeric record id.",
+                      "examples": [
+                        42
+                      ]
+                    },
+                    "serviceId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "x-gsm-alias": "Id",
+                      "description": "Numeric record id.",
+                      "examples": [
+                        42
+                      ]
+                    },
+                    "locale": {
+                      "type": "string"
+                    },
+                    "slug": {
+                      "type": "string"
+                    },
+                    "publicTitle": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string",
+                      "description": "One line under the title (this language)."
+                    },
+                    "etaText": {
+                      "type": "string",
+                      "description": "The delivery note shown instead of the service delivery time (this language); empty for none."
+                    },
+                    "brand": {
+                      "type": "string",
+                      "description": "Shared by every language of the service."
+                    },
+                    "carrier": {
+                      "type": "string",
+                      "description": "The network the service unlocks; shared by every language of the service."
+                    },
+                    "country": {
+                      "type": "string",
+                      "description": "ISO-2 country or empty; shared by every language of the service."
+                    },
+                    "sort": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "The position in the shop; shared by every language of the service."
+                    },
+                    "seoTitle": {
+                      "type": "string"
+                    },
+                    "seoDescription": {
+                      "type": "string"
+                    },
+                    "isListed": {
+                      "type": "boolean"
+                    },
+                    "isFeatured": {
+                      "type": "boolean",
+                      "description": "Shared by every language of the service."
+                    },
+                    "listedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "x-gsm-alias": "IsoDateTime",
+                          "description": "ISO 8601 UTC time with milliseconds.",
+                          "examples": [
+                            "2026-03-01T09:30:00.000Z"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "When the listing first went on the site (set once, never reset); `null` until then."
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "x-gsm-alias": "IsoDateTime",
+                      "description": "ISO 8601 UTC time with milliseconds.",
+                      "examples": [
+                        "2026-03-01T09:30:00.000Z"
+                      ]
+                    },
+                    "imageUrl": {
+                      "description": "The picture of the service, shared by every language: a root-relative `/store/v1/media/<sha256>.<ext>` path; `null` when none.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "service": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "x-gsm-alias": "Id",
+                          "description": "Numeric record id.",
+                          "examples": [
+                            42
+                          ]
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "basePrice": {
+                          "type": "string",
+                          "pattern": "^-?\\d+\\.\\d{4}$",
+                          "x-gsm-alias": "Money",
+                          "description": "The B2B base price merchants pay.",
+                          "examples": [
+                            "12.4900"
+                          ]
+                        },
+                        "cost": {
+                          "type": "string",
+                          "pattern": "^-?\\d+\\.\\d{4}$",
+                          "x-gsm-alias": "Money",
+                          "description": "The effective cost (RESOLUTIONS catalog-1), so cost, `marginPct` and `floorPrice` agree.",
+                          "examples": [
+                            "12.4900"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "code",
+                        "basePrice",
+                        "cost"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "retailPrice": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^-?\\d+\\.\\d{4}$",
+                          "x-gsm-alias": "Money",
+                          "description": "Decimal string with exactly 4 fraction digits.",
+                          "examples": [
+                            "12.4900"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The storefront price of the service, net USD before VAT, shared by every language; `null` when unset."
+                    },
+                    "floorPrice": {
+                      "type": "string",
+                      "pattern": "^-?\\d+\\.\\d{4}$",
+                      "x-gsm-alias": "Money",
+                      "description": "The lowest retail price accepted: `max(round(basePrice x 1.10, 2), effective cost + minimum profit)` for the retail group.",
+                      "examples": [
+                        "12.4900"
+                      ]
+                    },
+                    "marginPct": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 40,
+                          "pattern": "^-?\\d+(\\.\\d+)?$",
+                          "x-gsm-alias": "Decimal",
+                          "description": "Exact decimal number as a string.",
+                          "examples": [
+                            "19.0000"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "`(retail - cost) / retail x 100`, 4 decimals; `null` without a retail price."
+                    },
+                    "orders30d": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "The service's non-rejected storefront orders of the last 30 days."
+                    },
+                    "revenue30d": {
+                      "type": "string",
+                      "pattern": "^-?\\d+\\.\\d{4}$",
+                      "x-gsm-alias": "Money",
+                      "description": "Their net `total_price`.",
+                      "examples": [
+                        "12.4900"
+                      ]
+                    },
+                    "locked": {
+                      "type": "boolean",
+                      "description": "The service can never be public: its category is B2B only, or it is disabled."
+                    },
+                    "lockedReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "descriptionMd": {
+                      "type": "string",
+                      "description": "Markdown (this language)."
+                    },
+                    "requirementsMd": {
+                      "type": "string",
+                      "description": "Markdown (this language)."
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "serviceId",
+                    "locale",
+                    "slug",
+                    "publicTitle",
+                    "summary",
+                    "etaText",
+                    "brand",
+                    "carrier",
+                    "country",
+                    "sort",
+                    "seoTitle",
+                    "seoDescription",
+                    "isListed",
+                    "isFeatured",
+                    "listedAt",
+                    "updatedAt",
+                    "imageUrl",
+                    "service",
+                    "retailPrice",
+                    "floorPrice",
+                    "marginPct",
+                    "orders30d",
+                    "revenue30d",
+                    "locked",
+                    "lockedReason",
+                    "descriptionMd",
+                    "requirementsMd"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "id": 5,
+                  "serviceId": 5,
+                  "locale": "en",
+                  "slug": "atandt-usa-premier-unlock",
+                  "publicTitle": "AT&T USA Premier Unlock",
+                  "summary": "Unlock an AT&T iPhone.",
+                  "etaText": "",
+                  "brand": "Apple",
+                  "carrier": "AT&T",
+                  "country": "US",
+                  "sort": 2,
+                  "seoTitle": "",
+                  "seoDescription": "",
+                  "isListed": true,
+                  "isFeatured": true,
+                  "listedAt": "2026-10-01T09:00:00.000Z",
+                  "updatedAt": "2026-10-01T09:00:00.000Z",
+                  "imageUrl": "/store/v1/media/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08.webp",
+                  "service": {
+                    "id": 5,
+                    "name": "AT&T USA Premier Unlock",
+                    "code": "IMEI-ATT-USA",
+                    "basePrice": "17.2800",
+                    "cost": "13.5000"
+                  },
+                  "retailPrice": "25.9900",
+                  "floorPrice": "19.0100",
+                  "marginPct": "48.0569",
+                  "orders30d": 12,
+                  "revenue30d": "311.8800",
+                  "locked": false,
+                  "lockedReason": null,
+                  "descriptionMd": "We unlock the phone from the IMEI.",
+                  "requirementsMd": ""
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to do this.\nCSRF_FAILED: The security check for this request failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FORBIDDEN",
+                        "CSRF_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CSRF_FAILED": {
+                    "summary": "The security check for this request failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/csrf-failed",
+                      "title": "The security check for this request failed.",
+                      "status": 403,
+                      "code": "CSRF_FAILED",
+                      "detail": "The security check for this request failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: The requested item was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 404
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_FOUND"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "NOT_FOUND": {
+                    "summary": "The requested item was not found.",
+                    "value": {
+                      "type": "https://errors.gsm.example/not-found",
+                      "title": "The requested item was not found.",
+                      "status": 404,
+                      "code": "NOT_FOUND",
+                      "detail": "The requested item was not found.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "PAYLOAD_TOO_LARGE: The request is too large.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 413
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "PAYLOAD_TOO_LARGE"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "PAYLOAD_TOO_LARGE": {
+                    "summary": "The request is too large.",
+                    "value": {
+                      "type": "https://errors.gsm.example/payload-too-large",
+                      "title": "The request is too large.",
+                      "status": 413,
+                      "code": "PAYLOAD_TOO_LARGE",
+                      "detail": "The request is too large.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "UNSUPPORTED_MEDIA_TYPE: This content type is not supported.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 415
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNSUPPORTED_MEDIA_TYPE"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNSUPPORTED_MEDIA_TYPE": {
+                    "summary": "This content type is not supported.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unsupported-media-type",
+                      "title": "This content type is not supported.",
+                      "status": 415,
+                      "code": "UNSUPPORTED_MEDIA_TYPE",
+                      "detail": "This content type is not supported.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: You are sending requests too quickly.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 429
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "RATE_LIMITED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "RATE_LIMITED": {
+                    "summary": "You are sending requests too quickly.",
+                    "value": {
+                      "type": "https://errors.gsm.example/rate-limited",
+                      "title": "You are sending requests too quickly.",
+                      "status": 429,
+                      "code": "RATE_LIMITED",
+                      "detail": "You are sending requests too quickly.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "retry-after": {
+                "description": "Seconds to wait before the next request.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "UNAVAILABLE: The service is temporarily unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 503
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAVAILABLE"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAVAILABLE": {
+                    "summary": "The service is temporarily unavailable.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unavailable",
+                      "title": "The service is temporarily unavailable.",
+                      "status": 503,
+                      "code": "UNAVAILABLE",
+                      "detail": "The service is temporarily unavailable.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "staffSession": []
+          }
+        ],
+        "summary": "Upload the picture of a storefront service",
+        "tags": [
+          "storefront-listings"
+        ],
+        "x-gsm-access": "staff-permission",
+        "x-gsm-audit": true,
+        "x-gsm-key": "POST /admin/service-listings/:id/image",
+        "x-gsm-permission": "storefront:update",
+        "x-gsm-session-stages": [
+          "active"
+        ],
+        "x-gsm-surface": "admin"
+      },
+      "delete": {
+        "description": "The service has no picture any more, in every language (`imageUrl` becomes `null`). The stored file is kept. Answers `204` also when there was no picture. Audited (`removed image of`).",
+        "operationId": "deleteAdminServiceListingsByIdImage",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Numeric record id.",
+            "schema": {
+              "x-gsm-alias": "Id",
+              "description": "Numeric record id.",
+              "type": "string",
+              "pattern": "^[1-9]\\d{0,15}$"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body.",
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to do this.\nCSRF_FAILED: The security check for this request failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FORBIDDEN",
+                        "CSRF_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CSRF_FAILED": {
+                    "summary": "The security check for this request failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/csrf-failed",
+                      "title": "The security check for this request failed.",
+                      "status": 403,
+                      "code": "CSRF_FAILED",
+                      "detail": "The security check for this request failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: The requested item was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 404
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_FOUND"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "NOT_FOUND": {
+                    "summary": "The requested item was not found.",
+                    "value": {
+                      "type": "https://errors.gsm.example/not-found",
+                      "title": "The requested item was not found.",
+                      "status": 404,
+                      "code": "NOT_FOUND",
+                      "detail": "The requested item was not found.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "staffSession": []
+          }
+        ],
+        "summary": "Remove the picture of a storefront service",
+        "tags": [
+          "storefront-listings"
+        ],
+        "x-gsm-access": "staff-permission",
+        "x-gsm-audit": true,
+        "x-gsm-key": "DELETE /admin/service-listings/:id/image",
         "x-gsm-permission": "storefront:update",
         "x-gsm-session-stages": [
           "active"
@@ -187506,6 +189505,219 @@
         "x-gsm-surface": "store"
       }
     },
+    "/store/v1/categories": {
+      "get": {
+        "description": "The catalog categories that hold at least one service the shop sells in the language (`?locale=`, default `en`): a switched-on page, a service that may be sold and a retail price. `serviceCount` equals `x-total-count` of `GET /store/v1/services` filtered by `categoryId` and `locale`. In category order (the staff `sort`), at most 500. The name is the Arabic name staff set, else the English one. Public; cacheable for 30 seconds.",
+        "operationId": "getStoreV1Categories",
+        "parameters": [
+          {
+            "name": "locale",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "en",
+              "type": "string",
+              "enum": [
+                "en",
+                "ar"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "locale": {
+                      "type": "string",
+                      "enum": [
+                        "en",
+                        "ar"
+                      ]
+                    },
+                    "categories": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "x-gsm-alias": "Id",
+                            "description": "Numeric record id.",
+                            "examples": [
+                              42
+                            ]
+                          },
+                          "slug": {
+                            "type": "string",
+                            "description": "`<id>-<words>`: only the number before the first hyphen counts."
+                          },
+                          "name": {
+                            "type": "string",
+                            "description": "The name in the requested language (the English name when there is no Arabic one)."
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "imei",
+                              "server",
+                              "remote",
+                              "file"
+                            ]
+                          },
+                          "serviceCount": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991,
+                            "description": "Services with a switched-on page in the language that can be bought now."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "slug",
+                          "name",
+                          "type",
+                          "serviceCount"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "locale",
+                    "categories"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "locale": "en",
+                  "categories": [
+                    {
+                      "id": 1,
+                      "slug": "1-apple",
+                      "name": "Apple",
+                      "type": "imei",
+                      "serviceCount": 12
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List the storefront categories",
+        "tags": [
+          "storefront"
+        ],
+        "x-gsm-access": "public",
+        "x-gsm-key": "GET /store/v1/categories",
+        "x-gsm-surface": "store"
+      }
+    },
     "/store/v1/checkout-sessions": {
       "post": {
         "description": "Starts a purchase, as a guest or as a signed-in customer: the session locks the retail price, the tax rate of the buyer's `country` and the exchange rate of `currency` for 30 minutes. A guest's email makes (or finds) a guest customer. A request that carries the cookie of a signed-in customer (and its `X-CSRF-Token`, else `403 CSRF_FAILED` and nothing is written) opens the checkout as that account instead: `email` must be the email of the account in any case (else `422` on `email`: \"Use the email of your account, or sign out to check out as a guest.\"), the `guestCheckout` switch does not apply and the session belongs to the signed-in customer. A request without a usable customer session is a guest. An IMEI service needs a valid `imei` (else `422 INVALID_IMEI`); a service with order fields needs their `inputs`. A suspended or blocked customer is refused (`403 ACCOUNT_SUSPENDED`); when the shop requires an account (`guestCheckout` off) a guest gets `401 UNAUTHORIZED`. A service the shop cannot sell is `422` on `serviceId`. The answer carries the session token: the whole credential of the next two routes. Paying comes later. Needs the anti-bot token (`X-Turnstile-Token`). The answer holds the token, so it is never cached.",
@@ -190965,6 +193177,250 @@
         "x-gsm-surface": "store"
       }
     },
+    "/store/v1/help/{slug}/vote": {
+      "post": {
+        "description": "Counts one \"helpful\" (`true`) or \"not helpful\" (`false`) vote on a published article, found by the id that starts the slug (as `GET /store/v1/help/:slug`). One vote per visitor address and article per day counts; a repeat is accepted and ignored with the same `204`, so the answer never tells whether it counted. Voting does not change the article's `updatedAt`. An unknown or unpublished article is `404`.",
+        "operationId": "postStoreV1HelpBySlugVote",
+        "parameters": [
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "helpful": {
+                    "type": "boolean",
+                    "description": "`true` for \"yes, it helped\", `false` for \"no\"."
+                  }
+                },
+                "required": [
+                  "helpful"
+                ]
+              },
+              "examples": {
+                "example": {
+                  "value": {
+                    "helpful": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Done. No body.",
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: The requested item was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 404
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_FOUND"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "NOT_FOUND": {
+                    "summary": "The requested item was not found.",
+                    "value": {
+                      "type": "https://errors.gsm.example/not-found",
+                      "title": "The requested item was not found.",
+                      "status": 404,
+                      "code": "NOT_FOUND",
+                      "detail": "The requested item was not found.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Vote on a help article",
+        "tags": [
+          "storefront-public"
+        ],
+        "x-gsm-access": "public",
+        "x-gsm-key": "POST /store/v1/help/:slug/vote",
+        "x-gsm-surface": "store"
+      }
+    },
     "/store/v1/imei/check": {
       "post": {
         "description": "Reads an IMEI before payment: 15 digits with a valid Luhn check digit (else `422 INVALID_IMEI`), then the device the first 8 digits (the TAC) name in the catalogue. Blacklist and lock status come with a later stage, so `status` is `unknown` for now. The IMEI is stored encrypted with a keyed hash for lookups, never logged; every check writes its own record and is never answered from another visitor's check (`cached` stays false here). With `serviceId` the check counts as `pre_order` for that service, without it as the free tool (`storefront_free`). Needs the anti-bot token (`X-Turnstile-Token`).",
@@ -193767,6 +196223,234 @@
         "x-gsm-surface": "store"
       }
     },
+    "/store/v1/media/{name}": {
+      "get": {
+        "description": "The picture of a storefront service, as the `imageUrl` of a service card names it (`/store/v1/media/<sha256>.<jpg|png|webp>`). The name is the SHA-256 of the bytes, so the answer never changes: `Cache-Control: public, max-age=31536000, immutable`, `ETag` the SHA-256, `Content-Type` the real type of the picture (`image/jpeg`, `image/png` or `image/webp`), `Content-Disposition: inline` and `Cross-Origin-Resource-Policy: cross-origin` (the site may show it from another origin). The picture was checked and cleaned when it was uploaded (no metadata). A name of another form, or one that names no picture, is `404`. Public, no Turnstile; limited per address by its own budget (1200 a minute), apart from the API budget.",
+        "operationId": "getStoreV1MediaByName",
+        "parameters": [
+          {
+            "name": "name",
+            "required": true,
+            "in": "path",
+            "description": "`<sha256>.<jpg|png|webp>`.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "`<sha256>.<jpg|png|webp>`."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "image/*": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: The requested item was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 404
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_FOUND"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "NOT_FOUND": {
+                    "summary": "The requested item was not found.",
+                    "value": {
+                      "type": "https://errors.gsm.example/not-found",
+                      "title": "The requested item was not found.",
+                      "status": 404,
+                      "code": "NOT_FOUND",
+                      "detail": "The requested item was not found.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "UNAVAILABLE: The service is temporarily unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 503
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAVAILABLE"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAVAILABLE": {
+                    "summary": "The service is temporarily unavailable.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unavailable",
+                      "title": "The service is temporarily unavailable.",
+                      "status": 503,
+                      "code": "UNAVAILABLE",
+                      "detail": "The service is temporarily unavailable.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Download a service picture",
+        "tags": [
+          "storefront"
+        ],
+        "x-gsm-access": "public",
+        "x-gsm-key": "GET /store/v1/media/:name",
+        "x-gsm-surface": "store"
+      }
+    },
     "/store/v1/orders/{token}": {
       "get": {
         "description": "The order the tracking token names: its public status (`pending`, `processing`, `completed`, `rejected`), the service, the input with all but its last four characters hidden, the result once it is completed, and the timeline in the shop's own words (no supplier, risk, note or cost line ever appears). The token is the whole credential (128 random bits, in the link the buyer received); an unknown, malformed or wrong token is `404`. Lookups are limited to 30 a minute per address. Never cached.",
@@ -194320,6 +197004,306 @@
         "x-gsm-surface": "store"
       }
     },
+    "/store/v1/pages": {
+      "get": {
+        "description": "The live content pages of one language (`?locale=`, default `en`): status `published`, or `noindex` (live, flagged `noindex: true`: leave those out of a sitemap). Drafts are never listed, and neither are the legal documents (read them by slug at `GET /store/v1/pages/:slug`). Filter by `kind`; `q` is a contains over the title; sort by `publishedAt` (default, newest first) or `title`; pages of up to 100 rows with `x-total-count`. Bodies are not included: fetch a page by slug. Public; cacheable for 30 seconds.",
+        "operationId": "getStoreV1Pages",
+        "parameters": [
+          {
+            "name": "_start",
+            "required": false,
+            "in": "query",
+            "description": "First row to return (0-based, inclusive). Default 0.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000000
+            }
+          },
+          {
+            "name": "_end",
+            "required": false,
+            "in": "query",
+            "description": "Row after the last one to return (exclusive). Default _start + 25; a page holds at most 100 rows.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "_sort",
+            "required": false,
+            "in": "query",
+            "description": "Comma-separated sort fields. Allowed: publishedAt, title, id. Default: publishedAt desc.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "_order",
+            "required": false,
+            "in": "query",
+            "description": "Comma-separated directions (asc or desc), one per sort field in the same order.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Case-insensitive text search over: title.",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where kind equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "country",
+                  "model",
+                  "brand",
+                  "carrier",
+                  "tool",
+                  "static",
+                  "blog"
+                ]
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "locale",
+            "required": false,
+            "in": "query",
+            "description": "The language: `en` or `ar`.",
+            "schema": {
+              "default": "en",
+              "type": "string",
+              "description": "The language: `en` or `ar`.",
+              "examples": [
+                "en"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "country",
+                          "model",
+                          "brand",
+                          "carrier",
+                          "tool",
+                          "static",
+                          "blog"
+                        ]
+                      },
+                      "slug": {
+                        "type": "string"
+                      },
+                      "locale": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "seoDescription": {
+                        "type": "string",
+                        "description": "`''` when none."
+                      },
+                      "noindex": {
+                        "type": "boolean",
+                        "description": "The page is live but must stay out of search results and sitemaps."
+                      },
+                      "publishedAt": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "date-time",
+                            "x-gsm-alias": "IsoDateTime",
+                            "description": "ISO 8601 UTC time with milliseconds.",
+                            "examples": [
+                              "2026-03-01T09:30:00.000Z"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "updatedAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "x-gsm-alias": "IsoDateTime",
+                        "description": "ISO 8601 UTC time with milliseconds.",
+                        "examples": [
+                          "2026-03-01T09:30:00.000Z"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "slug",
+                      "locale",
+                      "title",
+                      "seoDescription",
+                      "noindex",
+                      "publishedAt",
+                      "updatedAt"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "example": [
+                  {
+                    "kind": "blog",
+                    "slug": "how-to-find-your-imei",
+                    "locale": "en",
+                    "title": "How to find your IMEI",
+                    "seoDescription": "Three ways to find the IMEI of a phone.",
+                    "noindex": false,
+                    "publishedAt": "2026-10-01T09:00:00.000Z",
+                    "updatedAt": "2026-10-02T09:00:00.000Z"
+                  }
+                ]
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "x-total-count": {
+                "description": "Rows that match the filters, before the range is applied.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List the published pages",
+        "tags": [
+          "storefront-public"
+        ],
+        "x-gsm-access": "public",
+        "x-gsm-key": "GET /store/v1/pages",
+        "x-gsm-surface": "store"
+      }
+    },
     "/store/v1/pages/{slug}": {
       "get": {
         "description": "A content or landing page by slug and language (`?locale=`, default `en`): only a `published` or `noindex` page (`noindex` is live with `noindex: true`); a draft is `404`. The slugs `terms`, `privacy`, `refund` and `cookies` answer the legal document of that type in force in that language (`kind: legal`, with `legal` naming the version); no version in force is `404`.",
@@ -194710,7 +197694,7 @@
     },
     "/store/v1/services": {
       "get": {
-        "description": "The service pages that are switched on, at the retail price: `net` before tax, `tax` of the buyer's country and `gross`, in the buyer's currency (`buyerCountry`, `currency`). Only services the shop may sell and has priced appear (an archived, disabled or B2B-only service never does, and the price is never under the retail floor). Filter by `brand`, `network` and `country` (case-insensitive), `featured` and `locale` (default `en`); `q` searches title, summary, brand and network; sort by `featured` (default: featured first), `sort` and `title`; pages of up to 100 rows with `x-total-count`. Public; cacheable for 30 seconds.",
+        "description": "The service pages that are switched on, at the retail price: `net` before tax, `tax` of the buyer's country and `gross`, in the buyer's currency (`buyerCountry`, `currency`). Only services the shop may sell and has priced appear (an archived, disabled or B2B-only service never does, and the price is never under the retail floor). Filter by `brand`, `network` and `country` (case-insensitive), `featured`, `locale` (default `en`), `type` (`imei`, `server`, `remote`, `file`; repeat the key for several), `categoryId` (repeatable) and `availability` (`in_stock` keeps the services the stock covers); `minPrice` and `maxPrice` bound `price.gross` in the requested `currency` (inclusive; `minPrice` above `maxPrice` is `422` on `maxPrice`); `q` searches title, summary, brand and network; sort by `featured` (default: featured first), `sort`, `title`, `popular` (best sellers: the orders of the last 30 days, refreshed every 30 minutes, no number is shown), `listedAt` (first publication) and `price` (`gross`, in the requested currency); pages of up to 100 rows with `x-total-count`. Public; cacheable for 30 seconds.",
         "operationId": "getStoreV1Services",
         "parameters": [
           {
@@ -194738,7 +197722,7 @@
             "name": "_sort",
             "required": false,
             "in": "query",
-            "description": "Comma-separated sort fields. Allowed: featured, sort, title. Default: featured desc, sort asc, title asc.",
+            "description": "Comma-separated sort fields. Allowed: featured, sort, title, popular, listedAt, price. Default: featured desc, sort asc, title asc.",
             "schema": {
               "type": "string"
             }
@@ -194844,6 +197828,59 @@
             "explode": true
           },
           {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where type equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "imei",
+                  "server",
+                  "remote",
+                  "file"
+                ]
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "categoryId",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where categoryId equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[1-9]\\d{0,15}$"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "availability",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where availability equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "in_stock",
+                  "on_request"
+                ]
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
             "name": "buyerCountry",
             "required": false,
             "in": "query",
@@ -194875,6 +197912,28 @@
               "description": "The currency to show prices in (one `GET /store/v1/config` lists). Default: USD.",
               "type": "string",
               "pattern": "^[A-Za-z]{3}$"
+            }
+          },
+          {
+            "name": "minPrice",
+            "required": false,
+            "in": "query",
+            "description": "Lowest `price.gross` to show (inclusive), in `currency`.",
+            "schema": {
+              "description": "Lowest `price.gross` to show (inclusive), in `currency`.",
+              "type": "string",
+              "pattern": "^\\d{1,12}(\\.\\d{1,4})?$"
+            }
+          },
+          {
+            "name": "maxPrice",
+            "required": false,
+            "in": "query",
+            "description": "Highest `price.gross` to show (inclusive), in `currency`. Not below `minPrice`.",
+            "schema": {
+              "description": "Highest `price.gross` to show (inclusive), in `currency`. Not below `minPrice`.",
+              "type": "string",
+              "pattern": "^\\d{1,12}(\\.\\d{1,4})?$"
             }
           }
         ],
@@ -194939,7 +197998,79 @@
                       },
                       "deliveryTime": {
                         "type": "string",
-                        "description": "How long it takes, as text."
+                        "description": "How long it takes, as text (English, or the supplier's own words)."
+                      },
+                      "category": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "x-gsm-alias": "Id",
+                            "description": "Numeric record id.",
+                            "examples": [
+                              42
+                            ]
+                          },
+                          "slug": {
+                            "type": "string",
+                            "description": "`<id>-<words>`: only the number before the first hyphen counts."
+                          },
+                          "name": {
+                            "type": "string",
+                            "description": "The category name in the requested language (the English name when there is no Arabic one)."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "slug",
+                          "name"
+                        ],
+                        "additionalProperties": false,
+                        "description": "The catalog category of the service (what `GET /store/v1/categories` lists)."
+                      },
+                      "availability": {
+                        "type": "string",
+                        "enum": [
+                          "in_stock",
+                          "on_request"
+                        ],
+                        "description": "`in_stock`: the available inventory codes cover the smallest order, so it is delivered at once; `on_request`: processed after the order. Both can be bought. Never a count."
+                      },
+                      "deliveryMinutes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991,
+                        "description": "The expected delivery time in minutes (the service SLA); the site formats it per language."
+                      },
+                      "etaText": {
+                        "type": "string",
+                        "description": "A delivery note in this page's language that replaces `deliveryMinutes` on screen; `''` when none."
+                      },
+                      "listedAt": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "date-time",
+                            "x-gsm-alias": "IsoDateTime",
+                            "description": "ISO 8601 UTC time with milliseconds.",
+                            "examples": [
+                              "2026-03-01T09:30:00.000Z"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "When the page first went on the site; never resets. `null` for pages from before it was recorded."
+                      },
+                      "imageUrl": {
+                        "description": "The picture of the service: a root-relative path `/store/v1/media/<sha256>.<jpg|png|webp>` (immutable, cached for a year); `null` when it has none (show the picture of the service type).",
+                        "type": [
+                          "string",
+                          "null"
+                        ]
                       },
                       "price": {
                         "type": "object",
@@ -195027,6 +198158,12 @@
                       "isFeatured",
                       "type",
                       "deliveryTime",
+                      "category",
+                      "availability",
+                      "deliveryMinutes",
+                      "etaText",
+                      "listedAt",
+                      "imageUrl",
                       "price"
                     ],
                     "additionalProperties": false
@@ -195045,6 +198182,16 @@
                     "isFeatured": true,
                     "type": "imei",
                     "deliveryTime": "2 minutes",
+                    "category": {
+                      "id": 1,
+                      "slug": "1-apple",
+                      "name": "Apple"
+                    },
+                    "availability": "on_request",
+                    "deliveryMinutes": 2,
+                    "etaText": "",
+                    "listedAt": "2026-10-01T09:00:00.000Z",
+                    "imageUrl": "/store/v1/media/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08.webp",
                     "price": {
                       "currency": "GBP",
                       "fxRate": "0.80185000",
@@ -195176,7 +198323,7 @@
     },
     "/store/v1/services/{slug}": {
       "get": {
-        "description": "One service page by slug and language: description, delivery time, what the order form asks for, the quantities, the published FAQs of the service and its retail price (see the list). `404` when the page does not exist, is switched off, or the service cannot be sold. Public; cacheable for 30 seconds.",
+        "description": "One service page by slug and language: description, delivery time, what the order form asks for, the quantities, the published FAQs of the service, its retail price (see the list) and `alternates`, the switched-on pages of the same service in the other languages. `404` when the page does not exist, is switched off, or the service cannot be sold. Public; cacheable for 30 seconds.",
         "operationId": "getStoreV1ServicesBySlug",
         "parameters": [
           {
@@ -195295,7 +198442,79 @@
                     },
                     "deliveryTime": {
                       "type": "string",
-                      "description": "How long it takes, as text."
+                      "description": "How long it takes, as text (English, or the supplier's own words)."
+                    },
+                    "category": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "x-gsm-alias": "Id",
+                          "description": "Numeric record id.",
+                          "examples": [
+                            42
+                          ]
+                        },
+                        "slug": {
+                          "type": "string",
+                          "description": "`<id>-<words>`: only the number before the first hyphen counts."
+                        },
+                        "name": {
+                          "type": "string",
+                          "description": "The category name in the requested language (the English name when there is no Arabic one)."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "slug",
+                        "name"
+                      ],
+                      "additionalProperties": false,
+                      "description": "The catalog category of the service (what `GET /store/v1/categories` lists)."
+                    },
+                    "availability": {
+                      "type": "string",
+                      "enum": [
+                        "in_stock",
+                        "on_request"
+                      ],
+                      "description": "`in_stock`: the available inventory codes cover the smallest order, so it is delivered at once; `on_request`: processed after the order. Both can be bought. Never a count."
+                    },
+                    "deliveryMinutes": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991,
+                      "description": "The expected delivery time in minutes (the service SLA); the site formats it per language."
+                    },
+                    "etaText": {
+                      "type": "string",
+                      "description": "A delivery note in this page's language that replaces `deliveryMinutes` on screen; `''` when none."
+                    },
+                    "listedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "x-gsm-alias": "IsoDateTime",
+                          "description": "ISO 8601 UTC time with milliseconds.",
+                          "examples": [
+                            "2026-03-01T09:30:00.000Z"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "When the page first went on the site; never resets. `null` for pages from before it was recorded."
+                    },
+                    "imageUrl": {
+                      "description": "The picture of the service: a root-relative path `/store/v1/media/<sha256>.<jpg|png|webp>` (immutable, cached for a year); `null` when it has none (show the picture of the service type).",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "price": {
                       "type": "object",
@@ -195373,9 +198592,6 @@
                     "descriptionMd": {
                       "type": "string",
                       "description": "Markdown."
-                    },
-                    "etaText": {
-                      "type": "string"
                     },
                     "requirementsMd": {
                       "type": "string",
@@ -195477,6 +198693,30 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "alternates": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "locale": {
+                            "type": "string",
+                            "enum": [
+                              "en",
+                              "ar"
+                            ]
+                          },
+                          "slug": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "locale",
+                          "slug"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "The switched-on pages of the same service in the other languages (for the language switch); empty when none."
                     }
                   },
                   "required": [
@@ -195491,15 +198731,21 @@
                     "isFeatured",
                     "type",
                     "deliveryTime",
+                    "category",
+                    "availability",
+                    "deliveryMinutes",
+                    "etaText",
+                    "listedAt",
+                    "imageUrl",
                     "price",
                     "descriptionMd",
-                    "etaText",
                     "requirementsMd",
                     "seoTitle",
                     "seoDescription",
                     "quantity",
                     "fields",
-                    "faqs"
+                    "faqs",
+                    "alternates"
                   ],
                   "additionalProperties": false
                 },
@@ -195515,6 +198761,16 @@
                   "isFeatured": true,
                   "type": "imei",
                   "deliveryTime": "2 minutes",
+                  "category": {
+                    "id": 1,
+                    "slug": "1-apple",
+                    "name": "Apple"
+                  },
+                  "availability": "on_request",
+                  "deliveryMinutes": 2,
+                  "etaText": "Usually 2 minutes",
+                  "listedAt": "2026-10-01T09:00:00.000Z",
+                  "imageUrl": "/store/v1/media/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08.webp",
                   "price": {
                     "currency": "GBP",
                     "fxRate": "0.80185000",
@@ -195525,7 +198781,6 @@
                     "taxCountry": "GB"
                   },
                   "descriptionMd": "We check iCloud and Find My status from the IMEI.",
-                  "etaText": "Usually 2 minutes",
                   "requirementsMd": "The 15-digit IMEI of the phone (dial *#06#).",
                   "seoTitle": "iCloud Clean / Lost Check",
                   "seoDescription": "Check iCloud status from the IMEI.",
@@ -195539,6 +198794,12 @@
                     {
                       "question": "How fast is it?",
                       "answerMd": "Most checks finish in two minutes."
+                    }
+                  ],
+                  "alternates": [
+                    {
+                      "locale": "ar",
+                      "slug": "icloud-check-ar"
                     }
                   ]
                 }

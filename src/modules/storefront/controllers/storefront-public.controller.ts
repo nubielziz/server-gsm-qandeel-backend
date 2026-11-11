@@ -4,7 +4,12 @@ import { Controller, Param, Query, Res } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import { type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
 import { StorefrontCatalogService } from '../application/storefront-catalog.service';
-import { getStoreConfig, listStoreServices, showStoreService } from '../contracts/storefront-public.contracts';
+import {
+  getStoreConfig,
+  listStoreCategories,
+  listStoreServices,
+  showStoreService,
+} from '../contracts/storefront-public.contracts';
 
 /** What a browser or a CDN may keep a public catalog answer for. */
 const PUBLIC_CACHE_CONTROL = 'public, max-age=30';
@@ -18,6 +23,7 @@ const PUBLIC_CACHE_CONTROL = 'public, max-age=30';
  * @route GET /store/v1/config
  * @route GET /store/v1/services
  * @route GET /store/v1/services/:slug
+ * @route GET /store/v1/categories
  */
 @Controller()
 export class StorefrontPublicController {
@@ -74,5 +80,22 @@ export class StorefrontPublicController {
       region: query.region,
       currency: query.currency,
     });
+  }
+
+  /**
+   * Lists the storefront categories with their service counts.
+   *
+   * @param query the language
+   * @param reply the reply, for the cache header
+   * @returns the categories of the menu
+   * @route GET /store/v1/categories
+   */
+  @Route(listStoreCategories)
+  categories(
+    @Query() query: QueryOf<typeof listStoreCategories>,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<ResultOf<typeof listStoreCategories>> {
+    reply.header('cache-control', PUBLIC_CACHE_CONTROL);
+    return this.catalog.categories(query.locale);
   }
 }

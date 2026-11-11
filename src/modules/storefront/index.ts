@@ -17,3 +17,8 @@ export { StorefrontPublicModule } from './storefront-public.module';
 export { StorefrontAdminModule } from './storefront-admin.module';
 export { StorefrontModule } from './storefront.module';
 export { StorefrontContentModule } from './storefront-content.module';
+// The popularity job (worker only). It reads the order counts through this module's foreign-read file, never the orders barrel.
+export { PopularityRefresh, POPULARITY_WINDOW_DAYS } from './jobs/popularity';
+export type { PopularityResult } from './jobs/popularity';
+export { STOREFRONT_POPULARITY_JOB } from './jobs/popularity.processor';
+export { STOREFRONT_POPULARITY_SCHEDULER, StorefrontPopularityModule } from './jobs/popularity.module';

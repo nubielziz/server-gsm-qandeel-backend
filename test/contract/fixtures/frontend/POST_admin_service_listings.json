@@ -24,6 +24,19 @@
     "orders30d": 0,
     "revenue30d": "0.0000",
     "locked": false,
-    "lockedReason": null
+    "lockedReason": null,
+    "summary": "",
+    "etaText": "",
+    "brand": "",
+    "carrier": "",
+    "country": "",
+    "sort": 0,
+    "seoTitle": "",
+    "seoDescription": "",
+    "listedAt": null,
+    "updatedAt": "2026-03-01T09:30:00.000Z",
+    "descriptionMd": "",
+    "requirementsMd": "",
+    "imageUrl": null
   }
 }

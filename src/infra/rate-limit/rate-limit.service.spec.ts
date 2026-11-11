@@ -19,7 +19,9 @@ describe('RATE_LIMITERS', () => {
   it('has the limiters decision 021 names: per IP, per API key, sign-in, token lookups, per supplier', () => {
     expect(Object.keys(RATE_LIMITERS).sort()).toEqual([
       'api-key',
+      'help-vote',
       'ip',
+      'media',
       'sign-in',
       'supplier',
       'ticket-email',
@@ -35,6 +37,14 @@ describe('RATE_LIMITERS', () => {
 
   it('lets one email address open 3 tickets an hour on the public form', () => {
     expect(RATE_LIMITERS['ticket-email']).toMatchObject({ points: 3, windowSeconds: 3600 });
+  });
+
+  it('counts one help vote per visitor address and article per day', () => {
+    expect(RATE_LIMITERS['help-vote']).toMatchObject({ points: 1, windowSeconds: 86_400 });
+  });
+
+  it('gives the public pictures their own budget of 1200 a minute per address, apart from the 300 of the API', () => {
+    expect(RATE_LIMITERS.media).toMatchObject({ points: 1200, windowSeconds: 60 });
   });
 
   it('uses limiter names that are valid parts of a Redis key', () => {

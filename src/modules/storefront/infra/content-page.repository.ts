@@ -167,3 +167,44 @@ export async function takenSlugs(db: DbExecutor, locale: string, slugs: readonly
     .where(and(eq(contentPages.locale, locale), inArray(contentPages.slug, [...slugs])));
   return new Set(rows.map((row) => row.slug));
 }
+
+/** The sorts the public page list accepts. */
+export type PublicPageSort = 'publishedAt' | 'title' | 'id';
+
+/**
+ * Lists the live pages of one language for `GET /store/v1/pages`.
+ *
+ * Why: the storefront builds its blog index and sitemap from this list (feature 22, D-15a). Only `published` and `noindex` pages are
+ * live; a draft never is, and legal documents are a different table, so they are not listed.
+ *
+ * @param db the database or a transaction
+ * @param query the parsed list request (`kind` filter, `q` over the title, sort, range)
+ * @param locale the language
+ * @returns the page of rows and the exact total
+ */
+export async function listLivePages(
+  db: DbExecutor,
+  query: ParsedListQuery<PublicPageSort, unknown>,
+  locale: string,
+): Promise<{ rows: ContentPage[]; total: number }> {
+  const where = listWhere(
+    query,
+    COLUMNS,
+    inArray(contentPages.status, ['published', 'noindex']),
+    eq(contentPages.locale, locale),
+  );
+  const [rows, [count]] = await Promise.all([
+    db
+      .select()
+      .from(contentPages)
+      .where(where)
+      .orderBy(...listOrderBy(query.sort, COLUMNS, contentPages.id))
+      .limit(query.range.limit)
+      .offset(query.range.start),
+    db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(contentPages)
+      .where(where),
+  ]);
+  return { rows, total: count?.total ?? 0 };
+}

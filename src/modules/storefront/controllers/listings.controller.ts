@@ -1,9 +1,17 @@
-// HTTP controller of the storefront listing routes (map domain H, /admin/service-listings, stage 15). Thin: the rules live in
-// ListingAdminService.
+// HTTP controller of the storefront listing routes (map domain H, /admin/service-listings, stage 15, and the service picture of feature 22).
+// Thin: the rules live in ListingAdminService.
 import { Body, Controller, Param, Query } from '@nestjs/common';
 import { type BodyOf, type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
+import { CurrentStaff, type StaffPrincipal } from '../../identity';
 import { ListingAdminService } from '../application/listing-admin.service';
-import { createListing, listListings, showListing, updateListing } from '../contracts/listings.contracts';
+import {
+  createListing,
+  listListings,
+  removeListingImage,
+  showListing,
+  updateListing,
+  uploadListingImage,
+} from '../contracts/listings.contracts';
 
 /**
  * The storefront listing routes.
@@ -14,6 +22,8 @@ import { createListing, listListings, showListing, updateListing } from '../cont
  * @route GET /admin/service-listings/:id
  * @route POST /admin/service-listings
  * @route PATCH /admin/service-listings/:id
+ * @route POST /admin/service-listings/:id/image
+ * @route DELETE /admin/service-listings/:id/image
  */
 @Controller()
 export class ListingsController {
@@ -46,7 +56,7 @@ export class ListingsController {
   /**
    * Creates a listing.
    *
-   * @param body the service, language, title and optional slug
+   * @param body the service, language, title, optional slug and optional content
    * @returns the new listing
    * @route POST /admin/service-listings
    */
@@ -59,7 +69,7 @@ export class ListingsController {
    * Changes a listing.
    *
    * @param params the listing id
-   * @param body `isListed` and/or `retailPrice`
+   * @param body the fields to change: the switch, the retail price and/or the content
    * @returns the updated listing
    * @route PATCH /admin/service-listings/:id
    */
@@ -69,5 +79,35 @@ export class ListingsController {
     @Body() body: BodyOf<typeof updateListing>,
   ): Promise<ResultOf<typeof updateListing>> {
     return this.listings.update(params.id, body);
+  }
+
+  /**
+   * Uploads the picture of a listing's service.
+   *
+   * @param params the listing id
+   * @param body the multipart part `file`
+   * @param staff the signed-in staff member (the owner of the stored file)
+   * @returns the listing with its new picture
+   * @route POST /admin/service-listings/:id/image
+   */
+  @Route(uploadListingImage)
+  uploadImage(
+    @Param() params: ParamsOf<typeof uploadListingImage>,
+    @Body() body: BodyOf<typeof uploadListingImage>,
+    @CurrentStaff() staff: StaffPrincipal,
+  ): Promise<ResultOf<typeof uploadListingImage>> {
+    return this.listings.uploadImage(params.id, body.file, staff.staffId);
+  }
+
+  /**
+   * Removes the picture of a listing's service.
+   *
+   * @param params the listing id
+   * @returns nothing (`204`)
+   * @route DELETE /admin/service-listings/:id/image
+   */
+  @Route(removeListingImage)
+  removeImage(@Param() params: ParamsOf<typeof removeListingImage>): Promise<void> {
+    return this.listings.removeImage(params.id);
   }
 }

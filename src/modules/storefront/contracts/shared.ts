@@ -35,6 +35,30 @@ export const SeoTitleField = z.string().trim().max(200, 'Use at most 200 charact
 export const SeoDescriptionField = z.string().trim().max(400, 'Use at most 400 characters.');
 
 /**
+ * One line of text: trimmed, no control characters (a new line, a tab), at most `max` characters; empty clears it.
+ *
+ * @param max the most characters accepted
+ * @returns the field schema
+ */
+export const oneLine = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max, `Use at most ${max} characters.`)
+    // eslint-disable-next-line no-control-regex -- the point of the rule is to refuse control characters
+    .refine((value) => !/[\u0000-\u001f\u007f]/.test(value), { error: 'Use one line, without line breaks or tabs.' });
+
+/** A country on a listing: empty, or two letters (stored upper case). */
+export const ListingCountryField = z
+  .string()
+  .trim()
+  .regex(/^([A-Za-z]{2})?$/, 'Use a two-letter country code like GB, or leave it empty.')
+  .transform((value) => value.toUpperCase());
+
+/** The position of a listing in the shop's own order: a whole number from 0 to 1 000 000. */
+export const ListingSortField = z.number().int('Enter a whole number.').min(0, 'Enter 0 or more.').max(1_000_000);
+
+/**
  * Markdown exactly as typed (spaces and new lines kept); HTML inside is stored as sent.
  *
  * @param max the most characters accepted

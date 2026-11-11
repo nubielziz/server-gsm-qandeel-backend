@@ -4,11 +4,11 @@
   "domain": "H",
   "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
   "counts": {
-    "rows": 14,
-    "endpoints": 25,
+    "rows": 19,
+    "endpoints": 30,
     "bySurface": {
-      "store": 6,
-      "admin": 19
+      "store": 9,
+      "admin": 21
     },
     "frontendCalled": 19
   },
@@ -16,7 +16,8 @@
     14,
     15,
     16,
-    19
+    19,
+    22
   ],
   "ownedTables": [
     {
@@ -141,12 +142,20 @@
       "owner": "money"
     },
     {
+      "table": "files",
+      "owner": "platform"
+    },
+    {
       "table": "notification_templates",
       "owner": "platform"
     },
     {
       "table": "payment_gateways",
       "owner": "money"
+    },
+    {
+      "table": "service_categories",
+      "owner": "catalog"
     },
     {
       "table": "service_fields",
@@ -989,6 +998,178 @@
         "line": 10,
         "fn": "updateStorefrontSettings"
       }
+    },
+    {
+      "key": "GET /store/v1/categories",
+      "method": "GET",
+      "path": "/store/v1/categories",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "تصنيفات المتجر مع عدد الخدمات المعروضة في كل تصنيف",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 22,
+      "tables": [
+        "service_categories",
+        "service_listings",
+        "services"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/categories",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/categories"
+      },
+      "module": "storefront",
+      "description": "List the storefront categories with their listed service counts.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/22.mjs",
+        "spec": "B-TBD store-categories"
+      }
+    },
+    {
+      "key": "GET /store/v1/pages",
+      "method": "GET",
+      "path": "/store/v1/pages",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "content",
+      "descriptionAr": "قائمة الصفحات المنشورة",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 22,
+      "tables": [
+        "content_pages"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/pages",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/pages"
+      },
+      "module": "storefront",
+      "description": "List the published content pages.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/22.mjs",
+        "spec": "B-TBD store-page-list"
+      }
+    },
+    {
+      "key": "POST /store/v1/help/:slug/vote",
+      "method": "POST",
+      "path": "/store/v1/help/:slug/vote",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "content",
+      "descriptionAr": "تصويت «هل كان هذا مفيداً؟» على مقال مساعدة",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 22,
+      "tables": [
+        "help_articles"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/help/:slug/vote",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/help/:slug/vote"
+      },
+      "module": "storefront",
+      "description": "Vote whether a help article was helpful.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/22.mjs",
+        "spec": "B-TBD help-vote"
+      }
+    },
+    {
+      "key": "POST /admin/service-listings/:id/image",
+      "method": "POST",
+      "path": "/admin/service-listings/:id/image",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "رفع صورة الخدمة",
+      "access": "staff-permission",
+      "permission": "storefront:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:update",
+      "stage": 22,
+      "tables": [
+        "service_listings",
+        "files",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/service-listings/:id/image",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/service-listings/:id/image"
+      },
+      "module": "storefront",
+      "description": "Upload the picture of a listed service.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/22.mjs",
+        "spec": "B-TBD listing-image"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "DELETE /admin/service-listings/:id/image",
+      "method": "DELETE",
+      "path": "/admin/service-listings/:id/image",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "إزالة صورة الخدمة",
+      "access": "staff-permission",
+      "permission": "storefront:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:update",
+      "stage": 22,
+      "tables": [
+        "service_listings",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin DELETE /admin/service-listings/:id/image",
+        "method": "DELETE",
+        "ops": null,
+        "path": "/admin/service-listings/:id/image"
+      },
+      "module": "storefront",
+      "description": "Remove the picture of a listed service.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/22.mjs",
+        "spec": "B-TBD listing-image"
+      },
+      "successStatus": 204
     }
   ],
   "scenarios": []

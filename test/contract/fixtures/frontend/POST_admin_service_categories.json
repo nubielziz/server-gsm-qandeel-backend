@@ -12,6 +12,7 @@
     ],
     "sort": 10,
     "isActive": false,
-    "serviceCount": 0
+    "serviceCount": 0,
+    "nameAr": ""
   }
 }

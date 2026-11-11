@@ -7,7 +7,7 @@ import { type TestApp, createTestApp } from '../support/app';
 import { TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 import { insertCurrency, insertListing, insertTaxWindow, storefrontWorld } from '../support/storefront';
-import { insertService } from '../support/catalog';
+import { insertCategory, insertInventoryCodes, insertService } from '../support/catalog';
 
 const clock = new TestClock('2026-11-07T12:00:00.000Z');
 let t: TestApp;
@@ -119,6 +119,12 @@ describe('GET /store/v1/services', () => {
       isFeatured: true,
       type: 'imei',
       deliveryTime: '2 minutes',
+      category: { id: world.icloud.categoryId, slug: `${world.icloud.categoryId}-apple`, name: 'Apple' },
+      availability: 'on_request',
+      deliveryMinutes: 2,
+      etaText: '',
+      listedAt: null,
+      imageUrl: null,
       // 3.99 net + 0.80 VAT = 4.79 USD; x 0.80185 = 3.84 GBP gross, 0.64 tax, 3.20 net.
       price: {
         currency: 'GBP',
@@ -356,5 +362,327 @@ describe('GET /store/v1/services/:slug', () => {
     const res = await get(`/store/v1/services/${world.icloud.slug}?currency=JPY`);
     expect(res.statusCode).toBe(422);
     expect(body(res).errors[0].field).toBe('currency');
+  });
+});
+
+describe('the catalog filters, sorts and categories of feature 22', () => {
+  /** Adds a priced, listed service in a category: one more row for the sorts and filters to tell apart. */
+  async function addService(
+    world: Awaited<ReturnType<typeof storefrontWorld>>,
+    name: string,
+    price: string,
+    categoryId: number,
+    options: {
+      type?: 'imei' | 'server' | 'remote' | 'file';
+      listing?: Partial<typeof s.serviceListings.$inferInsert>;
+      service?: Partial<typeof s.services.$inferInsert>;
+    } = {},
+  ) {
+    const { db } = world;
+    const serviceId = await insertService(db, categoryId, {
+      name,
+      type: options.type ?? 'imei',
+      basePrice: '1.0000',
+      cost: '0.1000',
+      effectiveCost: '0.1000',
+      slaMinutes: 30,
+      ...options.service,
+    });
+    await db.insert(s.serviceGroupPrices).values({ serviceId, groupId: world.groups.retail, price });
+    const slug = name.toLowerCase().replace(/\W+/g, '-');
+    const listingId = await insertListing(db, serviceId, { slug, publicTitle: name, ...options.listing });
+    return { serviceId, listingId, slug };
+  }
+  const slugs = async (query: string) =>
+    body(await get(`/store/v1/services?${query}`)).map((row: { slug: string }) => row.slug);
+
+  it('shows the category, the delivery minutes, the delivery note and the first publication on every card', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    await db
+      .update(s.serviceCategories)
+      .set({ nameAr: 'آبل' })
+      .where(eq(s.serviceCategories.id, world.icloud.categoryId));
+    await db
+      .update(s.serviceListings)
+      .set({ etaText: 'About 2 minutes', listedAt: new Date('2026-10-01T09:00:00.000Z') })
+      .where(eq(s.serviceListings.id, world.icloud.listingId));
+    await db.update(s.services).set({ slaMinutes: 1440 }).where(eq(s.services.id, world.att.serviceId));
+    const rows = body(await get('/store/v1/services'));
+    expect(rows[0]).toMatchObject({
+      category: { id: world.icloud.categoryId, slug: `${world.icloud.categoryId}-apple`, name: 'Apple' },
+      deliveryMinutes: 2,
+      deliveryTime: '2 minutes',
+      etaText: 'About 2 minutes',
+      listedAt: '2026-10-01T09:00:00.000Z',
+    });
+    expect(rows[1]).toMatchObject({ deliveryMinutes: 1440, etaText: '', listedAt: null });
+    // The Arabic page shows the Arabic category name; the slug stays the English one.
+    await insertListing(db, world.icloud.serviceId, { locale: 'ar', slug: 'icloud-ar', publicTitle: 'فحص' });
+    const [ar] = body(await get('/store/v1/services?locale=ar'));
+    expect(ar.category).toEqual({ id: world.icloud.categoryId, slug: `${world.icloud.categoryId}-apple`, name: 'آبل' });
+  });
+
+  it('says in_stock only when the available codes cover the smallest order, and never gives a count', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    const packs = await addService(world, 'Packs', '9.0000', world.icloud.categoryId, {
+      service: { minQty: 1, maxQty: 50, qtyOptions: [5, 10] },
+    });
+    await insertInventoryCodes(db, world.icloud.serviceId, 1);
+    await insertInventoryCodes(db, world.att.serviceId, 2, { status: 'sold' });
+    await insertInventoryCodes(db, packs.serviceId, 4);
+    const availability = async () =>
+      Object.fromEntries(
+        body(await get('/store/v1/services')).map((row: { slug: string; availability: string }) => [
+          row.slug,
+          row.availability,
+        ]),
+      );
+    expect(await availability()).toEqual({
+      [world.icloud.slug]: 'in_stock',
+      [world.att.slug]: 'on_request',
+      [packs.slug]: 'on_request',
+    });
+    await insertInventoryCodes(db, packs.serviceId, 1);
+    expect((await availability())[packs.slug]).toBe('in_stock');
+    expect(JSON.stringify(body(await get('/store/v1/services')))).not.toMatch(/stock"?:\s*\d/i);
+  });
+
+  it('filters by type (repeatable), category (repeatable) and availability, with exact totals', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    const credits = await insertCategory(db, { name: 'Credits', type: 'server' });
+    const server = await addService(world, 'Server credit', '4.0000', credits, { type: 'server' });
+    await insertInventoryCodes(db, world.icloud.serviceId, 1);
+
+    expect(await slugs('type=server')).toEqual([server.slug]);
+    expect(await slugs('type=imei')).toEqual([world.icloud.slug, world.att.slug]);
+    expect(new Set(await slugs('type=imei&type=server'))).toEqual(
+      new Set([world.icloud.slug, world.att.slug, server.slug]),
+    );
+    expect(await slugs(`categoryId=${credits}`)).toEqual([server.slug]);
+    expect(new Set(await slugs(`categoryId=${credits}&categoryId=${world.icloud.categoryId}`))).toEqual(
+      new Set([server.slug, world.icloud.slug]),
+    );
+    expect(await slugs('availability=in_stock')).toEqual([world.icloud.slug]);
+    expect(new Set(await slugs('availability=on_request'))).toEqual(new Set([world.att.slug, server.slug]));
+    // Both values, or filters that agree, change nothing / combine.
+    expect(await slugs('availability=in_stock&availability=on_request')).toHaveLength(3);
+    expect(await slugs(`type=imei&categoryId=${credits}`)).toEqual([]);
+    const res = await get('/store/v1/services?type=imei&_start=0&_end=1');
+    expect(res.headers['x-total-count']).toBe('2');
+    expect(body(res)).toHaveLength(1);
+    // Unknown values are refused, not ignored.
+    expect((await get('/store/v1/services?type=sms')).statusCode).toBe(422);
+    expect((await get('/store/v1/services?availability=low')).statusCode).toBe(422);
+    expect((await get('/store/v1/services?categoryId=abc')).statusCode).toBe(422);
+  });
+
+  it('bounds the price the visitor sees, inclusive, in the chosen currency with the buyer country tax', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    const buyer = 'buyerCountry=GB&currency=GBP';
+    const priced = body(await get(`/store/v1/services?${buyer}`)) as Array<{ slug: string; price: { gross: string } }>;
+    const cheap = priced.find((row) => row.slug === world.icloud.slug)!.price.gross;
+    const dear = priced.find((row) => row.slug === world.att.slug)!.price.gross;
+    expect(cheap).toBe('3.8400');
+    expect(Number(dear)).toBeGreaterThan(Number(cheap));
+
+    expect(await slugs(`${buyer}&minPrice=${cheap}&maxPrice=${cheap}`)).toEqual([world.icloud.slug]);
+    expect(await slugs(`${buyer}&minPrice=${dear}`)).toEqual([world.att.slug]);
+    expect(await slugs(`${buyer}&maxPrice=${cheap}`)).toEqual([world.icloud.slug]);
+    expect(await slugs(`${buyer}&minPrice=3.8401&maxPrice=${dear}`)).toEqual([world.att.slug]);
+    expect(await slugs(`${buyer}&minPrice=3.85&maxPrice=3.99`)).toEqual([]);
+    // The bound is read in the chosen currency: 3.84 GBP is not 3.84 USD.
+    expect(await slugs('minPrice=3.84&maxPrice=3.90')).toEqual([]);
+    const counted = await get(`/store/v1/services?${buyer}&maxPrice=${cheap}&_start=0&_end=1`);
+    expect(counted.headers['x-total-count']).toBe('1');
+    // It combines with a filter and a page.
+    expect(await slugs(`${buyer}&maxPrice=${dear}&brand=apple&_sort=price&_order=desc&_start=1&_end=2`)).toEqual([
+      world.icloud.slug,
+    ]);
+  });
+
+  it('refuses a lowest price above the highest, and a malformed bound, with 422 on the field', async () => {
+    const { db } = await testDb();
+    await storefrontWorld(db);
+    const inverted = await get('/store/v1/services?minPrice=10&maxPrice=5');
+    expect(inverted.statusCode).toBe(422);
+    expect(body(inverted).errors[0].field).toBe('maxPrice');
+    expect((await get('/store/v1/services?minPrice=abc')).statusCode).toBe(422);
+    expect((await get('/store/v1/services?minPrice=-1')).statusCode).toBe(422);
+    expect((await get('/store/v1/services?maxPrice=1.23456')).statusCode).toBe(422);
+    expect((await get('/store/v1/services?minPrice=5&maxPrice=5')).statusCode).toBe(200);
+  });
+
+  it('sorts by price in both directions with stable ties and exact paging', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    // Two more services at the same price as the cheap one: ties keep the listing order (featured, position, title).
+    const twinA = await addService(world, 'Twin A', '3.9900', world.icloud.categoryId, { listing: { sort: 5 } });
+    const twinB = await addService(world, 'Twin B', '3.9900', world.icloud.categoryId, { listing: { sort: 6 } });
+    expect(await slugs('_sort=price&_order=asc')).toEqual([world.icloud.slug, twinA.slug, twinB.slug, world.att.slug]);
+    expect(await slugs('_sort=price&_order=desc')).toEqual([world.att.slug, world.icloud.slug, twinA.slug, twinB.slug]);
+    // Pages never repeat or skip a row.
+    const first = await slugs('_sort=price&_order=asc&_start=0&_end=2');
+    const second = await slugs('_sort=price&_order=asc&_start=2&_end=4');
+    expect([...first, ...second]).toEqual([world.icloud.slug, twinA.slug, twinB.slug, world.att.slug]);
+    const paged = await get('/store/v1/services?_sort=price&_order=asc&_start=2&_end=4');
+    expect(paged.headers['x-total-count']).toBe('4');
+    // Price after another key sorts inside the tie of the key before it; the id (descending, like the first key) breaks the rest.
+    expect(await slugs('_sort=featured,price&_order=desc,desc')).toEqual([
+      world.icloud.slug,
+      world.att.slug,
+      twinB.slug,
+      twinA.slug,
+    ]);
+  });
+
+  it('sorts by popularity and by first publication, nulls last', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    const third = await addService(world, 'Third', '5.0000', world.icloud.categoryId);
+    await db
+      .update(s.serviceListings)
+      .set({ sales30d: 5, listedAt: new Date('2026-10-01T00:00:00Z') })
+      .where(eq(s.serviceListings.id, world.att.listingId));
+    await db
+      .update(s.serviceListings)
+      .set({ sales30d: 9, listedAt: new Date('2026-10-09T00:00:00Z') })
+      .where(eq(s.serviceListings.id, third.listingId));
+    expect(await slugs('_sort=popular&_order=desc')).toEqual([third.slug, world.att.slug, world.icloud.slug]);
+    expect(await slugs('_sort=popular&_order=asc')).toEqual([world.icloud.slug, world.att.slug, third.slug]);
+    expect(await slugs('_sort=listedAt&_order=desc')).toEqual([third.slug, world.att.slug, world.icloud.slug]);
+    expect(await slugs('_sort=listedAt&_order=asc')).toEqual([world.att.slug, third.slug, world.icloud.slug]);
+    // No number leaks through the popularity sort.
+    expect(JSON.stringify(body(await get('/store/v1/services?_sort=popular')))).not.toContain('sales');
+  });
+
+  it('names the other languages of the same service on its page', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    expect(body(await get(`/store/v1/services/${world.icloud.slug}`)).alternates).toEqual([]);
+    const ar = await insertListing(db, world.icloud.serviceId, { locale: 'ar', slug: 'icloud-ar', publicTitle: 'فحص' });
+    await insertListing(db, world.att.serviceId, {
+      locale: 'ar',
+      slug: 'att-ar-off',
+      publicTitle: 'AT&T',
+      isListed: false,
+    });
+    expect(body(await get(`/store/v1/services/${world.icloud.slug}`)).alternates).toEqual([
+      { locale: 'ar', slug: 'icloud-ar' },
+    ]);
+    expect(body(await get('/store/v1/services/icloud-ar?locale=ar')).alternates).toEqual([
+      { locale: 'en', slug: world.icloud.slug },
+    ]);
+    // A page that is switched off is not an alternate.
+    expect(body(await get(`/store/v1/services/${world.att.slug}`)).alternates).toEqual([]);
+    await db.update(s.serviceListings).set({ isListed: false }).where(eq(s.serviceListings.id, ar));
+    expect(body(await get(`/store/v1/services/${world.icloud.slug}`)).alternates).toEqual([]);
+  });
+});
+
+describe('GET /store/v1/categories', () => {
+  it('lists the categories with a sellable listed service in the language, their counts and names, in category order', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    await db
+      .update(s.serviceCategories)
+      .set({ nameAr: 'آبل', sort: 2 })
+      .where(eq(s.serviceCategories.id, world.icloud.categoryId));
+    const carrierId = (await db.select().from(s.services).where(eq(s.services.id, world.att.serviceId)))[0]!.categoryId;
+    await db.update(s.serviceCategories).set({ sort: 1 }).where(eq(s.serviceCategories.id, carrierId));
+
+    const res = await get('/store/v1/categories');
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['cache-control']).toBe('public, max-age=30');
+    expect(body(res)).toEqual({
+      locale: 'en',
+      categories: [
+        { id: carrierId, slug: `${carrierId}-carrier-unlock`, name: 'Carrier unlock', type: 'imei', serviceCount: 1 },
+        {
+          id: world.icloud.categoryId,
+          slug: `${world.icloud.categoryId}-apple`,
+          name: 'Apple',
+          type: 'imei',
+          serviceCount: 1,
+        },
+      ],
+    });
+    // Arabic: only the services with an Arabic page count; the name falls back to the English one.
+    await insertListing(db, world.icloud.serviceId, { locale: 'ar', slug: 'icloud-ar', publicTitle: 'فحص' });
+    expect(body(await get('/store/v1/categories?locale=ar'))).toEqual({
+      locale: 'ar',
+      categories: [
+        {
+          id: world.icloud.categoryId,
+          slug: `${world.icloud.categoryId}-apple`,
+          name: 'آبل',
+          type: 'imei',
+          serviceCount: 1,
+        },
+      ],
+    });
+    expect((await get('/store/v1/categories?locale=fr')).statusCode).toBe(422);
+  });
+
+  it('never counts what the shop cannot sell: B2B-only or inactive categories, unlisted, unpriced or disabled services', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    const b2b = await insertCategory(db, { name: 'B2B only', allowedGroupIds: [world.groups.vip] });
+    const off = await insertCategory(db, { name: 'Switched off', isActive: false });
+    const open = await insertCategory(db, { name: 'Open' });
+    const make = async (
+      categoryId: number,
+      name: string,
+      extra: Partial<typeof s.services.$inferInsert> = {},
+      price = true,
+    ) => {
+      const id = await insertService(db, categoryId, {
+        name,
+        basePrice: '1.0000',
+        cost: '0.1000',
+        effectiveCost: '0.1000',
+        ...extra,
+      });
+      if (price)
+        await db.insert(s.serviceGroupPrices).values({ serviceId: id, groupId: world.groups.retail, price: '5.0000' });
+      return id;
+    };
+    await insertListing(db, await make(b2b, 'a'), { slug: 'a' });
+    await insertListing(db, await make(off, 'b'), { slug: 'b' });
+    await insertListing(db, await make(open, 'c', { status: 'disabled' }), { slug: 'c' });
+    await insertListing(db, await make(open, 'd', {}, false), { slug: 'd' });
+    await insertListing(db, await make(open, 'e'), { slug: 'e', isListed: false });
+    const ok = await make(open, 'f');
+    await insertListing(db, ok, { slug: 'f' });
+    const names = body(await get('/store/v1/categories')).categories.map(
+      (c: { name: string; serviceCount: number }) => [c.name, c.serviceCount],
+    );
+    expect(names).toContainEqual(['Open', 1]);
+    expect(names.map(([name]: [string]) => name)).not.toContain('B2B only');
+    expect(names.map(([name]: [string]) => name)).not.toContain('Switched off');
+  });
+
+  it('gives each category a count equal to the list total filtered by it', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    const extra = await insertCategory(db, { name: 'Extra' });
+    for (const name of ['One', 'Two', 'Three']) {
+      const id = await insertService(db, extra, { name, basePrice: '1.0000', cost: '0.1000', effectiveCost: '0.1000' });
+      await db.insert(s.serviceGroupPrices).values({ serviceId: id, groupId: world.groups.retail, price: '5.0000' });
+      await insertListing(db, id, { slug: name.toLowerCase(), publicTitle: name });
+    }
+    const { categories } = body(await get('/store/v1/categories'));
+    expect(categories.length).toBe(3);
+    for (const category of categories as Array<{ id: number; serviceCount: number }>) {
+      const res = await get(`/store/v1/services?categoryId=${category.id}&_start=0&_end=1`);
+      expect(res.headers['x-total-count']).toBe(String(category.serviceCount));
+    }
+  });
+
+  it('is empty without a retail group', async () => {
+    expect(body(await get('/store/v1/categories'))).toEqual({ locale: 'en', categories: [] });
   });
 });

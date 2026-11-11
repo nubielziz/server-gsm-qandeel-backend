@@ -14,6 +14,9 @@ const TOKEN_ACCESS: ReadonlySet<AccessKind> = new Set([
 /** The sign-in steps of the admin console and the merchant portal (login, 2FA, password); `me` and logout are not. */
 const AUTH_PATH = /^\/(admin|client)\/auth\/(login|2fa|password)(\/|$)/;
 
+/** The public service pictures (feature 22): counted against `media`, not `ip`. */
+const MEDIA_PATH = '/store/v1/media/';
+
 /**
  * Picks the limiter for a request on a public surface.
  *
@@ -25,7 +28,9 @@ const AUTH_PATH = /^\/(admin|client)\/auth\/(login|2fa|password)(\/|$)/;
  * webhooks are signed, and `/health` and `/metrics` are probes: none of them is limited per IP here, except for a large body
  * (`upload`, 20 a minute): a multipart body or one over 1 MiB on Dhru, REST v1 or the merchant portal is buffered and parsed
  * (up to 25 MiB, B157) before the credentials are known, so an anonymous caller could otherwise make the server read one after
- * another (the per-key limit comes too late for that).
+ * another (the per-key limit comes too late for that). The admin console counts a large body the same way (its service picture upload
+ * is multipart, feature 22). The public pictures (`/store/v1/media/`) have their own budget (`media`, 1200 a minute): a catalog page
+ * shows up to 100 of them and they must not use up the store's `ip` budget.
  *
  * @param path the route template or decoded path of the request (`requestPath`)
  * @param access the `access` of the matched route's contract; `undefined` for an unknown route
@@ -39,10 +44,13 @@ export function publicLimiterFor(
 ): LimiterName | undefined {
   switch (surfaceOfPath(path)) {
     case 'store':
-      return access !== undefined && TOKEN_ACCESS.has(access) ? 'token' : 'ip';
+      if (access !== undefined && TOKEN_ACCESS.has(access)) return 'token';
+      return path.startsWith(MEDIA_PATH) ? 'media' : 'ip';
     case 'admin':
       // The sign-in routes count per IP whatever their access: the 2FA steps run on a pending session (P2.6).
-      return access === 'public' || AUTH_PATH.test(path) ? 'ip' : undefined;
+      if (access === 'public' || AUTH_PATH.test(path)) return 'ip';
+      // A session route still reads its body before the session is checked: a large one (the picture upload) is counted.
+      return largeBody ? 'upload' : undefined;
     case 'client':
       if (access === 'public' || AUTH_PATH.test(path)) return 'ip';
       // A session route still reads its body before the session is checked: a large one (the file upload) is counted.

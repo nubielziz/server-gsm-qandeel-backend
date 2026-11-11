@@ -12,7 +12,8 @@
       "allowedGroupIds": [],
       "sort": 1,
       "isActive": true,
-      "serviceCount": 4
+      "serviceCount": 4,
+      "nameAr": ""
     },
     {
       "id": 2,
@@ -21,7 +22,8 @@
       "allowedGroupIds": [],
       "sort": 2,
       "isActive": true,
-      "serviceCount": 2
+      "serviceCount": 2,
+      "nameAr": ""
     },
     {
       "id": 3,
@@ -30,7 +32,8 @@
       "allowedGroupIds": [],
       "sort": 3,
       "isActive": true,
-      "serviceCount": 1
+      "serviceCount": 1,
+      "nameAr": ""
     },
     {
       "id": 4,
@@ -39,7 +42,8 @@
       "allowedGroupIds": [],
       "sort": 4,
       "isActive": true,
-      "serviceCount": 6
+      "serviceCount": 6,
+      "nameAr": ""
     },
     {
       "id": 5,
@@ -48,7 +52,8 @@
       "allowedGroupIds": [],
       "sort": 5,
       "isActive": true,
-      "serviceCount": 1
+      "serviceCount": 1,
+      "nameAr": ""
     },
     {
       "id": 6,
@@ -57,7 +62,8 @@
       "allowedGroupIds": [],
       "sort": 6,
       "isActive": true,
-      "serviceCount": 3
+      "serviceCount": 3,
+      "nameAr": ""
     },
     {
       "id": 7,
@@ -66,7 +72,8 @@
       "allowedGroupIds": [],
       "sort": 7,
       "isActive": true,
-      "serviceCount": 2
+      "serviceCount": 2,
+      "nameAr": ""
     },
     {
       "id": 8,
@@ -75,7 +82,8 @@
       "allowedGroupIds": [],
       "sort": 8,
       "isActive": true,
-      "serviceCount": 4
+      "serviceCount": 4,
+      "nameAr": ""
     },
     {
       "id": 9,
@@ -84,7 +92,8 @@
       "allowedGroupIds": [],
       "sort": 9,
       "isActive": true,
-      "serviceCount": 4
+      "serviceCount": 4,
+      "nameAr": ""
     }
   ]
 }

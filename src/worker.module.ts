@@ -34,6 +34,7 @@ import {
   WebhookDeliveryModule,
 } from './modules/platform';
 import { DataRetentionModule, RiskServicesModule } from './modules/risk';
+import { StorefrontPopularityModule } from './modules/storefront';
 import { SupplierJobsModule } from './modules/suppliers';
 import { SupportEventsModule, SupportMailModule } from './modules/support';
 
@@ -69,6 +70,7 @@ import { SupportEventsModule, SupportMailModule } from './modules/support';
     CustomerMailModule,
     OrdersOutboxModule,
     IdempotencyPurgeModule,
+    StorefrontPopularityModule,
     WebhookDeliveryModule,
     NotificationEventsModule,
     NotificationDeliveryModule,

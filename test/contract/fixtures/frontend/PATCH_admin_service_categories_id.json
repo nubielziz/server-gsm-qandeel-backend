@@ -10,6 +10,7 @@
     "allowedGroupIds": [],
     "sort": 1,
     "isActive": true,
-    "serviceCount": 4
+    "serviceCount": 4,
+    "nameAr": ""
   }
 }

@@ -77,8 +77,19 @@ describe('GET /admin/service-listings', () => {
         locale: 'en',
         slug: 'atandt-usa-premier-unlock',
         publicTitle: 'AT&T USA Premier Unlock',
+        summary: '',
+        etaText: '',
+        brand: '',
+        carrier: '',
+        country: '',
+        sort: 0,
+        seoTitle: '',
+        seoDescription: '',
         isListed: true,
         isFeatured: true,
+        listedAt: null,
+        updatedAt: expect.any(String),
+        imageUrl: null,
         service: {
           id: world.att,
           name: 'AT&T USA Premier Unlock',
@@ -681,5 +692,292 @@ describe('PATCH /admin/service-listings/:id (the retail price)', () => {
     const rows = await retailRow(world.att);
     expect(rows).toHaveLength(1);
     expect(prices).toContain(rows[0]!.price);
+  });
+});
+
+describe('listing content (feature 22)', () => {
+  const listingRows = async (serviceId: number) =>
+    (await testDb()).db
+      .select()
+      .from(s.serviceListings)
+      .where(eq(s.serviceListings.serviceId, serviceId))
+      .orderBy(s.serviceListings.id);
+
+  it('writes every content field of this language and answers the detail with the Markdown bodies', async () => {
+    const { db } = await testDb();
+    const world = await listingWorld(db);
+    const id = await insertListingRow(db, world.att, { slug: 'att', publicTitle: 'AT&T' });
+    const res = await admin.patch(`/admin/service-listings/${id}`, {
+      publicTitle: 'AT&T USA Premier',
+      slug: 'att-usa-premier',
+      summary: '  Unlock an AT&T iPhone.  ',
+      descriptionMd: '# Unlock\n\nSteps.',
+      requirementsMd: 'The IMEI.',
+      etaText: 'Usually 1 to 3 days',
+      seoTitle: 'AT&T unlock',
+      seoDescription: 'Unlock an AT&T iPhone online.',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      id,
+      slug: 'att-usa-premier',
+      publicTitle: 'AT&T USA Premier',
+      summary: 'Unlock an AT&T iPhone.',
+      descriptionMd: '# Unlock\n\nSteps.',
+      requirementsMd: 'The IMEI.',
+      etaText: 'Usually 1 to 3 days',
+      seoTitle: 'AT&T unlock',
+      seoDescription: 'Unlock an AT&T iPhone online.',
+    });
+    // The detail has the bodies, the list leaves them out.
+    expect((await admin.get(`/admin/service-listings/${id}`)).body.descriptionMd).toBe('# Unlock\n\nSteps.');
+    const [row] = (await admin.get('/admin/service-listings')).body;
+    expect(row.summary).toBe('Unlock an AT&T iPhone.');
+    expect(row).not.toHaveProperty('descriptionMd');
+    expect(row).not.toHaveProperty('requirementsMd');
+  });
+
+  it('writes brand, carrier, country, featured and position to every language row of the service', async () => {
+    const { db } = await testDb();
+    const world = await listingWorld(db);
+    const en = await insertListingRow(db, world.att, { slug: 'att', publicTitle: 'AT&T' });
+    const ar = await insertListingRow(db, world.att, { slug: 'att-ar', publicTitle: 'اي تي اند تي', locale: 'ar' });
+    const res = await admin.patch(`/admin/service-listings/${en}`, {
+      brand: 'Apple',
+      carrier: 'AT&T',
+      country: 'us',
+      isFeatured: true,
+      sort: 7,
+      summary: 'English only',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ brand: 'Apple', carrier: 'AT&T', country: 'US', isFeatured: true, sort: 7 });
+    const rows = await listingRows(world.att);
+    expect(rows.map((r) => [r.brand, r.carrier, r.country, r.isFeatured, r.sort])).toEqual([
+      ['Apple', 'AT&T', 'US', true, 7],
+      ['Apple', 'AT&T', 'US', true, 7],
+    ]);
+    // A per-language field stays in its language.
+    expect(rows.map((r) => r.summary)).toEqual(['English only', '']);
+    expect((await admin.get(`/admin/service-listings/${ar}`)).body).toMatchObject({ brand: 'Apple', country: 'US' });
+    // Clearing a fact clears it everywhere.
+    await admin.patch(`/admin/service-listings/${en}`, { country: '' });
+    expect((await listingRows(world.att)).map((r) => r.country)).toEqual(['', '']);
+  });
+
+  it('refuses a field over its limit with 422 on that field and changes nothing', async () => {
+    const { db } = await testDb();
+    const world = await listingWorld(db);
+    const id = await insertListingRow(db, world.att, { slug: 'att' });
+    const cases: Array<[string, unknown]> = [
+      ['summary', 'x'.repeat(301)],
+      ['summary', 'two\nlines'],
+      ['etaText', 'y'.repeat(81)],
+      ['brand', 'b'.repeat(81)],
+      ['carrier', 'tab\there'],
+      ['country', 'USA'],
+      ['country', '1'],
+      ['sort', -1],
+      ['sort', 1_000_001],
+      ['sort', 1.5],
+      ['descriptionMd', 'd'.repeat(20_001)],
+      ['requirementsMd', 'r'.repeat(10_001)],
+      ['seoTitle', 't'.repeat(201)],
+      ['seoDescription', 'd'.repeat(401)],
+      ['publicTitle', ''],
+      ['slug', 'Not A Slug'],
+    ];
+    for (const [field, value] of cases) {
+      const res = await admin.patch(`/admin/service-listings/${id}`, { [field]: value });
+      expect(res.status, `${field} ${String(value).slice(0, 12)}`).toBe(422);
+      expect(res.body.errors[0].field, field).toBe(field);
+    }
+    expect((await listingRows(world.att))[0]).toMatchObject({ slug: 'att', summary: '', sort: 0 });
+    expect(await auditRows()).toEqual([]);
+  });
+
+  it('refuses a slug another listing of the language uses with 409 on slug, but allows it in the other language', async () => {
+    const { db } = await testDb();
+    const world = await listingWorld(db);
+    await insertListingRow(db, world.att, { slug: 'taken' });
+    const other = await insertListingRow(db, world.check, { slug: 'mine' });
+    const clash = await admin.patch(`/admin/service-listings/${other}`, { slug: 'taken', summary: 'not applied' });
+    expect(clash.status).toBe(409);
+    expect(clash.body.code).toBe('LISTING_EXISTS');
+    expect(clash.body.errors[0]).toMatchObject({ field: 'slug' });
+    expect((await admin.get(`/admin/service-listings/${other}`)).body).toMatchObject({ slug: 'mine', summary: '' });
+    // The same slug in Arabic is a different address.
+    const ar = await insertListingRow(db, world.check, { slug: 'x-ar', locale: 'ar' });
+    expect((await admin.patch(`/admin/service-listings/${ar}`, { slug: 'taken' })).status).toBe(200);
+    // Sending its own slug is not a clash.
+    expect((await admin.patch(`/admin/service-listings/${other}`, { slug: 'mine' })).status).toBe(200);
+  });
+
+  it('answers 409 and not 500 when two requests race for the same slug', async () => {
+    const { db } = await testDb();
+    const world = await listingWorld(db);
+    const a = await insertListingRow(db, world.att, { slug: 'a' });
+    const b = await insertListingRow(db, world.check, { slug: 'b' });
+    const [one, two] = await Promise.all([
+      admin.patch(`/admin/service-listings/${a}`, { slug: 'same' }),
+      admin.patch(`/admin/service-listings/${b}`, { slug: 'same' }),
+    ]);
+    expect([one.status, two.status].sort()).toEqual([200, 409]);
+  });
+
+  it('makes the slug from the title when an empty slug is sent', async () => {
+    const { db } = await testDb();
+    const world = await listingWorld(db);
+    const id = await insertListingRow(db, world.att, { slug: 'old', publicTitle: 'Old' });
+    const res = await admin.patch(`/admin/service-listings/${id}`, { slug: '', publicTitle: 'AT&T Premier' });
+    expect(res.body.slug).toBe('atandt-premier');
+  });
+
+  it('records one audit row with the fields that changed, the Markdown lengths only, and the languages a fact reached', async () => {
+    const { db } = await testDb();
+    const world = await listingWorld(db);
+    const id = await insertListingRow(db, world.att, { slug: 'att', summary: 'Before', brand: 'Old' });
+    await insertListingRow(db, world.att, { slug: 'att-ar', locale: 'ar' });
+    await admin.patch(`/admin/service-listings/${id}`, {
+      summary: 'After',
+      brand: 'New',
+      descriptionMd: 'a secret body that must not be logged',
+      etaText: '',
+    });
+    const [audit] = await auditRows();
+    expect(audit).toMatchObject({ action: 'edited listing of', entityType: 'listing', entityId: id });
+    expect(audit!.before).toEqual({ summary: 'Before', brand: 'Old', descriptionMd: { length: 0 } });
+    expect(audit!.after).toEqual({
+      summary: 'After',
+      brand: 'New',
+      descriptionMd: { length: 'a secret body that must not be logged'.length },
+      appliedToLocales: ['en', 'ar'],
+    });
+    expect(JSON.stringify(audit)).not.toContain('secret body');
+  });
+
+  it('writes an audit row even when the values sent equal the stored ones', async () => {
+    const { db } = await testDb();
+    const world = await listingWorld(db);
+    const id = await insertListingRow(db, world.att, { summary: 'Same' });
+    expect((await admin.patch(`/admin/service-listings/${id}`, { summary: 'Same' })).status).toBe(200);
+    const audits = await auditRows();
+    expect(audits.map((a) => a.action)).toEqual(['edited listing of']);
+    expect(audits[0]!.after).toEqual({});
+  });
+
+  it('sets listedAt on the first switch-on and keeps it through off and on', async () => {
+    const { db } = await testDb();
+    const world = await listingWorld(db);
+    const id = await insertListingRow(db, world.att);
+    expect((await admin.get(`/admin/service-listings/${id}`)).body.listedAt).toBeNull();
+    clock.set('2026-11-07T12:00:00.000Z');
+    const first = await admin.patch(`/admin/service-listings/${id}`, { isListed: true });
+    expect(first.body.listedAt).toBe('2026-11-07T12:00:00.000Z');
+    clock.set('2026-11-07T12:05:00.000Z');
+    await admin.patch(`/admin/service-listings/${id}`, { isListed: false });
+    const again = await admin.patch(`/admin/service-listings/${id}`, { isListed: true });
+    expect(again.body.listedAt).toBe('2026-11-07T12:00:00.000Z');
+    clock.set('2026-11-07T12:00:00.000Z');
+  });
+
+  it('creates a listing with content, inheriting the facts of the service from its oldest listing', async () => {
+    const { db } = await testDb();
+    const world = await listingWorld(db);
+    await insertListingRow(db, world.att, {
+      slug: 'att',
+      brand: 'Apple',
+      carrier: 'AT&T',
+      country: 'US',
+      isFeatured: true,
+      sort: 3,
+    });
+    const res = await admin.post('/admin/service-listings', {
+      serviceId: world.att,
+      locale: 'ar',
+      publicTitle: 'فك شبكة اي تي اند تي',
+      slug: 'att-ar',
+      summary: 'ملخص',
+      descriptionMd: 'وصف',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({
+      locale: 'ar',
+      summary: 'ملخص',
+      descriptionMd: 'وصف',
+      brand: 'Apple',
+      carrier: 'AT&T',
+      country: 'US',
+      isFeatured: true,
+      sort: 3,
+      isListed: false,
+      listedAt: null,
+    });
+  });
+
+  it('writes the facts sent at creation to the other language too', async () => {
+    const { db } = await testDb();
+    const world = await listingWorld(db);
+    await insertListingRow(db, world.att, { slug: 'att', brand: 'Old' });
+    const res = await admin.post('/admin/service-listings', {
+      serviceId: world.att,
+      locale: 'ar',
+      publicTitle: 'Arabic',
+      slug: 'att-ar',
+      brand: 'New',
+      isFeatured: true,
+    });
+    expect(res.status).toBe(201);
+    expect((await listingRows(world.att)).map((r) => [r.brand, r.isFeatured])).toEqual([
+      ['New', true],
+      ['New', true],
+    ]);
+  });
+
+  it('sorts the admin list by listedAt (never-listed last) and position, and filters by isFeatured', async () => {
+    const { db } = await testDb();
+    const world = await listingWorld(db);
+    const a = await insertListingRow(db, world.att, {
+      publicTitle: 'A',
+      listedAt: new Date('2026-10-01T00:00:00Z'),
+      sort: 2,
+    });
+    const b = await insertListingRow(db, world.check, {
+      publicTitle: 'B',
+      listedAt: new Date('2026-10-05T00:00:00Z'),
+      sort: 1,
+      isFeatured: true,
+    });
+    const c = await insertListingRow(db, world.att, { publicTitle: 'C', locale: 'ar', sort: 3 });
+    const ids = async (query: string) =>
+      (await admin.get(`/admin/service-listings?${query}`)).body.map((r: { id: number }) => r.id);
+    expect(await ids('_sort=listedAt&_order=desc')).toEqual([b, a, c]);
+    expect(await ids('_sort=listedAt&_order=asc')).toEqual([a, b, c]);
+    expect(await ids('_sort=sort&_order=asc')).toEqual([b, a, c]);
+    expect(await ids('isFeatured=true')).toEqual([b]);
+    expect(await ids('isFeatured=false&_sort=sort')).toEqual([a, c]);
+  });
+
+  it('needs storefront:update to change content and storefront:create to send content at creation', async () => {
+    const { db } = await testDb();
+    const world = await listingWorld(db);
+    const id = await insertListingRow(db, world.att);
+    const reader = await adminWith(t, ['storefront:read']);
+    expect((await reader.patch(`/admin/service-listings/${id}`, { summary: 'x' })).status).toBe(403);
+    expect(
+      (await reader.post('/admin/service-listings', { serviceId: world.check, locale: 'en', publicTitle: 'T' })).status,
+    ).toBe(403);
+    expect((await listingRows(world.att))[0]!.summary).toBe('');
+  });
+
+  it('keeps the old bodies working: only isListed, only retailPrice', async () => {
+    const { db } = await testDb();
+    const world = await listingWorld(db);
+    const id = await insertListingRow(db, world.att);
+    expect((await admin.patch(`/admin/service-listings/${id}`, { isListed: true })).body.isListed).toBe(true);
+    expect((await admin.patch(`/admin/service-listings/${id}`, { retailPrice: '25.9900' })).body.retailPrice).toBe(
+      '25.9900',
+    );
+    expect((await admin.patch(`/admin/service-listings/${id}`, {})).status).toBe(422);
   });
 });

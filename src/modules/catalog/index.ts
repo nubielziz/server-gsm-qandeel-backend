@@ -57,7 +57,15 @@ export {
 } from './domain/service-figures';
 export { INVENTORY_CODE_AAD, inventoryCodeHashInput, lastFour } from './domain/inventory-codes';
 export { StorefrontServices, TacDirectory } from './application/storefront-services';
-export type { SellableField, SellableService, ServiceName, TacRef } from './application/storefront-services';
+export type {
+  SellableCategory,
+  SellableField,
+  SellableFilter,
+  SellableService,
+  ServiceName,
+  TacRef,
+} from './application/storefront-services';
+export { coversSmallestOrder, smallestOrder } from './domain/storefront-availability';
 export { InventoryStock } from './application/inventory-stock';
 export type { StockClaim } from './application/inventory-stock';
 export { SERVICE_DUPLICATE_RULES, SERVICE_PRICE_MODES, SERVICE_TYPES } from './db/schema';

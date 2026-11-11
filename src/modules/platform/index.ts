@@ -2,7 +2,7 @@
 // need from its documentation routes, the audit log, the transactional outbox (write events, register their queues, relay
 // them), the settings readers, maintenance mode and the merchant webhooks (the event contracts and outbox routes of 7b, the
 // delivery engine, the processor of the `merchant-webhooks` queue) and the notifications (event registry, templates, delivery, the
-// mail and Telegram channels, a merchant's preference rules).
+// mail and Telegram channels, a merchant's preference rules) and the public service pictures of the storefront.
 export { PlatformModule } from './platform.module';
 export { FilesModule } from './files.module';
 export {
@@ -103,6 +103,15 @@ export { PdfRenderer } from './pdf/pdf-renderer';
 export type { PdfBlock, PdfColumn, PdfDocument } from './pdf/pdf-renderer';
 export { PROOF_MIME_TYPES, StoredFiles } from './files/stored-files';
 export type { FileMeta, StoreFileInput } from './files/stored-files';
+export { PUBLIC_IMAGE_NAME, PUBLIC_IMAGE_PREFIX, PUBLIC_MEDIA_PATH, PublicImages } from './files/public-images';
+export type { PublicImageBytes, StorePublicImageInput, StoredPublicImage } from './files/public-images';
+export {
+  PUBLIC_IMAGE_MAX_BYTES,
+  PUBLIC_IMAGE_MAX_SIDE,
+  PUBLIC_IMAGE_MIN_SIDE,
+  inspectImage,
+} from './files/image-inspect';
+export type { ImageRefusalCode, InspectedImage, RefusedImage } from './files/image-inspect';
 export { NotificationEventsModule } from './notifications/notification-events.module';
 export { NotificationTransportModule } from './notifications/notification-transport.module';
 export { MAIL_PROBE_TOKEN, MailHealthProbe, MailHealthProbeModule } from './notifications/mail-health-probe';

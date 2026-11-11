@@ -78,9 +78,14 @@ describe('parseMultipart', () => {
 });
 
 describe('the multipart limits', () => {
-  it('leaves room for the form fields around a 25 MiB file, on the three routes that take uploads', () => {
+  it('leaves room for the form fields around a 25 MiB file, on the routes that take uploads', () => {
     expect(MULTIPART_MAX_BYTES).toBeGreaterThan(25 * 1024 * 1024);
     expect(MULTIPART_MAX_BYTES).toBeLessThan(26 * 1024 * 1024);
-    expect([...MULTIPART_ROUTES].sort()).toEqual(['/api/index.php', '/client/files', '/v1/files']);
+    expect([...MULTIPART_ROUTES].sort()).toEqual([
+      '/admin/service-listings/:id/image',
+      '/api/index.php',
+      '/client/files',
+      '/v1/files',
+    ]);
   });
 });

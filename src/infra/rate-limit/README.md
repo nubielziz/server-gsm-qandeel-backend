@@ -9,6 +9,9 @@
 | `sign-in`  | `RateLimitService.compositeKey(email, ip)`           | 5 attempts per 15 minutes, then locked for 15 min   |
 | `token`    | client IP                                            | 30 per minute                                       |
 | `supplier` | supplier id                                          | 60 per minute, or `suppliers.rate_limit_per_min`    |
+| `help-vote` | `RateLimitService.compositeKey(ip, articleId)`      | 1 per day: one counted help vote per visitor and article (`POST /store/v1/help/:slug/vote`; repeats are ignored with the same `204`) |
+| `media`    | client IP                                            | 1200 per minute: the public service pictures (`GET /store/v1/media/:name`), apart from `ip` |
+| `upload`   | client IP                                            | 20 per minute: large bodies (multipart or over 1 MiB) on Dhru, REST v1, the portal and the admin console |
 
 ```ts
 // A pipeline guard or a use case:
@@ -54,15 +57,17 @@ its IPv4 address) on these routes (`publicLimiterFor`, decision 021):
 
 | Request | Limiter |
 |---|---|
-| anything under `/store/v1` (matched or not), except routes with a capability token | `ip` (300 a minute) |
+| anything under `/store/v1` (matched or not), except routes with a capability token and the pictures | `ip` (300 a minute) |
+| anything under `/store/v1/media/` (the public service pictures, matched or not) | `media` (1200 a minute) |
 | routes with `access` `checkout-token`, `tracking-token`, `ticket-token` or `link-token` | `token` (30 a minute) |
 | routes with `access: 'public'` under `/admin` and `/client` (sign-in, password and registration routes) | `ip` |
+| a large body (multipart, or a declared length over 1 MiB) on Dhru, REST v1, `/client` and `/admin` session routes | `upload` (20 a minute) |
 
 Unknown API keys are counted per client address by the API key guard itself (identity module), with the `ip` limiter under the key
 `api-key-failures:<address key>`, because REST v1 and Dhru have no per-IP stage here and an unknown key has no per-key limit; a known
 key is limited by its own `rate_limit_per_min` after every other check (`api-key` limiter, key = key id).
 
-Not counted here: session-authenticated admin and portal routes (per-principal limits come after authentication), REST v1 and Dhru
+Not counted here: session-authenticated admin and portal routes without a large body (per-principal limits come after authentication), REST v1 and Dhru
 (a limit per API key), webhooks (signed), `/health`, `/metrics`, the documentation. The numbers live in `limiters.ts` only. A
 refusal is `429 RATE_LIMITED` with `Retry-After` and the CORS headers; with the cache Redis down the limiter counts in memory.
 The route's `access` comes from its contract (`contractRegistry`), so new routes are covered by declaring the right `access`.

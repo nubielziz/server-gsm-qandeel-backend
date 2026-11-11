@@ -42,10 +42,16 @@ const COLUMNS: ListColumns = {
   publicTitle: s.serviceListings.publicTitle,
   slug: s.serviceListings.slug,
   isListed: s.serviceListings.isListed,
+  isFeatured: s.serviceListings.isFeatured,
+  listedAt: s.serviceListings.listedAt,
+  sort: s.serviceListings.sort,
   'service.name': s.services.name,
   'service.code': s.services.code,
   locked: LOCKED_SQL,
 };
+
+/** The sorts of `GET /admin/service-listings`. */
+export type AdminListingSort = 'publicTitle' | 'isListed' | 'slug' | 'id' | 'listedAt' | 'sort';
 
 /** The columns every listing read selects, and the joins that make an archived service disappear (RESOLUTIONS catalog-3). */
 function listingSelect(db: DbExecutor) {
@@ -79,12 +85,12 @@ const toRow = (row: Selected): ListingRow => ({
  * Lists listings with their service facts for `GET /admin/service-listings`.
  *
  * @param db the database or a transaction
- * @param query the parsed list request (filters `isListed` and `locked`, search over title, slug, service name and code)
+ * @param query the parsed list request (filters `isListed`, `locked` and `isFeatured`, search over title, slug, service name and code)
  * @returns the page of rows and the exact total; listings of archived services are left out
  */
 export async function listListingRows(
   db: DbExecutor,
-  query: ParsedListQuery<'publicTitle' | 'isListed' | 'slug' | 'id'>,
+  query: ParsedListQuery<AdminListingSort>,
 ): Promise<{ rows: ListingRow[]; total: number }> {
   const where = listWhere(query, COLUMNS);
   const [rows, [count]] = await Promise.all([
@@ -183,6 +189,28 @@ export async function salesOf(db: DbExecutor, serviceIds: readonly number[], sin
     )
     .groupBy(s.orders.serviceId);
   return new Map(rows.map((row) => [row.serviceId, { orders: row.orders, revenue: row.revenue }]));
+}
+
+/**
+ * Counts the non-rejected orders of every service created since a moment, whatever the channel (merchant, REST, Dhru, storefront).
+ *
+ * Why: the storefront's best-seller order (feature 22). It lives here, beside `salesOf`, instead of behind an orders service: the
+ * orders module imports this module (its ledger reads the storefront policies), so an import of the orders barrel from the storefront
+ * closed a load-order cycle (decision 032; seen as "Cannot access 'OrderLedger' before initialization" when a test imported the
+ * orders ledger first). `created_at` equals `placed_at` at placement and has the index `orders_created_idx`, so the window is a range
+ * scan.
+ *
+ * @param db the database or a transaction
+ * @param since the start of the window (inclusive)
+ * @returns the count per service id; services without orders are absent
+ */
+export async function salesCountsByService(db: DbExecutor, since: Date): Promise<Map<number, number>> {
+  const rows = await db
+    .select({ serviceId: s.orders.serviceId, total: sql<number>`count(*)::int` })
+    .from(s.orders)
+    .where(and(gte(s.orders.createdAt, since), ne(s.orders.status, 'rejected')))
+    .groupBy(s.orders.serviceId);
+  return new Map(rows.map((row) => [row.serviceId, row.total]));
 }
 
 /**

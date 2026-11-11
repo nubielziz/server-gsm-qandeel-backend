@@ -24,7 +24,8 @@ export interface LimiterConfig {
  * `api_keys.rate_limit_per_min` through the `limit` option, this is the default); `sign-in` email + IP (build the key
  * with `RateLimitService.compositeKey`), counted per attempt and reset on success; `token` the client IP; `supplier` the
  * supplier id (the points come from `suppliers.rate_limit_per_min`); `webhook-retry` the delivery id; `upload` the client IP; `ticket-email`
- * the hashed email address of a public ticket form (`RateLimitService.compositeKey`).
+ * the hashed email address of a public ticket form (`RateLimitService.compositeKey`); `help-vote` the client IP + help article id
+ * (`RateLimitService.compositeKey`); `media` the client IP.
  *
  * @see docs/decisions/021-rate-limiting.md
  */
@@ -60,7 +61,7 @@ export const RATE_LIMITERS = {
     points: 20,
     windowSeconds: 60,
     description:
-      'Large bodies read before the credentials are known (multipart or over 1 MiB on Dhru, REST v1 and the portal upload): requests per client IP.',
+      'Large bodies read before the credentials are known (multipart or over 1 MiB on Dhru, REST v1, the portal upload and the admin console, whose service picture upload is multipart): requests per client IP.',
   },
   'webhook-retry': {
     points: 1,
@@ -73,6 +74,18 @@ export const RATE_LIMITERS = {
     windowSeconds: 60 * 60,
     description:
       'The public ticket form (POST /store/v1/tickets): new tickets per email address per hour, so the receipt email cannot relay spam to a stranger.',
+  },
+  'help-vote': {
+    points: 1,
+    windowSeconds: 24 * 60 * 60,
+    description:
+      'The "was this helpful?" vote of a help article (POST /store/v1/help/:slug/vote): one counted vote per visitor IP and article per day; repeats are accepted and ignored.',
+  },
+  media: {
+    points: 1200,
+    windowSeconds: 60,
+    description:
+      'The public service pictures (GET /store/v1/media/:name), instead of `ip`: a first catalog view fetches up to 100 pictures, which must not use up the 300 a minute of the API; answers are cached for a year.',
   },
 } as const satisfies Record<string, LimiterConfig>;
 

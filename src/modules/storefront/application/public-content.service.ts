@@ -4,11 +4,12 @@ import { Injectable } from '@nestjs/common';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { DbService } from '../../../infra/db';
-import type { ContentPageKind, HelpArticle } from '../db/schema';
+import { RateLimitService } from '../../../infra/rate-limit';
+import type { ContentPage, ContentPageKind, HelpArticle } from '../db/schema';
 import { helpIdOfSlug, helpSlugOf } from '../domain/help-slug';
 import { LEGAL_TYPE_LABEL, legalTypeOfSlug } from '../domain/legal';
-import { findLivePage } from '../infra/content-page.repository';
-import { findPublishedArticle, listArticles } from '../infra/help-article.repository';
+import { type PublicPageSort, findLivePage, listLivePages } from '../infra/content-page.repository';
+import { addHelpVote, findPublishedArticle, listArticles } from '../infra/help-article.repository';
 import { CurrentLegalDocuments } from './legal-documents';
 
 /** The version of a legal document a public page carries. */
@@ -35,6 +36,29 @@ export interface PublicPageView {
   readonly updatedAt: string;
   readonly legal: PublicPageLegal | null;
 }
+
+/** A live page in the public list: the page without its body. */
+export interface PublicPageListItem {
+  readonly kind: ContentPageKind;
+  readonly slug: string;
+  readonly locale: string;
+  readonly title: string;
+  readonly seoDescription: string;
+  readonly noindex: boolean;
+  readonly publishedAt: string | null;
+  readonly updatedAt: string;
+}
+
+const toPageListItem = (page: ContentPage): PublicPageListItem => ({
+  kind: page.kind,
+  slug: page.slug,
+  locale: page.locale,
+  title: page.title,
+  seoDescription: page.seoDescription,
+  noindex: page.status === 'noindex',
+  publishedAt: page.publishedAt?.toISOString() ?? null,
+  updatedAt: page.updatedAt.toISOString(),
+});
 
 /** A published help article as the storefront reads it. */
 export interface PublicArticleView {
@@ -75,7 +99,8 @@ function toArticleView(article: HelpArticle): PublicArticleView {
  * an unpublished article and a legal version that is not in force are all a plain 404. HTML in a body is returned as stored
  * and rendered only by the storefront.
  *
- * Side effects: none (reads only).
+ * Side effects: none, except the help vote: it counts a point of the `help-vote` limiter on the cache Redis (a hashed key, one day)
+ * and increments `help_articles.helpful_yes` / `helpful_no` (never `updated_at`).
  *
  * @see docs/contract/endpoints/storefront.md (the `/store/v1/pages` and `/store/v1/help` sections)
  */
@@ -84,6 +109,7 @@ export class PublicContentService {
   constructor(
     private readonly db: DbService,
     private readonly legal: CurrentLegalDocuments,
+    private readonly limits: RateLimitService,
   ) {}
 
   /**
@@ -167,5 +193,44 @@ export class PublicContentService {
     const article = await findPublishedArticle(this.db.db, id);
     if (!article) throw articleNotFound();
     return toArticleView(article);
+  }
+
+  /**
+   * Lists the live pages of a language (no bodies).
+   *
+   * Why: feature 22 (D-15a): the blog index and the sitemap. Drafts and legal documents are never listed.
+   *
+   * @param query the parsed list request (`kind`, `q`, sort, paging)
+   * @param locale the language
+   * @returns the page of rows and the exact total
+   */
+  async pageList(
+    query: ParsedListQuery<PublicPageSort, unknown>,
+    locale: string,
+  ): Promise<{ rows: PublicPageListItem[]; total: number }> {
+    const { rows, total } = await listLivePages(this.db.db, query, locale);
+    return { rows: rows.map(toPageListItem), total };
+  }
+
+  /**
+   * Counts a visitor's "was this helpful?" vote.
+   *
+   * Why: feature 22 (D-15c). The first vote of a visitor address on an article in a day counts; later ones are accepted and ignored,
+   * and the answer is the same, so it is not an oracle for "did my vote count". The limiter point is taken before the article is
+   * read, so a refused vote does nothing at all.
+   *
+   * Side effects: a point of the `help-vote` limiter (cache Redis); `help_articles.helpful_yes` or `helpful_no` + 1 (not `updated_at`).
+   *
+   * @param slug `<id>-<words>`; only the id counts
+   * @param helpful true for a "yes", false for a "no"
+   * @param ip the visitor's address (`request.ip`)
+   * @throws {AppError} `NOT_FOUND` (404: no such id, or the article is not published)
+   */
+  async vote(slug: string, helpful: boolean, ip: string): Promise<void> {
+    const id = helpIdOfSlug(slug);
+    if (id === undefined) throw articleNotFound();
+    const point = await this.limits.consume('help-vote', RateLimitService.compositeKey(ip, String(id)));
+    if (!point.allowed) return;
+    if (!(await addHelpVote(this.db.db, id, helpful))) throw articleNotFound();
   }
 }

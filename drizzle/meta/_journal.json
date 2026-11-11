@@ -141,6 +141,20 @@
       "when": 1794156476979,
       "tag": "0019_idempotency_purge_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794324066976,
+      "tag": "0020_store_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794324067655,
+      "tag": "0021_store_catalog_backfill",
+      "breakpoints": true
     }
   ]
 }

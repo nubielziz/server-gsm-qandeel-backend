@@ -141,6 +141,8 @@ export async function seedStorefront(db: DbExecutor, demo: DemoSeed): Promise<Se
           country: facets.country ?? '',
           isListed: listing.listed,
           isFeatured: listing.featured,
+          // A listing seeded as listed counts as published when it was created (feature 22).
+          listedAt: listing.listed ? created : null,
           sort: index + 1,
           seoTitle: listing.seoTitle ? listing.title : '',
           seoDescription: listing.seoDesc ? `Order ${listing.title} online and track it in your account.` : '',

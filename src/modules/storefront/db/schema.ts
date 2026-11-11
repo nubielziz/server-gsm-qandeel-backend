@@ -63,6 +63,12 @@ export const serviceListings = pgTable(
     seoTitle: text().notNull().default(''),
     seoDescription: text().notNull().default(''),
     ogFileId: fk((): AnyPgColumn => files.id),
+    /** first time the listing went on the site; set once, never reset (feature 22: "new arrivals") */
+    listedAt: timestampTz(),
+    /** non-rejected orders of the service in the last 30 days, written only by the popularity job (feature 22) */
+    sales30d: integer('sales_30d').notNull().default(0),
+    /** the service's picture (a `files` row under `media/`); shared by every language row of the service (feature 22) */
+    imageFileId: fk((): AnyPgColumn => files.id),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -72,6 +78,7 @@ export const serviceListings = pgTable(
     index('service_listings_listed_idx').on(t.isListed, t.sort),
     index('service_listings_public_title_idx').on(t.publicTitle),
     index('service_listings_og_file_id_idx').on(t.ogFileId),
+    index('service_listings_image_file_id_idx').on(t.imageFileId),
   ],
 );
 

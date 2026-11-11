@@ -26,7 +26,18 @@
       "orders30d": 13,
       "revenue30d": "51.8700",
       "locked": false,
-      "lockedReason": null
+      "lockedReason": null,
+      "summary": "",
+      "etaText": "",
+      "brand": "",
+      "carrier": "",
+      "country": "",
+      "sort": 0,
+      "seoTitle": "",
+      "seoDescription": "",
+      "listedAt": null,
+      "updatedAt": "2026-03-01T09:30:00.000Z",
+      "imageUrl": null
     },
     {
       "id": 2,
@@ -49,7 +60,18 @@
       "orders30d": 6,
       "revenue30d": "23.9400",
       "locked": false,
-      "lockedReason": null
+      "lockedReason": null,
+      "summary": "",
+      "etaText": "",
+      "brand": "",
+      "carrier": "",
+      "country": "",
+      "sort": 0,
+      "seoTitle": "",
+      "seoDescription": "",
+      "listedAt": null,
+      "updatedAt": "2026-03-01T09:30:00.000Z",
+      "imageUrl": null
     },
     {
       "id": 3,
@@ -72,7 +94,18 @@
       "orders30d": 6,
       "revenue30d": "23.9400",
       "locked": false,
-      "lockedReason": null
+      "lockedReason": null,
+      "summary": "",
+      "etaText": "",
+      "brand": "",
+      "carrier": "",
+      "country": "",
+      "sort": 0,
+      "seoTitle": "",
+      "seoDescription": "",
+      "listedAt": null,
+      "updatedAt": "2026-03-01T09:30:00.000Z",
+      "imageUrl": null
     },
     {
       "id": 4,
@@ -95,7 +128,18 @@
       "orders30d": 6,
       "revenue30d": "23.9400",
       "locked": false,
-      "lockedReason": null
+      "lockedReason": null,
+      "summary": "",
+      "etaText": "",
+      "brand": "",
+      "carrier": "",
+      "country": "",
+      "sort": 0,
+      "seoTitle": "",
+      "seoDescription": "",
+      "listedAt": null,
+      "updatedAt": "2026-03-01T09:30:00.000Z",
+      "imageUrl": null
     },
     {
       "id": 5,
@@ -118,7 +162,18 @@
       "orders30d": 17,
       "revenue30d": "441.8300",
       "locked": false,
-      "lockedReason": null
+      "lockedReason": null,
+      "summary": "",
+      "etaText": "",
+      "brand": "",
+      "carrier": "",
+      "country": "",
+      "sort": 0,
+      "seoTitle": "",
+      "seoDescription": "",
+      "listedAt": null,
+      "updatedAt": "2026-03-01T09:30:00.000Z",
+      "imageUrl": null
     },
     {
       "id": 6,
@@ -141,7 +196,18 @@
       "orders30d": 12,
       "revenue30d": "239.8800",
       "locked": false,
-      "lockedReason": null
+      "lockedReason": null,
+      "summary": "",
+      "etaText": "",
+      "brand": "",
+      "carrier": "",
+      "country": "",
+      "sort": 0,
+      "seoTitle": "",
+      "seoDescription": "",
+      "listedAt": null,
+      "updatedAt": "2026-03-01T09:30:00.000Z",
+      "imageUrl": null
     },
     {
       "id": 7,
@@ -164,7 +230,18 @@
       "orders30d": 10,
       "revenue30d": "119.9000",
       "locked": false,
-      "lockedReason": null
+      "lockedReason": null,
+      "summary": "",
+      "etaText": "",
+      "brand": "",
+      "carrier": "",
+      "country": "",
+      "sort": 0,
+      "seoTitle": "",
+      "seoDescription": "",
+      "listedAt": null,
+      "updatedAt": "2026-03-01T09:30:00.000Z",
+      "imageUrl": null
     },
     {
       "id": 8,
@@ -187,7 +264,18 @@
       "orders30d": 7,
       "revenue30d": "104.9300",
       "locked": false,
-      "lockedReason": null
+      "lockedReason": null,
+      "summary": "",
+      "etaText": "",
+      "brand": "",
+      "carrier": "",
+      "country": "",
+      "sort": 0,
+      "seoTitle": "",
+      "seoDescription": "",
+      "listedAt": null,
+      "updatedAt": "2026-03-01T09:30:00.000Z",
+      "imageUrl": null
     },
     {
       "id": 9,
@@ -210,7 +298,18 @@
       "orders30d": 9,
       "revenue30d": "116.9100",
       "locked": false,
-      "lockedReason": null
+      "lockedReason": null,
+      "summary": "",
+      "etaText": "",
+      "brand": "",
+      "carrier": "",
+      "country": "",
+      "sort": 0,
+      "seoTitle": "",
+      "seoDescription": "",
+      "listedAt": null,
+      "updatedAt": "2026-03-01T09:30:00.000Z",
+      "imageUrl": null
     },
     {
       "id": 10,
@@ -233,7 +332,18 @@
       "orders30d": 3,
       "revenue30d": "65.9700",
       "locked": false,
-      "lockedReason": null
+      "lockedReason": null,
+      "summary": "",
+      "etaText": "",
+      "brand": "",
+      "carrier": "",
+      "country": "",
+      "sort": 0,
+      "seoTitle": "",
+      "seoDescription": "",
+      "listedAt": null,
+      "updatedAt": "2026-03-01T09:30:00.000Z",
+      "imageUrl": null
     },
     {
       "id": 11,
@@ -256,7 +366,18 @@
       "orders30d": 0,
       "revenue30d": "0.0000",
       "locked": true,
-      "lockedReason": "High risk: removal services attract stolen devices. B2B only."
+      "lockedReason": "High risk: removal services attract stolen devices. B2B only.",
+      "summary": "",
+      "etaText": "",
+      "brand": "",
+      "carrier": "",
+      "country": "",
+      "sort": 0,
+      "seoTitle": "",
+      "seoDescription": "",
+      "listedAt": null,
+      "updatedAt": "2026-03-01T09:30:00.000Z",
+      "imageUrl": null
     },
     {
       "id": 12,
@@ -279,7 +400,18 @@
       "orders30d": 0,
       "revenue30d": "0.0000",
       "locked": true,
-      "lockedReason": "High risk: removal services attract stolen devices. B2B only."
+      "lockedReason": "High risk: removal services attract stolen devices. B2B only.",
+      "summary": "",
+      "etaText": "",
+      "brand": "",
+      "carrier": "",
+      "country": "",
+      "sort": 0,
+      "seoTitle": "",
+      "seoDescription": "",
+      "listedAt": null,
+      "updatedAt": "2026-03-01T09:30:00.000Z",
+      "imageUrl": null
     },
     {
       "id": 13,
@@ -302,7 +434,18 @@
       "orders30d": 9,
       "revenue30d": "134.9100",
       "locked": false,
-      "lockedReason": null
+      "lockedReason": null,
+      "summary": "",
+      "etaText": "",
+      "brand": "",
+      "carrier": "",
+      "country": "",
+      "sort": 0,
+      "seoTitle": "",
+      "seoDescription": "",
+      "listedAt": null,
+      "updatedAt": "2026-03-01T09:30:00.000Z",
+      "imageUrl": null
     },
     {
       "id": 14,
@@ -325,7 +468,18 @@
       "orders30d": 0,
       "revenue30d": "0.0000",
       "locked": true,
-      "lockedReason": "Service disabled"
+      "lockedReason": "Service disabled",
+      "summary": "",
+      "etaText": "",
+      "brand": "",
+      "carrier": "",
+      "country": "",
+      "sort": 0,
+      "seoTitle": "",
+      "seoDescription": "",
+      "listedAt": null,
+      "updatedAt": "2026-03-01T09:30:00.000Z",
+      "imageUrl": null
     }
   ]
 }

@@ -130,8 +130,11 @@ merchant joins, the group inside a merchant row and the nightly promotion), `rec
 calls it from sync, import and link changes), the figure rules (`defaultMinProfit`, `effectiveMinProfit`, `floorPrice`,
 `marginPercent`, `isBelowFloor`, `deliveryTimeText`), the closed vocabularies `SERVICE_PRICE_MODES`, `SERVICE_DUPLICATE_RULES` and
 `SERVICE_TYPES`, the inventory helpers the seed uses, and the storefront's read-only views (feature 14a): `StorefrontServices`
-(`sellable(db, ids, groupId)`: the merchant catalog's visibility rule for the retail group, no cost or supplier; `priced(db, groupId)`: the
-sellable ids that also have a fixed price for the group; `names(db, ids)`: name, type and delivery time whatever the service's state;
+(`sellable(db, ids, groupId)`: the merchant catalog's visibility rule for the retail group, no cost or supplier; `priced(db, groupId, filter?)`: the
+sellable ids that also have a fixed price for the group, optionally narrowed by service type, category and stock (feature 22:
+`SellableFilter`, the SQL test `IN_STOCK_SQL`); `inStockIds(db, ids)`: which services have enough available inventory codes for their
+smallest order (`smallestOrder` / `coversSmallestOrder`, `domain/storefront-availability.ts`); `categoriesOf(db, ids)`: the categories of
+some services with counts; a category has an optional Arabic name `name_ar` for the storefront (feature 22); `names(db, ids)`: name, type and delivery time whatever the service's state;
 `fields(db, serviceId)`) and `TacDirectory.find(db, tac)` (brand, model, marketing name and year of a TAC). Other modules import only `src/modules/catalog/index.ts` (lint rule
 `gsm/module-boundaries`). The export order matters (decision 032): the leaves identity injects come first, `CatalogAdminModule`
 (whose controllers use identity's decorators) last.

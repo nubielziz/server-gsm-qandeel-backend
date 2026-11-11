@@ -249,7 +249,7 @@ Scheduled housekeeping: group promotion, data retention, integrity checks, FX re
 - **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly, and `refund.process`, event-driven (money module, below), `checkout_recovery_sweep`, every 5 minutes (customers module, below), `service_price_scan`, event-driven (catalog module, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below). The others are built by their features, each
   registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
   `ledger_integrity` (12b, nightly 02:30 UTC, below), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). `idempotency_purge` (daily 04:10 UTC,
-orders module, below) is built. `data_retention`
+orders module, below) is built. `storefront_popularity` (every 30 minutes, storefront module, below) is built. `data_retention`
   (nightly 03:00 UTC, risk module, below) is built. The names are the
   console's job names (`GET /admin/system/jobs`, which lists only the jobs that write `job_runs`: `ip_rule_hits_flush` does not, so it is not listed and a manual run of it is 404). `data_retention` erases `imei_checks` older than `imeiRetentionDays` by
   setting `imei_enc`, `imei_hash` and `cached_until` to NULL together (no marker column; the wire then shows the TAC followed
@@ -272,6 +272,16 @@ orders module, below) is built. `data_retention`
   (`src/modules/customers/checkout-recovery.module.ts`); the health jobs in
   `src/modules/health/jobs/health-jobs.module.ts`; the others are registered with `JobSchedulerRegistry` by the owning
   features.
+
+### Storefront popularity (storefront module, `src/modules/storefront/jobs/`)
+
+- **`storefront_popularity`** (every 30 minutes, scheduler `storefront-popularity`, `PopularityRefresh`; feature 22): the best-seller sort of the
+  public catalog (`GET /store/v1/services?_sort=popular`). The job counts the non-rejected orders (every channel, merchants included) created in the
+  last 30 days per service (`salesCountsByService`, the storefront's documented foreign read of `orders`; cutoff = clock now - 30 days) and stores the count in
+  `service_listings.sales_30d` of every listing row of the service. One statement writes only the rows whose value differs (`is distinct from`)
+  and takes their row locks in id order (`order by id for update`, the order listing writers use), never touches `updated_at`, and never takes the
+  service row lock. A repeat or a parallel run changes nothing more. The run is recorded in `job_runs` (`processed` = rows changed, `result` =
+  `{ services, changed }`); a manual run carries `{ runId }`. Retry policy: the `maintenance` queue's. The shop shows the order only, never the number.
 
 ### Idempotency purge (orders module, `src/modules/orders/jobs/`)
 
@@ -503,6 +513,7 @@ Registered with `JobSchedulerRegistry.register` in `onModuleInit`; the worker up
 | `data-retention` | `maintenance` | `data_retention` | daily 03:00 UTC | risk (`src/modules/risk/jobs/`) |
 | `fx-refresh` | `maintenance` | `fx_refresh` | every hour at minute 0 | money (`src/modules/money/jobs/`) |
 | `idempotency-purge` | `maintenance` | `idempotency_purge` | daily 04:10 UTC | orders (`src/modules/orders/jobs/`) |
+| `storefront-popularity` | `maintenance` | `storefront_popularity` | every 30 minutes | storefront (`src/modules/storefront/jobs/`) |
 | `supplier-poll-tick` | `supplier-poll` | `supplier_poll_tick` | every minute | suppliers (`src/modules/suppliers/jobs/`) |
 | `supplier-price-sync` | `supplier-sync` | `price_sync` | every 15 minutes | suppliers (`src/modules/suppliers/jobs/`) |
 | `supplier-balance-check` | `supplier-sync` | `balance_check` | every 30 minutes | suppliers (`src/modules/suppliers/jobs/`) |

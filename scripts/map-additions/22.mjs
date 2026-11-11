@@ -1,0 +1,80 @@
+// Routes of feature 22 (storefront catalog backend) that the API design map does not have (decision 035): the category list with
+// counts, the public service pictures, the public page list, the help "helpful" vote, and the console's upload and removal of a picture.
+import { R } from '../lib/map-additions.mjs';
+
+export const rows = [
+  R(
+    'store',
+    'catalog',
+    'GET',
+    '/store/v1/categories',
+    'تصنيفات المتجر مع عدد الخدمات المعروضة في كل تصنيف',
+    'عام',
+    22,
+    ['service_categories', 'service_listings', 'services'],
+    {
+      en: 'List the storefront categories with their listed service counts.',
+      module: 'storefront',
+      spec: 'B-TBD store-categories',
+    },
+  ),
+  R(
+    'store',
+    'catalog',
+    'GET',
+    '/store/v1/media/:name',
+    'صورة خدمة عامة (ملف ثابت يُخزَّن طويلاً)',
+    'عام',
+    22,
+    ['files'],
+    { en: 'Serve a public service image (immutable, long cache).', module: 'platform', spec: 'B-TBD store-media' },
+  ),
+  R('store', 'content', 'GET', '/store/v1/pages', 'قائمة الصفحات المنشورة', 'عام', 22, ['content_pages'], {
+    en: 'List the published content pages.',
+    module: 'storefront',
+    spec: 'B-TBD store-page-list',
+  }),
+  R(
+    'store',
+    'content',
+    'POST',
+    '/store/v1/help/:slug/vote',
+    'تصويت «هل كان هذا مفيداً؟» على مقال مساعدة',
+    'عام',
+    22,
+    ['help_articles'],
+    { en: 'Vote whether a help article was helpful.', module: 'storefront', spec: 'B-TBD help-vote' },
+  ),
+  R(
+    'admin',
+    'storefront',
+    'POST',
+    '/admin/service-listings/:id/image',
+    'رفع صورة الخدمة',
+    'storefront:update',
+    22,
+    ['service_listings', 'files', 'audit_logs'],
+    {
+      en: 'Upload the picture of a listed service.',
+      module: 'storefront',
+      spec: 'B-TBD listing-image',
+      successStatus: 200,
+    },
+  ),
+  R(
+    'admin',
+    'storefront',
+    'DELETE',
+    '/admin/service-listings/:id/image',
+    'إزالة صورة الخدمة',
+    'storefront:update',
+    22,
+    ['service_listings', 'audit_logs'],
+    {
+      en: 'Remove the picture of a listed service.',
+      module: 'storefront',
+      spec: 'B-TBD listing-image',
+      successStatus: 204,
+    },
+  ),
+];

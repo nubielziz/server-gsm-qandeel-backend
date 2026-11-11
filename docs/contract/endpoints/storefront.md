@@ -32,6 +32,11 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 | `POST /admin/legal-documents` | admin | staff-permission `legal:*` | 15 | `createLegalDocument` |
 | `POST /admin/legal-documents/:id/publish` | admin | staff-permission `legal:publish` | 15 | `publishLegalDocument` |
 | `PATCH /admin/storefront/settings` | admin | staff-permission `settings:storefront` | 16 | `updateStorefrontSettings` |
+| `GET /store/v1/categories` | store | public | 22 |  |
+| `GET /store/v1/pages` | store | public | 22 |  |
+| `POST /store/v1/help/:slug/vote` | store | public | 22 |  |
+| `POST /admin/service-listings/:id/image` | admin | staff-permission `storefront:update` | 22 |  |
+| `DELETE /admin/service-listings/:id/image` | admin | staff-permission `storefront:update` | 22 |  |
 
 ## GET /store/v1/config
 
@@ -271,4 +276,29 @@ Later consents reference this version. requires_reacceptance makes signed-in cus
 - **Errors**: 422 VALIDATION_FAILED (value not boolean / not an integer in range / unknown key); 403 FORBIDDEN (caller lacks settings:storefront)
 - **B68**: Map says the route also writes payment_gateways and notification_templates. The console uses it for the 8 policies only; the gateway switch uses PATCH /admin/payment-gateways/:id (payments:gateways) and the email switch the template CRUD (notifications:update) (M168). Proposal: accept policy keys only. → Proposal accepted.
 - **Mock**: src/features/settings/mocks/storefrontRoutes.ts (Ranges, 422 messages per key, answer = the 8 policy keys; writes into the shared settings store.)
+
+## GET /store/v1/categories
+
+- **Map addition** (B-TBD store-categories, `scripts/map-additions/22.mjs`): List the storefront categories with their listed service counts. (تصنيفات المتجر مع عدد الخدمات المعروضة في كل تصنيف) · public · stage 22 · tables service_categories, service_listings, services
+- **Frontend**: none.
+
+## GET /store/v1/pages
+
+- **Map addition** (B-TBD store-page-list, `scripts/map-additions/22.mjs`): List the published content pages. (قائمة الصفحات المنشورة) · public · stage 22 · tables content_pages
+- **Frontend**: none.
+
+## POST /store/v1/help/:slug/vote
+
+- **Map addition** (B-TBD help-vote, `scripts/map-additions/22.mjs`): Vote whether a help article was helpful. (تصويت «هل كان هذا مفيداً؟» على مقال مساعدة) · public · stage 22 · tables help_articles
+- **Frontend**: none.
+
+## POST /admin/service-listings/:id/image
+
+- **Map addition** (B-TBD listing-image, `scripts/map-additions/22.mjs`): Upload the picture of a listed service. (رفع صورة الخدمة) · staff-permission `storefront:update` · stage 22 · tables service_listings, files, audit_logs · success 200
+- **Frontend**: none.
+
+## DELETE /admin/service-listings/:id/image
+
+- **Map addition** (B-TBD listing-image, `scripts/map-additions/22.mjs`): Remove the picture of a listed service. (إزالة صورة الخدمة) · staff-permission `storefront:update` · stage 22 · tables service_listings, audit_logs · success 204
+- **Frontend**: none.
 

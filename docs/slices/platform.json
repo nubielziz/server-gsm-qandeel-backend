@@ -4,14 +4,15 @@
   "domain": "G",
   "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
   "counts": {
-    "rows": 26,
-    "endpoints": 33,
+    "rows": 27,
+    "endpoints": 34,
     "bySurface": {
       "v1": 2,
       "client": 11,
       "admin": 17,
       "hooks": 1,
-      "system": 2
+      "system": 2,
+      "store": 1
     },
     "frontendCalled": 17
   },
@@ -20,7 +21,8 @@
     5,
     7,
     9,
-    12
+    12,
+    22
   ],
   "ownedTables": [
     {
@@ -1261,6 +1263,39 @@
       "module": "platform",
       "description": "REST v1 documentation page.",
       "frontend": null
+    },
+    {
+      "key": "GET /store/v1/media/:name",
+      "method": "GET",
+      "path": "/store/v1/media/:name",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "صورة خدمة عامة (ملف ثابت يُخزَّن طويلاً)",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "عام",
+      "stage": 22,
+      "tables": [
+        "files"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/media/:name",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/media/:name"
+      },
+      "module": "platform",
+      "description": "Serve a public service image (immutable, long cache).",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/22.mjs",
+        "spec": "B-TBD store-media"
+      }
     }
   ],
   "scenarios": [

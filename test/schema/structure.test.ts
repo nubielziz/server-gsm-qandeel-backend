@@ -123,6 +123,9 @@ const ADDITIONS: Record<string, string[]> = {
   supplier_api_logs: ['outcome'],
   imei_checks: ['country'],
   blocklist_entries: ['customer_id'],
+  // Feature 22 (storefront catalog): first publication, 30-day sales for the popularity sort, the service picture; the Arabic category name.
+  service_listings: ['listed_at', 'sales_30d', 'image_file_id'],
+  service_categories: ['name_ar'],
 };
 
 interface Slice {

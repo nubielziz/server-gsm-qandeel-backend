@@ -22,6 +22,8 @@ The outbox: `OutboxModule` (global: `OutboxService`, `OutboxRouteRegistry`), `Ou
 
 Documents and stored files (feature 8): `PdfModule` (global) provides `PdfRenderer.render(document)` (`PdfDocument`, `PdfBlock`, `PdfColumn`), and `StoredFiles` (`store`, `metaOf`, `findOwned`, with `StoreFileInput`, `FileMeta` and `PROOF_MIME_TYPES`) is the public side of the `files` table for the money and identity modules.
 
+Public service pictures (feature 22): `PublicImages` (`store`, `urlsOf`, `read`; global through `FilesModule`), `inspectImage` and its limits (`PUBLIC_IMAGE_MAX_BYTES`, `PUBLIC_IMAGE_MIN_SIDE`, `PUBLIC_IMAGE_MAX_SIDE`), `PUBLIC_IMAGE_NAME`, `PUBLIC_IMAGE_PREFIX`, `PUBLIC_MEDIA_PATH`. See "Public service pictures (feature 22)" below.
+
 The notifications (12a): `NotificationEventsModule` (global: `NotificationEventRegistry` and the outbox routes, API and worker), `NotificationTransportModule` (`MailTransport`, `TelegramClient`, their drivers), `NotificationDeliveryModule` (`NotificationService`, the planning and sending processors; API and worker), `NotificationAdminModule` (the 8 staff routes); `BUILT_IN_EVENTS`, `MERCHANT_MAIL_EVENT_KEYS`, `CUSTOMER_MAIL_EVENT_KEYS`, `NotificationService` (`enqueue`, `sendNow`, `statusOf`, `abandon`, `check`), `NOTIFICATION_SEND_EVENT`, `DeliveryError`, `MailTransport` (`send`, `verify`: the `mail` health check of feature 9 calls it), `TelegramClient`, the in-memory drivers and their tokens (`MAIL_DRIVER`, `TELEGRAM_DRIVER`), `maskEmail`, `maskTelegram`, `redactAddresses`, the preference rules (`choiceFor`, `channelsFor`, `applyPreferences`, `withoutTelegram`, `thresholdOf`, `parseThreshold`) that identity's portal routes use, and `DEFAULT_TEMPLATES`.
 
 The merchant webhooks (7b): `WebhookEventsModule` (event contracts and the outbox routes of `wallet.low_balance` and `service.price_changed`, loaded by the API and the worker), `WebhookDeliveryModule` (sender, fan-out, the processor of `merchant-webhooks`; API and worker), `MerchantWebhooksModule` (the staff log routes and `MerchantWebhookService`), the four `defineEvent` contracts (`orderStatusChanged`, `walletLowBalance`, `invoicePaid`, `servicePriceChanged`), `WEBHOOK_EVENT_NAMES`, `PING_EVENT`, `WebhookDeliveries`, `WebhookFanOut`, `MerchantWebhooksProcessor`, the event type constants and the `WEBHOOK_TARGET_POLICY` token. The portal's controller for `/client/webhooks*` (`MerchantWebhooksController`) lives in the identity module (`controllers/merchant-webhooks.controller.ts`, `MerchantWebhookRoutesModule`): it needs identity's `CurrentMerchant`, and platform imports no module, so a platform file that imported identity would make a cycle for every identity file that imports platform (decision 032). Platform exports `MerchantWebhookService` and the six portal contracts for it.
@@ -214,7 +216,7 @@ logged at info without the file name and writes no audit row. The routes read th
 merchant waiting for approval can upload its KYC documents) are one code path, `FileUploadService.upload` (`application/file-upload.service.ts`,
 provided to every module by the global `FilesModule`, which the Dhru file order of the orders module uses too). The body is
 `multipart/form-data` with one part named `file`, parsed before the guards by `registerMultipartBodies` (a multipart body on any route but
-`/api/index.php`, `/v1/files` and `/client/files` is `415 UNSUPPORTED_MEDIA_TYPE`, and the buffer is bounded at 25 MiB plus the form
+`/api/index.php`, `/v1/files`, `/client/files` and `/admin/service-listings/:id/image` is `415 UNSUPPORTED_MEDIA_TYPE`, and the buffer is bounded at 25 MiB plus the form
 fields). Limits: 1 byte to 25 MiB (`422` on `file` when missing or empty, `413 PAYLOAD_TOO_LARGE` above), any media type (a value that is not a
 `type/subtype` is stored as `application/octet-stream`), the name reduced to its base name without control characters and cut to 200
 characters. The object goes to the files bucket under a key built here (`files/<year>/<month>/<uuid>`: never from the name), then a `files`
@@ -235,6 +237,34 @@ database cannot enforce (`kyc_submissions.file_ids`, `ticket_messages.file_ids`,
 same kind as `ownsOrderFile`: `deleteUnreferencedClientFile` in `infra/file.repository.ts` reads tables of other modules (identity's
 `kyc_submissions`, support's `ticket_messages`, money's `disputes`) because platform imports no module (decision 032); this one statement is
 the only place that names them. Replace its body when those modules export a reader.
+
+## Public service pictures (feature 22)
+
+`PublicImages` (`files/public-images.ts`, provided by the global `FilesModule`) stores the pictures staff upload for storefront services
+(`POST /admin/service-listings/:id/image`, storefront module) and `GET /store/v1/media/:name` (`controllers/public-media.controller.ts`,
+public, limiter `media`: 1200 a minute per address, not the store's `ip`) serves them.
+
+- **Check** (`files/image-inspect.ts`, pure, no image library, pixels never decoded): 1 byte to 2 MiB (`413` above); the type from the
+  magic bytes only (JPEG, PNG, WebP; the declared type and the name are ignored, so SVG, GIF, HTML, PDF and polyglots are
+  `unsupported_type`); a structure walk (JPEG segments to EOI, PNG chunks with their CRC from `IHDR` to `IEND`, WebP RIFF chunks)
+  where anything truncated or inconsistent is `corrupt`; `animated` for APNG and animated WebP; 200 to 4096 px per side
+  (`too_small`, `too_large_dimensions`); a JPEG whose EXIF orientation is 2 to 8 is `rotated` (dropping the EXIF would show it turned).
+  Each refusal is `422` on `file` with that code.
+- **Clean**: the container is written again with only what decoding needs. JPEG keeps the non-APP segments, the JFIF header (without a
+  thumbnail), ICC profiles and the Adobe header, and drops `APP1` (EXIF, XMP), `APP13` (IPTC), `COM` and every other `APPn`. PNG keeps
+  the critical chunks and the colour ones (`tRNS`, `cHRM`, `gAMA`, `iCCP`, `sBIT`, `sRGB`, `cICP`, `mDCV`, `cLLI`, `bKGD`, `pHYs`) and
+  drops the rest (text, `eXIf`, `tIME`, private chunks). WebP keeps `VP8X` (EXIF and XMP flags cleared), `ICCP`, `ALPH` and the
+  bitstream, with the RIFF size written again. Bytes after the end marker are cut. The output is deterministic.
+- **Store**: key `media/<sha256 of the cleaned bytes>.<jpg|png|webp>`; a `files` row with that key is reused, else the object is put and
+  the row inserted (`owner_type staff`, the cleaned file name; a concurrent duplicate insert reads the other row). A failed insert leaves
+  the object (its key is shared by identical uploads). Only this class writes under `media/`.
+- **Serve**: the route builds the key only from a name matching `^[0-9a-f]{64}\.(jpg|png|webp)$` (anything else is `404` with no storage
+  call, so `..`, encoded slashes or a KYC key never reach storage) and reads no database row. Headers: the type from the extension,
+  `Cache-Control: public, max-age=31536000, immutable`, `ETag: "<sha256>"`, `Content-Disposition: inline`,
+  `Cross-Origin-Resource-Policy: cross-origin`, `X-Content-Type-Options: nosniff`, helmet's CSP `default-src 'none'`.
+- **Exception to "the API never proxies file bytes"** (`file-access.service.ts` presigns private files instead): these bytes are public,
+  at most 2 MiB, immutable and cached by browsers, the proxy and a CDN for a year, while the bucket stays private (it holds KYC
+  documents and order files, so no public prefix or bucket policy is used).
 
 ## OpenAPI: the Dhru reference (feature 7a, decision 017)
 

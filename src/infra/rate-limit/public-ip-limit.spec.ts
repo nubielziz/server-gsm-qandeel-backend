@@ -36,7 +36,18 @@ describe('publicLimiterFor', () => {
     // The public routes keep their own limiter; webhooks and probes are never counted per IP.
     expect(publicLimiterFor('/client/auth/login', 'public', true)).toBe('ip');
     expect(publicLimiterFor('/webhooks/payments/:gateway', 'gateway-signature', true)).toBeUndefined();
-    expect(publicLimiterFor('/admin/staff', 'staff-permission', true)).toBeUndefined();
+  });
+
+  it('counts a large body on an admin session route (the service picture upload) against upload', () => {
+    expect(publicLimiterFor('/admin/service-listings/:id/image', 'staff-permission', true)).toBe('upload');
+    expect(publicLimiterFor('/admin/staff', 'staff-permission', true)).toBe('upload');
+    expect(publicLimiterFor('/admin/service-listings/:id/image', 'staff-permission', false)).toBeUndefined();
+  });
+
+  it('counts the public pictures against their own media limiter, matched or not', () => {
+    expect(publicLimiterFor('/store/v1/media/:name', 'public')).toBe('media');
+    expect(publicLimiterFor('/store/v1/media/../../kyc', undefined)).toBe('media');
+    expect(publicLimiterFor('/store/v1/mediax', 'public')).toBe('ip');
   });
 
   it('calls a body large when it is multipart, longer than 1 MiB, or of an unreadable length', () => {

@@ -4,22 +4,30 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { z } from 'zod';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
-import type { ParsedListQuery, ResultOf } from '../../../common/contract';
+import type { ParsedFilter, ParsedListQuery, ResultOf } from '../../../common/contract';
+import { Money } from '../../../common/money';
 import { DbService } from '../../../infra/db';
-import { StorefrontServices } from '../../catalog';
+import { type SellableFilter, type ServiceType, StorefrontServices } from '../../catalog';
 import { BASE_CURRENCY, StorefrontMoney } from '../../money';
+import { PublicImages } from '../../platform';
 import type {
   getStoreConfig,
+  listStoreCategories,
   listStoreServices,
   showStoreService,
   StorefrontPriceSchema,
 } from '../contracts/storefront-public.contracts';
 import type { ServiceListing } from '../db/schema';
+import { categorySlug } from '../domain/category-slug';
+import { type PricedListing, applyPriceSort } from '../domain/price-sort';
 import {
   type ListingSort,
   DEFAULT_LOCALE,
+  allListings,
   findListedBySlug,
   findServiceFaqs,
+  findSiblingSlugs,
+  listedServiceIdsIn,
   pageListings,
 } from '../infra/listing.repository';
 import { CurrentLegalDocuments } from './legal-documents';
@@ -31,12 +39,43 @@ type Price = z.output<typeof StorefrontPriceSchema>;
 type ConfigBody = ResultOf<typeof getStoreConfig>;
 type PageBody = ResultOf<typeof showStoreService>;
 type CardBody = ResultOf<typeof listStoreServices>['rows'][number];
+type CategoriesBody = ResultOf<typeof listStoreCategories>;
 
-/** The buyer's country, region and currency the list query carries beside its filters. */
+/** The buyer's country, region and currency the list query carries beside its filters, and the price bounds. */
 interface ListExtra {
   readonly buyerCountry?: string | undefined;
   readonly region?: string | undefined;
   readonly currency?: string | undefined;
+  readonly minPrice?: string | undefined;
+  readonly maxPrice?: string | undefined;
+}
+
+/** The most categories the menu route returns. */
+const MAX_CATEGORIES = 500;
+
+/**
+ * Takes the filters that are not listing columns (`type`, `categoryId`, `availability`) out of a list request.
+ *
+ * Why: they narrow the sellable service ids in the catalog (one query with the stock test), not the listing rows, so
+ * `listWhere` must never see them (it would throw for a field with no listing column).
+ *
+ * @param filters the parsed filters
+ * @returns the filters the listing query keeps and the narrowing for the catalog
+ */
+function splitFilters(filters: readonly ParsedFilter[]): { rest: ParsedFilter[]; narrow: SellableFilter } {
+  const rest: ParsedFilter[] = [];
+  const types: ServiceType[] = [];
+  const categoryIds: number[] = [];
+  const availability = new Set<string>();
+  for (const filter of filters) {
+    if (filter.field === 'type') types.push(...(filter.values as ServiceType[]));
+    else if (filter.field === 'categoryId') categoryIds.push(...(filter.values as number[]));
+    else if (filter.field === 'availability') for (const value of filter.values) availability.add(String(value));
+    else rest.push(filter);
+  }
+  // Both values (or none) restrict nothing.
+  const inStock = availability.size === 1 ? availability.has('in_stock') : undefined;
+  return { rest, narrow: { types, categoryIds, inStock } };
 }
 
 /** The price block the wire shows: the buyer's currency, tax included in `gross`. */
@@ -54,7 +93,15 @@ function priceOf(context: QuoteContext, priced: PricedService, quotes: Storefron
 }
 
 /** One service page card. */
-function cardOf(listing: ServiceListing, priced: PricedService, price: Price): CardBody {
+function cardOf(
+  listing: ServiceListing,
+  priced: PricedService,
+  price: Price,
+  inStock: boolean,
+  imageUrl: string | null,
+): CardBody {
+  const { service } = priced;
+  const arabic = listing.locale === 'ar' && service.categoryNameAr !== '';
   return {
     id: listing.serviceId,
     slug: listing.slug,
@@ -65,10 +112,25 @@ function cardOf(listing: ServiceListing, priced: PricedService, price: Price): C
     network: listing.carrier,
     country: listing.country,
     isFeatured: listing.isFeatured,
-    type: priced.service.type,
-    deliveryTime: priced.service.deliveryTime,
+    type: service.type,
+    deliveryTime: service.deliveryTime,
+    category: {
+      id: service.categoryId,
+      slug: categorySlug({ id: service.categoryId, name: service.categoryName }),
+      name: arabic ? service.categoryNameAr : service.categoryName,
+    },
+    availability: inStock ? 'in_stock' : 'on_request',
+    deliveryMinutes: service.slaMinutes,
+    etaText: listing.etaText,
+    listedAt: listing.listedAt?.toISOString() ?? null,
+    imageUrl,
     price,
   };
+}
+
+/** The public path of a listing's picture, from the paths read for its page. */
+function imageOf(listing: ServiceListing, urls: ReadonlyMap<number, string>): string | null {
+  return listing.imageFileId === null ? null : (urls.get(listing.imageFileId) ?? null);
 }
 
 /**
@@ -89,6 +151,7 @@ export class StorefrontCatalogService {
     private readonly money: StorefrontMoney,
     private readonly policies: StorefrontPolicies,
     private readonly legal: CurrentLegalDocuments,
+    private readonly images: PublicImages,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -136,27 +199,101 @@ export class StorefrontCatalogService {
   /**
    * Lists one page of service pages.
    *
-   * @param query the parsed list request (filters, search, sort, range, buyer country and currency)
+   * Why: a request without a price bound or price sort is one SQL page (`pageListings`). One with `minPrice`, `maxPrice` or
+   * `_sort=price` cannot be, because the price is worked out in code (`StorefrontQuotes`, so the filtered price is the shown and
+   * the charged one): it reads every match (at most 10 000), prices them, keeps those inside the bounds, sorts by price and slices
+   * the page itself, so `x-total-count` stays exact.
+   *
+   * @param query the parsed list request (filters, search, sort, range, buyer country, currency and price bounds)
    * @returns the page and the exact total
-   * @throws {AppError} `VALIDATION_FAILED` on `currency` when it is not offered
+   * @throws {AppError} `VALIDATION_FAILED` on `currency` when it is not offered; on `maxPrice` when it is below `minPrice`
    */
   async list(query: ParsedListQuery<ListingSort, ListExtra>): Promise<{ rows: CardBody[]; total: number }> {
     const db = this.db.db;
+    const { minPrice, maxPrice } = query.extra;
+    const min = minPrice === undefined ? undefined : Money.of(minPrice);
+    const max = maxPrice === undefined ? undefined : Money.of(maxPrice);
+    if (min && max && min.cmp(max) > 0) {
+      throw new AppError('VALIDATION_FAILED', {
+        errors: [{ field: 'maxPrice', code: 'invalid', message: 'The highest price is below the lowest price.' }],
+      });
+    }
     const retailGroupId = await this.quotes.retailGroupId(db);
     if (retailGroupId === undefined) return { rows: [], total: 0 };
     const context = await this.quotes.context(db, retailGroupId, buyerOf(query.extra));
-    const ids = await this.services.priced(db, retailGroupId);
-    const { rows, total } = await pageListings(db, ids, query);
-    const priced = await this.quotes.priced(
-      db,
-      context,
-      rows.map((row) => row.serviceId),
-    );
-    const cards = rows.flatMap((row) => {
-      const found = priced.get(row.serviceId);
-      return found === undefined ? [] : [cardOf(row, found, priceOf(context, found, this.quotes))];
+    const { rest, narrow } = splitFilters(query.filters);
+    const ids = await this.services.priced(db, retailGroupId, narrow);
+    const listQuery = { ...query, filters: rest };
+
+    if (!min && !max && !query.sort.some((key) => key.field === 'price')) {
+      const { rows, total } = await pageListings(db, ids, listQuery);
+      return { rows: await this.cards(context, rows), total };
+    }
+
+    const all = await allListings(db, ids, listQuery);
+    const priced = await this.quotes.priced(db, context, [...new Set(all.map((row) => row.serviceId))]);
+    const items = all.flatMap((listing): PricedListing[] => {
+      const found = priced.get(listing.serviceId);
+      if (found === undefined) return [];
+      const gross = this.quotes.amounts(context, found.unitNet, 1).display.gross;
+      return (!min || gross.cmp(min) >= 0) && (!max || gross.cmp(max) <= 0) ? [{ listing, gross }] : [];
     });
-    return { rows: cards, total };
+    const ordered = applyPriceSort(items, query.sort);
+    const page = ordered.slice(query.range.start, query.range.start + query.range.limit);
+    return { rows: await this.cards(context, page), total: ordered.length };
+  }
+
+  /**
+   * Lists the categories of the storefront menu with their counts.
+   *
+   * Why: the menu, the tiles and the sidebar need the categories and how many services each holds (feature 22). The count is the
+   * services with a switched-on page in the language that the catalog says may be sold and has priced: the same set
+   * `GET /store/v1/services` lists, so a category's count equals the list total filtered by it.
+   *
+   * @param locale the language
+   * @returns the categories in category order, at most 500
+   */
+  async categories(locale: string): Promise<CategoriesBody> {
+    const db = this.db.db;
+    const language = locale === 'ar' ? 'ar' : 'en';
+    const retailGroupId = await this.quotes.retailGroupId(db);
+    if (retailGroupId === undefined) return { locale: language, categories: [] };
+    const ids = await this.services.priced(db, retailGroupId);
+    const listed = await listedServiceIdsIn(db, ids, language);
+    const rows = await this.services.categoriesOf(db, [...listed]);
+    return {
+      locale: language,
+      categories: rows.slice(0, MAX_CATEGORIES).map((row) => ({
+        id: row.id,
+        slug: categorySlug(row),
+        name: language === 'ar' && row.nameAr !== '' ? row.nameAr : row.name,
+        type: row.type,
+        serviceCount: row.serviceCount,
+      })),
+    };
+  }
+
+  /**
+   * Prices a page of listings and builds the cards (one batched stock query, one batched picture query); a listing that lost its price
+   * is left out.
+   */
+  private async cards(context: QuoteContext, rows: readonly ServiceListing[]): Promise<CardBody[]> {
+    const db = this.db.db;
+    const serviceIds = rows.map((row) => row.serviceId);
+    const [priced, inStock, images] = await Promise.all([
+      this.quotes.priced(db, context, serviceIds),
+      this.services.inStockIds(db, serviceIds),
+      this.images.urlsOf(
+        db,
+        rows.map((row) => row.imageFileId),
+      ),
+    ]);
+    return rows.flatMap((row) => {
+      const found = priced.get(row.serviceId);
+      return found === undefined
+        ? []
+        : [cardOf(row, found, priceOf(context, found, this.quotes), inStock.has(row.serviceId), imageOf(row, images))];
+    });
   }
 
   /**
@@ -165,7 +302,7 @@ export class StorefrontCatalogService {
    * @param slug the page slug
    * @param locale the language (default `en`)
    * @param buyer the buyer's country, region and currency
-   * @returns the page with its fields, quantities, FAQs and price
+   * @returns the page with its fields, quantities, FAQs, price and the other languages' pages of the same service
    * @throws {AppError} `NOT_FOUND` when there is no such switched-on page or its service cannot be sold; `VALIDATION_FAILED`
    *   on `currency` when it is not offered
    */
@@ -180,14 +317,22 @@ export class StorefrontCatalogService {
     const context = await this.quotes.context(db, retailGroupId, buyer);
     const priced = await this.quotes.price(db, context, listing.serviceId);
     if (!priced) throw notFound();
-    const [fields, faqs] = await Promise.all([
+    const [fields, faqs, alternates, inStock, images] = await Promise.all([
       this.services.fields(db, listing.serviceId),
       findServiceFaqs(db, listing.serviceId, language),
+      findSiblingSlugs(db, listing.serviceId, language),
+      this.services.inStockIds(db, [listing.serviceId]),
+      this.images.urlsOf(db, [listing.imageFileId]),
     ]);
     return {
-      ...cardOf(listing, priced, priceOf(context, priced, this.quotes)),
+      ...cardOf(
+        listing,
+        priced,
+        priceOf(context, priced, this.quotes),
+        inStock.has(listing.serviceId),
+        imageOf(listing, images),
+      ),
       descriptionMd: listing.descriptionMd,
-      etaText: listing.etaText,
       requirementsMd: listing.requirementsMd,
       seoTitle: listing.seoTitle,
       seoDescription: listing.seoDescription,
@@ -204,6 +349,7 @@ export class StorefrontCatalogService {
         required: field.required,
       })),
       faqs: faqs.map((faq) => ({ question: faq.question, answerMd: faq.answerMd })),
+      alternates: alternates.map((alternate) => ({ locale: alternate.locale as 'en' | 'ar', slug: alternate.slug })),
     };
   }
 }
