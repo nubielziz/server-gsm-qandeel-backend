@@ -1,7 +1,7 @@
 {
  "generatedBy": "scripts/extract-frontend-contract.mjs",
  "frontend": "../frontend-admin",
- "count": 299,
+ "count": 302,
  "endpoints": [
   {
    "key": "DELETE /admin/alert-rules/:id",
@@ -17852,6 +17852,344 @@
    }
   },
   {
+   "key": "GET /admin/suppliers/:id/quick-add/:runId",
+   "fn": "getQuickAddRun",
+   "file": "src/features/suppliers/api/quickAdd.ts",
+   "line": 35,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "runId",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "QuickAddRun",
+   "returns": {
+    "object": {
+     "id": {
+      "type": "number",
+      "alias": "Id"
+     },
+     "supplierId": {
+      "type": "number",
+      "alias": "Id"
+     },
+     "scope": {
+      "enum": [
+       "all",
+       "groups"
+      ]
+     },
+     "groups": {
+      "array": {
+       "object": {
+        "type": {
+         "type": "string"
+        },
+        "remoteGroup": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "serviceStatus": {
+      "enum": [
+       "active",
+       "disabled"
+      ]
+     },
+     "status": {
+      "enum": [
+       "queued",
+       "failed",
+       "running",
+       "succeeded"
+      ]
+     },
+     "total": {
+      "type": "number"
+     },
+     "processed": {
+      "type": "number"
+     },
+     "created": {
+      "type": "number"
+     },
+     "skipped": {
+      "type": "number"
+     },
+     "failed": {
+      "type": "number"
+     },
+     "categoriesCreated": {
+      "type": "number"
+     },
+     "failures": {
+      "array": {
+       "object": {
+        "supplierServiceId": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "name": {
+         "type": "string"
+        },
+        "reason": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "error": {
+      "type": "string",
+      "nullable": true
+     },
+     "requestedBy": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     },
+     "startedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "finishedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     }
+    }
+   }
+  },
+  {
+   "key": "GET /admin/suppliers/:id/service-groups",
+   "fn": "listServiceGroups",
+   "file": "src/features/suppliers/api/quickAdd.ts",
+   "line": 14,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "ServiceGroups",
+   "returns": {
+    "object": {
+     "groups": {
+      "array": {
+       "object": {
+        "type": {
+         "type": "string"
+        },
+        "remoteGroup": {
+         "type": "string"
+        },
+        "total": {
+         "type": "number"
+        },
+        "addable": {
+         "type": "number"
+        },
+        "imported": {
+         "type": "number"
+        },
+        "unavailable": {
+         "type": "number"
+        },
+        "unsupported": {
+         "type": "number"
+        }
+       }
+      }
+     },
+     "totals": {
+      "object": {
+       "total": {
+        "type": "number"
+       },
+       "addable": {
+        "type": "number"
+       },
+       "imported": {
+        "type": "number"
+       },
+       "unavailable": {
+        "type": "number"
+       },
+       "unsupported": {
+        "type": "number"
+       }
+      }
+     },
+     "latestRun": {
+      "object": {
+       "id": {
+        "type": "number",
+        "alias": "Id"
+       },
+       "supplierId": {
+        "type": "number",
+        "alias": "Id"
+       },
+       "scope": {
+        "enum": [
+         "all",
+         "groups"
+        ]
+       },
+       "groups": {
+        "array": {
+         "object": {
+          "type": {
+           "type": "string"
+          },
+          "remoteGroup": {
+           "type": "string"
+          }
+         }
+        }
+       },
+       "serviceStatus": {
+        "enum": [
+         "active",
+         "disabled"
+        ]
+       },
+       "status": {
+        "enum": [
+         "queued",
+         "failed",
+         "running",
+         "succeeded"
+        ]
+       },
+       "total": {
+        "type": "number"
+       },
+       "processed": {
+        "type": "number"
+       },
+       "created": {
+        "type": "number"
+       },
+       "skipped": {
+        "type": "number"
+       },
+       "failed": {
+        "type": "number"
+       },
+       "categoriesCreated": {
+        "type": "number"
+       },
+       "failures": {
+        "array": {
+         "object": {
+          "supplierServiceId": {
+           "type": "number",
+           "alias": "Id"
+          },
+          "name": {
+           "type": "string"
+          },
+          "reason": {
+           "type": "string"
+          }
+         }
+        }
+       },
+       "error": {
+        "type": "string",
+        "nullable": true
+       },
+       "requestedBy": {
+        "type": "number",
+        "nullable": true,
+        "alias": "Id"
+       },
+       "createdAt": {
+        "type": "string",
+        "alias": "IsoDateTime"
+       },
+       "startedAt": {
+        "type": "string",
+        "nullable": true,
+        "alias": "IsoDateTime"
+       },
+       "finishedAt": {
+        "type": "string",
+        "nullable": true,
+        "alias": "IsoDateTime"
+       }
+      },
+      "nullable": true
+     }
+    }
+   }
+  },
+  {
    "key": "GET /admin/suppliers/:id/services",
    "fn": "listSupplierServices",
    "file": "src/features/suppliers/api/catalogue.ts",
@@ -19375,8 +19713,8 @@
       "object": {
        "status": {
         "enum": [
-         "available",
-         "unavailable"
+         "unavailable",
+         "available"
         ]
        },
        "detail": {
@@ -39539,6 +39877,194 @@
         }
        }
       }
+     }
+    }
+   }
+  },
+  {
+   "key": "POST /admin/suppliers/:id/quick-add",
+   "fn": "startQuickAdd",
+   "file": "src/features/suppliers/api/quickAdd.ts",
+   "line": 25,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "QuickAddBody",
+     "shape": {
+      "anyOf": [
+       {
+        "object": {
+         "scope": {
+          "const": "all"
+         },
+         "serviceStatus": {
+          "enum": [
+           "active",
+           "disabled"
+          ],
+          "optional": true
+         }
+        }
+       },
+       {
+        "object": {
+         "scope": {
+          "const": "groups"
+         },
+         "groups": {
+          "array": {
+           "object": {
+            "type": {
+             "type": "string"
+            },
+            "remoteGroup": {
+             "type": "string"
+            }
+           }
+          }
+         },
+         "serviceStatus": {
+          "enum": [
+           "active",
+           "disabled"
+          ],
+          "optional": true
+         }
+        }
+       }
+      ]
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "QuickAddRun",
+   "returns": {
+    "object": {
+     "id": {
+      "type": "number",
+      "alias": "Id"
+     },
+     "supplierId": {
+      "type": "number",
+      "alias": "Id"
+     },
+     "scope": {
+      "enum": [
+       "all",
+       "groups"
+      ]
+     },
+     "groups": {
+      "array": {
+       "object": {
+        "type": {
+         "type": "string"
+        },
+        "remoteGroup": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "serviceStatus": {
+      "enum": [
+       "active",
+       "disabled"
+      ]
+     },
+     "status": {
+      "enum": [
+       "queued",
+       "failed",
+       "running",
+       "succeeded"
+      ]
+     },
+     "total": {
+      "type": "number"
+     },
+     "processed": {
+      "type": "number"
+     },
+     "created": {
+      "type": "number"
+     },
+     "skipped": {
+      "type": "number"
+     },
+     "failed": {
+      "type": "number"
+     },
+     "categoriesCreated": {
+      "type": "number"
+     },
+     "failures": {
+      "array": {
+       "object": {
+        "supplierServiceId": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "name": {
+         "type": "string"
+        },
+        "reason": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "error": {
+      "type": "string",
+      "nullable": true
+     },
+     "requestedBy": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     },
+     "startedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "finishedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
      }
     }
    }

@@ -254,7 +254,7 @@
       "name": "Rogers Canada Unlock",
       "credit": "6.0000",
       "time": "6 hours",
-      "isAvailable": true,
+      "isAvailable": false,
       "lastSeenAt": "2026-10-31T11:00:00.000Z",
       "priceChangedAt": null,
       "imported": false,

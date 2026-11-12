@@ -1,0 +1,90 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "groups": [
+      {
+        "type": "imei",
+        "remoteGroup": "Apple",
+        "total": 4,
+        "addable": 0,
+        "imported": 4,
+        "unavailable": 0,
+        "unsupported": 0
+      },
+      {
+        "type": "imei",
+        "remoteGroup": "Australia",
+        "total": 1,
+        "addable": 1,
+        "imported": 0,
+        "unavailable": 0,
+        "unsupported": 0
+      },
+      {
+        "type": "imei",
+        "remoteGroup": "Canada",
+        "total": 1,
+        "addable": 0,
+        "imported": 0,
+        "unavailable": 1,
+        "unsupported": 0
+      },
+      {
+        "type": "imei",
+        "remoteGroup": "Carrier unlock",
+        "total": 6,
+        "addable": 0,
+        "imported": 6,
+        "unavailable": 0,
+        "unsupported": 0
+      },
+      {
+        "type": "imei",
+        "remoteGroup": "Generic",
+        "total": 1,
+        "addable": 0,
+        "imported": 1,
+        "unavailable": 0,
+        "unsupported": 0
+      },
+      {
+        "type": "imei",
+        "remoteGroup": "Samsung",
+        "total": 2,
+        "addable": 0,
+        "imported": 2,
+        "unavailable": 0,
+        "unsupported": 0
+      },
+      {
+        "type": "imei",
+        "remoteGroup": "USA",
+        "total": 1,
+        "addable": 1,
+        "imported": 0,
+        "unavailable": 0,
+        "unsupported": 0
+      },
+      {
+        "type": "imei",
+        "remoteGroup": "Xiaomi",
+        "total": 1,
+        "addable": 0,
+        "imported": 1,
+        "unavailable": 0,
+        "unsupported": 0
+      }
+    ],
+    "totals": {
+      "total": 17,
+      "addable": 2,
+      "imported": 14,
+      "unavailable": 1,
+      "unsupported": 0
+    },
+    "latestRun": null
+  }
+}

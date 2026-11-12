@@ -25,7 +25,7 @@
       "rows": 59,
       "endpoints": 59
     },
-    "frontendRoutes": 299,
+    "frontendRoutes": 302,
     "bySurface": {
       "dhru": {
         "rows": 8,
@@ -15005,10 +15005,14 @@
       },
       "module": "suppliers",
       "description": "The supplier's service groups with counts and the latest quick add.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/suppliers/api/quickAdd.ts",
+        "line": 12,
+        "fn": "listServiceGroups"
+      },
       "addition": {
         "file": "scripts/map-additions/26.mjs",
-        "spec": "B-TBD supplier-quick-add"
+        "spec": "B214"
       },
       "successStatus": 200
     },
@@ -15041,10 +15045,14 @@
       },
       "module": "suppliers",
       "description": "Quick add: add the supplier's services by group, or all of them, in the background.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/suppliers/api/quickAdd.ts",
+        "line": 23,
+        "fn": "startQuickAdd"
+      },
       "addition": {
         "file": "scripts/map-additions/26.mjs",
-        "spec": "B-TBD supplier-quick-add"
+        "spec": "B214"
       },
       "successStatus": 202
     },
@@ -15075,10 +15083,14 @@
       },
       "module": "suppliers",
       "description": "The state and progress of a quick add.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/suppliers/api/quickAdd.ts",
+        "line": 33,
+        "fn": "getQuickAddRun"
+      },
       "addition": {
         "file": "scripts/map-additions/26.mjs",
-        "spec": "B-TBD supplier-quick-add"
+        "spec": "B214"
       },
       "successStatus": 200
     }

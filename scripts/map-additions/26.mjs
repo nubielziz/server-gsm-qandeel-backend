@@ -15,7 +15,7 @@ export const rows = [
     {
       en: "The supplier's service groups with counts and the latest quick add.",
       module: 'suppliers',
-      spec: 'B-TBD supplier-quick-add',
+      spec: 'B214',
       successStatus: 200,
     },
   ),
@@ -31,7 +31,7 @@ export const rows = [
     {
       en: "Quick add: add the supplier's services by group, or all of them, in the background.",
       module: 'suppliers',
-      spec: 'B-TBD supplier-quick-add',
+      spec: 'B214',
       successStatus: 202,
     },
   ),
@@ -47,7 +47,7 @@ export const rows = [
     {
       en: 'The state and progress of a quick add.',
       module: 'suppliers',
-      spec: 'B-TBD supplier-quick-add',
+      spec: 'B214',
       successStatus: 200,
     },
   ),

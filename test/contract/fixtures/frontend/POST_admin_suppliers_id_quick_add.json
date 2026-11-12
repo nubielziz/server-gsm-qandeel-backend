@@ -1,0 +1,26 @@
+{
+  "status": 202,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "id": 2,
+    "supplierId": 1,
+    "scope": "all",
+    "groups": [],
+    "serviceStatus": "active",
+    "status": "queued",
+    "total": 2,
+    "processed": 0,
+    "created": 0,
+    "skipped": 0,
+    "failed": 0,
+    "categoriesCreated": 0,
+    "failures": [],
+    "error": null,
+    "requestedBy": 1,
+    "createdAt": "2026-10-31T12:00:00.000Z",
+    "startedAt": null,
+    "finishedAt": null
+  }
+}

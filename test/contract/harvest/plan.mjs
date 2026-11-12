@@ -125,6 +125,9 @@ export const OVERRIDES = {
   'GET /admin/pricing/resolve': { query: { serviceId: 1, clientId: 1 } },
   // Feature 23: a campaign's recipients are listed per channel (the route refuses a list without one).
   'GET /admin/notification-campaigns/:id/recipients': { query: { channel: 'in_app', _start: 0, _end: 10 } },
+  // Feature 26: a quick add run exists only after a POST, and GETs are read first, so the console's mock seeds one finished
+  // run (supplier 6, Bosphorus Unlock, run 1).
+  'GET /admin/suppliers/:id/quick-add/:runId': { path: { id: 6, runId: 1 } },
   'GET /admin/system/queues/:name/failed': (w) => ({ path: { name: queueName(w, true) } }),
 
   'POST /admin/system/queues/:name/pause': (w) => ({

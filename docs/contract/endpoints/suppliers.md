@@ -25,9 +25,9 @@ Frontend features covering this module: `suppliers` (rules in `RULES.md`).
 | `SUPPLIER imeiservicelist` | supplier | outbound-supplier-account | 6 |  |
 | `SUPPLIER placeimeiorder+placeimeiorderbulk` | supplier | outbound-supplier-account | 6 |  |
 | `SUPPLIER getimeiorder+getimeiorderbulk` | supplier | outbound-supplier-account | 6 |  |
-| `GET /admin/suppliers/:id/service-groups` | admin | staff-permission `suppliers:read` | 26 |  |
-| `POST /admin/suppliers/:id/quick-add` | admin | staff-permission `catalog:create` | 26 |  |
-| `GET /admin/suppliers/:id/quick-add/:runId` | admin | staff-permission `suppliers:read` | 26 |  |
+| `GET /admin/suppliers/:id/service-groups` | admin | staff-permission `suppliers:read` | 26 | `listServiceGroups` |
+| `POST /admin/suppliers/:id/quick-add` | admin | staff-permission `catalog:create` | 26 | `startQuickAdd` |
+| `GET /admin/suppliers/:id/quick-add/:runId` | admin | staff-permission `suppliers:read` | 26 | `getQuickAddRun` |
 
 ## GET /admin/suppliers
 
@@ -178,16 +178,16 @@ Frontend features covering this module: `suppliers` (rules in `RULES.md`).
 
 ## GET /admin/suppliers/:id/service-groups
 
-- **Map addition** (B-TBD supplier-quick-add, `scripts/map-additions/26.mjs`): The supplier's service groups with counts and the latest quick add. (مجموعات خدمات المورد مع الأعداد وآخر إضافة سريعة) · staff-permission `suppliers:read` · stage 26 · tables supplier_services, service_supplier_links, supplier_import_runs · success 200
-- **Frontend**: none.
+- **Map addition** (B214, `scripts/map-additions/26.mjs`): The supplier's service groups with counts and the latest quick add. (مجموعات خدمات المورد مع الأعداد وآخر إضافة سريعة) · staff-permission `suppliers:read` · stage 26 · tables supplier_services, service_supplier_links, supplier_import_runs · success 200
+- **Frontend**: `listServiceGroups` (src/features/suppliers/api/quickAdd.ts:14) · params `id: number` · returns `ServiceGroups`
 
 ## POST /admin/suppliers/:id/quick-add
 
-- **Map addition** (B-TBD supplier-quick-add, `scripts/map-additions/26.mjs`): Quick add: add the supplier's services by group, or all of them, in the background. (إضافة سريعة: إضافة خدمات المورد حسب المجموعة أو كلها في الخلفية) · staff-permission `catalog:create` · stage 26 · tables supplier_import_runs, outbox_events, audit_logs · success 202
-- **Frontend**: none.
+- **Map addition** (B214, `scripts/map-additions/26.mjs`): Quick add: add the supplier's services by group, or all of them, in the background. (إضافة سريعة: إضافة خدمات المورد حسب المجموعة أو كلها في الخلفية) · staff-permission `catalog:create` · stage 26 · tables supplier_import_runs, outbox_events, audit_logs · success 202
+- **Frontend**: `startQuickAdd` (src/features/suppliers/api/quickAdd.ts:25) · params `id: number`, `body: QuickAddBody` · returns `QuickAddRun`
 
 ## GET /admin/suppliers/:id/quick-add/:runId
 
-- **Map addition** (B-TBD supplier-quick-add, `scripts/map-additions/26.mjs`): The state and progress of a quick add. (حالة الإضافة السريعة وتقدّمها) · staff-permission `suppliers:read` · stage 26 · tables supplier_import_runs · success 200
-- **Frontend**: none.
+- **Map addition** (B214, `scripts/map-additions/26.mjs`): The state and progress of a quick add. (حالة الإضافة السريعة وتقدّمها) · staff-permission `suppliers:read` · stage 26 · tables supplier_import_runs · success 200
+- **Frontend**: `getQuickAddRun` (src/features/suppliers/api/quickAdd.ts:35) · params `id: number`, `runId: number` · returns `QuickAddRun`
 
