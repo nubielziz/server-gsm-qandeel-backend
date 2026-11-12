@@ -1,5 +1,5 @@
-// Suppliers tables (map domain C): connections, their synced services, links to our services, the call log.
-// Conventions: decision 027; schema additions: MISMATCHES B116; ownership: scripts/module-map.mjs.
+// Suppliers tables (map domain C): connections, their synced services, links to our services, the call log, and the record of a quick add
+// (feature 26). Conventions: decision 027; schema additions: MISMATCHES B116; ownership: scripts/module-map.mjs.
 import { sql } from 'drizzle-orm';
 import {
   boolean,
@@ -11,6 +11,7 @@ import {
   pgTable,
   text,
   unique,
+  uniqueIndex,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import {
@@ -27,6 +28,7 @@ import {
   updatedAt,
 } from '../../../infra/db/columns';
 import { services } from '../../catalog/db/schema';
+import { staffUsers } from '../../identity/db/schema';
 import { orders } from '../../orders/db/schema';
 
 /**
@@ -240,3 +242,94 @@ export type SupplierApiLog = typeof supplierApiLogs.$inferSelect;
 
 /** A row to insert into `supplier_api_logs`. */
 export type NewSupplierApiLog = typeof supplierApiLogs.$inferInsert;
+
+/**
+ * What a quick add takes: every service of the supplier, or the services of the picked groups.
+ *
+ * Why: feature 26 (supplier quick add), B214: the scope is the request; the server builds the work list.
+ */
+export const SUPPLIER_IMPORT_SCOPES = ['all', 'groups'] as const;
+
+/** One value of {@link SUPPLIER_IMPORT_SCOPES}. */
+export type SupplierImportScope = (typeof SUPPLIER_IMPORT_SCOPES)[number];
+
+/**
+ * The state a service gets when a quick add creates it.
+ *
+ * Why: feature 26: on sale by default (the import's rule, orders-suppliers-10), or switched off when staff ask.
+ */
+export const SUPPLIER_IMPORT_SERVICE_STATUSES = ['active', 'disabled'] as const;
+
+/** One value of {@link SUPPLIER_IMPORT_SERVICE_STATUSES}. */
+export type SupplierImportServiceStatus = (typeof SUPPLIER_IMPORT_SERVICE_STATUSES)[number];
+
+/**
+ * How far a quick add is: waiting for the worker, working, done, or stopped.
+ *
+ * Why: feature 26: `queued` and `running` are the live states (one live run per supplier); the other two end the run.
+ */
+export const SUPPLIER_IMPORT_RUN_STATUSES = ['queued', 'running', 'succeeded', 'failed'] as const;
+
+/** One value of {@link SUPPLIER_IMPORT_RUN_STATUSES}. */
+export type SupplierImportRunStatus = (typeof SUPPLIER_IMPORT_RUN_STATUSES)[number];
+
+/**
+ * The record of one quick add of a supplier's services: its scope, its counts and its progress.
+ *
+ * Why: feature 26 (B214): a quick add runs in the worker in chunks and the console polls its progress. `job_runs` cannot carry it
+ * (no supplier, scope or progress column; its overlap guard is per job name), so the run has its own table. The partial unique
+ * index allows one live run per supplier, in the database. `heartbeat_at` moves with every chunk: a live run without one for five
+ * minutes reads as stalled.
+ */
+export const supplierImportRuns = pgTable(
+  'supplier_import_runs',
+  {
+    id: pk(),
+    /** a deleted supplier takes its run records with it */
+    supplierId: fk((): AnyPgColumn => suppliers.id, 'cascade').notNull(),
+    scope: text().$type<SupplierImportScope>().notNull(),
+    /** `[{ type, remoteGroup }]` as stored on `supplier_services`; `[]` for the scope `all` */
+    groups: jsonList(),
+    serviceStatus: text().$type<SupplierImportServiceStatus>().notNull(),
+    status: text().$type<SupplierImportRunStatus>().notNull().default('queued'),
+    /** how many services the run set out to add (counted again by the worker when it starts) */
+    total: integer().notNull().default(0),
+    createdCount: integer().notNull().default(0),
+    skippedCount: integer().notNull().default(0),
+    failedCount: integer().notNull().default(0),
+    categoriesCreated: integer().notNull().default(0),
+    /** how many of the created services started with the supplier's quantity rule (feature 25) */
+    createdWithQuantity: integer().notNull().default(0),
+    /** `[{ supplierServiceId, name, reason }]`, at most 20 */
+    failures: jsonList(),
+    error: text(),
+    requestedBy: fk((): AnyPgColumn => staffUsers.id),
+    startedAt: timestampTz(),
+    finishedAt: timestampTz(),
+    /** set at insert, at the claim and by every chunk (the clock's time) */
+    heartbeatAt: timestampTz().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('supplier_import_runs_scope_check', inList(t.scope, SUPPLIER_IMPORT_SCOPES)),
+    check('supplier_import_runs_service_status_check', inList(t.serviceStatus, SUPPLIER_IMPORT_SERVICE_STATUSES)),
+    check('supplier_import_runs_status_check', inList(t.status, SUPPLIER_IMPORT_RUN_STATUSES)),
+    check(
+      'supplier_import_runs_counts_check',
+      sql`${t.total} >= 0 and ${t.createdCount} >= 0 and ${t.skippedCount} >= 0 and ${t.failedCount} >= 0 and ${t.categoriesCreated} >= 0 and ${t.createdWithQuantity} >= 0`,
+    ),
+    index('supplier_import_runs_supplier_idx').on(t.supplierId, t.id.desc()),
+    index('supplier_import_runs_requested_by_idx').on(t.requestedBy),
+    // One live run per supplier.
+    uniqueIndex('supplier_import_runs_active_uq')
+      .on(t.supplierId)
+      .where(sql`${t.status} in ('queued', 'running')`),
+  ],
+);
+
+/** A row read from `supplier_import_runs`. */
+export type SupplierImportRun = typeof supplierImportRuns.$inferSelect;
+
+/** A row to insert into `supplier_import_runs`. */
+export type NewSupplierImportRun = typeof supplierImportRuns.$inferInsert;

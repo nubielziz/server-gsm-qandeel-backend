@@ -100,6 +100,8 @@ export const modules = [
     name: 'Suppliers',
     domain: 'C',
     tables: ['suppliers', 'supplier_services', 'service_supplier_links', 'supplier_api_logs'],
+    // Feature 26 (supplier quick add): the record of a background import of a supplier's services.
+    additionalTables: ['supplier_import_runs'],
     rows: [
       /^admin \S+ \/admin\/(suppliers|supplier-api-logs)(\/|$)/,
       'admin PUT /admin/services/:id/supplier-links',

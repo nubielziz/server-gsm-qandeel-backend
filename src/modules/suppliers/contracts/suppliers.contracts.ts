@@ -397,7 +397,9 @@ export const listSupplierServices = defineRoute({
   key: 'GET /admin/suppliers/:id/services',
   summary: 'List the services of a supplier',
   description:
-    "The synced copy of the supplier's services. Filter `imported=false` for the ones nobody has linked yet.",
+    "The synced copy of the supplier's services. Filter `imported=false` for the ones nobody has linked yet. `remoteGroup` and `type` " +
+    'narrow the list to one supplier group (exact text; an empty value is skipped, so the group without a name cannot be filtered) ' +
+    'and `isAvailable` to the services the supplier still lists or no longer lists (feature 26, B215).',
   tags: ['suppliers'],
   surface: 'admin',
   access: 'staff-permission',
@@ -406,7 +408,12 @@ export const listSupplierServices = defineRoute({
   query: listQuery({
     sorts: ['name', 'credit', 'lastSeenAt', 'id'],
     defaultSort: { field: 'name', order: 'asc' },
-    filters: { imported: { type: 'boolean' } },
+    filters: {
+      imported: { type: 'boolean' },
+      remoteGroup: { type: 'string', ops: ['eq'] },
+      type: { type: 'string', ops: ['eq'] },
+      isAvailable: { type: 'boolean' },
+    },
     search: ['name', 'remoteGroup', 'remoteId'],
   }),
   success: { status: 200, schema: SupplierServiceRow },

@@ -176,16 +176,17 @@
       "module": "suppliers",
       "name": "Suppliers",
       "domain": "C",
-      "rows": 13,
-      "endpoints": 18,
+      "rows": 16,
+      "endpoints": 21,
       "bySurface": {
-        "admin": 14,
+        "admin": 17,
         "supplier": 4
       },
       "frontendCalled": 14,
       "stages": [
         6,
-        11
+        11,
+        26
       ],
       "tables": 4,
       "scenarios": [

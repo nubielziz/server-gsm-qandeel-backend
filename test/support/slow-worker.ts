@@ -13,9 +13,14 @@ const mark = (text: string): void => {
   process.stdout.write(`[MARK] ${text}\n`);
 };
 
-/** Takes `ms` milliseconds to finish, so the test can send SIGTERM while it runs. */
+/**
+ * Takes `ms` milliseconds to finish, so the test can send SIGTERM while it runs.
+ *
+ * It handles the job name `bulk` only: the real worker already has a named processor on `imports` (`supplier_quick_add`, feature 26),
+ * and a queue cannot have a catch-all and named processors together.
+ */
 @Injectable()
-@QueueProcessor('imports')
+@QueueProcessor('imports', 'bulk')
 class SlowProcessor implements JobProcessor<{ ms: number }, string> {
   async process(job: Job<{ ms: number }, string, string>): Promise<string> {
     mark(`job start ${job.id}`);

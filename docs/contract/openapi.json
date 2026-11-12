@@ -157607,9 +157607,2138 @@
         "x-gsm-surface": "admin"
       }
     },
+    "/admin/suppliers/{id}/quick-add": {
+      "post": {
+        "description": "Adds the supplier's services to the catalog in the background, by whole group or all of them. Body `{ scope: 'all' }` or `{ scope: 'groups', groups: [{ type, remoteGroup }] }` (1 to 500 groups, compared exactly with the stored text; exact repeats are dropped), and `serviceStatus` (`active` by default, or `disabled` to add them switched off). The client never sends ids: the server takes only the candidates of the scope, the services that are not in the console yet, are still available and have an importable type, and counts the rest as left out. It only creates (the picker import's rules: category by type and group, suggested price, fields, quantity rule); a service already in the console is never changed. Answers `202` with the run in `queued`; the worker adds the services in chunks and the run's `processed` moves. A supplier has one live run: a second start answers `409 JOB_ALREADY_RUNNING` (unless the live run stalled: it is closed and a new one starts); a `disabled` supplier answers `409 SUPPLIER_DISABLED` (a paused one is accepted). A scope with no candidate answers `422` on `scope` with code `nothing_to_add` and creates no run. Writes the audit row `started quick add from`; the worker writes `quick added services from` when the run ends.",
+        "operationId": "postAdminSuppliersByIdQuickAdd",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Numeric record id.",
+            "schema": {
+              "x-gsm-alias": "Id",
+              "description": "Numeric record id.",
+              "type": "string",
+              "pattern": "^[1-9]\\d{0,15}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "scope": {
+                        "type": "string",
+                        "const": "all"
+                      },
+                      "serviceStatus": {
+                        "type": "string",
+                        "enum": [
+                          "active",
+                          "disabled"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "scope"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "scope": {
+                        "type": "string",
+                        "const": "groups"
+                      },
+                      "groups": {
+                        "minItems": 1,
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "maxLength": 60
+                            },
+                            "remoteGroup": {
+                              "type": "string",
+                              "maxLength": 300
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "remoteGroup"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "serviceStatus": {
+                        "type": "string",
+                        "enum": [
+                          "active",
+                          "disabled"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "scope",
+                      "groups"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "examples": {
+                "example": {
+                  "value": {
+                    "scope": "groups",
+                    "groups": [
+                      {
+                        "type": "IMEI",
+                        "remoteGroup": "Apple iPhone"
+                      }
+                    ],
+                    "serviceStatus": "active"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "x-gsm-alias": "Id",
+                      "description": "Numeric record id.",
+                      "examples": [
+                        42
+                      ]
+                    },
+                    "supplierId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "x-gsm-alias": "Id",
+                      "description": "Numeric record id.",
+                      "examples": [
+                        42
+                      ]
+                    },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "all",
+                        "groups"
+                      ]
+                    },
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "description": "The supplier's type name (`IMEI`, `SERVER`, ...), as stored."
+                          },
+                          "remoteGroup": {
+                            "type": "string",
+                            "description": "The supplier's group name, as stored; may be empty."
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "remoteGroup"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "The picked groups; `[]` for the scope `all`."
+                    },
+                    "serviceStatus": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "disabled"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "running",
+                        "succeeded",
+                        "failed"
+                      ],
+                      "description": "A `queued` or `running` run without a heartbeat for 5 minutes reads as `failed`."
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "How many services the run set out to add."
+                    },
+                    "processed": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "`created + skipped + failed`."
+                    },
+                    "created": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "skipped": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "Left out inside the run: already in the console, no longer available or of another type."
+                    },
+                    "failed": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "categoriesCreated": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "failures": {
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "supplierServiceId": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "x-gsm-alias": "Id",
+                            "description": "Numeric record id.",
+                            "examples": [
+                              42
+                            ]
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string",
+                            "description": "The database constraint that refused it, or `unexpected error`."
+                          }
+                        },
+                        "required": [
+                          "supplierServiceId",
+                          "name",
+                          "reason"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "The first 20 services that could not be added."
+                    },
+                    "error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "requestedBy": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "x-gsm-alias": "Id",
+                          "description": "Numeric record id.",
+                          "examples": [
+                            42
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "x-gsm-alias": "IsoDateTime",
+                      "description": "ISO 8601 UTC time with milliseconds.",
+                      "examples": [
+                        "2026-03-01T09:30:00.000Z"
+                      ]
+                    },
+                    "startedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "x-gsm-alias": "IsoDateTime",
+                          "description": "ISO 8601 UTC time with milliseconds.",
+                          "examples": [
+                            "2026-03-01T09:30:00.000Z"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "finishedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "x-gsm-alias": "IsoDateTime",
+                          "description": "ISO 8601 UTC time with milliseconds.",
+                          "examples": [
+                            "2026-03-01T09:30:00.000Z"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "supplierId",
+                    "scope",
+                    "groups",
+                    "serviceStatus",
+                    "status",
+                    "total",
+                    "processed",
+                    "created",
+                    "skipped",
+                    "failed",
+                    "categoriesCreated",
+                    "failures",
+                    "error",
+                    "requestedBy",
+                    "createdAt",
+                    "startedAt",
+                    "finishedAt"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "id": 7,
+                  "supplierId": 2,
+                  "scope": "groups",
+                  "groups": [
+                    {
+                      "type": "IMEI",
+                      "remoteGroup": "Apple iPhone"
+                    }
+                  ],
+                  "serviceStatus": "active",
+                  "status": "queued",
+                  "total": 80,
+                  "processed": 0,
+                  "created": 0,
+                  "skipped": 0,
+                  "failed": 0,
+                  "categoriesCreated": 0,
+                  "failures": [],
+                  "error": null,
+                  "requestedBy": 4,
+                  "createdAt": "2026-11-11T09:00:00.000Z",
+                  "startedAt": null,
+                  "finishedAt": null
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to do this.\nCSRF_FAILED: The security check for this request failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FORBIDDEN",
+                        "CSRF_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CSRF_FAILED": {
+                    "summary": "The security check for this request failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/csrf-failed",
+                      "title": "The security check for this request failed.",
+                      "status": 403,
+                      "code": "CSRF_FAILED",
+                      "detail": "The security check for this request failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: The requested item was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 404
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_FOUND"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "NOT_FOUND": {
+                    "summary": "The requested item was not found.",
+                    "value": {
+                      "type": "https://errors.gsm.example/not-found",
+                      "title": "The requested item was not found.",
+                      "status": 404,
+                      "code": "NOT_FOUND",
+                      "detail": "The requested item was not found.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "SUPPLIER_DISABLED: This supplier is disabled.\nJOB_ALREADY_RUNNING: This job is already running.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 409
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "SUPPLIER_DISABLED",
+                        "JOB_ALREADY_RUNNING"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "SUPPLIER_DISABLED": {
+                    "summary": "This supplier is disabled.",
+                    "value": {
+                      "type": "https://errors.gsm.example/supplier-disabled",
+                      "title": "This supplier is disabled.",
+                      "status": 409,
+                      "code": "SUPPLIER_DISABLED",
+                      "detail": "This supplier is disabled.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "JOB_ALREADY_RUNNING": {
+                    "summary": "This job is already running.",
+                    "value": {
+                      "type": "https://errors.gsm.example/job-already-running",
+                      "title": "This job is already running.",
+                      "status": 409,
+                      "code": "JOB_ALREADY_RUNNING",
+                      "detail": "This job is already running.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "staffSession": []
+          }
+        ],
+        "summary": "Quick add a supplier's services",
+        "tags": [
+          "suppliers"
+        ],
+        "x-gsm-access": "staff-permission",
+        "x-gsm-audit": true,
+        "x-gsm-key": "POST /admin/suppliers/:id/quick-add",
+        "x-gsm-permission": "catalog:create",
+        "x-gsm-session-stages": [
+          "active"
+        ],
+        "x-gsm-surface": "admin"
+      }
+    },
+    "/admin/suppliers/{id}/quick-add/{runId}": {
+      "get": {
+        "description": "The state and progress of one quick add of this supplier; the console polls it while the run is `queued` or `running`. A run of another supplier is `404`. A live run without a heartbeat for 5 minutes reads as `failed` with an error that says to start it again (reading never changes the row).",
+        "operationId": "getAdminSuppliersByIdQuickAddByRunId",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Numeric record id.",
+            "schema": {
+              "x-gsm-alias": "Id",
+              "description": "Numeric record id.",
+              "type": "string",
+              "pattern": "^[1-9]\\d{0,15}$"
+            }
+          },
+          {
+            "name": "runId",
+            "required": true,
+            "in": "path",
+            "description": "Numeric record id.",
+            "schema": {
+              "x-gsm-alias": "Id",
+              "description": "Numeric record id.",
+              "type": "string",
+              "pattern": "^[1-9]\\d{0,15}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "x-gsm-alias": "Id",
+                      "description": "Numeric record id.",
+                      "examples": [
+                        42
+                      ]
+                    },
+                    "supplierId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "x-gsm-alias": "Id",
+                      "description": "Numeric record id.",
+                      "examples": [
+                        42
+                      ]
+                    },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "all",
+                        "groups"
+                      ]
+                    },
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "description": "The supplier's type name (`IMEI`, `SERVER`, ...), as stored."
+                          },
+                          "remoteGroup": {
+                            "type": "string",
+                            "description": "The supplier's group name, as stored; may be empty."
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "remoteGroup"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "The picked groups; `[]` for the scope `all`."
+                    },
+                    "serviceStatus": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "disabled"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "running",
+                        "succeeded",
+                        "failed"
+                      ],
+                      "description": "A `queued` or `running` run without a heartbeat for 5 minutes reads as `failed`."
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "How many services the run set out to add."
+                    },
+                    "processed": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "`created + skipped + failed`."
+                    },
+                    "created": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "skipped": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "Left out inside the run: already in the console, no longer available or of another type."
+                    },
+                    "failed": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "categoriesCreated": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "failures": {
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "supplierServiceId": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "x-gsm-alias": "Id",
+                            "description": "Numeric record id.",
+                            "examples": [
+                              42
+                            ]
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string",
+                            "description": "The database constraint that refused it, or `unexpected error`."
+                          }
+                        },
+                        "required": [
+                          "supplierServiceId",
+                          "name",
+                          "reason"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "The first 20 services that could not be added."
+                    },
+                    "error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "requestedBy": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "x-gsm-alias": "Id",
+                          "description": "Numeric record id.",
+                          "examples": [
+                            42
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "x-gsm-alias": "IsoDateTime",
+                      "description": "ISO 8601 UTC time with milliseconds.",
+                      "examples": [
+                        "2026-03-01T09:30:00.000Z"
+                      ]
+                    },
+                    "startedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "x-gsm-alias": "IsoDateTime",
+                          "description": "ISO 8601 UTC time with milliseconds.",
+                          "examples": [
+                            "2026-03-01T09:30:00.000Z"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "finishedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "x-gsm-alias": "IsoDateTime",
+                          "description": "ISO 8601 UTC time with milliseconds.",
+                          "examples": [
+                            "2026-03-01T09:30:00.000Z"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "supplierId",
+                    "scope",
+                    "groups",
+                    "serviceStatus",
+                    "status",
+                    "total",
+                    "processed",
+                    "created",
+                    "skipped",
+                    "failed",
+                    "categoriesCreated",
+                    "failures",
+                    "error",
+                    "requestedBy",
+                    "createdAt",
+                    "startedAt",
+                    "finishedAt"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "id": 7,
+                  "supplierId": 2,
+                  "scope": "groups",
+                  "groups": [
+                    {
+                      "type": "IMEI",
+                      "remoteGroup": "Apple iPhone"
+                    }
+                  ],
+                  "serviceStatus": "active",
+                  "status": "running",
+                  "total": 80,
+                  "processed": 30,
+                  "created": 29,
+                  "skipped": 1,
+                  "failed": 0,
+                  "categoriesCreated": 1,
+                  "failures": [],
+                  "error": null,
+                  "requestedBy": 4,
+                  "createdAt": "2026-11-11T09:00:00.000Z",
+                  "startedAt": "2026-11-11T09:00:02.000Z",
+                  "finishedAt": null
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to do this.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FORBIDDEN"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: The requested item was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 404
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_FOUND"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "NOT_FOUND": {
+                    "summary": "The requested item was not found.",
+                    "value": {
+                      "type": "https://errors.gsm.example/not-found",
+                      "title": "The requested item was not found.",
+                      "status": 404,
+                      "code": "NOT_FOUND",
+                      "detail": "The requested item was not found.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "staffSession": []
+          }
+        ],
+        "summary": "Show a quick add run",
+        "tags": [
+          "suppliers"
+        ],
+        "x-gsm-access": "staff-permission",
+        "x-gsm-key": "GET /admin/suppliers/:id/quick-add/:runId",
+        "x-gsm-permission": "suppliers:read",
+        "x-gsm-session-stages": [
+          "active"
+        ],
+        "x-gsm-surface": "admin"
+      }
+    },
+    "/admin/suppliers/{id}/service-groups": {
+      "get": {
+        "description": "The supplier's synced services counted per group, where a group is the pair (`type`, `remoteGroup`) as stored. Each service is counted once, in the first bucket that fits: `imported` (a service of ours is linked to it), `unavailable` (the supplier no longer lists it), `unsupported` (a type other than imei, server, remote or file), else `addable`; `total` is their sum. One row per group ordered by type then group name, not paged; `remoteGroup` may be empty (the import names that category `Imported`). `latestRun` is the supplier's newest quick add, or `null`.",
+        "operationId": "getAdminSuppliersByIdServiceGroups",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Numeric record id.",
+            "schema": {
+              "x-gsm-alias": "Id",
+              "description": "Numeric record id.",
+              "type": "string",
+              "pattern": "^[1-9]\\d{0,15}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "description": "The supplier's type name (`IMEI`, `SERVER`, ...), as stored."
+                          },
+                          "remoteGroup": {
+                            "type": "string",
+                            "description": "The supplier's group name, as stored; may be empty."
+                          },
+                          "total": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Every service in the scope: the sum of the four buckets below."
+                          },
+                          "addable": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Not in the console, available and of an importable type: what a quick add takes."
+                          },
+                          "imported": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Some service of ours is linked to it (an archived service counts)."
+                          },
+                          "unavailable": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Not imported and no longer listed by the supplier."
+                          },
+                          "unsupported": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "description": "Not imported, available, but of a type other than imei, server, remote or file."
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "remoteGroup",
+                          "total",
+                          "addable",
+                          "imported",
+                          "unavailable",
+                          "unsupported"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "totals": {
+                      "type": "object",
+                      "properties": {
+                        "total": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "description": "Every service in the scope: the sum of the four buckets below."
+                        },
+                        "addable": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "description": "Not in the console, available and of an importable type: what a quick add takes."
+                        },
+                        "imported": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "description": "Some service of ours is linked to it (an archived service counts)."
+                        },
+                        "unavailable": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "description": "Not imported and no longer listed by the supplier."
+                        },
+                        "unsupported": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "description": "Not imported, available, but of a type other than imei, server, remote or file."
+                        }
+                      },
+                      "required": [
+                        "total",
+                        "addable",
+                        "imported",
+                        "unavailable",
+                        "unsupported"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "latestRun": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "x-gsm-alias": "Id",
+                              "description": "Numeric record id.",
+                              "examples": [
+                                42
+                              ]
+                            },
+                            "supplierId": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "x-gsm-alias": "Id",
+                              "description": "Numeric record id.",
+                              "examples": [
+                                42
+                              ]
+                            },
+                            "scope": {
+                              "type": "string",
+                              "enum": [
+                                "all",
+                                "groups"
+                              ]
+                            },
+                            "groups": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "description": "The supplier's type name (`IMEI`, `SERVER`, ...), as stored."
+                                  },
+                                  "remoteGroup": {
+                                    "type": "string",
+                                    "description": "The supplier's group name, as stored; may be empty."
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "remoteGroup"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "description": "The picked groups; `[]` for the scope `all`."
+                            },
+                            "serviceStatus": {
+                              "type": "string",
+                              "enum": [
+                                "active",
+                                "disabled"
+                              ]
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "queued",
+                                "running",
+                                "succeeded",
+                                "failed"
+                              ],
+                              "description": "A `queued` or `running` run without a heartbeat for 5 minutes reads as `failed`."
+                            },
+                            "total": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "description": "How many services the run set out to add."
+                            },
+                            "processed": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "description": "`created + skipped + failed`."
+                            },
+                            "created": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "skipped": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "description": "Left out inside the run: already in the console, no longer available or of another type."
+                            },
+                            "failed": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "categoriesCreated": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "failures": {
+                              "maxItems": 20,
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "supplierServiceId": {
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "x-gsm-alias": "Id",
+                                    "description": "Numeric record id.",
+                                    "examples": [
+                                      42
+                                    ]
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "reason": {
+                                    "type": "string",
+                                    "description": "The database constraint that refused it, or `unexpected error`."
+                                  }
+                                },
+                                "required": [
+                                  "supplierServiceId",
+                                  "name",
+                                  "reason"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "description": "The first 20 services that could not be added."
+                            },
+                            "error": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "requestedBy": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991,
+                                  "x-gsm-alias": "Id",
+                                  "description": "Numeric record id.",
+                                  "examples": [
+                                    42
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "format": "date-time",
+                              "x-gsm-alias": "IsoDateTime",
+                              "description": "ISO 8601 UTC time with milliseconds.",
+                              "examples": [
+                                "2026-03-01T09:30:00.000Z"
+                              ]
+                            },
+                            "startedAt": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date-time",
+                                  "x-gsm-alias": "IsoDateTime",
+                                  "description": "ISO 8601 UTC time with milliseconds.",
+                                  "examples": [
+                                    "2026-03-01T09:30:00.000Z"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "finishedAt": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date-time",
+                                  "x-gsm-alias": "IsoDateTime",
+                                  "description": "ISO 8601 UTC time with milliseconds.",
+                                  "examples": [
+                                    "2026-03-01T09:30:00.000Z"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "supplierId",
+                            "scope",
+                            "groups",
+                            "serviceStatus",
+                            "status",
+                            "total",
+                            "processed",
+                            "created",
+                            "skipped",
+                            "failed",
+                            "categoriesCreated",
+                            "failures",
+                            "error",
+                            "requestedBy",
+                            "createdAt",
+                            "startedAt",
+                            "finishedAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "groups",
+                    "totals",
+                    "latestRun"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "groups": [
+                    {
+                      "type": "IMEI",
+                      "remoteGroup": "Apple iPhone",
+                      "total": 120,
+                      "addable": 80,
+                      "imported": 30,
+                      "unavailable": 8,
+                      "unsupported": 2
+                    }
+                  ],
+                  "totals": {
+                    "total": 120,
+                    "addable": 80,
+                    "imported": 30,
+                    "unavailable": 8,
+                    "unsupported": 2
+                  },
+                  "latestRun": null
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to do this.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FORBIDDEN"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: The requested item was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 404
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_FOUND"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "NOT_FOUND": {
+                    "summary": "The requested item was not found.",
+                    "value": {
+                      "type": "https://errors.gsm.example/not-found",
+                      "title": "The requested item was not found.",
+                      "status": 404,
+                      "code": "NOT_FOUND",
+                      "detail": "The requested item was not found.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "staffSession": []
+          }
+        ],
+        "summary": "List a supplier's service groups",
+        "tags": [
+          "suppliers"
+        ],
+        "x-gsm-access": "staff-permission",
+        "x-gsm-key": "GET /admin/suppliers/:id/service-groups",
+        "x-gsm-permission": "suppliers:read",
+        "x-gsm-session-stages": [
+          "active"
+        ],
+        "x-gsm-surface": "admin"
+      }
+    },
     "/admin/suppliers/{id}/services": {
       "get": {
-        "description": "The synced copy of the supplier's services. Filter `imported=false` for the ones nobody has linked yet.",
+        "description": "The synced copy of the supplier's services. Filter `imported=false` for the ones nobody has linked yet. `remoteGroup` and `type` narrow the list to one supplier group (exact text; an empty value is skipped, so the group without a name cannot be filtered) and `isAvailable` to the services the supplier still lists or no longer lists (feature 26, B215).",
         "operationId": "getAdminSuppliersByIdServices",
         "parameters": [
           {
@@ -157678,6 +159807,54 @@
             "required": false,
             "in": "query",
             "description": "Keep rows where imported equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "true",
+                  "false"
+                ]
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "remoteGroup",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where remoteGroup equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 200
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where type equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 200
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "isAvailable",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where isAvailable equals (repeat the key for IN) the value.",
             "schema": {
               "type": "array",
               "items": {

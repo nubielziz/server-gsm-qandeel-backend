@@ -23,6 +23,7 @@ export { SupplierDirectory } from './application/supplier-directory';
 export type { SupplierRef } from './application/supplier-directory';
 export { SupplierReader } from './application/supplier-reader';
 export type { SupplierDetailView, SupplierView } from './application/supplier-reader';
+export { QuickAddRunner } from './application/quick-add-runner';
 export { SupplierDispatch } from './application/supplier-dispatch';
 export { SupplierPoll } from './application/supplier-poll';
 export { SupplierSync } from './application/supplier-sync';

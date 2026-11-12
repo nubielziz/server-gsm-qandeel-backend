@@ -4,17 +4,18 @@
   "domain": "C",
   "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
   "counts": {
-    "rows": 13,
-    "endpoints": 18,
+    "rows": 16,
+    "endpoints": 21,
     "bySurface": {
-      "admin": 14,
+      "admin": 17,
       "supplier": 4
     },
     "frontendCalled": 14
   },
   "stages": [
     6,
-    11
+    11,
+    26
   ],
   "ownedTables": [
     {
@@ -125,8 +126,16 @@
   ],
   "foreignTables": [
     {
+      "table": "audit_logs",
+      "owner": "platform"
+    },
+    {
       "table": "orders",
       "owner": "orders"
+    },
+    {
+      "table": "outbox_events",
+      "owner": "platform"
     },
     {
       "table": "service_fields",
@@ -727,6 +736,112 @@
       "module": "suppliers",
       "description": "Poll the status and the result.",
       "frontend": null
+    },
+    {
+      "key": "GET /admin/suppliers/:id/service-groups",
+      "method": "GET",
+      "path": "/admin/suppliers/:id/service-groups",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "suppliers",
+      "descriptionAr": "مجموعات خدمات المورد مع الأعداد وآخر إضافة سريعة",
+      "access": "staff-permission",
+      "permission": "suppliers:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "suppliers:read",
+      "stage": 26,
+      "tables": [
+        "supplier_services",
+        "service_supplier_links",
+        "supplier_import_runs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/suppliers/:id/service-groups",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/suppliers/:id/service-groups"
+      },
+      "module": "suppliers",
+      "description": "The supplier's service groups with counts and the latest quick add.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/26.mjs",
+        "spec": "B-TBD supplier-quick-add"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/suppliers/:id/quick-add",
+      "method": "POST",
+      "path": "/admin/suppliers/:id/quick-add",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "suppliers",
+      "descriptionAr": "إضافة سريعة: إضافة خدمات المورد حسب المجموعة أو كلها في الخلفية",
+      "access": "staff-permission",
+      "permission": "catalog:create",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:create",
+      "stage": 26,
+      "tables": [
+        "supplier_import_runs",
+        "outbox_events",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/suppliers/:id/quick-add",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/suppliers/:id/quick-add"
+      },
+      "module": "suppliers",
+      "description": "Quick add: add the supplier's services by group, or all of them, in the background.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/26.mjs",
+        "spec": "B-TBD supplier-quick-add"
+      },
+      "successStatus": 202
+    },
+    {
+      "key": "GET /admin/suppliers/:id/quick-add/:runId",
+      "method": "GET",
+      "path": "/admin/suppliers/:id/quick-add/:runId",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "suppliers",
+      "descriptionAr": "حالة الإضافة السريعة وتقدّمها",
+      "access": "staff-permission",
+      "permission": "suppliers:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "suppliers:read",
+      "stage": 26,
+      "tables": [
+        "supplier_import_runs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/suppliers/:id/quick-add/:runId",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/suppliers/:id/quick-add/:runId"
+      },
+      "module": "suppliers",
+      "description": "The state and progress of a quick add.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/26.mjs",
+        "spec": "B-TBD supplier-quick-add"
+      },
+      "successStatus": 200
     }
   ],
   "scenarios": [

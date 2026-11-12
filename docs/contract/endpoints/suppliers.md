@@ -25,6 +25,9 @@ Frontend features covering this module: `suppliers` (rules in `RULES.md`).
 | `SUPPLIER imeiservicelist` | supplier | outbound-supplier-account | 6 |  |
 | `SUPPLIER placeimeiorder+placeimeiorderbulk` | supplier | outbound-supplier-account | 6 |  |
 | `SUPPLIER getimeiorder+getimeiorderbulk` | supplier | outbound-supplier-account | 6 |  |
+| `GET /admin/suppliers/:id/service-groups` | admin | staff-permission `suppliers:read` | 26 |  |
+| `POST /admin/suppliers/:id/quick-add` | admin | staff-permission `catalog:create` | 26 |  |
+| `GET /admin/suppliers/:id/quick-add/:runId` | admin | staff-permission `suppliers:read` | 26 |  |
 
 ## GET /admin/suppliers
 
@@ -171,5 +174,20 @@ Frontend features covering this module: `suppliers` (rules in `RULES.md`).
 ## SUPPLIER getimeiorder+getimeiorderbulk
 
 - **Map**: Poll the status and the result. (سحب الحالة والنتيجة (polling)) · outbound-supplier-account · stage 6 · tables orders, supplier_api_logs
+- **Frontend**: none.
+
+## GET /admin/suppliers/:id/service-groups
+
+- **Map addition** (B-TBD supplier-quick-add, `scripts/map-additions/26.mjs`): The supplier's service groups with counts and the latest quick add. (مجموعات خدمات المورد مع الأعداد وآخر إضافة سريعة) · staff-permission `suppliers:read` · stage 26 · tables supplier_services, service_supplier_links, supplier_import_runs · success 200
+- **Frontend**: none.
+
+## POST /admin/suppliers/:id/quick-add
+
+- **Map addition** (B-TBD supplier-quick-add, `scripts/map-additions/26.mjs`): Quick add: add the supplier's services by group, or all of them, in the background. (إضافة سريعة: إضافة خدمات المورد حسب المجموعة أو كلها في الخلفية) · staff-permission `catalog:create` · stage 26 · tables supplier_import_runs, outbox_events, audit_logs · success 202
+- **Frontend**: none.
+
+## GET /admin/suppliers/:id/quick-add/:runId
+
+- **Map addition** (B-TBD supplier-quick-add, `scripts/map-additions/26.mjs`): The state and progress of a quick add. (حالة الإضافة السريعة وتقدّمها) · staff-permission `suppliers:read` · stage 26 · tables supplier_import_runs · success 200
 - **Frontend**: none.
 

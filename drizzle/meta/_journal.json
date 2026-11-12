@@ -211,6 +211,13 @@
       "when": 1794407760414,
       "tag": "0029_service_quantity_limits",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1794471261414,
+      "tag": "0030_supplier_import_runs",
+      "breakpoints": true
     }
   ]
 }

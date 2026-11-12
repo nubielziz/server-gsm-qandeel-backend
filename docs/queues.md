@@ -263,11 +263,25 @@ Refreshes supplier services, prices and balances.
 Runs bulk imports (service lists, inventory codes) started by staff.
 
 - **Concurrency:** 2 per worker process.
-- **Jobs:** none yet. Built by the catalog and suppliers features: `import`.
-- **Payload:** none yet (import id or file id).
-- **Idempotency:** none yet. Rule: an import records its progress and can be started again by staff, so it is not retried
-  automatically.
-- **Retry policy:** 1 attempt, no retry. Stalled jobs are not re-run (`maxStalledCount` 0).
+- **Jobs:** `supplier_quick_add` (suppliers module, feature 26, B214): adds a supplier's services to the catalog by group, or all of
+  them, in chunks of 100. Event-driven: the outbox event `supplier.quick_add`, written by `POST /admin/suppliers/:id/quick-add` in the
+  same transaction that inserts the run (job id `outbox-<event id>`). The processor is `QuickAddProcessor` (`src/modules/suppliers/jobs/`),
+  which calls `QuickAddRunner.run(runId)`. Other bulk imports (service lists from files, inventory codes) are built by their features.
+- **Payload:** ids only: `runId` (the `supplier_import_runs` row, also the outbox aggregate id) and `supplierId`. The scope, the groups
+  and the state the services start in are read from the run row.
+- **Idempotency:** the run claims itself with `UPDATE ... SET status = 'running' WHERE id = $1 AND status = 'queued'`; no row, no work
+  (a second delivery, two runners, or a run closed by a newer start). Every chunk is one transaction: it locks the supplier row first
+  (as the picker's import and the sync), re-reads the supplier services and their links, creates only what is still not imported,
+  available and of an importable type, and advances the run with a guarded `UPDATE ... WHERE status = 'running'` (the counts and the
+  heartbeat). When that update matches no row the run was closed by a newer start: the chunk rolls back and the runner stops. A chunk
+  that throws is retried item by item; an item that throws again is counted `failed` (at most 20 are listed, and 20 failed items end the
+  run `failed`). A rerun after a failure takes what is left, because the candidates are the services that are not imported yet.
+- **Recorded in:** `supplier_import_runs`, not in `job_runs`: the run has a supplier, a scope and a progress that `job_runs` has no
+  column for, its overlap guard is per job name, and it is closed only at the end. One live run (`queued` or `running`) per supplier
+  is a partial unique index. Every chunk moves `heartbeat_at`; a live run without a heartbeat for 5 minutes reads as `failed`
+  (`GET /admin/suppliers/:id/quick-add/:runId` and `service-groups` show it so, without writing), and the next start closes it.
+- **Retry policy:** 1 attempt, no retry. Stalled jobs are not re-run (`maxStalledCount` 0). Staff start it again: it continues with what
+  is left (an import records its progress and is started again by staff, so it is never retried automatically).
 - **Schedule:** none (started by staff).
 
 ## files
@@ -594,6 +608,7 @@ none); the job id is `outbox-<event id>`.
 | `receipt.render` | `files` | `receipt.render` | `invoiceId` (aggregate: `invoices`) | money (`ReceiptOutbox`, loaded by the API and the worker), written by the capture of a storefront payment together with the receipt invoice. The processor is `ReceiptRenderProcessor` (`src/modules/money/jobs/`) |
 | `refund.process` | `maintenance` | `refund.process` | `refundId` (aggregate: `refunds`) | money (`RefundOutbox`, loaded by the API and the worker), written by the approval and the retry of a storefront refund and by the system's automatic refunds. The processor is `RefundProcessProcessor` (`src/modules/money/jobs/`) |
 | `notification.campaign_fanout` | `notifications` | `notification.campaign_fanout` | none (aggregate: `notification_campaigns`, the campaign) | platform (`NotificationRoutes`), written by `POST /admin/notification-campaigns/:id/send` and the `notification_campaign_sweep` job, in the transaction that moves the campaign to `queued` (feature 23) |
+| `supplier.quick_add` | `imports` | `supplier_quick_add` | `runId`, `supplierId` (aggregate: `supplier_import_runs`) | suppliers (`QuickAddOutbox`, loaded by the API and the worker), written by `POST /admin/suppliers/:id/quick-add` in the transaction that inserts the run (feature 26). The processor is `QuickAddProcessor` (`src/modules/suppliers/jobs/`) |
 
 `invoice.paid` (feature 8) routes to `merchant-webhooks` (`InvoiceOutbox`) and to `notifications` (`notification.plan`, registered by the platform's `NotificationRoutes` since the 12a merge): every credited top-up tells the merchant once. `deposit.approved` has a registry entry and default templates but no producer: a credited top-up already writes `invoice.paid`, and emitting both would send two messages per top-up (B-entry of 12a). A test app plans a job directly through `test/support/notifications.ts` (`eventJob`).
 

@@ -3,6 +3,7 @@
 // leave it out.
 import { Module } from '@nestjs/common';
 import { OrderSupplierActions } from './application/order-supplier-actions.service';
+import { QuickAddService } from './application/quick-add.service';
 import { SupplierAdminService } from './application/supplier-admin.service';
 import { SupplierCatalogueService } from './application/supplier-catalogue.service';
 import { SupplierConnectionService } from './application/supplier-connection.service';
@@ -11,26 +12,28 @@ import { SupplierLogService } from './application/supplier-log.service';
 import { SupplierReader } from './application/supplier-reader';
 import { SupplierSyncRequests } from './application/supplier-sync-requests';
 import { OrderSupplierController } from './controllers/order-supplier.controller';
+import { QuickAddController } from './controllers/quick-add.controller';
 import { SupplierLinksLogsController } from './controllers/supplier-links-logs.controller';
 import { SuppliersController } from './controllers/suppliers.controller';
 import { SupplierEngineModule } from './supplier-engine.module';
 
 /**
- * Provides the `/admin/suppliers*`, `/admin/supplier-api-logs*`, `PUT /admin/services/:id/supplier-links` and the order dispatch, fetch
- * and change-supplier routes.
+ * Provides the `/admin/suppliers*` (with the quick add routes of feature 26), `/admin/supplier-api-logs*`,
+ * `PUT /admin/services/:id/supplier-links` and the order dispatch, fetch and change-supplier routes.
  *
  * Why: these use cases need the database, the cache (settings, rate limits), the queues (the sync request) and the audit writer,
  * which a database-less test app does not have.
  */
 @Module({
   imports: [SupplierEngineModule],
-  controllers: [SuppliersController, SupplierLinksLogsController, OrderSupplierController],
+  controllers: [SuppliersController, SupplierLinksLogsController, OrderSupplierController, QuickAddController],
   providers: [
     SupplierReader,
     SupplierAdminService,
     SupplierConnectionService,
     SupplierSyncRequests,
     SupplierCatalogueService,
+    QuickAddService,
     SupplierLogService,
     OrderSupplierActions,
     SupplierDirectory,

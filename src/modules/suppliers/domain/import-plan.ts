@@ -65,8 +65,8 @@ export function classifyImportItem(
     : { state: 'changed', cost, previousCost: current };
 }
 
-/** The service types an import can create (`SERVICE_TYPES`). */
-const IMPORTABLE_TYPES = ['imei', 'server', 'remote', 'file'] as const;
+/** The service types an import can create (`SERVICE_TYPES`); the quick add counts a supplier service of any other type as unsupported. */
+export const IMPORTABLE_TYPES = ['imei', 'server', 'remote', 'file'] as const;
 
 /**
  * The service type a supplier's type name stands for.

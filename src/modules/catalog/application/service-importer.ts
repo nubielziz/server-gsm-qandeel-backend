@@ -4,7 +4,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
-import { type ServiceFieldType, type ServiceType, serviceCategories, services } from '../db/schema';
+import { type ServiceFieldType, type ServiceStatus, type ServiceType, serviceCategories, services } from '../db/schema';
 import { type QuantityRule, quantityRuleProblems } from '../domain/quantity-rule';
 import { deliveryTimeText } from '../domain/service-figures';
 import { insertCategoryRow, nextCategorySort } from '../infra/category.repository';
@@ -27,6 +27,8 @@ export interface ImportedServiceInput {
   readonly slaMinutes: number;
   /** The quantity rule the service starts with (feature 25): the supplier's, already normalised by the suppliers module. */
   readonly quantity: QuantityRule;
+  /** The state the service starts in: `active` when omitted (the import's rule); the supplier quick add may ask for `disabled` (feature 26). */
+  readonly status?: ServiceStatus;
   readonly fields: ReadonlyArray<{
     readonly key: string;
     readonly label: string;
@@ -46,7 +48,8 @@ const MAX_DELIVERY_TEXT = 80;
  * Why: orders-suppliers-10 (with B24 and catalog-9): a new item becomes an active, automatic, fixed-price service with the
  * `POST /admin/services` defaults, a category found or created by (type, name), the suggested price as `base_price` and the
  * supplier's custom fields as service fields. It also starts with the quantity rule the supplier states (feature 25, B213), written
- * at creation only: a later import or sync never touches a service's quantities. The caller recomputes the effective cost and
+ * at creation only: a later import or sync never touches a service's quantities. The service starts `active` unless the caller asks
+ * for `disabled` (the supplier quick add, feature 26). The caller recomputes the effective cost and
  * moves the catalog price version afterwards. A changed item only has its cost set here.
  *
  * Side effects: inserts `service_categories` (when the group has none yet), `services` and `service_fields`; updates
@@ -59,25 +62,28 @@ export class ServiceImporter {
    *
    * @param tx the import's transaction
    * @param input what the supplier service says
-   * @returns the new service's id and the code it got
+   * @returns the new service's id, the code it got and whether its category had to be created
    * @throws {Error} when `input.quantity` breaks the quantity rule (a programming error: the caller normalises it)
    */
-  async create(tx: DbExecutor, input: ImportedServiceInput): Promise<{ serviceId: number; code: string }> {
+  async create(
+    tx: DbExecutor,
+    input: ImportedServiceInput,
+  ): Promise<{ serviceId: number; code: string; categoryCreated: boolean }> {
     const problems = quantityRuleProblems(input.quantity);
     if (problems.length > 0) throw new Error(`The imported quantity rule is invalid: ${problems.join('; ')}`);
-    const categoryId = await this.categoryFor(
+    const category = await this.categoryFor(
       tx,
       input.type,
       input.group.trim() === '' ? 'Imported' : input.group.trim(),
     );
     const code = await this.freeCode(tx, `IMP-${input.supplierServiceId}`);
     const service = await insertServiceRow(tx, {
-      categoryId,
+      categoryId: category.id,
       type: input.type,
       name: input.name,
       deliveryTime:
         input.time.trim() === '' ? deliveryTimeText(input.slaMinutes) : input.time.trim().slice(0, MAX_DELIVERY_TEXT),
-      status: 'active',
+      status: input.status ?? 'active',
       fulfillment: 'auto',
       priceMode: 'fixed',
       duplicateRule: 'block_open',
@@ -105,7 +111,7 @@ export class ServiceImporter {
         })),
       );
     }
-    return { serviceId: service.id, code };
+    return { serviceId: service.id, code, categoryCreated: category.created };
   }
 
   /**
@@ -120,13 +126,17 @@ export class ServiceImporter {
   }
 
   /** The category of this type with this name (ignoring case), created when it does not exist. */
-  private async categoryFor(tx: DbExecutor, type: ServiceType, name: string): Promise<number> {
+  private async categoryFor(
+    tx: DbExecutor,
+    type: ServiceType,
+    name: string,
+  ): Promise<{ id: number; created: boolean }> {
     const [found] = await tx
       .select({ id: serviceCategories.id })
       .from(serviceCategories)
       .where(and(eq(serviceCategories.type, type), sql`lower(${serviceCategories.name}) = lower(${name})`))
       .limit(1);
-    if (found) return found.id;
+    if (found) return { id: found.id, created: false };
     const created = await insertCategoryRow(tx, {
       name,
       type,
@@ -134,7 +144,7 @@ export class ServiceImporter {
       sort: await nextCategorySort(tx),
       isActive: true,
     });
-    return created.id;
+    return { id: created.id, created: true };
   }
 
   /** The first free code from `base`, `base-2`, `base-3`, ... (case-insensitive, live services only). */

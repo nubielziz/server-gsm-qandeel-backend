@@ -119,6 +119,9 @@ sent as `0` (sorted as 0); a body year is a whole number from 1990 to next year 
   rule's, and the readers stay defensive. No cache key: the catalog version already moves on every service write, and no view of the
   rule is cached. `ServiceImporter.create` takes the rule (`ImportedServiceInput.quantity`) and refuses, with a plain `Error`, one
   that `quantityRuleProblems` rejects (a programming error: the suppliers module normalises it first).
+  Feature 26 (supplier quick add, B214): `ImportedServiceInput.status` (`active` when omitted, or `disabled`) sets the state the new
+  service starts in, and `create` also returns `categoryCreated` (true when the group's category did not exist and was made for it),
+  so the quick add can count the categories a run created. The picker's import passes neither and behaves as before.
 - **Price protection** (user rule 9, MISMATCHES B117): `ListedPrices.record(db, clientId, entries, at)` remembers the last price
   listed to a merchant (table `listed_prices`, written only when the price changes); the three portal routes call it, and so do 7a's
   lists (`GET /v1/services[/:id]`, `imeiservicelist`). `checkPriceChange(listed, current, tolerance, { floorRaised? })` is the pure guard feature 5 calls at placement: above the

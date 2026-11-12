@@ -3,30 +3,29 @@
 import { Injectable } from '@nestjs/common';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
-import { Money } from '../../../common/money';
 import { DbService } from '../../../infra/db';
-import { CatalogPriceVersion, ServiceImporter, defaultMinProfit, recomputeEffectiveCost } from '../../catalog';
+import { CatalogPriceVersion, ServiceImporter, recomputeEffectiveCost } from '../../catalog';
 import { AuditService, SettingsReader } from '../../platform';
 import type { SupplierService } from '../db/schema';
-import { classifyImportItem, importableType, importedFields, quantityDiffers } from '../domain/import-plan';
-import { slaMinutesOf } from '../domain/sla-time';
+import { classifyImportItem, importableType, quantityDiffers } from '../domain/import-plan';
 import { supplierQuantityRule } from '../domain/supplier-quantity';
 import { lockLiveServiceRow, linkedServicesOf, liveServiceInfo } from '../infra/foreign-reads.repository';
 import {
   type SupplierServiceListField,
   chainsOf,
-  insertFirstLink,
   listSupplierServiceRows,
   replaceChain,
   supplierServicesByIds,
   supplierServicesWithSupplier,
 } from '../infra/supplier-catalogue.repository';
 import { findSupplier, lockSupplier } from '../infra/supplier.repository';
-
-/** The setting that gives an imported service an SLA when the supplier's time text cannot be read (orders-suppliers-10). */
-export const IMPORT_DEFAULT_SLA_KEY = 'catalog.importDefaultSlaMinutes';
-const DEFAULT_IMPORT_SLA_MINUTES = 1440;
-const SLA_BOUNDS = { min: 1, max: 525_600 } as const;
+import {
+  createImportedService,
+  DEFAULT_IMPORT_SLA_MINUTES,
+  IMPORT_DEFAULT_SLA_KEY,
+  SLA_BOUNDS,
+  suggestedPrice,
+} from './imported-service';
 
 /** One line of the import preview. */
 export interface ImportPreviewItem {
@@ -69,9 +68,6 @@ const notFound = () => new AppError('NOT_FOUND', { detail: 'No supplier has this
 function invalid(field: string, message: string, code = 'invalid'): AppError {
   return new AppError('VALIDATION_FAILED', { errors: [{ field, code, message }] });
 }
-
-/** The suggested price of an item: its cost plus the default minimum profit (catalog-9: at least 0.02 above cost). */
-const suggestedPrice = (cost: Money): Money => cost.add(defaultMinProfit(cost));
 
 const view = (service: SupplierService, imported: boolean, linkedServiceId: number | null): SupplierServiceView => ({
   id: service.id,
@@ -222,25 +218,14 @@ export class SupplierCatalogueService {
         if (item.state === 'matching') {
           unchanged += 1;
         } else if (item.state === 'new') {
-          const type = importableType(item.row.type)!;
-          // The supplier's rule is copied here, at creation only; a later import or sync never touches the quantities (B213).
-          const quantity = supplierQuantityRule(item.row.raw);
-          if (quantity.minQty !== 1 || quantity.maxQty !== 1 || quantity.qtyOptions.length > 0) {
-            createdWithQuantity += 1;
-          }
-          const made = await this.importer.create(tx, {
-            supplierServiceId: item.row.id,
-            type,
-            name: item.row.name,
-            group: item.row.remoteGroup,
-            time: item.row.time,
-            cost: item.cost.toWire(),
-            basePrice: suggestedPrice(item.cost).toWire(),
-            slaMinutes: slaMinutesOf(item.row.time, defaultSla),
-            quantity,
-            fields: importedFields(item.row.customFields),
+          // The supplier's rule is copied at creation only; a later import or sync never touches the quantities (B213).
+          const made = await createImportedService(tx, this.importer, {
+            row: item.row,
+            cost: item.cost,
+            defaultSla,
+            status: 'active',
           });
-          await insertFirstLink(tx, made.serviceId, item.row.id);
+          if (made.withQuantity) createdWithQuantity += 1;
           touched.push(made.serviceId);
           created += 1;
         } else if (item.found!.archived) {

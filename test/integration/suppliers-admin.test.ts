@@ -684,6 +684,53 @@ describe("the supplier's services and the import", () => {
     expect((await staff.get('/admin/suppliers/999999/services')).status).toBe(404);
   });
 
+  it('narrows the list to one supplier group, a type or availability (feature 26, B215), alone and together', async () => {
+    const remoteIds = (answer: { body: Array<{ remoteId: string }> }) => answer.body.map((row) => row.remoteId).sort();
+    const base = `/admin/suppliers/${supplierId}/services?_start=0&_end=50`;
+
+    const group = await staff.get(`${base}&remoteGroup=${encodeURIComponent('Carrier unlock')}`);
+    expect(group.status).toBe(200);
+    expect(group.total).toBe(2);
+    expect(remoteIds(group)).toEqual(['a1', 'a4']);
+    expect(group.body.every((row: { remoteGroup: string }) => row.remoteGroup === 'Carrier unlock')).toBe(true);
+
+    const type = await staff.get(`${base}&type=IMEI`);
+    expect(type.total).toBe(2);
+    expect(remoteIds(type)).toEqual(['a1', 'a4']);
+    // The match is exact, as the stored text is.
+    expect((await staff.get(`${base}&type=imei`)).total).toBe(0);
+    expect((await staff.get(`${base}&remoteGroup=Carrier`)).total).toBe(0);
+
+    // A group is the pair: the same name under another type is another group.
+    expect((await staff.get(`${base}&type=SERVER&remoteGroup=${encodeURIComponent('Carrier unlock')}`)).total).toBe(0);
+    const together = await staff.get(
+      `${base}&type=IMEI&remoteGroup=${encodeURIComponent('Carrier unlock')}&imported=false`,
+    );
+    expect(together.total).toBe(1);
+    expect(remoteIds(together)).toEqual(['a4']);
+
+    // An empty value is skipped, so the group without a name cannot be filtered.
+    const empty = await staff.get(`${base}&remoteGroup=&type=SERVER`);
+    expect(empty.total).toBe(1);
+    expect(remoteIds(empty)).toEqual(['a2']);
+
+    const gone = remoteByRemoteId.get('a3')!;
+    await world.db.update(s.supplierServices).set({ isAvailable: false }).where(eq(s.supplierServices.id, gone));
+    try {
+      const unavailable = await staff.get(`${base}&isAvailable=false`);
+      expect(unavailable.total).toBe(1);
+      expect(remoteIds(unavailable)).toEqual(['a3']);
+      expect((await staff.get(`${base}&isAvailable=true`)).total).toBe(3);
+      expect((await staff.get(`${base}&isAvailable=false&type=IMEI`)).total).toBe(0);
+    } finally {
+      await world.db.update(s.supplierServices).set({ isAvailable: true }).where(eq(s.supplierServices.id, gone));
+    }
+
+    // Only exact values are allowed on the two text filters.
+    const range = await staff.get(`${base}&remoteGroup_like=Carrier`);
+    expect(range.status).toBe(422);
+  });
+
   it('previews: new, matching and changed with the previous cost and the suggested price', async () => {
     const [linked] = await world.db.select().from(s.services).where(eq(s.services.name, 'Linked to a1'));
     const matching = await staff.post(`/admin/suppliers/${supplierId}/import/preview`, {

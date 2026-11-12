@@ -21,6 +21,14 @@ export interface SupplierServiceRow {
 // The outer id is written as text: in a select from one table Drizzle prints columns inside a selected `sql` without their table name,
 // which would bind `id` to the links table inside the subquery.
 const IMPORTED = sql<boolean>`exists (select 1 from ${serviceSupplierLinks} l where l.supplier_service_id = "supplier_services"."id")`;
+
+/**
+ * The condition "some service of ours is linked to this supplier service" (an archived service counts), for a query on
+ * `supplier_services` alone.
+ *
+ * Why: "imported" is a link row (feature 26 uses it to tell the candidates of a quick add from the services already in the console).
+ */
+export const isImportedSql = IMPORTED;
 const LINKED_SERVICE = sql<
   number | null
 >`(select min(l.service_id) from ${serviceSupplierLinks} l where l.supplier_service_id = "supplier_services"."id")`;
@@ -32,6 +40,8 @@ const COLUMNS: ListColumns = {
   lastSeenAt: supplierServices.lastSeenAt,
   remoteGroup: supplierServices.remoteGroup,
   remoteId: supplierServices.remoteId,
+  type: supplierServices.type,
+  isAvailable: supplierServices.isAvailable,
   imported: IMPORTED,
 };
 
@@ -40,7 +50,7 @@ const COLUMNS: ListColumns = {
  *
  * @param db the database or a transaction
  * @param supplierId the supplier
- * @param query the parsed list request (filter `imported`)
+ * @param query the parsed list request (filters `imported`, `remoteGroup`, `type`, `isAvailable`)
  * @returns the page and the exact total
  */
 export async function listSupplierServiceRows(
