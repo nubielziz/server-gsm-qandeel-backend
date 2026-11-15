@@ -4,7 +4,7 @@
     "content-type": "application/json"
   },
   "body": {
-    "id": 31,
+    "id": 32,
     "email": "harvest.sample@example.com",
     "emailVerifiedAt": null,
     "name": "Harvest sample",
@@ -29,6 +29,6 @@
     "createdAt": "2026-10-31T12:00:00.000Z",
     "ordersCount": 0,
     "lastOrderAt": null,
-    "temporaryPassword": "FXx53czmSucge4"
+    "temporaryPassword": "53czmSucge4taw"
   }
 }

@@ -28,6 +28,11 @@
     "csatScore": null,
     "createdAt": "2026-10-31T03:00:00.000Z",
     "updatedAt": "2026-10-31T09:54:00.000Z",
+    "staffSeenMessageId": null,
+    "staffSeenAt": null,
+    "requesterSeenMessageId": 2,
+    "requesterSeenAt": "2026-10-31T09:54:00.000Z",
+    "hasUnread": true,
     "lastPublicAt": "2026-10-31T09:54:00.000Z",
     "slaDueAt": "2026-10-31T11:54:00.000Z",
     "late": true,
@@ -41,6 +46,7 @@
         "body": "I got the email saying completed but my phone still says SIM not supported.",
         "isInternal": false,
         "fileIds": [],
+        "attachments": [],
         "createdAt": "2026-10-31T03:00:00.000Z"
       },
       {
@@ -52,6 +58,7 @@
         "body": "Hi, thanks for telling us. Please restart the phone with the new SIM inside and send me a photo of the message on screen.",
         "isInternal": false,
         "fileIds": [],
+        "attachments": [],
         "createdAt": "2026-10-31T04:12:00.000Z"
       },
       {
@@ -63,6 +70,7 @@
         "body": "Here is the photo. Same message after restart.",
         "isInternal": false,
         "fileIds": [],
+        "attachments": [],
         "createdAt": "2026-10-31T09:54:00.000Z"
       }
     ],

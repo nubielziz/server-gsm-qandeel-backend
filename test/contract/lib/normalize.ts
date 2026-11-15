@@ -62,6 +62,8 @@ export type Variant =
   | { readonly kind: 'tuple'; readonly items: readonly TypeNode[] }
   /** A free-form JSON value (`JsonValue`), or only an object (`JsonObject`). */
   | { readonly kind: 'json'; readonly objectOnly: boolean }
+  /** A file part of a `multipart/form-data` body: the console's `File` or `Blob`, a backend `format: binary` string (B157). */
+  | { readonly kind: 'file' }
   /** Unconstrained (`z.unknown()`, `{}`); `cut` marks a recursive reference the walk stopped following. */
   | { readonly kind: 'any'; readonly cut: boolean };
 
@@ -168,6 +170,10 @@ export function fromFrontendShape(shape: FrontendShape): TypeNode {
         break;
       case 'json':
         variants.push({ kind: 'json', objectOnly: shape.alias === 'JsonObject' });
+        break;
+      case 'File':
+      case 'Blob':
+        variants.push({ kind: 'file' });
         break;
       default:
         // `any`, `unknown`, opaque types (AbortSignal, function) and cut references: nothing to compare.
@@ -317,6 +323,11 @@ export function fromJsonSchema(
         nullable = true;
         break;
       case 'string': {
+        // `zUploadedFile` (a multipart part) is written as `format: binary`: a file, not text.
+        if (schema.format === 'binary') {
+          variants.push({ kind: 'file' });
+          break;
+        }
         const found = stringAlias(schema);
         variants.push({ kind: 'string', ...(found ? { alias: found } : {}) });
         break;

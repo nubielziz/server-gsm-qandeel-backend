@@ -162362,11 +162362,10 @@
                         "description": "A reply is awaited and `slaDueAt` has passed; never true for a resolved ticket."
                       },
                       "hasUnread": {
-                        "description": "The requester wrote after the newest message staff marked seen (`staffSeenMessageId`). Always sent; optional in the schema until the console merge.",
-                        "type": "boolean"
+                        "type": "boolean",
+                        "description": "The requester wrote after the newest message staff marked seen (`staffSeenMessageId`)."
                       },
                       "requesterSeenMessageId": {
-                        "description": "The newest public staff message the requester has seen, or null: `Seen` under it. Always sent; optional in the schema until the console merge.",
                         "anyOf": [
                           {
                             "type": "integer",
@@ -162381,10 +162380,10 @@
                           {
                             "type": "null"
                           }
-                        ]
+                        ],
+                        "description": "The newest public staff message the requester has seen, or null: `Seen` under it."
                       },
                       "requesterSeenAt": {
-                        "description": "When the requester saw it, or null. Always sent; optional in the schema until the console merge.",
                         "anyOf": [
                           {
                             "type": "string",
@@ -162398,10 +162397,10 @@
                           {
                             "type": "null"
                           }
-                        ]
+                        ],
+                        "description": "When the requester saw it, or null."
                       },
                       "staffSeenMessageId": {
-                        "description": "The newest requester message staff have seen (one mark for the whole team), or null. Always sent; optional in the schema until the console merge.",
                         "anyOf": [
                           {
                             "type": "integer",
@@ -162416,10 +162415,10 @@
                           {
                             "type": "null"
                           }
-                        ]
+                        ],
+                        "description": "The newest requester message staff have seen (one mark for the whole team), or null."
                       },
                       "staffSeenAt": {
-                        "description": "When staff saw it, or null. Always sent; optional in the schema until the console merge.",
                         "anyOf": [
                           {
                             "type": "string",
@@ -162433,7 +162432,8 @@
                           {
                             "type": "null"
                           }
-                        ]
+                        ],
+                        "description": "When staff saw it, or null."
                       }
                     },
                     "required": [
@@ -162457,7 +162457,12 @@
                       "createdAt",
                       "updatedAt",
                       "lastPublicAt",
-                      "late"
+                      "late",
+                      "hasUnread",
+                      "requesterSeenMessageId",
+                      "requesterSeenAt",
+                      "staffSeenMessageId",
+                      "staffSeenAt"
                     ],
                     "additionalProperties": false
                   }
@@ -163091,11 +163096,10 @@
                       "description": "A reply is awaited and `slaDueAt` has passed; never true for a resolved ticket."
                     },
                     "hasUnread": {
-                      "description": "The requester wrote after the newest message staff marked seen (`staffSeenMessageId`). Always sent; optional in the schema until the console merge.",
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "The requester wrote after the newest message staff marked seen (`staffSeenMessageId`)."
                     },
                     "requesterSeenMessageId": {
-                      "description": "The newest public staff message the requester has seen, or null: `Seen` under it. Always sent; optional in the schema until the console merge.",
                       "anyOf": [
                         {
                           "type": "integer",
@@ -163110,10 +163114,10 @@
                         {
                           "type": "null"
                         }
-                      ]
+                      ],
+                      "description": "The newest public staff message the requester has seen, or null: `Seen` under it."
                     },
                     "requesterSeenAt": {
-                      "description": "When the requester saw it, or null. Always sent; optional in the schema until the console merge.",
                       "anyOf": [
                         {
                           "type": "string",
@@ -163127,10 +163131,10 @@
                         {
                           "type": "null"
                         }
-                      ]
+                      ],
+                      "description": "When the requester saw it, or null."
                     },
                     "staffSeenMessageId": {
-                      "description": "The newest requester message staff have seen (one mark for the whole team), or null. Always sent; optional in the schema until the console merge.",
                       "anyOf": [
                         {
                           "type": "integer",
@@ -163145,10 +163149,10 @@
                         {
                           "type": "null"
                         }
-                      ]
+                      ],
+                      "description": "The newest requester message staff have seen (one mark for the whole team), or null."
                     },
                     "staffSeenAt": {
-                      "description": "When staff saw it, or null. Always sent; optional in the schema until the console merge.",
                       "anyOf": [
                         {
                           "type": "string",
@@ -163162,7 +163166,8 @@
                         {
                           "type": "null"
                         }
-                      ]
+                      ],
+                      "description": "When staff saw it, or null."
                     },
                     "messages": {
                       "type": "array",
@@ -163241,7 +163246,6 @@
                             }
                           },
                           "attachments": {
-                            "description": "The files of the message, oldest first; empty when it has none. Always sent; optional in the schema until the console merge.",
                             "type": "array",
                             "items": {
                               "type": "object",
@@ -163278,7 +163282,8 @@
                                 "size"
                               ],
                               "additionalProperties": false
-                            }
+                            },
+                            "description": "The files of the message, oldest first; empty when it has none."
                           },
                           "createdAt": {
                             "type": "string",
@@ -163299,6 +163304,7 @@
                           "body",
                           "isInternal",
                           "fileIds",
+                          "attachments",
                           "createdAt"
                         ],
                         "additionalProperties": false
@@ -163339,6 +163345,11 @@
                     "updatedAt",
                     "lastPublicAt",
                     "late",
+                    "hasUnread",
+                    "requesterSeenMessageId",
+                    "requesterSeenAt",
+                    "staffSeenMessageId",
+                    "staffSeenAt",
                     "messages",
                     "replyChannels"
                   ],
@@ -164032,11 +164043,10 @@
                       "description": "A reply is awaited and `slaDueAt` has passed; never true for a resolved ticket."
                     },
                     "hasUnread": {
-                      "description": "The requester wrote after the newest message staff marked seen (`staffSeenMessageId`). Always sent; optional in the schema until the console merge.",
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "The requester wrote after the newest message staff marked seen (`staffSeenMessageId`)."
                     },
                     "requesterSeenMessageId": {
-                      "description": "The newest public staff message the requester has seen, or null: `Seen` under it. Always sent; optional in the schema until the console merge.",
                       "anyOf": [
                         {
                           "type": "integer",
@@ -164051,10 +164061,10 @@
                         {
                           "type": "null"
                         }
-                      ]
+                      ],
+                      "description": "The newest public staff message the requester has seen, or null: `Seen` under it."
                     },
                     "requesterSeenAt": {
-                      "description": "When the requester saw it, or null. Always sent; optional in the schema until the console merge.",
                       "anyOf": [
                         {
                           "type": "string",
@@ -164068,10 +164078,10 @@
                         {
                           "type": "null"
                         }
-                      ]
+                      ],
+                      "description": "When the requester saw it, or null."
                     },
                     "staffSeenMessageId": {
-                      "description": "The newest requester message staff have seen (one mark for the whole team), or null. Always sent; optional in the schema until the console merge.",
                       "anyOf": [
                         {
                           "type": "integer",
@@ -164086,10 +164096,10 @@
                         {
                           "type": "null"
                         }
-                      ]
+                      ],
+                      "description": "The newest requester message staff have seen (one mark for the whole team), or null."
                     },
                     "staffSeenAt": {
-                      "description": "When staff saw it, or null. Always sent; optional in the schema until the console merge.",
                       "anyOf": [
                         {
                           "type": "string",
@@ -164103,7 +164113,8 @@
                         {
                           "type": "null"
                         }
-                      ]
+                      ],
+                      "description": "When staff saw it, or null."
                     }
                   },
                   "required": [
@@ -164127,7 +164138,12 @@
                     "createdAt",
                     "updatedAt",
                     "lastPublicAt",
-                    "late"
+                    "late",
+                    "hasUnread",
+                    "requesterSeenMessageId",
+                    "requesterSeenAt",
+                    "staffSeenMessageId",
+                    "staffSeenAt"
                   ],
                   "additionalProperties": false
                 },
@@ -166012,7 +166028,6 @@
                       }
                     },
                     "attachments": {
-                      "description": "The files of the message, oldest first; empty when it has none. Always sent; optional in the schema until the console merge.",
                       "type": "array",
                       "items": {
                         "type": "object",
@@ -166049,7 +166064,8 @@
                           "size"
                         ],
                         "additionalProperties": false
-                      }
+                      },
+                      "description": "The files of the message, oldest first; empty when it has none."
                     },
                     "createdAt": {
                       "type": "string",
@@ -166070,6 +166086,7 @@
                     "body",
                     "isInternal",
                     "fileIds",
+                    "attachments",
                     "createdAt"
                   ],
                   "additionalProperties": false
@@ -167090,7 +167107,6 @@
                       }
                     },
                     "attachments": {
-                      "description": "The files of the message, oldest first; empty when it has none. Always sent; optional in the schema until the console merge.",
                       "type": "array",
                       "items": {
                         "type": "object",
@@ -167127,7 +167143,8 @@
                           "size"
                         ],
                         "additionalProperties": false
-                      }
+                      },
+                      "description": "The files of the message, oldest first; empty when it has none."
                     },
                     "createdAt": {
                       "type": "string",
@@ -167148,6 +167165,7 @@
                     "body",
                     "isInternal",
                     "fileIds",
+                    "attachments",
                     "createdAt"
                   ],
                   "additionalProperties": false
@@ -214848,7 +214866,7 @@
                             ]
                           },
                           "attachments": {
-                            "description": "The files of the message, oldest first; empty when it has none. Always sent; optional in the schema until the console merge.",
+                            "description": "The files of the message, oldest first; empty when it has none. Always sent; optional in the schema until the storefront merge.",
                             "type": "array",
                             "items": {
                               "type": "object",
@@ -215568,7 +215586,7 @@
                             ]
                           },
                           "attachments": {
-                            "description": "The files of the message, oldest first; empty when it has none. Always sent; optional in the schema until the console merge.",
+                            "description": "The files of the message, oldest first; empty when it has none. Always sent; optional in the schema until the storefront merge.",
                             "type": "array",
                             "items": {
                               "type": "object",
@@ -216775,7 +216793,7 @@
                       ]
                     },
                     "attachments": {
-                      "description": "The files of the message, oldest first; empty when it has none. Always sent; optional in the schema until the console merge.",
+                      "description": "The files of the message, oldest first; empty when it has none. Always sent; optional in the schema until the storefront merge.",
                       "type": "array",
                       "items": {
                         "type": "object",
@@ -236461,7 +236479,7 @@
                             ]
                           },
                           "attachments": {
-                            "description": "The files of the message, oldest first; empty when it has none. Always sent; optional in the schema until the console merge.",
+                            "description": "The files of the message, oldest first; empty when it has none. Always sent; optional in the schema until the storefront merge.",
                             "type": "array",
                             "items": {
                               "type": "object",
@@ -236512,7 +236530,7 @@
                       "description": "Oldest first, without internal notes."
                     },
                     "seenByYou": {
-                      "description": "The newest support message the requester has seen (their own mark), or null. Always sent; optional in the schema until the console merge.",
+                      "description": "The newest support message the requester has seen (their own mark), or null. Always sent; optional in the schema until the storefront merge.",
                       "anyOf": [
                         {
                           "type": "integer",
@@ -236530,7 +236548,7 @@
                       ]
                     },
                     "seenBySupport": {
-                      "description": "The newest message of the requester that support has seen, or null: show `Seen` under it and the older ones. Always sent; optional in the schema until the console merge.",
+                      "description": "The newest message of the requester that support has seen, or null: show `Seen` under it and the older ones. Always sent; optional in the schema until the storefront merge.",
                       "anyOf": [
                         {
                           "type": "integer",
@@ -236548,7 +236566,7 @@
                       ]
                     },
                     "seenBySupportAt": {
-                      "description": "When support saw it, or null. Always sent; optional in the schema until the console merge.",
+                      "description": "When support saw it, or null. Always sent; optional in the schema until the storefront merge.",
                       "anyOf": [
                         {
                           "type": "string",
@@ -245029,7 +245047,7 @@
                             ]
                           },
                           "attachments": {
-                            "description": "The files of the message, oldest first; empty when it has none. Always sent; optional in the schema until the console merge.",
+                            "description": "The files of the message, oldest first; empty when it has none. Always sent; optional in the schema until the storefront merge.",
                             "type": "array",
                             "items": {
                               "type": "object",
@@ -245080,7 +245098,7 @@
                       "description": "Oldest first, without internal notes."
                     },
                     "seenByYou": {
-                      "description": "The newest support message the requester has seen (their own mark), or null. Always sent; optional in the schema until the console merge.",
+                      "description": "The newest support message the requester has seen (their own mark), or null. Always sent; optional in the schema until the storefront merge.",
                       "anyOf": [
                         {
                           "type": "integer",
@@ -245098,7 +245116,7 @@
                       ]
                     },
                     "seenBySupport": {
-                      "description": "The newest message of the requester that support has seen, or null: show `Seen` under it and the older ones. Always sent; optional in the schema until the console merge.",
+                      "description": "The newest message of the requester that support has seen, or null: show `Seen` under it and the older ones. Always sent; optional in the schema until the storefront merge.",
                       "anyOf": [
                         {
                           "type": "integer",
@@ -245116,7 +245134,7 @@
                       ]
                     },
                     "seenBySupportAt": {
-                      "description": "When support saw it, or null. Always sent; optional in the schema until the console merge.",
+                      "description": "When support saw it, or null. Always sent; optional in the schema until the storefront merge.",
                       "anyOf": [
                         {
                           "type": "string",
@@ -245652,7 +245670,7 @@
                             ]
                           },
                           "attachments": {
-                            "description": "The files of the message, oldest first; empty when it has none. Always sent; optional in the schema until the console merge.",
+                            "description": "The files of the message, oldest first; empty when it has none. Always sent; optional in the schema until the storefront merge.",
                             "type": "array",
                             "items": {
                               "type": "object",
@@ -245703,7 +245721,7 @@
                       "description": "Oldest first, without internal notes."
                     },
                     "seenByYou": {
-                      "description": "The newest support message the requester has seen (their own mark), or null. Always sent; optional in the schema until the console merge.",
+                      "description": "The newest support message the requester has seen (their own mark), or null. Always sent; optional in the schema until the storefront merge.",
                       "anyOf": [
                         {
                           "type": "integer",
@@ -245721,7 +245739,7 @@
                       ]
                     },
                     "seenBySupport": {
-                      "description": "The newest message of the requester that support has seen, or null: show `Seen` under it and the older ones. Always sent; optional in the schema until the console merge.",
+                      "description": "The newest message of the requester that support has seen, or null: show `Seen` under it and the older ones. Always sent; optional in the schema until the storefront merge.",
                       "anyOf": [
                         {
                           "type": "integer",
@@ -245739,7 +245757,7 @@
                       ]
                     },
                     "seenBySupportAt": {
-                      "description": "When support saw it, or null. Always sent; optional in the schema until the console merge.",
+                      "description": "When support saw it, or null. Always sent; optional in the schema until the storefront merge.",
                       "anyOf": [
                         {
                           "type": "string",
@@ -246114,7 +246132,7 @@
                             ]
                           },
                           "attachments": {
-                            "description": "The files of the message, oldest first; empty when it has none. Always sent; optional in the schema until the console merge.",
+                            "description": "The files of the message, oldest first; empty when it has none. Always sent; optional in the schema until the storefront merge.",
                             "type": "array",
                             "items": {
                               "type": "object",
@@ -246165,7 +246183,7 @@
                       "description": "Oldest first, without internal notes."
                     },
                     "seenByYou": {
-                      "description": "The newest support message the requester has seen (their own mark), or null. Always sent; optional in the schema until the console merge.",
+                      "description": "The newest support message the requester has seen (their own mark), or null. Always sent; optional in the schema until the storefront merge.",
                       "anyOf": [
                         {
                           "type": "integer",
@@ -246183,7 +246201,7 @@
                       ]
                     },
                     "seenBySupport": {
-                      "description": "The newest message of the requester that support has seen, or null: show `Seen` under it and the older ones. Always sent; optional in the schema until the console merge.",
+                      "description": "The newest message of the requester that support has seen, or null: show `Seen` under it and the older ones. Always sent; optional in the schema until the storefront merge.",
                       "anyOf": [
                         {
                           "type": "integer",
@@ -246201,7 +246219,7 @@
                       ]
                     },
                     "seenBySupportAt": {
-                      "description": "When support saw it, or null. Always sent; optional in the schema until the console merge.",
+                      "description": "When support saw it, or null. Always sent; optional in the schema until the storefront merge.",
                       "anyOf": [
                         {
                           "type": "string",
@@ -247593,7 +247611,7 @@
                       ]
                     },
                     "attachments": {
-                      "description": "The files of the message, oldest first; empty when it has none. Always sent; optional in the schema until the console merge.",
+                      "description": "The files of the message, oldest first; empty when it has none. Always sent; optional in the schema until the storefront merge.",
                       "type": "array",
                       "items": {
                         "type": "object",

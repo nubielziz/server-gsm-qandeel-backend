@@ -38,7 +38,9 @@ frontend. Every difference has a path (`data[].status`, `checks.*`, `body.roleId
 | `fixture` | A harvested fixture does not satisfy the response schema. |
 
 Path and query parameters are text on the wire, so numbers, booleans and strings are interchangeable there and enum
-values are compared as strings. The list dialect (`_start`, `_end`, `_sort`, filters) is not compared field by field: the
+values are compared as strings. A multipart file part (`zUploadedFile`, written as `format: binary`) is a file: it fits a
+`File` or `Blob` field of the console function's `body` parameter (`uploadTicketFile(id, body: { file: File })`, which
+builds its `FormData` from it) and nothing else; a function that takes a bare `File` sends no body the extractor can see. The list dialect (`_start`, `_end`, `_sort`, filters) is not compared field by field: the
 `listQuery()` contract owns it. Error codes per route are not compared (the extraction mixes recorded and proposed codes).
 
 ## Building a route (the Phase 3 loop)

@@ -34,10 +34,12 @@ export const WireStatusSchema = z.enum(WIRE_TICKET_STATUSES);
 export const TicketPrioritySchema = z.enum(TICKET_PRIORITIES, 'Choose high, normal or low.');
 
 /**
- * The text of a key a feature added to an existing answer: the server always sends it, and the schema keeps it optional until the
- * console reads it (feature 28, as feature 25 did). The lead makes these keys required after the merges.
+ * The text of a key a feature added to an existing answer: the server always sends it, and the schema keeps it optional until its
+ * client reads it (feature 28, as feature 25 did). The lead makes these keys required after the merges: the console's (the staff
+ * ticket row and message) are required since the console merge; the storefront's (`StoreMessage`, `StoreTicket`) wait for the
+ * storefront's.
  */
-export const ALWAYS_SENT = 'Always sent; optional in the schema until the console merge.';
+export const ALWAYS_SENT = 'Always sent; optional in the schema until the storefront merge.';
 
 /** One file of a message: a PDF, JPEG or PNG, downloaded only through its presigned link (feature 28). */
 export const AttachmentSchema = z.object({
@@ -47,7 +49,7 @@ export const AttachmentSchema = z.object({
   size: z.number().int().min(1).describe('Bytes, at most 5 MiB.'),
 });
 
-/** The attachments of a message, in the order they were attached. */
+/** The attachments of a message as the storefront reads them, in the order they were attached. */
 export const AttachmentsSchema = z
   .array(AttachmentSchema)
   .optional()
@@ -120,7 +122,7 @@ export const TicketMessageSchema = z.object({
   body: z.string(),
   isInternal: z.boolean().describe('A note the customer never sees (and the system messages).'),
   fileIds: z.array(zId),
-  attachments: AttachmentsSchema,
+  attachments: z.array(AttachmentSchema).describe('The files of the message, oldest first; empty when it has none.'),
   createdAt: zIsoDateTime,
 });
 

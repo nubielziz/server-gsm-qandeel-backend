@@ -518,6 +518,20 @@ describe('requests', () => {
     expect(compareRequest([param('query', obj({ start: opt(num) }), 'ListQuery', true)], backend)).toEqual([]);
   });
 
+  it('compares a multipart file part: a File or Blob fits a binary part, other kinds do not', () => {
+    const backend = {
+      pathParams: [],
+      queryIsList: false,
+      body: o({ file: { type: 'string', format: 'binary' } }),
+    };
+    expect(compareRequest([param('body', obj({ file: { type: 'File' } }))], backend)).toEqual([]);
+    expect(compareRequest([param('body', obj({ file: { type: 'Blob' } }))], backend)).toEqual([]);
+    expect(brief(compareRequest([param('body', obj({ file: str }))], backend))).toEqual(['error:type@body.file']);
+    expect(brief(request(obj({ file: { type: 'File' } }), o({ file: s })))).toEqual(['error:type@file']);
+    // The extractor sees no body in a function that builds its FormData from a bare File parameter.
+    expect(brief(compareRequest([param('file', { type: 'File' })], backend))).toEqual(['error:required@body']);
+  });
+
   it('fails when the frontend sends a body the route does not declare, or omits one it requires', () => {
     expect(brief(compareRequest([param('body', obj({ a: str }))], { pathParams: [], queryIsList: false }))).toEqual([
       'error:missing-field@body',

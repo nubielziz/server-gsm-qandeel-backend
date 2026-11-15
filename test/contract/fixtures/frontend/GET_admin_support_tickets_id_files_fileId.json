@@ -1,0 +1,8 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/pdf",
+    "content-disposition": "attachment; filename=\"receipt-SF-20421.pdf\""
+  },
+  "body": "mock file"
+}

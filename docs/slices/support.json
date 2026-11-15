@@ -294,7 +294,7 @@
       "description": "Support inbox: priority, assignment, status and SLA timers.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 32,
+        "line": 34,
         "fn": "listSupportTickets"
       }
     },
@@ -328,7 +328,7 @@
       "description": "Support inbox: priority, assignment, status and SLA timers.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 45,
+        "line": 47,
         "fn": "getSupportTicket"
       }
     },
@@ -362,7 +362,7 @@
       "description": "Support inbox: priority, assignment, status and SLA timers.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 55,
+        "line": 57,
         "fn": "updateSupportTicket"
       }
     },
@@ -397,7 +397,7 @@
       "description": "Reply to the customer by email or Telegram.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 66,
+        "line": 68,
         "fn": "replyToTicket"
       }
     },
@@ -430,7 +430,7 @@
       "description": "Internal note that the customer does not see.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 76,
+        "line": 78,
         "fn": "addTicketNote"
       }
     },
@@ -806,7 +806,7 @@
       "description": "Mark the requester's messages as seen.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 87,
+        "line": 89,
         "fn": "markTicketRead"
       },
       "addition": {
@@ -845,7 +845,7 @@
       "description": "A staff member is typing a reply or a note.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 97,
+        "line": 99,
         "fn": "sendTicketTyping"
       },
       "addition": {
@@ -886,7 +886,7 @@
       "description": "Upload an attachment for a reply or a note.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 108,
+        "line": 110,
         "fn": "uploadTicketFile"
       },
       "addition": {
@@ -926,7 +926,7 @@
       "description": "Download an attachment of the ticket (presigned link).",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 120,
+        "line": 123,
         "fn": "ticketFileUrl"
       },
       "addition": {

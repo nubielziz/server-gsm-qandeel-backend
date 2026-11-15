@@ -6,7 +6,6 @@ import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime } from '../../../co
 import { REPLY_CHANNELS } from '../domain/reply-channels';
 import { WIRE_TICKET_STATUSES } from '../domain/ticket-status';
 import {
-  ALWAYS_SENT,
   FileIdsSchema,
   MessageBodyText,
   RequesterTypeSchema,
@@ -47,20 +46,15 @@ export const TicketRowSchema = z.object({
   late: z.boolean().describe('A reply is awaited and `slaDueAt` has passed; never true for a resolved ticket.'),
   hasUnread: z
     .boolean()
-    .optional()
-    .describe(
-      `The requester wrote after the newest message staff marked seen (\`staffSeenMessageId\`). ${ALWAYS_SENT}`,
-    ),
+    .describe('The requester wrote after the newest message staff marked seen (`staffSeenMessageId`).'),
   requesterSeenMessageId: zId
     .nullable()
-    .optional()
-    .describe(`The newest public staff message the requester has seen, or null: \`Seen\` under it. ${ALWAYS_SENT}`),
-  requesterSeenAt: zIsoDateTime.nullable().optional().describe(`When the requester saw it, or null. ${ALWAYS_SENT}`),
+    .describe('The newest public staff message the requester has seen, or null: `Seen` under it.'),
+  requesterSeenAt: zIsoDateTime.nullable().describe('When the requester saw it, or null.'),
   staffSeenMessageId: zId
     .nullable()
-    .optional()
-    .describe(`The newest requester message staff have seen (one mark for the whole team), or null. ${ALWAYS_SENT}`),
-  staffSeenAt: zIsoDateTime.nullable().optional().describe(`When staff saw it, or null. ${ALWAYS_SENT}`),
+    .describe('The newest requester message staff have seen (one mark for the whole team), or null.'),
+  staffSeenAt: zIsoDateTime.nullable().describe('When staff saw it, or null.'),
 });
 
 const TICKET_EXAMPLE = {

@@ -18361,7 +18361,7 @@
    "key": "GET /admin/support-tickets",
    "fn": "listSupportTickets",
    "file": "src/features/support/api/tickets.ts",
-   "line": 34,
+   "line": 36,
    "params": [
     {
      "name": "query",
@@ -18618,7 +18618,7 @@
    "key": "GET /admin/support-tickets/:id",
    "fn": "getSupportTicket",
    "file": "src/features/support/api/tickets.ts",
-   "line": 47,
+   "line": 49,
    "params": [
     {
      "name": "id",
@@ -18879,7 +18879,7 @@
    "key": "GET /admin/support-tickets/:id/files/:fileId",
    "fn": "ticketFileUrl",
    "file": "src/features/support/api/tickets.ts",
-   "line": 122,
+   "line": 125,
    "params": [
     {
      "name": "id",
@@ -28242,7 +28242,7 @@
    "key": "PATCH /admin/support-tickets/:id",
    "fn": "updateSupportTicket",
    "file": "src/features/support/api/tickets.ts",
-   "line": 57,
+   "line": 59,
    "params": [
     {
      "name": "id",
@@ -40320,7 +40320,7 @@
    "key": "POST /admin/support-tickets/:id/files",
    "fn": "uploadTicketFile",
    "file": "src/features/support/api/tickets.ts",
-   "line": 110,
+   "line": 112,
    "params": [
     {
      "name": "id",
@@ -40332,11 +40332,15 @@
      }
     },
     {
-     "name": "file",
+     "name": "body",
      "optional": false,
-     "typeText": "File",
+     "typeText": "TicketFileUpload",
      "shape": {
-      "type": "File"
+      "object": {
+       "file": {
+        "type": "File"
+       }
+      }
      }
     },
     {
@@ -40390,7 +40394,7 @@
    "key": "POST /admin/support-tickets/:id/note",
    "fn": "addTicketNote",
    "file": "src/features/support/api/tickets.ts",
-   "line": 78,
+   "line": 80,
    "params": [
     {
      "name": "id",
@@ -40510,7 +40514,7 @@
    "key": "POST /admin/support-tickets/:id/read",
    "fn": "markTicketRead",
    "file": "src/features/support/api/tickets.ts",
-   "line": 89,
+   "line": 91,
    "params": [
     {
      "name": "id",
@@ -40522,12 +40526,16 @@
      }
     },
     {
-     "name": "upToMessageId",
+     "name": "body",
      "optional": false,
-     "typeText": "number",
+     "typeText": "MarkReadBody",
      "shape": {
-      "type": "number",
-      "alias": "Id"
+      "object": {
+       "upToMessageId": {
+        "type": "number",
+        "alias": "Id"
+       }
+      }
      }
     },
     {
@@ -40560,7 +40568,7 @@
    "key": "POST /admin/support-tickets/:id/reply",
    "fn": "replyToTicket",
    "file": "src/features/support/api/tickets.ts",
-   "line": 68,
+   "line": 70,
    "params": [
     {
      "name": "id",
@@ -40687,7 +40695,7 @@
    "key": "POST /admin/support-tickets/:id/typing",
    "fn": "sendTicketTyping",
    "file": "src/features/support/api/tickets.ts",
-   "line": 99,
+   "line": 101,
    "params": [
     {
      "name": "id",
@@ -40699,14 +40707,18 @@
      }
     },
     {
-     "name": "mode",
+     "name": "body",
      "optional": false,
-     "typeText": "TypingMode",
+     "typeText": "TypingBody",
      "shape": {
-      "enum": [
-       "note",
-       "reply"
-      ]
+      "object": {
+       "mode": {
+        "enum": [
+         "note",
+         "reply"
+        ]
+       }
+      }
      }
     },
     {

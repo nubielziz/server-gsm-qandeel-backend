@@ -113,6 +113,8 @@ function describe(variant: Variant): string {
       return 'a tuple';
     case 'json':
       return variant.objectOnly ? 'a JSON object' : 'any JSON value';
+    case 'file':
+      return 'a file';
     case 'any':
       return 'anything';
   }
@@ -264,6 +266,9 @@ function checkVariants(sub: Variant, sup: Variant, path: string, ctx: Ctx, depth
       }
       case 'boolean':
         checkValues(sub.values, (sup as typeof sub).values, path, ctx, sub);
+        return;
+      case 'file':
+        // A multipart file part has no inner shape: its type and size are the route's own checks.
         return;
       case 'object':
         checkObject(sub, sup as typeof sub, path, ctx, depth);
