@@ -1,13 +1,27 @@
 // Fastify onResponse hook that records http_request_duration_seconds (decision 015) for every request,
-// including unknown routes (labelled `unmatched`) and errors.
+// including unknown routes (labelled `unmatched`) and errors, but not live event streams (decision 037).
 import type { FastifyInstance } from 'fastify';
 import { surfaceOfPath } from '../../common/surface';
 import type { MetricsService } from './metrics.service';
 
 /**
+ * Tells whether a reply is a live event stream (`text/event-stream`, decision 037).
+ *
+ * Why: a stream is one "request" that lasts up to 15 minutes; counted as a request it would bend the latency percentiles of
+ * the System health traffic page and fill the access log at info. The stream has its own metrics (`realtime_*`).
+ *
+ * @param contentType the `Content-Type` of the reply (any header value)
+ * @returns true for `text/event-stream`, with or without parameters
+ */
+export function isEventStream(contentType: unknown): boolean {
+  return typeof contentType === 'string' && contentType.toLowerCase().startsWith('text/event-stream');
+}
+
+/**
  * Registers the request-duration hook on a Fastify instance.
  *
- * Why: the System health traffic page (p50/p95/p99, 4xx/5xx rates) is computed from this histogram.
+ * Why: the System health traffic page (p50/p95/p99, 4xx/5xx rates) is computed from this histogram. A live event stream is
+ * skipped ({@link isEventStream}); its refusals (401, 429, 503) are ordinary problem+json answers and are counted.
  *
  * @param fastify the underlying Fastify instance
  * @param metrics the process metrics service
@@ -15,6 +29,10 @@ import type { MetricsService } from './metrics.service';
  */
 export function registerHttpMetrics(fastify: FastifyInstance, metrics: MetricsService): void {
   fastify.addHook('onResponse', (request, reply, done) => {
+    if (isEventStream(reply.getHeader('content-type'))) {
+      done();
+      return;
+    }
     const template = request.routeOptions?.url;
     metrics.observeHttpRequest(
       {

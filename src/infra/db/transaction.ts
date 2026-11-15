@@ -1,5 +1,6 @@
-// The transaction helper with post-commit callbacks (decisions 022, 024): one place that opens a transaction, hands the
-// callback `tx`, and runs the registered `afterCommit` callbacks only once the commit has succeeded.
+// The transaction helper with post-commit callbacks (decisions 022, 024, 037): one place that opens a transaction, hands the
+// callback `tx`, and runs the registered `afterCommit` / `onCommit` callbacks only once the commit has succeeded.
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { Logger } from '@nestjs/common';
 import type { Database, Transaction } from './database';
 
@@ -36,13 +37,57 @@ export interface TransactionContext {
 /** The part of {@link Database} the helper needs; lets unit tests pass a fake without a pool. */
 export type TransactionRunner = Pick<Database, 'transaction'>;
 
+/** The callbacks of one {@link runInTransaction} call and where that transaction is. */
+interface CommitScope {
+  readonly callbacks: Array<() => void | Promise<void>>;
+  state: 'open' | 'committed' | 'rolled-back';
+}
+
 const logger = new Logger('Transaction');
+/** The transaction of the current async context; a savepoint (`tx.transaction`) runs in the same context, so it shares it. */
+const scopes = new AsyncLocalStorage<CommitScope>();
+
+/** Runs one callback whose data is committed: a failure is logged, never thrown (nothing can undo the commit). */
+function runCommitted(callback: () => void | Promise<void>): void {
+  const failed = (error: unknown) =>
+    logger.error(`afterCommit callback failed: ${error instanceof Error ? error.message : String(error)}`);
+  try {
+    const result = callback();
+    if (result instanceof Promise) result.catch(failed);
+  } catch (error) {
+    failed(error);
+  }
+}
+
+/**
+ * Runs a callback after the transaction of the current async context commits, or at once when no transaction is open.
+ *
+ * Why: decision 037 rings the real-time doorbell after the commit (a reader must find the row), and many callers hold only
+ * `tx`, not `afterCommit` (`NotificationService.enqueue({ tx })` has 21 call sites); the async context finds their
+ * transaction without a signature change. A savepoint shares its transaction's list, so a rolled-back savepoint still rings
+ * (the reader then finds nothing and sends nothing). Nested `runInTransaction` calls keep their own lists. A callback of a
+ * transaction that rolled back never runs; one registered after the commit (a late promise) runs at once.
+ *
+ * Side effects: whatever the callback does. Inside a transaction runInTransaction awaits it after the commit; outside one it is
+ * called at once and not awaited. A failure is logged.
+ *
+ * @param callback the work to run after the commit (a publish, never a database write that must be atomic with the change)
+ */
+export function onCommit(callback: () => void | Promise<void>): void {
+  const scope = scopes.getStore();
+  if (!scope || scope.state === 'committed') {
+    runCommitted(callback);
+    return;
+  }
+  if (scope.state === 'open') scope.callbacks.push(callback);
+  // A rolled-back transaction: the change never happened, so the callback is dropped.
+}
 
 /**
  * Runs `fn` in one database transaction and then its post-commit callbacks.
  *
  * Why: decision 020 and 024 want every state change, its ledger posting and its outbox row in one commit; callers that
- * also touch the cache register the invalidation with `afterCommit` so it happens only for a committed change.
+ * also touch the cache register the invalidation with `afterCommit` (or `onCommit`) so it happens only for a committed change.
  *
  * @param db the Drizzle database (or any object with `transaction`)
  * @param fn the work; its return value becomes the result. Throwing rolls everything back and skips the callbacks
@@ -55,31 +100,35 @@ export async function runInTransaction<T>(
   fn: (context: TransactionContext) => Promise<T>,
   options: TransactionOptions = {},
 ): Promise<T> {
-  const callbacks: Array<() => void | Promise<void>> = [];
-  let open = true;
+  const scope: CommitScope = { callbacks: [], state: 'open' };
   let result: T;
   try {
-    result = await db.transaction(
-      (tx) =>
-        fn({
-          tx,
-          afterCommit: (callback) => {
-            if (!open) throw new Error('afterCommit() was called after the transaction ended');
-            callbacks.push(callback);
-          },
-        }),
-      options.isolation || options.readOnly
-        ? {
-            ...(options.isolation ? { isolationLevel: options.isolation } : {}),
-            ...(options.readOnly ? { accessMode: 'read only' as const } : {}),
-          }
-        : undefined,
+    result = await scopes.run(scope, () =>
+      db.transaction(
+        (tx) =>
+          fn({
+            tx,
+            afterCommit: (callback) => {
+              if (scope.state !== 'open') throw new Error('afterCommit() was called after the transaction ended');
+              scope.callbacks.push(callback);
+            },
+          }),
+        options.isolation || options.readOnly
+          ? {
+              ...(options.isolation ? { isolationLevel: options.isolation } : {}),
+              ...(options.readOnly ? { accessMode: 'read only' as const } : {}),
+            }
+          : undefined,
+      ),
     );
-  } finally {
-    open = false;
+  } catch (error) {
+    scope.state = 'rolled-back';
+    throw error;
   }
-  // The commit succeeded: from here on a failing callback cannot undo the change, so it is only logged.
-  for (const callback of callbacks) {
+  scope.state = 'committed';
+  // The commit succeeded: from here on a failing callback cannot undo the change, so it is only logged. The loop runs in the
+  // caller's async context: an onCommit() inside a callback belongs to an enclosing transaction, or runs at once.
+  for (const callback of scope.callbacks) {
     try {
       await callback();
     } catch (error) {

@@ -58,6 +58,18 @@ Versioned keys are the base key plus `:v{n}`, where `{n}` is the current number 
 (`gsm:{env}:cache:version:{name}`). The counter is the larger of "previous + 1" and the current time in milliseconds, so a
 counter that the cache evicted and re-created can never reuse a number that old entries still carry.
 
+## Not keys
+
+The cache Redis also carries one **pub/sub channel**, which stores nothing, so `allkeys-lru` never evicts it and it has no TTL
+and no row in the table above (the key-family test reads only that table):
+
+- `gsm:{env}:realtime:doorbell:{db}` (owner: infra/realtime, decision 037). `{db}` is the database number of the cache URL,
+  because pub/sub ignores `SELECT` and the test runs of several worktrees share one instance. Every process publishes
+  (`RealtimePublisher`, after the commit); each API process has one dedicated subscriber connection (`gsm-realtime-sub`) that
+  filters by `topic` in memory. A message is JSON of at most 8 KB with ids only (`v`, `topic`, `op`, `at`, ids), never a text,
+  a token, an email address or a cookie; a lost message loses no data (the truth is in Postgres; see
+  `src/infra/realtime/README.md`). Monitor it with `PUBSUB NUMSUB`, not `SCAN`.
+
 ## Adding a key family
 
 1. Add a method to `CacheKeys` that returns a `CacheKey` (never build a key by hand).

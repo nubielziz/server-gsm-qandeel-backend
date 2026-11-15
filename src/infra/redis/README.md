@@ -5,7 +5,7 @@ data only; the cache Redis (`allkeys-lru`) holds cache entries, rate limits, loc
 
 | What                                                       | Where                                                                                       |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Client factories (cache, queue producer, worker connection) | `redis-clients.ts`                                                                          |
+| Client factories (cache, queue producer, worker connection, real-time subscriber) | `redis-clients.ts`                                                     |
 | Nest provider, connect/close lifecycle, logging             | `redis.service.ts` (`RedisService`), `redis.module.ts`                                      |
 | Health indicators `redis` and `redis_queue`                 | `redis.health.ts` (non-critical: a failure makes `GET /health` `degraded`, never `down`)     |
 | Memory gauges `redis_memory_used_bytes{role}` / `_max_bytes` | `redis.metrics.ts` (read from `INFO memory` on every scrape)                                 |
@@ -28,6 +28,13 @@ data only; the cache Redis (`allkeys-lru`) holds cache entries, rate limits, loc
   or `Worker` anywhere else, and do not check `status` before enqueueing (check-then-act); catch the error instead.
 - **BullMQ workers** use one `createWorkerConnection()` per process (shared by every `Worker` as its non-blocking connection;
   BullMQ duplicates it for each worker's blocking connection) and reconnect after a queue-Redis restart on their own.
+- **The real-time subscriber** (decision 037, `src/infra/realtime`) comes from `RedisService.createSubscriberConnection()`: one
+  connection per **API** process (the worker has none), to the **cache** Redis (`REDIS_CACHE_URL`; pub/sub stores no key, so
+  `allkeys-lru` does not matter), `connectionName: 'gsm-realtime-sub'`, `lazyConnect`, `maxRetriesPerRequest: null`, no command
+  timeout, reconnects for ever and resubscribes itself. A subscribed connection can run no other command, so it is its own; it is
+  watched like a worker connection (`error` listener) and closed in `onApplicationShutdown`. The hub subscribes it to the one
+  channel `gsm:{env}:realtime:doorbell:{db}`; publishers use the ordinary cache client (fail fast). It is the only use of pub/sub:
+  the queue Redis never carries it, and the channel is not a cache key (`docs/cache-keys.md`, "Not keys").
 - Every client has an `error` listener. Errors are logged once per 30 s per client, with credentials stripped.
 - Tests use **database 1** of both instances (`REDIS_QUEUE_URL_TEST`, `REDIS_CACHE_URL_TEST`); under `NODE_ENV=test` the
   normal URLs are ignored.

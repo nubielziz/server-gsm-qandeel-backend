@@ -5,6 +5,7 @@ import type { Redis } from 'ioredis';
 import {
   createCacheClient,
   createQueueProducerClient,
+  createSubscriberConnection,
   createWorkerConnection,
   reconnectDelayMs,
 } from './redis-clients';
@@ -45,14 +46,29 @@ describe('client factories', () => {
   });
 
   it('name each connection, so CLIENT LIST tells them apart', () => {
-    const names = [createCacheClient(URL), createQueueProducerClient(URL), createWorkerConnection(URL)].map(
-      (client) => {
-        const name = client.options.connectionName;
-        client.disconnect();
-        return name;
-      },
-    );
-    expect(names).toEqual(['gsm-cache', 'gsm-queue-producer', 'gsm-queue-worker']);
+    const names = [
+      createCacheClient(URL),
+      createQueueProducerClient(URL),
+      createWorkerConnection(URL),
+      createSubscriberConnection(URL),
+    ].map((client) => {
+      const name = client.options.connectionName;
+      client.disconnect();
+      return name;
+    });
+    expect(names).toEqual(['gsm-cache', 'gsm-queue-producer', 'gsm-queue-worker', 'gsm-realtime-sub']);
+  });
+
+  it('give the real-time subscriber a lazy connection that reconnects and resubscribes for ever (decision 037)', () => {
+    const client = createSubscriberConnection('redis://localhost:6380/7');
+    expect(client.status).toBe('wait');
+    expect(client.options.lazyConnect).toBe(true);
+    expect(client.options.maxRetriesPerRequest).toBeNull();
+    expect(client.options.commandTimeout).toBeUndefined();
+    expect(client.options.autoResubscribe).toBe(true);
+    expect(client.options.retryStrategy).toBe(reconnectDelayMs);
+    expect(client.options.db).toBe(7);
+    client.disconnect();
   });
 
   it('take the database from the URL', () => {

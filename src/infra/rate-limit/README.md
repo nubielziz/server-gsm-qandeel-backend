@@ -15,6 +15,7 @@
 | `media`    | client IP                                            | 1200 per minute: the public service pictures (`GET /store/v1/media/:name`), apart from `ip` |
 | `upload`   | client IP                                            | 20 per minute: large bodies (multipart or over 1 MiB) on Dhru, REST v1, the portal, the admin console and the store (the receipt upload, feature 21) |
 | `wallet-topup` | customer id                                      | 10 per 10 minutes (feature 21: a hint; the top-up limits are SQL) |
+| `stream-connect` | the first cap key of the stream (`session:<id>`) | 20 per minute: opening a live event stream (`GET /admin/stream`, `/client/stream`, `/store/v1/me/stream`, decision 037) |
 
 ```ts
 // A pipeline guard or a use case:

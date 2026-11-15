@@ -1,6 +1,7 @@
 // Drizzle queries on `notification_inbox` (platform module, feature 23): the writes of campaign items (fan-out) and event items
-// (`NotificationInbox`), each idempotent on its unique key, and the read counters of a campaign. Every function takes a DbExecutor.
-import { type SQL, and, eq, lte, sql } from 'drizzle-orm';
+// (`NotificationInbox`), each idempotent on its unique key, the read counters of a campaign, and the reads of the live stream
+// (feature 27: one item, a chunk's items, the items after a cursor, batched unread counts). Every function takes a DbExecutor.
+import { type SQL, and, asc, eq, gt, inArray, isNull, lte, max, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../../infra/db';
 import {
@@ -16,7 +17,8 @@ import {
  * Inserts the in-app items of a campaign for some people, once each.
  *
  * Why: the fan-out may run a chunk twice; the partial unique key `(campaign_id, recipient_type, recipient_id)` makes the second
- * insert a no-op.
+ * insert a no-op. The people who got an item now are the audience of the chunk's doorbell (decision 037), so a repeated chunk
+ * rings nothing.
  *
  * @param db the fan-out's transaction
  * @param campaignId the campaign
@@ -24,7 +26,7 @@ import {
  * @param recipientType the type of every id
  * @param recipientIds the people
  * @param now the clock's time
- * @returns how many items this call made
+ * @returns the recipient ids this call made an item for
  */
 export async function insertCampaignItems(
   db: DbExecutor,
@@ -33,8 +35,8 @@ export async function insertCampaignItems(
   recipientType: NotificationRecipientType,
   recipientIds: readonly number[],
   now: Date,
-): Promise<number> {
-  if (recipientIds.length === 0) return 0;
+): Promise<number[]> {
+  if (recipientIds.length === 0) return [];
   const rows = await db
     .insert(notificationInbox)
     .values(
@@ -51,8 +53,8 @@ export async function insertCampaignItems(
       target: [notificationInbox.campaignId, notificationInbox.recipientType, notificationInbox.recipientId],
       where: sql`${notificationInbox.campaignId} is not null`,
     })
-    .returning({ id: notificationInbox.id });
-  return rows.length;
+    .returning({ recipientId: notificationInbox.recipientId });
+  return rows.map((row) => row.recipientId);
 }
 
 /** An event item to insert. */
@@ -162,7 +164,12 @@ const INBOX_COLUMNS: ListColumns = {
  * cancelling a campaign that is still sending hides the in-app items it already made.
  */
 function visibleTo(owner: InboxOwner): SQL {
-  return sql`${notificationInbox.recipientType} = ${owner.type} and ${notificationInbox.recipientId} = ${owner.id} and not exists (select 1 from ${notificationCampaigns} c where c.id = ${notificationInbox.campaignId} and c.status = 'cancelled')`;
+  return sql`${notificationInbox.recipientType} = ${owner.type} and ${notificationInbox.recipientId} = ${owner.id} and ${notCancelled()}`;
+}
+
+/** O10: the items of a cancelled campaign are hidden from every read. */
+function notCancelled(): SQL {
+  return sql`not exists (select 1 from ${notificationCampaigns} c where c.id = ${notificationInbox.campaignId} and c.status = 'cancelled')`;
 }
 
 /**
@@ -221,6 +228,122 @@ export async function countUnread(db: DbExecutor, owner: InboxOwner): Promise<nu
     sql`select count(*)::int as unread from (select 1 from ${notificationInbox} where ${visibleTo(owner)} and ${notificationInbox.readAt} is null limit ${UNREAD_CAP}) x`,
   );
   return result.rows[0]?.unread ?? 0;
+}
+
+/**
+ * Reads one item of a person's inbox, with its campaign (the live stream, decision 037).
+ *
+ * Why: a doorbell names the item; the owner's two keys are in the `WHERE`, so a doorbell can never render another person's item.
+ *
+ * @param db the pool
+ * @param owner whose inbox
+ * @param itemId the item
+ * @returns the item, or `undefined` when the owner has no such visible item
+ */
+export async function inboxRowFor(db: DbExecutor, owner: InboxOwner, itemId: number): Promise<InboxRow | undefined> {
+  const [row] = await db
+    .select({ item: notificationInbox, campaign: notificationCampaigns })
+    .from(notificationInbox)
+    .leftJoin(notificationCampaigns, eq(notificationCampaigns.id, notificationInbox.campaignId))
+    .where(and(eq(notificationInbox.id, itemId), visibleTo(owner)))
+    .limit(1);
+  return row;
+}
+
+/**
+ * Reads the items one campaign made for some people of one type (a fan-out chunk's doorbell, decision 037).
+ *
+ * @param db the pool
+ * @param campaignId the campaign
+ * @param recipientType the type of every id
+ * @param recipientIds the people (those with an open stream)
+ * @returns their items with the campaign; none when the campaign was cancelled meanwhile
+ */
+export async function campaignRowsFor(
+  db: DbExecutor,
+  campaignId: number,
+  recipientType: NotificationRecipientType,
+  recipientIds: readonly number[],
+): Promise<InboxRow[]> {
+  if (recipientIds.length === 0) return [];
+  return db
+    .select({ item: notificationInbox, campaign: notificationCampaigns })
+    .from(notificationInbox)
+    .leftJoin(notificationCampaigns, eq(notificationCampaigns.id, notificationInbox.campaignId))
+    .where(
+      and(
+        eq(notificationInbox.campaignId, campaignId),
+        eq(notificationInbox.recipientType, recipientType),
+        inArray(notificationInbox.recipientId, [...recipientIds]),
+        notCancelled(),
+      ),
+    );
+}
+
+/**
+ * Reads a person's visible items after an id, oldest first (the replay of a reconnecting stream, decision 037).
+ *
+ * @param db the pool
+ * @param owner whose inbox
+ * @param afterId the last id the client saw
+ * @param limit the most rows to read (the caller reads one more than it replays, to know whether more were missed)
+ * @returns the items with their campaigns
+ */
+export async function inboxRowsAfter(
+  db: DbExecutor,
+  owner: InboxOwner,
+  afterId: number,
+  limit: number,
+): Promise<InboxRow[]> {
+  return db
+    .select({ item: notificationInbox, campaign: notificationCampaigns })
+    .from(notificationInbox)
+    .leftJoin(notificationCampaigns, eq(notificationCampaigns.id, notificationInbox.campaignId))
+    .where(and(visibleTo(owner), gt(notificationInbox.id, afterId)))
+    .orderBy(asc(notificationInbox.id))
+    .limit(limit);
+}
+
+/**
+ * Counts the unread items of several people of one type at once, each capped at {@link UNREAD_CAP}.
+ *
+ * Why: a fan-out chunk reaches up to 500 people with open streams; one grouped query instead of one probe each.
+ *
+ * @param db the pool
+ * @param recipientType the type of every id
+ * @param recipientIds the people
+ * @returns id to unread count (an id without unread items is absent)
+ */
+export async function countUnreadOf(
+  db: DbExecutor,
+  recipientType: NotificationRecipientType,
+  recipientIds: readonly number[],
+): Promise<Map<number, number>> {
+  if (recipientIds.length === 0) return new Map();
+  const rows = await db
+    .select({ recipientId: notificationInbox.recipientId, unread: sql<number>`count(*)::int` })
+    .from(notificationInbox)
+    .where(
+      and(
+        eq(notificationInbox.recipientType, recipientType),
+        inArray(notificationInbox.recipientId, [...recipientIds]),
+        isNull(notificationInbox.readAt),
+        notCancelled(),
+      ),
+    )
+    .groupBy(notificationInbox.recipientId);
+  return new Map(rows.map((row) => [row.recipientId, Math.min(row.unread, UNREAD_CAP)]));
+}
+
+/**
+ * The newest item id of the whole table: where a stream without a cursor starts (decision 037).
+ *
+ * @param db the pool
+ * @returns the largest id, or 0 for an empty table
+ */
+export async function newestInboxId(db: DbExecutor): Promise<number> {
+  const [row] = await db.select({ id: max(notificationInbox.id) }).from(notificationInbox);
+  return row?.id ?? 0;
 }
 
 /**

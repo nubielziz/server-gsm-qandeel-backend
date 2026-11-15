@@ -141,6 +141,21 @@ export interface AppConfig {
      */
     readonly merchantAuth: boolean;
   };
+  /** The live event streams of the signed-in consoles and the storefront account (decision 037). */
+  readonly realtime: {
+    /** `REALTIME_ENABLED`: the kill switch. Off answers every stream `503 UNAVAILABLE` and the clients keep polling. */
+    readonly enabled: boolean;
+    /** `REALTIME_MAX_CONNECTIONS`: open streams of this API process; the next one is `503 UNAVAILABLE`. */
+    readonly maxConnections: number;
+    /** `REALTIME_MAX_PER_SESSION`: open streams of one session (the tabs that share no lock); the next one is `429`. */
+    readonly maxPerSession: number;
+    /** `REALTIME_MAX_PER_IP`: open streams of one client address; the next one is `429`. */
+    readonly maxPerIp: number;
+    /** `REALTIME_HEARTBEAT_SECONDS`: how often every stream gets an `hb` event (under the 30 s cut of a Next rewrite). */
+    readonly heartbeatSeconds: number;
+    /** `REALTIME_MAX_AGE_SECONDS`: a stream ends after this long (plus up to 120 s of jitter), so the guard runs again. */
+    readonly maxAgeSeconds: number;
+  };
   readonly observability: {
     /** When set, `/metrics` requires `Authorization: Bearer <token>`; when unset only private networks may read it. */
     readonly metricsToken: string | undefined;
@@ -305,6 +320,12 @@ const rawSchema = z.object({
   TURNSTILE_SECRET_KEY: z.string().min(1).optional(),
   TURNSTILE_HOSTNAMES: z.string().optional(),
   TURNSTILE_MERCHANT_AUTH: z.stringbool().optional(),
+  REALTIME_ENABLED: z.stringbool().optional(),
+  REALTIME_MAX_CONNECTIONS: int(1, 100_000).optional(),
+  REALTIME_MAX_PER_SESSION: int(1, 50).optional(),
+  REALTIME_MAX_PER_IP: int(1, 100_000).optional(),
+  REALTIME_HEARTBEAT_SECONDS: int(5, 25).optional(),
+  REALTIME_MAX_AGE_SECONDS: int(60, 3600).optional(),
 });
 
 type RawEnv = z.output<typeof rawSchema>;
@@ -653,6 +674,15 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
       hostnames: turnstileHosts.ok ? turnstileHosts.value : [],
       merchantAuth: raw.TURNSTILE_MERCHANT_AUTH ?? false,
     },
+    // Decision 037: a heartbeat under the 30 s cut of a Next rewrite; re-authentication at least every 15 minutes.
+    realtime: {
+      enabled: raw.REALTIME_ENABLED ?? true,
+      maxConnections: raw.REALTIME_MAX_CONNECTIONS ?? 5000,
+      maxPerSession: raw.REALTIME_MAX_PER_SESSION ?? 3,
+      maxPerIp: raw.REALTIME_MAX_PER_IP ?? 30,
+      heartbeatSeconds: raw.REALTIME_HEARTBEAT_SECONDS ?? 15,
+      maxAgeSeconds: raw.REALTIME_MAX_AGE_SECONDS ?? 900,
+    },
     observability: {
       metricsToken: raw.METRICS_TOKEN,
       workerMetricsPort: raw.WORKER_METRICS_PORT ?? 9464,
@@ -826,6 +856,7 @@ export function summarizeConfig(config: AppConfig): Record<string, unknown> {
       hostnames: config.turnstile.hostnames,
       merchantAuth: config.turnstile.merchantAuth,
     },
+    realtime: config.realtime,
     observability: {
       metricsToken: flag(config.observability.metricsToken),
       workerMetricsPort: config.observability.workerMetricsPort,

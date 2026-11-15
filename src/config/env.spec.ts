@@ -485,6 +485,54 @@ describe('Turnstile settings (decision 034)', () => {
   });
 });
 
+describe('REALTIME_* (decision 037)', () => {
+  it('defaults to streams on, 5000 per process, 3 per session, 30 per address, a 15 s heartbeat and 15 minutes', () => {
+    expect(parseEnv({}).realtime).toEqual({
+      enabled: true,
+      maxConnections: 5000,
+      maxPerSession: 3,
+      maxPerIp: 30,
+      heartbeatSeconds: 15,
+      maxAgeSeconds: 900,
+    });
+    expect(parseEnv(production()).realtime.enabled).toBe(true);
+  });
+
+  it('reads the kill switch and the limits', () => {
+    const config = parseEnv({
+      REALTIME_ENABLED: 'false',
+      REALTIME_MAX_CONNECTIONS: '100',
+      REALTIME_MAX_PER_SESSION: '2',
+      REALTIME_MAX_PER_IP: '5000',
+      REALTIME_HEARTBEAT_SECONDS: '5',
+      REALTIME_MAX_AGE_SECONDS: '60',
+    });
+    expect(config.realtime).toEqual({
+      enabled: false,
+      maxConnections: 100,
+      maxPerSession: 2,
+      maxPerIp: 5000,
+      heartbeatSeconds: 5,
+      maxAgeSeconds: 60,
+    });
+    expect(JSON.stringify(summarizeConfig(config))).toContain('"realtime":{"enabled":false');
+  });
+
+  it('keeps the heartbeat under the 30 s cut of a Next rewrite and the age between a minute and an hour', () => {
+    for (const [variable, value] of [
+      ['REALTIME_HEARTBEAT_SECONDS', '4'],
+      ['REALTIME_HEARTBEAT_SECONDS', '26'],
+      ['REALTIME_MAX_AGE_SECONDS', '59'],
+      ['REALTIME_MAX_AGE_SECONDS', '3601'],
+      ['REALTIME_MAX_PER_SESSION', '0'],
+      ['REALTIME_MAX_CONNECTIONS', 'many'],
+      ['REALTIME_ENABLED', 'maybe'],
+    ] as const) {
+      expect(issuesOf({ [variable]: value }).map((i) => i.variable)).toEqual([variable]);
+    }
+  });
+});
+
 describe('parseTrustProxy', () => {
   it('trusts nobody by default', () => {
     for (const value of [undefined, '', 'false', '0', '  '])

@@ -16,6 +16,7 @@ interface Service {
   init?: boolean;
   volumes?: string[];
   environment?: Record<string, string>;
+  ulimits?: { nofile?: { soft: number; hard: number } };
 }
 const compose = Bun.YAML.parse(read('deploy/compose.prod.yaml')) as { services: Record<string, Service> };
 const service = (name: string): Service => {
@@ -44,6 +45,12 @@ describe('deploy/compose.prod.yaml', () => {
     expect(cache).toContain('--maxmemory 256mb');
     expect(service('redis-cache').volumes).toBeUndefined();
     expect(service('redis-queue').volumes).toEqual(['redis-queue-data:/data']);
+  });
+
+  it('raises the descriptor limit of Caddy and the API for the live event streams (decision 037)', () => {
+    for (const name of ['caddy', 'api']) {
+      expect(service(name).ulimits).toEqual({ nofile: { soft: 65536, hard: 65536 } });
+    }
   });
 
   it('gives the worker more time than its 25 s drain, and the API, worker and migrate one image', () => {
@@ -119,7 +126,23 @@ describe('deploy/Caddyfile', () => {
     expect(active).not.toContain('trusted_proxies');
     expect(caddyfile).toContain('max_size 27MB');
     expect(caddyfile).toContain('Strict-Transport-Security');
-    expect(caddyfile).toContain('encode zstd gzip');
+  });
+
+  it('compresses everything except the live event streams (decision 037)', () => {
+    const active = caddyfile
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('#'))
+      .join('\n');
+    const matcher = /^\s*@compressible not path (.+)$/m.exec(active);
+    expect((matcher?.[1] ?? '').split(' ')).toEqual([
+      '/store/v1/me/stream',
+      '/client/stream',
+      '/admin/stream',
+      '/store/v1/tickets/*/stream',
+    ]);
+    expect(active).toContain('encode @compressible zstd gzip');
+    // Caddy flushes text/event-stream by itself; `flush_interval -1` would also stop it from cancelling the upstream on leave.
+    expect(active).not.toContain('flush_interval');
   });
 });
 

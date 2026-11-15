@@ -67,7 +67,7 @@ export class CsrfGuard implements CanActivate {
     const site = request.headers['sec-fetch-site'];
     if (typeof site === 'string') {
       if (SAME_SITE_FETCH.has(site)) return;
-      throw new AppError('CSRF_FAILED', { detail: 'This download must be started from the admin console.' });
+      throw new AppError('CSRF_FAILED', { detail: 'This request must be started from this site.' });
     }
     this.assertAllowedOrigin(request.headers.origin);
   }

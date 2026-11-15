@@ -1,11 +1,17 @@
-// The process-wide Redis clients (decision 006): one cache client and one queue producer client per process, plus a
-// factory for BullMQ worker connections. Connects in onModuleInit, closes in onApplicationShutdown.
+// The process-wide Redis clients (decision 006): one cache client and one queue producer client per process, plus factories
+// for BullMQ worker connections and the real-time subscriber (decision 037). Connects in onModuleInit, closes in
+// onApplicationShutdown.
 import { Inject, Injectable, Logger, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
 import type { Redis } from 'ioredis';
 import { LogThrottle } from '../../common/log-throttle';
 import { TimeoutError, withTimeout } from '../../common/timeout';
 import { APP_CONFIG, type AppConfig } from '../../config';
-import { createCacheClient, createQueueProducerClient, createWorkerConnection } from './redis-clients';
+import {
+  createCacheClient,
+  createQueueProducerClient,
+  createSubscriberConnection,
+  createWorkerConnection,
+} from './redis-clients';
 
 /** The Redis instances of decision 006. */
 export type RedisRole = 'cache' | 'queue';
@@ -81,6 +87,21 @@ export class RedisService implements OnModuleInit, OnApplicationShutdown {
   createWorkerConnection(): Redis {
     const connection = createWorkerConnection(this.config.redis.queueUrl);
     this.watch(connection, 'queue worker');
+    this.workerConnections.add(connection);
+    return connection;
+  }
+
+  /**
+   * Creates the subscriber connection of the real-time hub (decision 037): the cache Redis, reconnects for ever.
+   *
+   * Why: the hub of an API process listens to the doorbell channel on a connection of its own (a subscribed connection runs no
+   * other command). Like a worker connection it is watched (an `error` listener, logged without secrets) and closed at shutdown.
+   *
+   * @returns an unconnected ioredis client for the cache Redis (`gsm-realtime-sub`)
+   */
+  createSubscriberConnection(): Redis {
+    const connection = createSubscriberConnection(this.config.redis.cacheUrl);
+    this.watch(connection, 'realtime subscriber');
     this.workerConnections.add(connection);
     return connection;
   }

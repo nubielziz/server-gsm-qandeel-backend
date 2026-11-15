@@ -1,6 +1,7 @@
 // CampaignFanOut: turns a queued campaign into in-app items and queued email and Telegram rows, chunk by chunk (feature 23, plan
 // section 8.1). Each chunk is one transaction that locks the campaign row, reads one keyset page of one recipient type, inserts its rows
-// idempotently and moves the cursor; the send jobs are added to the bulk queue after the commit.
+// idempotently and moves the cursor; after the commit the chunk rings the inbox doorbell (decision 037) and adds the send jobs to the
+// bulk queue.
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Counter } from 'prom-client';
 import { CLOCK, type Clock } from '../../../../common/clock';
@@ -8,6 +9,7 @@ import { DbService, type DbExecutor } from '../../../../infra/db';
 import { MetricsService } from '../../../../infra/metrics';
 import { QueuesService, UnrecoverableError, queueJobId } from '../../../../infra/queues';
 import type { NotificationCampaign, NotificationRecipientType } from '../../db/schema';
+import { InboxDoorbell } from '../inbox/inbox-doorbell';
 import { insertCampaignItems } from '../inbox/inbox.repository';
 import { AUDIENCE_TYPE_ORDER, parseStoredAudience, selectionsOf } from './audience-spec';
 import { BROADCAST_ANNOUNCEMENT_EVENT } from './broadcast-events';
@@ -78,6 +80,8 @@ interface ChunkResult {
   readonly rows: Array<{ id: number; channel: 'email' | 'telegram' }>;
   readonly chunksDone: number;
   readonly error?: string;
+  /** The people of one type who got an in-app item in this chunk (none when the chunk ran before). */
+  readonly inApp?: { readonly type: NotificationRecipientType; readonly ids: readonly number[] };
 }
 
 const isType = (value: unknown): value is NotificationRecipientType =>
@@ -104,8 +108,9 @@ export function cursorOf(value: unknown): FanOutCursor | undefined {
  * transaction, so a crash resumes where the last commit left. A cancelled campaign stops at the next chunk. When the bulk queue is
  * full the job pauses (the noeviction Redis stays bounded); after its time budget it hands over to a continuation.
  *
- * Side effects: per chunk, inserts `notification_inbox` and `notifications` rows and updates the campaign; adds send jobs to
- * `notification-broadcasts` and continuation jobs to `notifications`; counts `notification_campaign_fanout_rows_total{channel}`.
+ * Side effects: per chunk, inserts `notification_inbox` and `notifications` rows and updates the campaign; after its commit rings the
+ * `inbox created` doorbell with the ids that got an item (decision 037); adds send jobs to `notification-broadcasts` and
+ * continuation jobs to `notifications`; counts `notification_campaign_fanout_rows_total{channel}`.
  */
 @Injectable()
 export class CampaignFanOut {
@@ -119,6 +124,7 @@ export class CampaignFanOut {
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(CAMPAIGN_FANOUT_OPTIONS) private readonly options: CampaignFanOutOptions,
     metrics: MetricsService,
+    private readonly doorbell: InboxDoorbell,
   ) {
     this.counter = new Counter({
       name: 'notification_campaign_fanout_rows_total',
@@ -156,6 +162,10 @@ export class CampaignFanOut {
       if (chunk.state === 'stopped') return { chunks, rows, outcome: 'stopped' };
       chunks += 1;
       rows += chunk.rows.length;
+      // The chunk committed: its recipients' open pages show the item at once (a repeated chunk made none and rings nothing).
+      if (chunk.inApp && chunk.inApp.ids.length > 0) {
+        this.doorbell.campaignChunk(campaignId, chunk.inApp.type, chunk.inApp.ids);
+      }
       await this.handOver(chunk.rows);
       if (chunk.state === 'sent') return { chunks, rows, outcome: 'sent' };
       if (this.clock.nowMs() - startedMs >= this.options.timeBudgetMs) {
@@ -222,7 +232,8 @@ export class CampaignFanOut {
     // Both inserts are ON CONFLICT DO NOTHING on their unique keys: a chunk that runs again makes nothing twice.
     const items = await insertCampaignItems(tx, campaign.id, categoryOf(campaign.purpose), selection.type, inbox, now);
     const created = await insertCampaignMessages(tx, campaign.id, BROADCAST_ANNOUNCEMENT_EVENT, messages, now);
-    this.counter.inc({ channel: 'in_app' }, items);
+    this.counter.inc({ channel: 'in_app' }, items.length);
+    const inApp = { type: selection.type, ids: items };
     for (const row of created) this.counter.inc({ channel: row.channel });
 
     const last = members[members.length - 1];
@@ -233,7 +244,7 @@ export class CampaignFanOut {
       next = following ? { type: following.type, afterId: 0 } : undefined;
     }
     const rows = created.map((row) => ({ id: row.id, channel: row.channel }));
-    if (!next) return this.finish(tx, campaign, stats, reached, now, rows);
+    if (!next) return { ...(await this.finish(tx, campaign, stats, reached, now, rows)), inApp };
 
     const updated = await updateCampaignIf(tx, campaign.id, FANOUT_STATUSES, {
       status: 'sending',
@@ -244,7 +255,7 @@ export class CampaignFanOut {
       fanoutCursor: { ...next },
       updatedAt: now,
     });
-    return { state: 'more', rows, chunksDone: updated?.chunksDone ?? campaign.chunksDone + 1 };
+    return { state: 'more', rows, chunksDone: updated?.chunksDone ?? campaign.chunksDone + 1, inApp };
   }
 
   /** The last chunk: the campaign is `sent` (every in-app item exists and every message is queued). */

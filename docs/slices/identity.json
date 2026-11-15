@@ -4,11 +4,12 @@
   "domain": "A",
   "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
   "counts": {
-    "rows": 53,
-    "endpoints": 67,
+    "rows": 56,
+    "endpoints": 70,
     "bySurface": {
-      "client": 23,
-      "admin": 44
+      "client": 24,
+      "admin": 45,
+      "store": 1
     },
     "frontendCalled": 44
   },
@@ -16,7 +17,8 @@
     2,
     7,
     8,
-    20
+    20,
+    27
   ],
   "ownedTables": [
     {
@@ -256,6 +258,14 @@
     },
     {
       "table": "files",
+      "owner": "platform"
+    },
+    {
+      "table": "notification_campaigns",
+      "owner": "platform"
+    },
+    {
+      "table": "notification_inbox",
       "owner": "platform"
     },
     {
@@ -2486,6 +2496,114 @@
         "file": "scripts/map-additions/20.mjs",
         "spec": "B-TBD merchant-verification-resend"
       }
+    },
+    {
+      "key": "GET /admin/stream",
+      "method": "GET",
+      "path": "/admin/stream",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "قناة الأحداث الحية للموظف (SSE)",
+      "access": "staff-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 27,
+      "tables": [
+        "sessions",
+        "notification_inbox",
+        "notification_campaigns"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/stream",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/stream"
+      },
+      "module": "identity",
+      "description": "The staff member's live event stream (server-sent events).",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/27.mjs",
+        "spec": "B216"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "GET /client/stream",
+      "method": "GET",
+      "path": "/client/stream",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "قناة الأحداث الحية للتاجر (SSE)",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 27,
+      "tables": [
+        "sessions",
+        "notification_inbox",
+        "notification_campaigns"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/stream",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/stream"
+      },
+      "module": "identity",
+      "description": "The merchant's live event stream (server-sent events).",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/27.mjs",
+        "spec": "B216"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "GET /store/v1/me/stream",
+      "method": "GET",
+      "path": "/store/v1/me/stream",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "قناة الأحداث الحية للزبون (SSE)",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 27,
+      "tables": [
+        "sessions",
+        "notification_inbox",
+        "notification_campaigns"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/me/stream",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/me/stream"
+      },
+      "module": "identity",
+      "description": "The customer's live event stream (server-sent events).",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/27.mjs",
+        "spec": "B216"
+      },
+      "successStatus": 200
     }
   ],
   "scenarios": [

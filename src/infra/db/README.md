@@ -49,7 +49,16 @@ await this.db.runInTransaction(async ({ tx, afterCommit }) => {
   ledger zero-sum rule) also skips them.
 - `isolation: 'repeatable read' | 'serializable'` is optional; there is no automatic retry on a serialization failure.
 - Callbacks registered inside a nested transaction (savepoint) that rolls back still run after the outer commit. That is
-  harmless for cache deletes (the only use today); track callbacks per savepoint before using them for jobs or emails.
+  harmless for cache deletes and real-time doorbells (the uses today: the hub finds no row and sends nothing); track callbacks
+  per savepoint before using them for jobs or emails.
+- **`onCommit(callback)`** (`transaction.ts`, exported from `src/infra/db`; decision 037): registers work for after the commit of
+  the transaction of the *current async context* (`runInTransaction` runs its function inside an `AsyncLocalStorage`), without
+  needing the `afterCommit` parameter. Why: many callers hold only `tx` (`NotificationService.enqueue({ tx })` has 21 call
+  sites), and the real-time doorbell must ring after the commit. It runs after the commit; **never** after a rollback; at once
+  when no transaction is open; at once when called after the commit (a late promise). It is not awaited and a failure is only
+  logged. A savepoint (`tx.transaction`) shares the list of its transaction, nested `runInTransaction` calls keep their own, and
+  `afterCommit` uses the same list. Use it for a publish or a cache delete, never for a write that must be atomic with the change
+  (use the outbox, decision 020).
 - Repositories take `DbExecutor` (the database or a transaction) so one function serves both.
 - The `postgres` health indicator (critical) is registered by `DbModule`; `GET /health` runs `select 1`.
 - `PgListener` is for `LISTEN`/`NOTIFY`: one `pg.Client` of its own (never a pooled connection held for ever), named in

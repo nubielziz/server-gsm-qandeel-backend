@@ -1,12 +1,13 @@
 // SessionService: create, rotate, touch, revoke and look up the sessions of staff, merchants and customers (decision 018).
 // Tokens are random and stored only as keyed hashes (decision 019); lookups are cached 60 seconds in the cache Redis and
-// deleted after the commit of any change to the session or its account.
+// deleted after the commit of any change to the session or its account, which also rings the `session` doorbell (decision 037).
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { CacheKeys, CacheService } from '../../../infra/cache';
 import { TokenService } from '../../../infra/crypto';
 import { DbService, type DbExecutor, type TransactionContext } from '../../../infra/db';
+import { RealtimePublisher, SESSION_TOPIC } from '../../../infra/realtime';
 import type { SubjectType } from '../db/schema';
 import { SessionPolicy } from './session-policy';
 import {
@@ -39,6 +40,8 @@ export const UNKNOWN_SESSION_TTL_SECONDS = 10;
 const TOKEN_SHAPE = /^[A-Za-z0-9_-]{32,128}$/;
 const MAX_USER_AGENT = 512;
 const MAX_TTL_SECONDS = 400 * 24 * 60 * 60;
+/** Session ids per `session ended` doorbell: well under its 8 KB. */
+const ENDED_IDS_PER_DOORBELL = 500;
 
 function assertCreateInput(input: CreateSessionInput): void {
   if (!Number.isSafeInteger(input.subjectId) || input.subjectId < 1) {
@@ -60,7 +63,9 @@ function assertCreateInput(input: CreateSessionInput): void {
  * a row in `sessions` with a sign-in stage, absolute and idle expiry from settings, rotation when a step completes
  * (no fixation) and revocation of one session or all sessions of an account.
  *
- * Side effects: reads and writes `sessions`; reads and deletes `gsm:{env}:identity:session:{tokenHash}` in the cache Redis.
+ * Side effects: reads and writes `sessions`; reads and deletes `gsm:{env}:identity:session:{tokenHash}` in the cache Redis; after
+ * the commit of an end (revoke, rotate, revoke all) rings `session ended` with the session ids, and after an account change
+ * (`invalidateSubject`) `session subject`, so the live streams of those sessions close (decision 037).
  *
  * @see docs/decisions/018-auth-sessions-csrf.md and docs/cache-keys.md
  */
@@ -74,6 +79,7 @@ export class SessionService {
     private readonly policy: SessionPolicy,
     private readonly subjects: SessionSubjects,
     @Inject(CLOCK) private readonly clock: Clock,
+    private readonly realtime: RealtimePublisher,
   ) {}
 
   /**
@@ -100,7 +106,8 @@ export class SessionService {
    * Why: decision 018: reaching `active` rotates the token, so a token known before the last sign-in step is worthless
    * (session fixation). The CSRF token changes with it.
    *
-   * Side effects: revokes the old row and inserts the new one in one transaction; deletes the old cache key after the commit.
+   * Side effects: revokes the old row and inserts the new one in one transaction; deletes the old cache key and rings `session
+   * ended` for the old session after the commit.
    *
    * @param current the session being replaced (`principal.session`)
    * @param input the new stage and, optionally, IP, user agent and lifetime
@@ -125,6 +132,7 @@ export class SessionService {
       assertCreateInput(create);
       const issued = await this.insert(context.tx, create, now);
       this.forgetAfterCommit(context, [old.tokenHash]);
+      this.announceEnded(context, [old.id]);
       return issued;
     });
   }
@@ -174,7 +182,7 @@ export class SessionService {
    *
    * Why: logout, "end this device" and the admin's revoke-session route.
    *
-   * Side effects: sets `revoked_at`; deletes the cached view after the commit.
+   * Side effects: sets `revoked_at`; deletes the cached view and rings `session ended` after the commit.
    *
    * @param sessionId the session id
    * @param work the caller's transaction, if it has one
@@ -183,7 +191,10 @@ export class SessionService {
   revoke(sessionId: number, work?: SessionWork): Promise<boolean> {
     return this.within(work, async (context) => {
       const row = await revokeLiveSession(context.tx, sessionId, this.clock.now());
-      if (row) this.forgetAfterCommit(context, [row.tokenHash]);
+      if (row) {
+        this.forgetAfterCommit(context, [row.tokenHash]);
+        this.announceEnded(context, [row.id]);
+      }
       return row !== undefined;
     });
   }
@@ -194,7 +205,8 @@ export class SessionService {
    * Why: suspension, password change and reset, "end all sessions" and the 2FA reset sign the account out everywhere
    * (decision 018); a password change keeps the caller's own session.
    *
-   * Side effects: sets `revoked_at` on every live session of the account; deletes their cached views after the commit.
+   * Side effects: sets `revoked_at` on every live session of the account; deletes their cached views and rings `session ended`
+   * with their ids after the commit.
    *
    * @param subjectType staff, client or customer
    * @param subjectId the account id
@@ -220,6 +232,10 @@ export class SessionService {
         context,
         rows.map((row) => row.tokenHash),
       );
+      this.announceEnded(
+        context,
+        rows.map((row) => row.id),
+      );
       return rows.length;
     });
   }
@@ -230,7 +246,8 @@ export class SessionService {
    * Why: the cached view holds the account state (status, role id), so a change to the account (suspension, role change,
    * password change) must delete it, or the old state would be served for up to a minute (decision 018).
    *
-   * Side effects: deletes the cache keys of the account's live sessions (after the commit when `work` is given).
+   * Side effects: deletes the cache keys of the account's live sessions (after the commit when `work` is given); when it has live
+   * sessions, rings `session subject` afterwards, so its live streams end with `bye reauth` and reconnect through the guard.
    *
    * @param subjectType staff, client or customer
    * @param subjectId the account id
@@ -240,6 +257,12 @@ export class SessionService {
     const hashes = await liveTokenHashesOf(work?.tx ?? this.db.db, subjectType, subjectId);
     if (work) this.forgetAfterCommit(work, hashes);
     else await this.forget(hashes);
+    if (hashes.length === 0) return;
+    // Inside an afterCommit callback the change is already committed: publish directly, since an onCommit() there would join
+    // an enclosing transaction of the caller and be dropped by its rollback (the stream would then stay open until max_age).
+    const fields = { subjectType, subjectId };
+    if (work) work.afterCommit(() => void this.realtime.publish(SESSION_TOPIC, 'subject', fields));
+    else this.realtime.publishOnCommit(SESSION_TOPIC, 'subject', fields);
   }
 
   private async load(hash: string): Promise<SessionView | undefined> {
@@ -290,6 +313,19 @@ export class SessionService {
   private forgetAfterCommit(context: Pick<SessionWork, 'afterCommit'>, hashes: readonly string[]): void {
     if (hashes.length === 0) return;
     context.afterCommit(() => this.forget(hashes));
+  }
+
+  /** Rings `session ended` after the commit (ids only), so the hub closes the live streams of those sessions (decision 037). */
+  private announceEnded(context: Pick<SessionWork, 'afterCommit'>, ids: readonly number[]): void {
+    if (ids.length === 0) return;
+    context.afterCommit(() => {
+      for (let at = 0; at < ids.length; at += ENDED_IDS_PER_DOORBELL) {
+        // Already after the commit: publish directly (an onCommit() here would join an enclosing transaction, see above).
+        void this.realtime.publish(SESSION_TOPIC, 'ended', {
+          sessionIds: ids.slice(at, at + ENDED_IDS_PER_DOORBELL),
+        });
+      }
+    });
   }
 
   private async forget(hashes: readonly string[]): Promise<void> {

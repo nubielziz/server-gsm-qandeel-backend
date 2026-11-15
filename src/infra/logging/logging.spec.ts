@@ -1,8 +1,10 @@
-// Unit tests for the logging rules of decision 012: masking, redaction, request id binding, level per environment.
+// Unit tests for the logging rules of decision 012: masking, redaction, request id binding, level per environment, the level of an
+// access log line (live event streams at debug, decision 037).
 import { describe, expect, it } from 'bun:test';
 import pino from 'pino';
 import { runWithRequestId } from '../../common/request-id';
 import { parseEnv } from '../../config';
+import { accessLogLevel } from './access-log';
 import { maskEmail, maskImei, maskPhone } from './mask';
 import { buildPinoOptions, chooseDestination } from './pino-options';
 
@@ -153,5 +155,41 @@ describe('log destination', () => {
     expect(await chooseDestination(parseEnv({ NODE_ENV: 'test' }), injected)).toBe(injected);
     expect(await chooseDestination(parseEnv({ NODE_ENV: 'test' }), undefined)).toBeUndefined();
     expect(await chooseDestination(parseEnv({ NODE_ENV: 'development' }), undefined)).toBeDefined();
+  });
+});
+
+describe('accessLogLevel', () => {
+  const facts = {
+    route: '/admin/orders',
+    status: 200,
+    code: undefined,
+    contentType: 'application/json; charset=utf-8',
+  };
+
+  it('logs successes at info, refusals at warn and faults at error, a maintenance 503 like a refusal', () => {
+    expect(accessLogLevel(facts)).toBe('log');
+    expect(accessLogLevel({ ...facts, status: 404, code: 'NOT_FOUND' })).toBe('warn');
+    expect(accessLogLevel({ ...facts, status: 500, code: 'INTERNAL_ERROR' })).toBe('error');
+    expect(accessLogLevel({ ...facts, status: 503, code: 'MAINTENANCE' })).toBe('warn');
+  });
+
+  it('logs health probes, metric scrapes and live event streams at debug (decision 037)', () => {
+    expect(accessLogLevel({ ...facts, route: '/health' })).toBe('debug');
+    expect(accessLogLevel({ ...facts, route: '/metrics' })).toBe('debug');
+    expect(
+      accessLogLevel({ ...facts, route: '/store/v1/me/stream', contentType: 'text/event-stream; charset=utf-8' }),
+    ).toBe('debug');
+  });
+
+  it('keeps a refused stream (a problem+json answer) at warn', () => {
+    expect(
+      accessLogLevel({
+        ...facts,
+        route: '/store/v1/me/stream',
+        status: 429,
+        code: 'RATE_LIMITED',
+        contentType: 'application/problem+json',
+      }),
+    ).toBe('warn');
   });
 });

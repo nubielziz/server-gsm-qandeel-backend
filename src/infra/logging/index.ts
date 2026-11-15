@@ -1,5 +1,6 @@
 // Public surface of src/infra/logging: the module, the pino options, masking helpers and the access log hook.
-export { registerAccessLog } from './access-log';
+export { accessLogLevel, registerAccessLog } from './access-log';
+export type { AccessLogFacts } from './access-log';
 export { LOG_DESTINATION, LoggingModule } from './logging.module';
 export { maskEmail, maskImei, maskPhone } from './mask';
 export { buildPinoOptions, chooseDestination, requestIdMixin } from './pino-options';

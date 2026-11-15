@@ -1,4 +1,5 @@
-// Factories for the ioredis clients of the two Redis roles (decision 006): cache, queue producer, worker connection.
+// Factories for the ioredis clients of the two Redis roles (decision 006): cache, queue producer, worker connection, and the
+// real-time subscriber of the cache role (decision 037).
 // None of them connects when it is built (`lazyConnect`); RedisService connects in onModuleInit.
 import { Redis, type RedisOptions } from 'ioredis';
 
@@ -81,6 +82,27 @@ export function createWorkerConnection(url: string): Redis {
   return new Redis(url, {
     ...COMMON,
     connectionName: 'gsm-queue-worker',
+    maxRetriesPerRequest: null,
+  });
+}
+
+/**
+ * Builds the real-time subscriber of an API process (decision 037): one connection to the cache Redis in subscriber mode.
+ *
+ * Why: the doorbell of decision 037 is a pub/sub channel on the cache Redis (pub/sub stores no key, so `allkeys-lru` does not
+ * matter). A subscribed connection can run no other command, so it is its own; it must outlive a restart of Redis, so it
+ * reconnects for ever (`maxRetriesPerRequest: null`, no command timeout) and resubscribes itself (`autoResubscribe`, the
+ * ioredis default).
+ *
+ * @param url the cache Redis URL (`REDIS_CACHE_URL`)
+ * @returns an unconnected client; the hub subscribes it, which connects it
+ *
+ * @see docs/decisions/037-realtime-sse.md
+ */
+export function createSubscriberConnection(url: string): Redis {
+  return new Redis(url, {
+    ...COMMON,
+    connectionName: 'gsm-realtime-sub',
     maxRetriesPerRequest: null,
   });
 }

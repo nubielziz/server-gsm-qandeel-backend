@@ -13,9 +13,10 @@ import {
   notificationCampaigns,
 } from '../../db/schema';
 import { OutboxService } from '../../outbox/outbox.service';
+import { InboxDoorbell } from '../inbox/inbox-doorbell';
 import { NotificationInbox } from '../inbox/notification-inbox';
 import { NotificationService } from '../notification.service';
-import { type AudienceSpec, parseStoredAudience } from './audience-spec';
+import { AUDIENCE_TYPE_ORDER, type AudienceSpec, parseStoredAudience, selectionsOf } from './audience-spec';
 import { AudiencePreviewService } from './audience-preview.service';
 import { BROADCAST_TEST_EVENT } from './broadcast-events';
 import { CampaignAdminService, campaignNotFound, currentStaff, notNow } from './campaign-admin.service';
@@ -55,6 +56,7 @@ export class CampaignSendService {
     private readonly notifications: NotificationService,
     private readonly inbox: NotificationInbox,
     @Inject(CLOCK) private readonly clock: Clock,
+    private readonly doorbell: InboxDoorbell,
   ) {}
 
   /**
@@ -148,6 +150,9 @@ export class CampaignSendService {
   /**
    * Cancels a scheduled, queued or sending campaign.
    *
+   * Side effects: after the commit rings `inbox recount` for the audience's recipient types: the items it already made hide, so
+   * the open bells get their new count (decision 037).
+   *
    * @param id the campaign
    * @returns the cancelled campaign
    * @throws {AppError} `NOT_FOUND`; `INVALID_TRANSITION` for a draft (delete it) or a campaign that is over
@@ -168,6 +173,9 @@ export class CampaignSendService {
         if (!current) throw campaignNotFound();
         throw notNow(current, 'cancelled');
       }
+      // A stored audience that no longer parses could have reached anyone: every type recounts.
+      const spec = parseStoredAudience(row.audience);
+      this.doorbell.recount(spec ? selectionsOf(spec).map((selection) => selection.type) : AUDIENCE_TYPE_ORDER);
       await this.audit.record(tx, {
         action: 'cancelled notification campaign',
         entityType: 'notification_campaign',

@@ -2,7 +2,8 @@
 // need from its documentation routes, the audit log, the transactional outbox (write events, register their queues, relay
 // them), the settings readers, maintenance mode and the merchant webhooks (the event contracts and outbox routes of 7b, the
 // delivery engine, the processor of the `merchant-webhooks` queue) and the notifications (event registry, templates, delivery, the
-// mail and Telegram channels, a merchant's preference rules) and the public service pictures of the storefront.
+// mail and Telegram channels, a merchant's preference rules), the inbox doorbell and live-stream source (feature 27) and the public service
+// pictures of the storefront.
 export { PlatformModule } from './platform.module';
 export { FilesModule } from './files.module';
 export {
@@ -212,6 +213,16 @@ export { marketingUnsubscribeToken, parseMarketingUnsubscribeToken } from './not
 export { InboxTextRegistry, renderInboxText } from './notifications/inbox/inbox-texts';
 export type { InboxText, InboxTextDefinition } from './notifications/inbox/inbox-texts';
 export { NotificationInbox } from './notifications/inbox/notification-inbox';
+export { CHUNK_IDS_PER_DOORBELL, INBOX_TOPIC, InboxDoorbell } from './notifications/inbox/inbox-doorbell';
+export { INBOX_REPLAY_LIMIT, InboxRealtimeSource } from './notifications/inbox/inbox-realtime.source';
+export {
+  NOTIFICATION_CREATED_EVENT,
+  NOTIFICATION_READ_EVENT,
+  UNREAD_CHANGED_EVENT,
+  zNotificationCreatedEvent,
+  zNotificationReadEvent,
+  zUnreadChangedEvent,
+} from './notifications/inbox/inbox-realtime.events';
 export type { EventItemInput } from './notifications/inbox/notification-inbox';
 export {
   NotificationCampaignEngineModule,

@@ -5,6 +5,7 @@ export type { RedisRole } from './redis.service';
 export {
   createCacheClient,
   createQueueProducerClient,
+  createSubscriberConnection,
   createWorkerConnection,
   reconnectDelayMs,
 } from './redis-clients';

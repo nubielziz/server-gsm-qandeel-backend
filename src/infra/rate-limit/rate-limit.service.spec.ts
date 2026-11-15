@@ -26,6 +26,7 @@ describe('RATE_LIMITERS', () => {
       'ip',
       'media',
       'sign-in',
+      'stream-connect',
       'supplier',
       'ticket-email',
       'token',
@@ -37,6 +38,10 @@ describe('RATE_LIMITERS', () => {
 
   it('locks a sign-in pair out for as long as its window after five attempts', () => {
     expect(RATE_LIMITERS['sign-in']).toMatchObject({ points: 5, windowSeconds: 900, blockSeconds: 900 });
+  });
+
+  it('lets one session open 20 live streams a minute (decision 037)', () => {
+    expect(RATE_LIMITERS['stream-connect']).toMatchObject({ points: 20, windowSeconds: 60 });
   });
 
   it('lets one email address open 3 tickets an hour on the public form', () => {

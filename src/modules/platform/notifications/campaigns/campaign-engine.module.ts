@@ -1,10 +1,11 @@
-// The worker side of the notification center (feature 23, plan section 2.3): the fan-out, the in-app writer, the per-channel budget,
+// The worker side of the notification center (feature 23, plan section 2.3): the fan-out, the in-app writer and its doorbell (feature 27), the per-channel budget,
 // the minute sweep and its schedule. Imported by `NotificationDeliveryModule`, so the API (which writes the events) and the worker (which
 // runs the jobs) load the same classes; only the worker starts BullMQ workers for the processors.
 import { Module, type OnModuleInit } from '@nestjs/common';
 import { JobSchedulerRegistry } from '../../../../infra/queues';
 import { AuditService } from '../../audit/audit.service';
 import { SettingsModule } from '../../settings/settings.module';
+import { InboxDoorbell } from '../inbox/inbox-doorbell';
 import { NotificationInbox } from '../inbox/notification-inbox';
 import { NotificationReconcile } from '../notification-reconcile';
 import { NotificationReconcileProcessor, NOTIFICATION_RECONCILE_JOB } from '../notification-reconcile.processor';
@@ -39,6 +40,7 @@ export const NOTIFICATION_RETENTION_SCHEDULER = 'notification-retention';
   providers: [
     // The worker has no global AuditModule: the sweep's audit rows need their own writer (like the other worker jobs).
     AuditService,
+    InboxDoorbell,
     NotificationInbox,
     BroadcastBudget,
     { provide: CAMPAIGN_FANOUT_OPTIONS, useValue: DEFAULT_FANOUT_OPTIONS },
@@ -52,6 +54,7 @@ export const NOTIFICATION_RETENTION_SCHEDULER = 'notification-retention';
     NotificationRetentionProcessor,
   ],
   exports: [
+    InboxDoorbell,
     NotificationInbox,
     BroadcastBudget,
     CampaignFanOut,

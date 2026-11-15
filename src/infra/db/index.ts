@@ -11,7 +11,7 @@ export { isForeignKeyViolation, isUniqueViolation, pgErrorInfo } from './pg-erro
 export type { PgErrorInfo } from './pg-errors';
 export { escapeLike, listOrderBy, listWhere } from './list-sql';
 export type { ListColumn, ListColumns } from './list-sql';
-export { runInTransaction } from './transaction';
+export { onCommit, runInTransaction } from './transaction';
 export type { IsolationLevel, TransactionContext, TransactionOptions, TransactionRunner } from './transaction';
 export { MIGRATIONS_FOLDER, migrateDatabase } from './migrate';
 export { databaseUrlFor } from './url';

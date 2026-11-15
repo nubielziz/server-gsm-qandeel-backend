@@ -12,9 +12,10 @@ import { TEST_DATABASE_URL } from './db';
 import { CacheModule } from '../../src/infra/cache';
 import { DbModule } from '../../src/infra/db';
 import { LOG_DESTINATION } from '../../src/infra/logging';
-import { SecurityModule } from '../../src/modules/identity';
+import { SecurityModule, StreamRoutesModule } from '../../src/modules/identity';
 import { QueuesModule } from '../../src/infra/queues';
 import { PublicIpLimitModule, RateLimitModule } from '../../src/infra/rate-limit';
+import { RealtimeHubModule, RealtimeModule } from '../../src/infra/realtime';
 import { RedisModule } from '../../src/infra/redis';
 import { StorageModule } from '../../src/infra/storage';
 import { CatalogAdminModule, CatalogPricesModule } from '../../src/modules/catalog';
@@ -135,9 +136,13 @@ const NEEDS_DATABASE_AND_CACHE = [
   SupportAdminModule,
   SupportStoreModule,
   SupportMailModule,
+  StreamRoutesModule,
 ];
-/** The pipeline module that only uses the cache Redis and the rate limiter: replaced when the infrastructure is. */
-const NEEDS_INFRASTRUCTURE = [PublicIpLimitModule];
+/**
+ * The modules that only use the cache Redis and the rate limiter: replaced when the infrastructure is (the per-IP limit stage, and
+ * the real-time publisher and hub of decision 037).
+ */
+const NEEDS_INFRASTRUCTURE = [PublicIpLimitModule, RealtimeModule, RealtimeHubModule];
 
 /** What a test can change about the app. */
 export interface TestAppOptions {

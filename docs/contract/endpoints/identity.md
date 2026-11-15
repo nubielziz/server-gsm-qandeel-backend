@@ -74,6 +74,9 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 | `PATCH /admin/api-keys/:id` | admin | staff-permission `api_keys:update` | 20 | `updateApiKey` |
 | `POST /client/auth/password/change` | client | merchant-session | 20 |  |
 | `POST /client/auth/verify-email/resend` | client | merchant-session | 20 |  |
+| `GET /admin/stream` | admin | staff-session | 27 |  |
+| `GET /client/stream` | client | merchant-session | 27 |  |
+| `GET /store/v1/me/stream` | store | customer-session | 27 |  |
 
 ## POST /client/auth/register
 
@@ -568,5 +571,20 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 ## POST /client/auth/verify-email/resend
 
 - **Map addition** (B-TBD merchant-verification-resend, `scripts/map-additions/20.mjs`): Send the signed-in merchant a new email verification link. (إعادة إرسال إيميل تفعيل البريد) · merchant-session · stage 20 · tables clients, auth_tokens, notifications
+- **Frontend**: none.
+
+## GET /admin/stream
+
+- **Map addition** (B216, `scripts/map-additions/27.mjs`): The staff member's live event stream (server-sent events). (قناة الأحداث الحية للموظف (SSE)) · staff-session · stage 27 · tables sessions, notification_inbox, notification_campaigns · success 200
+- **Frontend**: none.
+
+## GET /client/stream
+
+- **Map addition** (B216, `scripts/map-additions/27.mjs`): The merchant's live event stream (server-sent events). (قناة الأحداث الحية للتاجر (SSE)) · merchant-session · stage 27 · tables sessions, notification_inbox, notification_campaigns · success 200
+- **Frontend**: none.
+
+## GET /store/v1/me/stream
+
+- **Map addition** (B216, `scripts/map-additions/27.mjs`): The customer's live event stream (server-sent events). (قناة الأحداث الحية للزبون (SSE)) · customer-session · stage 27 · tables sessions, notification_inbox, notification_campaigns · success 200
 - **Frontend**: none.
 

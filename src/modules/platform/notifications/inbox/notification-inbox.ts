@@ -6,6 +6,7 @@ import { CLOCK, type Clock } from '../../../../common/clock';
 import type { DbExecutor } from '../../../../infra/db';
 import type { NotificationRecipientType } from '../../db/schema';
 import { type Recipient, audienceOf, recipientOf } from '../notification-foreign-reads';
+import { InboxDoorbell } from './inbox-doorbell';
 import { InboxTextRegistry } from './inbox-texts';
 import { insertEventItem } from './inbox.repository';
 
@@ -40,13 +41,15 @@ export function canReadInbox(recipient: Recipient): boolean {
  * transaction, so it exists if and only if the event did. An event with no registered text, a recipient who is gone or cannot read
  * an inbox, and a repeated occurrence make nothing.
  *
- * Side effects: inserts at most one `notification_inbox` row per call.
+ * Side effects: inserts at most one `notification_inbox` row per call; after the commit of a new item rings the `inbox created`
+ * doorbell (decision 037), so the item reaches the recipient's open pages at once.
  */
 @Injectable()
 export class NotificationInbox {
   constructor(
     private readonly texts: InboxTextRegistry,
     @Inject(CLOCK) private readonly clock: Clock,
+    private readonly doorbell: InboxDoorbell,
   ) {}
 
   /**
@@ -62,7 +65,7 @@ export class NotificationInbox {
     if (!text) return undefined;
     const recipient = await recipientOf(tx, input.recipient.type, input.recipient.id);
     if (!recipient || !canReadInbox(recipient)) return undefined;
-    return insertEventItem(
+    const id = await insertEventItem(
       tx,
       {
         recipientType: input.recipient.type,
@@ -74,6 +77,9 @@ export class NotificationInbox {
       },
       this.clock.now(),
     );
+    // Rings after the caller's transaction commits (the async context finds it: callers pass only `tx`); a repeat made nothing.
+    if (id !== undefined) this.doorbell.created(input.recipient.type, input.recipient.id, id);
+    return id;
   }
 
   /**

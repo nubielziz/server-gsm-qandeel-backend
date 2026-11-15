@@ -27,7 +27,7 @@ export interface LimiterConfig {
  * the hashed email address of a public ticket form (`RateLimitService.compositeKey`); `wallet-topup` the customer id; `help-vote` the
  * client IP + help article id (`RateLimitService.compositeKey`); `media` the client IP; `account-mail` an account and a kind of
  * mail (`accountMailKey`); `broadcast-email` and `broadcast-telegram` the constant `all` (one budget for the whole system,
- * feature 23).
+ * feature 23); `stream-connect` the first cap key of a live stream (`session:<id>`, decision 037).
  *
  * @see docs/decisions/021-rate-limiting.md
  */
@@ -106,6 +106,12 @@ export const RATE_LIMITERS = {
     windowSeconds: 24 * 60 * 60,
     description:
       'The "was this helpful?" vote of a help article (POST /store/v1/help/:slug/vote): one counted vote per visitor IP and article per day; repeats are accepted and ignored.',
+  },
+  'stream-connect': {
+    points: 20,
+    windowSeconds: 60,
+    description:
+      'Opening a live event stream (GET /admin/stream, /client/stream, /store/v1/me/stream): attempts per session (the first cap key, `session:<id>`), so a reconnect loop cannot hammer the API (decision 037).',
   },
   media: {
     points: 1200,

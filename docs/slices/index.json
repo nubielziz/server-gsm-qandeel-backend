@@ -5,18 +5,20 @@
       "module": "identity",
       "name": "Identity & access",
       "domain": "A",
-      "rows": 53,
-      "endpoints": 67,
+      "rows": 56,
+      "endpoints": 70,
       "bySurface": {
-        "client": 23,
-        "admin": 44
+        "client": 24,
+        "admin": 45,
+        "store": 1
       },
       "frontendCalled": 44,
       "stages": [
         2,
         7,
         8,
-        20
+        20,
+        27
       ],
       "tables": 8,
       "scenarios": [

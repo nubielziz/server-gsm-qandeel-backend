@@ -1,5 +1,6 @@
 // Root module of the API process (decision 016): config, the clock (decision 031), logging, metrics, the infrastructure (database, Redis, cache, rate
-// limits, crypto, storage, outbound HTTP, the anti-bot check, queue producers), the error filter, the request pipeline registry and the 12 domain
+// limits, crypto, storage, outbound HTTP, the anti-bot check, queue producers, the real-time publisher and hub of decision 037), the error filter,
+// the request pipeline registry and the 12 domain
 // modules. The API only produces work (queue producers, outbox writes). Fastify hooks (IP rules, maintenance, per-IP limit)
 // register with the pipeline; sessions, guards and CSRF are added by their own feature.
 import { Module } from '@nestjs/common';
@@ -16,6 +17,7 @@ import { LoggingModule } from './infra/logging';
 import { MetricsModule } from './infra/metrics';
 import { QueuesModule } from './infra/queues';
 import { PublicIpLimitModule, RateLimitModule } from './infra/rate-limit';
+import { RealtimeHubModule, RealtimeModule } from './infra/realtime';
 import { RedisModule } from './infra/redis';
 import { StorageModule } from './infra/storage';
 import { TurnstileModule } from './infra/turnstile';
@@ -36,7 +38,8 @@ import { SupportModule } from './modules/support';
  * Root Nest module of the API process.
  *
  * Why: the API and the worker share config, logging, metrics and the infrastructure modules; the API adds the
- * problem+json filter and every domain module (one per map domain, `scripts/module-map.mjs`).
+ * problem+json filter, the real-time hub (it holds the live streams, decision 037) and every domain module (one per map domain,
+ * `scripts/module-map.mjs`).
  */
 @Module({
   imports: [
@@ -53,6 +56,8 @@ import { SupportModule } from './modules/support';
     OutboundHttpModule,
     TurnstileModule,
     QueuesModule,
+    RealtimeModule,
+    RealtimeHubModule,
     ErrorsModule,
     DhruModule,
     PipelineModule,

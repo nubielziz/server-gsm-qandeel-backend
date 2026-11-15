@@ -10,20 +10,20 @@
     "rowFlags": "the same files may add Turnstile to a public client or store map row (rowFlags, feature 24A); the endpoint then has turnstile true and rowFlag { file, spec }"
   },
   "counts": {
-    "rows": 333,
+    "rows": 336,
     "tables": 66,
     "scenarios": 13,
     "surfaces": 9,
     "moneyEvents": 13,
     "accounts": 14,
-    "endpoints": 441,
+    "endpoints": 444,
     "map": {
       "rows": 274,
       "endpoints": 382
     },
     "additions": {
-      "rows": 59,
-      "endpoints": 59
+      "rows": 62,
+      "endpoints": 62
     },
     "frontendRoutes": 302,
     "bySurface": {
@@ -36,12 +36,12 @@
         "endpoints": 12
       },
       "client": {
-        "rows": 58,
-        "endpoints": 58
+        "rows": 59,
+        "endpoints": 59
       },
       "admin": {
-        "rows": 193,
-        "endpoints": 301
+        "rows": 194,
+        "endpoints": 302
       },
       "hooks": {
         "rows": 3,
@@ -56,8 +56,8 @@
         "endpoints": 4
       },
       "store": {
-        "rows": 48,
-        "endpoints": 48
+        "rows": 49,
+        "endpoints": 49
       },
       "system": {
         "rows": 4,
@@ -82,8 +82,8 @@
         "endpoints": 59
       },
       "identity": {
-        "rows": 53,
-        "endpoints": 67
+        "rows": 56,
+        "endpoints": 70
       },
       "commissions": {
         "rows": 6,
@@ -15091,6 +15091,114 @@
       "addition": {
         "file": "scripts/map-additions/26.mjs",
         "spec": "B214"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "GET /admin/stream",
+      "method": "GET",
+      "path": "/admin/stream",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "ops",
+      "descriptionAr": "قناة الأحداث الحية للموظف (SSE)",
+      "access": "staff-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 27,
+      "tables": [
+        "sessions",
+        "notification_inbox",
+        "notification_campaigns"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/stream",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/stream"
+      },
+      "module": "identity",
+      "description": "The staff member's live event stream (server-sent events).",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/27.mjs",
+        "spec": "B216"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "GET /client/stream",
+      "method": "GET",
+      "path": "/client/stream",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "قناة الأحداث الحية للتاجر (SSE)",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 27,
+      "tables": [
+        "sessions",
+        "notification_inbox",
+        "notification_campaigns"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/stream",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/stream"
+      },
+      "module": "identity",
+      "description": "The merchant's live event stream (server-sent events).",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/27.mjs",
+        "spec": "B216"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "GET /store/v1/me/stream",
+      "method": "GET",
+      "path": "/store/v1/me/stream",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "قناة الأحداث الحية للزبون (SSE)",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 27,
+      "tables": [
+        "sessions",
+        "notification_inbox",
+        "notification_campaigns"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/me/stream",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/me/stream"
+      },
+      "module": "identity",
+      "description": "The customer's live event stream (server-sent events).",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/27.mjs",
+        "spec": "B216"
       },
       "successStatus": 200
     }

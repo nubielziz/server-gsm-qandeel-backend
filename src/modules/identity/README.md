@@ -46,6 +46,7 @@ Exports `IdentityModule` and the security stack (`SecurityModule`, global). Othe
 | `CurrentMerchant` | parameter decorator: the signed-in merchant (`MerchantPrincipal`) of a `merchant-session` route |
 | `MerchantGroupMembers` | `countByGroup(db, groupIds)` (the `merchantCount` of the catalog's group routes and their delete guard) and `countInGroup(db, groupId, clientIds)` (the overdraft rule); read-only, no dependencies, exported in the leaf block of `index.ts` (decision 032) |
 | `GroupPromotionModule`, `GroupPromotion`, `decidePromotion`, `breaksCreditRule` | the nightly promotion job of feature 4a (worker only) and its pure decision |
+| `StreamRoutesModule` | the three live event stream routes (feature 27, decision 037), loaded by the API only; the hub it uses is `RealtimeHubModule` of `src/infra/realtime` |
 
 ## The security stack (decision 018)
 
@@ -467,6 +468,32 @@ group and country, never suspended; their email and Telegram flags are the SQL t
 (a Telegram message also needs a linked chat). Merchants read the language of `clients.locale` (feature 20; the `arabic` flag and `page` of
 `merchant-audience.ts`); staff read English. The providers only read `staff_users` and `clients`.
 
+### Live event streams and session doorbells (feature 27)
+
+Three routes beyond the map (`scripts/map-additions/27.mjs`; decisions 035 and 037; plan `docs/briefs/27-realtime-notifications.md`)
+answer `text/event-stream` to the signed-in person, so a notification appears at once. The routes live here because identity owns
+sessions, principals and the guard; the layer itself (hub, publisher, registry, wire format) is `src/infra/realtime` (see its
+README) and the inbox is its first source (platform). Code: `realtime/` (`stream.contracts.ts`, `stream.controller.ts`,
+`stream-viewer.ts`, `stream.module.ts` = `StreamRoutesModule`).
+
+- **Thin controller.** The session guard authenticates the request like any other (stage, account state, IP rules, and `originCheck`:
+  `Sec-Fetch-Site` `same-origin` or `same-site`, else `403 CSRF_FAILED`); the handler maps the principal to a `StreamViewer`
+  (`streamViewerOf`: staff, merchant as `client`, customer; an API-key, capability or webhook principal is `401`) and the caps
+  `session:<id>` (`REALTIME_MAX_PER_SESSION`) and `ip:<address>` (`REALTIME_MAX_PER_IP`) (`streamCapsOf`), then calls `RealtimeHub.open`.
+  The hub refuses (problem+json, before the stream starts) or hijacks the reply and streams. `GET /client/stream` uses
+  `pendingMerchant: 'allow'`: a merchant waiting for approval has an inbox too; a suspended one is `ACCOUNT_SUSPENDED`.
+- **Events and refusals:** `docs/contract/realtime-events.md`.
+- **Session doorbells.** `SessionService` rings the hub after the commit, ids only (topic `session`, never a source): `revoke`,
+  `revokeAllOf` and `rotate` (the old row) ring `ended` with the session ids (500 per message), so the streams of those sessions get
+  `bye session_ended` and close at once; `invalidateSubject` (suspension, password or role change, a staff edit of a merchant) rings
+  `subject` with the subject type and id when the account has live sessions, so its streams get `bye reauth`, reconnect, and the guard
+  answers 401 or 403 for a suspended account (which stops the browser's `EventSource`). Beside the cache `forget`, after the commit
+  (`afterCommit` and `onCommit`), through `RealtimePublisher.publishOnCommit`; a failed publish never fails the use case. A stream
+  also ends by itself every 15 minutes (`bye max_age`), so the idle and absolute expiry of a session, IP rules and a changed role
+  apply to an open stream.
+- **No new table, migration, permission or error code** (`RATE_LIMITED`, `UNAVAILABLE` and `CSRF_FAILED` are in the catalog); the
+  limiter `stream-connect` (20 a minute per session) is in `src/infra/rate-limit/limiters.ts`.
+
 ## Owned tables
 
 Only this module reads and writes these 8 tables (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts` once the data layer exists.
@@ -484,7 +511,7 @@ Only this module reads and writes these 8 tables (`scripts/module-map.mjs`); oth
 
 ## Routes
 
-67 endpoints (admin 44, client 23; the map has 59: feature 20 adds 8 routes beyond it). Source: `docs/slices/identity.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built; the staff sign-in (6) and the 15 merchant portal routes of stage 2 (2b) are built.
+70 endpoints (admin 45, client 24, store 1; the map has 59: feature 20 adds 8 routes beyond it and feature 27 adds the 3 live event streams). Source: `docs/slices/identity.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built; the staff sign-in (6) and the 15 merchant portal routes of stage 2 (2b) are built.
 
 ### Admin console (44)
 
@@ -562,6 +589,14 @@ Only this module reads and writes these 8 tables (`scripts/module-map.mjs`); oth
 | `POST /client/security/2fa/enable` | merchant-session | Enable 2FA after confirming a code. | 2 |
 | `POST /client/security/2fa/setup` | merchant-session | A new TOTP secret with a QR code. | 2 |
 | `POST /client/security/password` | merchant-session | Change the password. | 2 |
+
+### Live event streams (3, beyond the map: feature 27)
+
+| Route | Access | What it does | Stage |
+|---|---|---|---|
+| `GET /admin/stream` | staff-session | The staff member's live event stream (server-sent events). | 27 |
+| `GET /client/stream` | merchant-session (`pendingMerchant: 'allow'`) | The merchant's live event stream (server-sent events). | 27 |
+| `GET /store/v1/me/stream` | customer-session | The customer's live event stream (server-sent events). | 27 |
 
 ## Scenarios
 

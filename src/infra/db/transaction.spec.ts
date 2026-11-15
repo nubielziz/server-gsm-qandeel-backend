@@ -1,7 +1,7 @@
-// Unit tests of the transaction helper (decisions 022, 024) with a fake database: when afterCommit callbacks run.
+// Unit tests of the transaction helper (decisions 022, 024, 037) with a fake database: when afterCommit and onCommit callbacks run.
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { Logger } from '@nestjs/common';
-import { type TransactionContext, type TransactionRunner, runInTransaction } from './transaction';
+import { type TransactionContext, type TransactionRunner, onCommit, runInTransaction } from './transaction';
 import { rejectionOf } from '../../../test/support/rejection';
 
 /** A runner whose `transaction` behaves like Drizzle's: run the callback, then commit (or fail to). */
@@ -126,5 +126,140 @@ describe('runInTransaction', () => {
       { accessMode: 'read only' },
       { isolationLevel: 'repeatable read', accessMode: 'read only' },
     ]);
+  });
+});
+
+/** A runner whose `transaction` also offers savepoints: `tx.transaction(fn)` runs `fn` and rolls only it back on a throw. */
+function savepointRunner() {
+  const events: string[] = [];
+  const tx = {
+    transaction: async (fn: (savepoint: unknown) => Promise<unknown>) => {
+      events.push('savepoint');
+      try {
+        return await fn(tx);
+      } catch (error) {
+        events.push('rollback to savepoint');
+        throw error;
+      }
+    },
+  };
+  const runner = {
+    transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
+      const result = await fn(tx);
+      events.push('commit');
+      return result;
+    },
+  } as unknown as TransactionRunner;
+  return { runner, events };
+}
+
+describe('onCommit (decision 037)', () => {
+  it('runs after the commit, in order with afterCommit, from anywhere in the async context', async () => {
+    const { runner, events } = fakeRunner();
+    const deep = async () => {
+      await Promise.resolve();
+      onCommit(() => void events.push('doorbell'));
+    };
+    await runInTransaction(runner, async ({ afterCommit }) => {
+      afterCommit(() => void events.push('cache'));
+      await deep();
+      events.push('work');
+    });
+    expect(events).toEqual(['begin', 'work', 'commit', 'cache', 'doorbell']);
+  });
+
+  it('runs nothing after a rollback or a failed commit', async () => {
+    for (const commitFails of [false, true]) {
+      const { runner, events } = fakeRunner({ commitFails });
+      await rejectionOf(
+        runInTransaction(runner, () => {
+          onCommit(() => void events.push('doorbell'));
+          return commitFails ? Promise.resolve() : Promise.reject(new Error('boom'));
+        }),
+      );
+      expect(events).not.toContain('doorbell');
+    }
+  });
+
+  it('runs at once without a transaction', () => {
+    const events: string[] = [];
+    onCommit(() => void events.push('now'));
+    expect(events).toEqual(['now']);
+  });
+
+  it('shares the list with a savepoint, even one that rolled back', async () => {
+    const { runner, events } = savepointRunner();
+    await runInTransaction(runner, async ({ tx }) => {
+      const savepoints = tx as unknown as { transaction: (fn: () => Promise<void>) => Promise<void> };
+      await savepoints.transaction(() => {
+        onCommit(() => void events.push('kept'));
+        return Promise.resolve();
+      });
+      await rejectionOf(
+        savepoints.transaction(() => {
+          onCommit(() => void events.push('rolled back savepoint'));
+          return Promise.reject(new Error('one item failed'));
+        }),
+      );
+    });
+    expect(events).toEqual([
+      'savepoint',
+      'savepoint',
+      'rollback to savepoint',
+      'commit',
+      'kept',
+      'rolled back savepoint',
+    ]);
+  });
+
+  it('keeps the lists of nested transactions apart', async () => {
+    const outer = fakeRunner();
+    const inner = fakeRunner();
+    const events: string[] = [];
+    await rejectionOf(
+      runInTransaction(outer.runner, async () => {
+        onCommit(() => void events.push('outer'));
+        await runInTransaction(inner.runner, () => {
+          onCommit(() => void events.push('inner'));
+          return Promise.resolve();
+        });
+        expect(events).toEqual(['inner']);
+        throw new Error('the outer one rolls back');
+      }),
+    );
+    expect(events).toEqual(['inner']);
+  });
+
+  it('runs a callback registered after the commit at once, and drops one registered after a rollback', async () => {
+    const events: string[] = [];
+    let late: Promise<void> | undefined;
+    await runInTransaction(fakeRunner().runner, () => {
+      late = (async () => {
+        await new Promise((resolve) => setImmediate(resolve));
+        onCommit(() => void events.push('late after commit'));
+      })();
+      return Promise.resolve();
+    });
+    await late;
+    await rejectionOf(
+      runInTransaction(fakeRunner().runner, () => {
+        late = (async () => {
+          await new Promise((resolve) => setImmediate(resolve));
+          onCommit(() => void events.push('late after rollback'));
+        })();
+        return Promise.reject(new Error('boom'));
+      }),
+    );
+    await late;
+    expect(events).toEqual(['late after commit']);
+  });
+
+  it('logs a failing callback, thrown or rejected, and never throws to the caller', async () => {
+    onCommit(() => {
+      throw new Error('redis down');
+    });
+    onCommit(() => Promise.reject(new Error('publish failed')));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(logged).toEqual(['afterCommit callback failed: redis down', 'afterCommit callback failed: publish failed']);
   });
 });

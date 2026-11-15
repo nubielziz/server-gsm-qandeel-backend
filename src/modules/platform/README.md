@@ -26,6 +26,8 @@ Public service pictures (feature 22): `PublicImages` (`store`, `urlsOf`, `read`;
 
 The notifications (12a): `NotificationEventsModule` (global: `NotificationEventRegistry` and the outbox routes, API and worker), `NotificationTransportModule` (`MailTransport`, `TelegramClient`, their drivers), `NotificationDeliveryModule` (`NotificationService`, the planning and sending processors; API and worker), `NotificationAdminModule` (the 8 staff routes); `BUILT_IN_EVENTS`, `MERCHANT_MAIL_EVENT_KEYS`, `CUSTOMER_MAIL_EVENT_KEYS`, `NotificationService` (`enqueue`, `sendNow`, `statusOf`, `abandon`, `check`), `NOTIFICATION_SEND_EVENT`, `DeliveryError`, `MailTransport` (`send`, `verify`: the `mail` health check of feature 9 calls it), `TelegramClient`, the in-memory drivers and their tokens (`MAIL_DRIVER`, `TELEGRAM_DRIVER`), `maskEmail`, `maskTelegram`, `redactAddresses`, the preference rules (`choiceFor`, `channelsFor`, `applyPreferences`, `withoutTelegram`, `thresholdOf`, `parseThreshold`) that identity's portal routes use, and `DEFAULT_TEMPLATES`.
 
+The inbox's live side (feature 27, decision 037): `InboxDoorbell` (`created`, `campaignChunk`, `read`, `readAll`, `recount`; `INBOX_TOPIC`, `CHUNK_IDS_PER_DOORBELL`), `InboxRealtimeSource` (`INBOX_REPLAY_LIMIT`) and the event names and zod schemas of the three inbox events (`NOTIFICATION_CREATED_EVENT`, `NOTIFICATION_READ_EVENT`, `UNREAD_CHANGED_EVENT`, `zNotificationCreatedEvent`, `zNotificationReadEvent`, `zUnreadChangedEvent`). See "Live notifications (feature 27)" below.
+
 The merchant webhooks (7b): `WebhookEventsModule` (event contracts and the outbox routes of `wallet.low_balance` and `service.price_changed`, loaded by the API and the worker), `WebhookDeliveryModule` (sender, fan-out, the processor of `merchant-webhooks`; API and worker), `MerchantWebhooksModule` (the staff log routes and `MerchantWebhookService`), the four `defineEvent` contracts (`orderStatusChanged`, `walletLowBalance`, `invoicePaid`, `servicePriceChanged`), `WEBHOOK_EVENT_NAMES`, `PING_EVENT`, `WebhookDeliveries`, `WebhookFanOut`, `MerchantWebhooksProcessor`, the event type constants and the `WEBHOOK_TARGET_POLICY` token. The portal's controller for `/client/webhooks*` (`MerchantWebhooksController`) lives in the identity module (`controllers/merchant-webhooks.controller.ts`, `MerchantWebhookRoutesModule`): it needs identity's `CurrentMerchant`, and platform imports no module, so a platform file that imported identity would make a cycle for every identity file that imports platform (decision 032). Platform exports `MerchantWebhookService` and the six portal contracts for it.
 
 ## Owned tables
@@ -609,3 +611,40 @@ inbox and empties their log payloads (the customers module calls it from its ano
 **Settings.** `notifications.broadcast_email_per_second` (1-30, default 5), `notifications.broadcast_telegram_per_second` (1-30,
 default 20), `notifications.inbox_read_retention_days` (7-3650, default 90), `notifications.inbox_retention_days` (30-3650, default
 365), `notifications.log_retention_days` (30-3650, default 180). No cache key: the unread count is not cached.
+
+## Live notifications (feature 27)
+
+A new in-app item reaches the person's open pages at once, with no reload. The layer (hub, publisher, wire format, cursor,
+caps) is `src/infra/realtime` (see its README) and the three stream routes are identity's (see its README, "Live event streams");
+this module owns the **inbox source** and its **doorbells**. Plan `docs/briefs/27-realtime-notifications.md`; decision 037; the
+events: `docs/contract/realtime-events.md`. No new route, table, setting, queue or error code here.
+
+**Doorbells** (`inbox/inbox-doorbell.ts`, `InboxDoorbell`, API and worker; ids only, after the commit through
+`RealtimePublisher.publishOnCommit`, so a rolled-back change rings nothing and no signature changed):
+
+| Change | Doorbell (`topic` `inbox`, `op`, fields) | Where |
+|---|---|---|
+| An event item was inserted (and only when the insert returned an id: a repeat rings nothing) | `created`, `{ type, ids: [recipientId], itemId }` | `NotificationInbox.addForEvent`, so `NotificationService.enqueue`, `EventNotifier.notifyMerchant` and the campaign test send |
+| A campaign chunk committed | `created`, `{ type, ids: [..up to 500], campaignId }` (a long chunk rings several times) | `CampaignFanOut.run`, after the chunk's transaction and before the hand-over to the bulk queue; `insertCampaignItems` returns the recipient ids that got an item now (`ChunkResult.inApp`), so a repeated chunk rings nothing |
+| One item read (the update changed a row) / all read (`updated > 0`) | `read`, `{ type, ids: [recipientId], itemIds: [id] }` / `{ type, ids, all: true, upToId }` | `InboxService.markRead`, `markAll` |
+| A campaign cancelled (its items hide, so counts change) | `recount`, `{ types: [..] }` (the audience's recipient types, every type for an unparsable audience) | `CampaignSendService.cancel` |
+
+**The source** (`inbox/inbox-realtime.source.ts`, `InboxRealtimeSource`, API only, registered with `RealtimeSources` in
+`onModuleInit`; provided by the module of the inbox controllers, `NotificationCenterModule`): topic `inbox`, cursor letter `i`
+(the cursor is the item id). `resolve`: `created` with `itemId` reads that one row with its campaign and renders it for
+`u:<type>:<id>` when connected; `created` with `campaignId` reads the chunk's connected recipients in one query
+(`recipient_id = any($1)`) and one grouped unread count (capped at 100 in code); `read` answers `notification.read` with the fresh
+count; `recount` answers `unread.changed` to every connected viewer of those types, counted in batches of 500. `replay`: the
+viewer's visible rows with `id > after`, ascending, at most 50; a 51st row is `'resync'`. `snapshot`: one `unread.changed`.
+`head`: the largest `notification_inbox.id`. `keysFor`: none (an item is for `u:<type>:<id>`).
+
+- **No leak.** Every query carries the viewer's `recipient_type` and `recipient_id` (`visibleTo`), so a customer, a merchant and a
+  staff member with the same numeric id never see each other's items, and a doorbell naming someone else's id renders nothing for
+  the viewer. A doorbell is not trusted: its fields are checked, and the row is re-read.
+- **Text** is made as the lists make it (`inboxView`): the page's `?locale=`, else the saved language of the account (read once per
+  stream), else English; a campaign's `{{name}}` is the account's name. The data is parsed by `inbox-realtime.events.ts` before it is
+  written; a mismatch is logged and the frame skipped.
+- **Known limit.** Two transactions can commit inbox rows out of id order; a reconnect that falls exactly between them may not
+  replay the lower id. The count is never wrong (`snapshot`) and clients refetch their open list after a reconnect.
+- **Tests:** `test/integration/realtime-inbox.test.ts` (delivery under 1 s, rollback, no leak, mark read, campaign fan-out through
+  Redis, cancel, replay and `resync`, subscriber outage) beside the hub's `realtime-stream.test.ts`.

@@ -32,6 +32,11 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    # A live event stream (decision 037) is one open descriptor in the API and two in Caddy (browser side and API side).
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     depends_on:
       api:
         condition: service_healthy
@@ -48,6 +53,11 @@ services:
         APP_VERSION: ${APP_VERSION:-0.0.0}
     restart: unless-stopped
     init: true
+    # One open descriptor per live event stream (decision 037, REALTIME_MAX_CONNECTIONS defaults to 5000), beside the pools and files.
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     # The image's own healthcheck calls GET /health?strict=1 (503 when Postgres is down, decision 015).
     depends_on:
       postgres:

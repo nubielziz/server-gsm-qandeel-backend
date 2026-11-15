@@ -1,7 +1,8 @@
 // Public API of the identity module: the module, the staff sign-in tokens (invite and reset links for feature 2a), the
 // security building blocks other modules and features use (sessions, cookies, CSRF, the principal and permission helpers,
 // the access guards and the permissions catalog), the registries of the machine guards (capability token resolvers, URL
-// secrets, gateway webhook adapters, the API key cache) and the IP rules building blocks (the worker's hit flush job).
+// secrets, gateway webhook adapters, the API key cache), the IP rules building blocks (the worker's hit flush job) and the module of
+// the live event stream routes (decision 037).
 // Order matters: the request-principal layer (param decorators, principal helpers, the permission grammar) comes first.
 // Modules whose controllers use `CurrentStaff` and whose services identity calls (money, catalog) form an import cycle with
 // this file; ES modules evaluate these re-exports in source order, so these leaves are initialised before the services that
@@ -19,6 +20,7 @@ export { IdentityAudienceModule } from './notifications/identity-audience.module
 export { MerchantAudience } from './notifications/merchant-audience';
 export { StaffAudience } from './notifications/staff-audience';
 export { SecurityModule } from './security/security.module';
+export { StreamRoutesModule } from './realtime/stream.module';
 export { StaffAuthModule } from './staff-auth.module';
 export { AccessAdminModule } from './access-admin.module';
 export { MerchantAdminModule } from './merchant-admin.module';

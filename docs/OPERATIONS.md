@@ -206,6 +206,43 @@ Keep a copy of the new list offline before you restart.
   request id and the queue and job name. It does not receive request bodies, headers, cookies, users, breadcrumbs, the host name, or
   e-mail addresses and long digit runs inside messages. To turn it off, remove the line and restart: with no DSN the SDK is never started.
 
+**Live connections** (decision 037). The signed-in storefront account, merchant portal and admin console each keep one server-sent
+event stream open (`GET /store/v1/me/stream`, `/client/stream`, `/admin/stream`), so a notification appears at once instead of at
+the next poll. The browser's tabs share one stream; the server allows 3 per session, 30 per client address and 5000 per API process,
+refuses the newest one over a limit (`429`, or `503 UNAVAILABLE` for the process limit), re-checks every stream at least every
+15 minutes and closes it when its session ends. A stream is one open descriptor in the API and two in Caddy, so `deploy/compose.prod.yaml`
+raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream paths out of compression and sets no
+`flush_interval`. All keys are optional, in `.env.production`:
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `REALTIME_ENABLED` | `true` | the kill switch (below) |
+| `REALTIME_MAX_CONNECTIONS` | `5000` | open streams per API process (1 to 100000); the next one is `503 UNAVAILABLE` |
+| `REALTIME_MAX_PER_SESSION` | `3` | open streams per session (1 to 50) |
+| `REALTIME_MAX_PER_IP` | `30` | open streams per client address (1 to 100000); raise it for an office behind one address |
+| `REALTIME_HEARTBEAT_SECONDS` | `15` | the `hb` event interval (5 to 25); keep it under 30, which is where a Next rewrite cuts a silent stream |
+| `REALTIME_MAX_AGE_SECONDS` | `900` | a stream ends after this long plus 0 to 120 s, and its browser reconnects through the guard (60 to 3600) |
+
+- **Kill switch:** set `REALTIME_ENABLED=false` in `.env.production` and run `gsmc up -d api`. Open streams end, every stream route
+  answers `503 UNAVAILABLE` with `Retry-After: 30`, and the pages fall back to their 60-second poll. Nothing else changes (the
+  polling routes never went away). Turn it back on the same way.
+- **API restart or deploy:** every stream ends and every browser reconnects on its own after 2 to 5 seconds (its own back-off while
+  Caddy answers 502), sends its last event id and gets what it missed (at most 50 items, otherwise it refetches its list).
+  Nothing to do.
+- **Metrics** (the API's `/metrics`; the worker only publishes): `realtime_connections{surface}` (open streams),
+  `realtime_subscriber_up` (1 while this API process hears the doorbell channel; 0 means items reach open pages only at their
+  next reconnect or 5-minute poll, and the hub sends a refetch to every stream when the subscriber returns),
+  `realtime_connections_refused_total{surface,reason}` (`disabled`, `capacity`, `rate`, `session_cap`, `ip_cap`),
+  `realtime_drops_total{reason}` (should stay at 0: `slow_consumer` and `write_error` are dropped streams), `realtime_delivery_seconds`
+  (doorbell to write, under 1 s at p95) and, in both processes, `realtime_publish_failures_total{topic}` (the cache Redis refused a
+  doorbell: nothing is lost, the pages catch up on their poll). Logs: one `stream closed` line per stream (viewer kind and id, session id,
+  duration, number of frames, reason); the access log and the request histogram skip streams.
+- **Check after a deploy:** open `/account` on the shop signed in, then
+  `gsmc exec api bun -e "const t = await (await fetch('http://127.0.0.1:3000/metrics', {headers: {authorization: 'Bearer ' + process.env.METRICS_TOKEN}})).text(); console.log(t.split('\n').filter((l) => l.startsWith('realtime_connections') || l.startsWith('realtime_subscriber_up')).join('\n'))"`
+  shows `realtime_connections{surface="store"} 1` and `realtime_subscriber_up 1`.
+- **Load test:** `bash scripts/with-slot.sh bun run test:load:realtime` in a development checkout opens 2000 streams against a
+  test app and prints the table that `src/infra/realtime/README.md` keeps. Never point it at the production stack.
+
 ## 7. Owner checklists
 
 **Mail domain** (without it customers and merchants never receive links)

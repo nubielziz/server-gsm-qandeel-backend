@@ -9,6 +9,7 @@ import { CryptoModule } from '../../src/infra/crypto';
 import { DbModule, DbService, type Database, schema as s } from '../../src/infra/db';
 import { MetricsModule } from '../../src/infra/metrics';
 import { JobSchedulerRegistry, QueueWorkers, QueueWorkersModule, QueuesModule } from '../../src/infra/queues';
+import { RealtimeModule } from '../../src/infra/realtime';
 import { RedisModule, RedisService } from '../../src/infra/redis';
 import {
   GROUP_PROMOTION_JOB,
@@ -54,6 +55,8 @@ beforeAll(async () => {
       DbModule,
       QueuesModule,
       QueueWorkersModule,
+      // Global in the worker: the session service rings the real-time doorbell (decision 037).
+      RealtimeModule,
       GroupPromotionModule,
     ],
     env: { BULL_PREFIX: prefix },

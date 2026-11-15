@@ -9,7 +9,12 @@
 }
 
 (common) {
-	encode zstd gzip
+	# Live event streams (decision 037) are never compressed: `encode` matches text/* and would put an encoder on every long-lived
+	# connection, which delays the small frames. Caddy flushes a text/event-stream answer at once by itself, so there is no
+	# `flush_interval`: an explicit `-1` would also stop Caddy from cancelling the upstream request when the browser leaves, and
+	# the API needs that close to free the stream. The fourth path is the ticket stream of the support chat (feature 28).
+	@compressible not path /store/v1/me/stream /client/stream /admin/stream /store/v1/tickets/*/stream
+	encode @compressible zstd gzip
 	header Strict-Transport-Security "max-age=31536000"
 	# The API's largest upload is 25 MiB plus form fields.
 	request_body {

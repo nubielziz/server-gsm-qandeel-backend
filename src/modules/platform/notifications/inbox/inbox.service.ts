@@ -8,6 +8,7 @@ import { getRequestContext } from '../../../../common/request-context';
 import { DbService } from '../../../../infra/db';
 import type { NotificationRecipientType } from '../../db/schema';
 import { audienceOf, recipientOf } from '../notification-foreign-reads';
+import { InboxDoorbell } from './inbox-doorbell';
 import { InboxTextRegistry } from './inbox-texts';
 import { type WireInboxItem, inboxView } from './inbox-views';
 import { type InboxOwner, countUnread, listInboxRows, markAllRead, markItemRead } from './inbox.repository';
@@ -35,7 +36,8 @@ export function inboxOwner(type: NotificationRecipientType): InboxOwner {
  * write carries the owner's two keys, so another person's item is a 404, never a 403 (no existence leak). The answers are personal:
  * nothing here is cached.
  *
- * Side effects: `markRead` and `markAllRead` update `notification_inbox.read_at`; the rest only reads.
+ * Side effects: `markRead` and `markAllRead` update `notification_inbox.read_at` and ring the `inbox read` doorbell (the person's
+ * other tabs and devices update their bell, decision 037); the rest only reads.
  *
  * @see GET /admin/inbox, GET /client/notifications, GET /store/v1/me/notifications
  */
@@ -45,6 +47,7 @@ export class InboxService {
     private readonly db: DbService,
     private readonly texts: InboxTextRegistry,
     @Inject(CLOCK) private readonly clock: Clock,
+    private readonly doorbell: InboxDoorbell,
   ) {}
 
   /**
@@ -91,6 +94,7 @@ export class InboxService {
   async markRead(owner: InboxOwner, id: number): Promise<void> {
     const result = await markItemRead(this.db.db, owner, id, this.clock.now());
     if (result === 'missing') throw new AppError('NOT_FOUND', { detail: 'There is no such notification.' });
+    if (result === 'updated') this.doorbell.read(owner, id);
   }
 
   /**
@@ -101,6 +105,8 @@ export class InboxService {
    * @returns how many items this call marked
    */
   async markAll(owner: InboxOwner, upToId: number | undefined): Promise<{ updated: number }> {
-    return { updated: await markAllRead(this.db.db, owner, upToId, this.clock.now()) };
+    const updated = await markAllRead(this.db.db, owner, upToId, this.clock.now());
+    if (updated > 0) this.doorbell.readAll(owner, upToId ?? null);
+    return { updated };
   }
 }

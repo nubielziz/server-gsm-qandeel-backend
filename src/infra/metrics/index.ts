@@ -5,5 +5,5 @@ export type { ApiErrorLabels, HttpMetricLabels } from './metrics.service';
 export { authorizeMetricsRequest, hasForwardingHeaders, isPrivateAddress } from './metrics-access';
 export type { MetricsAccessRequest } from './metrics-access';
 export { MetricsAccessGuard } from './metrics-access.guard';
-export { registerHttpMetrics } from './http-metrics';
+export { isEventStream, registerHttpMetrics } from './http-metrics';
 export { WorkerMetricsServer } from './worker-metrics.server';

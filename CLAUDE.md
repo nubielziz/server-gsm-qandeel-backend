@@ -39,7 +39,7 @@ decisions: `docs/decisions/`; contract: `docs/contract/`.
 
 ## Redis, cache, workers
 - Two Redis roles, never mixed: queue (noeviction, AOF) for BullMQ only; cache (allkeys-lru) for cache, rate limits,
-  locks. One client per role; Queue producers `enableOfflineQueue: false`; Workers `maxRetriesPerRequest: null`;
+  locks, and the real-time doorbell (pub/sub with ids only, no keys; decision 037). One client per role; Queue producers `enableOfflineQueue: false`; Workers `maxRetriesPerRequest: null`;
   `error` listeners on every client, Queue and Worker.
 - Keys `gsm:{env}:{module}:{entity}:{id}[:v{n}]`, always a TTL with ±10–20% jitter, `SCAN` never `KEYS`, values
   < ~100 KB. Register every pattern in `docs/cache-keys.md` (owner, TTL, invalidation).
