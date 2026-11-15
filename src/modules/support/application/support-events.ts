@@ -37,7 +37,8 @@ const customerEvent = (
  * Why: the brief of feature 17: the receipt of a ticket, the survey after a resolve and the reply to a merchant's ticket are events with
  * default templates. The customer's `support.reply` is not here: 12a registered it for the console's Customer emails tab and this
  * feature widened its variables in the platform's list (`BUILT_IN_EVENTS`), because a reply email must carry the reply and the link.
- * A merchant's `support.reply` is transactional (the answer to their own ticket is always sent, never a preference).
+ * A merchant's `support.reply` is transactional (the answer to their own ticket is always sent, never a preference); since feature 28 it
+ * carries `link`, the conversation in the merchant portal.
  */
 export const SUPPORT_EVENTS: readonly NotificationEventDefinition[] = [
   customerEvent({
@@ -60,12 +61,14 @@ export const SUPPORT_EVENTS: readonly NotificationEventDefinition[] = [
     label: 'Support reply',
     description: 'Staff answered a merchant’s support ticket.',
     channels: ['email', 'telegram'],
-    variables: ['merchantName', 'ticketNumber', 'subject', 'message'],
+    // `link` (feature 28): the ticket page of the merchant portal, `<STORE_BASE_URL>/merchant/support/<id>`.
+    variables: ['merchantName', 'ticketNumber', 'subject', 'message', 'link'],
     sample: {
       merchantName: 'Zain Mobile Hub',
       ticketNumber: 'T-1043',
       subject: 'Invoice question',
       message: 'Hi, the invoice was issued in USD. I attached the statement to your portal.',
+      link: 'https://shop.example.com/merchant/support/1043',
     },
     transactional: true,
     defaultEmail: true,

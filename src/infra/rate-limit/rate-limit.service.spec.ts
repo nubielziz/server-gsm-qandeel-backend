@@ -28,7 +28,10 @@ describe('RATE_LIMITERS', () => {
       'sign-in',
       'stream-connect',
       'supplier',
+      'ticket-chat',
       'ticket-email',
+      'ticket-message',
+      'ticket-open',
       'token',
       'upload',
       'wallet-topup',
@@ -42,6 +45,12 @@ describe('RATE_LIMITERS', () => {
 
   it('lets one session open 20 live streams a minute (decision 037)', () => {
     expect(RATE_LIMITERS['stream-connect']).toMatchObject({ points: 20, windowSeconds: 60 });
+  });
+
+  it('gives a ticket page 120 typing and read calls a minute, a ticket 20 requester messages and an account 5 tickets an hour (feature 28)', () => {
+    expect(RATE_LIMITERS['ticket-chat']).toMatchObject({ points: 120, windowSeconds: 60 });
+    expect(RATE_LIMITERS['ticket-message']).toMatchObject({ points: 20, windowSeconds: 60 });
+    expect(RATE_LIMITERS['ticket-open']).toMatchObject({ points: 5, windowSeconds: 3600 });
   });
 
   it('lets one email address open 3 tickets an hour on the public form', () => {

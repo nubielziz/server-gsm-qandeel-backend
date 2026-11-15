@@ -245,6 +245,17 @@ export class CacheKeys {
   }
 
   /**
+   * The typing throttle of one party of a support ticket (feature 28): set with `NX PX 2500`, so a burst of pings rings one doorbell.
+   *
+   * @param ticketId the ticket
+   * @param party `r` for the requester, `s<staffId>` for a staff member
+   * @returns `gsm:{env}:support:typing:{ticketId}:{party}`
+   */
+  supportTyping(ticketId: number, party: string): CacheKey {
+    return `${this.keyspace}support:typing:${segment('ticket id', ticketId)}:${segment('typing party', party)}` as CacheKey;
+  }
+
+  /**
    * A group of keys, for `CacheService.delByPrefix`.
    *
    * @param module the owning module, for example `catalog`
@@ -394,6 +405,13 @@ export const CACHE_KEY_FAMILIES: readonly CacheKeyFamily[] = [
     owner: 'health',
     ttl: '48 h',
     invalidation: 'none; one hash per UTC hour (delivered, failed, retrying counters)',
+  },
+  {
+    builder: 'supportTyping',
+    pattern: 'gsm:{env}:support:typing:{ticketId}:{party}',
+    owner: 'support',
+    ttl: '2.5 s (SET NX PX 2500, no jitter: it is a throttle, not a cache)',
+    invalidation: 'never; it expires, and while it lives a typing ping rings no doorbell',
   },
   {
     builder: 'prefix',

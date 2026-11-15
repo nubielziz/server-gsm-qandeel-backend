@@ -15,7 +15,10 @@
 | `media`    | client IP                                            | 1200 per minute: the public service pictures (`GET /store/v1/media/:name`), apart from `ip` |
 | `upload`   | client IP                                            | 20 per minute: large bodies (multipart or over 1 MiB) on Dhru, REST v1, the portal, the admin console and the store (the receipt upload, feature 21) |
 | `wallet-topup` | customer id                                      | 10 per 10 minutes (feature 21: a hint; the top-up limits are SQL) |
-| `stream-connect` | the first cap key of the stream (`session:<id>`) | 20 per minute: opening a live event stream (`GET /admin/stream`, `/client/stream`, `/store/v1/me/stream`, decision 037) |
+| `stream-connect` | the first cap key of the stream (`session:<id>`) | 20 per minute: opening a live event stream (`GET /admin/stream`, `/client/stream`, `/store/v1/me/stream`, decision 037), and the ticket stream (`ticket:<id>`, feature 28) |
+| `ticket-chat` | client IP | 120 per minute: the typing pings and read marks of a ticket page (`POST /store/v1/tickets/:token/typing` and `/read`), instead of `token` (feature 28) |
+| `ticket-message` | ticket id | 20 per minute: the messages a requester writes on one ticket (feature 28) |
+| `ticket-open` | the account (`customer:<id>`, `client:<id>`) | 5 per hour: tickets a signed-in customer or merchant opens without Turnstile (feature 28) |
 
 ```ts
 // A pipeline guard or a use case:

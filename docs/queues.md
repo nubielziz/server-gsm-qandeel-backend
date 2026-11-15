@@ -311,7 +311,7 @@ Draws the PDF tax receipt of a paid storefront order and stores it (`GET /store/
 Scheduled housekeeping: group promotion, data retention, integrity checks, FX refresh.
 
 - **Concurrency:** 2 per worker process.
-- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly, and `refund.process`, event-driven (money module, below), `checkout_recovery_sweep`, every 5 minutes (customers module, below), `notification_campaign_sweep`, every minute, `notification_reconcile`, every 5 minutes, and `notification_retention`, daily at 04:20 UTC (platform module, feature 23, below), `service_price_scan`, event-driven (catalog module, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below). The others are built by their features, each
+- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly, and `refund.process`, event-driven (money module, below), `checkout_recovery_sweep`, every 5 minutes (customers module, below), `notification_campaign_sweep`, every minute, `notification_reconcile`, every 5 minutes, and `notification_retention`, daily at 04:20 UTC (platform module, feature 23, below), `service_price_scan`, event-driven (catalog module, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below), `support_reply_mail_sweep`, every minute, and `ticket_attachment_retention`, nightly at 03:30 UTC (support module, feature 28, below). The others are built by their features, each
   registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
   `ledger_integrity` (12b, nightly 02:30 UTC, below), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). `idempotency_purge` (daily 04:10 UTC,
 orders module, below) is built. `storefront_popularity` (every 30 minutes, storefront module, below) is built. `data_retention`
@@ -336,7 +336,8 @@ orders module, below) is built. `storefront_popularity` (every 30 minutes, store
   (`src/modules/money/jobs/fx-refresh.module.ts`); `checkout-recovery-sweep` every 5 minutes
   (`src/modules/customers/checkout-recovery.module.ts`); `notification-campaign-sweep` every minute
   (`src/modules/platform/notifications/campaigns/campaign-engine.module.ts`); the health jobs in
-  `src/modules/health/jobs/health-jobs.module.ts`; the others are registered with `JobSchedulerRegistry` by the owning
+  `src/modules/health/jobs/health-jobs.module.ts`; `support-reply-mail-sweep` every minute and `ticket-attachment-retention` at 03:30 UTC
+  (`src/modules/support/support-jobs.module.ts`); the others are registered with `JobSchedulerRegistry` by the owning
   features.
 
 ### Storefront popularity (storefront module, `src/modules/storefront/jobs/`)
@@ -368,6 +369,26 @@ orders module, below) is built. `storefront_popularity` (every 30 minutes, store
   clock's time minus the days) to NULL together, in batches of 1000 by id, at most 50 batches a run (a larger backlog continues the next
   night). Payload: none (a manual run carries `{ runId }`). Idempotent: an erased row is not matched again, a parallel run finds fewer rows.
   Recorded in `job_runs` (`processed` is the number of checks erased). The staff log then shows the TAC and bullets.
+
+### Support chat (support module, `src/modules/support/jobs/`, feature 28)
+
+- **`support_reply_mail_sweep`** (every minute, scheduler `support-reply-mail-sweep`, `ReplyMailSweep`): the email fallback of staff replies
+  (rule 9 of plan 28). A staff reply on channel `email` writes no outbox event; it sets `support_tickets.reply_mail_due_at` to
+  `coalesce(reply_mail_due_at, now + support.replyEmailDelayMinutes)` (default 5, 0 to 1440; `0` writes today's event at once). The sweep
+  takes the tickets with `reply_mail_due_at <= now` in id order, `FOR UPDATE SKIP LOCKED`, 100 a pass (index
+  `support_tickets_reply_mail_due_idx`), and per ticket, in the pass's transaction: the public staff messages with `notify_channel = 'email'`
+  and an id above `greatest(requester_seen_message_id, reply_mailed_message_id)`; none clears `reply_mail_due_at`, else it writes one
+  `support.ticket_mail` event (`kind: 'reply'`, `channel: 'email'`, `messageId` the last, `fromMessageId` the first), sets
+  `reply_mailed_message_id` to the last and clears the due time (`updated_at` stays). Payload: none (a manual run carries `{ runId }`).
+  Idempotent: a handled ticket is no longer due, its mailed replies are below `reply_mailed_message_id`, and a parallel sweep skips the locked
+  rows, so one reply is mailed once. Recorded like `checkout_recovery_sweep`: only a tick that found a due ticket, and every manual run, writes
+  `job_runs` (`processed` = mails queued, `result` = `{ tickets, mailed, seen }`). A Telegram reply is sent at once as before and never mailed.
+- **`ticket_attachment_retention`** (daily 03:30 UTC, scheduler `ticket-attachment-retention`, `TicketAttachmentService.applyRetention`): rule
+  10. Reads `support.attachmentRetentionDays` (0 to 3650, default 180; `0` keeps every attachment) and, for the tickets resolved before the
+  cutoff (clock now minus the days) that still have files, empties `ticket_messages.file_ids` and deletes the `files` rows nothing else uses
+  (the objects after the commit, best effort), in batches of 200 tickets (`FOR UPDATE SKIP LOCKED`), at most 25 batches a run. Payload: none
+  (a manual run carries `{ runId }`). Idempotent: an emptied message is not matched again, a parallel run skips the locked tickets. Recorded in
+  `job_runs` like `data_retention` (`processed` = files deleted, `result` = `{ days, tickets, files }`).
 
 ### Health jobs (health module, `src/modules/health/jobs/`)
 
@@ -597,7 +618,7 @@ none); the job id is `outbox-<event id>`.
 | `merchant.invited` | `notifications` | `merchant.invited` | `tokenId` (aggregate: `clients`) | identity (`MerchantMailOutbox`), written by `POST /admin/clients` (feature 2a) |
 | `staff.invited` | `notifications` | `staff.invited` | `tokenId` (aggregate: `staff_users`, the member) | identity (`StaffMailOutbox`, loaded by the API and the worker), written by `POST /admin/staff` (onboarding `invite`) and `POST /admin/staff/:id/password` while the member is `invited` (feature 20) |
 | `staff.password_reset` | `notifications` | `staff.password_reset` | `tokenId` (aggregate: `staff_users`) | identity (`StaffMailOutbox`), written by `POST /admin/staff/:id/password` (`reset_link`, member already active) (feature 20) |
-| `support.ticket_mail` | `notifications` | `support.ticket_mail` | `kind` (`received`, `reply`, `survey`), `messageId` and `channel` for a reply (aggregate: `support_tickets`) | support (`TicketMailRoutes`, loaded by the API and the worker), written by `POST /store/v1/tickets` (the receipt), `POST /admin/support-tickets/:id/reply` and `PATCH /admin/support-tickets/:id` with `status: resolved` (the survey) (feature 17) |
+| `support.ticket_mail` | `notifications` | `support.ticket_mail` | `kind` (`received`, `reply`, `survey`), `messageId` and `channel` for a reply, and `fromMessageId` for one email that carries every unseen reply from that message to `messageId` (feature 28) (aggregate: `support_tickets`) | support (`TicketMailRoutes`, loaded by the API and the worker), written by `POST /store/v1/tickets` (the receipt), `POST /admin/support-tickets/:id/reply` (a Telegram reply, or an email reply when `support.replyEmailDelayMinutes` is 0), the `support_reply_mail_sweep` job (the batched email of the unseen replies) and `PATCH /admin/support-tickets/:id` with `status: resolved` (the survey) (features 17 and 28) |
 | `notification.send` | `notifications` | `notification.send` | none (aggregate: `notifications`, the row) | platform (`NotificationRoutes`), written by `NotificationService.enqueue` together with the row |
 | `checkout.recovery` | `notifications` | `checkout.recovery` | none (aggregate: `checkout_sessions`, the abandoned checkout) | customers (`RecoveryOutbox`, loaded by the API and the worker), written by `POST /admin/checkouts/recover` and the `checkout_recovery_sweep` job, in the transaction that claims the checkout (`recovery_emailed_at`) |
 | `order.status_changed` | `merchant-webhooks`, `notifications` | `order.status_changed` on the webhooks, `notification.plan` on `notifications` | `orderId`, `clientId` (null for a storefront order), `fromStatus`, `toStatus` (aggregate: `orders`) | orders (`OrderOutbox`: the webhooks route, loaded by the API and the worker) and platform (`NotificationRoutes`: the notifications route); written by every transition that changes the status: accept, reply, reject, cancel, reopen, refund, verification refund. Consumers: the webhook fan-out (7b) and the order result notifications (12a) |
@@ -637,6 +658,8 @@ Registered with `JobSchedulerRegistry.register` in `onModuleInit`; the worker up
 | `fx-refresh` | `maintenance` | `fx_refresh` | every hour at minute 0 | money (`src/modules/money/jobs/`) |
 | `idempotency-purge` | `maintenance` | `idempotency_purge` | daily 04:10 UTC | orders (`src/modules/orders/jobs/`) |
 | `storefront-popularity` | `maintenance` | `storefront_popularity` | every 30 minutes | storefront (`src/modules/storefront/jobs/`) |
+| `support-reply-mail-sweep` | `maintenance` | `support_reply_mail_sweep` | every minute | support (`src/modules/support/support-jobs.module.ts`) |
+| `ticket-attachment-retention` | `maintenance` | `ticket_attachment_retention` | daily 03:30 UTC | support (`src/modules/support/support-jobs.module.ts`) |
 | `supplier-poll-tick` | `supplier-poll` | `supplier_poll_tick` | every minute | suppliers (`src/modules/suppliers/jobs/`) |
 | `supplier-price-sync` | `supplier-sync` | `price_sync` | every 15 minutes | suppliers (`src/modules/suppliers/jobs/`) |
 | `supplier-balance-check` | `supplier-sync` | `balance_check` | every 30 minutes | suppliers (`src/modules/suppliers/jobs/`) |

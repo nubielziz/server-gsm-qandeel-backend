@@ -20,6 +20,9 @@
 	request_body {
 		max_size 27MB
 	}
+}
+
+(json_log) {
 	log {
 		output stdout
 		format json
@@ -28,6 +31,17 @@
 
 {$SHOP_HOST} {
 	import common
+	# A ticket token is the whole credential of the ticket page and its API routes (feature 28): Caddy logs the full URI and the Referer,
+	# so both have the token part replaced (`/store/v1/tickets/<token>/…`, `/<lang>/support/tickets/<token>`). The API itself logs the
+	# route template only.
+	log {
+		output stdout
+		format filter {
+			wrap json
+			request>uri regexp "/tickets/[^/?]+" "/tickets/[token]"
+			request>headers>Referer regexp "/tickets/[^/?]+" "/tickets/[token]"
+		}
+	}
 	@api path /client/* /store/v1/*
 	handle @api {
 		reverse_proxy api:3000
@@ -39,6 +53,7 @@
 
 {$ADMIN_HOST} {
 	import common
+	import json_log
 	@api path /admin/* /health /reference /reference/*
 	handle @api {
 		reverse_proxy api:3000
@@ -50,6 +65,7 @@
 
 {$API_HOST} {
 	import common
+	import json_log
 	@api path /api/index.php /v1/* /webhooks/* /docs /docs/*
 	handle @api {
 		reverse_proxy api:3000

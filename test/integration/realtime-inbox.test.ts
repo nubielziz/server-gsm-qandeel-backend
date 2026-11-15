@@ -42,6 +42,13 @@ async function stream(path: string, headers: Record<string, string>, on = base):
   return opened;
 }
 
+/**
+ * The inbox part of a composite cursor (`i41` of `i41-t5521`).
+ *
+ * Why: since feature 28 a second source (the support chat, letter `t`) is registered, so every `id:` carries its part too.
+ */
+const inboxIdOf = (cursor: string | undefined): number => Number(/(?:^|-)i(\d+)(?:-|$)/.exec(cursor ?? '')?.[1]);
+
 /** Takes `ready` and the snapshot's count. */
 async function started(s: TestStream, unread = 0): Promise<TestStream> {
   expect(s.status).toBe(200);
@@ -129,12 +136,12 @@ describe('an event item', () => {
     await enqueue(orderMail(customerId, '4021'));
     const frame = await english.next('notification.created');
     expect(performance.now() - startedAt).toBeLessThan(1000);
-    expect(frame.id).toMatch(/^i\d+$/);
+    expect(frame.id).toMatch(/(^|-)i\d+(-|$)/);
     expect(frame.data).toMatchObject({
       unread: 1,
       live: true,
       item: {
-        id: Number(frame.id!.slice(1)),
+        id: inboxIdOf(frame.id),
         category: 'order',
         title: 'Order 4021 completed',
         body: 'Your order for Vodafone UK iPhone Unlock is complete.',
@@ -359,7 +366,7 @@ describe('a reconnect', () => {
         'Order 4 completed',
       ]);
       for (const frame of replayed) expect(frame.data).toMatchObject({ live: false, unread: 4 });
-      expect(replayed.map((frame) => Number(frame.id!.slice(1)))).toEqual(
+      expect(replayed.map((frame) => inboxIdOf(frame.id))).toEqual(
         replayed.map((frame) => frame.data.item.id as number),
       );
       expect(await again.next()).toMatchObject({ event: 'unread.changed', data: { unread: 4 } });
@@ -383,7 +390,7 @@ describe('a reconnect', () => {
     await enqueue(orderMail(customerId, '900'));
     const next = await s.next('notification.created');
     expect(next.data.item.title).toBe('Order 900 completed');
-    expect(next.id).toBe(`i${next.data.item.id as number}`);
+    expect(inboxIdOf(next.id)).toBe(next.data.item.id as number);
   });
 
   it('treats a garbage cursor as a fresh start', async () => {
@@ -423,7 +430,8 @@ describe('a Redis outage of the subscriber', () => {
       await forwarder.stop();
       await eventually(() => (flaky.app.get(RealtimeHub).listening ? undefined : true));
       await forwarder.start();
-      expect(await s.next('resync', 15_000)).toMatchObject({ data: { topics: ['inbox'] } });
+      // Every registered source resyncs (the support chat's `ticket` too, feature 28).
+      expect(await s.next('resync', 15_000)).toMatchObject({ data: { topics: expect.arrayContaining(['inbox']) } });
       expect(s.isEnded).toBe(false);
       s.close();
       await eventually(() => (flaky.app.get(RealtimeHub).size === 0 ? true : undefined));

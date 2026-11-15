@@ -60,6 +60,7 @@ export {
   INBOX_RETENTION_DAYS_KEY,
   LOG_RETENTION_DAYS_KEY,
   NOTIFICATION_RETENTION,
+  SUPPORT_SETTINGS,
 } from './settings/settings-registry';
 export { OutboxModule } from './outbox/outbox.module';
 export { OutboxRelayModule, OUTBOX_TICK_SCHEDULER } from './outbox/outbox-relay.module';
@@ -112,7 +113,7 @@ export { PdfModule } from './pdf/pdf.module';
 export { PdfRenderer } from './pdf/pdf-renderer';
 export type { PdfBlock, PdfColumn, PdfDocument } from './pdf/pdf-renderer';
 export { PROOF_MIME_TYPES, StoredFiles } from './files/stored-files';
-export type { FileMeta, StoreFileInput } from './files/stored-files';
+export type { FileMeta, StoreFileInput, StoredFileRecord } from './files/stored-files';
 export { PUBLIC_IMAGE_NAME, PUBLIC_IMAGE_PREFIX, PUBLIC_MEDIA_PATH, PublicImages } from './files/public-images';
 export type { PublicImageBytes, StorePublicImageInput, StoredPublicImage } from './files/public-images';
 export {

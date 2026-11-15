@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { CacheKeys } from '../../src/infra/cache';
 import { DbService, schema as s, type Database } from '../../src/infra/db';
 import { RedisService } from '../../src/infra/redis';
+import { SUPPORT_SETTINGS, SettingsReader } from '../../src/modules/platform';
 import {
   SUPPORT_DEFAULT_TEMPLATES,
   TICKET_MAIL_EVENT,
@@ -174,4 +175,41 @@ export async function sendTicketMails(t: TestApp, attemptsMade = 0): Promise<Tic
     );
   }
   return results;
+}
+
+/**
+ * Sets a setting of the support chat (feature 28) and drops the settings cache, so the next request reads it.
+ *
+ * @param t the running test app
+ * @param name `replyEmailDelayMinutes` (0 mails a reply at once, as before feature 28) or `attachmentRetentionDays`
+ * @param value the whole number to store
+ */
+export async function setSupportSetting(t: TestApp, name: keyof typeof SUPPORT_SETTINGS, value: number): Promise<void> {
+  const db = t.app.get(DbService).db;
+  const key = SUPPORT_SETTINGS[name].key;
+  await db.insert(s.settings).values({ key, value }).onConflictDoUpdate({ target: s.settings.key, set: { value } });
+  await t.app.get(SettingsReader).invalidate();
+}
+
+/**
+ * Deletes the counters of the `ticket-message`, `ticket-chat`, `token` and `upload` limiters and the typing throttle keys (feature 28).
+ *
+ * Why: ticket ids start again after every `resetDb`, the counters outlive a test in the cache Redis, and the streams and the console's
+ * uploads of a test all come from 127.0.0.1.
+ *
+ * @param t the running test app
+ */
+export async function clearTicketChatLimits(t: TestApp): Promise<void> {
+  const redis = t.app.get(RedisService).cache;
+  const keys = t.app.get(CacheKeys);
+  for (const pattern of [
+    `${keys.rateLimit('ticket-message')}:*`,
+    `${keys.rateLimit('ticket-chat')}:*`,
+    `${keys.rateLimit('token')}:*`,
+    `${keys.rateLimit('upload')}:*`,
+    `${keys.keyspace}support:typing:*`,
+  ]) {
+    const found = await redis.keys(pattern);
+    if (found.length > 0) await redis.del(...found);
+  }
 }

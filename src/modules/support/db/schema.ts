@@ -1,5 +1,6 @@
 // Support tables (map domain J): tickets from customers and merchants, their messages and reply templates.
-// Conventions: decision 027; schema additions: MISMATCHES B116 and the ticket token (feature 17); ownership: scripts/module-map.mjs.
+// Conventions: decision 027; schema additions: MISMATCHES B116, the ticket token (feature 17), the seen marks, the reply-mail columns and
+// the notify channel (feature 28); ownership: scripts/module-map.mjs.
 import { sql } from 'drizzle-orm';
 import { boolean, check, index, integer, pgTable, text, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { bigId, bigintList, createdAt, fk, inList, lower, pk, timestampTz, updatedAt } from '../../../infra/db/columns';
@@ -76,6 +77,16 @@ export const TICKET_AUTHOR_TYPES = ['staff', 'client', 'customer', 'system'] as 
 export type TicketAuthorType = (typeof TICKET_AUTHOR_TYPES)[number];
 
 /**
+ * How a public staff message was delivered: by email (the reply-mail sweep may batch it) or by Telegram (sent at once).
+ *
+ * Why: feature 28, rule 9: only email replies wait for the requester to see them; a Telegram reply is never repeated by email.
+ */
+export const TICKET_NOTIFY_CHANNELS = ['email', 'telegram'] as const;
+
+/** One value of {@link TICKET_NOTIFY_CHANNELS}. */
+export type TicketNotifyChannel = (typeof TICKET_NOTIFY_CHANNELS)[number];
+
+/**
  * Support tickets from storefront customers and merchants, linked to an order, with an SLA deadline.
  *
  * Why: Support tickets from storefront customers and merchants, linked to an order, with an SLA deadline (scenario
@@ -107,6 +118,20 @@ export const supportTickets = pgTable(
     token: text(),
     /** when the satisfaction survey was queued; set once, in the resolve transaction, and never cleared (one survey per ticket) */
     surveySentAt: timestampTz(),
+    /** the newest public staff message the requester has seen (feature 28: one seen mark per side, it only moves forward) */
+    requesterSeenMessageId: bigId(),
+    requesterSeenAt: timestampTz(),
+    /** the newest requester message staff have seen (staff are one party: the requester learns that support saw it, never who) */
+    staffSeenMessageId: bigId(),
+    staffSeenAt: timestampTz(),
+    /** the newest message of the requester; with `staff_seen_message_id` it decides the staff side's `hasUnread` */
+    lastRequesterMessageId: bigId(),
+    /** the newest public staff message; with `requester_seen_message_id` it decides the requester's `hasUnread` */
+    lastStaffMessageId: bigId(),
+    /** when the unseen email replies are mailed (the reply-mail sweep); null when nothing waits */
+    replyMailDueAt: timestampTz(),
+    /** the newest staff reply an email already carried, so a sweep never mails a reply twice */
+    replyMailedMessageId: bigId(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -129,6 +154,9 @@ export const supportTickets = pgTable(
     index('support_tickets_order_id_idx').on(t.orderId),
     check('support_tickets_csat_check', sql`${t.csatScore} is null or ${t.csatScore} between 1 and 5`),
     index('support_tickets_assignee_id_idx').on(t.assigneeId),
+    index('support_tickets_reply_mail_due_idx')
+      .on(t.replyMailDueAt)
+      .where(sql`${t.replyMailDueAt} is not null`),
   ],
 );
 
@@ -157,12 +185,15 @@ export const ticketMessages = pgTable(
     body: text().notNull(),
     /** an internal note: never shown to the requester */
     isInternal: boolean().notNull().default(false),
-    /** attachments (files.id) */
+    /** attachments (files.id): PDF, JPEG or PNG, at most 5 (feature 28) */
     fileIds: bigintList(),
+    /** how a public staff message reaches the requester (`email`, `telegram`); null for every other message (feature 28) */
+    notifyChannel: text().$type<TicketNotifyChannel>(),
     createdAt: createdAt(),
   },
   (t) => [
     check('ticket_messages_author_type_check', inList(t.authorType, TICKET_AUTHOR_TYPES)),
+    check('ticket_messages_notify_channel_check', inList(t.notifyChannel, TICKET_NOTIFY_CHANNELS)),
     index('ticket_messages_ticket_idx').on(t.ticketId, t.id),
     check('ticket_messages_author_check', sql`(${t.authorType} = 'system') = (${t.authorId} is null)`),
   ],

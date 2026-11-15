@@ -37,7 +37,13 @@ import { CheckoutModule, GrowthModule } from '../../src/modules/customers';
 import { ImeiCheckModule, RiskAdminModule } from '../../src/modules/risk';
 import { StorefrontAdminModule, StorefrontContentModule, StorefrontPublicModule } from '../../src/modules/storefront';
 import { SuppliersAdminModule } from '../../src/modules/suppliers';
-import { SupportAdminModule, SupportMailModule, SupportStoreModule } from '../../src/modules/support';
+import {
+  SupportAdminModule,
+  SupportErasureModule,
+  SupportMailModule,
+  SupportStoreModule,
+} from '../../src/modules/support';
+import { SupportClientModule } from '../../src/modules/support/support-client.module';
 import {
   MaintenanceModule,
   MerchantWebhooksModule,
@@ -135,7 +141,10 @@ const NEEDS_DATABASE_AND_CACHE = [
   NotificationDeliveryModule,
   SupportAdminModule,
   SupportStoreModule,
+  SupportClientModule,
   SupportMailModule,
+  // Feature 28: the erasure hook deletes attachments (storage) and rings the ticket doorbell (the real-time publisher).
+  SupportErasureModule,
   StreamRoutesModule,
 ];
 /**

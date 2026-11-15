@@ -1,5 +1,5 @@
 // TicketMailOutbox: writes the outbox event of a ticket's email or Telegram message (ids only) in the caller's transaction, and registers
-// its queue route. The job that sends it is TicketMailJobs.
+// its queue route. The job that sends it is TicketMailJobs; the reply-mail sweep of feature 28 writes the event of a batched reply mail.
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import type { TransactionContext } from '../../../infra/db';
 import { OutboxRouteRegistry, OutboxService } from '../../platform';
@@ -59,12 +59,13 @@ export class TicketMailOutbox {
   }
 
   /**
-   * Queues a staff reply for delivery.
+   * Queues a staff reply for delivery, or (feature 28) one email that carries several unseen replies.
    *
    * @param work the caller's transaction
    * @param ticket the ticket
-   * @param message the staff message just written
+   * @param message the staff message just written, or the newest of the unseen replies
    * @param channel `email`, or `telegram` for a merchant with a linked chat
+   * @param from the oldest of the unseen email replies the mail carries (the reply-mail sweep); without it the event is one message
    * @returns when the event is written
    */
   reply(
@@ -72,8 +73,14 @@ export class TicketMailOutbox {
     ticket: Pick<SupportTicket, 'id'>,
     message: Pick<TicketMessage, 'id'>,
     channel: ReplyChannel,
+    from?: Pick<TicketMessage, 'id'>,
   ): Promise<void> {
-    return this.add(work, ticket.id, { kind: 'reply', messageId: message.id, channel });
+    return this.add(work, ticket.id, {
+      kind: 'reply',
+      messageId: message.id,
+      channel,
+      ...(from === undefined ? {} : { fromMessageId: from.id }),
+    });
   }
 
   /**
@@ -90,7 +97,7 @@ export class TicketMailOutbox {
   private async add(
     work: Pick<TransactionContext, 'tx'>,
     ticketId: number,
-    payload: { kind: TicketMailKind; messageId?: number; channel?: ReplyChannel },
+    payload: { kind: TicketMailKind; messageId?: number; channel?: ReplyChannel; fromMessageId?: number },
   ): Promise<void> {
     await this.outbox.add(work.tx, {
       type: TICKET_MAIL_EVENT,

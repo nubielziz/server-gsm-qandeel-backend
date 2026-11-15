@@ -128,6 +128,15 @@ describe('deploy/Caddyfile', () => {
     expect(caddyfile).toContain('Strict-Transport-Security');
   });
 
+  it('hides the ticket token in the shop host access log, and logs the other hosts as plain JSON (feature 28)', () => {
+    const shop = block('SHOP_HOST');
+    expect(shop).toContain('format filter {');
+    expect(shop).toContain('request>uri regexp "/tickets/[^/?]+" "/tickets/[token]"');
+    expect(shop).toContain('request>headers>Referer regexp "/tickets/[^/?]+" "/tickets/[token]"');
+    for (const host of ['ADMIN_HOST', 'API_HOST']) expect(block(host)).toContain('import json_log');
+    expect(shop).not.toContain('import json_log');
+  });
+
   it('compresses everything except the live event streams (decision 037)', () => {
     const active = caddyfile
       .split('\n')

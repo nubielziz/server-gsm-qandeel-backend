@@ -1,5 +1,5 @@
-// Multipart form bodies (decision 026 note, B157): the routes that accept them (a Dhru call, `POST /v1/files`, `POST /client/files` and the
-// service picture of feature 22, `POST /admin/service-listings/:id/image`) get their text fields and uploaded files as one plain object before the guards run, so Dhru credentials in a multipart body are read like
+// Multipart form bodies (decision 026 note, B157): the routes that accept them (a Dhru call, `POST /v1/files`, `POST /client/files`, the
+// service picture of feature 22, `POST /admin/service-listings/:id/image`, and the ticket attachments of feature 28) get their text fields and uploaded files as one plain object before the guards run, so Dhru credentials in a multipart body are read like
 // those of a form body, and the maintenance stage sees the Dhru `action`.
 import type { FastifyInstance } from 'fastify';
 import { AppError } from './errors';
@@ -25,16 +25,22 @@ export const MULTIPART_ROUTES: ReadonlySet<string> = new Set([
   '/client/files',
   '/store/v1/files',
   '/admin/service-listings/:id/image',
+  // Feature 28: the attachments of the support chat, uploaded by the holder of a ticket link and by staff.
+  '/store/v1/tickets/:token/files',
+  '/admin/support-tickets/:id/files',
 ]);
 
 /**
- * Routes whose declared body may not exceed a smaller bound than {@link MULTIPART_MAX_BYTES}: the store's receipt upload (5 MiB file
- * plus 64 KiB of form parts).
+ * Routes whose declared body may not exceed a smaller bound than {@link MULTIPART_MAX_BYTES}: the store's receipt upload and the two
+ * ticket attachment uploads of feature 28 (5 MiB file plus 64 KiB of form parts).
  *
  * Why: plan 21 § 7.1 route 9 and risk K15: the store surface is public, so a declared body over its bound is refused before it is read.
  */
 export const MULTIPART_ROUTE_LIMITS: ReadonlyMap<string, number> = new Map([
   ['/store/v1/files', 5 * 1024 * 1024 + 64 * 1024],
+  // Feature 28: a ticket attachment is at most 5 MiB (rule 8), from the ticket page and from the console.
+  ['/store/v1/tickets/:token/files', 5 * 1024 * 1024 + 64 * 1024],
+  ['/admin/support-tickets/:id/files', 5 * 1024 * 1024 + 64 * 1024],
 ]);
 
 /**

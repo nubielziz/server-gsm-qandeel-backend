@@ -21,6 +21,24 @@ Frontend features covering this module: `support` (rules in `RULES.md`).
 | `POST /admin/reply-templates` | admin | staff-permission `support:*` | 17 | `createReplyTemplate` |
 | `PATCH /admin/reply-templates/:id` | admin | staff-permission `support:*` | 17 | `updateReplyTemplate` |
 | `DELETE /admin/reply-templates/:id` | admin | staff-permission `support:*` | 17 | `deleteReplyTemplate` |
+| `GET /store/v1/tickets/:token/stream` | store | ticket-token | 28 |  |
+| `POST /store/v1/tickets/:token/typing` | store | ticket-token | 28 |  |
+| `POST /store/v1/tickets/:token/read` | store | ticket-token | 28 |  |
+| `POST /store/v1/tickets/:token/files` | store | ticket-token | 28 |  |
+| `GET /store/v1/tickets/:token/files/:fileId` | store | ticket-token | 28 |  |
+| `POST /admin/support-tickets/:id/read` | admin | staff-permission `support:read` | 28 |  |
+| `POST /admin/support-tickets/:id/typing` | admin | staff-permission `support:reply` | 28 |  |
+| `POST /admin/support-tickets/:id/files` | admin | staff-permission `support:reply` | 28 |  |
+| `GET /admin/support-tickets/:id/files/:fileId` | admin | staff-permission `support:read` | 28 |  |
+| `GET /store/v1/me/tickets` | store | customer-session | 28 |  |
+| `POST /store/v1/me/tickets` | store | customer-session | 28 |  |
+| `GET /client/tickets` | client | merchant-session | 28 |  |
+| `POST /client/tickets` | client | merchant-session | 28 |  |
+| `GET /client/tickets/:id` | client | merchant-session | 28 |  |
+| `POST /client/tickets/:id/messages` | client | merchant-session | 28 |  |
+| `POST /client/tickets/:id/read` | client | merchant-session | 28 |  |
+| `POST /client/tickets/:id/typing` | client | merchant-session | 28 |  |
+| `GET /client/tickets/:id/files/:fileId` | client | merchant-session | 28 |  |
 
 ## POST /store/v1/tickets
 
@@ -168,4 +186,94 @@ Effects: inserts a staff message (is_internal false) and delivers it on the chan
 - **Response**: 204.
 - **Errors**: 404 NOT_FOUND (no template with that id); 403 FORBIDDEN (caller lacks support:delete)
 - **Mock**: src/features/support/mocks/templateHandlers.ts (Seeded from demo S.macros, converted to {{ }} variables (mocks/store.ts:105).)
+
+## GET /store/v1/tickets/:token/stream
+
+- **Map addition** (B218, `scripts/map-additions/28.mjs`): The ticket's live events (server-sent events). (بثّ مباشر لأحداث التذكرة) · ticket-token · stage 28 · tables support_tickets, ticket_messages · success 200
+- **Frontend**: none.
+
+## POST /store/v1/tickets/:token/typing
+
+- **Map addition** (B218, `scripts/map-additions/28.mjs`): The requester is typing. (الزبون يكتب الآن) · ticket-token · stage 28 · tables support_tickets, ticket_messages · success 204
+- **Frontend**: none.
+
+## POST /store/v1/tickets/:token/read
+
+- **Map addition** (B218, `scripts/map-additions/28.mjs`): Mark support's messages as seen. (تعليم رسائل الدعم كمقروءة) · ticket-token · stage 28 · tables support_tickets, ticket_messages · success 204
+- **Frontend**: none.
+
+## POST /store/v1/tickets/:token/files
+
+- **Map addition** (B218, `scripts/map-additions/28.mjs`): Upload an attachment for the ticket. (إرفاق ملف بالتذكرة) · ticket-token · stage 28 · tables support_tickets, ticket_messages, files · success 201
+- **Frontend**: none.
+
+## GET /store/v1/tickets/:token/files/:fileId
+
+- **Map addition** (B218, `scripts/map-additions/28.mjs`): Download an attachment of the ticket (presigned link). (تنزيل مرفق) · ticket-token · stage 28 · tables support_tickets, ticket_messages, files · success 302
+- **Frontend**: none.
+
+## POST /admin/support-tickets/:id/read
+
+- **Map addition** (B218, `scripts/map-additions/28.mjs`): Mark the requester's messages as seen. (تعليم رسائل التذكرة كمقروءة) · staff-permission `support:read` · stage 28 · tables support_tickets, ticket_messages · success 204
+- **Frontend**: none.
+
+## POST /admin/support-tickets/:id/typing
+
+- **Map addition** (B218, `scripts/map-additions/28.mjs`): A staff member is typing a reply or a note. (الموظف يكتب ردًا أو ملاحظة) · staff-permission `support:reply` · stage 28 · tables support_tickets, ticket_messages · success 204
+- **Frontend**: none.
+
+## POST /admin/support-tickets/:id/files
+
+- **Map addition** (B218, `scripts/map-additions/28.mjs`): Upload an attachment for a reply or a note. (إرفاق ملف برد أو ملاحظة) · staff-permission `support:reply` · stage 28 · tables support_tickets, ticket_messages, files, audit_logs · success 201
+- **Frontend**: none.
+
+## GET /admin/support-tickets/:id/files/:fileId
+
+- **Map addition** (B218, `scripts/map-additions/28.mjs`): Download an attachment of the ticket (presigned link). (تنزيل مرفق التذكرة) · staff-permission `support:read` · stage 28 · tables support_tickets, ticket_messages, files · success 302
+- **Frontend**: none.
+
+## GET /store/v1/me/tickets
+
+- **Map addition** (B217, `scripts/map-additions/28b.mjs`): The signed-in customer's own tickets, with the link token of each. (تذاكري) · customer-session · stage 28 · tables support_tickets, ticket_messages · success 200
+- **Frontend**: none.
+
+## POST /store/v1/me/tickets
+
+- **Map addition** (B217, `scripts/map-additions/28b.mjs`): Open a ticket when signed in (no anti-bot check; the answer carries the ticket link token). (فتح تذكرة من الحساب) · customer-session · stage 28 · tables support_tickets, ticket_messages, orders · success 201
+- **Frontend**: none.
+
+## GET /client/tickets
+
+- **Map addition** (B217, `scripts/map-additions/28b.mjs`): The merchant's own tickets. (تذاكر التاجر) · merchant-session · stage 28 · tables support_tickets, ticket_messages · success 200
+- **Frontend**: none.
+
+## POST /client/tickets
+
+- **Map addition** (B217, `scripts/map-additions/28b.mjs`): Open a ticket from the merchant portal. (فتح تذكرة جديدة من بوابة التاجر) · merchant-session · stage 28 · tables support_tickets, ticket_messages, orders · success 201
+- **Frontend**: none.
+
+## GET /client/tickets/:id
+
+- **Map addition** (B217, `scripts/map-additions/28b.mjs`): One of the merchant’s tickets with its conversation. (محادثة تذكرة التاجر) · merchant-session · stage 28 · tables support_tickets, ticket_messages · success 200
+- **Frontend**: none.
+
+## POST /client/tickets/:id/messages
+
+- **Map addition** (B217, `scripts/map-additions/28b.mjs`): Write on one of the merchant’s tickets. (رد التاجر على التذكرة) · merchant-session · stage 28 · tables support_tickets, ticket_messages · success 201
+- **Frontend**: none.
+
+## POST /client/tickets/:id/read
+
+- **Map addition** (B217, `scripts/map-additions/28b.mjs`): Mark support's messages of one of the merchant’s tickets as seen. (تعليم رسائل الدعم كمقروءة للتاجر) · merchant-session · stage 28 · tables support_tickets, ticket_messages · success 204
+- **Frontend**: none.
+
+## POST /client/tickets/:id/typing
+
+- **Map addition** (B217, `scripts/map-additions/28b.mjs`): The merchant is typing on one of its tickets. (التاجر يكتب الآن) · merchant-session · stage 28 · tables support_tickets, ticket_messages · success 204
+- **Frontend**: none.
+
+## GET /client/tickets/:id/files/:fileId
+
+- **Map addition** (B217, `scripts/map-additions/28b.mjs`): Download an attachment of one of the merchant’s tickets (presigned link). (تنزيل مرفق تذكرة التاجر) · merchant-session · stage 28 · tables support_tickets, ticket_messages, files · success 302
+- **Frontend**: none.
 

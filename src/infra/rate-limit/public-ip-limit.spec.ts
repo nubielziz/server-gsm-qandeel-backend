@@ -19,6 +19,18 @@ describe('publicLimiterFor', () => {
     }
   });
 
+  it('counts the typing pings and read marks of a ticket page against ticket-chat, never against token (feature 28)', () => {
+    expect(publicLimiterFor('/store/v1/tickets/:token/typing', 'ticket-token')).toBe('ticket-chat');
+    expect(publicLimiterFor('/store/v1/tickets/:token/read', 'ticket-token')).toBe('ticket-chat');
+    expect(publicLimiterFor('/store/v1/tickets/:token', 'ticket-token')).toBe('token');
+    expect(publicLimiterFor('/store/v1/tickets/:token/messages', 'ticket-token')).toBe('token');
+    expect(publicLimiterFor('/store/v1/tickets/:token/stream', 'ticket-token')).toBe('token');
+    // Only a ticket-token route: an unknown path that looks like one is a plain store request.
+    expect(publicLimiterFor('/store/v1/tickets/abc/typing', undefined)).toBe('ip');
+    // The attachment upload is multipart: it costs an upload point like any large body.
+    expect(publicLimiterFor('/store/v1/tickets/:token/files', 'ticket-token', true)).toBe('upload');
+  });
+
   it('counts only the public routes of the admin console and the merchant portal (sign-in, registration, password)', () => {
     expect(publicLimiterFor('/admin/auth/login', 'public')).toBe('ip');
     expect(publicLimiterFor('/client/auth/register', 'public')).toBe('ip');

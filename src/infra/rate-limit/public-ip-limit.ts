@@ -14,6 +14,9 @@ const TOKEN_ACCESS: ReadonlySet<AccessKind> = new Set([
 /** The sign-in steps of the admin console and the merchant portal (login, 2FA, password); `me` and logout are not. */
 const AUTH_PATH = /^\/(admin|client)\/auth\/(login|2fa|password)(\/|$)/;
 
+/** The typing pings and read marks of a ticket page (feature 28): counted against `ticket-chat`, not `token`. */
+const TICKET_CHAT_PATH = /^\/store\/v1\/tickets\/[^/]+\/(typing|read)$/;
+
 /** The public service pictures (feature 22): counted against `media`, not `ip`. */
 const MEDIA_PATH = '/store/v1/media/';
 
@@ -30,7 +33,8 @@ const MEDIA_PATH = '/store/v1/media/';
  * (up to 25 MiB, B157) before the credentials are known, so an anonymous caller could otherwise make the server read one after
  * another (the per-key limit comes too late for that). The admin console counts a large body the same way (its service picture upload
  * is multipart, feature 22). The public pictures (`/store/v1/media/`) have their own budget (`media`, 1200 a minute): a catalog page
- * shows up to 100 of them and they must not use up the store's `ip` budget.
+ * shows up to 100 of them and they must not use up the store's `ip` budget. The typing pings and read marks of a ticket page
+ * (`…/tickets/:token/typing` and `…/read`, feature 28) count against `ticket-chat` (120 a minute) instead of `token`.
  *
  * @param path the route template or decoded path of the request (`requestPath`)
  * @param access the `access` of the matched route's contract; `undefined` for an unknown route
@@ -46,6 +50,8 @@ export function publicLimiterFor(
     case 'store':
       // A large body on the store (the receipt upload, feature 21) is buffered before the session is checked: it costs an upload point.
       if (largeBody) return 'upload';
+      // A ticket page pings typing every few seconds and marks what it showed: its own budget, so the token lookups stay 30 a minute.
+      if (access === 'ticket-token' && TICKET_CHAT_PATH.test(path)) return 'ticket-chat';
       if (access !== undefined && TOKEN_ACCESS.has(access)) return 'token';
       return path.startsWith(MEDIA_PATH) ? 'media' : 'ip';
     case 'admin':

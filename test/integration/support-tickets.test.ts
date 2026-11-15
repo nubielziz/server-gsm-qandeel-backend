@@ -16,6 +16,7 @@ import {
   insertSupportTicket,
   seedSupportTemplates,
   sendTicketMails,
+  setSupportSetting,
   supportStaff,
   ticketMailEvents,
 } from '../support/support';
@@ -138,6 +139,12 @@ describe('GET /admin/support-tickets', () => {
         // The internal note is newer than the public reply but does not count.
         lastPublicAt: ago(HOUR / 2).toISOString(),
         late: false,
+        // Feature 28: the seen marks (none yet: these rows were written straight into the tables).
+        hasUnread: false,
+        requesterSeenMessageId: null,
+        requesterSeenAt: null,
+        staffSeenMessageId: null,
+        staffSeenAt: null,
       },
     ]);
   });
@@ -648,6 +655,10 @@ describe('PATCH /admin/support-tickets/:id', () => {
 });
 
 describe('POST /admin/support-tickets/:id/reply', () => {
+  // These tests read the reply mail at once: a delay of 0 is the behaviour before feature 28 (the delayed mail has its own tests,
+  // test/integration/support-reply-mail.test.ts).
+  beforeEach(() => setSupportSetting(t, 'replyEmailDelayMinutes', 0));
+
   it('adds a public staff message, moves the ticket to waiting, stamps the first response, assigns the sender and emails the customer', async () => {
     const { ticket } = await waitingTicket({ status: 'new' });
     await elapse(10 * 60_000);
@@ -744,7 +755,7 @@ describe('POST /admin/support-tickets/:id/reply', () => {
     expect(byEmail.status).toBe(201);
     expect(await sendTicketMails(t)).toEqual([{ sent: true }, { sent: true }]);
     expect(telegramOutbox(t).sent.map((sent) => sent.text)).toEqual([
-      `Support replied on ${ticket.number} (Invoice question):\nIssued in USD.`,
+      `Support replied on ${ticket.number} (Invoice question):\nIssued in USD.\n\nOpen the conversation: http://localhost:5175/merchant/support/${ticket.id}`,
     ]);
     expect(telegramOutbox(t).sent[0]).toMatchObject({ chatId: '555001' });
     expect(mailbox(t).sent).toHaveLength(1);

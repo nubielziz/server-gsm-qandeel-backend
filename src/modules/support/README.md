@@ -17,12 +17,24 @@ processor), `domain/` (the status codec and moves, the reply targets, the reply 
 test app built without them leaves them out; `SupportEventsModule` registers the notification events and the outbox route and needs
 neither. The API loads all four; the worker loads `SupportEventsModule` and `SupportMailModule`.
 
+Feature 28 turns the ticket into a live conversation on the real-time layer of feature 27 (decision 037; plan
+`docs/briefs/28-support-live-chat.md`): live messages, typing, seen marks, attachments, an email fallback for unseen replies, the
+signed-in customer's own ticket list and the merchant portal's tickets (18 more routes, 32 in all). Added to the layout: `realtime/`
+(`TicketRealtimeSource`: the ticket events and their two views), `jobs/` (the reply-mail sweep and the attachment retention), `domain/`
+(`attachment-rules.ts`, `seen.ts`, `reply-mail.ts`), `application/` (`TicketThreadService`, `TicketEvents`, `TicketReadService`,
+`TicketTypingService`, `TicketAttachmentService`, `ReplyMailSweep`, and for the account surfaces `AccountTicketOpener`,
+`MyTicketsService`, `ClientTicketService` with their pure views), `infra/account-ticket.repository.ts` (the two account lists and the
+ownership check). Two Nest modules more: `SupportClientModule` (the customer's list and the merchant routes; it lists the chat-engine services itself, like
+`SupportAdminModule`, and needs the database, so a database-less test app replaces it too) and `SupportJobsModule` (the two scheduled jobs,
+loaded by the worker only). `SupportStoreModule` also holds the ticket source of the live streams.
+
 ## Public API (`index.ts`)
 
 Exports the modules, the statuses' wire words (`WIRE_TICKET_STATUSES`, `toWireStatus`), the reply targets (`PRIORITY_TARGET_MS`,
 `defaultPriority`, `slaDueAt`: the dashboard's late-ticket rule and the seed use the same numbers), the notification events
 (`SUPPORT_EVENTS`, the three event keys), their default templates (`SUPPORT_DEFAULT_TEMPLATES`, `supportTemplatesSql`) and the ticket mail
-job (`TICKET_MAIL_EVENT`, `TicketMailJobs`, `TicketMailProcessor`). Other modules
+job (`TICKET_MAIL_EVENT`, `TicketMailJobs`, `TicketMailProcessor`), and from feature 28 the doorbell topic (`TICKET_TOPIC`), the jobs module with its
+two scheduler ids and job names. Other modules
 import only `src/modules/support/index.ts` (lint rule `gsm/module-boundaries`).
 
 ## Owned tables
@@ -37,9 +49,9 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
 
 ## Routes
 
-14 endpoints (admin 10, store 4). Source: `docs/slices/support.json` (generated from the map; `bun run routes:build`). Every route is a contract under `contracts/`.
+32 endpoints (admin 14, store 11, client 7). Source: `docs/slices/support.json` (generated from the map; `bun run routes:build`). Every route is a contract under `contracts/`.
 
-### Admin console (10)
+### Admin console (14)
 
 | Route | Access | What it does | Stage |
 |---|---|---|---|
@@ -48,20 +60,43 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
 | `GET /admin/reply-templates/:id` | staff-permission · `support:*` | Canned replies (macros) with order variables. | 17 |
 | `GET /admin/support-tickets` | staff-permission · `support:*` | Support inbox: priority, assignment, status and SLA timers. | 17 |
 | `GET /admin/support-tickets/:id` | staff-permission · `support:*` | Support inbox: priority, assignment, status and SLA timers. | 17 |
+| `GET /admin/support-tickets/:id/files/:fileId` | staff-permission · `support:read` | Download an attachment of the ticket (presigned link). | 28 |
 | `PATCH /admin/reply-templates/:id` | staff-permission · `support:*` | Canned replies (macros) with order variables. | 17 |
 | `PATCH /admin/support-tickets/:id` | staff-permission · `support:*` | Support inbox: priority, assignment, status and SLA timers. | 17 |
 | `POST /admin/reply-templates` | staff-permission · `support:*` | Canned replies (macros) with order variables. | 17 |
+| `POST /admin/support-tickets/:id/files` | staff-permission · `support:reply` | Upload an attachment for a reply or a note. | 28 |
 | `POST /admin/support-tickets/:id/note` | staff-permission · `support:reply` | Internal note that the customer does not see. | 17 |
+| `POST /admin/support-tickets/:id/read` | staff-permission · `support:read` | Mark the requester's messages as seen. | 28 |
 | `POST /admin/support-tickets/:id/reply` | staff-permission · `support:reply` | Reply to the customer by email or Telegram. | 17 |
+| `POST /admin/support-tickets/:id/typing` | staff-permission · `support:reply` | A staff member is typing a reply or a note. | 28 |
 
-### Storefront (B2C) (4)
+### Storefront (B2C) (11)
 
 | Route | Access | What it does | Stage |
 |---|---|---|---|
+| `GET /store/v1/me/tickets` | customer-session | The signed-in customer's own tickets, with the link token of each. | 28 |
 | `GET /store/v1/tickets/:token` | ticket-token | Ticket conversation (without internal notes). | 17 |
+| `GET /store/v1/tickets/:token/files/:fileId` | ticket-token | Download an attachment of the ticket (presigned link). | 28 |
+| `GET /store/v1/tickets/:token/stream` | ticket-token | The ticket's live events (server-sent events). | 28 |
+| `POST /store/v1/me/tickets` | customer-session | Open a ticket when signed in (no anti-bot check; the answer carries the ticket link token). | 28 |
 | `POST /store/v1/tickets` | public | Open a ticket from the order page or the contact page; it is linked to the order. | 17 |
 | `POST /store/v1/tickets/:token/csat` | ticket-token | Satisfaction rating after the ticket is closed. | 17 |
+| `POST /store/v1/tickets/:token/files` | ticket-token | Upload an attachment for the ticket. | 28 |
 | `POST /store/v1/tickets/:token/messages` | ticket-token | The customer's reply on the ticket. | 17 |
+| `POST /store/v1/tickets/:token/read` | ticket-token | Mark support's messages as seen. | 28 |
+| `POST /store/v1/tickets/:token/typing` | ticket-token | The requester is typing. | 28 |
+
+### Merchant portal (7)
+
+| Route | Access | What it does | Stage |
+|---|---|---|---|
+| `GET /client/tickets` | merchant-session | The merchant's own tickets. | 28 |
+| `GET /client/tickets/:id` | merchant-session | One of the merchant's tickets with its conversation. | 28 |
+| `GET /client/tickets/:id/files/:fileId` | merchant-session | Download an attachment of one of the merchant's tickets (presigned link). | 28 |
+| `POST /client/tickets` | merchant-session | Open a ticket from the merchant portal. | 28 |
+| `POST /client/tickets/:id/messages` | merchant-session | Write on one of the merchant's tickets. | 28 |
+| `POST /client/tickets/:id/read` | merchant-session | Mark support's messages of one of the merchant's tickets as seen. | 28 |
+| `POST /client/tickets/:id/typing` | merchant-session | The merchant is typing on one of its tickets. | 28 |
 
 ## Rules (RULES support, RESOLUTIONS b2c-2 and b2c-9, scenario b2c-ticket)
 
@@ -103,18 +138,69 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
 - **Templates.** The shortcut is trimmed; `''` is stored as NULL and read back as `''`; it must be `''` or `/word`; unique ignoring case among
   the non-empty ones (`409 SHORTCUT_TAKEN`, detail names the owner). The server renders no variables.
 
+### The live chat (feature 28, B217 to B219)
+
+- **Live both ways (rule 1).** Every use case that changes a ticket rings a doorbell after its commit (`TicketEvents`, topic `ticket`: `message`,
+  `updated`, `read`, `typing`, `revoked`; ids only). `TicketRealtimeSource` (API only) re-reads and renders two views: the staff view to
+  `support:staff` (every message, the inbox row, a colleague's typing with the name) and the requester view to `ticket:<id>` (the ticket link's
+  stream) and the requester's account stream (`u:customer:<id>`, `u:client:<id>`): public messages only, never a note, a system message, a staff
+  name, the assignee, the priority or a timer, and no ticket token (a customer's event has `ticketId: null`, match by `number`). The stream
+  route `GET /store/v1/tickets/:token/stream` keeps the token in the path (an `EventSource` cannot send a header), has no cookie and
+  `originCheck`, and is capped at 3 streams per ticket and 30 per address; the proxy's log hides the token (`deploy/Caddyfile`). Events and
+  frames: `docs/contract/realtime-events.md`.
+- **Typing (rule 2)** is a throttled `POST`, never stored or replayed: one Redis key per party and ticket (`SET NX PX 2500`) turns a burst
+  into one doorbell every 2.5 s; it always answers `204`. A staff reply's typing reaches the requester, a note's only other staff. The
+  ticket page's typing and read marks count against the limiter `ticket-chat` (120 a minute per address), not `token`.
+- **Seen (rule 3).** One mark per side on the ticket (`requester_seen_message_id`, `staff_seen_message_id` with their times), moved forward
+  only by one guarded `UPDATE`; the message must be one the other side wrote and the caller may see, else `422 unknown_message`. Staff are one
+  party: the requester learns that support saw it, never who. A requester's read never touches `updated_at`. `hasUnread` is never stored:
+  for staff `last_requester_message_id > coalesce(staff_seen_message_id, 0)`, for the requester `last_staff_message_id >
+  coalesce(requester_seen_message_id, 0)`.
+- **My tickets (rule 6, B217).** `GET /store/v1/me/tickets` lists the tickets whose requester is the signed-in customer (those filed as a
+  guest with the same address included, because the address belongs to the customer who owns it); each row hands out the ticket's link token
+  and the page stays the token page, so no new credential exists. A customer's ticket without a token (cleared by an erasure) is not listed.
+  `POST /store/v1/me/tickets` opens a ticket without Turnstile and answers with the token at once; the receipt email is still queued. The
+  order picked must be the customer's own (`422 orderId`, `unknown_order`, for any other order, an unknown id included).
+- **Merchant support (rule 7, B217).** A merchant's ticket has no link token: the session is the credential and the routes take the ticket
+  id, and another merchant's ticket (or an unknown id) is `404`, never `403`. List, open, the public conversation, reply, read mark, typing
+  and the download are `/client/tickets*`; a merchant waiting for approval may use all of them (`pendingMerchant: 'allow'`, B153), a
+  suspended one is refused by the session guard. The merchant's message goes through the same `TicketThreadService` as the ticket page's, so
+  the status moves, the reply target, the 20 messages a minute per ticket (`ticket-message`) and the doorbell are the same. The conversation
+  is the storefront's view without the rating (no survey for a merchant) and with `id`; a merchant gets no receipt email.
+- **Opening from an account.** `AccountTicketOpener` is the one path of routes `POST /store/v1/me/tickets` and `POST /client/tickets`: the
+  limiter `ticket-open` (5 an hour per account, `customer:<id>` or `client:<id>`, `429 RATE_LIMITED` with `Retry-After`) is taken first, before
+  anything is read, so a refused attempt counts too and order and file ids cannot be probed; then, in one transaction, the order check, the
+  attachments check, the ticket (priority and reply target of its category, `new`), the first message, `last_requester_message_id`, the
+  customer's receipt event and the doorbell. The first message may be files only (`message: ''` with `fileIds`).
+- **Attachments (rule 8).** PDF, JPEG or PNG, at most 5 MiB each and 5 per message; the content must start with the type's magic bytes
+  (`domain/attachment-rules.ts`). The ticket page and the console have their own upload routes (the file belongs to the ticket's customer or
+  the staff member; a link's holder attaches only the uploads of its own ticket, the area `tickets-<id>`); a merchant or a signed-in customer
+  uploads with the existing `POST /client/files` and `POST /store/v1/files`, and the type and size are checked again when the file is
+  attached (`422 fileIds`: `unknown_file`, `not_yours`, `type`, `too_large`). Nothing is scanned for viruses: files are never shown inline and
+  every download is a 5-minute presigned link with `Content-Disposition: attachment`. A requester downloads the files of the public messages of
+  their own ticket, staff with `support:read` every file of the ticket; anything else is `404`.
+- **Email fallback (rule 9).** A staff reply on channel `email` writes no outbox event at once: it sets `reply_mail_due_at` to the reply time
+  plus `support.replyEmailDelayMinutes` (default 5; `0` mails at once, as before feature 28). The job `support_reply_mail_sweep` then queues
+  one `support.ticket_mail` event that carries every reply the requester has not seen (`fromMessageId` to `messageId`). A reply on channel
+  `telegram` is sent at once as before and never mailed again. The receipt and the survey are unchanged.
+- **Erasure and retention (rule 10).** Anonymizing a customer also deletes the attachments of their tickets (the texts stay, B175) and ends
+  their ticket streams (`ticket revoked`). The job `ticket_attachment_retention` deletes the attachments of a ticket
+  `support.attachmentRetentionDays` (default 180, `0` keeps them) after it was resolved.
+
 ## Foreign reads
 
 `infra/support-foreign-reads.ts` is the only file that names tables of other modules (decision 016 deviation, like the order read model's):
 `customers` (the requester's name and address; the guest a first-time visitor becomes is made by the customers module's
 `CustomerDirectory.findOrCreateGuest`, so support only reads the table),
 `clients` (a merchant requester, its Telegram chat), `staff_users` (an assignee must be active; author names) and `orders` (by tracking
-token, for the link). Replace the bodies with calls to the owners' services when identity and orders export them.
+token, for the link; and, for the account routes, whether an order is the caller's own: `orders.customer_id` for a customer, `orders.client_id`
+for a merchant). Replace the bodies with calls to the owners' services when identity and orders export them.
 
 ## Links
 
 Ticket links in emails are `<STORE_BASE_URL>/support/tickets/<token>` (`STORE_BASE_URL`, the same config key feature 14b adds for the
-customer sign-in links); the storefront page at that path shows the ticket, the reply form and, once resolved, the rating.
+customer sign-in links); the storefront page at that path shows the ticket, the reply form and, once resolved, the rating. A merchant's reply
+mail and Telegram message link to `<STORE_BASE_URL>/merchant/support/<ticket id>`, the portal's conversation (feature 28).
 
 ## Scenarios
 
@@ -127,17 +213,23 @@ Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touc
 
 Staff permissions the map requires on this module's admin routes: `support:*`, `support:reply`. The contracts use the per-action words of
 RULES support 9 (M7): `support:read` (the inbox, one ticket, the templates), `support:update` (PATCH), `support:reply` (reply and note),
-`support:create` and `support:delete` (templates; a template change is `support:update`).
+`support:create` and `support:delete` (templates; a template change is `support:update`). Feature 28: the read mark and the file download are
+`support:read`, the typing ping and the file upload `support:reply`.
 
 Keep this list in step with the contracts (`permission` of each `defineRoute`).
 
 ## Events
 
 One outbox event type, `support.ticket_mail` (queue `notifications`, aggregate `support_tickets`, payload `kind` = `received` | `reply` |
-`survey`, plus `messageId` and `channel` for a reply), written by `TicketMailOutbox` in the use case's transaction by `POST /store/v1/tickets`
-(the receipt), a staff reply and a resolve (the survey). The route is registered by `TicketMailRoutes` (`SupportEventsModule`), which the API
+`survey`, plus `messageId` and `channel` for a reply, and `fromMessageId` for one email that carries every unseen reply from that message to
+`messageId`), written by `TicketMailOutbox` in the use case's transaction by `POST /store/v1/tickets` and `POST /store/v1/me/tickets` (the
+receipt), a staff reply on channel `telegram` (or on `email` when the delay is `0`), the `support_reply_mail_sweep` job (the batched email)
+and a resolve (the survey). The route is registered by `TicketMailRoutes` (`SupportEventsModule`), which the API
 and the worker both load. Why a job and not `NotificationService.enqueue`: the ticket link holds the ticket token, and what a notification
 stores in its `variables` is shown in the console's notification log, so the job builds the link and hands it over as a secret.
+
+Live events (feature 28, not outbox events): the doorbells of topic `ticket` on the cache Redis (`ticket.message.created`, `ticket.updated`,
+`ticket.read`, `ticket.typing`, and the end of a ticket link's streams), documented with both views in `docs/contract/realtime-events.md`.
 
 Notification events registered here (`SUPPORT_EVENTS`, loaded by the API and the worker through `SupportEventsModule`): customer
 `support.ticket_received` and `support.csat_survey` (email), and merchant `support.reply` (email and Telegram, transactional: never a
@@ -152,20 +244,27 @@ re-reads the ticket, the requester and the message, then sends through `Notifica
 so a repeat of a delivered message is skipped). The queue's policy applies (5 attempts, exponential backoff from 30 s): a transient failure
 is retried, a refusal that cannot change (a missing template, a Telegram chat that was unlinked) ends the job, a malformed event is an
 `UnrecoverableError`, and a customer anonymized since the event, a ticket that is gone or a message that is not a public staff message of
-that ticket is skipped. There is no scheduler.
+that ticket is skipped. That job has no scheduler.
+
+Feature 28 adds two scheduled jobs on the `maintenance` queue (`SupportJobsModule`, the worker only; `docs/queues.md`):
+`support_reply_mail_sweep` (every minute: mails the unseen email replies of the tickets whose `reply_mail_due_at` has come, one mail per
+ticket, `FOR UPDATE SKIP LOCKED`, 100 a pass) and `ticket_attachment_retention` (daily 03:30 UTC: batches of 200 tickets, at most 25 a
+run). Both are idempotent and record their runs in `job_runs`.
 
 ## Cache keys
 
-None: tickets and templates are read from Postgres on every request (the inbox is polled every 30 s and stays cheap through the indexes on
-status, updated time, `sla_due_at` and the requester).
+Tickets and templates are read from Postgres on every request (the inbox stays cheap through the indexes on status, updated time,
+`sla_due_at` and the requester). The one key is the typing throttle `gsm:{env}:support:typing:{ticketId}:{party}` (`r` or `s<staffId>`, TTL
+2.5 s, never invalidated: a throttle, not a cache; `docs/cache-keys.md`).
 
 ## Audit
 
 Staff writes use the demo's lower-case verb phrases with `entityType` `ticket` and the label `<number>, <subject>`: `assigned ticket`
 (also when the assignee is cleared: the assignee is then none), `changed priority of ticket`, `resolved ticket`, `reopened ticket`, `changed status of ticket` (any other move),
-`replied to ticket`, `added note to ticket`, and `edited ticket` for a PATCH that changed nothing (every staff write leaves one entry). The
-reply templates use `created|edited|deleted reply template` with the new entity type `reply_template`. The storefront routes write no audit
-rows (no staff actor).
+`replied to ticket` and `added note to ticket` (both with `after.fileIds` when files are attached), `attached file to ticket` (a staff upload,
+`{ fileId, filename, size }`), and `edited ticket` for a PATCH that changed nothing (every staff write leaves one entry). The
+reply templates use `created|edited|deleted reply template` with the new entity type `reply_template`. The storefront and merchant routes write no audit
+rows (no staff actor), and neither do the console's read mark and typing ping (`audit: false`: the staff side's own read mark, and nothing is stored).
 
 ## Audit resolutions
 

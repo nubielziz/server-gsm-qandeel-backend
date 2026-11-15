@@ -23,6 +23,8 @@ import {
   markSurveySent,
   updateTicket,
 } from '../infra/ticket.repository';
+import { TicketAttachmentService } from './ticket-attachment.service';
+import { TicketEvents } from './ticket-events';
 import { TicketMailOutbox } from './ticket-mail-outbox';
 import { type TicketDetailView, type TicketRowView, toDetailView, toTicketView } from './ticket-views';
 
@@ -61,7 +63,7 @@ const labelOf = (ticket: Pick<SupportTicket, 'number' | 'subject'>) => `${ticket
  * the same check.
  *
  * Side effects: writes `support_tickets`, `ticket_messages` (the system message), `outbox_events` (the survey's `support.ticket_mail`) and
- * `audit_logs`.
+ * `audit_logs`; rings `ticket updated` after a change (and `ticket message` for the system message of a resolve, which only staff see).
  */
 @Injectable()
 export class TicketAdminService {
@@ -69,6 +71,8 @@ export class TicketAdminService {
     private readonly db: DbService,
     private readonly audit: AuditService,
     private readonly mail: TicketMailOutbox,
+    private readonly attachments: TicketAttachmentService,
+    private readonly events: TicketEvents,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -92,7 +96,7 @@ export class TicketAdminService {
    * Reads one ticket with its thread.
    *
    * @param id the ticket id
-   * @returns the ticket, every message (internal notes included) and the channels a reply may use
+   * @returns the ticket, every message (internal notes included, each with its attachments) and the channels a reply may use
    * @throws {AppError} `NOT_FOUND`
    */
   async show(id: number): Promise<TicketDetailView> {
@@ -103,12 +107,16 @@ export class TicketAdminService {
       listMessageRows(this.db.db, id, false),
       findRequester(this.db.db, row.ticket.requesterType, row.ticket.requesterId),
     ]);
+    const files = await this.attachments.filesOf(
+      this.db.db,
+      messages.map((message) => message.message),
+    );
     const channels = replyChannelsOf({
       requesterType: row.ticket.requesterType,
       reachable: requester?.reachable ?? false,
       telegramChatId: requester?.telegramChatId ?? null,
     });
-    return toDetailView(row, times.get(id), messages, channels, this.clock.now());
+    return toDetailView(row, times.get(id), messages, files, channels, this.clock.now());
   }
 
   /**
@@ -213,6 +221,7 @@ export class TicketAdminService {
         });
         if (newStatus === 'resolved') await this.afterResolve(work, after, staffId, now);
       }
+      this.events.updated(id);
       return this.row(tx, id, now);
     });
   }
@@ -244,7 +253,7 @@ export class TicketAdminService {
     // The guarded update is the record that the survey was queued; it runs in this transaction, with the event and the message below.
     const survey = askable && (await markSurveySent(tx, ticket.id, now));
     const name = (await findStaffName(tx, staffId)) ?? 'staff';
-    await insertMessage(tx, {
+    const message = await insertMessage(tx, {
       ticketId: ticket.id,
       authorType: 'system',
       authorId: null,
@@ -252,6 +261,8 @@ export class TicketAdminService {
       isInternal: true,
       createdAt: now,
     });
+    // Staff see the system message live; the source never renders it for the requester (who gets the `updated` of the resolve).
+    this.events.message(ticket.id, message.id);
     if (survey) await this.mail.survey(work, ticket);
   }
 

@@ -3,14 +3,22 @@
 // The ticket token is the whole credential of the three token routes (decision 010, 018).
 import { z } from 'zod';
 import { defineRoute, zId, zIsoDateTime } from '../../../common/contract';
-import { TicketCategorySchema, WireStatusSchema, messageText } from './shared';
+import {
+  ALWAYS_SENT,
+  AttachmentsSchema,
+  TicketCategorySchema,
+  WireStatusSchema,
+  messageBody,
+  messageText,
+} from './shared';
 
 /** One message of the thread as the customer reads it: theirs or support's; notes and system messages never appear. */
 export const StoreMessageSchema = z.object({
   id: zId,
   from: z.enum(['you', 'support']).describe('`you` is the requester, `support` is the team.'),
-  body: z.string(),
+  body: z.string().describe("May be `''` when the message is files only."),
   createdAt: zIsoDateTime,
+  attachments: AttachmentsSchema,
 });
 
 /** A ticket as the customer reads it. */
@@ -26,6 +34,17 @@ export const StoreTicketSchema = z.object({
   csatScore: z.number().int().min(1).max(5).nullable().describe('The rating the customer gave, once.'),
   canRate: z.boolean().describe('True while the ticket is resolved and not yet rated.'),
   messages: z.array(StoreMessageSchema).describe('Oldest first, without internal notes.'),
+  seenByYou: zId
+    .nullable()
+    .optional()
+    .describe(`The newest support message the requester has seen (their own mark), or null. ${ALWAYS_SENT}`),
+  seenBySupport: zId
+    .nullable()
+    .optional()
+    .describe(
+      `The newest message of the requester that support has seen, or null: show \`Seen\` under it and the older ones. ${ALWAYS_SENT}`,
+    ),
+  seenBySupportAt: zIsoDateTime.nullable().optional().describe(`When support saw it, or null. ${ALWAYS_SENT}`),
 });
 
 const TICKET_EXAMPLE = {
@@ -40,14 +59,24 @@ const TICKET_EXAMPLE = {
   csatScore: null,
   canRate: false,
   messages: [
-    { id: 9000, from: 'you', body: 'I paid yesterday and still have no code.', createdAt: '2026-11-08T09:30:00.000Z' },
+    {
+      id: 9000,
+      from: 'you',
+      body: 'I paid yesterday and still have no code.',
+      createdAt: '2026-11-08T09:30:00.000Z',
+      attachments: [{ id: 7001, filename: 'payment.png', mime: 'image/png', size: 48213 }],
+    },
     {
       id: 9001,
       from: 'support',
       body: 'Hi, your order is with the carrier and should finish within the hour.',
       createdAt: '2026-11-08T10:12:00.000Z',
+      attachments: [],
     },
   ],
+  seenByYou: 9001,
+  seenBySupport: 9000,
+  seenBySupportAt: '2026-11-08T10:05:00.000Z',
 } as const;
 
 const TOKEN_PARAMS = z.object({ token: z.string().min(16).max(128).describe('The ticket token.') });
@@ -149,21 +178,24 @@ export const writeOnStoreTicket = defineRoute({
   summary: 'Write on a support ticket',
   description:
     "The customer's reply. A resolved ticket is reopened (`open`, `resolvedAt` cleared) and a ticket that waited on the customer goes back " +
-    'to `open`; the reply target restarts from this message. The answer is the new message.',
+    'to `open`; the reply target restarts from this message. `fileIds` attaches files uploaded with `POST /store/v1/tickets/:token/files` ' +
+    "(at most 5, the customer's own PDF, JPEG or PNG of 5 MiB); `body` may be `''` when a file is attached. One ticket takes 20 messages " +
+    'a minute (`429 RATE_LIMITED` with `Retry-After`). The answer is the new message; staff see it at once on their live stream.',
   tags: ['support-tickets'],
   surface: 'store',
   access: 'ticket-token',
   params: TOKEN_PARAMS,
-  body: z.object({ body: messageText('Write your message.') }),
+  body: messageBody('Write your message.'),
   success: { status: 201, schema: StoreMessageSchema },
-  errors: ['NOT_FOUND', 'VALIDATION_FAILED'],
+  errors: ['NOT_FOUND', 'VALIDATION_FAILED', 'RATE_LIMITED'],
   examples: {
-    request: { body: 'Here is the photo. Same message after restart.' },
+    request: { body: 'Here is the photo. Same message after restart.', fileIds: [7002] },
     response: {
       id: 9002,
       from: 'you',
       body: 'Here is the photo. Same message after restart.',
       createdAt: '2026-11-08T11:00:00.000Z',
+      attachments: [{ id: 7002, filename: 'screen.jpg', mime: 'image/jpeg', size: 182044 }],
     },
   },
 });

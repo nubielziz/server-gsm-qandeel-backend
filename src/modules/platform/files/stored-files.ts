@@ -1,12 +1,14 @@
 // StoredFiles: the public side of the `files` table for other modules (decision 004): store a generated document in object storage
-// and record it, read the metadata of files by id, and check which of them a merchant owns. The upload routes are 7a's.
+// and record it, read the metadata of files by id, check which of them a merchant owns, hand out a short download link and delete files
+// that nothing uses any more (feature 28). The upload routes are 7a's.
 import { randomUUID } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { AppError } from '../../../common/errors';
 import { and, eq, inArray } from 'drizzle-orm';
-import type { DbExecutor } from '../../../infra/db';
-import { DEFAULT_MAX_OBJECT_BYTES, StorageService } from '../../../infra/storage';
+import { type DbExecutor, onCommit } from '../../../infra/db';
+import { DEFAULT_MAX_OBJECT_BYTES, DEFAULT_PRESIGN_SECONDS, StorageService } from '../../../infra/storage';
 import { type StoredFile, files } from '../db/schema';
+import { deleteUnreferencedFiles } from '../infra/file.repository';
 
 /**
  * The media types a merchant may attach as proof (a KYC document, a bank transfer receipt): PDF, JPEG and PNG.
@@ -23,6 +25,20 @@ export interface FileMeta {
   readonly size: number;
   readonly ownerType: string;
   readonly ownerId: number;
+  /**
+   * The first segment of the object key: the `area` it was stored under (`invoices`, `receipts`, `tickets-42`), or `files` for an upload
+   * of the platform's upload routes.
+   *
+   * Why: feature 28: a ticket link may attach only the files uploaded through that ticket, which are stored under the ticket's own area.
+   */
+  readonly area: string;
+}
+
+/** A file just stored: its metadata plus the content hash and the time it was recorded (what an upload route answers). */
+export interface StoredFileRecord extends FileMeta {
+  /** Hex SHA-256 of the content. */
+  readonly sha256: string;
+  readonly createdAt: Date;
 }
 
 /** What {@link StoredFiles.store} writes. */
@@ -38,6 +54,12 @@ export interface StoreFileInput {
   readonly area: string;
 }
 
+/** The first segment of an object key (the whole key when it has no `/`). */
+function areaOf(key: string): string {
+  const slash = key.indexOf('/');
+  return slash < 0 ? key : key.slice(0, slash);
+}
+
 function metaOf(row: StoredFile): FileMeta {
   return {
     id: row.id,
@@ -46,6 +68,7 @@ function metaOf(row: StoredFile): FileMeta {
     size: row.size,
     ownerType: row.ownerType,
     ownerId: row.ownerId,
+    area: areaOf(row.key),
   };
 }
 
@@ -60,6 +83,8 @@ function metaOf(row: StoredFile): FileMeta {
  */
 @Injectable()
 export class StoredFiles {
+  private readonly logger = new Logger(StoredFiles.name);
+
   constructor(private readonly storage: StorageService) {}
 
   /**
@@ -67,10 +92,10 @@ export class StoredFiles {
    *
    * @param db the database or the caller's transaction
    * @param input the owner, the name, the type, the bytes and the key area
-   * @returns the stored file's metadata (its id goes into `invoices.pdf_file_id`)
+   * @returns the stored file's metadata (its id goes into `invoices.pdf_file_id`), its SHA-256 and the time it was recorded
    * @throws {AppError} `UNAVAILABLE` when the object store cannot be reached
    */
-  async store(db: DbExecutor, input: StoreFileInput): Promise<FileMeta> {
+  async store(db: DbExecutor, input: StoreFileInput): Promise<StoredFileRecord> {
     const key = `${input.area}/${input.ownerType}-${input.ownerId}/${randomUUID()}`;
     const object = await this.storage.put(key, input.bytes, { contentType: input.mime });
     const [row] = await db
@@ -86,7 +111,7 @@ export class StoredFiles {
         ownerId: input.ownerId,
       })
       .returning();
-    return metaOf(row!);
+    return { ...metaOf(row!), sha256: row!.sha256, createdAt: row!.createdAt };
   }
 
   /**
@@ -116,7 +141,7 @@ export class StoredFiles {
   }
 
   /**
-   * Reads the metadata of files by id.
+   * Reads the metadata of files by id, with the area of each (the first segment of its key).
    *
    * @param db the database or a transaction
    * @param ids the file ids (duplicates and unknown ids are fine)
@@ -150,5 +175,52 @@ export class StoredFiles {
       .where(and(eq(files.id, id), eq(files.ownerType, owner.type), eq(files.ownerId, owner.id)))
       .limit(1);
     return row ? metaOf(row) : undefined;
+  }
+
+  /**
+   * Makes the download link of a stored file: a presigned `GET` that lives 5 minutes and saves the file under its stored name.
+   *
+   * Why: feature 28, rule 8: an attachment is never shown inline; every download is a short link with `Content-Disposition:
+   * attachment` (the same lifetime as the file routes, B154). The caller has decided who may read the file.
+   *
+   * Side effects: none (the signature is computed locally; the object is not checked).
+   *
+   * @param db the database or a transaction
+   * @param id the file id
+   * @returns the presigned URL, or `undefined` when no file has this id
+   * @throws {RangeError} for a stored key the storage service refuses (a programming error)
+   */
+  async linkTo(db: DbExecutor, id: number): Promise<string | undefined> {
+    const [row] = await db.select().from(files).where(eq(files.id, id)).limit(1);
+    if (!row) return undefined;
+    return this.storage.presignGet(row.key, { expiresInSeconds: DEFAULT_PRESIGN_SECONDS, filename: row.filename });
+  }
+
+  /**
+   * Deletes files that nothing uses any more: their rows now, their objects after the commit.
+   *
+   * Why: feature 28, rule 10: the attachments of an anonymized customer and of a ticket resolved longer ago than the retention are
+   * deleted. A file another record still points at (a KYC document, an order's input, an attachment of another ticket) is kept: the
+   * caller first empties its own references in the same transaction. The objects go only once the rows are gone for good, best effort: an
+   * object that could not be deleted is logged and is unreachable (no row names it).
+   *
+   * Side effects: deletes `files` rows in the caller's transaction; after its commit, one `DeleteObject` per deleted row.
+   *
+   * @param tx the caller's transaction
+   * @param ids the file ids (duplicates and unknown ids are fine)
+   * @returns the ids of the files that were deleted
+   */
+  async remove(tx: DbExecutor, ids: readonly number[]): Promise<number[]> {
+    const deleted = await deleteUnreferencedFiles(tx, ids);
+    if (deleted.length > 0) {
+      onCommit(async () => {
+        for (const file of deleted) {
+          await this.storage.delete(file.key).catch((error: unknown) => {
+            this.logger.warn(`Could not delete the object of removed file ${file.id}: ${String(error)}`);
+          });
+        }
+      });
+    }
+    return deleted.map((file) => file.id);
   }
 }

@@ -11,6 +11,7 @@ import type { SupportTicket, TicketCategory } from '../db/schema';
 import { PRIORITY_TARGET_MS, defaultPriority } from '../domain/ticket-sla';
 import { findOrderByTrackingToken } from '../infra/support-foreign-reads';
 import {
+  type MessageRow,
   findTicket,
   insertMessage,
   insertTicket,
@@ -18,8 +19,11 @@ import {
   lockTicket,
   updateTicket,
 } from '../infra/ticket.repository';
+import { TicketAttachmentService } from './ticket-attachment.service';
+import { TicketEvents } from './ticket-events';
 import { TicketMailOutbox } from './ticket-mail-outbox';
-import { type StoreMessageView, type StoreTicketView, toStoreMessage, toStoreTicket } from './ticket-views';
+import { TicketThreadService } from './ticket-thread.service';
+import { NO_FILES, type StoreMessageView, type StoreTicketView, toStoreTicket } from './ticket-views';
 
 /** What `POST /store/v1/tickets` hands in. */
 export interface OpenStoreTicketInput {
@@ -54,9 +58,13 @@ const refuse = (field: string, code: string, message: string) =>
  * limiter `ticket-email` of decision 021). The order-token path writes to the order's own customer, who the visitor proved to be, and is
  * not counted here.
  *
+ * Feature 28: the customer's message is written by `TicketThreadService` (attachments, the `ticket-message` limit, the doorbell), the views
+ * carry the attachments and the seen marks, and a new ticket and a rating ring `ticket updated` so the console sees them at once.
+ *
  * Side effects: counts a point of the `ticket-email` limiter on the cache Redis (a hashed key, one hour); may insert a guest `customers`
  * row through the customers module; inserts `support_tickets` and `ticket_messages` rows, and for a new ticket the
- * `support.ticket_mail` outbox event of its receipt, in one transaction. Time comes from the injected clock (decision 031).
+ * `support.ticket_mail` outbox event of its receipt, in one transaction; rings the ticket doorbells after the commit. Time comes from
+ * the injected clock (decision 031).
  */
 @Injectable()
 export class StoreTicketService {
@@ -66,6 +74,9 @@ export class StoreTicketService {
     private readonly mail: TicketMailOutbox,
     private readonly customers: CustomerDirectory,
     private readonly limits: RateLimitService,
+    private readonly thread: TicketThreadService,
+    private readonly attachments: TicketAttachmentService,
+    private readonly events: TicketEvents,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -131,9 +142,12 @@ export class StoreTicketService {
         isInternal: false,
         createdAt: now,
       });
+      // The first message is the requester's newest (staff's `hasUnread`, feature 28).
+      const stored = await updateTicket(tx, ticket.id, { lastRequesterMessageId: message.id, updatedAt: now });
       // The receipt is sent by the job, which re-reads the customer: an anonymized one (reached through an old order link) gets nothing.
       await this.mail.received(work, ticket);
-      const view = toStoreTicket(ticket, [{ message, authorName: '' }]);
+      this.events.updated(ticket.id);
+      const view = toStoreTicket(stored, [{ message, authorName: '' }], NO_FILES);
       return provedByOrder ? { ...view, token } : view;
     });
   }
@@ -148,40 +162,22 @@ export class StoreTicketService {
   async show(id: number): Promise<StoreTicketView> {
     const ticket = await findTicket(this.db.db, id);
     if (!ticket) throw notFound();
-    return toStoreTicket(ticket, await listMessageRows(this.db.db, id, true));
+    return this.view(ticket, await listMessageRows(this.db.db, id, true));
   }
 
   /**
    * Adds the customer's message.
    *
    * @param id the ticket id the token resolved to
-   * @param body the text
+   * @param input the text (may be `''` with a file) and the ids of the files it carries
    * @returns the new message
-   * @throws {AppError} `NOT_FOUND` when the ticket no longer exists
+   * @throws {AppError} `NOT_FOUND` when the ticket no longer exists; `RATE_LIMITED`; `VALIDATION_FAILED` (422 on `fileIds`)
    */
-  async write(id: number, body: string): Promise<StoreMessageView> {
-    return this.db.runInTransaction(async ({ tx }) => {
-      const ticket = await lockTicket(tx, id);
-      if (!ticket) throw notFound();
-      const now = this.clock.now();
-      const message = await insertMessage(tx, {
-        ticketId: id,
-        authorType: ticket.requesterType,
-        authorId: ticket.requesterId,
-        body,
-        isInternal: false,
-        createdAt: now,
-      });
-      // `new` stays new (nobody has picked it up); a resolved or waiting ticket is open again (ANSWERS support Q8).
-      const reopened = ticket.status === 'resolved' || ticket.status === 'pending_customer';
-      await updateTicket(tx, id, {
-        ...(reopened ? { status: 'open' as const } : {}),
-        ...(ticket.status === 'resolved' ? { resolvedAt: null } : {}),
-        slaDueAt: new Date(now.getTime() + PRIORITY_TARGET_MS[ticket.priority]),
-        updatedAt: now,
-      });
-      return toStoreMessage(message);
-    });
+  write(
+    id: number,
+    input: { readonly body: string; readonly fileIds?: readonly number[] | undefined },
+  ): Promise<StoreMessageView> {
+    return this.thread.write(id, { via: 'link' }, input);
   }
 
   /**
@@ -201,8 +197,19 @@ export class StoreTicketService {
       }
       if (locked.csatScore !== null) throw refuse('score', 'already_rated', 'You already rated this ticket.');
       // Rating is not activity the team has to look at: the ticket keeps its `updated_at`.
-      return updateTicket(tx, id, { csatScore: score, updatedAt: locked.updatedAt });
+      const rated = await updateTicket(tx, id, { csatScore: score, updatedAt: locked.updatedAt });
+      this.events.updated(id);
+      return rated;
     });
-    return toStoreTicket(ticket, await listMessageRows(this.db.db, id, true));
+    return this.view(ticket, await listMessageRows(this.db.db, id, true));
+  }
+
+  /** The customer's view of a ticket with the attachments of its public messages. */
+  private async view(ticket: SupportTicket, messages: readonly MessageRow[]): Promise<StoreTicketView> {
+    const files = await this.attachments.filesOf(
+      this.db.db,
+      messages.map((row) => row.message),
+    );
+    return toStoreTicket(ticket, messages, files);
   }
 }

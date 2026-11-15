@@ -142,7 +142,7 @@ Keep this list in step with the contracts (`permission` of each `defineRoute`).
 after their commit. `PATCH /admin/settings` is an allow-list (lead resolution identity-platform-13):
 it accepts only the keys of a settings registry in this module, each with its validator (today `imeiRetentionDays`, a JSON
 integer 0 to 3650, shared with `PATCH /admin/storefront/settings`, and `pricing.price_change_tolerance_percent`, a JSON integer 0 to 100,
-default 10 when never saved, read by the catalog's price guard, user rule 9); any other key, including the keys owned by stricter routes
+default 10 when never saved, read by the catalog's price guard, user rule 9; and, from feature 28, `support.replyEmailDelayMinutes`, a JSON integer 0 to 1440, default 5, and `support.attachmentRetentionDays`, a JSON integer 0 to 3650, default 180, both read by the support module through `SettingsReader.integer` and kept in `SUPPORT_SETTINGS`); any other key, including the keys owned by stricter routes
 (`adminAllowlistOnly`, `maintenance`, risk rules, storefront policies), is `422 VALIDATION_FAILED` with `errors[].field` = the key.
 A feature that needs another key editable there adds it to the registry with its validator.
 
@@ -193,7 +193,7 @@ Four admin routes (`contracts/`, `controllers/`, `application/`, `infra/`), wire
 - **The audit list is read-only** (the table is append-only). `actorName` and `entityLabel` are snapshots written with the entry; the wire
   sends `null` for `''` (a system row has no actor name, id or address). `before` and `after` were masked when the entry was written.
 - **`PATCH /admin/settings` is an allow-list** (`settings/settings-registry.ts`, resolution `identity-platform-13`): the registry holds
-  `imeiRetentionDays` (a JSON integer 0 to 3650) and `pricing.price_change_tolerance_percent` (a JSON integer 0 to 100; feature 4b). Every key of the patch is judged first; any other key (the keys of the stricter routes
+  `imeiRetentionDays` (a JSON integer 0 to 3650), `pricing.price_change_tolerance_percent` (a JSON integer 0 to 100; feature 4b), `support.replyEmailDelayMinutes` (0 to 1440; how long an unseen staff email reply waits before it is mailed, `0` mails at once) and `support.attachmentRetentionDays` (0 to 3650; how long after a ticket was resolved its attachments are kept, `0` keeps them; feature 28). Every key of the patch is judged first; any other key (the keys of the stricter routes
   `adminAllowlistOnly`, `maintenance`, the risk rules, the storefront policies included) or a value the validator refuses is `422
   VALIDATION_FAILED` with one `errors[]` item per refused key (`field` = the key), and nothing is written. An empty body is `422` on
   `body`. A valid patch upserts the rows and writes one audit row (`action: changed settings`, `entityType: setting`, `entityLabel` the keys,
@@ -323,8 +323,8 @@ reuse it.
 
 `StoredFiles` (`files/stored-files.ts`, a plain provider: it needs `StorageService` and a database executor, so the money and identity modules list it themselves) is what other modules use instead of touching `files`:
 `store(db, { ownerType, ownerId, filename, mime, bytes, area })` puts the object in the files bucket (key `<area>/<owner>/<uuid>`, never built from the file name) and inserts the row (the object goes first: a rolled-back
-caller leaves an unreferenced object, never a row without an object), `metaOf(db, ids)` reads the metadata of files by id, and `findOwned(db, id, owner)` returns a file only if it belongs to that owner (B161 and B163: a
-merchant attaches only its own uploads; another owner's id answers like an unknown one). `PROOF_MIME_TYPES` (PDF, JPEG, PNG) are the types a merchant may attach as a KYC document or a transfer receipt. The merchants'
+caller leaves an unreferenced object, never a row without an object), `metaOf(db, ids)` reads the metadata of files by id (with `area`, the first segment of the key: the support chat lets a ticket link attach only the uploads of its own ticket's area `tickets-<id>`), and `findOwned(db, id, owner)` returns a file only if it belongs to that owner (B161 and B163: a
+merchant attaches only its own uploads; another owner's id answers like an unknown one). Feature 28 (the support chat) adds two methods: `linkTo(db, id)` makes the presigned download link of a file (5 minutes, `Content-Disposition: attachment` with the stored name; the caller has already decided who may read it, and the object is not checked), and `remove(tx, ids)` deletes files that nothing else uses: the rows in the caller's transaction (a file another record still points at is kept) and the objects after its commit, best effort. Support uses them for the downloads of ticket attachments and for the deletion with an anonymized customer and after the retention. `PROOF_MIME_TYPES` (PDF, JPEG, PNG) are the types a merchant may attach as a KYC document or a transfer receipt. The merchants'
 upload routes are feature 7a's; invoice PDFs are written here as the merchant's file, so `GET /client/files/:id` serves them.
 
 ## Jobs and schedules

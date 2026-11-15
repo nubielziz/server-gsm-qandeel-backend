@@ -27,7 +27,8 @@ export interface LimiterConfig {
  * the hashed email address of a public ticket form (`RateLimitService.compositeKey`); `wallet-topup` the customer id; `help-vote` the
  * client IP + help article id (`RateLimitService.compositeKey`); `media` the client IP; `account-mail` an account and a kind of
  * mail (`accountMailKey`); `broadcast-email` and `broadcast-telegram` the constant `all` (one budget for the whole system,
- * feature 23); `stream-connect` the first cap key of a live stream (`session:<id>`, decision 037).
+ * feature 23); `stream-connect` the first cap key of a live stream (`session:<id>`, decision 037); `ticket-chat` the client IP;
+ * `ticket-message` the ticket id; `ticket-open` the account (`customer:<id>` or `client:<id>`) (feature 28).
  *
  * @see docs/decisions/021-rate-limiting.md
  */
@@ -112,6 +113,24 @@ export const RATE_LIMITERS = {
     windowSeconds: 60,
     description:
       'Opening a live event stream (GET /admin/stream, /client/stream, /store/v1/me/stream): attempts per session (the first cap key, `session:<id>`), so a reconnect loop cannot hammer the API (decision 037).',
+  },
+  'ticket-chat': {
+    points: 120,
+    windowSeconds: 60,
+    description:
+      'The typing pings and read marks of a ticket page (POST /store/v1/tickets/:token/typing and /read), instead of `token`: requests per client IP, so a typing ping every few seconds never uses up the 30 token lookups a minute (feature 28).',
+  },
+  'ticket-message': {
+    points: 20,
+    windowSeconds: 60,
+    description:
+      'Messages a requester writes on one ticket (the ticket page and the merchant portal): per ticket id, so one open page cannot flood the support inbox (feature 28).',
+  },
+  'ticket-open': {
+    points: 5,
+    windowSeconds: 60 * 60,
+    description:
+      'Tickets a signed-in customer or merchant opens without Turnstile (POST /store/v1/me/tickets, POST /client/tickets): per account an hour (feature 28).',
   },
   media: {
     points: 1200,

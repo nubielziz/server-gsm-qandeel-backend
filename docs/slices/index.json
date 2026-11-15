@@ -294,15 +294,17 @@
       "module": "support",
       "name": "Support",
       "domain": "J",
-      "rows": 8,
-      "endpoints": 14,
+      "rows": 26,
+      "endpoints": 32,
       "bySurface": {
-        "store": 4,
-        "admin": 10
+        "store": 11,
+        "admin": 14,
+        "client": 7
       },
       "frontendCalled": 10,
       "stages": [
-        17
+        17,
+        28
       ],
       "tables": 3,
       "scenarios": [

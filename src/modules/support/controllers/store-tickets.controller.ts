@@ -77,7 +77,7 @@ export class StoreTicketsController {
    * Writes on a ticket.
    *
    * @param principal the holder of the ticket token
-   * @param body the text
+   * @param body the text and the ids of the files it carries
    * @param reply the reply, for the cache header
    * @returns the new message
    * @route POST /store/v1/tickets/:token/messages
@@ -89,7 +89,7 @@ export class StoreTicketsController {
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<ResultOf<typeof writeOnStoreTicket>> {
     reply.header('cache-control', NO_STORE);
-    return this.tickets.write(ticketIdOf(principal), body.body);
+    return this.tickets.write(ticketIdOf(principal), body);
   }
 
   /**

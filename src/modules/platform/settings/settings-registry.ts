@@ -180,6 +180,18 @@ export function logRetentionDaysProblem(value: unknown): string | undefined {
 }
 
 /**
+ * The support chat settings (feature 28) with their defaults and accepted ranges: how many minutes an unseen email reply waits before it is
+ * mailed (`0` mails at once) and how many days the attachments of a resolved ticket are kept (`0` keeps them).
+ *
+ * Why: rules 9 and 10 of plan 28; the owner kept the defaults (5 minutes, 180 days). The support module reads the same keys with
+ * `SettingsReader.integer` and falls back to the default outside these ranges.
+ */
+export const SUPPORT_SETTINGS = {
+  replyEmailDelayMinutes: { key: 'support.replyEmailDelayMinutes', fallback: 5, min: 0, max: 1440 },
+  attachmentRetentionDays: { key: 'support.attachmentRetentionDays', fallback: 180, min: 0, max: 3650 },
+} as const;
+
+/**
  * The customer wallet settings (feature 21, plan § 5.8): two switches and six whole USD numbers, with their accepted ranges.
  *
  * Why: the owner's defaults (lead rule L5) are settings so they can change without a release; the money module's
@@ -258,6 +270,22 @@ export const EDITABLE_SETTINGS: readonly EditableSetting[] = [
   walletRange(CUSTOMER_WALLET_SETTINGS.topUpsPerDay, 'top-ups'),
   walletRange(CUSTOMER_WALLET_SETTINGS.topUpAmountPerDay, 'dollars'),
   walletRange(CUSTOMER_WALLET_SETTINGS.adjustApprovalLimit, 'dollars'),
+  {
+    key: SUPPORT_SETTINGS.replyEmailDelayMinutes.key,
+    validate: wholeNumberProblem(
+      SUPPORT_SETTINGS.replyEmailDelayMinutes.min,
+      SUPPORT_SETTINGS.replyEmailDelayMinutes.max,
+      'minutes',
+    ),
+  },
+  {
+    key: SUPPORT_SETTINGS.attachmentRetentionDays.key,
+    validate: wholeNumberProblem(
+      SUPPORT_SETTINGS.attachmentRetentionDays.min,
+      SUPPORT_SETTINGS.attachmentRetentionDays.max,
+      'days',
+    ),
+  },
 ];
 
 /** A refused key of a settings patch. */

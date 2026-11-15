@@ -4,6 +4,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '../../src/infra/db';
+import { SupportJobsModule } from '../../src/modules/support';
+import { ReplyMailSweep } from '../../src/modules/support/application/reply-mail-sweep';
 import { type AdminApi } from '../support/admin-api';
 import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches } from '../support/auth';
@@ -34,7 +36,8 @@ let ticketNumber = '';
 let token = '';
 
 beforeAll(async () => {
-  t = await createTestApp({ clock });
+  // The worker's support jobs too: step 5 runs the reply-mail sweep of feature 28.
+  t = await createTestApp({ clock, imports: [SupportJobsModule] });
   clock.set('2026-11-08T09:00:00.000Z');
   await resetDb();
   await clearIdentityCaches(t);
@@ -191,6 +194,12 @@ describe('scenario b2c-ticket: a support ticket about a delay', () => {
   it('step 5: the reply reaches the customer by email and the ticket waits on them (pending_customer)', async () => {
     const row = await ticket();
     expect(row).toMatchObject({ status: 'pending_customer', slaDueAt: null });
+    // Feature 28: an email reply waits 5 minutes (support.replyEmailDelayMinutes) for the customer to see it on the ticket page;
+    // nobody had the page open, so the sweep mails it once the delay is over.
+    expect(row.replyMailDueAt?.toISOString()).toBe('2026-11-08T09:30:00.000Z');
+    expect(await t.app.get(ReplyMailSweep).run()).toMatchObject({ mailed: 0 });
+    clock.advance(5 * MINUTE);
+    expect(await t.app.get(ReplyMailSweep).run()).toMatchObject({ mailed: 1 });
     await sendTicketMails(t);
     const mail = mailbox(t).sent.at(-1)!;
     expect(mail).toMatchObject({
@@ -202,7 +211,8 @@ describe('scenario b2c-ticket: a support ticket about a delay', () => {
   });
 
   it('step 6 (POST /store/v1/tickets/:token/messages): the customer’s answer joins the same ticket and it is open again', async () => {
-    clock.advance(30 * MINUTE);
+    // 25 minutes after the 5 of step 5's mail delay: the customer answers half an hour after the reply.
+    clock.advance(25 * MINUTE);
     const res = await call('POST', `/store/v1/tickets/${token}/messages`, { body: 'Thanks, I will wait.' });
     expect(res.statusCode).toBe(201);
     const row = await ticket();

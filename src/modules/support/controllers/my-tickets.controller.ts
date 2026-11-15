@@ -1,0 +1,72 @@
+// HTTP controller of a signed-in customer's own tickets (feature 28, slice B2, routes beyond the map: scripts/map-additions/28b.mjs): the
+// list and opening a ticket from the account. Thin: the rules live in MyTicketsService. The customer id comes from the session only.
+import { Body, Controller, Header, Query } from '@nestjs/common';
+import { type BodyOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
+import { AppError } from '../../../common/errors';
+import { CurrentPrincipal, type Principal } from '../../identity';
+import { MyTicketsService } from '../application/my-tickets.service';
+import { listMyTickets, openMyTicket } from '../contracts/my-tickets.contracts';
+
+/**
+ * The customer behind a store session.
+ *
+ * Why: every customer id comes from the authenticated principal (support cannot import the customers module's `@CurrentCustomer`, which
+ * its index does not export, decision 016).
+ *
+ * @param principal the request's principal
+ * @returns the customer id
+ * @throws {AppError} `UNAUTHORIZED` when the request was not authenticated as a customer
+ */
+function customerIdOf(principal: Principal | undefined): number {
+  if (principal?.kind !== 'customer') throw new AppError('UNAUTHORIZED');
+  return principal.customerId;
+}
+
+/**
+ * The signed-in customer's ticket routes.
+ *
+ * Why: B217 and rule 6: a customer sees the tickets they opened (each row hands out the token of its page) and opens one without
+ * Turnstile. Both answers hold ticket tokens, so nothing may keep a copy (`Cache-Control: no-store`).
+ *
+ * @route GET /store/v1/me/tickets
+ * @route POST /store/v1/me/tickets
+ */
+@Controller()
+export class MyTicketsController {
+  constructor(private readonly tickets: MyTicketsService) {}
+
+  /**
+   * Lists the customer's tickets.
+   *
+   * @param principal the signed-in customer
+   * @param query the parsed list request
+   * @returns the rows and their total
+   * @route GET /store/v1/me/tickets
+   */
+  @Route(listMyTickets)
+  @Header('Cache-Control', 'no-store')
+  list(
+    @CurrentPrincipal() principal: Principal | undefined,
+    @Query() query: QueryOf<typeof listMyTickets>,
+  ): Promise<ResultOf<typeof listMyTickets>> {
+    return this.tickets.list(customerIdOf(principal), query);
+  }
+
+  /**
+   * Opens a ticket.
+   *
+   * @param principal the signed-in customer
+   * @param body the subject, the first message, the category, the order and the files
+   * @returns the new ticket with its link token
+   * @throws {AppError} `RATE_LIMITED` (429 with `Retry-After`) from the 6th ticket in an hour
+   * @route POST /store/v1/me/tickets
+   */
+  @Route(openMyTicket)
+  @Header('Cache-Control', 'no-store')
+  open(
+    @CurrentPrincipal() principal: Principal | undefined,
+    @Body() body: BodyOf<typeof openMyTicket>,
+  ): Promise<ResultOf<typeof openMyTicket>> {
+    return this.tickets.open(customerIdOf(principal), body);
+  }
+}

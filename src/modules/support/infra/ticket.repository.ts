@@ -1,6 +1,7 @@
 // Drizzle queries on `support_tickets` and `ticket_messages` (feature 17): the inbox list with its filters and sorts, one ticket with its
-// requester and assignee, the thread with author names, the writes of the use cases, and the token lookup of the ticket page.
-import { and, asc, count, desc, eq, inArray, isNull, max, sql, type SQL } from 'drizzle-orm';
+// requester and assignee, the thread with author names, the writes of the use cases, and the token lookup of the ticket page. Feature 28
+// adds the live chat's reads (one message, the messages after a cursor), the guarded seen marks, the reply-mail sweep and the attachments.
+import { and, asc, count, desc, eq, gt, inArray, isNull, lte, max, ne, sql, type SQL } from 'drizzle-orm';
 import type { ParsedListQuery, ParsedFilter } from '../../../common/contract';
 import { type DbExecutor, listOrderBy, listWhere, type ListColumns } from '../../../infra/db';
 import { fromWireStatus, type WireTicketStatus } from '../domain/ticket-status';
@@ -407,6 +408,362 @@ export async function findMessage(db: DbExecutor, id: number): Promise<TicketMes
   return row;
 }
 
+/** What a message read with its author's name selects. */
+const messageSelect = {
+  message: ticketMessages,
+  staffName: f.staff.name,
+  customerName: f.customers.name,
+  customerEmail: f.customers.email,
+  customerStatus: f.customers.status,
+  clientName: f.clients.name,
+  clientEmail: f.clients.email,
+};
+
+const onMessageStaff = and(eq(ticketMessages.authorType, 'staff'), eq(f.staff.id, ticketMessages.authorId));
+const onMessageCustomer = and(eq(ticketMessages.authorType, 'customer'), eq(f.customers.id, ticketMessages.authorId));
+const onMessageClient = and(eq(ticketMessages.authorType, 'client'), eq(f.clients.id, ticketMessages.authorId));
+
+/**
+ * A message the requester may see: public and not the system's.
+ *
+ * Why: the storefront view and every requester stream leave out internal notes and system messages (feature 17; feature 28, the security
+ * core of the live chat). Both conditions are written, so a system message can never pass even if it were stored public.
+ */
+const requesterVisible = and(eq(ticketMessages.isInternal, false), ne(ticketMessages.authorType, 'system'));
+
+/**
+ * Reads one message with the name of its author.
+ *
+ * Why: feature 28: a live `ticket.message.created` renders the message as the thread does (the staff view joins the author's name).
+ *
+ * @param db the database or a transaction
+ * @param id the message id
+ * @returns the message and its author's name, or `undefined`
+ */
+export async function findMessageRow(db: DbExecutor, id: number): Promise<MessageRow | undefined> {
+  const [row] = await db
+    .select(messageSelect)
+    .from(ticketMessages)
+    .leftJoin(f.staff, onMessageStaff)
+    .leftJoin(f.customers, onMessageCustomer)
+    .leftJoin(f.clients, onMessageClient)
+    .where(eq(ticketMessages.id, id))
+    .limit(1);
+  return row && { message: row.message, authorName: authorNameOf(row) };
+}
+
+/** Whose messages a reconnecting stream may replay. */
+export type MessageScope =
+  /** Staff with `support:read`: every message of every ticket, notes and system messages included. */
+  | { readonly kind: 'all' }
+  /** A signed-in requester: the public messages of their own tickets. */
+  | { readonly kind: 'requester'; readonly type: 'customer' | 'client'; readonly id: number }
+  /** The holder of a ticket link: the public messages of that ticket. */
+  | { readonly kind: 'ticket'; readonly ticketId: number };
+
+/** A message with its author's name and the ticket fields a live event names. */
+export interface LiveMessageRow extends MessageRow {
+  readonly ticket: Pick<SupportTicket, 'id' | 'number' | 'requesterType' | 'requesterId'>;
+}
+
+/**
+ * Reads the messages after a cursor that a viewer may see, oldest first.
+ *
+ * Why: feature 28 (plan § 3.4): a stream that reconnects replays the `ticket.message.created` frames it missed. The scope is part of the
+ * query (the requester's own tickets, or the one ticket of a link, public messages only), so nothing of another person can be read.
+ *
+ * @param db the database or a transaction
+ * @param scope whose messages
+ * @param after the last message id the stream saw
+ * @param limit the most rows to read (the caller asks one more than it replays, to know when to resync)
+ * @returns the messages with their author's name and ticket, ascending by id
+ */
+export async function messageRowsAfter(
+  db: DbExecutor,
+  scope: MessageScope,
+  after: number,
+  limit: number,
+): Promise<LiveMessageRow[]> {
+  const scoped =
+    scope.kind === 'all'
+      ? undefined
+      : scope.kind === 'ticket'
+        ? and(eq(ticketMessages.ticketId, scope.ticketId), requesterVisible)
+        : and(eq(supportTickets.requesterType, scope.type), eq(supportTickets.requesterId, scope.id), requesterVisible);
+  const rows = await db
+    .select({
+      ...messageSelect,
+      ticketNumber: supportTickets.number,
+      requesterType: supportTickets.requesterType,
+      requesterId: supportTickets.requesterId,
+    })
+    .from(ticketMessages)
+    .innerJoin(supportTickets, eq(supportTickets.id, ticketMessages.ticketId))
+    .leftJoin(f.staff, onMessageStaff)
+    .leftJoin(f.customers, onMessageCustomer)
+    .leftJoin(f.clients, onMessageClient)
+    .where(and(gt(ticketMessages.id, after), scoped))
+    .orderBy(asc(ticketMessages.id))
+    .limit(limit);
+  return rows.map((row) => ({
+    message: row.message,
+    authorName: authorNameOf(row),
+    ticket: {
+      id: row.message.ticketId,
+      number: row.ticketNumber,
+      requesterType: row.requesterType,
+      requesterId: row.requesterId,
+    },
+  }));
+}
+
+/**
+ * The newest message id of all tickets: where a live stream without a cursor starts.
+ *
+ * @param db the database or a transaction
+ * @returns the largest `ticket_messages.id`, or 0
+ */
+export async function newestMessageId(db: DbExecutor): Promise<number> {
+  const [row] = await db.select({ id: max(ticketMessages.id) }).from(ticketMessages);
+  return Number(row?.id ?? 0);
+}
+
+/**
+ * Moves one side's seen mark forward, never back, in one guarded statement.
+ *
+ * Why: feature 28, rule 3: two tabs or a late request must not move a mark back, and the database decides it (`coalesce(mark, 0) <
+ * upTo`), so two calls at once cannot race. The ticket keeps its `updated_at`: reading is not activity (and the table's `$onUpdate`
+ * default would stamp the wall clock, decision 031).
+ *
+ * Side effects: writes `support_tickets.<side>_seen_message_id` and `<side>_seen_at`.
+ *
+ * @param db the database or a transaction
+ * @param ticketId the ticket
+ * @param side who marks: `requester` or `staff`
+ * @param upTo the newest message the side has seen (checked by the caller to be the other side's message of this ticket)
+ * @param now the injected clock's time
+ * @returns true when the mark moved; false for a repeat or an older id
+ */
+export async function markSeen(
+  db: DbExecutor,
+  ticketId: number,
+  side: 'requester' | 'staff',
+  upTo: number,
+  now: Date,
+): Promise<boolean> {
+  const mark = side === 'requester' ? supportTickets.requesterSeenMessageId : supportTickets.staffSeenMessageId;
+  const changes =
+    side === 'requester'
+      ? { requesterSeenMessageId: upTo, requesterSeenAt: now }
+      : { staffSeenMessageId: upTo, staffSeenAt: now };
+  const rows = await db
+    .update(supportTickets)
+    .set({ ...changes, updatedAt: sql`${supportTickets.updatedAt}` })
+    .where(and(eq(supportTickets.id, ticketId), sql`coalesce(${mark}, 0) < ${upTo}`))
+    .returning({ id: supportTickets.id });
+  return rows.length > 0;
+}
+
+/**
+ * Locks the tickets whose unseen email replies are due, oldest ticket first, skipping the ones another sweep holds.
+ *
+ * Why: feature 28, rule 9: the reply-mail sweep runs every minute and may run twice at once; `FOR UPDATE SKIP LOCKED` gives each ticket to
+ * one sweep, and the due time is cleared in the same transaction.
+ *
+ * @param tx the sweep's transaction
+ * @param now the injected clock's time
+ * @param limit the most tickets of one pass
+ * @returns the locked tickets
+ */
+export async function lockDueReplyMails(tx: DbExecutor, now: Date, limit: number): Promise<SupportTicket[]> {
+  return tx
+    .select()
+    .from(supportTickets)
+    .where(lte(supportTickets.replyMailDueAt, now))
+    .orderBy(asc(supportTickets.id))
+    .limit(limit)
+    .for('update', { skipLocked: true });
+}
+
+/**
+ * Says whether a ticket has an email reply waiting for the sweep.
+ *
+ * @param db the database or a transaction
+ * @param now the injected clock's time
+ * @returns true when at least one ticket's `reply_mail_due_at` has passed
+ */
+export async function anyReplyMailDue(db: DbExecutor, now: Date): Promise<boolean> {
+  const [row] = await db
+    .select({ id: supportTickets.id })
+    .from(supportTickets)
+    .where(lte(supportTickets.replyMailDueAt, now))
+    .limit(1);
+  return row !== undefined;
+}
+
+/**
+ * Reads the email replies of a ticket that the requester has not seen and no mail carried yet, oldest first.
+ *
+ * Why: feature 28, rule 9: one mail carries every public staff message on channel `email` after the larger of the requester's mark and
+ * the newest mailed reply; the job reads them again with the same filter (and the range of its event), so a reply seen meanwhile drops out.
+ *
+ * @param db the database or a transaction
+ * @param ticketId the ticket
+ * @param after the id after which a reply counts (`unseenAfter` of the domain)
+ * @param range the first and last message of a mail event, when the job reads them again
+ * @returns the replies, ascending by id
+ */
+export async function unseenEmailReplies(
+  db: DbExecutor,
+  ticketId: number,
+  after: number,
+  range?: { readonly from: number; readonly to: number },
+): Promise<TicketMessage[]> {
+  return db
+    .select()
+    .from(ticketMessages)
+    .where(
+      and(
+        eq(ticketMessages.ticketId, ticketId),
+        eq(ticketMessages.authorType, 'staff'),
+        eq(ticketMessages.isInternal, false),
+        eq(ticketMessages.notifyChannel, 'email'),
+        gt(ticketMessages.id, after),
+        range === undefined ? undefined : sql`${ticketMessages.id} between ${range.from} and ${range.to}`,
+      ),
+    )
+    .orderBy(asc(ticketMessages.id));
+}
+
+/**
+ * Ends the wait of a ticket's email replies: clears the due time and, when a mail was written, records its newest reply.
+ *
+ * Side effects: writes `support_tickets.reply_mail_due_at` and `reply_mailed_message_id`; `updated_at` stays (a mail is not activity).
+ *
+ * @param tx the sweep's transaction (the ticket is locked)
+ * @param ticketId the ticket
+ * @param mailedId the newest reply the mail carries, or `undefined` when nothing was left to mail
+ */
+export async function finishReplyMail(tx: DbExecutor, ticketId: number, mailedId: number | undefined): Promise<void> {
+  await tx
+    .update(supportTickets)
+    .set({
+      replyMailDueAt: null,
+      ...(mailedId === undefined ? {} : { replyMailedMessageId: mailedId }),
+      updatedAt: sql`${supportTickets.updatedAt}`,
+    })
+    .where(eq(supportTickets.id, ticketId));
+}
+
+/**
+ * The ids of every ticket a customer opened.
+ *
+ * @param db the database or a transaction
+ * @param customerId the customer
+ * @returns the ticket ids, ascending
+ */
+export async function ticketIdsOfCustomer(db: DbExecutor, customerId: number): Promise<number[]> {
+  const rows = await db
+    .select({ id: supportTickets.id })
+    .from(supportTickets)
+    .where(and(eq(supportTickets.requesterType, 'customer'), eq(supportTickets.requesterId, customerId)))
+    .orderBy(asc(supportTickets.id));
+  return rows.map((row) => row.id);
+}
+
+/**
+ * Empties the attachments of every message of some tickets and returns the file ids they held.
+ *
+ * Why: feature 28, rule 10: an anonymized customer's tickets and the tickets past the attachment retention lose their files; the texts stay
+ * (B175). The references go first, in the caller's transaction, so the file rows can then be deleted when nothing else uses them.
+ *
+ * Side effects: writes `ticket_messages.file_ids`.
+ *
+ * @param tx the caller's transaction
+ * @param ticketIds the tickets
+ * @returns every file id their messages held (duplicates possible)
+ */
+export async function takeFileIdsOfTickets(tx: DbExecutor, ticketIds: readonly number[]): Promise<number[]> {
+  if (ticketIds.length === 0) return [];
+  const ids = sql`array[${sql.join(
+    ticketIds.map((id) => sql`${id}`),
+    sql`, `,
+  )}]::bigint[]`;
+  // RETURNING shows the new row, so the old lists come from the locked sub-select the update joins.
+  const result = await tx.execute(sql`
+    update ticket_messages m set file_ids = '{}'
+    from (
+      select id, file_ids from ticket_messages
+      where ticket_id = any(${ids}) and cardinality(file_ids) > 0
+      for update
+    ) old
+    where m.id = old.id
+    returning old.file_ids as file_ids
+  `);
+  return (result.rows as { file_ids: (string | number)[] }[]).flatMap((row) => row.file_ids.map(Number));
+}
+
+/**
+ * Locks the resolved tickets whose attachments are past the retention, skipping tickets another run holds.
+ *
+ * @param tx the run's transaction
+ * @param cutoff tickets resolved before this time
+ * @param limit the most tickets of one batch
+ * @returns the ticket ids, ascending
+ */
+export async function lockTicketsPastAttachmentRetention(
+  tx: DbExecutor,
+  cutoff: Date,
+  limit: number,
+): Promise<number[]> {
+  const rows = await tx
+    .select({ id: supportTickets.id })
+    .from(supportTickets)
+    .where(
+      and(
+        eq(supportTickets.status, 'resolved'),
+        sql`${supportTickets.resolvedAt} < ${cutoff}`,
+        sql`exists (select 1 from ${ticketMessages} where ${ticketMessages.ticketId} = ${supportTickets.id} and cardinality(${ticketMessages.fileIds}) > 0)`,
+      ),
+    )
+    .orderBy(asc(supportTickets.id))
+    .limit(limit)
+    .for('update', { skipLocked: true });
+  return rows.map((row) => row.id);
+}
+
+/**
+ * Says whether a file is attached to a message of a ticket that the viewer may see.
+ *
+ * Why: feature 28, rule 8: a download is checked on the message of **that** ticket; for the requester only on a public message, so the
+ * file of an internal note is a `404` like a file of another ticket.
+ *
+ * @param db the database or a transaction
+ * @param ticketId the ticket of the route
+ * @param fileId the file
+ * @param requester true for the requester (public messages only), false for staff (every message)
+ * @returns true when such a message holds the file
+ */
+export async function ticketMessageHoldsFile(
+  db: DbExecutor,
+  ticketId: number,
+  fileId: number,
+  requester: boolean,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: ticketMessages.id })
+    .from(ticketMessages)
+    .where(
+      and(
+        eq(ticketMessages.ticketId, ticketId),
+        sql`${ticketMessages.fileIds} @> array[${fileId}]::bigint[]`,
+        requester ? requesterVisible : undefined,
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
+}
+
 /**
  * Reads the thread of a ticket, oldest first, with the author's name.
  *
@@ -420,23 +777,13 @@ export async function findMessage(db: DbExecutor, id: number): Promise<TicketMes
  */
 export async function listMessageRows(db: DbExecutor, ticketId: number, publicOnly: boolean): Promise<MessageRow[]> {
   const rows = await db
-    .select({
-      message: ticketMessages,
-      staffName: f.staff.name,
-      customerName: f.customers.name,
-      customerEmail: f.customers.email,
-      customerStatus: f.customers.status,
-      clientName: f.clients.name,
-      clientEmail: f.clients.email,
-    })
+    .select(messageSelect)
     .from(ticketMessages)
-    .leftJoin(f.staff, and(eq(ticketMessages.authorType, 'staff'), eq(f.staff.id, ticketMessages.authorId)))
-    .leftJoin(f.customers, and(eq(ticketMessages.authorType, 'customer'), eq(f.customers.id, ticketMessages.authorId)))
-    .leftJoin(f.clients, and(eq(ticketMessages.authorType, 'client'), eq(f.clients.id, ticketMessages.authorId)))
+    .leftJoin(f.staff, onMessageStaff)
+    .leftJoin(f.customers, onMessageCustomer)
+    .leftJoin(f.clients, onMessageClient)
     .where(
-      publicOnly
-        ? and(eq(ticketMessages.ticketId, ticketId), eq(ticketMessages.isInternal, false))
-        : eq(ticketMessages.ticketId, ticketId),
+      publicOnly ? and(eq(ticketMessages.ticketId, ticketId), requesterVisible) : eq(ticketMessages.ticketId, ticketId),
     )
     .orderBy(asc(ticketMessages.createdAt), asc(ticketMessages.id));
   return rows.map((row) => ({ message: row.message, authorName: authorNameOf(row) }));

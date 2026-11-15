@@ -118,7 +118,21 @@ const ADDITIONS: Record<string, string[]> = {
   refunds: ['note', 'send_attempt'],
   data_requests: ['note'],
   notifications: ['error', 'attempts', 'dedupe_key', 'campaign_id'],
-  support_tickets: ['token', 'survey_sent_at'],
+  // Feature 28 (migration 0031): the seen marks of both sides, the newest message of each side and the reply-mail sweep's columns.
+  support_tickets: [
+    'token',
+    'survey_sent_at',
+    'requester_seen_message_id',
+    'requester_seen_at',
+    'staff_seen_message_id',
+    'staff_seen_at',
+    'last_requester_message_id',
+    'last_staff_message_id',
+    'reply_mail_due_at',
+    'reply_mailed_message_id',
+  ],
+  // Feature 28: the channel a public staff message was delivered on.
+  ticket_messages: ['notify_channel'],
   webhook_deliveries: ['response_body', 'error', 'event_id'],
   alert_rules: ['deleted_at'],
   alert_events: [

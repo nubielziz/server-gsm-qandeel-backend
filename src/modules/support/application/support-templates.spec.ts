@@ -1,11 +1,17 @@
 // Unit tests of the support events and their default templates (feature 17): every template belongs to a registered event and channel and
-// uses only that event's placeholders, every event is covered, and the data section of migration 0012 is exactly what
-// `supportTemplatesSql()` writes, so the two cannot drift.
+// uses only that event's placeholders, every event is covered, and the data sections of migrations 0016 and 0032 are exactly what
+// `supportTemplatesSql()` and `supportReplyLinkSql()` write, so code and SQL cannot drift.
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { NotificationEventRegistry } from '../../platform';
 import { SUPPORT_EVENTS } from './support-events';
-import { SUPPORT_DEFAULT_TEMPLATES, supportTemplatesSql } from './support-templates';
+import {
+  CONVERSATION_LINK_LINES,
+  SUPPORT_DEFAULT_TEMPLATES,
+  supportReplyLinkSql,
+  supportTemplatesSql,
+  withConversationLink,
+} from './support-templates';
 
 /** The `{{placeholders}}` of a text, once each (the platform's own reader is not part of its public API). */
 const placeholdersOf = (text: string): string[] => [
@@ -87,5 +93,27 @@ describe('migration 0016_support_tickets', () => {
     const start = migration.indexOf('INSERT INTO "notification_templates"');
     expect(start).toBeGreaterThan(0);
     expect(migration.slice(start).trim()).toBe(supportTemplatesSql());
+  });
+});
+
+describe('the conversation link of the merchant reply (feature 28, migration 0032)', () => {
+  it('ends the merchant email and Telegram reply with the portal link, and leaves every other template alone', () => {
+    const merchant = SUPPORT_DEFAULT_TEMPLATES.filter((t) => t.event === 'support.reply' && t.audience === 'merchant');
+    expect(merchant).toHaveLength(2);
+    for (const template of merchant) expect(template.body.endsWith(CONVERSATION_LINK_LINES.en)).toBe(true);
+    const customer = SUPPORT_DEFAULT_TEMPLATES.find((t) => t.event === 'support.reply' && t.audience === 'customer')!;
+    expect(withConversationLink(customer)).toBe(customer);
+    expect(withConversationLink({ ...merchant[0]!, locale: 'ar', body: 'x' }).body).toBe(
+      `x\n${CONVERSATION_LINK_LINES.ar}`,
+    );
+  });
+
+  it('migration 0032 holds exactly the guarded updates that supportReplyLinkSql() writes', () => {
+    const migration = readFileSync(new URL('../../../../drizzle/0032_support_reply_link.sql', import.meta.url), 'utf8');
+    const start = migration.indexOf('UPDATE "notification_templates"');
+    expect(start).toBeGreaterThan(0);
+    expect(migration.slice(start).trim()).toBe(supportReplyLinkSql());
+    // Four rows (English and Arabic, email and Telegram), each only where the body is still the shipped one.
+    expect(supportReplyLinkSql().match(/AND "body" = /g)).toHaveLength(4);
   });
 });

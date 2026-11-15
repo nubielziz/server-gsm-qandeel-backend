@@ -6,13 +6,17 @@ import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime } from '../../../co
 import { REPLY_CHANNELS } from '../domain/reply-channels';
 import { WIRE_TICKET_STATUSES } from '../domain/ticket-status';
 import {
+  ALWAYS_SENT,
+  FileIdsSchema,
+  MessageBodyText,
   RequesterTypeSchema,
   TicketCategorySchema,
   TicketChannelSchema,
   TicketMessageSchema,
   TicketPrioritySchema,
   WireStatusSchema,
-  messageText,
+  messageBody,
+  textOrFiles,
 } from './shared';
 
 /** A ticket as the inbox lists it. */
@@ -41,6 +45,22 @@ export const TicketRowSchema = z.object({
   updatedAt: zIsoDateTime.describe('The last activity.'),
   lastPublicAt: zIsoDateTime.nullable().describe('The time of the latest message the customer could see.'),
   late: z.boolean().describe('A reply is awaited and `slaDueAt` has passed; never true for a resolved ticket.'),
+  hasUnread: z
+    .boolean()
+    .optional()
+    .describe(
+      `The requester wrote after the newest message staff marked seen (\`staffSeenMessageId\`). ${ALWAYS_SENT}`,
+    ),
+  requesterSeenMessageId: zId
+    .nullable()
+    .optional()
+    .describe(`The newest public staff message the requester has seen, or null: \`Seen\` under it. ${ALWAYS_SENT}`),
+  requesterSeenAt: zIsoDateTime.nullable().optional().describe(`When the requester saw it, or null. ${ALWAYS_SENT}`),
+  staffSeenMessageId: zId
+    .nullable()
+    .optional()
+    .describe(`The newest requester message staff have seen (one mark for the whole team), or null. ${ALWAYS_SENT}`),
+  staffSeenAt: zIsoDateTime.nullable().optional().describe(`When staff saw it, or null. ${ALWAYS_SENT}`),
 });
 
 const TICKET_EXAMPLE = {
@@ -65,6 +85,11 @@ const TICKET_EXAMPLE = {
   updatedAt: '2026-11-08T10:00:00.000Z',
   lastPublicAt: '2026-11-08T10:00:00.000Z',
   late: false,
+  hasUnread: false,
+  requesterSeenMessageId: null,
+  requesterSeenAt: null,
+  staffSeenMessageId: 9000,
+  staffSeenAt: '2026-11-08T10:01:00.000Z',
 } as const;
 
 const MESSAGE_EXAMPLE = {
@@ -76,6 +101,7 @@ const MESSAGE_EXAMPLE = {
   body: 'Hi Victor, your order is with the carrier and should finish within the hour.',
   isInternal: false,
   fileIds: [],
+  attachments: [],
   createdAt: '2026-11-08T10:12:00.000Z',
 } as const;
 
@@ -177,16 +203,22 @@ export const replyToSupportTicket = defineRoute({
     "channel the ticket's own channel when allowed, else email; a channel the ticket cannot use is `422` on `channel`). The text is " +
     'stored and sent as given: the console fills the template variables. The first public reply sets `firstResponseAt`; a new or open ' +
     'ticket becomes `pending` and `slaDueAt` becomes null; an unassigned ticket is assigned to the sender. A resolved ticket is ' +
-    '`409 TICKET_RESOLVED`: reopen it first. The email goes through the notification templates (event `support.reply`).',
+    '`409 TICKET_RESOLVED`: reopen it first. `fileIds` attaches files the sender uploaded with `POST /admin/support-tickets/:id/files` ' +
+    "(at most 5); `body` may be `''` when a file is attached. The requester sees the reply at once on an open ticket page. A Telegram " +
+    'reply is sent at once; an email reply is mailed only when the requester has not seen it after `support.replyEmailDelayMinutes` ' +
+    '(default 5; `0` mails at once), one mail for every unseen reply of the ticket (template event `support.reply`).',
   tags: ['support-tickets'],
   surface: 'admin',
   access: 'staff-permission',
   permission: 'support:reply',
   params: ID_PARAMS,
-  body: z.object({
-    body: messageText('Write a reply first.'),
-    channel: z.enum(REPLY_CHANNELS, 'This ticket cannot be answered on that channel.').optional(),
-  }),
+  body: z
+    .object({
+      body: MessageBodyText,
+      fileIds: FileIdsSchema,
+      channel: z.enum(REPLY_CHANNELS, 'This ticket cannot be answered on that channel.').optional(),
+    })
+    .superRefine(textOrFiles('Write a reply first.')),
   success: { status: 201, schema: TicketMessageSchema },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'VALIDATION_FAILED', 'TICKET_RESOLVED'],
   examples: {
@@ -201,13 +233,14 @@ export const addSupportTicketNote = defineRoute({
   summary: 'Add an internal note',
   description:
     'Adds a note the customer never sees (`isInternal: true`). The status stays; as in the demo an unassigned ticket is assigned to the ' +
-    'author and `updatedAt` moves. Allowed on a resolved ticket.',
+    "author and `updatedAt` moves. Allowed on a resolved ticket. `fileIds` attaches the sender's uploads (at most 5); `body` may be " +
+    "`''` when a file is attached. Other staff see the note at once on their live stream; the requester never does.",
   tags: ['support-tickets'],
   surface: 'admin',
   access: 'staff-permission',
   permission: 'support:reply',
   params: ID_PARAMS,
-  body: z.object({ body: messageText('Write the note first.') }),
+  body: messageBody('Write the note first.'),
   success: { status: 201, schema: TicketMessageSchema },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'VALIDATION_FAILED'],
   examples: {

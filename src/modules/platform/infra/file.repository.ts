@@ -83,3 +83,48 @@ export async function deleteUnreferencedClientFile(
   const row = result.rows[0] as { bucket: string; key: string } | undefined;
   return row;
 }
+
+/**
+ * Deletes the file rows of the given ids that nothing points at, and says where their objects were.
+ *
+ * Why: feature 28 (rules 10): the attachments of an anonymized customer's tickets, and of a ticket resolved longer ago than the retention,
+ * are deleted. A file can be in use elsewhere too (a merchant's portal upload may also be its KYC document or an order's input; a staff
+ * upload may sit on a second ticket), so only the rows that no reference holds are deleted: the three tables that keep file ids in an
+ * array (checked here, the database cannot), and every foreign key (checked here as well, so the statement never fails on one and the
+ * caller's transaction, an anonymization, is not broken). The caller empties its own references first, in the same transaction.
+ *
+ * Side effects: deletes `files` rows.
+ *
+ * @param db the caller's transaction
+ * @param ids the file ids (duplicates are fine)
+ * @returns the bucket and key of each deleted row
+ */
+export async function deleteUnreferencedFiles(
+  db: DbExecutor,
+  ids: readonly number[],
+): Promise<{ id: number; bucket: string; key: string }[]> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return [];
+  const list = sql`array[${sql.join(
+    unique.map((id) => sql`${id}`),
+    sql`, `,
+  )}]::bigint[]`;
+  const result = await db.execute(sql`
+    delete from files f
+    where f.id = any(${list})
+      and not exists (select 1 from ticket_messages where file_ids @> array[f.id])
+      and not exists (select 1 from kyc_submissions where file_ids @> array[f.id])
+      and not exists (select 1 from disputes where evidence_file_ids @> array[f.id])
+      and not exists (select 1 from orders where input_file_id = f.id or result_file_id = f.id)
+      and not exists (select 1 from invoices where pdf_file_id = f.id)
+      and not exists (select 1 from payments where receipt_file_id = f.id)
+      and not exists (select 1 from data_requests where file_id = f.id)
+      and not exists (select 1 from service_listings where image_file_id = f.id or og_file_id = f.id)
+    returning f.id, f.bucket, f.key
+  `);
+  return (result.rows as { id: string | number; bucket: string; key: string }[]).map((row) => ({
+    id: Number(row.id),
+    bucket: row.bucket,
+    key: row.key,
+  }));
+}

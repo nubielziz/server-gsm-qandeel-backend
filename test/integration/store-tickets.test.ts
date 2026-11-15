@@ -121,7 +121,13 @@ describe('POST /store/v1/tickets', () => {
     });
     expect(ticket.number).toMatch(/^T-\d+$/);
     expect(ticket.messages).toEqual([
-      { id: expect.any(Number), from: 'you', body: 'I paid yesterday and still have no code.', createdAt: NOW },
+      {
+        id: expect.any(Number),
+        from: 'you',
+        body: 'I paid yesterday and still have no code.',
+        createdAt: NOW,
+        attachments: [],
+      },
     ]);
 
     const { db } = await testDb();
@@ -212,6 +218,10 @@ describe('POST /store/v1/tickets', () => {
           'number',
           'orderId',
           'resolvedAt',
+          // The seen marks of feature 28: which support message the requester saw and which of theirs support saw.
+          'seenBySupport',
+          'seenBySupportAt',
+          'seenByYou',
           'status',
           'subject',
           'updatedAt',
@@ -446,6 +456,9 @@ describe('GET /store/v1/tickets/:token', () => {
       'number',
       'orderId',
       'resolvedAt',
+      'seenBySupport',
+      'seenBySupportAt',
+      'seenByYou',
       'status',
       'subject',
       'updatedAt',
@@ -492,6 +505,7 @@ describe('POST /store/v1/tickets/:token/messages', () => {
       from: 'you',
       body: 'Any news?',
       createdAt: '2026-11-08T13:00:00.000Z',
+      attachments: [],
     });
     const row = await ticketRow(opened.token);
     expect(row.status).toBe('new');

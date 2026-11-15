@@ -4,16 +4,18 @@
   "domain": "J",
   "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
   "counts": {
-    "rows": 8,
-    "endpoints": 14,
+    "rows": 26,
+    "endpoints": 32,
     "bySurface": {
-      "store": 4,
-      "admin": 10
+      "store": 11,
+      "admin": 14,
+      "client": 7
     },
     "frontendCalled": 10
   },
   "stages": [
-    17
+    17,
+    28
   ],
   "ownedTables": [
     {
@@ -124,6 +126,14 @@
     }
   ],
   "foreignTables": [
+    {
+      "table": "audit_logs",
+      "owner": "platform"
+    },
+    {
+      "table": "files",
+      "owner": "platform"
+    },
     {
       "table": "notifications",
       "owner": "platform"
@@ -588,6 +598,644 @@
         "line": 63,
         "fn": "deleteReplyTemplate"
       }
+    },
+    {
+      "key": "GET /store/v1/tickets/:token/stream",
+      "method": "GET",
+      "path": "/store/v1/tickets/:token/stream",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "بثّ مباشر لأحداث التذكرة",
+      "access": "ticket-token",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "رمز التذكرة",
+      "stage": 28,
+      "tables": [
+        "support_tickets",
+        "ticket_messages"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/tickets/:token/stream",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/tickets/:token/stream"
+      },
+      "module": "support",
+      "description": "The ticket's live events (server-sent events).",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/28.mjs",
+        "spec": "B218"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /store/v1/tickets/:token/typing",
+      "method": "POST",
+      "path": "/store/v1/tickets/:token/typing",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "الزبون يكتب الآن",
+      "access": "ticket-token",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "رمز التذكرة",
+      "stage": 28,
+      "tables": [
+        "support_tickets",
+        "ticket_messages"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/tickets/:token/typing",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/tickets/:token/typing"
+      },
+      "module": "support",
+      "description": "The requester is typing.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/28.mjs",
+        "spec": "B218"
+      },
+      "successStatus": 204
+    },
+    {
+      "key": "POST /store/v1/tickets/:token/read",
+      "method": "POST",
+      "path": "/store/v1/tickets/:token/read",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "تعليم رسائل الدعم كمقروءة",
+      "access": "ticket-token",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "رمز التذكرة",
+      "stage": 28,
+      "tables": [
+        "support_tickets",
+        "ticket_messages"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/tickets/:token/read",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/tickets/:token/read"
+      },
+      "module": "support",
+      "description": "Mark support's messages as seen.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/28.mjs",
+        "spec": "B218"
+      },
+      "successStatus": 204
+    },
+    {
+      "key": "POST /store/v1/tickets/:token/files",
+      "method": "POST",
+      "path": "/store/v1/tickets/:token/files",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "إرفاق ملف بالتذكرة",
+      "access": "ticket-token",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "رمز التذكرة",
+      "stage": 28,
+      "tables": [
+        "support_tickets",
+        "ticket_messages",
+        "files"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/tickets/:token/files",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/tickets/:token/files"
+      },
+      "module": "support",
+      "description": "Upload an attachment for the ticket.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/28.mjs",
+        "spec": "B218"
+      },
+      "successStatus": 201
+    },
+    {
+      "key": "GET /store/v1/tickets/:token/files/:fileId",
+      "method": "GET",
+      "path": "/store/v1/tickets/:token/files/:fileId",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "تنزيل مرفق",
+      "access": "ticket-token",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "رمز التذكرة",
+      "stage": 28,
+      "tables": [
+        "support_tickets",
+        "ticket_messages",
+        "files"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/tickets/:token/files/:fileId",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/tickets/:token/files/:fileId"
+      },
+      "module": "support",
+      "description": "Download an attachment of the ticket (presigned link).",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/28.mjs",
+        "spec": "B218"
+      },
+      "successStatus": 302
+    },
+    {
+      "key": "POST /admin/support-tickets/:id/read",
+      "method": "POST",
+      "path": "/admin/support-tickets/:id/read",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "تعليم رسائل التذكرة كمقروءة",
+      "access": "staff-permission",
+      "permission": "support:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "support:read",
+      "stage": 28,
+      "tables": [
+        "support_tickets",
+        "ticket_messages"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/support-tickets/:id/read",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/support-tickets/:id/read"
+      },
+      "module": "support",
+      "description": "Mark the requester's messages as seen.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/28.mjs",
+        "spec": "B218"
+      },
+      "successStatus": 204
+    },
+    {
+      "key": "POST /admin/support-tickets/:id/typing",
+      "method": "POST",
+      "path": "/admin/support-tickets/:id/typing",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "الموظف يكتب ردًا أو ملاحظة",
+      "access": "staff-permission",
+      "permission": "support:reply",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "support:reply",
+      "stage": 28,
+      "tables": [
+        "support_tickets",
+        "ticket_messages"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/support-tickets/:id/typing",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/support-tickets/:id/typing"
+      },
+      "module": "support",
+      "description": "A staff member is typing a reply or a note.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/28.mjs",
+        "spec": "B218"
+      },
+      "successStatus": 204
+    },
+    {
+      "key": "POST /admin/support-tickets/:id/files",
+      "method": "POST",
+      "path": "/admin/support-tickets/:id/files",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "إرفاق ملف برد أو ملاحظة",
+      "access": "staff-permission",
+      "permission": "support:reply",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "support:reply",
+      "stage": 28,
+      "tables": [
+        "support_tickets",
+        "ticket_messages",
+        "files",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/support-tickets/:id/files",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/support-tickets/:id/files"
+      },
+      "module": "support",
+      "description": "Upload an attachment for a reply or a note.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/28.mjs",
+        "spec": "B218"
+      },
+      "successStatus": 201
+    },
+    {
+      "key": "GET /admin/support-tickets/:id/files/:fileId",
+      "method": "GET",
+      "path": "/admin/support-tickets/:id/files/:fileId",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "تنزيل مرفق التذكرة",
+      "access": "staff-permission",
+      "permission": "support:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "support:read",
+      "stage": 28,
+      "tables": [
+        "support_tickets",
+        "ticket_messages",
+        "files"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/support-tickets/:id/files/:fileId",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/support-tickets/:id/files/:fileId"
+      },
+      "module": "support",
+      "description": "Download an attachment of the ticket (presigned link).",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/28.mjs",
+        "spec": "B218"
+      },
+      "successStatus": 302
+    },
+    {
+      "key": "GET /store/v1/me/tickets",
+      "method": "GET",
+      "path": "/store/v1/me/tickets",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "تذاكري",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 28,
+      "tables": [
+        "support_tickets",
+        "ticket_messages"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/me/tickets",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/me/tickets"
+      },
+      "module": "support",
+      "description": "The signed-in customer's own tickets, with the link token of each.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/28b.mjs",
+        "spec": "B217"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /store/v1/me/tickets",
+      "method": "POST",
+      "path": "/store/v1/me/tickets",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "support",
+      "descriptionAr": "فتح تذكرة من الحساب",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة الزبون",
+      "stage": 28,
+      "tables": [
+        "support_tickets",
+        "ticket_messages",
+        "orders"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/me/tickets",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/me/tickets"
+      },
+      "module": "support",
+      "description": "Open a ticket when signed in (no anti-bot check; the answer carries the ticket link token).",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/28b.mjs",
+        "spec": "B217"
+      },
+      "successStatus": 201
+    },
+    {
+      "key": "GET /client/tickets",
+      "method": "GET",
+      "path": "/client/tickets",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "تذاكر التاجر",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 28,
+      "tables": [
+        "support_tickets",
+        "ticket_messages"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/tickets",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/tickets"
+      },
+      "module": "support",
+      "description": "The merchant's own tickets.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/28b.mjs",
+        "spec": "B217"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /client/tickets",
+      "method": "POST",
+      "path": "/client/tickets",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "فتح تذكرة جديدة من بوابة التاجر",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 28,
+      "tables": [
+        "support_tickets",
+        "ticket_messages",
+        "orders"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/tickets",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/tickets"
+      },
+      "module": "support",
+      "description": "Open a ticket from the merchant portal.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/28b.mjs",
+        "spec": "B217"
+      },
+      "successStatus": 201
+    },
+    {
+      "key": "GET /client/tickets/:id",
+      "method": "GET",
+      "path": "/client/tickets/:id",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "محادثة تذكرة التاجر",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 28,
+      "tables": [
+        "support_tickets",
+        "ticket_messages"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/tickets/:id",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/tickets/:id"
+      },
+      "module": "support",
+      "description": "One of the merchant’s tickets with its conversation.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/28b.mjs",
+        "spec": "B217"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /client/tickets/:id/messages",
+      "method": "POST",
+      "path": "/client/tickets/:id/messages",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "رد التاجر على التذكرة",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 28,
+      "tables": [
+        "support_tickets",
+        "ticket_messages"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/tickets/:id/messages",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/tickets/:id/messages"
+      },
+      "module": "support",
+      "description": "Write on one of the merchant’s tickets.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/28b.mjs",
+        "spec": "B217"
+      },
+      "successStatus": 201
+    },
+    {
+      "key": "POST /client/tickets/:id/read",
+      "method": "POST",
+      "path": "/client/tickets/:id/read",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "تعليم رسائل الدعم كمقروءة للتاجر",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 28,
+      "tables": [
+        "support_tickets",
+        "ticket_messages"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/tickets/:id/read",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/tickets/:id/read"
+      },
+      "module": "support",
+      "description": "Mark support's messages of one of the merchant’s tickets as seen.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/28b.mjs",
+        "spec": "B217"
+      },
+      "successStatus": 204
+    },
+    {
+      "key": "POST /client/tickets/:id/typing",
+      "method": "POST",
+      "path": "/client/tickets/:id/typing",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "التاجر يكتب الآن",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 28,
+      "tables": [
+        "support_tickets",
+        "ticket_messages"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client POST /client/tickets/:id/typing",
+        "method": "POST",
+        "ops": null,
+        "path": "/client/tickets/:id/typing"
+      },
+      "module": "support",
+      "description": "The merchant is typing on one of its tickets.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/28b.mjs",
+        "spec": "B217"
+      },
+      "successStatus": 204
+    },
+    {
+      "key": "GET /client/tickets/:id/files/:fileId",
+      "method": "GET",
+      "path": "/client/tickets/:id/files/:fileId",
+      "op": "action",
+      "surface": "client",
+      "kind": "http",
+      "group": "growth",
+      "descriptionAr": "تنزيل مرفق تذكرة التاجر",
+      "access": "merchant-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "جلسة",
+      "stage": 28,
+      "tables": [
+        "support_tickets",
+        "ticket_messages",
+        "files"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "client GET /client/tickets/:id/files/:fileId",
+        "method": "GET",
+        "ops": null,
+        "path": "/client/tickets/:id/files/:fileId"
+      },
+      "module": "support",
+      "description": "Download an attachment of one of the merchant’s tickets (presigned link).",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/28b.mjs",
+        "spec": "B217"
+      },
+      "successStatus": 302
     }
   ],
   "scenarios": [

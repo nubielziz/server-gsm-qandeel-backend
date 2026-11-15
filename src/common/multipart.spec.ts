@@ -2,7 +2,13 @@
 // refusal of a body that is not multipart.
 import { describe, expect, it } from 'bun:test';
 import { AppError } from './errors';
-import { MULTIPART_MAX_BYTES, MULTIPART_ROUTES, UploadedFile, parseMultipart } from './multipart';
+import {
+  MULTIPART_MAX_BYTES,
+  MULTIPART_ROUTES,
+  MULTIPART_ROUTE_LIMITS,
+  UploadedFile,
+  parseMultipart,
+} from './multipart';
 
 /** Encodes a form as a multipart body and its content type, the way a client sends it. */
 async function encode(form: FormData): Promise<{ body: Buffer; contentType: string }> {
@@ -83,10 +89,22 @@ describe('the multipart limits', () => {
     expect(MULTIPART_MAX_BYTES).toBeLessThan(26 * 1024 * 1024);
     expect([...MULTIPART_ROUTES].sort()).toEqual([
       '/admin/service-listings/:id/image',
+      '/admin/support-tickets/:id/files',
       '/api/index.php',
       '/client/files',
       '/store/v1/files',
+      '/store/v1/tickets/:token/files',
       '/v1/files',
     ]);
+  });
+
+  it('bounds the store receipt and the two ticket attachment uploads to 5 MiB plus 64 KiB of form parts (features 21 and 28)', () => {
+    const bound = 5 * 1024 * 1024 + 64 * 1024;
+    expect(Object.fromEntries(MULTIPART_ROUTE_LIMITS)).toEqual({
+      '/store/v1/files': bound,
+      '/store/v1/tickets/:token/files': bound,
+      '/admin/support-tickets/:id/files': bound,
+    });
+    for (const route of MULTIPART_ROUTE_LIMITS.keys()) expect(MULTIPART_ROUTES.has(route), route).toBe(true);
   });
 });

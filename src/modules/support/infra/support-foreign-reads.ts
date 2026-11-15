@@ -1,5 +1,5 @@
 // Lookups into tables other modules own, kept in this one file: who a ticket belongs to (a customer or a merchant), the storefront order a
-// ticket is about, and the staff member a ticket is assigned to. Reads only: the guest customer a first-time visitor becomes is made by the
+// ticket is about, whether an order is the caller's own (the account routes of feature 28), and the staff member a ticket is assigned to. Reads only: the guest customer a first-time visitor becomes is made by the
 // customers module's `CustomerDirectory`.
 //
 // DEVIATION to resolve when those modules export a reader: decision 016 wants these reads through the owning module's public service.
@@ -127,4 +127,31 @@ export async function findAssignableStaff(db: DbExecutor, id: number): Promise<S
 export async function findStaffName(db: DbExecutor, id: number): Promise<string | undefined> {
   const [row] = await db.select({ name: s.staffUsers.name }).from(s.staffUsers).where(eq(s.staffUsers.id, id)).limit(1);
   return row?.name;
+}
+
+/**
+ * Tells whether an order belongs to a signed-in customer or a merchant.
+ *
+ * Why: feature 28 (plan § 3.2, routes 7 and 9): a ticket opened from an account may name an order, and only one of the caller's own: a
+ * storefront order of the customer (`orders.customer_id`), a portal or API order of the merchant (`orders.client_id`). Anything else,
+ * an unknown id included, reads the same, so ids cannot be probed.
+ *
+ * @param db the database or a transaction
+ * @param owner the caller: a customer or a merchant
+ * @param orderId the order the ticket would be about
+ * @returns true when the order exists and is the owner's
+ */
+export async function orderBelongsTo(
+  db: DbExecutor,
+  owner: { readonly type: 'customer' | 'client'; readonly id: number },
+  orderId: number,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: s.orders.id })
+    .from(s.orders)
+    .where(
+      and(eq(s.orders.id, orderId), eq(owner.type === 'customer' ? s.orders.customerId : s.orders.clientId, owner.id)),
+    )
+    .limit(1);
+  return row !== undefined;
 }
