@@ -13,7 +13,7 @@ import { findTicketByToken } from '../infra/ticket.repository';
  * (decision 010: 128 random bits, unique, stored as issued so the link in an email keeps working). The identity guard checks the token's
  * shape and rate limits lookups per address; this resolver finds the row by the unique index and then compares the stored token with the
  * presented one in constant time, so the answer for a wrong token does not depend on how much of it matched. It does not judge the
- * ticket's state: a resolved ticket can still be read, answered (it reopens) and rated.
+ * ticket's state: a resolved ticket can still be read and rated, but takes no message or upload from its holder (B220: `409 TICKET_RESOLVED`, decided by the services).
  *
  * Side effects: none (reads only).
  */

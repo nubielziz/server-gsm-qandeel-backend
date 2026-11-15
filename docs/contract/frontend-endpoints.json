@@ -1,7 +1,7 @@
 {
  "generatedBy": "scripts/extract-frontend-contract.mjs",
  "frontend": "../frontend-admin",
- "count": 302,
+ "count": 306,
  "endpoints": [
   {
    "key": "DELETE /admin/alert-rules/:id",
@@ -18361,7 +18361,7 @@
    "key": "GET /admin/support-tickets",
    "fn": "listSupportTickets",
    "file": "src/features/support/api/tickets.ts",
-   "line": 31,
+   "line": 34,
    "params": [
     {
      "name": "query",
@@ -18581,6 +18581,29 @@
         "updatedAt": {
          "type": "string",
          "alias": "IsoDateTime"
+        },
+        "hasUnread": {
+         "type": "boolean"
+        },
+        "requesterSeenMessageId": {
+         "type": "number",
+         "nullable": true,
+         "alias": "Id"
+        },
+        "requesterSeenAt": {
+         "type": "string",
+         "nullable": true,
+         "alias": "IsoDateTime"
+        },
+        "staffSeenMessageId": {
+         "type": "number",
+         "nullable": true,
+         "alias": "Id"
+        },
+        "staffSeenAt": {
+         "type": "string",
+         "nullable": true,
+         "alias": "IsoDateTime"
         }
        }
       }
@@ -18595,7 +18618,7 @@
    "key": "GET /admin/support-tickets/:id",
    "fn": "getSupportTicket",
    "file": "src/features/support/api/tickets.ts",
-   "line": 44,
+   "line": 47,
    "params": [
     {
      "name": "id",
@@ -18753,6 +18776,29 @@
       "type": "string",
       "alias": "IsoDateTime"
      },
+     "hasUnread": {
+      "type": "boolean"
+     },
+     "requesterSeenMessageId": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "requesterSeenAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "staffSeenMessageId": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "staffSeenAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
      "messages": {
       "array": {
        "object": {
@@ -18795,6 +18841,25 @@
         },
         "authorName": {
          "type": "string"
+        },
+        "attachments": {
+         "array": {
+          "object": {
+           "id": {
+            "type": "number",
+            "alias": "Id"
+           },
+           "filename": {
+            "type": "string"
+           },
+           "mime": {
+            "type": "string"
+           },
+           "size": {
+            "type": "number"
+           }
+          }
+         }
         }
        }
       }
@@ -18808,6 +18873,36 @@
       }
      }
     }
+   }
+  },
+  {
+   "key": "GET /admin/support-tickets/:id/files/:fileId",
+   "fn": "ticketFileUrl",
+   "file": "src/features/support/api/tickets.ts",
+   "line": 122,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "fileId",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    }
+   ],
+   "returnsText": "string",
+   "returns": {
+    "type": "string"
    }
   },
   {
@@ -28147,7 +28242,7 @@
    "key": "PATCH /admin/support-tickets/:id",
    "fn": "updateSupportTicket",
    "file": "src/features/support/api/tickets.ts",
-   "line": 54,
+   "line": 57,
    "params": [
     {
      "name": "id",
@@ -28333,6 +28428,29 @@
      },
      "updatedAt": {
       "type": "string",
+      "alias": "IsoDateTime"
+     },
+     "hasUnread": {
+      "type": "boolean"
+     },
+     "requesterSeenMessageId": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "requesterSeenAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "staffSeenMessageId": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "staffSeenAt": {
+      "type": "string",
+      "nullable": true,
       "alias": "IsoDateTime"
      }
     }
@@ -40199,10 +40317,80 @@
    }
   },
   {
+   "key": "POST /admin/support-tickets/:id/files",
+   "fn": "uploadTicketFile",
+   "file": "src/features/support/api/tickets.ts",
+   "line": 110,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "file",
+     "optional": false,
+     "typeText": "File",
+     "shape": {
+      "type": "File"
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "StoredTicketFile",
+   "returns": {
+    "object": {
+     "id": {
+      "type": "number",
+      "alias": "Id"
+     },
+     "filename": {
+      "type": "string"
+     },
+     "size": {
+      "type": "number"
+     },
+     "mime": {
+      "type": "string"
+     },
+     "sha256": {
+      "type": "string"
+     },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     }
+    }
+   }
+  },
+  {
    "key": "POST /admin/support-tickets/:id/note",
    "fn": "addTicketNote",
    "file": "src/features/support/api/tickets.ts",
-   "line": 74,
+   "line": 78,
    "params": [
     {
      "name": "id",
@@ -40221,6 +40409,13 @@
       "object": {
        "body": {
         "type": "string"
+       },
+       "fileIds": {
+        "array": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "optional": true
        }
       }
      }
@@ -40288,15 +40483,84 @@
      },
      "authorName": {
       "type": "string"
+     },
+     "attachments": {
+      "array": {
+       "object": {
+        "id": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "filename": {
+         "type": "string"
+        },
+        "mime": {
+         "type": "string"
+        },
+        "size": {
+         "type": "number"
+        }
+       }
+      }
      }
     }
+   }
+  },
+  {
+   "key": "POST /admin/support-tickets/:id/read",
+   "fn": "markTicketRead",
+   "file": "src/features/support/api/tickets.ts",
+   "line": 89,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "upToMessageId",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "void",
+   "returns": {
+    "type": "undefined"
    }
   },
   {
    "key": "POST /admin/support-tickets/:id/reply",
    "fn": "replyToTicket",
    "file": "src/features/support/api/tickets.ts",
-   "line": 64,
+   "line": 68,
    "params": [
     {
      "name": "id",
@@ -40322,6 +40586,13 @@
          "telegram"
         ],
         "optional": true
+       },
+       "fileIds": {
+        "array": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "optional": true
        }
       }
      }
@@ -40389,8 +40660,79 @@
      },
      "authorName": {
       "type": "string"
+     },
+     "attachments": {
+      "array": {
+       "object": {
+        "id": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "filename": {
+         "type": "string"
+        },
+        "mime": {
+         "type": "string"
+        },
+        "size": {
+         "type": "number"
+        }
+       }
+      }
      }
     }
+   }
+  },
+  {
+   "key": "POST /admin/support-tickets/:id/typing",
+   "fn": "sendTicketTyping",
+   "file": "src/features/support/api/tickets.ts",
+   "line": 99,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "mode",
+     "optional": false,
+     "typeText": "TypingMode",
+     "shape": {
+      "enum": [
+       "note",
+       "reply"
+      ]
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "void",
+   "returns": {
+    "type": "undefined"
    }
   },
   {

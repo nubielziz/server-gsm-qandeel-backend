@@ -177,8 +177,9 @@ export const writeOnStoreTicket = defineRoute({
   key: 'POST /store/v1/tickets/:token/messages',
   summary: 'Write on a support ticket',
   description:
-    "The customer's reply. A resolved ticket is reopened (`open`, `resolvedAt` cleared) and a ticket that waited on the customer goes back " +
-    'to `open`; the reply target restarts from this message. `fileIds` attaches files uploaded with `POST /store/v1/tickets/:token/files` ' +
+    "The customer's reply. A ticket that waited on the customer goes back to `open`; the reply target restarts from this message. A " +
+    'resolved ticket is closed for the customer: `409 TICKET_RESOLVED` ("This ticket is closed. Open a new ticket if you still need help."), ' +
+    'nothing is written, and staff must reopen it before the customer can write again. `fileIds` attaches files uploaded with `POST /store/v1/tickets/:token/files` ' +
     "(at most 5, the customer's own PDF, JPEG or PNG of 5 MiB); `body` may be `''` when a file is attached. One ticket takes 20 messages " +
     'a minute (`429 RATE_LIMITED` with `Retry-After`). The answer is the new message; staff see it at once on their live stream.',
   tags: ['support-tickets'],
@@ -187,7 +188,7 @@ export const writeOnStoreTicket = defineRoute({
   params: TOKEN_PARAMS,
   body: messageBody('Write your message.'),
   success: { status: 201, schema: StoreMessageSchema },
-  errors: ['NOT_FOUND', 'VALIDATION_FAILED', 'RATE_LIMITED'],
+  errors: ['NOT_FOUND', 'TICKET_RESOLVED', 'VALIDATION_FAILED', 'RATE_LIMITED'],
   examples: {
     request: { body: 'Here is the photo. Same message after restart.', fileIds: [7002] },
     response: {

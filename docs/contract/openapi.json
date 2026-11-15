@@ -216675,7 +216675,7 @@
     },
     "/client/tickets/{id}/messages": {
       "post": {
-        "description": "The merchant’s message. A resolved ticket is reopened (`open`, `resolvedAt` cleared) and a ticket that waited on the merchant goes back to `open`; the reply target restarts from this message. `fileIds` attaches files uploaded with `POST /client/files` (at most 5, only a PDF, JPEG or PNG of at most 5 MiB); `body` may be `\"\"` when a file is attached. One ticket takes 20 messages a minute (`429 RATE_LIMITED` with `Retry-After`). The answer is the new message; staff see it at once on their live stream. Another merchant’s ticket and an unknown id are `404`.",
+        "description": "The merchant’s message. A ticket that waited on the merchant goes back to `open`; the reply target restarts from this message. A resolved ticket is closed for the merchant: `409 TICKET_RESOLVED` (\"This ticket is closed. Open a new ticket if you still need help.\"), nothing is written, and staff must reopen it before the merchant can write again. `fileIds` attaches files uploaded with `POST /client/files` (at most 5, only a PDF, JPEG or PNG of at most 5 MiB); `body` may be `\"\"` when a file is attached. One ticket takes 20 messages a minute (`429 RATE_LIMITED` with `Retry-After`). The answer is the new message; staff see it at once on their live stream. Another merchant’s ticket and an unknown id are `404`.",
         "operationId": "postClientTicketsByIdMessages",
         "parameters": [
           {
@@ -217127,6 +217127,96 @@
                       "status": 404,
                       "code": "NOT_FOUND",
                       "detail": "The requested item was not found.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "TICKET_RESOLVED: This ticket is already resolved.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 409
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "TICKET_RESOLVED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "TICKET_RESOLVED": {
+                    "summary": "This ticket is already resolved.",
+                    "value": {
+                      "type": "https://errors.gsm.example/ticket-resolved",
+                      "title": "This ticket is already resolved.",
+                      "status": 409,
+                      "code": "TICKET_RESOLVED",
+                      "detail": "This ticket is already resolved.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   }
@@ -217815,7 +217905,7 @@
     },
     "/client/tickets/{id}/typing": {
       "post": {
-        "description": "A typing ping of the portal thread (send at most one every 3 seconds while the text changes and is not empty). Staff see \"<name> is typing…\" for a few seconds. Never stored; pings within 2.5 seconds of the last one are absorbed. Always `204` for a ticket of the merchant, whatever happened to the ping; another merchant’s ticket and an unknown id are `404`.",
+        "description": "A typing ping of the portal thread (send at most one every 3 seconds while the text changes and is not empty). Staff see \"<name> is typing…\" for a few seconds. Never stored; pings within 2.5 seconds of the last one are absorbed. Always `204` for a ticket of the merchant, whatever happened to the ping (on a resolved ticket nothing is published); another merchant’s ticket and an unknown id are `404`.",
         "operationId": "postClientTicketsByIdTyping",
         "parameters": [
           {
@@ -246389,7 +246479,7 @@
     },
     "/store/v1/tickets/{token}/files": {
       "post": {
-        "description": "One file (`multipart/form-data`, one part named `file`): a PDF, JPEG or PNG of 1 byte to 5 MiB whose content starts with the type's magic bytes. Another type, or a content that is not what it claims, is `422` on `file` (`type`); an empty file `422` (`empty`); more than 5 MiB `413` (a declared body over 5 MiB is refused before it is read). The answer is the stored file; its id goes into `fileIds` of the next message. There is no virus scan: files are never shown inline, only downloaded through a link. The file belongs to the ticket's customer. Counted against `upload` (20 a minute per address).",
+        "description": "One file (`multipart/form-data`, one part named `file`): a PDF, JPEG or PNG of 1 byte to 5 MiB whose content starts with the type's magic bytes. Another type, or a content that is not what it claims, is `422` on `file` (`type`); an empty file `422` (`empty`); more than 5 MiB `413` (a declared body over 5 MiB is refused before it is read). The answer is the stored file; its id goes into `fileIds` of the next message. There is no virus scan: files are never shown inline, only downloaded through a link. The file belongs to the ticket's customer. A resolved ticket is closed for the customer: `409 TICKET_RESOLVED` and nothing is stored (staff reopen the ticket first). Counted against `upload` (20 a minute per address).",
         "operationId": "postStoreV1TicketsByTokenFiles",
         "parameters": [
           {
@@ -246575,6 +246665,96 @@
                       "status": 404,
                       "code": "NOT_FOUND",
                       "detail": "The requested item was not found.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "TICKET_RESOLVED: This ticket is already resolved.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 409
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "TICKET_RESOLVED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "TICKET_RESOLVED": {
+                    "summary": "This ticket is already resolved.",
+                    "value": {
+                      "type": "https://errors.gsm.example/ticket-resolved",
+                      "title": "This ticket is already resolved.",
+                      "status": 409,
+                      "code": "TICKET_RESOLVED",
+                      "detail": "This ticket is already resolved.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   }
@@ -247313,7 +247493,7 @@
     },
     "/store/v1/tickets/{token}/messages": {
       "post": {
-        "description": "The customer's reply. A resolved ticket is reopened (`open`, `resolvedAt` cleared) and a ticket that waited on the customer goes back to `open`; the reply target restarts from this message. `fileIds` attaches files uploaded with `POST /store/v1/tickets/:token/files` (at most 5, the customer's own PDF, JPEG or PNG of 5 MiB); `body` may be `''` when a file is attached. One ticket takes 20 messages a minute (`429 RATE_LIMITED` with `Retry-After`). The answer is the new message; staff see it at once on their live stream.",
+        "description": "The customer's reply. A ticket that waited on the customer goes back to `open`; the reply target restarts from this message. A resolved ticket is closed for the customer: `409 TICKET_RESOLVED` (\"This ticket is closed. Open a new ticket if you still need help.\"), nothing is written, and staff must reopen it before the customer can write again. `fileIds` attaches files uploaded with `POST /store/v1/tickets/:token/files` (at most 5, the customer's own PDF, JPEG or PNG of 5 MiB); `body` may be `''` when a file is attached. One ticket takes 20 messages a minute (`429 RATE_LIMITED` with `Retry-After`). The answer is the new message; staff see it at once on their live stream.",
         "operationId": "postStoreV1TicketsByTokenMessages",
         "parameters": [
           {
@@ -247561,6 +247741,96 @@
                       "status": 404,
                       "code": "NOT_FOUND",
                       "detail": "The requested item was not found.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "TICKET_RESOLVED: This ticket is already resolved.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 409
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "TICKET_RESOLVED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "TICKET_RESOLVED": {
+                    "summary": "This ticket is already resolved.",
+                    "value": {
+                      "type": "https://errors.gsm.example/ticket-resolved",
+                      "title": "This ticket is already resolved.",
+                      "status": 409,
+                      "code": "TICKET_RESOLVED",
+                      "detail": "This ticket is already resolved.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   }
@@ -248589,7 +248859,7 @@
     },
     "/store/v1/tickets/{token}/typing": {
       "post": {
-        "description": "A typing ping of the ticket page (send at most one every 3 seconds while the text changes and is not empty). Staff see \"<name> is typing…\" for a few seconds. Never stored; pings within 2.5 seconds of the last one are absorbed. Always `204`, whatever happened to the ping. Counted against `ticket-chat` (120 a minute per address), not the token limit.",
+        "description": "A typing ping of the ticket page (send at most one every 3 seconds while the text changes and is not empty). Staff see \"<name> is typing…\" for a few seconds. Never stored; pings within 2.5 seconds of the last one are absorbed. Always `204`, whatever happened to the ping; on a resolved ticket nothing is published. Counted against `ticket-chat` (120 a minute per address), not the token limit.",
         "operationId": "postStoreV1TicketsByTokenTyping",
         "parameters": [
           {

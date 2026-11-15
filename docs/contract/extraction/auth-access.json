@@ -2412,7 +2412,7 @@
       "where": [
         "src/features/support/mocks/ticketHandlers.ts:80"
       ],
-      "meaning": "Reply/note on a resolved ticket.",
+      "meaning": "Reply/note on a resolved ticket; a requester's message or upload on one (B220).",
       "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
     },
     {

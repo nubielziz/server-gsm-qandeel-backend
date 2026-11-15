@@ -11,7 +11,7 @@
       "admin": 14,
       "client": 7
     },
-    "frontendCalled": 10
+    "frontendCalled": 14
   },
   "stages": [
     17,
@@ -294,7 +294,7 @@
       "description": "Support inbox: priority, assignment, status and SLA timers.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 29,
+        "line": 32,
         "fn": "listSupportTickets"
       }
     },
@@ -328,7 +328,7 @@
       "description": "Support inbox: priority, assignment, status and SLA timers.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 42,
+        "line": 45,
         "fn": "getSupportTicket"
       }
     },
@@ -362,7 +362,7 @@
       "description": "Support inbox: priority, assignment, status and SLA timers.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 52,
+        "line": 55,
         "fn": "updateSupportTicket"
       }
     },
@@ -397,7 +397,7 @@
       "description": "Reply to the customer by email or Telegram.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 62,
+        "line": 66,
         "fn": "replyToTicket"
       }
     },
@@ -430,7 +430,7 @@
       "description": "Internal note that the customer does not see.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 72,
+        "line": 76,
         "fn": "addTicketNote"
       }
     },
@@ -804,7 +804,11 @@
       },
       "module": "support",
       "description": "Mark the requester's messages as seen.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/support/api/tickets.ts",
+        "line": 87,
+        "fn": "markTicketRead"
+      },
       "addition": {
         "file": "scripts/map-additions/28.mjs",
         "spec": "B218"
@@ -839,7 +843,11 @@
       },
       "module": "support",
       "description": "A staff member is typing a reply or a note.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/support/api/tickets.ts",
+        "line": 97,
+        "fn": "sendTicketTyping"
+      },
       "addition": {
         "file": "scripts/map-additions/28.mjs",
         "spec": "B218"
@@ -876,7 +884,11 @@
       },
       "module": "support",
       "description": "Upload an attachment for a reply or a note.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/support/api/tickets.ts",
+        "line": 108,
+        "fn": "uploadTicketFile"
+      },
       "addition": {
         "file": "scripts/map-additions/28.mjs",
         "spec": "B218"
@@ -912,7 +924,11 @@
       },
       "module": "support",
       "description": "Download an attachment of the ticket (presigned link).",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/support/api/tickets.ts",
+        "line": 120,
+        "fn": "ticketFileUrl"
+      },
       "addition": {
         "file": "scripts/map-additions/28.mjs",
         "spec": "B218"

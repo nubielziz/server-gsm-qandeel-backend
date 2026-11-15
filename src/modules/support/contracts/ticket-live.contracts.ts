@@ -86,7 +86,8 @@ export const storeTicketTyping = defineRoute({
   description:
     'A typing ping of the ticket page (send at most one every 3 seconds while the text changes and is not empty). Staff see ' +
     '"<name> is typing…" for a few seconds. Never stored; pings within 2.5 seconds of the last one are absorbed. Always `204`, ' +
-    'whatever happened to the ping. Counted against `ticket-chat` (120 a minute per address), not the token limit.',
+    'whatever happened to the ping; on a resolved ticket nothing is published. Counted against `ticket-chat` (120 a minute per address), ' +
+    'not the token limit.',
   tags: ['support-tickets'],
   surface: 'store',
   access: 'ticket-token',
@@ -118,7 +119,9 @@ export const storeTicketRead = defineRoute({
 export const uploadStoreTicketFile = defineRoute({
   key: 'POST /store/v1/tickets/:token/files',
   summary: 'Upload an attachment for a support ticket',
-  description: `${UPLOAD_RULES} The file belongs to the ticket's customer. Counted against \`upload\` (20 a minute per address).`,
+  description:
+    `${UPLOAD_RULES} The file belongs to the ticket's customer. A resolved ticket is closed for the customer: \`409 TICKET_RESOLVED\` ` +
+    'and nothing is stored (staff reopen the ticket first). Counted against `upload` (20 a minute per address).',
   tags: ['support-tickets'],
   surface: 'store',
   access: 'ticket-token',
@@ -126,7 +129,7 @@ export const uploadStoreTicketFile = defineRoute({
   bodyType: 'multipart',
   body: z.object({ file: zUploadedFile }),
   success: { status: 201, schema: UploadedAttachmentSchema },
-  errors: ['NOT_FOUND', 'VALIDATION_FAILED', 'PAYLOAD_TOO_LARGE', 'RATE_LIMITED', 'UNAVAILABLE'],
+  errors: ['NOT_FOUND', 'TICKET_RESOLVED', 'VALIDATION_FAILED', 'PAYLOAD_TOO_LARGE', 'RATE_LIMITED', 'UNAVAILABLE'],
   examples: { response: UPLOAD_EXAMPLE },
 });
 

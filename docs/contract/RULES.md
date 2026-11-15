@@ -449,7 +449,7 @@ The customer page embeds a customer's latest tickets. The timers (late, slaDueAt
 1. Ticket statuses are exactly new, open, pending and resolved:
 - new on creation;
 - pending after a public staff reply (from new or open);
-- open when the customer writes again;
+- open when the customer writes again on a ticket that waited on them (a resolved ticket takes no customer message, B220);
 - resolved through PATCH; reopen moves resolved to open.
 The console crashes on any other status, so the CSAT rating keeps the status resolved and only sets csat_score 1-5 (TicketStatusBadge.tsx:7-8; scenario b2c-ticket steps 2, 5-8; demo 12-state-b2c.js:188-199).
 2. SLA: priority targets are high 2h, normal 8h, low 24h (demo PRIO_TARGET).

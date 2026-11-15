@@ -31,6 +31,7 @@ import {
   ticketIdsOfCustomer,
   ticketMessageHoldsFile,
 } from '../infra/ticket.repository';
+import { isLockedForRequester, requesterLockedError } from './requester-lock';
 import { TicketEvents } from './ticket-events';
 import type { AttachmentFiles } from './ticket-views';
 
@@ -107,8 +108,9 @@ export class TicketAttachmentService {
    * @param uploader the ticket's requester (stored under the ticket's area `tickets-<id>`) or a staff member (area `tickets`)
    * @param input the multipart file part
    * @returns the stored file; its id goes into `fileIds` of the next message
-   * @throws {AppError} `NOT_FOUND` (no such ticket, or a link of a ticket that has no customer); `VALIDATION_FAILED` (422 on `file`:
-   *   `empty`, `type`); `PAYLOAD_TOO_LARGE` (over 5 MiB); `UNAVAILABLE` (the object store is down)
+   * @throws {AppError} `NOT_FOUND` (no such ticket, or a link of a ticket that has no customer); `TICKET_RESOLVED` (409: a requester's
+   *   upload for a resolved ticket, which takes no message, so the file would be an orphan; staff may still upload); `VALIDATION_FAILED`
+   *   (422 on `file`: `empty`, `type`); `PAYLOAD_TOO_LARGE` (over 5 MiB); `UNAVAILABLE` (the object store is down)
    */
   async upload(ticketId: number, uploader: Uploader, input: UploadInput): Promise<UploadedAttachment> {
     const mime = cleanMediaType(input.mime);
@@ -133,6 +135,8 @@ export class TicketAttachmentService {
     return this.db.runInTransaction(async ({ tx }) => {
       const ticket = await findTicket(tx, ticketId);
       if (!ticket) throw notFound('No ticket has this id.');
+      // B220: a resolved ticket is closed for its requester, so an upload for it could never be attached (no orphan files).
+      if (uploader.side === 'requester' && isLockedForRequester(ticket)) throw requesterLockedError();
       const owner: FileOwner =
         uploader.side === 'staff'
           ? { type: 'staff', id: uploader.staffId }

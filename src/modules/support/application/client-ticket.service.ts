@@ -98,7 +98,8 @@ export class ClientTicketService {
    * @param ticketId the ticket of the route
    * @param input the text (may be `''` with a file) and the ids of the files it carries
    * @returns the new message
-   * @throws {AppError} `NOT_FOUND`; `RATE_LIMITED` (the 21st message of a ticket in a minute); `VALIDATION_FAILED` (422 on `fileIds`)
+   * @throws {AppError} `NOT_FOUND`; `TICKET_RESOLVED` (409: the ticket is resolved, nothing is written); `RATE_LIMITED` (the 21st message of
+   *   a ticket in a minute); `VALIDATION_FAILED` (422 on `fileIds`)
    */
   async write(clientId: number, ticketId: number, input: ThreadMessageInput): Promise<StoreMessageView> {
     await this.owned(clientId, ticketId);
@@ -123,7 +124,8 @@ export class ClientTicketService {
    *
    * @param clientId the signed-in merchant
    * @param ticketId the ticket of the route
-   * @throws {AppError} `NOT_FOUND` for an unknown ticket or another merchant's (the ping itself never fails)
+   * @throws {AppError} `NOT_FOUND` for an unknown ticket or another merchant's (the ping itself never fails; on a resolved ticket it rings
+   *   nothing)
    */
   async ping(clientId: number, ticketId: number): Promise<void> {
     await this.owned(clientId, ticketId);

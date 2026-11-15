@@ -182,6 +182,26 @@ describe('the uploads', () => {
     const reader = await adminWith(t, ['support:read']);
     expect((await consoleUpload(reader, ticket.id, 'a.pdf', 'application/pdf', PDF)).statusCode).toBe(403);
   });
+
+  it('refuse the customer’s upload for a resolved ticket with 409 TICKET_RESOLVED and store nothing, until staff reopen it (B220)', async () => {
+    const { db, ticket } = await customerTicket();
+    expect((await staff.patch(`/admin/support-tickets/${ticket.id}`, { status: 'resolved' })).status).toBe(200);
+    const refused = await pageUpload(ticket.token, 'statement.pdf', 'application/pdf', PDF);
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({
+      code: 'TICKET_RESOLVED',
+      detail: 'This ticket is closed. Open a new ticket if you still need help.',
+    });
+    // No orphan: no file row, and the ticket is as the resolve left it.
+    expect(await db.select().from(s.files)).toEqual([]);
+    const [resolved] = await db.select().from(s.supportTickets).where(eq(s.supportTickets.id, ticket.id));
+    expect(resolved!.status).toBe('resolved');
+
+    expect((await staff.patch(`/admin/support-tickets/${ticket.id}`, { status: 'open' })).status).toBe(200);
+    const again = await pageUpload(ticket.token, 'statement.pdf', 'application/pdf', PDF);
+    expect(again.statusCode).toBe(201);
+    expect(await db.select().from(s.files)).toHaveLength(1);
+  });
 });
 
 describe('attaching files to a message', () => {

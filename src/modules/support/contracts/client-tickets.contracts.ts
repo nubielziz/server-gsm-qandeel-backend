@@ -171,8 +171,9 @@ export const writeOnClientTicket = defineRoute({
   key: 'POST /client/tickets/:id/messages',
   summary: 'Write on a support ticket',
   description:
-    'The merchant’s message. A resolved ticket is reopened (`open`, `resolvedAt` cleared) and a ticket that waited on the merchant goes ' +
-    'back to `open`; the reply target restarts from this message. `fileIds` attaches files uploaded with `POST /client/files` (at most 5, ' +
+    'The merchant’s message. A ticket that waited on the merchant goes back to `open`; the reply target restarts from this message. A ' +
+    'resolved ticket is closed for the merchant: `409 TICKET_RESOLVED` ("This ticket is closed. Open a new ticket if you still need help."), ' +
+    'nothing is written, and staff must reopen it before the merchant can write again. `fileIds` attaches files uploaded with `POST /client/files` (at most 5, ' +
     'only a PDF, JPEG or PNG of at most 5 MiB); `body` may be `""` when a file is attached. One ticket takes 20 messages a minute ' +
     '(`429 RATE_LIMITED` with `Retry-After`). The answer is the new message; staff see it at once on their live stream. Another ' +
     'merchant’s ticket and an unknown id are `404`.',
@@ -183,7 +184,7 @@ export const writeOnClientTicket = defineRoute({
   params: ID_PARAMS,
   body: messageBody('Write your message.'),
   success: { status: 201, schema: StoreMessageSchema },
-  errors: ['NOT_FOUND', 'VALIDATION_FAILED', 'CSRF_FAILED', 'RATE_LIMITED', ...CLIENT_ERRORS],
+  errors: ['NOT_FOUND', 'TICKET_RESOLVED', 'VALIDATION_FAILED', 'CSRF_FAILED', 'RATE_LIMITED', ...CLIENT_ERRORS],
   examples: {
     request: { body: 'Thank you, that is the right amount.', fileIds: [7002] },
     response: {
@@ -223,7 +224,8 @@ export const clientTicketTyping = defineRoute({
   description:
     'A typing ping of the portal thread (send at most one every 3 seconds while the text changes and is not empty). Staff see ' +
     '"<name> is typing…" for a few seconds. Never stored; pings within 2.5 seconds of the last one are absorbed. Always `204` for ' +
-    'a ticket of the merchant, whatever happened to the ping; another merchant’s ticket and an unknown id are `404`.',
+    'a ticket of the merchant, whatever happened to the ping (on a resolved ticket nothing is published); another merchant’s ticket and ' +
+    'an unknown id are `404`.',
   tags: ['support-tickets'],
   surface: 'client',
   access: 'merchant-session',

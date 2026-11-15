@@ -44,14 +44,15 @@ const refuse = (field: string, code: string, message: string) =>
 /**
  * Opens, reads, answers and rates support tickets for a storefront visitor.
  *
- * Why: scenario b2c-ticket steps 1, 2, 6 and 8 and ANSWERS support Q8. A visitor with no account opens a ticket from the tracking page
+ * Why: scenario b2c-ticket steps 1, 2, 6 and 8. A visitor with no account opens a ticket from the tracking page
  * (the order's tracking token links it to the order and to the order's customer) or the contact page (an email, which makes a guest
  * customer the first time); it starts `new` with the priority of its category and a reply target, and the customer gets a receipt. The
  * ticket token (128 random bits, decision 010) is the only credential of the ticket page: it reaches the visitor in the receipt email, and in
  * the answer to the open call only when the visitor proved who they are with the order's tracking token (an email anyone can type is not
- * a proof, so that path answers without it). A message on a resolved ticket reopens it, a
- * message on a ticket that waited on the customer makes it `open` again, and either one restarts the reply target from that message.
- * The rating is one answer, 1 to 5, only once the ticket is resolved, and the ticket stays resolved (no `closed` status).
+ * a proof, so that path answers without it). A message on a ticket that waited on the customer makes it `open` again and restarts the
+ * reply target from that message. A resolved ticket is closed for the customer (B220, owner decision 2026-11-15, replacing ANSWERS support
+ * Q8): a message is `409 TICKET_RESOLVED`, and staff reopen the ticket to continue. The rating is one answer, 1 to 5, only once the
+ * ticket is resolved, and the ticket stays resolved (no `closed` status).
  *
  * The receipt email repeats the visitor's subject to the address they typed, so the form could relay spam to a stranger: besides Turnstile
  * and the per-IP limit, one email address opens at most 3 tickets an hour (case-insensitive, `429 RATE_LIMITED` with `Retry-After`,
@@ -171,7 +172,8 @@ export class StoreTicketService {
    * @param id the ticket id the token resolved to
    * @param input the text (may be `''` with a file) and the ids of the files it carries
    * @returns the new message
-   * @throws {AppError} `NOT_FOUND` when the ticket no longer exists; `RATE_LIMITED`; `VALIDATION_FAILED` (422 on `fileIds`)
+   * @throws {AppError} `NOT_FOUND` when the ticket no longer exists; `TICKET_RESOLVED` (409: the ticket is resolved, nothing is written);
+   *   `RATE_LIMITED`; `VALIDATION_FAILED` (422 on `fileIds`)
    */
   write(
     id: number,

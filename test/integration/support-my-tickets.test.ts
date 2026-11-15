@@ -307,6 +307,44 @@ describe('POST /store/v1/me/tickets', () => {
     expect((await onPage('POST', res.body.token, '/messages', { body: 'One more thing.' })).statusCode).toBe(201);
   });
 
+  it('is closed for the customer once staff resolve it: a message on its token is 409 and changes nothing, until a reopen (B220)', async () => {
+    const mine = await customer();
+    const { db } = await testDb();
+    const opened = await mine.session.call('POST', '/store/v1/me/tickets', VALID);
+    expect(opened.status).toBe(201);
+    const ticketId = (
+      await db.select().from(s.supportTickets).where(eq(s.supportTickets.number, opened.body.number))
+    )[0]!.id;
+    expect((await staff.patch(`/admin/support-tickets/${ticketId}`, { status: 'resolved' })).status).toBe(200);
+    const ticketOf = async () =>
+      (await db.select().from(s.supportTickets).where(eq(s.supportTickets.id, ticketId)))[0]!;
+    const resolved = await ticketOf();
+    const messagesBefore = await db.select().from(s.ticketMessages);
+    const rung = spyOn(TicketEvents.prototype, 'message');
+
+    const refused = await onPage('POST', opened.body.token, '/messages', { body: 'Any news?' });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({
+      code: 'TICKET_RESOLVED',
+      detail: 'This ticket is closed. Open a new ticket if you still need help.',
+    });
+    expect(await ticketOf()).toEqual(resolved);
+    expect(await db.select().from(s.ticketMessages)).toEqual(messagesBefore);
+    expect(rung).not.toHaveBeenCalled();
+    // The account still lists and reads the ticket; only writing on it is closed.
+    expect((await mine.session.call('GET', '/store/v1/me/tickets')).body[0]).toMatchObject({
+      status: 'resolved',
+      token: opened.body.token,
+    });
+
+    expect((await staff.patch(`/admin/support-tickets/${ticketId}`, { status: 'open' })).status).toBe(200);
+    const again = await onPage('POST', opened.body.token, '/messages', { body: 'Any news?' });
+    expect(again.statusCode).toBe(201);
+    expect(rung).toHaveBeenCalledWith(ticketId, again.json().id);
+    rung.mockRestore();
+    expect(await ticketOf()).toMatchObject({ status: 'open', resolvedAt: null });
+  });
+
   it('may be about an order of the customer, and refuses another customer’s order, a merchant’s and an unknown one (422 on orderId)', async () => {
     const mine = await customer();
     const other = await customer({ name: 'Someone Else' });

@@ -111,7 +111,7 @@ console shows through their title and detail.
 | TAC_TAKEN | 409 | TAC catalogue entry already exists (with errors[{field:"tac"}]). | `POST /admin/tac-catalog`, `PATCH /admin/tac-catalog/:id` | yes |
 | TEMPLATE_BROKEN | 409 | PATCH /admin/notification-templates/:id leaves a broken template (test only). | any | yes |
 | TICKET_LOCKED | 409 | PATCH /admin/support-tickets/:id on a locked ticket (test only). | any | yes |
-| TICKET_RESOLVED | 409 | Reply/note on a resolved ticket. | `POST /admin/support-tickets/:id/reply` | yes |
+| TICKET_RESOLVED | 409 | Reply/note on a resolved ticket; a requester's message or upload on one (B220). | `POST /admin/support-tickets/:id/reply` | yes |
 | TWOFA_ALREADY_ENABLED | 409 | proposed code: the staff member is already enrolled (login said totp). Must refuse, or a password alone could enrol a new authenticator | `POST /admin/auth/2fa/setup` |  |
 | TWOFA_NOT_ENABLED | 409 | proposed: 2FA already off | `POST /admin/staff/:id/reset-2fa` |  |
 | USE_REFUNDS | 409 | Order refund action on a storefront order (refunds go through /admin/refunds). | `POST /admin/orders/:id/refund`, `POST /admin/orders/:id/reject` | yes |

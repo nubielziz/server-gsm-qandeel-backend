@@ -247,7 +247,7 @@ data: {"ticketId":null,"number":"T-1042","by":"support","upToMessageId":9002,"at
 ### `ticket.typing`
 
 Someone is typing: at most one event per person every 2.5 s while they type; show it for 6 s after the last one and clear it when that
-person's message arrives. Never stored, never replayed. No `id`. Staff view: the requester (`by: "requester"`, the rest `null`) or a
+person's message arrives. Never stored, never replayed. No `id`. Staff view: the requester (`by: "requester"`, the rest `null`; never for a resolved ticket, whose requester cannot write, B220) or a
 colleague with their name and `mode` (`reply` or `note`; skip your own `staffId`). Requester view: only while a staff member types a
 **reply** ("Support is typing…"); a note's typing never reaches the requester.
 

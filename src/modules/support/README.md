@@ -130,9 +130,18 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
   stranger who knows an address read that customer's thread. The receipt email repeats the visitor's subject to the address they typed, so
   besides Turnstile and the per-IP limit one email address (case-insensitive) opens at most 3 tickets an hour on the `email` path (limiter
   `ticket-email`, decision 021): the fourth is `429 RATE_LIMITED` with `Retry-After`. `TicketTokenResolver`
-  registers with identity's `CapabilityTokenResolvers` and compares in constant time. A customer message on a resolved ticket reopens it, on
-  a ticket that waited on the customer makes it `open`, on a `new` ticket leaves it `new`; the rating is once, 1 to 5, only when the ticket
-  is resolved, and the ticket stays resolved. The storefront's view carries no staff name, assignee, priority, timer or internal message.
+  registers with identity's `CapabilityTokenResolvers` and compares in constant time. A customer message on a ticket that waited on the
+  customer makes it `open`, on a `new` ticket leaves it `new` (a resolved ticket takes none: see the next rule); the rating is once, 1 to
+  5, only when the ticket is resolved, and the ticket stays resolved. The storefront's view carries no staff name, assignee, priority, timer or internal message.
+- **A resolved ticket is closed for its requester (B220, owner decision 2026-11-15; it replaces ANSWERS support Q8, where a customer
+  message reopened it).** The requester's message (`POST /store/v1/tickets/:token/messages`, `POST /client/tickets/:id/messages`, the one
+  path `TicketThreadService.write`) and the ticket page's file upload (`POST /store/v1/tickets/:token/files`) are `409 TICKET_RESOLVED`
+  with the detail `This ticket is closed. Open a new ticket if you still need help.`: nothing is written, rung or mailed, the status stays
+  `resolved` and the message does not take a point of the `ticket-message` limiter. The requester's typing ping answers `204` but publishes
+  no doorbell. Read marks and the rating are unchanged (they are not writes on the conversation). Staff keep the way back: `PATCH`
+  resolved to `open` (a reopen), after which the requester can write again; a staff reply on a resolved ticket stays `409`, and a note is
+  still allowed. The account opener (`POST /store/v1/me/tickets`, `POST /client/tickets`) only opens new tickets, so it has nothing to
+  refuse; a signed-in customer writes on an existing ticket through its link token. The lock is one helper, `application/requester-lock.ts`.
 - **Anonymization (B175, feature 18).** `SupportErasureModule` registers a customer erasure hook: when a customer is anonymized, in the same
   transaction, the `token` of every ticket the customer opened is set to NULL, so the old link answers `404`; the tickets and messages stay.
 - **Templates.** The shortcut is trimmed; `''` is stored as NULL and read back as `''`; it must be `''` or `/word`; unique ignoring case among
@@ -149,7 +158,7 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
   `originCheck`, and is capped at 3 streams per ticket and 30 per address; the proxy's log hides the token (`deploy/Caddyfile`). Events and
   frames: `docs/contract/realtime-events.md`.
 - **Typing (rule 2)** is a throttled `POST`, never stored or replayed: one Redis key per party and ticket (`SET NX PX 2500`) turns a burst
-  into one doorbell every 2.5 s; it always answers `204`. A staff reply's typing reaches the requester, a note's only other staff. The
+  into one doorbell every 2.5 s; it always answers `204`. The requester's ping on a resolved ticket rings nothing (B220). A staff reply's typing reaches the requester, a note's only other staff. The
   ticket page's typing and read marks count against the limiter `ticket-chat` (120 a minute per address), not `token`.
 - **Seen (rule 3).** One mark per side on the ticket (`requester_seen_message_id`, `staff_seen_message_id` with their times), moved forward
   only by one guarded `UPDATE`; the message must be one the other side wrote and the caller may see, else `422 unknown_message`. Staff are one
@@ -165,7 +174,8 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
   id, and another merchant's ticket (or an unknown id) is `404`, never `403`. List, open, the public conversation, reply, read mark, typing
   and the download are `/client/tickets*`; a merchant waiting for approval may use all of them (`pendingMerchant: 'allow'`, B153), a
   suspended one is refused by the session guard. The merchant's message goes through the same `TicketThreadService` as the ticket page's, so
-  the status moves, the reply target, the 20 messages a minute per ticket (`ticket-message`) and the doorbell are the same. The conversation
+  the status moves, the reply target, the 20 messages a minute per ticket (`ticket-message`), the doorbell and the refusal of a resolved
+  ticket (`409 TICKET_RESOLVED`, B220) are the same. The conversation
   is the storefront's view without the rating (no survey for a merchant) and with `id`; a merchant gets no receipt email.
 - **Opening from an account.** `AccountTicketOpener` is the one path of routes `POST /store/v1/me/tickets` and `POST /client/tickets`: the
   limiter `ticket-open` (5 an hour per account, `customer:<id>` or `client:<id>`, `429 RATE_LIMITED` with `Retry-After`) is taken first, before
@@ -174,7 +184,7 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
   customer's receipt event and the doorbell. The first message may be files only (`message: ''` with `fileIds`).
 - **Attachments (rule 8).** PDF, JPEG or PNG, at most 5 MiB each and 5 per message; the content must start with the type's magic bytes
   (`domain/attachment-rules.ts`). The ticket page and the console have their own upload routes (the file belongs to the ticket's customer or
-  the staff member; a link's holder attaches only the uploads of its own ticket, the area `tickets-<id>`); a merchant or a signed-in customer
+  the staff member; a link's holder attaches only the uploads of its own ticket, the area `tickets-<id>`, and none for a resolved ticket: `409 TICKET_RESOLVED`); a merchant or a signed-in customer
   uploads with the existing `POST /client/files` and `POST /store/v1/files`, and the type and size are checked again when the file is
   attached (`422 fileIds`: `unknown_file`, `not_yours`, `type`, `too_large`). Nothing is scanned for viruses: files are never shown inline and
   every download is a 5-minute presigned link with `Content-Disposition: attachment`. A requester downloads the files of the public messages of

@@ -261,4 +261,17 @@ describe('scenario b2c-ticket: a support ticket about a delay', () => {
     const rated = await call('POST', `/store/v1/tickets/${token}/csat`, { score: 3 });
     expect(rated.statusCode).toBe(422);
   });
+
+  it('after step 8 (B220): the resolved ticket takes no customer message (409 TICKET_RESOLVED) until staff reopen it', async () => {
+    const before = await messages();
+    const refused = await call('POST', `/store/v1/tickets/${token}/messages`, { body: 'Still not working.' });
+    expect(refused.statusCode).toBe(409);
+    expect(json(refused)).toMatchObject({ code: 'TICKET_RESOLVED' });
+    expect(await ticket()).toMatchObject({ status: 'resolved', csatScore: 5 });
+    expect(await messages()).toHaveLength(before.length);
+    expect((await staff.patch(`/admin/support-tickets/${ticketId}`, { status: 'open' })).status).toBe(200);
+    const again = await call('POST', `/store/v1/tickets/${token}/messages`, { body: 'Still not working.' });
+    expect(again.statusCode).toBe(201);
+    expect(await ticket()).toMatchObject({ status: 'open', resolvedAt: null });
+  });
 });

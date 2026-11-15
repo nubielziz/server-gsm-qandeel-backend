@@ -362,6 +362,27 @@ describe('typing', () => {
     expect(ttl).toBeLessThanOrEqual(2500);
   });
 
+  it('rings nothing for the requester on a resolved ticket (still 204, no throttle key) and rings again after a staff reopen (B220)', async () => {
+    const { db, ticket } = await customerTicket();
+    await db
+      .update(s.supportTickets)
+      .set({ status: 'resolved', resolvedAt: new Date(clock.nowMs()) })
+      .where(eq(s.supportTickets.id, ticket.id));
+    const team = await staffStream(staff);
+    for (let ping = 0; ping < 3; ping++) {
+      expect((await onTicket('POST', ticket.token, '/typing')).statusCode).toBe(204);
+    }
+    await barrier(ticket.id);
+    await team.next('ticket.updated');
+    expect(team.frames.filter((frame) => frame.event === 'ticket.typing')).toEqual([]);
+    // -2: the key does not exist, so the first ping after a reopen is not absorbed.
+    expect(await t.app.get(RedisService).cache.pttl(t.app.get(CacheKeys).supportTyping(ticket.id, 'r'))).toBe(-2);
+
+    expect((await staff.patch(`/admin/support-tickets/${ticket.id}`, { status: 'open' })).status).toBe(200);
+    expect((await onTicket('POST', ticket.token, '/typing')).statusCode).toBe(204);
+    expect((await team.next('ticket.typing')).data).toMatchObject({ ticketId: ticket.id, by: 'requester' });
+  });
+
   it('shows a staff reply’s typing to the requester and a note’s to other staff only', async () => {
     const { ticket } = await customerTicket();
     const page = await ticketStream(ticket.token);

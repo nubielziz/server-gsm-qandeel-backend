@@ -1,11 +1,13 @@
 // Integration tests of the storefront support routes (feature 17): POST /store/v1/tickets, GET /store/v1/tickets/:token,
 // POST /store/v1/tickets/:token/messages and POST /store/v1/tickets/:token/csat against the real API: the anti-bot check, the guest
-// customer, the order link, the ticket token, the reopen on a customer message, and the rating once.
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
+// customer, the order link, the ticket token, the lock on a resolved ticket (a customer message is 409 until staff reopen it), and the
+// rating once.
+import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { CacheKeys } from '../../src/infra/cache';
 import { schema as s } from '../../src/infra/db';
 import { RedisService } from '../../src/infra/redis';
+import { TicketEvents } from '../../src/modules/support/application/ticket-events';
 import type { TicketCategory, TicketPriority } from '../../src/modules/support/db/schema';
 import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches } from '../support/auth';
@@ -523,33 +525,66 @@ describe('POST /store/v1/tickets/:token/messages', () => {
     ]);
   });
 
-  it('makes a ticket that waited on the customer open again, and reopens a resolved one (resolved_at cleared)', async () => {
+  it('makes a ticket that waited on the customer open again and restarts the reply target', async () => {
     const opened = await openByEmail(VALID);
     const { db } = await testDb();
     await db
       .update(s.supportTickets)
       .set({ status: 'pending_customer', slaDueAt: null, assigneeId: null })
       .where(eq(s.supportTickets.token, opened.token));
-    await write(opened.token, { body: 'Here is the photo.' });
-    expect((await ticketRow(opened.token)).status).toBe('open');
-    expect((await ticketRow(opened.token)).slaDueAt).not.toBeNull();
-
-    await db
-      .update(s.supportTickets)
-      .set({ status: 'resolved', resolvedAt: new Date(clock.nowMs()), slaDueAt: null })
-      .where(eq(s.supportTickets.token, opened.token));
     clock.advance(HOUR);
-    expect((await write(opened.token, { body: 'It is still locked.' })).statusCode).toBe(201);
+    await write(opened.token, { body: 'Here is the photo.' });
     const row = await ticketRow(opened.token);
-    expect(row).toMatchObject({ status: 'open', resolvedAt: null });
+    expect(row.status).toBe('open');
     // No category was given: other is low, due 24 hours after this message.
     expect(row.slaDueAt?.toISOString()).toBe('2026-11-09T13:00:00.000Z');
+  });
+
+  it('refuses a message on a resolved ticket with 409 TICKET_RESOLVED and changes nothing; a staff reopen lets it through (B220)', async () => {
+    const opened = await openByEmail(VALID);
     const staff = await supportStaff(t);
-    expect((await staff.get(`/admin/support-tickets/${row.id}`)).body).toMatchObject({
+    const before = await ticketRow(opened.token);
+    expect((await staff.patch(`/admin/support-tickets/${before.id}`, { status: 'resolved' })).status).toBe(200);
+    await sendTicketMails(t);
+    mailbox(t).reset();
+    const { db } = await testDb();
+    const resolved = await ticketRow(opened.token);
+    const messagesBefore = await db.select().from(s.ticketMessages).orderBy(s.ticketMessages.id);
+    const eventsBefore = await ticketMailEvents(db);
+    const rung = spyOn(TicketEvents.prototype, 'message');
+
+    const refused = await write(opened.token, { body: 'It is still locked.' });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.headers['content-type']).toContain('application/problem+json');
+    expect(body(refused)).toMatchObject({
+      status: 409,
+      code: 'TICKET_RESOLVED',
+      detail: 'This ticket is closed. Open a new ticket if you still need help.',
+    });
+    // Nothing written, rung or mailed; the status stays resolved.
+    expect(await ticketRow(opened.token)).toEqual(resolved);
+    expect(resolved).toMatchObject({ status: 'resolved', slaDueAt: null });
+    expect(await db.select().from(s.ticketMessages).orderBy(s.ticketMessages.id)).toEqual(messagesBefore);
+    expect(await ticketMailEvents(db)).toEqual(eventsBefore);
+    expect(rung).not.toHaveBeenCalled();
+    await sendTicketMails(t);
+    expect(mailbox(t).sent).toEqual([]);
+    // Reading and the rating are not writes on the conversation: they still work.
+    expect(body(await show(opened.token))).toMatchObject({ status: 'resolved', canRate: true });
+    expect((await rate(opened.token, { score: 5 })).statusCode).toBe(200);
+    expect((await ticketRow(opened.token)).status).toBe('resolved');
+
+    // Staff reopen it (resolved to open): the customer can write again.
+    expect((await staff.patch(`/admin/support-tickets/${before.id}`, { status: 'open' })).status).toBe(200);
+    const again = await write(opened.token, { body: 'It is still locked.' });
+    expect(again.statusCode).toBe(201);
+    expect(await ticketRow(opened.token)).toMatchObject({
       status: 'open',
       resolvedAt: null,
-      lastPublicAt: '2026-11-08T13:00:00.000Z',
+      lastRequesterMessageId: body(again).id,
     });
+    expect(rung).toHaveBeenCalledWith(before.id, body(again).id);
+    rung.mockRestore();
   });
 
   it('refuses an empty message, answers 404 for a wrong token, and never touches another ticket', async () => {

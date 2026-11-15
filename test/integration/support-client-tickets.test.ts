@@ -467,12 +467,9 @@ describe('GET /client/tickets/:id', () => {
 });
 
 describe('POST /client/tickets/:id/messages', () => {
-  it('writes the merchant’s message, reopens a resolved ticket, rings the doorbell and keeps the files', async () => {
+  it('writes the merchant’s message, opens a ticket that waited on the merchant, rings the doorbell and keeps the files', async () => {
     const { db, clientId, portal } = await merchant();
-    const { ticket } = await merchantTicket(clientId, {
-      status: 'resolved',
-      resolvedAt: new Date(clock.nowMs() - MINUTE),
-    });
+    const { ticket } = await merchantTicket(clientId, { status: 'pending_customer' });
     const file = await insertFileRow(db, 'client', clientId, { filename: 'proof.pdf' });
     const rung = spyOn(TicketEvents.prototype, 'message');
     const res = await portal.call('POST', `/client/tickets/${ticket.id}/messages`, {
@@ -489,7 +486,7 @@ describe('POST /client/tickets/:id/messages', () => {
       attachments: [{ id: file.id, filename: 'proof.pdf', mime: 'application/pdf', size: 1000 }],
     });
     const [row] = await db.select().from(s.supportTickets).where(eq(s.supportTickets.id, ticket.id));
-    expect(row).toMatchObject({ status: 'open', resolvedAt: null, lastRequesterMessageId: res.body.id });
+    expect(row).toMatchObject({ status: 'open', lastRequesterMessageId: res.body.id });
     expect(rung).toHaveBeenCalledWith(ticket.id, res.body.id);
     rung.mockRestore();
     const [stored] = await db.select().from(s.ticketMessages).where(eq(s.ticketMessages.id, res.body.id));
@@ -501,6 +498,45 @@ describe('POST /client/tickets/:id/messages', () => {
     });
     expect(filesOnly.status).toBe(201);
     expect(filesOnly.body.body).toBe('');
+  });
+
+  it('refuses a message on a resolved ticket with 409 TICKET_RESOLVED and changes nothing; a staff reopen lets it through (B220)', async () => {
+    const { db, clientId, portal } = await merchant();
+    const { ticket } = await merchantTicket(clientId, {
+      status: 'resolved',
+      resolvedAt: new Date(clock.nowMs() - MINUTE),
+      slaDueAt: null,
+    });
+    const file = await insertFileRow(db, 'client', clientId, { filename: 'proof.pdf' });
+    const ticketOf = async () =>
+      (await db.select().from(s.supportTickets).where(eq(s.supportTickets.id, ticket.id)))[0]!;
+    const before = await ticketOf();
+    const messagesBefore = await db.select().from(s.ticketMessages);
+    const rung = spyOn(TicketEvents.prototype, 'message');
+    for (const payload of [{ body: 'The problem is back.' }, { body: 'With a file.', fileIds: [file.id] }]) {
+      const res = await portal.call('POST', `/client/tickets/${ticket.id}/messages`, payload);
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({
+        status: 409,
+        code: 'TICKET_RESOLVED',
+        detail: 'This ticket is closed. Open a new ticket if you still need help.',
+      });
+    }
+    // Nothing written, rung or mailed: the row, the thread and the outbox are as they were.
+    expect(await ticketOf()).toEqual(before);
+    expect(await db.select().from(s.ticketMessages)).toEqual(messagesBefore);
+    expect(rung).not.toHaveBeenCalled();
+    expect(await ticketMailEvents(db)).toEqual([]);
+    // Reading the conversation stays open to the merchant.
+    expect((await portal.call('GET', `/client/tickets/${ticket.id}`)).status).toBe(200);
+
+    // Staff reopen it (resolved to open): the merchant can write again.
+    expect((await staff.patch(`/admin/support-tickets/${ticket.id}`, { status: 'open' })).status).toBe(200);
+    const again = await portal.call('POST', `/client/tickets/${ticket.id}/messages`, { body: 'The problem is back.' });
+    expect(again.status).toBe(201);
+    expect(await ticketOf()).toMatchObject({ status: 'open', resolvedAt: null, lastRequesterMessageId: again.body.id });
+    expect(rung).toHaveBeenCalledWith(ticket.id, again.body.id);
+    rung.mockRestore();
   });
 
   it('refuses an empty message, a foreign file and a ticket of another merchant (404, nothing written)', async () => {
@@ -573,6 +609,16 @@ describe('POST /client/tickets/:id/read', () => {
     expect((await portal.call('GET', `/client/tickets/${ticket.id}`)).body.seenByYou).toBe(second);
   });
 
+  it('still moves the mark on a resolved ticket: a read mark is no write on the conversation (B220)', async () => {
+    const { db, clientId, portal } = await merchant();
+    const { ticket } = await merchantTicket(clientId);
+    const reply = await replyAsStaff(ticket.id, 'Done.');
+    expect((await staff.patch(`/admin/support-tickets/${ticket.id}`, { status: 'resolved' })).status).toBe(200);
+    expect((await portal.call('POST', `/client/tickets/${ticket.id}/read`, { upToMessageId: reply })).status).toBe(204);
+    const [row] = await db.select().from(s.supportTickets).where(eq(s.supportTickets.id, ticket.id));
+    expect(row).toMatchObject({ status: 'resolved', requesterSeenMessageId: reply });
+  });
+
   it('refuses the merchant’s own message, a note, a system message and another ticket’s message (422 unknown_message)', async () => {
     const { clientId, portal } = await merchant();
     const { ticket, first } = await merchantTicket(clientId);
@@ -616,6 +662,21 @@ describe('POST /client/tickets/:id/typing', () => {
     expect(typing).toHaveBeenCalledWith(ticket.id, { by: 'requester' });
     typing.mockRestore();
     expect((await db.select().from(s.ticketMessages)).length).toBe(messages);
+  });
+
+  it('answers 204 on a resolved ticket but rings nothing, and rings again after a staff reopen (B220)', async () => {
+    const { clientId, portal } = await merchant();
+    const { ticket } = await merchantTicket(clientId, { status: 'resolved', resolvedAt: new Date(clock.nowMs()) });
+    const typing = spyOn(TicketEvents.prototype, 'typing');
+    for (let n = 0; n < 3; n += 1) {
+      expect((await portal.call('POST', `/client/tickets/${ticket.id}/typing`)).status).toBe(204);
+    }
+    expect(typing).not.toHaveBeenCalled();
+    expect((await staff.patch(`/admin/support-tickets/${ticket.id}`, { status: 'open' })).status).toBe(200);
+    expect((await portal.call('POST', `/client/tickets/${ticket.id}/typing`)).status).toBe(204);
+    expect(typing).toHaveBeenCalledTimes(1);
+    expect(typing).toHaveBeenCalledWith(ticket.id, { by: 'requester' });
+    typing.mockRestore();
   });
 
   it('answers 404 for another merchant’s ticket and an unknown id, and rings nothing', async () => {
