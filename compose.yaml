@@ -1,4 +1,5 @@
-# Local infrastructure for the GSM backend: Postgres, the two Redis roles, S3-compatible storage, Prometheus and a mail catcher.
+# Local infrastructure for the GSM backend: Postgres, the two Redis roles, S3-compatible storage, Prometheus, a mail catcher and the
+# search engine (Typesense).
 # Start with `docker compose up -d`; host ports can be overridden through the GSM_*_PORT variables.
 # Decision records: docs/decisions/004-local-s3-minio.md (MinIO image), 006-redis-topology.md (two Redis roles),
 # 015-observability.md (Prometheus).
@@ -133,8 +134,28 @@ services:
       timeout: 3s
       retries: 12
 
+  # Search engine for the public storefront search (decision 038, feature 29): derived, public, price-free documents rebuilt
+  # from Postgres, so the volume holds nothing that cannot be recreated. Pinned by tag and digest. The image has bash but no
+  # curl or wget, so the healthcheck talks HTTP over /dev/tcp. The dev API key is fixed; production uses secrets.
+  typesense:
+    image: typesense/typesense:30.2@sha256:610f2d34b1f93d00762869da2c67736775e5798d19a2c8b91b014b8a0cc1e110
+    command: ["--data-dir", "/data", "--api-key", "gsm-typesense-dev", "--log-slow-requests-time-ms", "200"]
+    ports:
+      - "${GSM_TYPESENSE_PORT:-8108}:8108"
+    volumes:
+      - typesense-data:/data
+    mem_limit: 768m
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - bash -c 'exec 3<>/dev/tcp/127.0.0.1/8108 && printf "GET /health HTTP/1.0\r\n\r\n" >&3 && grep -q true <&3'
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
 volumes:
   pgdata:
   redis-queue-data:
   minio-data:
   prometheus-data:
+  typesense-data:

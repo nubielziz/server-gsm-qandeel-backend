@@ -104,11 +104,12 @@ writers of indexed facts write an outbox event; never read search results as tru
   `["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8108 && printf \"GET /health HTTP/1.0\\r\\n\\r\\n\" >&3 && grep -q true <&3'"]`.
 - **Production, `deploy/compose.prod.yaml`** (slice B2): service `typesense`, same image and digest, `restart: unless-stopped`,
   `command: ["--data-dir","/data","--api-key","${TYPESENSE_BOOTSTRAP_KEY:?set it}","--log-slow-requests-time-ms","500",
-  "--memory-used-max-percentage","90","--disk-used-max-percentage","85","--db-compaction-interval","86400"]` (compaction daily
+  "--disk-used-max-percentage","85","--db-compaction-interval","86400"]` (compaction daily
   because the nightly rebuild drops and recreates collections; writes stop before the disk Postgres shares fills), volume
   `typesense-data`, network `gsm` only, **no `ports`, no Caddy route**, `mem_limit: ${TYPESENSE_MEM_LIMIT:-1536m}`, the same
-  healthcheck. Step 0 checks whether `--memory-used-max-percentage` reads the cgroup limit or host RAM; if host RAM, the flag is
-  dropped and `mem_limit` + restart + the memory alert carry the rule. `api` and `worker` get `depends_on: typesense: condition:
+  healthcheck. Step 0 showed `--memory-used-max-percentage` never refused a write under a cgroup limit, so the flag is dropped:
+  `mem_limit` + restart + the memory alert (on `typesense_memory_allocated_bytes` against `TYPESENSE_MEM_LIMIT`; `/metrics.json`'s
+  `system_memory_*` report the host's RAM, not the container's) carry the rule. `api` and `worker` get `depends_on: typesense: condition:
   service_started` (never `service_healthy`: the API must boot without search); the API container gets only
   `TYPESENSE_SEARCH_KEY`, the worker only `TYPESENSE_INDEXER_KEY`. `TYPESENSE_BOOTSTRAP_KEY`, `TYPESENSE_SEARCH_KEY` and
   `TYPESENSE_INDEXER_KEY` are added to the secrets list of `docs/OPERATIONS.md`, with the runbook: after a volume wipe or an
@@ -116,7 +117,14 @@ writers of indexed facts write an outbox event; never read search results as tru
   is unchanged (derived data).
 - **Caddy** (`deploy/Caddyfile`, slice B2): the shop host's log filter becomes one `multi_regexp` per field on `request>uri` and
   `request>headers>Referer` holding the existing ticket-token rule and `([?&])q=[^&]*` → `${1}q=[redacted]`, so typed queries
-  (IMEIs, phones, emails) never reach access logs.
+  (IMEIs, phones, emails) never reach access logs. Syntax validated in step 0 with `caddy:2.11-alpine` (one `regexp` line per rule):
+  ```
+  request>uri multi_regexp {
+  	regexp "/tickets/[^/?]+" "/tickets/[token]"
+  	regexp "([?&])q=[^&]*" "${1}q=[redacted]"
+  }
+  ```
+  (the same block for `request>headers>Referer`).
 
 ### 3.2 Config (`src/config/env.ts`, `.env.example`, `docs/OPERATIONS.md`)
 
@@ -204,14 +212,15 @@ rows.
 | Field | Type | Params | From |
 |---|---|---|---|
 | `title` | string | — | English `publicTitle` as displayed: entities decoded, control characters and emoji removed, case and `&` kept (Typesense folds case and drops symbols itself, so `matched_tokens` map onto the shown title) |
+| `title_words` | string | `optional` | `typoSafe(normaliseText(title))`: the title's words without any token that holds a digit. The typo-tolerant copy of the title (step 0, §11: `enable_typos_for_alpha_numerical_tokens` has no effect in 30.2, so `title` itself is searched with no typos) |
 | `title_sort` | string | `sort: true` | `normaliseText(title)` (the `title` sort of §5.3) |
-| `summary` | string | `optional` | English `summary`, first 300 characters, same cleaning |
-| `brand`, `carrier` | string | `optional` | listing facts, trimmed, inner spaces collapsed, case kept (matched, not faceted) |
+| `summary` | string | `optional` | English `summary`, first 300 characters, same cleaning, then `typoSafe` |
+| `brand`, `carrier` | string | `optional` | listing facts, trimmed, inner spaces collapsed, case kept, then `typoSafe` (matched, not faceted) |
 | `brand_key`, `carrier_key` | string | `facet`, `optional` | the same, lower case (facets and `filter_by`; labels in §5.3) |
 | `country` | string | `facet`, `optional` | the ISO-2 code (upper case) |
-| `country_names` | string[] | `optional` | `Intl.DisplayNames('en', {type:'region'})` name plus the alias table of `search/domain/countries.ts` (GB: uk, britain, england, united kingdom; US: usa, america, united states; AE: uae, emirates; SA: ksa, saudi; …) |
-| `networks` | string[] | `optional` | `service_options` labels of list `network` (normalised, at most 50) |
-| `category` | string | `facet` | category `name` |
+| `country_names` | string[] | `optional` | (`typoSafe`) `Intl.DisplayNames('en', {type:'region'})` name plus the alias table of `search/domain/countries.ts` (GB: uk, britain, england, united kingdom; US: usa, america, united states; AE: uae, emirates; SA: ksa, saudi; …) |
+| `networks` | string[] | `optional` | `service_options` labels of list `network` (normalised, `typoSafe`, at most 50) |
+| `category` | string | — | category `name`, `typoSafe` (not a facet: facets and labels use `category_id`) |
 | `category_id` | int32 | `facet` | |
 | `type` | string | `facet` | `imei|server|remote|file` |
 | `codes` | string[] | `optional` | model codes and variants (§4.3) |
@@ -236,6 +245,9 @@ Display fields (slug, picture, ETA) are not stored: the API reads them from Post
   the joined form without `-./_` (`sma525f`), its parts when it had separators (`sm`, `a525f`), and the form without a leading
   1-3-letter prefix when that prefix was separated (`a525f`). Deduplicated, at most 100 per document. Sources: title,
   `services.name` (its codes only; the name itself is not indexed), model option labels.
+- `typoSafe(s)` (step 0 rule, §11): drops every token that holds a digit; a value that becomes empty is left out. **A field searched with
+  `num_typos > 0` never holds a token with a digit**; such tokens are matched only through `title`, `codes`, `joins` and `models`
+  (all searched with 0 typos). `extractCodes` therefore also reads brand, carrier, network labels and the category name.
 - `wordWindows(title)`: every window of 2-4 consecutive words of the normalised title, concatenated (`iphone15`, `iphone15pro`,
   `iphone15promax`, `15promax`), when at most 24 characters; at most 60 per document.
 
@@ -387,17 +399,18 @@ recorded (the results page shows the same "Check this IMEI" link).
 One `multiSearch` (timeout `SEARCH_SUGGEST_TIMEOUT_MS`) with three searches (`search/domain/ranking.ts` holds the parameters):
 1. **terms**: `q`, `query_by: q`, `prefix: true`, `num_typos: 1`, `max_candidates: 16`, `per_page: 10`, `sort_by:
    _text_match:desc,weight:desc,length:asc` (ties fixed: the shorter phrase first).
-2. **services**: `query_by: title,codes,joins,models,brand,carrier,networks,country_names,category,summary`, `query_by_weights:
-   10,10,8,6,6,5,4,5,4,2`, `num_typos: 2,0,0,0,1,1,1,1,1,1`, `prefix: true,true,true,true,true,true,true,true,true,false` (model
-   numbers match while typed: `a525`, `sm-g99`), `enable_typos_for_alpha_numerical_tokens: false` (SM-A525F never finds SM-A526F;
-   `sma526f` is not a prefix of `sma525f`), `enable_typos_for_numerical_tokens: false`, `drop_tokens_threshold: 0`,
+2. **services**: `query_by: title,title_words,codes,joins,models,brand,carrier,networks,country_names,category,summary`,
+   `query_by_weights: 10,9,10,8,6,6,5,4,5,4,2`, `num_typos: 0,2,0,0,0,1,1,1,1,1,1`, `prefix:
+   true,true,true,true,true,true,true,true,true,true,false` (model numbers match while typed: `a525`, `sm-g99`; typos only on the
+   digit-free fields, so SM-A525F never finds SM-A526F: step 0 showed that `enable_typos_for_alpha_numerical_tokens: false` alone does
+   not stop it in 30.2), `enable_typos_for_alpha_numerical_tokens: false` (kept, harmless), `enable_typos_for_numerical_tokens: false`, `drop_tokens_threshold: 0`,
    `split_join_tokens: fallback`, `synonym_prefix: true`, `synonym_num_typos: 1`, `max_candidates: 16`, `prioritize_exact_match:
    true`, `sort_by: _text_match:desc,_eval(in_stock:true):desc,popularity:desc` (no bucketing: text match decides; `in_stock`
    only breaks exact ties, which is intended), `facet_by: brand_key,carrier_key,country,category_id`, `max_facet_values: 10`,
-   `per_page: 6`, `include_fields: id`, `highlight_fields: title,brand,carrier,category,codes`.
+   `per_page: 6`, `include_fields: id`, `highlight_fields: title,title_words,brand,carrier,category,codes`.
 3. **nearby**: the same as 2 with `drop_tokens_threshold: 6` (drop words until results exist), `typo_tokens_threshold: 6` (look for
-   typo variants until 6 results exist; the default 1 would switch typos off after one hit), `num_typos: 2` on the text fields
-   (title, brand, carrier, networks, country_names, category, summary; codes, joins, models stay 0), `per_page: 12`.
+   typo variants until 6 results exist; the default 1 would switch typos off after one hit), `num_typos: 2` on the digit-free text
+   fields (title_words, brand, carrier, networks, country_names, category, summary; title, codes, joins, models stay 0), `per_page: 12`.
 Assembly (`search/domain/suggest-assembly.ts`, pure): services = hits of 2, then hits of 3 not already present ("nearby", never an id
 of 2), at most 6, after the re-check: `searchableIds` on the ids, the cards, and the price of the survivors through
 `StorefrontQuotes.pricedSellable(db, context, sellable)` (split out of `priced`, so the sellable and listing reads are not repeated;
@@ -456,7 +469,7 @@ boost; typo matches score lower), then in-stock and popularity break exact ties;
 override, and keep every query word for the organic part (`remove_matched_tokens: false`). Synonyms apply to the query words with
 one typo and to prefixes (`synonym_prefix`, `synonym_num_typos: 1`), so `frp bypas` and `iclo` still expand.
 `didYouMean` (`search/domain/did-you-mean.ts`, pure), over the main search's hits with `highlight_fields:
-title,brand,carrier,category,codes`:
+title,title_words,brand,carrier,category,codes`:
 - The checked words are the complete query words (in suggest the last word only counts when the input ends with a space); words
   containing a digit are never corrected.
 - A word `w` is **unknown** when no hit's `matched_tokens` holds `w` exactly or as a prefix, and `w` is not inside an enabled
@@ -820,3 +833,63 @@ should-fix items taken differently or left out, with the reason):
   request, which keeps "a stale hit is dropped, never shown" exact.
 
 Approved by Opus 5.5 (planner), 2026-11-15, after two adversarial reviews
+
+### Step 0 results (lead, 2026-11-16, on the dev node `typesense/typesense:30.2`; scripts in `/home/saifi/gsm-project/.typesense-step0/`)
+These answers bind B1, B2, C and S; where they changed the text above, the text above is already corrected.
+- **Image.** Digest `sha256:610f2d34…1e110` matches. The image (Ubuntu 22.04) has `bash` and `grep` but **no `curl` or `wget`**: the
+  healthcheck is the `/dev/tcp` variant (in `compose.yaml` on `main`, container healthy).
+- **Keys.** A key created with a fixed `value` works (the 201 echoes the value once). `collections: ["<prefix>.*"]` is a regex:
+  the scoped key reads and writes only matching collections; another prefix answers **401** `{"message": "Forbidden - a valid
+  'x-typesense-api-key' header must be sent."}`; `GET /collections` with a scoped key lists only matching collections. The search
+  key (`documents:search`, `aliases:get`, `collections:get`) can search through the alias and `GET` the alias and the collection;
+  a write answers 401. `GET /health` needs no key. The indexer key reads `/metrics.json` and `/debug` and **can write a synonym set
+  of any name** (global endpoint, as §3.3 accepts). A wrong key answers 401 with the same message.
+- **multi_search.** HTTP 200 even when a sub-search fails; the failing entry is `{"code":404,"error":"Could not find a field named
+  'nope' in the schema."}` or `{"code":404,"error":"Collection not found"}` in `results[i]` (§3.4's rule stands). A missing alias or
+  collection on a plain search answers 404 `{"message":"Collection not found"}`.
+- **Import.** HTTP 200 with one JSON line per input line, in order: `{"success":true}` or `{"code":400,"error":"Field 'in_stock' must
+  be a bool.","success":false}` (no id in the line: map failures by line index). Delete by `filter_by=id:[…]` of absent ids answers
+  200 `{"num_deleted":0}`. Export streams one JSON line per document.
+- **Disk refusal.** With `--disk-used-max-percentage` exceeded every write (create collection, document, import) answers **422**
+  `{"message":"Rejecting write: running out of resource type: OUT_OF_DISK"}`; searches still answer; `/health` answers 200
+  `{"ok":true,"resource_error":"OUT_OF_DISK"}`. So `SearchUnavailable{kind:'resources'}` = a 422 whose message starts with
+  `Rejecting write: running out of resource`, and the health indicator reports `resource_error` as a failure.
+- **Memory flag.** `--memory-used-max-percentage` 10 % and 20 % under a 256 MiB cgroup (24 % used; host 52-61 %) never refused a
+  write: unreliable here, dropped (§3.1).
+- **Model codes and typos (changes §4.2, §4.3, §5.2).** `enable_typos_for_alpha_numerical_tokens: false` (with or without
+  `enable_typos_for_numerical_tokens: false`) does **not** stop typo matches on letter+digit tokens in 30.2: `sma527f` found SM-A525F
+  and SM-A526F through `title` (2 typos), and `a525f` found SM-A526F once `typo_tokens_threshold` widened. `num_typos: 0` per field
+  does stop it. Hence `title` (0 typos) + `title_words` (2 typos, `typoSafe`), and every typo-searched field is `typoSafe`.
+  Verified on a split collection: `sma527f` → nothing; `sma525f` → only SM-A525F; `samsng sma525f` → SM-A525F (the typo lands on
+  `title_words`, the code on `title`: tokens match across fields); `iphne 15 pro` → the iPhone 15 Pro Max service only; `iphone 17`
+  → nothing (nearby then drops words); `a52` → both A52x services (prefix, no typo); `sm a525f` and `sm-g99` (Typesense drops the `-`
+  and matches the prefix of `smg991b`) behave as §4.3 expects. The golden set (§8) must hold `sma527f` (no SM-A52x hit in services
+  **or** nearby) and `samsng a525f`.
+- **Synonyms.** A multi-way set (`frp` ↔ `google account lock`) expands both ways. `synonym_num_typos: 1` works (`gogle account
+  lock`). `synonym_prefix: true` expands only when the input covers the **whole** synonym phrase up to a prefix of its last word
+  (`google account lo` expands, `google acc` does not); one-word synonyms expand from any prefix (`iclo`). Terms completion (search 1)
+  covers the partial phrases.
+- **Curation.** `curated: true` marks pinned hits. A rule's own `filter_curated_hits: true` wins over the search parameter (a
+  parameter `false` does not undo it); with the rule's `false`, the parameter `filter_curated_hits: true` applies the page filters to
+  pins. **Rule for B1/B2:** `set-conversion.ts` writes `filter_curated_hits: true` on every rule, and every search also passes
+  `filter_curated_hits: true`, so a pin never bypasses a filter. `remove_matched_tokens: false` keeps every query word for the organic
+  part (`network unlock` with a `contains` rule on `unlock` returned the pin plus the organic `network unlock` match). The pinned
+  document is left out of the organic set, so with `drop_tokens_threshold ≥ 1` the organic part may widen by dropping words when
+  only the pin matched every word (seen on `samsung frp`); search 2 (`drop_tokens_threshold: 0`) is unaffected; the results page
+  accepts it. `enable_overrides` has no effect in 30.2; `enable_curations: false` switches curation off (use it, not
+  `enable_overrides`, wherever a search must ignore pins).
+- **Typo threshold.** With the default `typo_tokens_threshold: 1` typos are tried only when exact matches are fewer than 1; search
+  3's `typo_tokens_threshold: 6` widens as §5.2 says (and is exactly why the typo-safe rule above is needed).
+- **Caddy.** `multi_regexp` takes one `regexp "<pattern>" "<replacement>"` line per rule (§3.1 has the block); validated and run:
+  `/store/v1/search/suggest?lang=en&q=my%40mail.com` logs `q=[redacted]`, a Referer `…/services?q=354123456789012&brand=x` logs
+  `q=[redacted]&brand=x`, ticket tokens stay `[token]`.
+- **Sizing.** The owner's DB `gsm` holds 25 services and **one listing (Arabic)**, so its English index starts **empty** until
+  English listings exist (`gsm_storefront`, the isolated demo DB, has the seed's listings). 1142 supplier services: names average 55
+  characters (p90 89, max 249). 100 000 synthetic documents built from those names with §4.2-§4.3 (≈1 KB JSON each with codes,
+  joins and `title_words`): import 26 s in batches of 500 (≈3 800 documents/s); allocated memory 77 → 203 MB, resident 290 MB,
+  container 390 MiB with page cache; data dir 223 MB; a services + nearby `multi_search` with four facets on 100k answered in
+  33-103 ms cold. `mem_limit` stays **768 MB in dev and 1.5 GB in production** (a rebuild peak is about twice the services part plus
+  the terms). The Postgres side of a 100k build is measured by B1's rebuild test with `test/fixtures/search/generator.ts`.
+- **Worktrees.** `../backend-29` (`feat/backend-29`, `.env.test`: `gsm_29_test`, Redis DB 8, so the prefix is `gsm_29_test_`),
+  `../frontend-admin-29` (`feat/console-29`), `../storefront-29` (`feat/storefront-29`, own `npm ci`). The dev node is shared:
+  every suite cleans its own prefix (§3.3), and nothing outside the step-0 prefix `s0_` was created here (cleaned).
