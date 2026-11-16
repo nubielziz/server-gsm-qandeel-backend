@@ -81,6 +81,14 @@ rules), and the stock flag. The plan's target of 4 is not reachable with catalog
 answers "sellable, priced and in stock" for a page of ids in one query (a later B-entry). `test/integration/search-api.test.ts` asserts the
 measured 12 so a regression shows.
 
+## Trying it locally
+
+The owner's development database has no English listing of its own, so its index starts empty. `bun scripts/seed-search-demo.ts` adds
+the ~60 English services of the golden fixture (each with a retail price and a listed English listing, service codes `DEMO-SEARCH-…`)
+and writes `catalog.services_changed`, so a running worker indexes them within seconds; `bun scripts/search-rebuild.ts` then rebuilds
+the terms collection (phrase completions are built by the rebuild, not by each sync). `--remove` takes the demo away again (a demo
+service with an order is archived instead). Development only: the script refuses production.
+
 ## Load test (`bun run test:load:search`, not in `check`)
 
 The lead runs it once before the merge and records the table here (targets: suggest p95 <= 50 ms, engine part <= 15 ms, results p95

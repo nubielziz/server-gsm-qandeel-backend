@@ -48,7 +48,8 @@ export async function requestSearchRebuild(config: AppConfig, origin: string, at
   });
   queue.on('error', () => undefined);
   try {
-    await connection.connect();
+    // The queue connects the lazy client itself; a second connect() would throw "Redis is already connecting/connected".
+    await queue.waitUntilReady();
     const jobId = queueJobId(
       'rebuild',
       origin,
