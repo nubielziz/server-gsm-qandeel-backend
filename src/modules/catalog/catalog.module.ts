@@ -3,6 +3,7 @@
 // of them holds a connection: they take the caller's database handle); the admin routes of the catalog are CatalogAdminModule
 // (docs/ARCHITECTURE.md § 2).
 import { Global, Module } from '@nestjs/common';
+import { CatalogSignals } from './application/catalog-signals';
 import { ClientGroupDirectory } from './application/client-group-directory';
 import { ListedPrices } from './application/listed-prices';
 import { InventoryStock } from './application/inventory-stock';
@@ -26,6 +27,7 @@ import { ServiceImporter } from './application/service-importer';
 @Global()
 @Module({
   providers: [
+    CatalogSignals,
     ClientGroupDirectory,
     PriceResolver,
     RetailPrices,
@@ -37,6 +39,7 @@ import { ServiceImporter } from './application/service-importer';
     TacDirectory,
   ],
   exports: [
+    CatalogSignals,
     ClientGroupDirectory,
     PriceResolver,
     RetailPrices,

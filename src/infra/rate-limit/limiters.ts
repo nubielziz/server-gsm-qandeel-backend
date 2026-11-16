@@ -28,7 +28,7 @@ export interface LimiterConfig {
  * client IP + help article id (`RateLimitService.compositeKey`); `media` the client IP; `account-mail` an account and a kind of
  * mail (`accountMailKey`); `broadcast-email` and `broadcast-telegram` the constant `all` (one budget for the whole system,
  * feature 23); `stream-connect` the first cap key of a live stream (`session:<id>`, decision 037); `ticket-chat` the client IP;
- * `ticket-message` the ticket id; `ticket-open` the account (`customer:<id>` or `client:<id>`) (feature 28).
+ * `ticket-message` the ticket id; `ticket-open` the account (`customer:<id>` or `client:<id>`) (feature 28); `search-suggest` the client IP (feature 29).
  *
  * @see docs/decisions/021-rate-limiting.md
  */
@@ -131,6 +131,12 @@ export const RATE_LIMITERS = {
     windowSeconds: 60 * 60,
     description:
       'Tickets a signed-in customer or merchant opens without Turnstile (POST /store/v1/me/tickets, POST /client/tickets): per account an hour (feature 28).',
+  },
+  'search-suggest': {
+    points: 1200,
+    windowSeconds: 60,
+    description:
+      'The search-as-you-type route (GET /store/v1/search/suggest), instead of `ip`: a visitor typing sends a request every 150 ms, so two typing visitors behind one carrier NAT must fit; the results page keeps `ip` (feature 29).',
   },
   media: {
     points: 1200,

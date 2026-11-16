@@ -41,6 +41,7 @@ import {
   updateServiceRow,
 } from '../infra/service.repository';
 import { CatalogPriceVersion } from './catalog-price-version';
+import { CatalogSignals } from './catalog-signals';
 import { recomputeEffectiveCost } from './effective-cost';
 import { PriceResolver } from './price-resolver';
 
@@ -271,6 +272,7 @@ export class ServiceAdminService {
     private readonly audit: AuditService,
     private readonly resolver: PriceResolver,
     private readonly priceVersion: CatalogPriceVersion,
+    private readonly signals: CatalogSignals,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -366,6 +368,7 @@ export class ServiceAdminService {
       }
       await recomputeEffectiveCost(tx, [service.id]);
       this.priceVersion.bumpAfterCommit(work);
+      await this.signals.servicesChanged(tx, [service.id], 'service');
       await this.audit.record(tx, {
         action: 'created service',
         entityType: 'service',
@@ -445,6 +448,8 @@ export class ServiceAdminService {
       }
       // Any change can move what merchants see (the price, the status, the category), so cached price lists start over.
       this.priceVersion.bumpAfterCommit(work);
+      // ... and what the shop's search holds (status, category, the name's model codes): feature 29.
+      await this.signals.servicesChanged(tx, [id], 'service');
       await this.audit.record(tx, {
         action: 'edited service',
         entityType: 'service',
@@ -474,6 +479,7 @@ export class ServiceAdminService {
       const service = await lockLiveService(tx, id);
       if (!service) throw notFound();
       this.priceVersion.bumpAfterCommit(work);
+      await this.signals.servicesChanged(tx, [id], 'service');
       if (await isServiceReferenced(tx, id)) {
         const deactivated = await deactivateServiceRules(tx, id);
         const archivedAt = this.clock.now();

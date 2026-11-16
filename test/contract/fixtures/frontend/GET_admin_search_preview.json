@@ -1,0 +1,48 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "engine": "typesense",
+    "hits": [
+      {
+        "serviceId": 5,
+        "title": "AT&T USA Premier Unlock",
+        "position": 1,
+        "pinned": true
+      },
+      {
+        "serviceId": 6,
+        "title": "T-Mobile USA Unlock",
+        "position": 2,
+        "pinned": false
+      },
+      {
+        "serviceId": 7,
+        "title": "Verizon iPhone Unlock",
+        "position": 3,
+        "pinned": false
+      },
+      {
+        "serviceId": 8,
+        "title": "Vodafone UK iPhone Unlock",
+        "position": 4,
+        "pinned": false
+      },
+      {
+        "serviceId": 9,
+        "title": "EE UK Unlock",
+        "position": 5,
+        "pinned": false
+      },
+      {
+        "serviceId": 10,
+        "title": "Orange France Unlock",
+        "position": 6,
+        "pinned": false
+      }
+    ],
+    "hiddenIds": []
+  }
+}

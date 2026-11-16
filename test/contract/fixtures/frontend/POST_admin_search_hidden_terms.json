@@ -1,0 +1,12 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "term": "harvest sample text.",
+    "note": "",
+    "createdAt": "2026-10-31T12:00:00.000Z",
+    "id": 2
+  }
+}

@@ -19,6 +19,7 @@ import { StorefrontPublicController } from './controllers/storefront-public.cont
 @Module({
   controllers: [StorefrontPublicController],
   providers: [StorefrontQuotes, StorefrontPolicies, StorefrontCatalogService],
-  exports: [StorefrontQuotes, StorefrontPolicies],
+  // The catalog list builds the cards of the search results too (feature 29).
+  exports: [StorefrontQuotes, StorefrontPolicies, StorefrontCatalogService],
 })
 export class StorefrontPublicModule {}

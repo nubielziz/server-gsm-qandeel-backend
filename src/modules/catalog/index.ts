@@ -4,6 +4,15 @@
 // module. Other modules import only this file.
 // Order matters: `CatalogModule` and the leaves other modules use come first, ahead of `CatalogAdminModule`, whose controllers
 // lead into identity (decision 032).
+export {
+  CATALOG_CATEGORY_CHANGED_EVENT,
+  CATALOG_SERVICES_CHANGED_EVENT,
+  CatalogSignals,
+  MAX_IDS_PER_EVENT,
+  SERVICE_CHANGE_REASONS,
+  idChunks,
+} from './application/catalog-signals';
+export type { ServiceChangeReason } from './application/catalog-signals';
 export { ClientGroupDirectory, RETAIL_GROUP_KIND } from './application/client-group-directory';
 export type { ClientGroupRef, FindGroupOptions } from './application/client-group-directory';
 export { recomputeEffectiveCost } from './application/effective-cost';

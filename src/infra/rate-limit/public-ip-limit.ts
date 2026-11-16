@@ -20,6 +20,9 @@ const TICKET_CHAT_PATH = /^\/store\/v1\/tickets\/[^/]+\/(typing|read)$/;
 /** The public service pictures (feature 22): counted against `media`, not `ip`. */
 const MEDIA_PATH = '/store/v1/media/';
 
+/** The search-as-you-type route (feature 29): counted against `search-suggest`, not `ip`. */
+const SUGGEST_PATH = '/store/v1/search/suggest';
+
 /**
  * Picks the limiter for a request on a public surface.
  *
@@ -34,7 +37,7 @@ const MEDIA_PATH = '/store/v1/media/';
  * another (the per-key limit comes too late for that). The admin console counts a large body the same way (its service picture upload
  * is multipart, feature 22). The public pictures (`/store/v1/media/`) have their own budget (`media`, 1200 a minute): a catalog page
  * shows up to 100 of them and they must not use up the store's `ip` budget. The typing pings and read marks of a ticket page
- * (`…/tickets/:token/typing` and `…/read`, feature 28) count against `ticket-chat` (120 a minute) instead of `token`.
+ * (`…/tickets/:token/typing` and `…/read`, feature 28) count against `ticket-chat` (120 a minute) instead of `token`. The suggest route of the search (`/store/v1/search/suggest`, feature 29) counts against `search-suggest` (1200 a minute).
  *
  * @param path the route template or decoded path of the request (`requestPath`)
  * @param access the `access` of the matched route's contract; `undefined` for an unknown route
@@ -53,6 +56,7 @@ export function publicLimiterFor(
       // A ticket page pings typing every few seconds and marks what it showed: its own budget, so the token lookups stay 30 a minute.
       if (access === 'ticket-token' && TICKET_CHAT_PATH.test(path)) return 'ticket-chat';
       if (access !== undefined && TOKEN_ACCESS.has(access)) return 'token';
+      if (path === SUGGEST_PATH) return 'search-suggest';
       return path.startsWith(MEDIA_PATH) ? 'media' : 'ip';
     case 'admin':
       // The sign-in routes count per IP whatever their access: the 2FA steps run on a pending session (P2.6).

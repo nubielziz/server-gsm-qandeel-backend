@@ -1,0 +1,81 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "5"
+  },
+  "body": [
+    {
+      "id": 1,
+      "kind": "multi",
+      "root": null,
+      "terms": [
+        "frp",
+        "google account lock",
+        "frp lock"
+      ],
+      "isEnabled": true,
+      "note": "Visitors search for the old name and the new one.",
+      "createdAt": "2026-10-11T12:00:00.000Z",
+      "updatedAt": "2026-10-11T12:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "kind": "multi",
+      "root": null,
+      "terms": [
+        "icloud",
+        "activation lock",
+        "icloud lock"
+      ],
+      "isEnabled": true,
+      "note": "",
+      "createdAt": "2026-10-11T12:00:00.000Z",
+      "updatedAt": "2026-10-13T12:00:00.000Z"
+    },
+    {
+      "id": 3,
+      "kind": "multi",
+      "root": null,
+      "terms": [
+        "unlock",
+        "network unlock",
+        "carrier unlock",
+        "sim unlock"
+      ],
+      "isEnabled": true,
+      "note": "",
+      "createdAt": "2026-10-11T12:00:00.000Z",
+      "updatedAt": "2026-10-15T12:00:00.000Z"
+    },
+    {
+      "id": 4,
+      "kind": "multi",
+      "root": null,
+      "terms": [
+        "imei check",
+        "blacklist check",
+        "gsma check",
+        "clean check"
+      ],
+      "isEnabled": true,
+      "note": "",
+      "createdAt": "2026-10-11T12:00:00.000Z",
+      "updatedAt": "2026-10-17T12:00:00.000Z"
+    },
+    {
+      "id": 5,
+      "kind": "multi",
+      "root": null,
+      "terms": [
+        "kg lock",
+        "knox guard",
+        "knox guard lock"
+      ],
+      "isEnabled": true,
+      "note": "",
+      "createdAt": "2026-10-11T12:00:00.000Z",
+      "updatedAt": "2026-10-19T12:00:00.000Z"
+    }
+  ]
+}

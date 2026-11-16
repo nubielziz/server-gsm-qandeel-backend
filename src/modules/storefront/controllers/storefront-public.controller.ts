@@ -1,9 +1,10 @@
 // HTTP controller of the public storefront catalog (map domain H, stage 14): configuration, the service list and one service page.
 // Thin: the rules live in StorefrontCatalogService. The answers carry a short Cache-Control for the browser.
-import { Controller, Param, Query, Res } from '@nestjs/common';
-import type { FastifyReply } from 'fastify';
+import { Controller, Param, Query, Req, Res } from '@nestjs/common';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
 import { StorefrontCatalogService } from '../application/storefront-catalog.service';
+import { visitorOf } from '../search/controllers/visitor';
 import {
   getStoreConfig,
   listStoreCategories,
@@ -46,17 +47,22 @@ export class StorefrontPublicController {
    * Lists the service pages on sale.
    *
    * @param query the parsed list request
-   * @param reply the reply, for the cache header
+   * @param request the request, for the search statistics when `q` is set (address hash, User-Agent, prefetch)
+   * @param reply the reply, for the cache header and, with `q`, which engine answered
    * @returns the page of services and the exact total
    * @route GET /store/v1/services
    */
   @Route(listStoreServices)
-  list(
+  async list(
     @Query() query: QueryOf<typeof listStoreServices>,
+    @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<ResultOf<typeof listStoreServices>> {
     reply.header('cache-control', PUBLIC_CACHE_CONTROL);
-    return this.catalog.list(query);
+    const page = await this.catalog.list(query, visitorOf(request));
+    if (page.engine !== undefined) reply.header('x-search-engine', page.engine);
+    if (page.truncated === true) reply.header('x-search-truncated', 'true');
+    return page;
   }
 
   /**

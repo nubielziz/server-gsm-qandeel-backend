@@ -35,6 +35,8 @@ decisions: `docs/decisions/`; contract: `docs/contract/`.
   unique `idempotency_key`; lock `ledger_accounts` `FOR UPDATE` in id order; never floats.
 - Orders: explicit state machine, every transition writes `order_events`; B2C never dispatches before payment;
   supplier timeout → `needs_attention`, hold kept, no automatic re-send.
+- Search: Typesense holds derived, public, price-free documents; writers of indexed facts write an outbox event; never
+  read search results as truth (decision 038).
 - Never `import type` a class that Nest injects (Bun needs the value import for decorator metadata).
 
 ## Redis, cache, workers

@@ -1,0 +1,28 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "engine": {
+      "status": "ok",
+      "version": "30.2",
+      "memoryBytes": 48234496
+    },
+    "schemaVersion": 1,
+    "collection": "gsm_services_v1_20261116034000",
+    "documents": 14,
+    "expectedDocuments": 14,
+    "lastSyncAt": "2026-10-31T11:58:00.000Z",
+    "lastReconcileAt": "2026-10-31T11:49:00.000Z",
+    "lastRebuildAt": "2026-10-30T22:00:00.000Z",
+    "lastTermsBuildAt": "2026-10-31T11:20:00.000Z",
+    "queued": 0,
+    "failed": 0,
+    "rebuild": {
+      "running": false,
+      "startedAt": null
+    },
+    "lastError": null
+  }
+}

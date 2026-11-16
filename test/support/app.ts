@@ -35,7 +35,12 @@ import { MoneyAdminModule } from '../../src/modules/money/money-admin.module';
 import { OrderTrackingModule, OrdersAdminModule } from '../../src/modules/orders';
 import { CheckoutModule, GrowthModule } from '../../src/modules/customers';
 import { ImeiCheckModule, RiskAdminModule } from '../../src/modules/risk';
-import { StorefrontAdminModule, StorefrontContentModule, StorefrontPublicModule } from '../../src/modules/storefront';
+import {
+  SearchHttpModule,
+  StorefrontAdminModule,
+  StorefrontContentModule,
+  StorefrontPublicModule,
+} from '../../src/modules/storefront';
 import { SuppliersAdminModule } from '../../src/modules/suppliers';
 import {
   SupportAdminModule,
@@ -78,6 +83,10 @@ export const PRODUCTION_ENV: Record<string, string> = {
   MAIL_FROM: 'GSM <noreply@gsm.example>',
   LOG_LEVEL: 'warn',
   TURNSTILE_SECRET_KEY: 'turnstile-secret-for-tests',
+  // Feature 29: the search engine of production; the keys are the process keys a production API and worker require.
+  TYPESENSE_URL: 'http://typesense.internal:8108',
+  TYPESENSE_SEARCH_KEY: 's'.repeat(32),
+  TYPESENSE_INDEXER_KEY: 'i'.repeat(32),
 };
 
 /**
@@ -127,6 +136,8 @@ const NEEDS_DATABASE_AND_CACHE = [
   OrderTrackingModule,
   StorefrontPublicModule,
   StorefrontAdminModule,
+  // Feature 29: the search routes read Postgres, the cache and the engine's client on every request.
+  SearchHttpModule,
   ImeiCheckModule,
   RiskAdminModule,
   CheckoutModule,

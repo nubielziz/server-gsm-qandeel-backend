@@ -4,6 +4,7 @@ import { Injectable } from '@nestjs/common';
 import { AppError, type FieldError } from '../../../common/errors';
 import { DbService } from '../../../infra/db';
 import { AuditService } from '../../platform';
+import { CatalogSignals } from './catalog-signals';
 import type { ServiceFieldType, ServiceOptionList } from '../db/schema';
 import { duplicateFieldKeys, duplicateOptionValues, isValidPattern } from '../domain/service-parts';
 import {
@@ -64,6 +65,7 @@ export class ServicePartsService {
   constructor(
     private readonly db: DbService,
     private readonly audit: AuditService,
+    private readonly signals: CatalogSignals,
   ) {}
 
   /**
@@ -121,6 +123,8 @@ export class ServicePartsService {
 
       const before = await listOptionRows(tx, serviceId);
       const saved = await replaceOptionRows(tx, serviceId, options);
+      // The model and network labels are indexed by the shop's search (feature 29).
+      await this.signals.servicesChanged(tx, [serviceId], 'options');
       await this.audit.record(tx, {
         action: 'replaced option lists of service',
         entityType: 'service',

@@ -141,6 +141,8 @@ export const modules = [
     name: 'Storefront & content',
     domain: 'H',
     tables: ['service_listings', 'content_pages', 'help_articles', 'legal_documents'],
+    // Feature 29 (search on Typesense, decision 038): synonyms, pins, hidden terms, the daily term counts and the index state.
+    additionalTables: ['search_synonyms', 'search_pins', 'search_hidden_terms', 'search_terms_daily', 'search_index_state'],
     rows: [
       /^admin \S+ \/admin\/(service-listings|content-pages|help-articles|legal-documents|storefront)(\/|$)/,
       /^store GET \/store\/v1\/(config|services|pages|help)(\/|$)/,

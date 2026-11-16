@@ -1,0 +1,110 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "days": 30,
+    "totals": {
+      "searches": 2840,
+      "zeroResults": 216,
+      "terms": 214
+    },
+    "topTerms": [
+      {
+        "term": "iphone 15 unlock",
+        "searches": 412,
+        "visitors": 188,
+        "zeroResults": 0
+      },
+      {
+        "term": "icloud",
+        "searches": 361,
+        "visitors": 205,
+        "zeroResults": 12
+      },
+      {
+        "term": "frp",
+        "searches": 298,
+        "visitors": 160,
+        "zeroResults": 0
+      },
+      {
+        "term": "samsung unlock",
+        "searches": 254,
+        "visitors": 140,
+        "zeroResults": 6
+      },
+      {
+        "term": "imei check",
+        "searches": 233,
+        "visitors": 171,
+        "zeroResults": 0
+      },
+      {
+        "term": "vodafone uk",
+        "searches": 187,
+        "visitors": 120,
+        "zeroResults": 0
+      },
+      {
+        "term": "o2 uk unlock",
+        "searches": 164,
+        "visitors": 98,
+        "zeroResults": 0
+      },
+      {
+        "term": "sim unlock",
+        "searches": 141,
+        "visitors": 90,
+        "zeroResults": 0
+      },
+      {
+        "term": "xiaomi mi account",
+        "searches": 96,
+        "visitors": 61,
+        "zeroResults": 41
+      },
+      {
+        "term": "blacklist check",
+        "searches": 88,
+        "visitors": 70,
+        "zeroResults": 0
+      },
+      {
+        "term": "mi account remove",
+        "searches": 71,
+        "visitors": 49,
+        "zeroResults": 71
+      },
+      {
+        "term": "huawei id",
+        "searches": 54,
+        "visitors": 38,
+        "zeroResults": 22
+      }
+    ],
+    "zeroResultTerms": [
+      {
+        "term": "mi account remove",
+        "searches": 71,
+        "lastSeen": "2026-10-31T10:00:00.000Z"
+      },
+      {
+        "term": "bootloader unlock",
+        "searches": 33,
+        "lastSeen": "2026-10-30T10:00:00.000Z"
+      },
+      {
+        "term": "tmobile premium",
+        "searches": 19,
+        "lastSeen": "2026-10-28T14:00:00.000Z"
+      },
+      {
+        "term": "apple watch",
+        "searches": 12,
+        "lastSeen": "2026-10-26T14:00:00.000Z"
+      }
+    ]
+  }
+}

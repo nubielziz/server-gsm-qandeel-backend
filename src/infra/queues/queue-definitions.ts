@@ -1,4 +1,4 @@
-// The BullMQ queue registry (decision 020): the eleven queues, each with its concurrency, retry policy and stall rule.
+// The BullMQ queue registry (decision 020): the twelve queues, each with its concurrency, retry policy and stall rule.
 // Add a queue here and in docs/queues.md; src/infra/queues/queue-definitions.spec.ts fails when the two disagree.
 import type { JobsOptions } from 'bullmq';
 
@@ -42,7 +42,9 @@ export const FAILED_JOB_MAX_AGE_SECONDS = 14 * 24 * 60 * 60;
 /**
  * Every queue, by name.
  *
- * Why: decision 020 names the ten queues; feature 23 added the eleventh, `notification-broadcasts`. The numbers are the starting point for one worker process; the feature that
+ * Why: decision 020 names the ten queues; feature 23 added the eleventh, `notification-broadcasts`, and feature 29 the twelfth,
+ * `search-index` (decision 038: concurrency 1, so the sync is the only writer of the search documents and two writes never race on
+ * one document). The numbers are the starting point for one worker process; the feature that
  * owns a queue tunes them (and its section of docs/queues.md) when it knows the real load. `supplier-dispatch` has
  * `maxStalledCount: 0` because a dispatch that was running when its worker died may already have reached the supplier,
  * so it is never re-sent automatically (decision 025, scenario `timeout`).
@@ -127,6 +129,15 @@ export const QUEUES = {
     backoff: { delayMs: 60_000, jitter: 0.5 },
     maxStalledCount: 1,
     limiter: { max: 30, durationMs: 1000 },
+  },
+  // Feature 29: the storefront search index (decision 038). One job at a time: `search_sync` is the only writer of documents through
+  // the services alias. Retries reach about an hour (30 s doubling, 8 tries), then the job waits in the failed list for the reconcile.
+  'search-index': {
+    purpose: 'Applies catalog, listing and search settings changes to the storefront search engine.',
+    concurrency: 1,
+    attempts: 8,
+    backoff: { delayMs: 30_000, jitter: 0.5 },
+    maxStalledCount: 1,
   },
 } as const satisfies Record<string, QueueDefinition>;
 

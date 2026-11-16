@@ -46,7 +46,7 @@ on no host.
    cp deploy/.env.example deploy/.env
    cp .env.production.example .env.production
    mkdir -p deploy/secrets
-   openssl rand -hex 32          # run once for each of CSRF_SECRET, TOKEN_PEPPER, METRICS_TOKEN
+   openssl rand -hex 32          # run once for each of CSRF_SECRET, TOKEN_PEPPER, METRICS_TOKEN and, in deploy/.env, TYPESENSE_BOOTSTRAP_KEY, TYPESENSE_INDEXER_KEY, TYPESENSE_SEARCH_KEY
    echo "k1:$(openssl rand -base64 32)"   # the whole line is the value of ENCRYPTION_KEYS
    ```
 
@@ -73,8 +73,11 @@ on no host.
    accounts and the Owner role, and asks for the first admin):
 
    ```bash
-   gsmc up -d postgres redis-queue redis-cache minio minio-init
+   gsmc up -d postgres redis-queue redis-cache minio minio-init typesense
    gsmc run --rm api bun run setup
+   # the search engine's two keys (section 6, "Search engine"): the engine knows only its bootstrap key until this ran
+   set -a; . deploy/.env; set +a
+   gsmc run --rm -e TYPESENSE_BOOTSTRAP_KEY -e TYPESENSE_INDEXER_KEY -e TYPESENSE_SEARCH_KEY -e TYPESENSE_PREFIX=gsm_production_ api bun scripts/search-keys.ts
    ```
 
 4. **Start everything**: `gsmc up -d` (add `--profile site` once the storefront image exists).
@@ -184,6 +187,7 @@ The private key only has to be on the machine for the minute the drill runs.
 | `CSRF_SECRET` | changing it only voids forms that are open | can be changed at any time |
 | `METRICS_TOKEN` | Prometheus cannot scrape until `deploy/secrets/metrics_token` has the same value | change both together |
 | Postgres and MinIO passwords | the services lock out the app | change them in `deploy/.env` and `.env.production` together, then recreate the services |
+| `TYPESENSE_BOOTSTRAP_KEY`, `TYPESENSE_INDEXER_KEY`, `TYPESENSE_SEARCH_KEY` (`deploy/.env`) | the shop search falls back to the database search (nothing is lost: the index is derived data) | the bootstrap key stays with the `typesense` container and with you; the worker holds only the indexer key and the API only the search key. After a change or a lost volume run `scripts/search-keys.ts` again (section 6) |
 
 **Adding an encryption key without losing the old one:** `ENCRYPTION_KEYS` is a list, `k1:<key>,k2:<key>`. Make the new key
 (`openssl rand -base64 32`), append it with a new id, set `ENCRYPTION_ACTIVE_KID=k2`, keep `k1` in the list for as long as any stored value
@@ -205,6 +209,54 @@ Keep a copy of the new list offline before you restart.
   It then receives only unexpected server errors (an unhandled 5xx of the API) and jobs that failed for good, with the stack, the route, the
   request id and the queue and job name. It does not receive request bodies, headers, cookies, users, breadcrumbs, the host name, or
   e-mail addresses and long digit runs inside messages. To turn it off, remove the line and restart: with no DSN the SDK is never started.
+
+**Search engine** (feature 29, decision 038). The English search of the shop header and the results page runs on one Typesense node
+(`typesense` in `deploy/compose.prod.yaml`, pinned by digest, on the network `gsm` only: no published port, no Caddy route, never
+reachable from a browser). Postgres is the truth; the index holds only public, English, price-free documents and can be rebuilt at any
+moment. A prices or stock change shows at once because the API reads them from Postgres on every request; an edit of a service,
+listing, category or stock reaches the index within about 5 seconds (outbox, queue `search-index`), and anything missed within 15
+minutes (the reconcile). When the engine is off, down or has no index yet, the shop answers from the database search, says so, and
+nothing fails.
+
+- **Secrets** (`deploy/.env`): `TYPESENSE_BOOTSTRAP_KEY` (the node's own key), `TYPESENSE_INDEXER_KEY` (worker only) and
+  `TYPESENSE_SEARCH_KEY` (API only: `documents:search`, `aliases:get`, `collections:get`). Both app keys are limited to the names of
+  this environment (`TYPESENSE_PREFIX`, `gsm_production_`). Typesense scopes **collections** by key but not the global synonym and
+  curation sets: the indexer key could write any set on the node. Accepted: production runs one node per environment, only our code holds
+  the keys, and sets are named by prefix.
+- **After a volume wipe, an image upgrade or a changed key**, before `api` and `worker` start (or restart them afterwards): run
+  `set -a; . deploy/.env; set +a; gsmc run --rm -e TYPESENSE_BOOTSTRAP_KEY -e TYPESENSE_INDEXER_KEY -e TYPESENSE_SEARCH_KEY -e TYPESENSE_PREFIX=gsm_production_ api bun scripts/search-keys.ts`.
+  It is idempotent (lists the keys, keeps those that work, recreates those that differ or answer 401) and never prints a key. The worker's
+  boot reconcile then finds no alias and rebuilds the index (a few minutes for 100 000 services); the shop uses the database search
+  meanwhile. The data volume is not backed up: it is derived data.
+- **Console:** Storefront, **Search**: synonyms, pinned results, the report (what visitors searched for and what found nothing), a
+  preview of a query with the rules applied, and the index status with **Rebuild index** (`storefront:publish`; a rebuild runs the
+  nightly job now). Staff never edit Typesense by hand: the worker pushes the whole synonym and curation sets after every change.
+- **Kill switch:** `SEARCH_ENABLED=false` in `.env.production` and `gsmc up -d api worker`: every search is the database search and the
+  sync jobs complete without calls. No deploy of code is needed to go back to today's behaviour. Removing Typesense is stopping the
+  container and deleting `typesense-data`.
+- **Memory and disk:** the container is limited by `mem_limit` (`TYPESENSE_MEM_LIMIT`, default 1.5 GB, about 100 000 services; a rebuild
+  needs about twice the services part while two collections live). Writes stop when the disk Postgres shares reaches 85 %
+  (`--disk-used-max-percentage 85`): `GET /health` of the engine then reports `OUT_OF_DISK` and System health shows `Search engine`
+  degraded; searches still answer. `typesense_memory_allocated_bytes` (the worker's `/metrics`, read from the engine at every reconcile;
+  the engine has no Prometheus endpoint) is the memory figure: the container's own system figures report the host, not the container.
+- **Alerts to set** (rules for the Prometheus of your choice; the repository ships none): `typesense_memory_allocated_bytes` above 80 % of
+  `TYPESENSE_MEM_LIMIT`; host disk use above 80 %; `rate(search_fallback_total[5m]) > 0` for 10 minutes (the shop is on the database
+  search); `increase(search_auth_failures_total[15m]) > 0` (the keys are missing: run `scripts/search-keys.ts`);
+  `search_stale_hits_total` growing fast (the index is behind: check the `search-index` queue); `search_sync_lag_seconds` p95 above 30 s.
+- **Metrics:** API: `search_requests_total{route,engine}`, `search_engine_seconds{route}`, `search_fallback_total{reason}` (`timeout`,
+  `error`, `not_ready`, `circuit_open`, `disabled`), `search_stale_hits_total`, `search_zero_results_total{route}`,
+  `search_suggest_limited_total`, `search_terms_dropped_total`. Worker: `search_sync_documents_total{op}`, `search_sync_failures_total`,
+  `search_sync_rejected_total`, `search_auth_failures_total`, `search_sync_lag_seconds`, `search_index_documents`,
+  `search_index_last_rebuild_timestamp_seconds`, `search_index_last_reconcile_timestamp_seconds`.
+- **Logs and privacy:** Caddy replaces the `q` parameter of the URI and the Referer with `q=[redacted]` in its access log (a typed
+  query can be an IMEI, a phone number or an email address); the API logs the route template only; the search engine keeps no request log (its slow-request and slow-search logs are off
+  because they record the typed query; engine latency is `search_engine_seconds`). The statistics keep per day and term
+  the count of searches, of searches without results and an estimate of distinct visitors (a HyperLogLog over a hash that changes
+  every day, never the address); a text with an `@`, a link, a `+` start or five digits in a row is never counted; rows older than 180
+  days are deleted.
+- **Rate limits:** the suggest route has its own budget (`search-suggest`, 1200 a minute per client address: a typing visitor sends a
+  request every 150 ms); the results page and `GET /store/v1/services` keep `ip` (300). The shop's server must forward the visitor's
+  address (`X-Forwarded-For`) on search reads, or every visitor shares the server's budget.
 
 **Live connections** (decision 037). The signed-in storefront account, merchant portal and admin console each keep one server-sent
 event stream open (`GET /store/v1/me/stream`, `/client/stream`, `/admin/stream`), so a notification appears at once instead of at

@@ -22,6 +22,7 @@ scripts/*
 !scripts/db-migrate.ts
 !scripts/setup.ts
 !scripts/first-run.ts
+!scripts/search-keys.ts
 !scripts/lib
 scripts/lib/*
 !scripts/lib/first-run-flow.ts

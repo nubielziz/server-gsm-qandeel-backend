@@ -1,11 +1,13 @@
 // The per-IP rate limit stage of the request pipeline (decision 021): public store routes, sign-in routes and token routes are
 // counted per client IP before authentication; a refusal is 429 RATE_LIMITED with Retry-After.
-import { Injectable, type OnModuleInit } from '@nestjs/common';
+import { Injectable, Optional, type OnModuleInit } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { contractRegistry } from '../../common/contract';
 import { ipRateLimitKey, parseIpAddress } from '../../common/ip-address';
 import { RequestPipeline, requestPath } from '../../common/pipeline';
 import { RAISED_BODY_LIMITS, isFormContentType } from '../../common/route-body-limits';
+import { AppError } from '../../common/errors';
+import { SearchMetrics } from '../search';
 import { isLargeBody, publicLimiterFor } from './public-ip-limit';
 import { RateLimitService } from './rate-limit.service';
 
@@ -17,7 +19,7 @@ import { RateLimitService } from './rate-limit.service';
  * else). The key is the IPv4 address or the /64 network of an IPv6 address, so rotating addresses inside one subscriber's
  * network does not dodge the limit. If the cache Redis is down, the limiter counts in memory per process (decision 021).
  *
- * Side effects: one point on `gsm:{env}:ratelimit:{ip|token}:{client}` per counted request; `rate_limit_denied_total`.
+ * Side effects: one point on `gsm:{env}:ratelimit:{ip|token}:{client}` per counted request; `rate_limit_denied_total` (and `search_suggest_limited_total` for the suggest limiter).
  *
  * @throws {AppError} `RATE_LIMITED` (429, `Retry-After` in seconds) when the budget is used up
  */
@@ -26,6 +28,8 @@ export class PublicIpLimitHook implements OnModuleInit {
   constructor(
     private readonly pipeline: RequestPipeline,
     private readonly limits: RateLimitService,
+    // Feature 29: the suggest limiter's refusals are counted for the search dashboards (absent in apps built without the engine client).
+    @Optional() private readonly searchMetrics?: SearchMetrics,
   ) {}
 
   /** Registers the stage. */
@@ -54,6 +58,11 @@ export class PublicIpLimitHook implements OnModuleInit {
     const largeBody = isLargeBody(contentType, request.headers['content-length'], unboundedForm);
     const limiter = publicLimiterFor(requestPath(request), access, largeBody);
     if (!limiter) return;
-    await this.limits.enforce(limiter, ipRateLimitKey(parseIpAddress(request.ip)));
+    try {
+      await this.limits.enforce(limiter, ipRateLimitKey(parseIpAddress(request.ip)));
+    } catch (error) {
+      if (limiter === 'search-suggest' && error instanceof AppError) this.searchMetrics?.suggestLimited.inc();
+      throw error;
+    }
   }
 }

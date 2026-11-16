@@ -2,7 +2,7 @@
 # Run from the repository root:  docker compose -f deploy/compose.prod.yaml --env-file deploy/.env <command>
 # Compose-level values (hosts, image names, passwords, backup target) come from deploy/.env (template: deploy/.env.example);
 # the application's own variables come from .env.production (template: .env.production.example), read by api, worker and migrate.
-# Only Caddy publishes ports. Postgres, both Redis roles, MinIO and Prometheus are reachable inside the network `gsm` only.
+# Only Caddy publishes ports. Postgres, both Redis roles, MinIO, Typesense and Prometheus are reachable inside the network `gsm` only.
 name: gsm
 
 x-app: &app
@@ -58,6 +58,9 @@ services:
       nofile:
         soft: 65536
         hard: 65536
+    # The API holds only the search key of the search engine (feature 29, decision 038): it can search and read an alias, never write.
+    environment:
+      TYPESENSE_SEARCH_KEY: ${TYPESENSE_SEARCH_KEY:?set it in deploy/.env}
     # The image's own healthcheck calls GET /health?strict=1 (503 when Postgres is down, decision 015).
     depends_on:
       postgres:
@@ -66,6 +69,9 @@ services:
         condition: service_healthy
       redis-cache:
         condition: service_healthy
+      # `service_started`, never `service_healthy`: the API boots without search (every search is the database fallback meanwhile).
+      typesense:
+        condition: service_started
     stop_grace_period: 15s
 
   worker:
@@ -73,6 +79,9 @@ services:
     restart: unless-stopped
     init: true
     command: ["bun", "src/worker.ts"]
+    # The worker holds only the indexer key (feature 29): it writes documents, aliases, synonym and curation sets.
+    environment:
+      TYPESENSE_INDEXER_KEY: ${TYPESENSE_INDEXER_KEY:?set it in deploy/.env}
     healthcheck:
       # The worker has no /health; its metrics listener answers only with the METRICS_TOKEN, so a 200 proves the process is up.
       test:
@@ -91,6 +100,8 @@ services:
         condition: service_healthy
       redis-cache:
         condition: service_healthy
+      typesense:
+        condition: service_started
     # The worker drains in-flight jobs for up to 25 s (queue-workers.service.ts); the container must outlive that.
     stop_grace_period: 30s
 
@@ -164,6 +175,41 @@ services:
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
+      timeout: 3s
+      retries: 30
+    networks: [gsm]
+
+  # Search engine (feature 29, decision 038): derived, public, price-free documents of the English storefront search; Postgres stays the
+  # truth. No ports and no Caddy route: only api and worker reach it, each with its own key (docs/OPERATIONS.md section 6). The image is
+  # pinned by digest. Writes stop at 85 % disk (the disk Postgres shares); `--memory-used-max-percentage` is not used: under a cgroup
+  # limit it never refused a write (step 0), so `mem_limit`, the restart and the memory alert carry that rule. Compaction is daily
+  # because the nightly rebuild drops and recreates collections. The data volume is not backed up (derived data): after a wipe or an
+  # upgrade run `bun scripts/search-keys.ts` before api and worker start (section 6). No slow-request or slow-search log: Typesense
+  # logs a slow multi_search with its body, which holds the typed query (an email, a phone or an IMEI); latency is
+  # `search_engine_seconds`, so `--log-slow-searches-time-ms -1` switches off the one slow log that is on by default.
+  typesense:
+    image: typesense/typesense:30.2@sha256:610f2d34b1f93d00762869da2c67736775e5798d19a2c8b91b014b8a0cc1e110
+    restart: unless-stopped
+    command:
+      - --data-dir
+      - /data
+      - --api-key
+      - ${TYPESENSE_BOOTSTRAP_KEY:?set it in deploy/.env}
+      - --log-slow-searches-time-ms
+      - "-1"
+      - --disk-used-max-percentage
+      - "85"
+      - --db-compaction-interval
+      - "86400"
+    volumes:
+      - typesense-data:/data
+    mem_limit: ${TYPESENSE_MEM_LIMIT:-1536m}
+    # The image has no curl or wget (step 0): the check is a plain TCP request to /health.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8108 && printf \"GET /health HTTP/1.0\\r\\n\\r\\n\" >&3 && grep -q true <&3'"
+      interval: 10s
       timeout: 3s
       retries: 30
     networks: [gsm]
@@ -272,6 +318,7 @@ secrets:
 volumes:
   pgdata:
   redis-queue-data:
+  typesense-data:
   minio-data:
   prometheus-data:
   caddy-data:

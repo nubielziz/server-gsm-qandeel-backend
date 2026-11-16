@@ -1,7 +1,14 @@
 // The test instances of this run (decision 014): the *_TEST variables from the environment, for example the `.env.test`
 // of a worktree, so parallel worktrees point their tests (and the child processes they start) at their own databases.
 
-const TEST_INSTANCE_VARIABLES = ['DATABASE_URL_TEST', 'REDIS_QUEUE_URL_TEST', 'REDIS_CACHE_URL_TEST', 'S3_BUCKET_TEST'];
+// TYPESENSE_URL_TEST (feature 29): the Typesense node of the search suites; their names follow from DATABASE_URL_TEST.
+const TEST_INSTANCE_VARIABLES = [
+  'DATABASE_URL_TEST',
+  'REDIS_QUEUE_URL_TEST',
+  'REDIS_CACHE_URL_TEST',
+  'S3_BUCKET_TEST',
+  'TYPESENSE_URL_TEST',
+];
 
 /**
  * The test-instance settings found in this process's environment.

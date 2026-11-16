@@ -2,17 +2,30 @@
 // Conventions: decision 027; schema additions: MISMATCHES B116; ownership: scripts/module-map.mjs.
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
   boolean,
   check,
+  date,
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   unique,
   uniqueIndex,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
-import { createdAt, fk, inList, jsonObject, pk, timestampTz, updatedAt } from '../../../infra/db/columns';
+import {
+  bigintList,
+  createdAt,
+  fk,
+  inList,
+  jsonObject,
+  pk,
+  textList,
+  timestampTz,
+  updatedAt,
+} from '../../../infra/db/columns';
 import { services } from '../../catalog/db/schema';
 import { staffUsers } from '../../identity/db/schema';
 import { files } from '../../platform/db/schema';
@@ -208,3 +221,200 @@ export type LegalDocument = typeof legalDocuments.$inferSelect;
 
 /** A row to insert into `legal_documents`. */
 export type NewLegalDocument = typeof legalDocuments.$inferInsert;
+
+// --- Storefront search (feature 29, decision 038, plan section 4.6) -----------------------------------------------------------------
+// The search's own tables live here and not in search/db/schema.ts: only a module's db/schema.ts may hold foreign keys to another
+// module's tables (decision 016, the boundary lint), and the infra barrel re-exports only those files. Owned by storefront
+// (`additionalTables` in scripts/module-map.mjs).
+
+/**
+ * Kinds of a search synonym: every term means the others (`multi`), or the root expands to the terms (`one_way`).
+ *
+ * Why: Typesense synonym sets know both kinds (plan section 4.6).
+ */
+export const SEARCH_SYNONYM_KINDS = ['multi', 'one_way'] as const;
+
+/** One value of {@link SEARCH_SYNONYM_KINDS}. */
+export type SearchSynonymKind = (typeof SEARCH_SYNONYM_KINDS)[number];
+
+/**
+ * How a pin rule matches the query: the whole query (`exact`) or a part of it (`contains`).
+ *
+ * Why: Typesense curation rules know both (plan section 4.6).
+ */
+export const SEARCH_PIN_MATCHES = ['exact', 'contains'] as const;
+
+/** One value of {@link SEARCH_PIN_MATCHES}. */
+export type SearchPinMatch = (typeof SEARCH_PIN_MATCHES)[number];
+
+/**
+ * The synonyms of the storefront search, edited by staff and pushed to the Typesense synonym set (feature 29).
+ *
+ * Why: plan section 4.6: synonyms live in Postgres and are pushed whole; nothing is edited in Typesense by hand. Migration 0033 inserts
+ * the owner's five (frp, icloud, unlock, imei check, kg lock).
+ */
+export const searchSynonyms = pgTable(
+  'search_synonyms',
+  {
+    id: pk(),
+    kind: text().$type<SearchSynonymKind>().notNull(),
+    /** required for `one_way`: the word that expands to the terms */
+    root: text(),
+    /** 2-20 normalised items of 1-60 characters, distinct */
+    terms: textList(),
+    isEnabled: boolean().notNull().default(true),
+    note: text().notNull().default(''),
+    createdBy: fk((): AnyPgColumn => staffUsers.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('search_synonyms_kind_check', inList(t.kind, SEARCH_SYNONYM_KINDS)),
+    check('search_synonyms_root_check', sql`${t.kind} <> 'one_way' or ${t.root} is not null`),
+    check('search_synonyms_terms_check', sql`cardinality(${t.terms}) between 2 and 20`),
+    index('search_synonyms_created_by_idx').on(t.createdBy),
+  ],
+);
+
+/** A row read from `search_synonyms`. */
+export type SearchSynonym = typeof searchSynonyms.$inferSelect;
+
+/** A row to insert into `search_synonyms`. */
+export type NewSearchSynonym = typeof searchSynonyms.$inferInsert;
+
+/**
+ * The pinned and hidden results of a query, pushed to the Typesense curation set (feature 29).
+ *
+ * Why: plan section 4.6: staff put chosen services first for a query (or hide some), optionally in a time window; the rows are the
+ * truth and the curation set is rebuilt from them.
+ */
+export const searchPins = pgTable(
+  'search_pins',
+  {
+    id: pk(),
+    /** the normalised query, 1-100 characters */
+    query: text().notNull(),
+    match: text().$type<SearchPinMatch>().notNull(),
+    /** `[{ serviceId, position }]`, at most 10, positions 1-10 distinct */
+    pinned: jsonb().$type<Array<{ serviceId: number; position: number }>>().notNull().default([]),
+    /** service ids left out of the results, at most 50 */
+    hidden: bigintList(),
+    startsAt: timestampTz(),
+    endsAt: timestampTz(),
+    isEnabled: boolean().notNull().default(true),
+    note: text().notNull().default(''),
+    createdBy: fk((): AnyPgColumn => staffUsers.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique('search_pins_query_match_uq').on(t.query, t.match),
+    check('search_pins_match_check', inList(t.match, SEARCH_PIN_MATCHES)),
+    check('search_pins_query_check', sql`char_length(${t.query}) between 1 and 100`),
+    check(
+      'search_pins_lists_check',
+      sql`jsonb_typeof(${t.pinned}) = 'array' and jsonb_array_length(${t.pinned}) <= 10 and cardinality(${t.hidden}) <= 50`,
+    ),
+    check('search_pins_window_check', sql`${t.startsAt} is null or ${t.endsAt} is null or ${t.endsAt} > ${t.startsAt}`),
+    index('search_pins_created_by_idx').on(t.createdBy),
+  ],
+);
+
+/** A row read from `search_pins`. */
+export type SearchPin = typeof searchPins.$inferSelect;
+
+/** A row to insert into `search_pins`. */
+export type NewSearchPin = typeof searchPins.$inferInsert;
+
+/**
+ * Searched terms staff keep out of the popular searches (feature 29).
+ *
+ * Why: plan section 5.6 and owner question 4: popular searches are automatic, and staff can hide a term.
+ */
+export const searchHiddenTerms = pgTable(
+  'search_hidden_terms',
+  {
+    id: pk(),
+    /** the normalised term */
+    term: text().notNull(),
+    note: text().notNull().default(''),
+    createdBy: fk((): AnyPgColumn => staffUsers.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique('search_hidden_terms_term_uq').on(t.term),
+    index('search_hidden_terms_created_by_idx').on(t.createdBy),
+  ],
+);
+
+/** A row read from `search_hidden_terms`. */
+export type SearchHiddenTerm = typeof searchHiddenTerms.$inferSelect;
+
+/**
+ * Searches per day and term: counts and a distinct-visitor estimate, no IP, user, session or cookie (feature 29).
+ *
+ * Why: plan section 5.6: the "no results" report and the popular searches read these rows; the `search_terms_flush` job writes
+ * absolute values from the day's Redis counters (a repeat writes the same numbers); rows older than 180 days are purged.
+ */
+export const searchTermsDaily = pgTable(
+  'search_terms_daily',
+  {
+    id: pk(),
+    day: date({ mode: 'string' }).notNull(),
+    /** the normalised term, at most 64 characters */
+    term: text().notNull(),
+    searches: integer().notNull().default(0),
+    zeroResults: integer().notNull().default(0),
+    /** distinct visitors of the day (a HyperLogLog estimate over a daily salted hash) */
+    visitors: integer().notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique('search_terms_daily_day_term_uq').on(t.day, t.term),
+    check('search_terms_daily_term_check', sql`char_length(${t.term}) between 1 and 64`),
+    check(
+      'search_terms_daily_counts_check',
+      sql`${t.searches} >= 0 and ${t.zeroResults} >= 0 and ${t.zeroResults} <= ${t.searches} and ${t.visitors} >= 0`,
+    ),
+  ],
+);
+
+/** A row read from `search_terms_daily`. */
+export type SearchTermsDay = typeof searchTermsDaily.$inferSelect;
+
+/**
+ * The state of the search index: one row, written by the worker, read by `GET /admin/search/index` (feature 29).
+ *
+ * Why: plan section 3.4 and 4.6: the console shows the engine version, its memory, the documents, the last sync, reconcile and
+ * rebuild and the last error, which only the worker sees (the API holds a search-only key). `singleton` (always true, unique) keeps
+ * it to one row.
+ */
+export const searchIndexState = pgTable(
+  'search_index_state',
+  {
+    id: pk(),
+    singleton: boolean().notNull().default(true),
+    schemaVersion: integer().notNull().default(0),
+    servicesCollection: text(),
+    termsCollection: text(),
+    documents: integer().notNull().default(0),
+    engineVersion: text(),
+    memoryBytes: bigint({ mode: 'number' }),
+    lastSyncAt: timestampTz(),
+    lastReconcileAt: timestampTz(),
+    lastRebuildAt: timestampTz(),
+    lastTermsBuildAt: timestampTz(),
+    lastError: text(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique('search_index_state_singleton_uq').on(t.singleton),
+    check('search_index_state_singleton_check', sql`${t.singleton}`),
+  ],
+);
+
+/** A row read from `search_index_state`. */
+export type SearchIndexState = typeof searchIndexState.$inferSelect;

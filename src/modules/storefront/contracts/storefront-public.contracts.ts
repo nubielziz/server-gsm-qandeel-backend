@@ -32,7 +32,7 @@ export const zLocale = z.enum(STOREFRONT_LOCALES);
 export const AVAILABILITIES = ['in_stock', 'on_request'] as const;
 
 /** A price bound of the list: decimal text, 0 or more, at most 4 decimals. */
-const PriceBound = z
+export const PriceBound = z
   .string()
   .trim()
   .regex(/^\d{1,12}(\.\d{1,4})?$/, 'Use a number like 12.50 (at most 4 decimals).');
@@ -48,7 +48,8 @@ export const StorefrontPriceSchema = z.object({
   taxCountry: z.string().nullable().describe('The country the tax was worked out for.'),
 });
 
-const ServiceCardSchema = z.object({
+/** One service card: what the list, the search results and the service page share. */
+export const ServiceCardSchema = z.object({
   id: zId.describe('The service id: what `POST /store/v1/checkout-sessions` takes as `serviceId`.'),
   slug: z.string(),
   locale: zLocale,
@@ -154,7 +155,8 @@ const CARD_EXAMPLE = {
   price: PRICE_EXAMPLE,
 } as const;
 
-const BUYER_QUERY = {
+/** The buyer's country, region and currency every priced public route takes. */
+export const BUYER_QUERY = {
   buyerCountry: zCountryCode
     .optional()
     .describe("The buyer's country: the tax of its window is added. Without it no tax is added."),
@@ -233,8 +235,11 @@ export const getStoreConfig = defineRoute({
 
 /** The list dialect of the public service list. */
 const SERVICE_LIST_QUERY = listQuery({
-  sorts: ['featured', 'sort', 'title', 'popular', 'listedAt', 'price'],
+  sorts: ['relevance', 'featured', 'sort', 'title', 'popular', 'listedAt', 'price'],
+  // `relevance` leads the default order but means something only with `q` on an English list the search engine answers; without it
+  // (no `q`, `locale=ar`, the engine down) it is skipped and the order is the staff's, exactly as before feature 29.
   defaultSort: [
+    { field: 'relevance', order: 'desc' },
     { field: 'featured', order: 'desc' },
     { field: 'sort', order: 'asc' },
     { field: 'title', order: 'asc' },
@@ -272,8 +277,12 @@ export const listStoreServices = defineRoute({
     '`categoryId` (repeatable) and `availability` (`in_stock` keeps the services the stock covers); `minPrice` and `maxPrice` bound ' +
     '`price.gross` in the requested `currency` (inclusive; `minPrice` above `maxPrice` is `422` on `maxPrice`); `q` searches title, ' +
     'summary, brand and network; sort by `featured` (default: featured first), `sort`, `title`, `popular` (best sellers: the ' +
-    'orders of the last 30 days, refreshed every 30 minutes, no number is shown), `listedAt` (first publication) and `price` ' +
-    '(`gross`, in the requested currency); pages of up to 100 rows with `x-total-count`. Public; cacheable for 30 seconds.',
+    'orders of the last 30 days, refreshed every 30 minutes, no number is shown), `listedAt` (first publication), `price` ' +
+    '(`gross`, in the requested currency) and `relevance` (how well the service matches `q`; the default order while `q` is set on an ' +
+    'English list, ignored otherwise). With `q` on an English list the order and the match set come from the search engine, which ' +
+    'forgives typos and knows synonyms; `x-search-engine: typesense|fallback` says which answered, and with a price sort or price ' +
+    'bounds the set is the best 1000 matches (`x-search-truncated: true` when more matched). Pages of up to 100 rows with ' +
+    '`x-total-count`. Public; cacheable for 30 seconds.',
   tags: ['storefront'],
   surface: 'store',
   access: 'public',

@@ -18,15 +18,15 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json tsconfig.json ./
 COPY src ./src
 COPY drizzle ./drizzle
-# The one-off tools of a deploy: the migrator and the first-run flow (they import src/** and these files only).
-COPY scripts/db-migrate.ts scripts/setup.ts scripts/first-run.ts ./scripts/
+# The one-off tools of a deploy: the migrator, the first-run flow and the search-key setup (they import src/** and these files only).
+COPY scripts/db-migrate.ts scripts/setup.ts scripts/first-run.ts scripts/search-keys.ts ./scripts/
 COPY scripts/lib/first-run-flow.ts scripts/lib/first-admin-prompt.ts scripts/lib/stdin-password.ts scripts/lib/terminal-prompter.ts ./scripts/lib/
 
 # Stage 3 (thrown away): proves no production code imports a development dependency. Importing the two root modules loads
 # every module file; a missing package fails the build here instead of at the first boot. The config is not read at import.
 FROM tree AS verify
 ENV NODE_ENV=production
-RUN bun -e "await import('./src/app.module.ts'); await import('./src/worker.module.ts'); for (const f of ['first-run', 'lib/first-run-flow', 'lib/first-admin-prompt', 'lib/stdin-password', 'lib/terminal-prompter']) await import('./scripts/' + f + '.ts'); console.log('imports ok')" \
+RUN bun -e "await import('./src/app.module.ts'); await import('./src/worker.module.ts'); for (const f of ['first-run', 'search-keys', 'lib/first-run-flow', 'lib/first-admin-prompt', 'lib/stdin-password', 'lib/terminal-prompter']) await import('./scripts/' + f + '.ts'); console.log('imports ok')" \
  && echo ok > /tmp/verified
 
 # Stage 4: the runtime.

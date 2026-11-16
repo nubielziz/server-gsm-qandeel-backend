@@ -12,6 +12,7 @@ import type { UploadedFile } from '../../../common/multipart';
 import { AuditService, PUBLIC_MEDIA_PATH, PublicImages } from '../../platform';
 import { lockOf, lockedDetail, retailPriceProblem } from '../domain/listing-rules';
 import { chooseSlug } from '../domain/slug';
+import { SearchSignals } from '../search/application/search-signals';
 import {
   type AdminListingSort,
   type ListingRow,
@@ -174,6 +175,7 @@ export class ListingAdminService {
     private readonly retail: RetailPrices,
     private readonly priceVersion: CatalogPriceVersion,
     private readonly images: PublicImages,
+    private readonly signals: SearchSignals,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -256,6 +258,8 @@ export class ListingAdminService {
         throw error;
       }
       if (hasFacts) await updateServiceFacts(tx, input.serviceId, sentFacts);
+      // The shop's search follows every listing of the service (feature 29).
+      await this.signals.listingsChanged(tx, [input.serviceId]);
       await this.audit.record(tx, {
         action: 'created listing for',
         entityType: 'listing',
@@ -398,6 +402,8 @@ export class ListingAdminService {
           },
         });
       }
+      // Any field (the switch, the retail price of the same request, the content, the facts) can change the search document (feature 29).
+      await this.signals.listingsChanged(tx, [listing.serviceId]);
       const fresh = (await findListingRow(tx, id))!;
       return this.detail(tx, fresh);
     });

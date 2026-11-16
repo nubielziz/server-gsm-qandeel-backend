@@ -37,6 +37,23 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 | `POST /store/v1/help/:slug/vote` | store | public | 22 |  |
 | `POST /admin/service-listings/:id/image` | admin | staff-permission `storefront:update` | 22 | `uploadListingImage` |
 | `DELETE /admin/service-listings/:id/image` | admin | staff-permission `storefront:update` | 22 | `removeListingImage` |
+| `GET /store/v1/search/suggest` | store | public | 29 |  |
+| `GET /store/v1/search` | store | public | 29 |  |
+| `GET /admin/search/synonyms` | admin | staff-permission `storefront:read` | 29 | `listSearchSynonyms` |
+| `POST /admin/search/synonyms` | admin | staff-permission `storefront:update` | 29 | `createSearchSynonym` |
+| `PATCH /admin/search/synonyms/:id` | admin | staff-permission `storefront:update` | 29 | `updateSearchSynonym` |
+| `DELETE /admin/search/synonyms/:id` | admin | staff-permission `storefront:update` | 29 | `deleteSearchSynonym` |
+| `GET /admin/search/pins` | admin | staff-permission `storefront:read` | 29 | `listSearchPins` |
+| `POST /admin/search/pins` | admin | staff-permission `storefront:update` | 29 | `createSearchPin` |
+| `PATCH /admin/search/pins/:id` | admin | staff-permission `storefront:update` | 29 | `updateSearchPin` |
+| `DELETE /admin/search/pins/:id` | admin | staff-permission `storefront:update` | 29 | `deleteSearchPin` |
+| `GET /admin/search/hidden-terms` | admin | staff-permission `storefront:read` | 29 | `listHiddenTerms` |
+| `POST /admin/search/hidden-terms` | admin | staff-permission `storefront:update` | 29 | `createHiddenTerm` |
+| `DELETE /admin/search/hidden-terms/:id` | admin | staff-permission `storefront:update` | 29 | `deleteHiddenTerm` |
+| `GET /admin/search/report` | admin | staff-permission `storefront:read` | 29 | `getSearchReport` |
+| `GET /admin/search/preview` | admin | staff-permission `storefront:read` | 29 | `getSearchPreview` |
+| `GET /admin/search/index` | admin | staff-permission `storefront:read` | 29 | `getSearchIndex` |
+| `POST /admin/search/index/rebuild` | admin | staff-permission `storefront:publish` | 29 | `rebuildSearchIndex` |
 
 ## GET /store/v1/config
 
@@ -71,7 +88,7 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 ## GET /admin/service-listings
 
 - **Map**: Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked. (الخدمات المعروضة بالمتجر وسعر Retail لكل خدمة؛ منع البيع تحت الحد الأدنى) · staff-permission `storefront:*` · stage 15 · tables service_listings, services
-- **Frontend**: `listListings` (src/features/storefront/api/listings.ts:25) · params `query?: ListQuery` · returns `ListResult<ServiceListing>` · success 200 · assumed contract
+- **Frontend**: `listListings` (src/features/storefront/api/listings.ts:26) · params `query?: ListQuery` · returns `ListResult<ServiceListing>` · success 200 · assumed contract
 - **Query**: Paging 25. q: contains over publicTitle, slug, service.name and service.code (mocks/listingRoutes.ts:21). Filters isListed=true|false and locked=true|false. _sort publicTitle|isListed, default publicTitle asc (lib/views.ts:22-26). Counts, each with _start=0&_end=1: isListed=true; isListed=false&locked=false; locked=true (components/ListingStats.tsx:10-14; lib/counts.ts:5).
 - **Response**: JSON array + x-total-count. One row per service and locale:
 - id, serviceId, locale (en|ar), slug, publicTitle, isListed, isFeatured.
@@ -88,7 +105,7 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 ## GET /admin/service-listings/:id
 
 - **Map**: Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked. (الخدمات المعروضة بالمتجر وسعر Retail لكل خدمة؛ منع البيع تحت الحد الأدنى) · staff-permission `storefront:*` · stage 15 · tables service_listings, services
-- **Frontend**: `getListing` (src/features/storefront/api/listings.ts:33) · params `id: number` · returns `ServiceListingDetail` · success 200 · assumed contract
+- **Frontend**: `getListing` (src/features/storefront/api/listings.ts:34) · params `id: number` · returns `ServiceListingDetail` · success 200 · assumed contract
 - **Request**: :id is the numeric listing id.
 - **Response**: Same shape as a list row.
 - **Errors**: 404 NOT_FOUND (no listing with that id)
@@ -97,7 +114,7 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 ## POST /admin/service-listings
 
 - **Map**: Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked. (الخدمات المعروضة بالمتجر وسعر Retail لكل خدمة؛ منع البيع تحت الحد الأدنى) · staff-permission `storefront:*` · stage 15 · tables service_listings, services
-- **Frontend**: `createListing` (src/features/storefront/api/listings.ts:42) · params `body: CreateListingBody` · returns `ServiceListingDetail` · success 201 · assumed contract
+- **Frontend**: `createListing` (src/features/storefront/api/listings.ts:43) · params `body: CreateListingBody` · returns `ServiceListingDetail` · success 201 · assumed contract
 - **Request**: Body {serviceId, locale (en|ar), publicTitle, slug?}. Without slug, the server uses slugOf(publicTitle): lower case, & becomes 'and', other non-alphanumerics become '-', and '-' is trimmed at the ends (mocks/http.ts:69-76). A new listing has is_listed false and is_featured false. (service_id, locale) and (locale, slug) are unique.
 - **Response**: 201 with the ServiceListing row.
 - **Errors**: 422 VALIDATION_FAILED (errors[].field is one of serviceId|locale|publicTitle|slug); 409 LISTING_EXISTS (the service already has a listing in that locale, or the slug is used; errors[{field: 'serviceId'|'slug'}] (listingRoutes.ts:73-83)); 409 LISTING_LOCKED (the service can never be public (listingRoutes.ts:64-71)); 403 FORBIDDEN (caller lacks storefront:create (the service menu also needs catalog:read))
@@ -106,7 +123,7 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 ## PATCH /admin/service-listings/:id
 
 - **Map**: Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked. (الخدمات المعروضة بالمتجر وسعر Retail لكل خدمة؛ منع البيع تحت الحد الأدنى) · staff-permission `storefront:*` · stage 15 · tables service_listings, services
-- **Frontend**: `updateListing` (src/features/storefront/api/listings.ts:53) · params `id: number`, `body: UpdateListingBody` · returns `ServiceListingDetail` · success 200 · assumed contract
+- **Frontend**: `updateListing` (src/features/storefront/api/listings.ts:54) · params `id: number`, `body: UpdateListingBody` · returns `ServiceListingDetail` · success 200 · assumed contract
 - **Request**: Body is any of {isListed: boolean, retailPrice: 4-dp money string, net USD before VAT (components/PriceDialog.tsx:52)}. The switch sends only isListed; the price dialog sends only retailPrice. retailPrice upserts service_group_prices(service_id, b2c_retail group), so it applies to every locale's listing of the service and only to new storefront checkouts. Refuse a price <= 0 or below floorPrice. floorPrice is the same B117 effective floor (effective cost + minimum profit for the b2c_retail group); retailPrice below it is 422 on retailPrice.
 - **Response**: 200 with the updated row; retailPrice, marginPct and floorPrice are worked out again.
 - **Errors**: 422 VALIDATION_FAILED (errors[{field: 'retailPrice'}] for a price <= 0, or below the floor, with a message naming the floor (demo text 'Below the floor...', listingRoutes.ts:106-124)); 409 LISTING_LOCKED (switching on or pricing a locked listing); 409 SERVICE_DISABLED (isListed true while the service status is not active (listingRoutes.ts:135-141)); 404 NOT_FOUND (no listing with that id); 403 FORBIDDEN (caller lacks storefront:update)
@@ -295,10 +312,95 @@ Later consents reference this version. requires_reacceptance makes signed-in cus
 ## POST /admin/service-listings/:id/image
 
 - **Map addition** (B-TBD listing-image, `scripts/map-additions/22.mjs`): Upload the picture of a listed service. (رفع صورة الخدمة) · staff-permission `storefront:update` · stage 22 · tables service_listings, files, audit_logs · success 200
-- **Frontend**: `uploadListingImage` (src/features/storefront/api/listings.ts:68) · params `id: number`, `file: File` · returns `ServiceListingDetail`
+- **Frontend**: `uploadListingImage` (src/features/storefront/api/listings.ts:69) · params `id: number`, `file: File` · returns `ServiceListingDetail`
 
 ## DELETE /admin/service-listings/:id/image
 
 - **Map addition** (B-TBD listing-image, `scripts/map-additions/22.mjs`): Remove the picture of a listed service. (إزالة صورة الخدمة) · staff-permission `storefront:update` · stage 22 · tables service_listings, audit_logs · success 204
-- **Frontend**: `removeListingImage` (src/features/storefront/api/listings.ts:78) · params `id: number` · returns `void`
+- **Frontend**: `removeListingImage` (src/features/storefront/api/listings.ts:79) · params `id: number` · returns `void`
+
+## GET /store/v1/search/suggest
+
+- **Map addition** (B221, `scripts/map-additions/29.mjs`): Search as you type: word completions, nearby services and filter chips (English). (اقتراحات البحث أثناء الكتابة: إكمال الكلمات والخدمات الأقرب) · public · stage 29 · tables service_listings, services, service_categories, currencies, search_terms_daily · success 200
+- **Frontend**: none.
+
+## GET /store/v1/search
+
+- **Map addition** (B221, `scripts/map-additions/29.mjs`): The search results page with facet counts and the price span (English). (صفحة نتائج البحث بالإنجليزية مع عدّ الفلاتر ونطاق السعر) · public · stage 29 · tables service_listings, services, service_categories, currencies, search_terms_daily · success 200
+- **Frontend**: none.
+
+## GET /admin/search/synonyms
+
+- **Map addition** (B222, `scripts/map-additions/29.mjs`): List the search synonyms. (قائمة مرادفات البحث) · staff-permission `storefront:read` · stage 29 · tables search_synonyms · success 200
+- **Frontend**: `listSearchSynonyms` (src/features/storefront/api/search.ts:37) · params `query?: ListQuery` · returns `ListResult<SearchSynonym>`
+
+## POST /admin/search/synonyms
+
+- **Map addition** (B222, `scripts/map-additions/29.mjs`): Create a search synonym. (إضافة مرادف بحث) · staff-permission `storefront:update` · stage 29 · tables search_synonyms, search_pins, search_hidden_terms, audit_logs · success 201
+- **Frontend**: `createSearchSynonym` (src/features/storefront/api/search.ts:51) · params `body: CreateSynonymBody` · returns `SearchSynonym`
+
+## PATCH /admin/search/synonyms/:id
+
+- **Map addition** (B222, `scripts/map-additions/29.mjs`): Change a search synonym. (تعديل مرادف بحث) · staff-permission `storefront:update` · stage 29 · tables search_synonyms, search_pins, search_hidden_terms, audit_logs · success 200
+- **Frontend**: `updateSearchSynonym` (src/features/storefront/api/search.ts:59) · params `id: number`, `body: Partial<CreateSynonymBody>` · returns `SearchSynonym`
+
+## DELETE /admin/search/synonyms/:id
+
+- **Map addition** (B222, `scripts/map-additions/29.mjs`): Delete a search synonym. (حذف مرادف بحث) · staff-permission `storefront:update` · stage 29 · tables search_synonyms, search_pins, search_hidden_terms, audit_logs · success 204
+- **Frontend**: `deleteSearchSynonym` (src/features/storefront/api/search.ts:67) · params `id: number` · returns `void`
+
+## GET /admin/search/pins
+
+- **Map addition** (B222, `scripts/map-additions/29.mjs`): List the pinned search results. (قائمة النتائج المثبّتة في البحث) · staff-permission `storefront:read` · stage 29 · tables search_pins, service_listings · success 200
+- **Frontend**: `listSearchPins` (src/features/storefront/api/search.ts:76) · params `query?: ListQuery` · returns `ListResult<SearchPin>`
+
+## POST /admin/search/pins
+
+- **Map addition** (B222, `scripts/map-additions/29.mjs`): Create a pinned search result. (تثبيت نتائج لعبارة بحث) · staff-permission `storefront:update` · stage 29 · tables search_synonyms, search_pins, search_hidden_terms, audit_logs, service_listings · success 201
+- **Frontend**: `createSearchPin` (src/features/storefront/api/search.ts:88) · params `body: CreatePinBody` · returns `SearchPin`
+
+## PATCH /admin/search/pins/:id
+
+- **Map addition** (B222, `scripts/map-additions/29.mjs`): Change a pinned search result. (تعديل نتيجة مثبّتة) · staff-permission `storefront:update` · stage 29 · tables search_synonyms, search_pins, search_hidden_terms, audit_logs, service_listings · success 200
+- **Frontend**: `updateSearchPin` (src/features/storefront/api/search.ts:96) · params `id: number`, `body: Partial<CreatePinBody>` · returns `SearchPin`
+
+## DELETE /admin/search/pins/:id
+
+- **Map addition** (B222, `scripts/map-additions/29.mjs`): Delete a pinned search result. (حذف نتيجة مثبّتة) · staff-permission `storefront:update` · stage 29 · tables search_synonyms, search_pins, search_hidden_terms, audit_logs · success 204
+- **Frontend**: `deleteSearchPin` (src/features/storefront/api/search.ts:104) · params `id: number` · returns `void`
+
+## GET /admin/search/hidden-terms
+
+- **Map addition** (B222, `scripts/map-additions/29.mjs`): List the hidden popular searches. (قائمة العبارات المخفية من البحث الرائج) · staff-permission `storefront:read` · stage 29 · tables search_hidden_terms · success 200
+- **Frontend**: `listHiddenTerms` (src/features/storefront/api/search.ts:112) · params `query?: ListQuery` · returns `ListResult<HiddenTerm>`
+
+## POST /admin/search/hidden-terms
+
+- **Map addition** (B222, `scripts/map-additions/29.mjs`): Hide a term from the popular searches. (إخفاء عبارة من البحث الرائج) · staff-permission `storefront:update` · stage 29 · tables search_synonyms, search_pins, search_hidden_terms, audit_logs · success 201
+- **Frontend**: `createHiddenTerm` (src/features/storefront/api/search.ts:122) · params `body: CreateHiddenTermBody` · returns `HiddenTerm`
+
+## DELETE /admin/search/hidden-terms/:id
+
+- **Map addition** (B222, `scripts/map-additions/29.mjs`): Show a hidden term again. (إظهار عبارة مخفية من جديد) · staff-permission `storefront:update` · stage 29 · tables search_synonyms, search_pins, search_hidden_terms, audit_logs · success 204
+- **Frontend**: `deleteHiddenTerm` (src/features/storefront/api/search.ts:130) · params `id: number` · returns `void`
+
+## GET /admin/search/report
+
+- **Map addition** (B222, `scripts/map-additions/29.mjs`): The search report: top terms and terms with no results. (تقرير البحث: الأكثر بحثاً وما لم يُعثر عليه) · staff-permission `storefront:read` · stage 29 · tables search_terms_daily · success 200
+- **Frontend**: `getSearchReport` (src/features/storefront/api/search.ts:139) · params `days: 7 | 30 | 90` · returns `SearchReport`
+
+## GET /admin/search/preview
+
+- **Map addition** (B222, `scripts/map-additions/29.mjs`): Preview a search with the pin rules applied. (معاينة نتائج البحث مع القواعد المطبّقة) · staff-permission `storefront:read` · stage 29 · tables search_pins, service_listings · success 200
+- **Frontend**: `getSearchPreview` (src/features/storefront/api/search.ts:149) · params `query: SearchPreviewQuery` · returns `SearchPreview`
+
+## GET /admin/search/index
+
+- **Map addition** (B222, `scripts/map-additions/29.mjs`): The search index status. (حالة فهرس البحث) · staff-permission `storefront:read` · stage 29 · tables search_index_state, service_listings · success 200
+- **Frontend**: `getSearchIndex` (src/features/storefront/api/search.ts:158) · params none · returns `SearchIndexStatus`
+
+## POST /admin/search/index/rebuild
+
+- **Map addition** (B222, `scripts/map-additions/29.mjs`): Rebuild the search index. (إعادة بناء فهرس البحث) · staff-permission `storefront:publish` · stage 29 · tables search_index_state, audit_logs · success 202
+- **Frontend**: `rebuildSearchIndex` (src/features/storefront/api/search.ts:168) · params none · returns `void`
 

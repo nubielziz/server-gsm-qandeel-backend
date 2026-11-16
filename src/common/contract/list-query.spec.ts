@@ -121,6 +121,12 @@ describe('search', () => {
     expect(ok({}).search).toBeUndefined();
   });
 
+  it('drops control characters from q, so a NUL byte is no longer a server error', () => {
+    expect(ok({ q: 'sam\u0000sung' }).search?.text).toBe('samsung');
+    expect(ok({ q: '\u0000\u0007\u001f' }).search).toBeUndefined();
+    expect(ok({ q: 'a\tb\u007f' }).search?.text).toBe('ab');
+  });
+
   it('refuses q on a list without search fields, and a repeated or oversized q', () => {
     const plain = listQuery({ sorts: ['id'], defaultSort: { field: 'id', order: 'asc' } });
     const result = plain.safeParse({ q: 'x' });

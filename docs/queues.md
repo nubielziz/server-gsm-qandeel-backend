@@ -1,6 +1,6 @@
 # Queues
 
-Every piece of asynchronous work runs on one of eleven BullMQ queues on the **queue Redis** (decision 006: `noeviction`, AOF)
+Every piece of asynchronous work runs on one of twelve BullMQ queues on the **queue Redis** (decision 006: `noeviction`, AOF)
 and is processed by the **worker process** only (decision 020). The code is in `src/infra/queues/`
 (`README.md` there explains the API); this document lists every queue, job, payload, idempotency key, retry policy and
 schedule, and is extended by the feature that adds a job. A test (`src/infra/queues/queue-definitions.spec.ts`) fails
@@ -48,6 +48,7 @@ when a queue is missing here or when the numbers in a section differ from `QUEUE
 | `maintenance` | 2 | 3 | 1 min, jitter 50 % | 1 |
 | `alerts` | 2 | 3 | 10 s, jitter 50 % | 1 |
 | `notification-broadcasts` | 10 | 6 | 1 min, jitter 50 % | 1 |
+| `search-index` | 1 | 8 | 30 s, jitter 50 % | 1 |
 
 Concurrency is per worker process. Backoff is exponential: the first retry waits the base time, the next twice as long, and
 so on; jitter takes up to that share off each wait.
@@ -235,6 +236,40 @@ limiter is per queue, so a broadcast of 50 000 messages never slows a password r
 - **Schedule:** none (event-driven, from the fan-out).
 - **Not recorded in `job_runs`:** event-driven; the `notifications` rows and the campaign's `delivery` counters are the record.
 
+## search-index
+
+Applies catalog, listing and search settings changes to the storefront search engine (feature 29, decision 038: Typesense holds derived,
+public, price-free documents; Postgres is the truth).
+
+- **Concurrency:** 1 per worker process. `search_sync` is the only writer of documents through the services alias
+  (`<prefix>services_v<N>`), so two writes never race on one document; the reconcile only compares and enqueues `search_sync`, and the
+  rebuild writes only its own new collection (both on `maintenance`, below).
+- **Jobs:** two named processors (`src/modules/storefront/search/jobs/search-index.processor.ts`):
+  - `search_sync` (`SearchSyncProcessor`, logic `SearchSync.run`): the job of the outbox events `catalog.services_changed`, `catalog.category_changed` and
+    `storefront.listing_changed` (the relay names the job `search_sync`), and of the reconcile's `{ serviceIds }` jobs. A category event is resolved to
+    the category's service ids (`StorefrontServices.serviceIdsOfCategory`, keyset pages of 500). Each batch of ids is built from Postgres
+    (`SearchDocuments.build`: the searchable rule, the English listing, the option labels, the stock flag); the ids that fail the rule are **deleted
+    first** (`filter_by=id:[...]`, 250 per request), then the documents are imported with `action=upsert` in batches of 500.
+  - `search_settings` (`SearchSettingsProcessor`, logic `SearchSettingsPush`): the job of `search.settings_changed { kind }`. `synonyms` and `pins` put
+    the whole set of enabled rows (`PUT /synonym_sets/<prefix>synonyms`, `PUT /curation_sets/<prefix>curations`; every pin rule carries
+    `filter_curated_hits: true` and `remove_matched_tokens: false`) and then move the cache version `search`; `hidden_terms` deletes the popular-searches
+    cache key and enqueues `search_terms_build` on `maintenance` (job id `terms-hidden-<event id>`).
+- **Payload:** the `OutboxJobData` of the event (`payload: { serviceIds, reason }` with 1-50 ids and `reason` one of `service`, `price`, `options`,
+  `stock`; `{ categoryId }`; `{ serviceIds }`; `{ kind }`), or `{ serviceIds }` (at most 500 ids) from the reconcile. Ids only.
+- **Idempotency:** the job id is `outbox-<event id>` (relay) or `reconcile-<run id>-<n>` (reconcile). The job re-reads every fact from Postgres and writes
+  whole documents (upsert) and deletes by id (an absent id deletes nothing), so a repeat or a late run writes what Postgres says now; a set push replaces
+  the whole set.
+- **Retry policy:** 8 attempts, exponential backoff from 30 s (jitter 50 %), about an hour in all; then the job sits in the failed list (the console's
+  queues page) and the next reconcile repairs the index anyway. `SearchUnavailable` (connection, timeout, 5xx, a refused key, a node out of disk)
+  throws and is retried; a 401/403 also sets `search_index_state.last_error = 'search keys missing'` and counts `search_auth_failures_total`. A
+  missing alias (`SearchNotReady`) completes without writes (result `not_ready`): the rebuild and its reconcile cover the change. A refused document line
+  never stops the others: its id and error go to `search_index_state.last_error` and `search_sync_rejected_total`, and the job completes. A refusal of
+  the whole request (another 4xx) is an `UnrecoverableError` with `last_error`. With `SEARCH_ENABLED=false` every job completes at once without a call.
+- **Schedule:** none (event-driven).
+- **Not recorded in `job_runs`:** event-driven, like the supplier dispatch; `search_index_state.last_sync_at`, `last_error` and the metrics
+  `search_sync_documents_total{op}`, `search_sync_failures_total`, `search_sync_rejected_total` and `search_sync_lag_seconds` (BullMQ's enqueue time of
+  the job to written) are the record. A `job_runs` guard would also skip a sync while a stale run stays `running`, which would lose a change.
+
 ## supplier-sync
 
 Refreshes supplier services, prices and balances.
@@ -311,7 +346,7 @@ Draws the PDF tax receipt of a paid storefront order and stores it (`GET /store/
 Scheduled housekeeping: group promotion, data retention, integrity checks, FX refresh.
 
 - **Concurrency:** 2 per worker process.
-- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly, and `refund.process`, event-driven (money module, below), `checkout_recovery_sweep`, every 5 minutes (customers module, below), `notification_campaign_sweep`, every minute, `notification_reconcile`, every 5 minutes, and `notification_retention`, daily at 04:20 UTC (platform module, feature 23, below), `service_price_scan`, event-driven (catalog module, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below), `support_reply_mail_sweep`, every minute, and `ticket_attachment_retention`, nightly at 03:30 UTC (support module, feature 28, below). The others are built by their features, each
+- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly, and `refund.process`, event-driven (money module, below), `checkout_recovery_sweep`, every 5 minutes (customers module, below), `notification_campaign_sweep`, every minute, `notification_reconcile`, every 5 minutes, and `notification_retention`, daily at 04:20 UTC (platform module, feature 23, below), `service_price_scan`, event-driven (catalog module, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below), `support_reply_mail_sweep`, every minute, and `ticket_attachment_retention`, nightly at 03:30 UTC (support module, feature 28, below), and the storefront search jobs `search_reconcile` (every `SEARCH_RECONCILE_MINUTES`, default 15, and once at worker boot), `search_rebuild` (nightly at 03:40 UTC, and on demand), `search_terms_build` (hourly at :20), `search_terms_flush` (every 15 minutes) and `search_terms_purge` (daily 04:10 UTC) (storefront module, feature 29, below). The others are built by their features, each
   registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
   `ledger_integrity` (12b, nightly 02:30 UTC, below), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). `idempotency_purge` (daily 04:10 UTC,
 orders module, below) is built. `storefront_popularity` (every 30 minutes, storefront module, below) is built. `data_retention`
@@ -349,6 +384,34 @@ orders module, below) is built. `storefront_popularity` (every 30 minutes, store
   and takes their row locks in id order (`order by id for update`, the order listing writers use), never touches `updated_at`, and never takes the
   service row lock. A repeat or a parallel run changes nothing more. The run is recorded in `job_runs` (`processed` = rows changed, `result` =
   `{ services, changed }`); a manual run carries `{ runId }`. Retry policy: the `maintenance` queue's. The shop shows the order only, never the number.
+
+### Storefront search (storefront module, `src/modules/storefront/search/jobs/search-maintenance.processors.ts`; feature 29)
+
+None of these writes documents through the services alias (the `search-index` queue's `search_sync` does). Each run is wrapped with
+`JobRunsService.run` (a manual run carries `{ runId }`; a run that finds its lock held, or `SEARCH_ENABLED=false`, records `skipped`).
+
+- **`search_reconcile`** (scheduler `search-reconcile`, every `SEARCH_RECONCILE_MINUTES` minutes, default 15; also once at worker boot with the job id
+  `boot-<boot id>`; after a rebuild `after-rebuild-<run id>-reconcile`): holds the cache-Redis lock `gsm:{env}:storefront:search-index:lock`. When the alias
+  of the running schema version is missing it enqueues `search_rebuild` (job id `rebuild-auto-v<N>-<yyyymmddhh>`, one per hour at most) and stops.
+  Otherwise it exports `id,hash` through the alias, builds the hash of every expected document from Postgres (`StorefrontServices.pricedPage`, keyset
+  pages of 1000 with no ceiling, and `SearchDocuments.build`), and enqueues `search_sync` jobs of at most 500 ids for the changed, missing and extra ids
+  (job ids `reconcile-<run id>-<n>`). Then it reads `/metrics.json` and `/debug` and writes `documents`, `memory_bytes`, `engine_version` and
+  `last_reconcile_at` into `search_index_state`. Payload: none, or `{ runId }`.
+- **`search_rebuild`** (scheduler `search-rebuild-nightly`, daily 03:40 UTC; the console's "Rebuild index" through the outbox event
+  `search.rebuild_requested { staffId, runId? }`; the reconcile above): holds the same lock. It pushes the synonym and curation sets, drops every collection
+  of the prefix that is not an alias target (orphans of a stalled run, so never three collections), creates a services collection of the running version
+  (`SearchCollections.create`, the only creator, which links both sets), imports every document built from `pricedPage` into **that collection only**,
+  checks that the collection holds exactly the built count with no refused line (else it drops it, keeps the old alias and records `last_error`: an
+  `UnrecoverableError`), swaps the alias (`PUT /aliases`, no failed search during it), drops the older collections of this version and every collection
+  and alias of older versions, releases the lock and enqueues `search_terms_build` and `search_reconcile` (job ids `after-rebuild-<run id>-terms` and
+  `-reconcile`): the reconcile turns the changes made during the build into `search_sync` jobs.
+- **`search_terms_build`** (scheduler `search-terms-build`, hourly at :20; after a rebuild; after a hidden-term change, job id `terms-hidden-<event id>`):
+  holds `gsm:{env}:storefront:search-terms:lock`, builds the terms (title phrases, facet values, synonym phrases, popular queries of
+  `search_terms_daily`) into a new terms collection and swaps `<prefix>terms_v<N>` the same way; it is the only writer of terms collections.
+- **`search_terms_flush`** (scheduler `search-terms-flush`, every 15 minutes): for today and yesterday (UTC) reads the day's counter hash
+  `gsm:{env}:storefront:search-terms:{yyyymmdd}` and the `PFCOUNT` of each term's visitors, and upserts **absolute** values into `search_terms_daily`
+  (`searches`, `zero_results`, `visitors` set, never added): a retry or a second run writes the same rows. No `RENAME`; the Redis keys expire by TTL.
+- **`search_terms_purge`** (scheduler `search-terms-purge`, daily 04:10 UTC): deletes the `search_terms_daily` rows older than 180 days.
 
 ### Idempotency purge (orders module, `src/modules/orders/jobs/`)
 
@@ -629,6 +692,11 @@ none); the job id is `outbox-<event id>`.
 | `receipt.render` | `files` | `receipt.render` | `invoiceId` (aggregate: `invoices`) | money (`ReceiptOutbox`, loaded by the API and the worker), written by the capture of a storefront payment together with the receipt invoice. The processor is `ReceiptRenderProcessor` (`src/modules/money/jobs/`) |
 | `refund.process` | `maintenance` | `refund.process` | `refundId` (aggregate: `refunds`) | money (`RefundOutbox`, loaded by the API and the worker), written by the approval and the retry of a storefront refund and by the system's automatic refunds. The processor is `RefundProcessProcessor` (`src/modules/money/jobs/`) |
 | `notification.campaign_fanout` | `notifications` | `notification.campaign_fanout` | none (aggregate: `notification_campaigns`, the campaign) | platform (`NotificationRoutes`), written by `POST /admin/notification-campaigns/:id/send` and the `notification_campaign_sweep` job, in the transaction that moves the campaign to `queued` (feature 23) |
+| `catalog.services_changed` | `search-index` | `search_sync` | `serviceIds` (1-50), `reason` (`service`, `price`, `options`, `stock`) (aggregate: `services`, the first id) | storefront (`SearchOutboxRoutes`, loaded by the API and the worker), written by the catalog's `CatalogSignals` in the writer's transaction: service create, edit, archive and delete, every `PUT /admin/services/:id/group-prices`, `PUT /admin/services/:id/options`, an inventory import and void, and the stock claim of an order placement (feature 29) |
+| `catalog.category_changed` | `search-index` | `search_sync` | `categoryId` (aggregate: `service_categories`) | storefront (`SearchOutboxRoutes`), written by `CatalogSignals` on a category edit or delete and, once per category, by a merchant group delete that removed the group from categories (feature 29) |
+| `storefront.listing_changed` | `search-index` | `search_sync` | `serviceIds` (1-50) (aggregate: `services`, the first id) | storefront (`SearchOutboxRoutes`), written by `SearchSignals` on `POST /admin/service-listings` and every `PATCH /admin/service-listings/:id` (feature 29) |
+| `search.settings_changed` | `search-index` | `search_settings` | `kind` (`synonyms`, `pins`, `hidden_terms`) (aggregate: the row's table) | storefront (`SearchOutboxRoutes`), written by the console's search routes (feature 29, slice B2) |
+| `search.rebuild_requested` | `maintenance` | `search_rebuild` | `staffId`, optional `runId` (aggregate: `search_index`, 1) | storefront (`SearchOutboxRoutes`), written by `POST /admin/search/index/rebuild` (feature 29, slice B2) |
 | `supplier.quick_add` | `imports` | `supplier_quick_add` | `runId`, `supplierId` (aggregate: `supplier_import_runs`) | suppliers (`QuickAddOutbox`, loaded by the API and the worker), written by `POST /admin/suppliers/:id/quick-add` in the transaction that inserts the run (feature 26). The processor is `QuickAddProcessor` (`src/modules/suppliers/jobs/`) |
 
 `invoice.paid` (feature 8) routes to `merchant-webhooks` (`InvoiceOutbox`) and to `notifications` (`notification.plan`, registered by the platform's `NotificationRoutes` since the 12a merge): every credited top-up tells the merchant once. `deposit.approved` has a registry entry and default templates but no producer: a credited top-up already writes `invoice.paid`, and emitting both would send two messages per top-up (B-entry of 12a). A test app plans a job directly through `test/support/notifications.ts` (`eventJob`).
@@ -660,6 +728,11 @@ Registered with `JobSchedulerRegistry.register` in `onModuleInit`; the worker up
 | `storefront-popularity` | `maintenance` | `storefront_popularity` | every 30 minutes | storefront (`src/modules/storefront/jobs/`) |
 | `support-reply-mail-sweep` | `maintenance` | `support_reply_mail_sweep` | every minute | support (`src/modules/support/support-jobs.module.ts`) |
 | `ticket-attachment-retention` | `maintenance` | `ticket_attachment_retention` | daily 03:30 UTC | support (`src/modules/support/support-jobs.module.ts`) |
+| `search-reconcile` | `maintenance` | `search_reconcile` | every `SEARCH_RECONCILE_MINUTES` (default 15) minutes | storefront (`src/modules/storefront/search/search-worker.module.ts`) |
+| `search-rebuild-nightly` | `maintenance` | `search_rebuild` | daily 03:40 UTC | storefront (`src/modules/storefront/search/search-worker.module.ts`) |
+| `search-terms-build` | `maintenance` | `search_terms_build` | every hour at minute 20 | storefront (`src/modules/storefront/search/search-worker.module.ts`) |
+| `search-terms-flush` | `maintenance` | `search_terms_flush` | every 15 minutes | storefront (`src/modules/storefront/search/search-worker.module.ts`) |
+| `search-terms-purge` | `maintenance` | `search_terms_purge` | daily 04:10 UTC | storefront (`src/modules/storefront/search/search-worker.module.ts`) |
 | `supplier-poll-tick` | `supplier-poll` | `supplier_poll_tick` | every minute | suppliers (`src/modules/suppliers/jobs/`) |
 | `supplier-price-sync` | `supplier-sync` | `price_sync` | every 15 minutes | suppliers (`src/modules/suppliers/jobs/`) |
 | `supplier-balance-check` | `supplier-sync` | `balance_check` | every 30 minutes | suppliers (`src/modules/suppliers/jobs/`) |

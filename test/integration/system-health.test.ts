@@ -143,6 +143,7 @@ describe('GET /admin/system/health', () => {
       'storage',
       'workers',
       'mail',
+      'search',
       `supplier:${active}`,
       `supplier:${off}`,
     ]);
@@ -308,6 +309,7 @@ describe('GET /admin/system/checks', () => {
       'storage',
       'workers',
       'mail',
+      'search',
     ]);
   });
 });

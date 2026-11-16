@@ -1,6 +1,6 @@
 // Drizzle queries of the storefront's view of the catalog (feature 14a): the services a group may buy, their order fields, and
 // the TAC catalogue. Read only; the visibility rule is the merchant catalog's (live, active, active category, group allowed).
-import { type SQL, and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { type SQL, and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
 import {
   type Service,
@@ -10,6 +10,7 @@ import {
   serviceCategories,
   serviceFields,
   serviceGroupPrices,
+  serviceOptions,
   services,
   tacCatalog,
 } from '../db/schema';
@@ -136,6 +137,116 @@ export async function findPricedServiceIds(
     .orderBy(asc(services.id))
     .limit(MAX_PRICED_IDS);
   return rows.map((row) => row.id);
+}
+
+/**
+ * Reads one page of the ids of the services a group may buy and that have a fixed price for it, after an id.
+ *
+ * Why: feature 29, plan section 4.5: the search reconcile and the rebuild walk every searchable service; unlike
+ * {@link findPricedServiceIds} there is no ceiling, the caller pages with the last id it got (keyset, no offset).
+ *
+ * @param db the database or a transaction
+ * @param groupId the group (the storefront's retail group)
+ * @param afterId the last id of the previous page (0 for the first)
+ * @param limit the page size
+ * @returns the ids, ascending
+ */
+export async function findPricedServicePage(
+  db: DbExecutor,
+  groupId: number,
+  afterId: number,
+  limit: number,
+): Promise<number[]> {
+  const rows = await db
+    .select({ id: services.id })
+    .from(services)
+    .innerJoin(serviceCategories, eq(serviceCategories.id, services.categoryId))
+    .innerJoin(
+      serviceGroupPrices,
+      and(eq(serviceGroupPrices.serviceId, services.id), eq(serviceGroupPrices.groupId, groupId)),
+    )
+    .where(and(visibleTo(groupId), gt(services.id, afterId)))
+    .orderBy(asc(services.id))
+    .limit(limit);
+  return rows.map((row) => row.id);
+}
+
+/**
+ * Finds which of some services a group may buy and has a fixed price for.
+ *
+ * @param db the database or a transaction
+ * @param ids the service ids
+ * @param groupId the group (the storefront's retail group)
+ * @returns the ids among `ids` that are visible to the group and carry its price row
+ */
+export async function findPricedAmong(db: DbExecutor, ids: readonly number[], groupId: number): Promise<Set<number>> {
+  if (ids.length === 0) return new Set();
+  const rows = await db
+    .select({ id: services.id })
+    .from(services)
+    .innerJoin(serviceCategories, eq(serviceCategories.id, services.categoryId))
+    .innerJoin(
+      serviceGroupPrices,
+      and(eq(serviceGroupPrices.serviceId, services.id), eq(serviceGroupPrices.groupId, groupId)),
+    )
+    .where(and(inArray(services.id, [...new Set(ids)]), visibleTo(groupId)));
+  return new Set(rows.map((row) => row.id));
+}
+
+/**
+ * Reads one page of the ids of the services of a category, whatever their state, after an id.
+ *
+ * Why: feature 29, plan section 4.5: a category change (its switch, name or groups) can show or hide every service in it, so the
+ * search sync re-reads them all, 500 at a time.
+ *
+ * @param db the database or a transaction
+ * @param categoryId the category
+ * @param afterId the last id of the previous page (0 for the first)
+ * @param limit the page size
+ * @returns the ids, ascending
+ */
+export async function findServiceIdsOfCategory(
+  db: DbExecutor,
+  categoryId: number,
+  afterId: number,
+  limit: number,
+): Promise<number[]> {
+  const rows = await db
+    .select({ id: services.id })
+    .from(services)
+    .where(and(eq(services.categoryId, categoryId), gt(services.id, afterId)))
+    .orderBy(asc(services.id))
+    .limit(limit);
+  return rows.map((row) => row.id);
+}
+
+/** The labels of a service's option lists that the storefront search indexes. */
+export interface OptionLabelRow {
+  readonly serviceId: number;
+  readonly list: 'model' | 'network';
+  readonly label: string;
+}
+
+/**
+ * Reads the labels of the `model` and `network` option lists of some services.
+ *
+ * Why: feature 29, plan section 4.2: a visitor types a model (`SM-G991B`) or a network (`Vodafone`) the service lists as an option.
+ * The `mep` list and the supplier values are never read.
+ *
+ * @param db the database or a transaction
+ * @param ids the service ids
+ * @returns the labels in id order
+ */
+export async function findOptionLabels(db: DbExecutor, ids: readonly number[]): Promise<OptionLabelRow[]> {
+  if (ids.length === 0) return [];
+  const rows = await db
+    .select({ serviceId: serviceOptions.serviceId, list: serviceOptions.list, label: serviceOptions.label })
+    .from(serviceOptions)
+    .where(
+      and(inArray(serviceOptions.serviceId, [...new Set(ids)]), inArray(serviceOptions.list, ['model', 'network'])),
+    )
+    .orderBy(asc(serviceOptions.id));
+  return rows as OptionLabelRow[];
 }
 
 /**

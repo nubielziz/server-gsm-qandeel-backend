@@ -15,6 +15,7 @@ import {
 } from '../infra/service.repository';
 import { RETAIL_GROUP_KIND } from './client-group-directory';
 import { CatalogPriceVersion } from './catalog-price-version';
+import { CatalogSignals } from './catalog-signals';
 import { PriceResolver } from './price-resolver';
 
 /** One group price as the console sends it (`price` is above zero, checked by the contract). */
@@ -51,6 +52,7 @@ export class GroupPriceAdminService {
     private readonly audit: AuditService,
     private readonly resolver: PriceResolver,
     private readonly priceVersion: CatalogPriceVersion,
+    private readonly signals: CatalogSignals,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -105,6 +107,8 @@ export class GroupPriceAdminService {
         throw error;
       }
       this.priceVersion.bumpAfterCommit(work);
+      // Every call (feature 29): a set without the retail row takes the service off the shop's search.
+      await this.signals.servicesChanged(tx, [serviceId], 'price');
       await this.audit.record(tx, {
         action: 'changed group prices of',
         entityType: 'service',

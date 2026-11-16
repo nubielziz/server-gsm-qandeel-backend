@@ -46,6 +46,8 @@ const INDICATORS: Readonly<Record<string, string>> = {
   redis: 'redis',
   redis_queue: 'redis_queue',
   storage: 'storage',
+  // Feature 29: registered only while SEARCH_ENABLED is on (non-critical; the shop falls back to Postgres).
+  search: 'search',
 };
 
 function infoNumber(info: string, key: string): number | null {

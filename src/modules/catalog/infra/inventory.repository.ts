@@ -100,16 +100,19 @@ export async function insertCodeRows(db: DbExecutor, rows: readonly NewInventory
  *
  * @param db the transaction
  * @param ids the distinct code ids
- * @returns the ids that became void
+ * @returns the codes that became void with their service (for the search signal of feature 29), by id
  */
-export async function voidAvailableCodes(db: DbExecutor, ids: readonly number[]): Promise<number[]> {
+export async function voidAvailableCodes(
+  db: DbExecutor,
+  ids: readonly number[],
+): Promise<Array<{ id: number; serviceId: number }>> {
   if (ids.length === 0) return [];
   const rows = await db
     .update(inventoryCodes)
     .set({ status: 'void' })
     .where(and(inArray(inventoryCodes.id, [...ids]), eq(inventoryCodes.status, 'available')))
-    .returning({ id: inventoryCodes.id });
-  return rows.map((row) => row.id).sort((a, b) => a - b);
+    .returning({ id: inventoryCodes.id, serviceId: inventoryCodes.serviceId });
+  return rows.sort((a, b) => a.id - b.id);
 }
 
 /**

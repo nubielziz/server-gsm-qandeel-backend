@@ -16,6 +16,8 @@ interface Service {
   init?: boolean;
   volumes?: string[];
   environment?: Record<string, string>;
+  mem_limit?: string;
+  depends_on?: Record<string, { condition: string }>;
   ulimits?: { nofile?: { soft: number; hard: number } };
 }
 const compose = Bun.YAML.parse(read('deploy/compose.prod.yaml')) as { services: Record<string, Service> };
@@ -84,6 +86,32 @@ describe('deploy/compose.prod.yaml', () => {
     expect(service('site').environment).toEqual({ GSM_API_ORIGIN: 'http://api:3000' });
   });
 
+  it('runs the search engine on the internal network with its limits, and gives each app container only its own key (feature 29)', () => {
+    const engine = service('typesense');
+    const dev = Bun.YAML.parse(read('compose.yaml')) as { services: Record<string, Service> };
+    // The same image and digest as the development stack, never published, restarted, memory-limited.
+    expect(engine.image).toBe(dev.services.typesense?.image);
+    expect(engine.image).toMatch(/^typesense\/typesense:30\.2@sha256:[0-9a-f]{64}$/);
+    expect(engine.ports).toBeUndefined();
+    expect(engine.restart).toBe('unless-stopped');
+    expect(engine.mem_limit).toContain('TYPESENSE_MEM_LIMIT');
+    const command = (engine.command ?? []).join(' ');
+    expect(command).toContain('--api-key ${TYPESENSE_BOOTSTRAP_KEY:?');
+    expect(command).toContain('--disk-used-max-percentage 85');
+    expect(command).toContain('--db-compaction-interval 86400');
+    // Step 0: the memory flag never refused a write under a cgroup limit, so it is not used.
+    expect(command).not.toContain('--memory-used-max-percentage');
+    // A slow multi_search is logged with its body, which holds the typed query: no slow log at all.
+    expect(command).not.toContain('--log-slow-requests-time-ms');
+    expect(command).toContain('--log-slow-searches-time-ms -1');
+    expect(engine.volumes).toEqual(['typesense-data:/data']);
+    // The API must boot without search: started, never healthy.
+    for (const name of ['api', 'worker'])
+      expect(service(name).depends_on?.typesense, name).toEqual({ condition: 'service_started' });
+    expect(Object.keys(service('api').environment ?? {})).toEqual(['TYPESENSE_SEARCH_KEY']);
+    expect(Object.keys(service('worker').environment ?? {})).toEqual(['TYPESENSE_INDEXER_KEY']);
+  });
+
   it('pins every image by tag and never uses latest', () => {
     for (const [name, definition] of Object.entries(compose.services)) {
       const image = definition.image ?? '';
@@ -128,11 +156,18 @@ describe('deploy/Caddyfile', () => {
     expect(caddyfile).toContain('Strict-Transport-Security');
   });
 
-  it('hides the ticket token in the shop host access log, and logs the other hosts as plain JSON (feature 28)', () => {
+  it('hides the ticket token and the typed search in the shop host access log, and logs the other hosts as plain JSON (features 28, 29)', () => {
     const shop = block('SHOP_HOST');
     expect(shop).toContain('format filter {');
-    expect(shop).toContain('request>uri regexp "/tickets/[^/?]+" "/tickets/[token]"');
-    expect(shop).toContain('request>headers>Referer regexp "/tickets/[^/?]+" "/tickets/[token]"');
+    // One `multi_regexp` per field holds every rule (one `regexp` line each): the ticket token and the `q` parameter of a search, which
+    // can be an IMEI, a phone number or an email address.
+    for (const field of ['request>uri', 'request>headers>Referer']) {
+      const rules = new RegExp(`${field} multi_regexp \\{([\\s\\S]*?)\\n\\s*\\}`).exec(shop)?.[1] ?? '';
+      expect(rules, field).not.toBe('');
+      expect(rules, field).toContain('regexp "/tickets/[^/?]+" "/tickets/[token]"');
+      expect(rules, field).toContain('regexp "([?&])q=[^&]*" "${1}q=[redacted]"');
+    }
+    expect(shop).not.toMatch(/^\s*request>[^\n]* regexp /m);
     for (const host of ['ADMIN_HOST', 'API_HOST']) expect(block(host)).toContain('import json_log');
     expect(shop).not.toContain('import json_log');
   });
@@ -192,6 +227,12 @@ describe('Dockerfile and .dockerignore', () => {
     for (const entry of ['.git', 'node_modules', '.env', '.env.*', 'test', 'docs', 'reference', '.lead', 'deploy']) {
       expect(ignored).toContain(entry);
     }
+  });
+
+  it('carries the search-key tool the runbook runs in the api container, in the allow-list, the copy and the import check', () => {
+    expect(read('.dockerignore').split('\n')).toContain('!scripts/search-keys.ts');
+    expect(dockerfile).toMatch(/^COPY [^\n]*scripts\/search-keys\.ts [^\n]*\.\/scripts\/$/m);
+    expect(dockerfile).toContain("'search-keys'");
   });
 
   it('copies no environment file into the image and bakes in no secret', () => {

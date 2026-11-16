@@ -154,7 +154,25 @@ export class StorefrontQuotes {
     context: QuoteContext,
     serviceIds: readonly number[],
   ): Promise<Map<number, PricedService>> {
-    const sellable = await this.listedSellable(db, serviceIds, context.retailGroupId);
+    return this.pricedSellable(db, context, await this.listedSellable(db, serviceIds, context.retailGroupId));
+  }
+
+  /**
+   * Prices services that already passed the sellable and listed rule.
+   *
+   * Why: feature 29: the search re-checks its hits with its own rule (`SearchableIds`: sellable, priced, an English listing) and must
+   * not read the sellable and listing rows a second time to price the survivors; `priced` is this after `listedSellable`.
+   *
+   * @param db the database or a transaction
+   * @param context the buyer's context
+   * @param sellable the services that may be sold, by id (from `listedSellable`, or the search's own rule)
+   * @returns those with a retail price, by id (the others are absent)
+   */
+  async pricedSellable(
+    db: DbExecutor,
+    context: QuoteContext,
+    sellable: ReadonlyMap<number, SellableService>,
+  ): Promise<Map<number, PricedService>> {
     const quotes = await this.retail.quotes(db, [...sellable.keys()], context.at);
     const out = new Map<number, PricedService>();
     for (const [id, service] of sellable) {

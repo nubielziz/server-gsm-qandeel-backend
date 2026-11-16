@@ -19,6 +19,7 @@ import { seedRisk } from './risk';
 import { seedStorefront } from './storefront';
 import { seedSupport } from './support';
 import { seedSupplierLogs, seedSuppliers } from './suppliers';
+import { requestSearchRebuild } from '../search-rebuild';
 
 /** One module's seeder. */
 export interface Seeder {
@@ -72,7 +73,8 @@ export const SEEDERS: readonly Seeder[] = [
  *
  * @param db the Drizzle database
  * @param demo the loaded frontend demo state
- * @param config the application configuration; the catalog seeder needs it for the encrypted inventory codes and leaves them out without it
+ * @param config the application configuration; the catalog seeder needs it for the encrypted inventory codes and leaves them out without it;
+ *   with it and search on, a rebuild of the search index is queued after the commit (feature 29)
  * @returns the reports of all seeders, in order
  */
 export async function runSeed(
@@ -80,11 +82,25 @@ export async function runSeed(
   demo: DemoSeed,
   config?: AppConfig,
 ): Promise<Array<SeedReport & { module: string }>> {
-  return db.transaction(async (tx) => {
-    const reports: Array<SeedReport & { module: string }> = [];
+  const reports = await db.transaction(async (tx) => {
+    const done: Array<SeedReport & { module: string }> = [];
     for (const seeder of SEEDERS) {
-      for (const report of await seeder.run(tx, demo, config)) reports.push({ module: seeder.module, ...report });
+      for (const report of await seeder.run(tx, demo, config)) done.push({ module: seeder.module, ...report });
     }
-    return reports;
+    return done;
   });
+  // Feature 29: the seeded listings reach the storefront search once the worker rebuilds the index (only with a configuration, search
+  // on and the engine answering; the tests call the seed without one).
+  if (config?.search.enabled) {
+    const request = await requestSearchRebuild(config, 'seed', new Date()).catch((error: unknown) => ({
+      queued: false,
+      detail: error instanceof Error ? error.message : String(error),
+    }));
+    console.log(
+      request.queued
+        ? `  search    index rebuild queued (job ${request.detail})`
+        : `  search    no index rebuild queued: ${request.detail}`,
+    );
+  }
+  return reports;
 }

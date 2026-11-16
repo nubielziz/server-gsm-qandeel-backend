@@ -203,6 +203,8 @@ const DEFAULT_OPS: Readonly<Record<FilterType, readonly FilterOp[]>> = {
   id: NUMERIC_OPS,
   datetime: ['eq', 'gte', 'lte', 'gt', 'lt'],
 };
+// eslint-disable-next-line no-control-regex -- matching control characters is the point of this pattern
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/g;
 const RESERVED = new Set(['_start', '_end', '_sort', '_order', 'q']);
 
 type Converted = { readonly ok: true; readonly value: FilterValue } | { readonly ok: false; readonly message: string };
@@ -387,7 +389,8 @@ function parse(
 
   // Search text.
   let search: ParsedListQuery['search'];
-  const searchText = single('q')?.trim();
+  // Control characters (a NUL byte made Postgres answer 500) are not part of a search: they are dropped before the text is read.
+  const searchText = single('q')?.replace(CONTROL_CHARACTERS, '').trim();
   if (searchText) {
     if (!descriptor.search) fail('q', 'This list does not support search.');
     else if (searchText.length > MAX_TEXT_LENGTH) fail('q', `Must be at most ${MAX_TEXT_LENGTH} characters.`);

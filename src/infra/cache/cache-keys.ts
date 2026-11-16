@@ -256,6 +256,96 @@ export class CacheKeys {
   }
 
   /**
+   * The lock of the search index's long runs (feature 29): the reconcile and the rebuild hold it (`SET NX PX`, renewed every minute).
+   *
+   * @returns `gsm:{env}:storefront:search-index:lock`
+   */
+  searchIndexLock(): CacheKey {
+    return `${this.keyspace}storefront:search-index:lock` as CacheKey;
+  }
+
+  /**
+   * The lock of the search terms build (feature 29).
+   *
+   * @returns `gsm:{env}:storefront:search-terms:lock`
+   */
+  searchTermsLock(): CacheKey {
+    return `${this.keyspace}storefront:search-terms:lock` as CacheKey;
+  }
+
+  /**
+   * The popular searches the empty search box shows (feature 29, slice B2).
+   *
+   * @returns `gsm:{env}:storefront:search-popular`
+   */
+  searchPopular(): CacheKey {
+    return `${this.keyspace}storefront:search-popular` as CacheKey;
+  }
+
+  /**
+   * The display part of a search card (title, slug, picture, brand, network, category, type; never a price), before its `search`
+   * version suffix (feature 29, slice B2).
+   *
+   * @param serviceId the service
+   * @returns `gsm:{env}:storefront:search-card:{serviceId}` (read through `CacheService.versioned('search', key)`)
+   */
+  searchCard(serviceId: number): CacheKey {
+    return `${this.keyspace}storefront:search-card:${segment('service id', serviceId)}` as CacheKey;
+  }
+
+  /**
+   * The engine part of a suggest answer (ids, ghost, completions, filters, did-you-mean), before its `search` version suffix
+   * (feature 29, slice B2).
+   *
+   * @param prefixHash sha1 of the normalised typed text
+   * @returns `gsm:{env}:storefront:suggest:{sha1(p)}` (read through `CacheService.versioned('search', key)`)
+   */
+  searchSuggest(prefixHash: string): CacheKey {
+    return `${this.keyspace}storefront:suggest:${segment('suggest hash', prefixHash)}` as CacheKey;
+  }
+
+  /**
+   * The facet labels of the results page (the most frequent spelling per lower-cased brand and network), before its `search` version
+   * suffix (feature 29, slice B2).
+   *
+   * @returns `gsm:{env}:storefront:search-facet-labels` (read through `CacheService.versioned('search', key)`)
+   */
+  searchFacetLabels(): CacheKey {
+    return `${this.keyspace}storefront:search-facet-labels` as CacheKey;
+  }
+
+  /**
+   * The day's search counters: a hash of `s:<term>` (searches) and `z:<term>` (no results) (feature 29).
+   *
+   * @param day the UTC day, `yyyymmdd`
+   * @returns `gsm:{env}:storefront:search-terms:{yyyymmdd}`
+   */
+  searchTermsDay(day: string): CacheKey {
+    return `${this.keyspace}storefront:search-terms:${segment('day', day)}` as CacheKey;
+  }
+
+  /**
+   * The day's distinct-visitor estimate of one term (a HyperLogLog over salted hashes, never an IP) (feature 29).
+   *
+   * @param day the UTC day, `yyyymmdd`
+   * @param termHash sha1 of the normalised term
+   * @returns `gsm:{env}:storefront:search-visitors:{yyyymmdd}:{sha1(term)}`
+   */
+  searchVisitors(day: string, termHash: string): CacheKey {
+    return `${this.keyspace}storefront:search-visitors:${segment('day', day)}:${segment('term hash', termHash)}` as CacheKey;
+  }
+
+  /**
+   * The day's random salt of the visitor hashes (feature 29), so yesterday's hashes cannot be linked to today's.
+   *
+   * @param day the UTC day, `yyyymmdd`
+   * @returns `gsm:{env}:storefront:search-visitor-salt:{yyyymmdd}`
+   */
+  searchVisitorSalt(day: string): CacheKey {
+    return `${this.keyspace}storefront:search-visitor-salt:${segment('day', day)}` as CacheKey;
+  }
+
+  /**
    * A group of keys, for `CacheService.delByPrefix`.
    *
    * @param module the owning module, for example `catalog`
@@ -412,6 +502,72 @@ export const CACHE_KEY_FAMILIES: readonly CacheKeyFamily[] = [
     owner: 'support',
     ttl: '2.5 s (SET NX PX 2500, no jitter: it is a throttle, not a cache)',
     invalidation: 'never; it expires, and while it lives a typing ping rings no doorbell',
+  },
+  {
+    builder: 'searchIndexLock',
+    pattern: 'gsm:{env}:storefront:search-index:lock',
+    owner: 'storefront (search)',
+    ttl: '30 min (SET NX PX 1800000), renewed every minute by its holder',
+    invalidation:
+      'released by its holder with a token compare when the reconcile or rebuild ends; otherwise it expires',
+  },
+  {
+    builder: 'searchTermsLock',
+    pattern: 'gsm:{env}:storefront:search-terms:lock',
+    owner: 'storefront (search)',
+    ttl: '30 min (SET NX PX 1800000), renewed every minute by its holder',
+    invalidation: 'released by its holder with a token compare when the terms build ends; otherwise it expires',
+  },
+  {
+    builder: 'searchPopular',
+    pattern: 'gsm:{env}:storefront:search-popular',
+    owner: 'storefront (search)',
+    ttl: '10 min (+-15 %)',
+    invalidation:
+      'deleted by the search_settings job after a hidden-term change; otherwise expiry (display only, never a decision)',
+  },
+  {
+    builder: 'searchCard',
+    pattern: 'gsm:{env}:storefront:search-card:{serviceId}:v{search}',
+    owner: 'storefront (search)',
+    ttl: '30 s (+-15 %); display text only (no price, no searchable rule: both are read on every request)',
+    invalidation: 'the search version moves after a synonym or pin push; otherwise expiry',
+  },
+  {
+    builder: 'searchSuggest',
+    pattern: 'gsm:{env}:storefront:suggest:{sha1(p)}:v{search}',
+    owner: 'storefront (search)',
+    ttl: '30 s (+-15 %); the engine part only (ids, ghost, completions, filters, did-you-mean), prices and the re-check come after it',
+    invalidation: 'the search version moves after a synonym or pin push; otherwise expiry',
+  },
+  {
+    builder: 'searchFacetLabels',
+    pattern: 'gsm:{env}:storefront:search-facet-labels:v{search}',
+    owner: 'storefront (search)',
+    ttl: '10 min (+-15 %)',
+    invalidation: 'the search version moves after a synonym or pin push; otherwise expiry (labels for display only)',
+  },
+  {
+    builder: 'searchTermsDay',
+    pattern: 'gsm:{env}:storefront:search-terms:{yyyymmdd}',
+    owner: 'storefront (search)',
+    ttl: '3 days; statistics only (at most 20 000 fields a day), an evicted counter is a lost statistic',
+    invalidation:
+      'never deleted; the search_terms_flush job copies absolute values into search_terms_daily every 15 minutes',
+  },
+  {
+    builder: 'searchVisitors',
+    pattern: 'gsm:{env}:storefront:search-visitors:{yyyymmdd}:{sha1(term)}',
+    owner: 'storefront (search)',
+    ttl: '3 days; a HyperLogLog of salted visitor hashes, never an IP',
+    invalidation: 'never deleted; read with PFCOUNT by the search_terms_flush job',
+  },
+  {
+    builder: 'searchVisitorSalt',
+    pattern: 'gsm:{env}:storefront:search-visitor-salt:{yyyymmdd}',
+    owner: 'storefront (search)',
+    ttl: '48 h (SET NX: 32 random bytes per UTC day)',
+    invalidation: 'never; it expires, so hashes of two days cannot be linked',
   },
   {
     builder: 'prefix',

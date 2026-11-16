@@ -44,6 +44,15 @@ The queue Redis holds BullMQ data only and has no keys in this list (see `docs/q
 | `gsm:{env}:health:checks:{range}:{component}` | health | 30 s (+-15 %) | expiry only (history, not a decision) | `healthChecks` |
 | `gsm:{env}:dashboard:payload:{scope}-{days}` | health (dashboard read model) | 15 s (+-15 %) | expiry only (a read model for display; nothing decides on it) | `dashboard` |
 | `gsm:{env}:health:webhooks-in:{YYYYMMDDHH}` | health | 48 h | none; one hash per UTC hour (delivered, failed, retrying counters) | `webhookIntake` |
+| `gsm:{env}:storefront:search-index:lock` | storefront (search) | 30 min (`SET NX PX 1800000`), renewed every minute by its holder | released by its holder with a token compare when the reconcile or rebuild ends; otherwise it expires | `searchIndexLock` |
+| `gsm:{env}:storefront:search-terms:lock` | storefront (search) | 30 min (`SET NX PX 1800000`), renewed every minute by its holder | released by its holder with a token compare when the terms build ends; otherwise it expires | `searchTermsLock` |
+| `gsm:{env}:storefront:search-popular` | storefront (search) | 10 min (+-15 %) | deleted by the `search_settings` job after a hidden-term change; otherwise expiry (display only, never a decision) | `searchPopular` |
+| `gsm:{env}:storefront:search-card:{serviceId}:v{search}` | storefront (search) | 30 s (+-15 %); display text only (no price, no searchable rule: both are read on every request) | the search version moves after a synonym or pin push; otherwise expiry | `searchCard` |
+| `gsm:{env}:storefront:suggest:{sha1(p)}:v{search}` | storefront (search) | 30 s (+-15 %); the engine part only (ids, ghost, completions, filters, did-you-mean), prices and the re-check come after it | the search version moves after a synonym or pin push; otherwise expiry | `searchSuggest` |
+| `gsm:{env}:storefront:search-facet-labels:v{search}` | storefront (search) | 10 min (+-15 %) | the search version moves after a synonym or pin push; otherwise expiry (labels for display only) | `searchFacetLabels` |
+| `gsm:{env}:storefront:search-terms:{yyyymmdd}` | storefront (search) | 3 days; statistics only (at most 20 000 fields a day), an evicted counter is a lost statistic | never deleted; the `search_terms_flush` job copies absolute values into `search_terms_daily` every 15 minutes | `searchTermsDay` |
+| `gsm:{env}:storefront:search-visitors:{yyyymmdd}:{sha1(term)}` | storefront (search) | 3 days; a HyperLogLog of salted visitor hashes, never an IP | never deleted; read with `PFCOUNT` by the `search_terms_flush` job | `searchVisitors` |
+| `gsm:{env}:storefront:search-visitor-salt:{yyyymmdd}` | storefront (search) | 48 h (`SET NX`: 32 random bytes per UTC day) | never; it expires, so hashes of two days cannot be linked | `searchVisitorSalt` |
 | `gsm:{env}:{module}:{entity}:{idPrefix}` | infra/cache | n/a (a `SCAN` pattern, never stored) | n/a; `CacheService.delByPrefix` deletes every key that starts with it | `prefix` |
 
 Version counters in use (all under the `gsm:{env}:cache:version:{name}` family above):
@@ -54,6 +63,11 @@ Version counters in use (all under the `gsm:{env}:cache:version:{name}` family a
   (Dhru, REST v1, merchant catalog) must build its key through `CatalogPriceVersion.versioned(key)`; a list cached per merchant
   also carries the merchant's group id in its key, so a move to another group needs no bump. Feature 4b caches nothing itself: its
   routes read Postgres on every request.
+
+- **search** (owner: storefront, feature 29): moves after the `search_settings` job pushed the synonym set or the curation set to
+  Typesense, so cached suggest answers, search cards and facet labels (`searchSuggest`, `searchCard`, `searchFacetLabels`) start
+  over with the new synonyms and pins. Read through `CacheService.versioned('search', key)`; nothing that decides (prices, the
+  searchable rule) is cached under it.
 
 Versioned keys are the base key plus `:v{n}`, where `{n}` is the current number of the version counter
 (`gsm:{env}:cache:version:{name}`). The counter is the larger of "previous + 1" and the current time in milliseconds, so a

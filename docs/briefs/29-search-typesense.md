@@ -94,7 +94,7 @@ writers of indexed facts write an outbox event; never read search results as tru
   ```yaml
   typesense:
     image: typesense/typesense:30.2@sha256:610f2d34b1f93d00762869da2c67736775e5798d19a2c8b91b014b8a0cc1e110
-    command: ["--data-dir", "/data", "--api-key", "gsm-typesense-dev", "--log-slow-requests-time-ms", "200"]
+    command: ["--data-dir", "/data", "--api-key", "gsm-typesense-dev", "--log-slow-searches-time-ms", "-1"]
     ports: ["${GSM_TYPESENSE_PORT:-8108}:8108"]
     volumes: ["typesense-data:/data"]
     mem_limit: 768m
@@ -103,7 +103,7 @@ writers of indexed facts write an outbox event; never read search results as tru
   plus the volume `typesense-data`. Step 0 checks that the image has `curl`; if not, the test is
   `["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8108 && printf \"GET /health HTTP/1.0\\r\\n\\r\\n\" >&3 && grep -q true <&3'"]`.
 - **Production, `deploy/compose.prod.yaml`** (slice B2): service `typesense`, same image and digest, `restart: unless-stopped`,
-  `command: ["--data-dir","/data","--api-key","${TYPESENSE_BOOTSTRAP_KEY:?set it}","--log-slow-requests-time-ms","500",
+  `command: ["--data-dir","/data","--api-key","${TYPESENSE_BOOTSTRAP_KEY:?set it}","--log-slow-searches-time-ms","-1",
   "--disk-used-max-percentage","85","--db-compaction-interval","86400"]` (compaction daily
   because the nightly rebuild drops and recreates collections; writes stop before the disk Postgres shares fills), volume
   `typesense-data`, network `gsm` only, **no `ports`, no Caddy route**, `mem_limit: ${TYPESENSE_MEM_LIMIT:-1536m}`, the same
@@ -893,3 +893,6 @@ These answers bind B1, B2, C and S; where they changed the text above, the text 
 - **Worktrees.** `../backend-29` (`feat/backend-29`, `.env.test`: `gsm_29_test`, Redis DB 8, so the prefix is `gsm_29_test_`),
   `../frontend-admin-29` (`feat/console-29`), `../storefront-29` (`feat/storefront-29`, own `npm ci`). The dev node is shared:
   every suite cleans its own prefix (§3.3), and nothing outside the step-0 prefix `s0_` was created here (cleaned).
+- **No engine request log** (B2 review, 2026-11-16): Typesense logs a slow `multi_search` with its body, which holds the typed
+  query, so neither stack sets `--log-slow-requests-time-ms`, and both pass `--log-slow-searches-time-ms -1` (on by default at
+  30 s; the flag is accepted by 30.2, checked on a scratch container). Latency is `search_engine_seconds`.

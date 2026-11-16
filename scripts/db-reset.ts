@@ -1,5 +1,6 @@
 // `bun run db:reset`: a fresh start in development (P4b). Drops and recreates the database of DATABASE_URL, runs the migrations,
-// empties the queue and cache Redis databases and the files bucket, then optionally seeds the demo (--seed) or runs the first run
+// empties the queue and cache Redis databases and the files bucket, drops the search engine's collections, aliases and sets of
+// TYPESENSE_PREFIX (feature 29; the worker rebuilds the index), then optionally seeds the demo (--seed) or runs the first run
 // (--setup: asks for the first admin in a terminal, or takes --email and --name). Development only: refused for production, for
 // the test databases and for servers that are not local.
 import { type AppConfig, loadConfigOrExit } from '../src/config';
@@ -28,8 +29,36 @@ import {
 import { runFirstRunFlow } from './lib/first-run-flow';
 import { readPasswordFromStdin } from './lib/stdin-password';
 import { atTerminal, createTerminalPrompter } from './lib/terminal-prompter';
+import { scriptClient } from './search-keys';
 import { seedDevelopmentDatabase } from './seed/dev-seed';
 import { demoStatePath } from './seed/demo-state';
+
+/**
+ * Drops the search engine's names of the configuration's prefix: aliases, collections, the synonym and curation sets.
+ *
+ * Why: feature 29: the index is derived from the database being reset; the worker's boot reconcile finds no alias and rebuilds it. An
+ * engine that does not answer is not an error (search falls back to Postgres), so the reset goes on and says so.
+ *
+ * @param config the configuration (its search prefix, URL and indexer key)
+ * @returns the line to print
+ */
+async function dropSearchNames(config: AppConfig): Promise<string> {
+  const prefix = config.search.prefix;
+  if (!config.search.enabled) return `  search     off (SEARCH_ENABLED=false): nothing to drop`;
+  const client = scriptClient(config.search.url, config.search.indexerKey ?? '');
+  try {
+    await client.health();
+  } catch {
+    return `  search     the engine at ${new URL(config.search.url).host} does not answer: nothing dropped`;
+  }
+  const aliases = await client.listAliases(prefix);
+  for (const alias of aliases) await client.deleteAlias(alias.name);
+  const collections = await client.listCollections(prefix);
+  for (const collection of collections) await client.dropCollection(collection.name);
+  await client.deleteSynonymSet(`${prefix}synonyms`);
+  await client.deleteCurationSet(`${prefix}curations`);
+  return `  search     prefix "${prefix}": ${collections.length} collections and ${aliases.length} aliases dropped`;
+}
 
 /** Prints what is wrong and stops with exit code 1. */
 function stop(message: string): never {
@@ -104,6 +133,7 @@ try {
   } else {
     console.log(`  files      bucket "${target.bucket.name}" does not exist: nothing to empty`);
   }
+  console.log(await dropSearchNames(config));
 
   if (seed) {
     await seedDevelopmentDatabase(config);

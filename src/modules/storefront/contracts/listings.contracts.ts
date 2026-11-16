@@ -16,6 +16,7 @@ import {
   ListingCountryField,
   ListingSortField,
   LocaleField,
+  STOREFRONT_LOCALES,
   SeoDescriptionField,
   SeoTitleField,
   SlugField,
@@ -140,7 +141,8 @@ export const listListings = defineRoute({
   summary: 'List storefront listings',
   description:
     'One row per service and language. Archived services are gone (RESOLUTIONS catalog-3). `q` is a contains over the public ' +
-    'title, the slug, the service name and the service code. Filters: `isListed`, `locked` and `isFeatured`. Sorts: public title, ' +
+    'title, the slug, the service name and the service code. Filters: `isListed`, `locked`, `isFeatured` and `locale` (`en` or ' +
+    '`ar`: the search pin picker lists English listings only, feature 29). Sorts: public title, ' +
     '`isListed`, `slug`, `id`, `listedAt` (first publication; never-listed rows last) and `sort`. The counts above the table ask ' +
     'with `_start=0&_end=1` and read `x-total-count`. Rows leave out the two Markdown bodies (`GET /admin/service-listings/:id` has them). ' +
     'Default order: public title.',
@@ -151,7 +153,12 @@ export const listListings = defineRoute({
   query: listQuery({
     sorts: ['publicTitle', 'isListed', 'slug', 'id', 'listedAt', 'sort'],
     defaultSort: { field: 'publicTitle', order: 'asc' },
-    filters: { isListed: { type: 'boolean' }, locked: { type: 'boolean' }, isFeatured: { type: 'boolean' } },
+    filters: {
+      isListed: { type: 'boolean' },
+      locked: { type: 'boolean' },
+      isFeatured: { type: 'boolean' },
+      locale: { type: 'enum', values: STOREFRONT_LOCALES },
+    },
     search: ['publicTitle', 'slug', 'service.name', 'service.code'],
   }),
   success: { status: 200, schema: ListingRow },

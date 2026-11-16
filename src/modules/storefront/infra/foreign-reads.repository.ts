@@ -48,6 +48,8 @@ const COLUMNS: ListColumns = {
   'service.name': s.services.name,
   'service.code': s.services.code,
   locked: LOCKED_SQL,
+  // Feature 29: the console's pin picker lists the English listings only.
+  locale: s.serviceListings.locale,
 };
 
 /** The sorts of `GET /admin/service-listings`. */
@@ -85,7 +87,8 @@ const toRow = (row: Selected): ListingRow => ({
  * Lists listings with their service facts for `GET /admin/service-listings`.
  *
  * @param db the database or a transaction
- * @param query the parsed list request (filters `isListed`, `locked` and `isFeatured`, search over title, slug, service name and code)
+ * @param query the parsed list request (filters `isListed`, `locked`, `isFeatured` and `locale`, search over title, slug, service name
+ *   and code)
  * @returns the page of rows and the exact total; listings of archived services are left out
  */
 export async function listListingRows(

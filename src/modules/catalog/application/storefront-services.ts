@@ -8,7 +8,11 @@ import {
   type SellableFilter,
   countServicesByCategory,
   findInStockIds,
+  findOptionLabels,
+  findPricedAmong,
   findPricedServiceIds,
+  findPricedServicePage,
+  findServiceIdsOfCategory,
   findSellableServices,
   findServiceNames,
   findServiceFields,
@@ -92,6 +96,72 @@ export class StorefrontServices {
    */
   priced(db: DbExecutor, groupId: number, filter?: SellableFilter): Promise<number[]> {
     return findPricedServiceIds(db, groupId, filter);
+  }
+
+  /**
+   * Lists one page of the ids the storefront may sell (visible to the group and priced for it), after an id, with no ceiling.
+   *
+   * Why: feature 29, plan section 4.5: the search reconcile and the rebuild walk every searchable service; `priced` stops at 10 000.
+   *
+   * @param db the database or a transaction
+   * @param groupId the storefront's retail group
+   * @param afterId the last id of the previous page (0 for the first)
+   * @param limit the page size
+   * @returns the ids, ascending; fewer than `limit` on the last page
+   */
+  pricedPage(db: DbExecutor, groupId: number, afterId: number, limit: number): Promise<number[]> {
+    return findPricedServicePage(db, groupId, afterId, limit);
+  }
+
+  /**
+   * Tells which of some services the storefront may sell: visible to the group and priced for it.
+   *
+   * Why: feature 29: the search's one rule (`searchableIds`) needs "a retail price row" for a page of ids.
+   *
+   * @param db the database or a transaction
+   * @param ids the service ids
+   * @param groupId the storefront's retail group
+   * @returns the ids among them that are visible and priced
+   */
+  pricedAmong(db: DbExecutor, ids: readonly number[], groupId: number): Promise<Set<number>> {
+    return findPricedAmong(db, ids, groupId);
+  }
+
+  /**
+   * Lists one page of the ids of the services of a category, whatever their state, after an id.
+   *
+   * Why: feature 29: a category change re-reads every service of the category for the search index.
+   *
+   * @param db the database or a transaction
+   * @param categoryId the category
+   * @param afterId the last id of the previous page (0 for the first)
+   * @param limit the page size
+   * @returns the ids, ascending
+   */
+  serviceIdsOfCategory(db: DbExecutor, categoryId: number, afterId: number, limit: number): Promise<number[]> {
+    return findServiceIdsOfCategory(db, categoryId, afterId, limit);
+  }
+
+  /**
+   * Reads the model and network option labels of some services.
+   *
+   * Why: feature 29, plan section 4.2: the search indexes them (never the MEP list or the supplier values).
+   *
+   * @param db the database or a transaction
+   * @param ids the service ids
+   * @returns per service id its model and network labels, in option order (a service without options is absent)
+   */
+  async optionLabels(
+    db: DbExecutor,
+    ids: readonly number[],
+  ): Promise<Map<number, { models: string[]; networks: string[] }>> {
+    const out = new Map<number, { models: string[]; networks: string[] }>();
+    for (const row of await findOptionLabels(db, ids)) {
+      const entry = out.get(row.serviceId) ?? { models: [], networks: [] };
+      (row.list === 'model' ? entry.models : entry.networks).push(row.label);
+      out.set(row.serviceId, entry);
+    }
+    return out;
   }
 
   /**

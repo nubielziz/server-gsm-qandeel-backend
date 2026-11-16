@@ -12,6 +12,7 @@ import {
   parseEnv,
   parseTrustProxy,
   parseTurnstileHostnames,
+  searchPrefixOf,
   summarizeConfig,
 } from './env';
 
@@ -39,6 +40,7 @@ const production = (): Record<string, string> => ({
   MAIL_SMTP_URL: 'smtps://mailer:pw@smtp.provider.example:465',
   MAIL_FROM: 'GSM <noreply@gsm.example>',
   TURNSTILE_SECRET_KEY: 'turnstile-secret-for-tests',
+  TYPESENSE_URL: 'http://typesense:8108/',
 });
 
 const issuesOf = (env: Record<string, string>) => {
@@ -665,5 +667,90 @@ describe('.env.example', () => {
     expect(config.env).toBe('development');
     expect(config.http.port).toBe(3000);
     expect(config.database.url).toBe(DEV_DEFAULTS.databaseUrl);
+  });
+});
+
+describe('search (feature 29)', () => {
+  it('is on in development with the compose node and its bootstrap key for both processes, and off under test', () => {
+    const development = parseEnv({});
+    expect(development.search).toEqual({
+      enabled: true,
+      url: DEV_DEFAULTS.typesenseUrl,
+      indexerKey: DEV_DEFAULTS.typesenseKey,
+      searchKey: DEV_DEFAULTS.typesenseKey,
+      prefix: 'gsm_development_',
+      suggestTimeoutMs: 250,
+      timeoutMs: 800,
+      reconcileMinutes: 15,
+    });
+    const test = parseEnv({ NODE_ENV: 'test' });
+    expect(test.search.enabled).toBe(false);
+    expect(test.search.prefix).toBe('gsm_test_');
+  });
+
+  it('reads only the *_TEST values under test, and derives the prefix from the test database name', () => {
+    const config = parseEnv({
+      NODE_ENV: 'test',
+      SEARCH_ENABLED: 'false',
+      SEARCH_ENABLED_TEST: 'true',
+      TYPESENSE_URL: 'http://never:1',
+      TYPESENSE_URL_TEST: 'http://127.0.0.1:8108/',
+      TYPESENSE_PREFIX: 'gsm_other_',
+      DATABASE_URL_TEST: 'postgres://gsm:gsm@localhost:5432/gsm_29_test',
+    });
+    expect(config.search.enabled).toBe(true);
+    expect(config.search.url).toBe('http://127.0.0.1:8108');
+    expect(config.search.prefix).toBe('gsm_29_test_');
+    expect(parseEnv({ NODE_ENV: 'test', TYPESENSE_PREFIX_TEST: 'gsm_29_test_ab12_' }).search.prefix).toBe(
+      'gsm_29_test_ab12_',
+    );
+    expect(searchPrefixOf('postgres://gsm:gsm@localhost:5432/Gsm-Lock.Test')).toBe('gsm_lock_test_');
+  });
+
+  it('refuses a prefix that breaks the naming rule and timeouts outside their ranges', () => {
+    const issues = issuesOf({
+      TYPESENSE_PREFIX: 'Bad-Prefix',
+      SEARCH_SUGGEST_TIMEOUT_MS: '10',
+      SEARCH_TIMEOUT_MS: '9000',
+      SEARCH_RECONCILE_MINUTES: '1',
+    });
+    expect(issues.map((issue) => issue.variable).sort()).toEqual([
+      'SEARCH_RECONCILE_MINUTES',
+      'SEARCH_SUGGEST_TIMEOUT_MS',
+      'SEARCH_TIMEOUT_MS',
+      'TYPESENSE_PREFIX',
+    ]);
+  });
+
+  it('requires TYPESENSE_URL in production while search is on, never defaults a key there, and refuses the development key', () => {
+    const { TYPESENSE_URL: _url, ...withoutUrl } = production();
+    expect(issuesOf(withoutUrl)).toEqual([{ variable: 'TYPESENSE_URL', message: 'is required in production' }]);
+    expect(issuesOf({ ...withoutUrl, SEARCH_ENABLED: 'false' })).toEqual([]);
+    const config = parseEnv(production());
+    expect(config.search).toMatchObject({
+      enabled: true,
+      url: 'http://typesense:8108',
+      indexerKey: undefined,
+      searchKey: undefined,
+      prefix: 'gsm_production_',
+    });
+    expect(
+      issuesOf({ ...production(), TYPESENSE_SEARCH_KEY: DEV_DEFAULTS.typesenseKey }).map((issue) => issue.variable),
+    ).toEqual(['TYPESENSE_SEARCH_KEY']);
+    expect(
+      issuesOf({ ...production(), TYPESENSE_INDEXER_KEY: DEV_DEFAULTS.typesenseKey }).map((issue) => issue.variable),
+    ).toEqual(['TYPESENSE_INDEXER_KEY']);
+  });
+
+  it('never prints the keys in the boot summary', () => {
+    const config = parseEnv({
+      ...production(),
+      TYPESENSE_SEARCH_KEY: 'search-key-secret',
+      TYPESENSE_INDEXER_KEY: 'idx-secret',
+    });
+    const text = JSON.stringify(summarizeConfig(config));
+    expect(text).not.toContain('search-key-secret');
+    expect(text).not.toContain('idx-secret');
+    expect(text).toContain('"searchKey":"[set]"');
   });
 });

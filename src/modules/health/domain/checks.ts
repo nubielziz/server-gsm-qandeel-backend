@@ -2,8 +2,20 @@
 // overall verdict (RESOLUTIONS health-commissions-6, -7; docs/contract/endpoints/health.md `GET /admin/system/health` and `/checks`).
 import type { CheckStatus } from '../db/schema';
 
-/** The core components the checker writes (`service_checks.component` as is); suppliers and gateways add `supplier:<id>` and `gateway:<id>`. */
-export const CORE_COMPONENTS = ['api', 'postgres', 'redis', 'redis_queue', 'storage', 'workers', 'mail'] as const;
+/**
+ * The core components the checker writes (`service_checks.component` as is); suppliers and gateways add `supplier:<id>` and `gateway:<id>`.
+ * `search` (feature 29) is the storefront search engine: checked while `SEARCH_ENABLED` is on, `unknown` otherwise.
+ */
+export const CORE_COMPONENTS = [
+  'api',
+  'postgres',
+  'redis',
+  'redis_queue',
+  'storage',
+  'workers',
+  'mail',
+  'search',
+] as const;
 /** One core component key. */
 export type CoreComponent = (typeof CORE_COMPONENTS)[number];
 
@@ -16,6 +28,7 @@ export const CORE_NAMES: Readonly<Record<CoreComponent, string>> = {
   storage: 'File storage',
   workers: 'Queue workers',
   mail: 'Email relay',
+  search: 'Search engine',
 };
 
 /** The detail text of a supplier whose checks are switched off (a disabled supplier has no check row). */

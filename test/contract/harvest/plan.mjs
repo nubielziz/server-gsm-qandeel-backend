@@ -131,6 +131,8 @@ export const OVERRIDES = {
   // Feature 28: a download needs a file on a message, and GETs are read before any upload, so the console's mock seeds one: the
   // receipt on the team's reply of T-4208 (ticket 4208, file 1).
   'GET /admin/support-tickets/:id/files/:fileId': { path: { id: 4208, fileId: 1 } },
+  // Feature 29: the search preview needs the query it ranks.
+  'GET /admin/search/preview': { query: { q: 'unlock' } },
   'GET /admin/system/queues/:name/failed': (w) => ({ path: { name: queueName(w, true) } }),
 
   'POST /admin/system/queues/:name/pause': (w) => ({

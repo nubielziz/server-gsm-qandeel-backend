@@ -65,6 +65,11 @@ export const AUDIT_ENTITY_TYPES = [
   'tac_entry',
   'ledger_account',
   'notification_campaign',
+  // Feature 29 (storefront search, slice B2's console routes).
+  'search_synonym',
+  'search_pin',
+  'search_hidden_term',
+  'search_index',
 ] as const;
 
 /** One value of {@link AUDIT_ENTITY_TYPES}. */

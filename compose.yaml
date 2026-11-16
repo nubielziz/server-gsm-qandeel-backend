@@ -139,7 +139,7 @@ services:
   # curl or wget, so the healthcheck talks HTTP over /dev/tcp. The dev API key is fixed; production uses secrets.
   typesense:
     image: typesense/typesense:30.2@sha256:610f2d34b1f93d00762869da2c67736775e5798d19a2c8b91b014b8a0cc1e110
-    command: ["--data-dir", "/data", "--api-key", "gsm-typesense-dev", "--log-slow-requests-time-ms", "200"]
+    command: ["--data-dir", "/data", "--api-key", "gsm-typesense-dev", "--log-slow-searches-time-ms", "-1"]
     ports:
       - "${GSM_TYPESENSE_PORT:-8108}:8108"
     volumes:

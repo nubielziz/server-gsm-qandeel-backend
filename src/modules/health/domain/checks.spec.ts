@@ -1,6 +1,22 @@
 // Unit tests of the check rules: buckets, worst check, uptime, the overall status.
 import { describe, expect, it } from 'bun:test';
-import { CHECK_RANGES, bucketStarts, bucketStatus, overallStatus, uptimePercent } from './checks';
+import {
+  CHECK_RANGES,
+  CORE_COMPONENTS,
+  CORE_NAMES,
+  bucketStarts,
+  bucketStatus,
+  overallStatus,
+  uptimePercent,
+} from './checks';
+
+describe('CORE_COMPONENTS', () => {
+  it('lists the search engine last, as "Search engine" (feature 29)', () => {
+    expect(CORE_COMPONENTS.at(-1)).toBe('search');
+    expect(CORE_NAMES.search).toBe('Search engine');
+    for (const key of CORE_COMPONENTS) expect(CORE_NAMES[key].length, key).toBeGreaterThan(0);
+  });
+});
 
 describe('bucketStarts', () => {
   it('aligns buckets to the width, oldest first, the last one holding now', () => {

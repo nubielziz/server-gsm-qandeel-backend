@@ -29,7 +29,7 @@ function section(name: string): string | undefined {
 }
 
 describe('QUEUES', () => {
-  it('has the ten queues of decision 020 and the bulk queue of feature 23', () => {
+  it('has the ten queues of decision 020, the bulk queue of feature 23 and the search queue of feature 29', () => {
     expect<string[]>([...QUEUE_NAMES].sort()).toEqual(
       [
         'alerts',
@@ -40,6 +40,7 @@ describe('QUEUES', () => {
         'notification-broadcasts',
         'notifications',
         'outbox-relay',
+        'search-index',
         'supplier-dispatch',
         'supplier-poll',
         'supplier-sync',
@@ -57,6 +58,15 @@ describe('QUEUES', () => {
       // A queue that retries needs a backoff, and a queue that does not retry needs none.
       expect(queue.attempts > 1, name).toBe('backoff' in queue);
     }
+  });
+
+  it('runs one search sync at a time, so the sync is the only writer of a document (decision 038)', () => {
+    expect(QUEUES['search-index']).toMatchObject({
+      concurrency: 1,
+      attempts: 8,
+      backoff: { delayMs: 30_000, jitter: 0.5 },
+      maxStalledCount: 1,
+    });
   });
 
   it('never re-runs a supplier dispatch on its own after a worker died (decision 025)', () => {

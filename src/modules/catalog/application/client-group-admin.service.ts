@@ -11,6 +11,7 @@ import { MerchantGroupMembers } from '../../identity';
 import { MerchantWallets, PaymentGateways } from '../../money';
 import { AuditService } from '../../platform';
 import { CatalogPriceVersion } from './catalog-price-version';
+import { CatalogSignals } from './catalog-signals';
 import type { ClientGroup } from '../db/schema';
 import {
   clearDefaultMark,
@@ -115,6 +116,7 @@ export class ClientGroupAdminService {
     private readonly wallets: MerchantWallets,
     private readonly gateways: PaymentGateways,
     private readonly priceVersion: CatalogPriceVersion,
+    private readonly signals: CatalogSignals,
   ) {}
 
   /**
@@ -282,6 +284,9 @@ export class ClientGroupAdminService {
       const removedPrices = await deleteGroupPrices(tx, id);
       const removedRuleIds = await deletePricingRulesOfGroup(tx, id);
       const categoryIds = await dropGroupFromCategories(tx, id);
+      // A category that listed only this group is open to every group now, the shop's included: its services may become searchable
+      // (feature 29), one event per category.
+      for (const categoryId of categoryIds) await this.signals.categoryChanged(tx, categoryId);
       // Payment methods that listed the group stop listing it, in this same transaction (money owns that table).
       const gateways = await this.gateways.dropGroup(tx, id);
       try {

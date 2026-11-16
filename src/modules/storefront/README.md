@@ -4,7 +4,7 @@ Map domain H. The content of the public storefront: service listings, content pa
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
-Decisions that shape this module: 022 caching, 034 Turnstile. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 022 caching, 034 Turnstile, 038 search on Typesense. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
 
@@ -15,6 +15,10 @@ listings, content pages, help articles and legal documents and the three public 
 `PATCH /admin/storefront/settings` (below). Feature 22 (the storefront catalog backend) added the listing content editor, the
 catalog filters and sorts, `GET /store/v1/categories`, the availability flag, the popularity job, the public page list, the slug
 alternates, the help vote and the service picture (upload, removal, `imageUrl`; section "Feature 22" below).
+
+Feature 29 (decision 038) added the English search: `GET /store/v1/search/suggest`, `GET /store/v1/search`, the engine path of
+`GET /store/v1/services?q=` and the console's `/admin/search/*` tools; everything of it is in `search/` (its own README) and section
+"Feature 29: search" below.
 
 Layout: `contracts/` (one file per route group, `shared.ts` for the field schemas), `controllers/` (thin), `application/` (one
 service per group, `storefront-catalog.service.ts`, `storefront-quotes.ts`, `storefront-policies.ts`, `legal-documents.ts`,
@@ -234,6 +238,22 @@ model or network with no Latin letter or digit is `422` on `models` or `networks
 never create a page twice and never answer an error. One audit entry `generated landing pages` (entity `content_page`, label `N drafts`, ids in `after`),
 also when nothing was created. Nothing is published.
 
+## Feature 29: search
+
+The English storefront search (`search/README.md` has the flow, the fallback and the statistics). Public routes and the console's
+`/admin/search/*` tools share `SearchHttpModule`; the index side (documents, sync, rebuild, terms) is `SearchIndexModule` and
+`SearchWorkerModule`. `GET /store/v1/services` keeps its contract; `relevance` is a new sort (the first of the default order, skipped
+without `q`, on `locale=ar` and on fallback) and `x-search-engine` / `x-search-truncated` are new response headers.
+
+**Ranking values after tuning on the golden set** (`test/search/golden.test.ts`; all in `search/domain/ranking.ts`): `query_by`
+`title,title_words,codes,joins,models,brand,carrier,networks,country_names,category,summary` with weights `10,9,10,8,6,6,5,4,5,4,2`;
+`num_typos` `0,2,0,0,0,1,1,1,1,1,1` (nearby `0,2,0,0,0,2,2,2,2,2,2`); `prefix` true except `summary`; `max_candidates` 16;
+`drop_tokens_threshold` 0 for the suggest services and the completions, 6 for the nearby search, 1 for the results page;
+`typo_tokens_threshold` 6 on the nearby search only; `prioritize_exact_match` true; `sort_by`
+`_text_match:desc,_eval(in_stock:true):desc,popularity:desc`. Changed from the plan: `synonym_num_typos` 0 (was 1: with 1 the query
+`uk unlock` matched every unlock service through the phrase `sim unlock`), and the completion search takes no typo when the typed text
+holds a digit.
+
 ## Scenarios
 
 None of the 13 map scenarios (`docs/slices/` → `scenarios`) touches this module's tables.
@@ -248,7 +268,11 @@ As built (CRUD rows expand per ALIGNMENT § 4; the generator needs `storefront:c
 
 ## Events
 
-Outbox events produced (types, payload ids): none. Consumed: none.
+Outbox events produced (feature 29; payloads are ids only): `storefront.listing_changed { serviceIds }` (`ListingAdminService` create and
+update, at most 50 ids an event), `search.settings_changed { kind }` (the console's synonym, pin and hidden-term writes) and
+`search.rebuild_requested { staffId, runId }` (`POST /admin/search/index/rebuild`). Consumed: the three above, by the worker's
+`search-index` and `maintenance` queues (`search/jobs/search-outbox-routes.ts`); catalog's `catalog.services_changed` and
+`catalog.category_changed` also reach the `search-index` queue.
 
 ## Jobs and schedules
 
@@ -256,10 +280,18 @@ Outbox events produced (types, payload ids): none. Consumed: none.
 `service_listings.sales_30d`. Idempotent, written to `job_runs` (`processed` = rows changed, `result` = `{ services, changed }`).
 Documented in `docs/queues.md`.
 
+Search (feature 29, `search/jobs`): on `search-index` `search_sync` (the only writer of documents through the live alias) and
+`search_settings`; on `maintenance` `search_reconcile` (every `SEARCH_RECONCILE_MINUTES`), `search_rebuild` (03:40 UTC and on demand),
+`search_terms_build` (hourly at :20), `search_terms_flush` (every 15 minutes) and `search_terms_purge` (04:10 UTC). All idempotent and
+recorded in `job_runs`.
+
 ## Cache keys
 
-None. The public routes read Postgres on every request (only the browser caches the catalog answers, 30 s): the legal page must
-always show the version a consent will reference, and the per-IP limit protects the reads. A listing's retail price write moves the
+The catalog routes (`/store/v1/config`, `/store/v1/services`, `/store/v1/services/:slug`, `/store/v1/categories`) read Postgres on every
+request (only the browser caches the answers, 30 s): the legal page must always show the version a consent will reference, and the
+per-IP limit protects the reads. The search keeps display-only keys, all registered in `docs/cache-keys.md`: `search-card:{serviceId}`,
+`suggest:{sha1(p)}`, `search-facet-labels` (under the `search` version), `search-popular`, the two index locks and the day counters of the
+statistics. Prices, availability and the searchable rule are never cached. A listing's retail price write moves the
 catalog price version after its commit (owner: catalog). A server-side cache with keys per language, country and currency, deleted
 after the commit of listing, price, tax or currency changes, is the next step if the public routes need it.
 

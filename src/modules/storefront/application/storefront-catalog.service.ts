@@ -20,6 +20,10 @@ import type {
 import type { ServiceListing } from '../db/schema';
 import { categorySlug } from '../domain/category-slug';
 import { type PricedListing, applyPriceSort } from '../domain/price-sort';
+import { SearchMatches } from '../search/application/search-matches';
+import { SearchResolver } from '../search/application/search-resolver';
+import { SearchTermsCounter } from '../search/application/search-terms-counter';
+import { NO_FILTERS, type ResultFilters } from '../search/domain/filters';
 import {
   type ListingSort,
   DEFAULT_LOCALE,
@@ -49,6 +53,29 @@ interface ListExtra {
   readonly minPrice?: string | undefined;
   readonly maxPrice?: string | undefined;
 }
+
+/** The sort keys of the public list: the listing columns and `relevance`, which only the search engine knows. */
+export type ListSortField = ListingSort | 'relevance';
+
+/** What the list route needs to know about who asks, for the search statistics (never stored as such: see `SearchTermsCounter`). */
+export interface ListVisitor {
+  readonly ip: string;
+  readonly userAgent: string | undefined;
+  readonly prefetch: boolean;
+}
+
+/** The answer of the list route: the page, the exact total, and what the search engine did when `q` was set. */
+export interface ServiceListPage {
+  rows: CardBody[];
+  total: number;
+  /** `typesense` or `fallback` when `q` was set on an English list; `undefined` otherwise. */
+  engine?: 'typesense' | 'fallback';
+  /** More than 1000 matched and a price sort or bound worked over the best 1000. */
+  truncated?: boolean;
+}
+
+/** The most services a price sort or price bounds read from the search engine. */
+const SEARCH_PRICE_READ = 1000;
 
 /** The most categories the menu route returns. */
 const MAX_CATEGORIES = 500;
@@ -152,6 +179,10 @@ export class StorefrontCatalogService {
     private readonly policies: StorefrontPolicies,
     private readonly legal: CurrentLegalDocuments,
     private readonly images: PublicImages,
+    // Feature 29: with `q` on an English list the order and the match set come from the search engine.
+    private readonly matches: SearchMatches,
+    private readonly resolver: SearchResolver,
+    private readonly terms: SearchTermsCounter,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -202,13 +233,22 @@ export class StorefrontCatalogService {
    * Why: a request without a price bound or price sort is one SQL page (`pageListings`). One with `minPrice`, `maxPrice` or
    * `_sort=price` cannot be, because the price is worked out in code (`StorefrontQuotes`, so the filtered price is the shown and
    * the charged one): it reads every match (at most 10 000), prices them, keeps those inside the bounds, sorts by price and slices
-   * the page itself, so `x-total-count` stays exact.
+   * the page itself, so `x-total-count` stays exact. With `q` on an English list (feature 29, B223) the match set and the order come
+   * from the search engine (typos, synonyms, model codes, pins), every hit re-checked against Postgres and priced here; a price sort or
+   * bounds then work over the best 1000 matches. When the engine is off, down or not ready, and for `locale=ar`, the database search
+   * above answers as before.
    *
    * @param query the parsed list request (filters, search, sort, range, buyer country, currency and price bounds)
-   * @returns the page and the exact total
+   * @param visitor who asks, for the search statistics (absent for internal callers: nothing is counted)
+   * @param options `engine: 'skip'` keeps the engine out (the results route already asked it and fell back)
+   * @returns the page, the exact total, and which engine answered when `q` was set
    * @throws {AppError} `VALIDATION_FAILED` on `currency` when it is not offered; on `maxPrice` when it is below `minPrice`
    */
-  async list(query: ParsedListQuery<ListingSort, ListExtra>): Promise<{ rows: CardBody[]; total: number }> {
+  async list(
+    query: ParsedListQuery<ListSortField, ListExtra>,
+    visitor?: ListVisitor,
+    options: { readonly engine?: 'try' | 'skip' } = {},
+  ): Promise<ServiceListPage> {
     const db = this.db.db;
     const { minPrice, maxPrice } = query.extra;
     const min = minPrice === undefined ? undefined : Money.of(minPrice);
@@ -221,6 +261,34 @@ export class StorefrontCatalogService {
     const retailGroupId = await this.quotes.retailGroupId(db);
     if (retailGroupId === undefined) return { rows: [], total: 0 };
     const context = await this.quotes.context(db, retailGroupId, buyerOf(query.extra));
+    // `relevance` names the search engine's order: the database path has no column for it and keeps the staff's order.
+    const sqlQuery: ParsedListQuery<ListingSort, ListExtra> = {
+      ...query,
+      sort: query.sort.filter((key): key is { field: ListingSort; order: 'asc' | 'desc' } => key.field !== 'relevance'),
+    };
+    const englishSearch = query.search !== undefined && englishOnly(query.filters);
+    if (englishSearch && options.engine !== 'skip') {
+      const answered = await this.listFromEngine(query, context, min, max);
+      if (answered !== null) {
+        await this.countSearch(query, visitor, answered.total);
+        return answered;
+      }
+    }
+    const page = await this.listFromDatabase(sqlQuery, context, retailGroupId, min, max);
+    if (!englishSearch) return page;
+    await this.countSearch(query, visitor, page.total);
+    return { ...page, engine: 'fallback' };
+  }
+
+  /** The database list: SQL for the page, or every match priced in code for a price sort or bounds. */
+  private async listFromDatabase(
+    query: ParsedListQuery<ListingSort, ListExtra>,
+    context: QuoteContext,
+    retailGroupId: number,
+    min: Money | undefined,
+    max: Money | undefined,
+  ): Promise<ServiceListPage> {
+    const db = this.db.db;
     const { rest, narrow } = splitFilters(query.filters);
     const ids = await this.services.priced(db, retailGroupId, narrow);
     const listQuery = { ...query, filters: rest };
@@ -241,6 +309,77 @@ export class StorefrontCatalogService {
     const ordered = applyPriceSort(items, query.sort);
     const page = ordered.slice(query.range.start, query.range.start + query.range.limit);
     return { rows: await this.cards(context, page), total: ordered.length };
+  }
+
+  /**
+   * The list from the search engine, or `null` when the engine did not answer (the caller falls back to the database).
+   *
+   * Side effects: engine calls; reads only in Postgres.
+   */
+  private async listFromEngine(
+    query: ParsedListQuery<ListSortField, ListExtra>,
+    context: QuoteContext,
+    min: Money | undefined,
+    max: Money | undefined,
+  ): Promise<ServiceListPage | null> {
+    const db = this.db.db;
+    const priceMode = min !== undefined || max !== undefined || query.sort.some((key) => key.field === 'price');
+    const sort = query.sort.flatMap((key) => (key.field === 'price' ? [] : [{ field: key.field, order: key.order }]));
+    const outcome = await this.matches.find({
+      route: 'services',
+      q: query.search!.text,
+      filters: resultFiltersOf(query.filters),
+      sort: sort.length > 0 ? sort : [{ field: 'relevance', order: 'desc' }],
+      offset: query.range.start,
+      limit: query.range.limit,
+      readAll: priceMode,
+      extras: false,
+    });
+    if (outcome.engine === 'fallback' || outcome.value === null) return null;
+    const { found, ids } = outcome.value;
+    const hits = await this.resolver.resolve(db, context, ids);
+    const pricedById = new Map(hits.map((hit) => [hit.listing.serviceId, hit.priced]));
+    if (!priceMode) {
+      const dropped = new Set(ids).size - hits.length;
+      const rows = await this.cards(
+        context,
+        hits.map((hit) => hit.listing),
+        pricedById,
+      );
+      return { rows, total: Math.max(rows.length, found - dropped), engine: 'typesense', truncated: false };
+    }
+    const items = hits.flatMap((hit): PricedListing[] => {
+      const gross = this.quotes.amounts(context, hit.priced.unitNet, 1).display.gross;
+      return (!min || gross.cmp(min) >= 0) && (!max || gross.cmp(max) <= 0) ? [{ listing: hit.listing, gross }] : [];
+    });
+    const ordered = applyPriceSort(items, query.sort);
+    const page = ordered.slice(query.range.start, query.range.start + query.range.limit);
+    return {
+      rows: await this.cards(context, page, pricedById),
+      total: ordered.length,
+      engine: 'typesense',
+      truncated: found > SEARCH_PRICE_READ,
+    };
+  }
+
+  /** Counts a search for the statistics (page 1, no filter but `q`; see `SearchTermsCounter`); never fails the request. */
+  private async countSearch(
+    query: ParsedListQuery<ListSortField, ListExtra>,
+    visitor: ListVisitor | undefined,
+    total: number,
+  ): Promise<void> {
+    if (visitor === undefined || query.search === undefined) return;
+    const filtered =
+      query.filters.some((filter) => filter.field !== 'locale') ||
+      query.extra.minPrice !== undefined ||
+      query.extra.maxPrice !== undefined;
+    await this.terms.recordSearch({
+      text: query.search.text,
+      total,
+      firstPage: query.range.start === 0,
+      filtered,
+      ...visitor,
+    });
   }
 
   /**
@@ -276,12 +415,21 @@ export class StorefrontCatalogService {
   /**
    * Prices a page of listings and builds the cards (one batched stock query, one batched picture query); a listing that lost its price
    * is left out.
+   *
+   * @param context the buyer's pricing context
+   * @param rows the listings, in the order to show
+   * @param prepriced prices the caller already worked out (the search's re-check); read here when absent
+   * @returns the cards
    */
-  private async cards(context: QuoteContext, rows: readonly ServiceListing[]): Promise<CardBody[]> {
+  async cards(
+    context: QuoteContext,
+    rows: readonly ServiceListing[],
+    prepriced?: ReadonlyMap<number, PricedService>,
+  ): Promise<CardBody[]> {
     const db = this.db.db;
     const serviceIds = rows.map((row) => row.serviceId);
     const [priced, inStock, images] = await Promise.all([
-      this.quotes.priced(db, context, serviceIds),
+      prepriced ?? this.quotes.priced(db, context, serviceIds),
       this.services.inStockIds(db, serviceIds),
       this.images.urlsOf(
         db,
@@ -352,6 +500,32 @@ export class StorefrontCatalogService {
       alternates: alternates.map((alternate) => ({ locale: alternate.locale as 'en' | 'ar', slug: alternate.slug })),
     };
   }
+}
+
+/** Whether a list request asks for English pages (the language the search engine holds): no `locale` filter, or `locale=en`. */
+function englishOnly(filters: readonly ParsedFilter[]): boolean {
+  const locale = filters.find((filter) => filter.field === 'locale');
+  return locale === undefined || locale.values.every((value) => value === 'en');
+}
+
+/** The list request's filters as the search engine takes them. */
+function resultFiltersOf(filters: readonly ParsedFilter[]): ResultFilters {
+  const texts = (field: string) =>
+    filters.filter((filter) => filter.field === field).flatMap((filter) => filter.values.map(String));
+  const availability = texts('availability').filter(
+    (value): value is 'in_stock' | 'on_request' => value === 'in_stock' || value === 'on_request',
+  );
+  const featured = texts('featured')[0];
+  return {
+    ...NO_FILTERS,
+    brand: texts('brand'),
+    network: texts('network'),
+    country: texts('country'),
+    category: texts('categoryId').map(Number),
+    type: texts('type'),
+    availability,
+    featured: featured === undefined ? undefined : featured === 'true',
+  };
 }
 
 /** The buyer's country, region and currency from the `extra` parameters. */

@@ -279,6 +279,15 @@ Keep this list in step with the contracts (`permission` of each `defineRoute`).
 Outbox events produced: `service.price_changed` (queue `merchant-webhooks`, aggregate `services`, payload `{ clientId, serviceId, previousPrice, price, currency }`), written by
 `PriceChangeScan` (feature 7b, user rule 9 (5)): see "Jobs and schedules". Consumed: none. The route is registered by the platform module.
 
+Feature 29 (storefront search, decision 038): `CatalogSignals` (`application/catalog-signals.ts`) writes `catalog.services_changed`
+(`{ serviceIds, reason }`, 1-50 ids per event, aggregate `services`; reason `service`, `price`, `options` or `stock`) and
+`catalog.category_changed` (`{ categoryId }`, aggregate `service_categories`) in the writer's own transaction: service create, edit,
+archive and delete, every group price set, the option lists, an inventory import and void, the stock claim of an order placement,
+a category edit and delete, and (one per category) a merchant group delete that removed the group from categories. Supplier
+imports (Quick add) write none: imported services have no listing. The routes (queue `search-index`, job `search_sync`) are
+registered by the storefront's search module. `StorefrontServices` gained `pricedPage`, `pricedAmong`, `serviceIdsOfCategory` and
+`optionLabels` for the index.
+
 ## Jobs and schedules
 
 `service_price_scan` (queue `maintenance`, processor `jobs/price-change-scan.processor.ts`, module `PriceChangeScanModule` in the worker; feature 7b): every move of the

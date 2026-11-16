@@ -22,3 +22,21 @@ export { PopularityRefresh, POPULARITY_WINDOW_DAYS } from './jobs/popularity';
 export type { PopularityResult } from './jobs/popularity';
 export { STOREFRONT_POPULARITY_JOB } from './jobs/popularity.processor';
 export { STOREFRONT_POPULARITY_SCHEDULER, StorefrontPopularityModule } from './jobs/popularity.module';
+// The storefront search (feature 29): the change signals, the searchable rule, the index's names, and the modules (the index module
+// for the API and the worker, the worker module for the worker only).
+export {
+  LISTING_CHANGED_EVENT,
+  REBUILD_REQUESTED_EVENT,
+  SEARCH_JOBS,
+  SEARCH_SETTINGS_KINDS,
+  SETTINGS_CHANGED_EVENT,
+  SearchSignals,
+} from './search/application/search-signals';
+export type { SearchSettingsKind } from './search/application/search-signals';
+export { SearchableIds } from './search/application/searchable-ids';
+export type { Searchable } from './search/application/searchable-ids';
+export { SERVICES_SCHEMA_VERSION, SearchNames } from './search/domain/services-schema';
+export { TERMS_SCHEMA_VERSION } from './search/domain/terms';
+export { SearchIndexModule } from './search/search-index.module';
+export { SearchHttpModule } from './search/search-http.module';
+export { SEARCH_SCHEDULERS, SearchWorkerModule } from './search/search-worker.module';

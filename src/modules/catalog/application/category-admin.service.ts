@@ -7,6 +7,7 @@ import { AppError } from '../../../common/errors';
 import { DbService, type DbExecutor, isForeignKeyViolation, isUniqueViolation } from '../../../infra/db';
 import { AuditService } from '../../platform';
 import { CatalogPriceVersion } from './catalog-price-version';
+import { CatalogSignals } from './catalog-signals';
 import type { ServiceCategory, ServiceType } from '../db/schema';
 import {
   type CategoryRow,
@@ -95,6 +96,7 @@ export class CategoryAdminService {
     private readonly db: DbService,
     private readonly audit: AuditService,
     private readonly priceVersion: CatalogPriceVersion,
+    private readonly signals: CatalogSignals,
   ) {}
 
   /**
@@ -171,8 +173,10 @@ export class CategoryAdminService {
       const { tx } = work;
       const before = await lockCategoryRow(tx, id);
       if (!before) throw new AppError('NOT_FOUND', { detail: 'No category has this id.' });
-      // A category's name, switch and allowed groups decide what merchants see, so cached price lists start over.
+      // A category's name, switch and allowed groups decide what merchants see, so cached price lists start over; the shop's search
+      // re-reads its services (feature 29).
       this.priceVersion.bumpAfterCommit(work);
+      await this.signals.categoryChanged(tx, id);
       const type = changes.type ?? before.type;
       const name = changes.name ?? before.name;
 
@@ -237,6 +241,7 @@ export class CategoryAdminService {
       const category = await lockCategoryRow(tx, id);
       if (!category) throw new AppError('NOT_FOUND', { detail: 'No category has this id.' });
       this.priceVersion.bumpAfterCommit(work);
+      await this.signals.categoryChanged(tx, id);
       const { live, archived } = await countServicesOfCategory(tx, id);
       if (live > 0) throw inUseByLive(category.name, live);
       if (archived > 0) throw inUseByArchived(category.name, archived);

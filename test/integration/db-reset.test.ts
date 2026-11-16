@@ -14,7 +14,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { Redis } from 'ioredis';
 import { Pool } from 'pg';
-import { parseEnv } from '../../src/config';
+import { parseEnv, searchPrefixOf } from '../../src/config';
 import { MIGRATIONS_FOLDER, migrateDatabase } from '../../src/infra/db/migrate';
 import { demoStatePath } from '../../scripts/seed/demo-state';
 import {
@@ -419,6 +419,8 @@ describe.skipIf(!ownRedis)('bun run db:reset end to end, on scratch resources', 
     DATABASE_URL: scratch.url,
     REDIS_QUEUE_URL: process.env.REDIS_QUEUE_URL_TEST!,
     REDIS_CACHE_URL: process.env.REDIS_CACHE_URL_TEST!,
+    // Feature 29: the reset drops the search names of its prefix; a scratch prefix of this test database, never gsm_development_.
+    TYPESENSE_PREFIX: `${searchPrefixOf(TEST_DATABASE_URL)}reset_`,
     S3_BUCKET: bucketName,
     S3_ENDPOINT: config.s3.endpoint!,
     ...(process.env.FRONTEND_DIR ? { FRONTEND_DIR: process.env.FRONTEND_DIR } : {}),
@@ -606,6 +608,8 @@ const productionEnv = (databaseUrl: string): Record<string, string> => ({
   MAIL_SMTP_URL: 'smtps://mailer:pw@smtp.gsm.example:465',
   MAIL_FROM: 'GSM <noreply@gsm.example>',
   TURNSTILE_SECRET_KEY: 'turnstile-secret-for-tests',
+  // Feature 29: required in production while search is on.
+  TYPESENSE_URL: 'http://typesense.internal:8108',
 });
 
 /** The number of migrations of the repository, counted from its journal: not just "some number". */

@@ -25,6 +25,7 @@ describe('RATE_LIMITERS', () => {
       'help-vote',
       'ip',
       'media',
+      'search-suggest',
       'sign-in',
       'stream-connect',
       'supplier',
@@ -48,6 +49,7 @@ describe('RATE_LIMITERS', () => {
   });
 
   it('gives a ticket page 120 typing and read calls a minute, a ticket 20 requester messages and an account 5 tickets an hour (feature 28)', () => {
+    expect(RATE_LIMITERS['search-suggest']).toMatchObject({ points: 1200, windowSeconds: 60 });
     expect(RATE_LIMITERS['ticket-chat']).toMatchObject({ points: 120, windowSeconds: 60 });
     expect(RATE_LIMITERS['ticket-message']).toMatchObject({ points: 20, windowSeconds: 60 });
     expect(RATE_LIMITERS['ticket-open']).toMatchObject({ points: 5, windowSeconds: 3600 });

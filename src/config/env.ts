@@ -141,6 +141,31 @@ export interface AppConfig {
      */
     readonly merchantAuth: boolean;
   };
+  /**
+   * The public storefront search on Typesense (feature 29, decision 038). Postgres stays the truth: with search off, or with the
+   * engine down, every search is the Postgres fallback.
+   */
+  readonly search: {
+    /** `SEARCH_ENABLED` (`SEARCH_ENABLED_TEST` under test, default false there): off makes every search the fallback and the sync jobs complete without calls. */
+    readonly enabled: boolean;
+    /** `TYPESENSE_URL` (`TYPESENSE_URL_TEST` under test): the node's base URL, without a trailing slash. */
+    readonly url: string;
+    /** `TYPESENSE_INDEXER_KEY`: the worker's key (secret); a production worker with search on refuses to start without it. */
+    readonly indexerKey: string | undefined;
+    /** `TYPESENSE_SEARCH_KEY`: the API's key (secret, search only); a production API with search on refuses to start without it. */
+    readonly searchKey: string | undefined;
+    /**
+     * `TYPESENSE_PREFIX` (`TYPESENSE_PREFIX_TEST` under test, default: the test database name and `_`): the start of every collection,
+     * alias, synonym set and curation set name of this environment.
+     */
+    readonly prefix: string;
+    /** `SEARCH_SUGGEST_TIMEOUT_MS`: the timeout of one suggest call to the engine. */
+    readonly suggestTimeoutMs: number;
+    /** `SEARCH_TIMEOUT_MS`: the timeout of one results-page call to the engine. */
+    readonly timeoutMs: number;
+    /** `SEARCH_RECONCILE_MINUTES`: how often the worker compares the index with Postgres. */
+    readonly reconcileMinutes: number;
+  };
   /** The live event streams of the signed-in consoles and the storefront account (decision 037). */
   readonly realtime: {
     /** `REALTIME_ENABLED`: the kill switch. Off answers every stream `503 UNAVAILABLE` and the clients keep polling. */
@@ -232,7 +257,36 @@ export const DEV_DEFAULTS = {
   // The Mailpit of compose.yaml (decision 033): SMTP on 1025, a web UI on 8025 with every message.
   mailSmtpUrl: 'smtp://localhost:1025',
   mailFrom: 'GSM <noreply@gsm.local>',
+  // The Typesense node of compose.yaml (feature 29): its bootstrap key serves as both process keys outside production.
+  typesenseUrl: 'http://localhost:8108',
+  typesenseKey: 'gsm-typesense-dev',
 } as const;
+
+/** What a Typesense name prefix must look like: lower-case letters, digits and `_`, ending in `_` (feature 29). */
+const SEARCH_PREFIX = /^[a-z0-9_]{1,40}_$/;
+
+/**
+ * The default Typesense prefix of a test run: the test database's name, made safe, then `_` (`gsm_29_test` gives `gsm_29_test_`).
+ *
+ * Why: feature 29, plan section 3.3: like the Redis database numbers, each worktree's test database gives its own names in the shared
+ * Typesense node, so parallel runs never see each other's collections.
+ *
+ * @param databaseUrl the test database URL
+ * @returns a prefix that matches the prefix rule (at most 40 characters before the final `_`)
+ */
+export function searchPrefixOf(databaseUrl: string): string {
+  let name = 'gsm_test';
+  try {
+    name = decodeURIComponent(new URL(databaseUrl).pathname.replace(/^\//, '')) || name;
+  } catch {
+    // an invalid URL is reported by its own variable; the default name keeps this one valid
+  }
+  const safe = name
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '_')
+    .slice(0, 40);
+  return `${safe}_`;
+}
 
 const url = (protocol: RegExp) => z.url({ protocol });
 const httpUrl = url(/^https?$/);
@@ -320,6 +374,23 @@ const rawSchema = z.object({
   TURNSTILE_SECRET_KEY: z.string().min(1).optional(),
   TURNSTILE_HOSTNAMES: z.string().optional(),
   TURNSTILE_MERCHANT_AUTH: z.stringbool().optional(),
+  SEARCH_ENABLED: z.stringbool().optional(),
+  SEARCH_ENABLED_TEST: z.stringbool().optional(),
+  TYPESENSE_URL: httpUrl.optional(),
+  TYPESENSE_URL_TEST: httpUrl.optional(),
+  TYPESENSE_INDEXER_KEY: z.string().min(1).optional(),
+  TYPESENSE_SEARCH_KEY: z.string().min(1).optional(),
+  TYPESENSE_PREFIX: z
+    .string()
+    .regex(SEARCH_PREFIX, 'use lower-case letters, digits and "_", ending in "_" (at most 41)')
+    .optional(),
+  TYPESENSE_PREFIX_TEST: z
+    .string()
+    .regex(SEARCH_PREFIX, 'use lower-case letters, digits and "_", ending in "_" (at most 41)')
+    .optional(),
+  SEARCH_SUGGEST_TIMEOUT_MS: int(50, 2000).optional(),
+  SEARCH_TIMEOUT_MS: int(100, 5000).optional(),
+  SEARCH_RECONCILE_MINUTES: int(5, 1440).optional(),
   REALTIME_ENABLED: z.stringbool().optional(),
   REALTIME_MAX_CONNECTIONS: int(1, 100_000).optional(),
   REALTIME_MAX_PER_SESSION: int(1, 50).optional(),
@@ -594,6 +665,23 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
   if (!turnstileHosts.ok) fail('TURNSTILE_HOSTNAMES', turnstileHosts.message);
   const alertEmails = parseAlertEmails(raw.ALERTS_EMAIL_TO ?? '');
   if (!alertEmails.ok) fail('ALERTS_EMAIL_TO', alertEmails.message);
+  // Feature 29: under NODE_ENV=test only the *_TEST values count (decision 013), and search stays off unless a suite opts in.
+  const searchEnabled = testing ? (raw.SEARCH_ENABLED_TEST ?? false) : (raw.SEARCH_ENABLED ?? true);
+  const typesenseUrl = (
+    testing
+      ? (raw.TYPESENSE_URL_TEST ?? DEV_DEFAULTS.typesenseUrl)
+      : searchEnabled
+        ? withDefault('TYPESENSE_URL', raw.TYPESENSE_URL, DEV_DEFAULTS.typesenseUrl)
+        : (raw.TYPESENSE_URL ?? DEV_DEFAULTS.typesenseUrl)
+  ).replace(/\/+$/, '');
+  // Which process needs which key is decided by the search module (SEARCH_KEY_ROLE): the API the search key, the worker the
+  // indexer key. Production never falls back to the development key and refuses it when given.
+  noDevValue('TYPESENSE_INDEXER_KEY', raw.TYPESENSE_INDEXER_KEY, DEV_DEFAULTS.typesenseKey);
+  noDevValue('TYPESENSE_SEARCH_KEY', raw.TYPESENSE_SEARCH_KEY, DEV_DEFAULTS.typesenseKey);
+  const devKey = production ? undefined : DEV_DEFAULTS.typesenseKey;
+  const searchPrefix = testing
+    ? (raw.TYPESENSE_PREFIX_TEST ?? searchPrefixOf(raw.DATABASE_URL_TEST ?? DEV_DEFAULTS.databaseUrlTest))
+    : (raw.TYPESENSE_PREFIX ?? (production ? 'gsm_production_' : 'gsm_development_'));
 
   return {
     env,
@@ -673,6 +761,16 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
       secretKey: raw.TURNSTILE_SECRET_KEY,
       hostnames: turnstileHosts.ok ? turnstileHosts.value : [],
       merchantAuth: raw.TURNSTILE_MERCHANT_AUTH ?? false,
+    },
+    search: {
+      enabled: searchEnabled,
+      url: typesenseUrl,
+      indexerKey: raw.TYPESENSE_INDEXER_KEY ?? devKey,
+      searchKey: raw.TYPESENSE_SEARCH_KEY ?? devKey,
+      prefix: searchPrefix,
+      suggestTimeoutMs: raw.SEARCH_SUGGEST_TIMEOUT_MS ?? 250,
+      timeoutMs: raw.SEARCH_TIMEOUT_MS ?? 800,
+      reconcileMinutes: raw.SEARCH_RECONCILE_MINUTES ?? 15,
     },
     // Decision 037: a heartbeat under the 30 s cut of a Next rewrite; re-authentication at least every 15 minutes.
     realtime: {
@@ -855,6 +953,16 @@ export function summarizeConfig(config: AppConfig): Record<string, unknown> {
       secretKey: flag(config.turnstile.secretKey),
       hostnames: config.turnstile.hostnames,
       merchantAuth: config.turnstile.merchantAuth,
+    },
+    search: {
+      enabled: config.search.enabled,
+      url: redactUrl(config.search.url),
+      indexerKey: flag(config.search.indexerKey),
+      searchKey: flag(config.search.searchKey),
+      prefix: config.search.prefix,
+      suggestTimeoutMs: config.search.suggestTimeoutMs,
+      timeoutMs: config.search.timeoutMs,
+      reconcileMinutes: config.search.reconcileMinutes,
     },
     realtime: config.realtime,
     observability: {

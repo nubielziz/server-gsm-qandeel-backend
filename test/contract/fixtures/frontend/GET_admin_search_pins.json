@@ -1,0 +1,28 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "1"
+  },
+  "body": [
+    {
+      "id": 1,
+      "query": "unlock",
+      "match": "contains",
+      "pinned": [
+        {
+          "serviceId": 5,
+          "position": 1,
+          "title": "AT&T USA Premier Unlock"
+        }
+      ],
+      "hidden": [],
+      "startsAt": null,
+      "endsAt": null,
+      "isEnabled": true,
+      "note": "Our best seller for the search everyone starts with.",
+      "createdAt": "2026-10-25T12:00:00.000Z",
+      "updatedAt": "2026-10-29T12:00:00.000Z"
+    }
+  ]
+}

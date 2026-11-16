@@ -59,6 +59,13 @@ describe('publicLimiterFor', () => {
     expect(publicLimiterFor('/admin/service-listings/:id/image', 'staff-permission', false)).toBeUndefined();
   });
 
+  it('counts the search-as-you-type route against its own limiter and the results route against ip', () => {
+    expect(publicLimiterFor('/store/v1/search/suggest', 'public')).toBe('search-suggest');
+    expect(publicLimiterFor('/store/v1/search/suggest', undefined)).toBe('search-suggest');
+    expect(publicLimiterFor('/store/v1/search', 'public')).toBe('ip');
+    expect(publicLimiterFor('/store/v1/search/suggestions', 'public')).toBe('ip');
+  });
+
   it('counts the public pictures against their own media limiter, matched or not', () => {
     expect(publicLimiterFor('/store/v1/media/:name', 'public')).toBe('media');
     expect(publicLimiterFor('/store/v1/media/../../kyc', undefined)).toBe('media');

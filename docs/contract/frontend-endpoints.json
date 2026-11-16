@@ -1,7 +1,7 @@
 {
  "generatedBy": "scripts/extract-frontend-contract.mjs",
  "frontend": "../frontend-admin",
- "count": 306,
+ "count": 321,
  "endpoints": [
   {
    "key": "DELETE /admin/alert-rules/:id",
@@ -578,6 +578,129 @@
    }
   },
   {
+   "key": "DELETE /admin/search/hidden-terms/:id",
+   "fn": "deleteHiddenTerm",
+   "file": "src/features/storefront/api/search.ts",
+   "line": 130,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "void",
+   "returns": {
+    "type": "undefined"
+   }
+  },
+  {
+   "key": "DELETE /admin/search/pins/:id",
+   "fn": "deleteSearchPin",
+   "file": "src/features/storefront/api/search.ts",
+   "line": 104,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "void",
+   "returns": {
+    "type": "undefined"
+   }
+  },
+  {
+   "key": "DELETE /admin/search/synonyms/:id",
+   "fn": "deleteSearchSynonym",
+   "file": "src/features/storefront/api/search.ts",
+   "line": 67,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "void",
+   "returns": {
+    "type": "undefined"
+   }
+  },
+  {
    "key": "DELETE /admin/service-categories/:id",
    "fn": "deleteCategory",
    "file": "src/features/services/api/categories.ts",
@@ -622,7 +745,7 @@
    "key": "DELETE /admin/service-listings/:id/image",
    "fn": "removeListingImage",
    "file": "src/features/storefront/api/listings.ts",
-   "line": 78,
+   "line": 79,
    "params": [
     {
      "name": "id",
@@ -15597,6 +15720,731 @@
    }
   },
   {
+   "key": "GET /admin/search/hidden-terms",
+   "fn": "listHiddenTerms",
+   "file": "src/features/storefront/api/search.ts",
+   "line": 112,
+   "params": [
+    {
+     "name": "query",
+     "optional": true,
+     "typeText": "ListQuery",
+     "shape": {
+      "object": {
+       "start": {
+        "type": "number",
+        "optional": true
+       },
+       "end": {
+        "type": "number",
+        "optional": true
+       },
+       "sort": {
+        "array": {
+         "type": "string"
+        },
+        "optional": true
+       },
+       "order": {
+        "array": {
+         "enum": [
+          "asc",
+          "desc"
+         ]
+        },
+        "optional": true
+       },
+       "q": {
+        "type": "string",
+        "optional": true
+       },
+       "filters": {
+        "object": {},
+        "record": {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "type": "number"
+          },
+          {
+           "array": {
+            "anyOf": [
+             {
+              "type": "string"
+             },
+             {
+              "type": "number"
+             },
+             {
+              "type": "boolean"
+             }
+            ]
+           }
+          },
+          {
+           "type": "boolean"
+          }
+         ],
+         "undefinable": true
+        },
+        "optional": true
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "ListResult<HiddenTerm>",
+   "returns": {
+    "object": {
+     "data": {
+      "array": {
+       "object": {
+        "id": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "term": {
+         "type": "string"
+        },
+        "note": {
+         "type": "string"
+        },
+        "createdAt": {
+         "type": "string",
+         "alias": "IsoDateTime"
+        }
+       }
+      }
+     },
+     "total": {
+      "type": "number"
+     }
+    }
+   }
+  },
+  {
+   "key": "GET /admin/search/index",
+   "fn": "getSearchIndex",
+   "file": "src/features/storefront/api/search.ts",
+   "line": 158,
+   "params": [
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "SearchIndexStatus",
+   "returns": {
+    "object": {
+     "engine": {
+      "object": {
+       "status": {
+        "enum": [
+         "ok",
+         "down",
+         "disabled",
+         "not_ready"
+        ]
+       },
+       "version": {
+        "type": "string",
+        "nullable": true
+       },
+       "memoryBytes": {
+        "type": "number",
+        "nullable": true
+       }
+      }
+     },
+     "schemaVersion": {
+      "type": "number"
+     },
+     "collection": {
+      "type": "string",
+      "nullable": true
+     },
+     "documents": {
+      "type": "number"
+     },
+     "expectedDocuments": {
+      "type": "number"
+     },
+     "lastSyncAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "lastReconcileAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "lastRebuildAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "lastTermsBuildAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "queued": {
+      "type": "number"
+     },
+     "failed": {
+      "type": "number"
+     },
+     "rebuild": {
+      "object": {
+       "running": {
+        "type": "boolean"
+       },
+       "startedAt": {
+        "type": "string",
+        "nullable": true,
+        "alias": "IsoDateTime"
+       }
+      }
+     },
+     "lastError": {
+      "type": "string",
+      "nullable": true
+     }
+    }
+   }
+  },
+  {
+   "key": "GET /admin/search/pins",
+   "fn": "listSearchPins",
+   "file": "src/features/storefront/api/search.ts",
+   "line": 76,
+   "params": [
+    {
+     "name": "query",
+     "optional": true,
+     "typeText": "ListQuery",
+     "shape": {
+      "object": {
+       "start": {
+        "type": "number",
+        "optional": true
+       },
+       "end": {
+        "type": "number",
+        "optional": true
+       },
+       "sort": {
+        "array": {
+         "type": "string"
+        },
+        "optional": true
+       },
+       "order": {
+        "array": {
+         "enum": [
+          "asc",
+          "desc"
+         ]
+        },
+        "optional": true
+       },
+       "q": {
+        "type": "string",
+        "optional": true
+       },
+       "filters": {
+        "object": {},
+        "record": {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "type": "number"
+          },
+          {
+           "array": {
+            "anyOf": [
+             {
+              "type": "string"
+             },
+             {
+              "type": "number"
+             },
+             {
+              "type": "boolean"
+             }
+            ]
+           }
+          },
+          {
+           "type": "boolean"
+          }
+         ],
+         "undefinable": true
+        },
+        "optional": true
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "ListResult<SearchPin>",
+   "returns": {
+    "object": {
+     "data": {
+      "array": {
+       "object": {
+        "id": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "query": {
+         "type": "string"
+        },
+        "match": {
+         "enum": [
+          "exact",
+          "contains"
+         ]
+        },
+        "pinned": {
+         "array": {
+          "object": {
+           "serviceId": {
+            "type": "number",
+            "alias": "Id"
+           },
+           "position": {
+            "type": "number"
+           },
+           "title": {
+            "type": "string"
+           }
+          }
+         }
+        },
+        "hidden": {
+         "array": {
+          "object": {
+           "serviceId": {
+            "type": "number",
+            "alias": "Id"
+           },
+           "title": {
+            "type": "string"
+           }
+          }
+         }
+        },
+        "startsAt": {
+         "type": "string",
+         "nullable": true,
+         "alias": "IsoDateTime"
+        },
+        "endsAt": {
+         "type": "string",
+         "nullable": true,
+         "alias": "IsoDateTime"
+        },
+        "isEnabled": {
+         "type": "boolean"
+        },
+        "note": {
+         "type": "string"
+        },
+        "createdAt": {
+         "type": "string",
+         "alias": "IsoDateTime"
+        },
+        "updatedAt": {
+         "type": "string",
+         "alias": "IsoDateTime"
+        }
+       }
+      }
+     },
+     "total": {
+      "type": "number"
+     }
+    }
+   }
+  },
+  {
+   "key": "GET /admin/search/preview",
+   "fn": "getSearchPreview",
+   "file": "src/features/storefront/api/search.ts",
+   "line": 149,
+   "params": [
+    {
+     "name": "query",
+     "optional": false,
+     "typeText": "SearchPreviewQuery",
+     "shape": {
+      "object": {
+       "q": {
+        "type": "string"
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "SearchPreview",
+   "returns": {
+    "object": {
+     "engine": {
+      "enum": [
+       "typesense",
+       "fallback"
+      ]
+     },
+     "hits": {
+      "array": {
+       "object": {
+        "serviceId": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "title": {
+         "type": "string"
+        },
+        "position": {
+         "type": "number"
+        },
+        "pinned": {
+         "type": "boolean"
+        }
+       }
+      }
+     },
+     "hiddenIds": {
+      "array": {
+       "type": "number",
+       "alias": "Id"
+      }
+     }
+    }
+   }
+  },
+  {
+   "key": "GET /admin/search/report",
+   "fn": "getSearchReport",
+   "file": "src/features/storefront/api/search.ts",
+   "line": 139,
+   "params": [
+    {
+     "name": "days",
+     "optional": false,
+     "typeText": "7 | 30 | 90",
+     "shape": {
+      "enum": [
+       7,
+       30,
+       90
+      ]
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "SearchReport",
+   "returns": {
+    "object": {
+     "days": {
+      "type": "number"
+     },
+     "totals": {
+      "object": {
+       "searches": {
+        "type": "number"
+       },
+       "zeroResults": {
+        "type": "number"
+       },
+       "terms": {
+        "type": "number"
+       }
+      }
+     },
+     "topTerms": {
+      "array": {
+       "object": {
+        "term": {
+         "type": "string"
+        },
+        "searches": {
+         "type": "number"
+        },
+        "visitors": {
+         "type": "number"
+        },
+        "zeroResults": {
+         "type": "number"
+        }
+       }
+      }
+     },
+     "zeroResultTerms": {
+      "array": {
+       "object": {
+        "term": {
+         "type": "string"
+        },
+        "searches": {
+         "type": "number"
+        },
+        "lastSeen": {
+         "type": "string",
+         "alias": "IsoDateTime"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "key": "GET /admin/search/synonyms",
+   "fn": "listSearchSynonyms",
+   "file": "src/features/storefront/api/search.ts",
+   "line": 37,
+   "params": [
+    {
+     "name": "query",
+     "optional": true,
+     "typeText": "ListQuery",
+     "shape": {
+      "object": {
+       "start": {
+        "type": "number",
+        "optional": true
+       },
+       "end": {
+        "type": "number",
+        "optional": true
+       },
+       "sort": {
+        "array": {
+         "type": "string"
+        },
+        "optional": true
+       },
+       "order": {
+        "array": {
+         "enum": [
+          "asc",
+          "desc"
+         ]
+        },
+        "optional": true
+       },
+       "q": {
+        "type": "string",
+        "optional": true
+       },
+       "filters": {
+        "object": {},
+        "record": {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "type": "number"
+          },
+          {
+           "array": {
+            "anyOf": [
+             {
+              "type": "string"
+             },
+             {
+              "type": "number"
+             },
+             {
+              "type": "boolean"
+             }
+            ]
+           }
+          },
+          {
+           "type": "boolean"
+          }
+         ],
+         "undefinable": true
+        },
+        "optional": true
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "ListResult<SearchSynonym>",
+   "returns": {
+    "object": {
+     "data": {
+      "array": {
+       "object": {
+        "id": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "kind": {
+         "enum": [
+          "multi",
+          "one_way"
+         ]
+        },
+        "root": {
+         "type": "string",
+         "nullable": true
+        },
+        "terms": {
+         "array": {
+          "type": "string"
+         }
+        },
+        "isEnabled": {
+         "type": "boolean"
+        },
+        "note": {
+         "type": "string"
+        },
+        "createdAt": {
+         "type": "string",
+         "alias": "IsoDateTime"
+        },
+        "updatedAt": {
+         "type": "string",
+         "alias": "IsoDateTime"
+        }
+       }
+      }
+     },
+     "total": {
+      "type": "number"
+     }
+    }
+   }
+  },
+  {
    "key": "GET /admin/service-categories",
    "fn": "listCategories",
    "file": "src/features/services/api/categories.ts",
@@ -15821,7 +16669,7 @@
    "key": "GET /admin/service-listings",
    "fn": "listListings",
    "file": "src/features/storefront/api/listings.ts",
-   "line": 25,
+   "line": 26,
    "params": [
     {
      "name": "query",
@@ -16042,7 +16890,7 @@
    "key": "GET /admin/service-listings/:id",
    "fn": "getListing",
    "file": "src/features/storefront/api/listings.ts",
-   "line": 33,
+   "line": 34,
    "params": [
     {
      "name": "id",
@@ -27022,6 +27870,285 @@
    }
   },
   {
+   "key": "PATCH /admin/search/pins/:id",
+   "fn": "updateSearchPin",
+   "file": "src/features/storefront/api/search.ts",
+   "line": 96,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "Partial<CreatePinBody>",
+     "shape": {
+      "object": {
+       "query": {
+        "type": "string",
+        "optional": true
+       },
+       "match": {
+        "enum": [
+         "exact",
+         "contains"
+        ],
+        "optional": true
+       },
+       "pinned": {
+        "array": {
+         "object": {
+          "serviceId": {
+           "type": "number",
+           "alias": "Id"
+          },
+          "position": {
+           "type": "number"
+          }
+         }
+        },
+        "optional": true
+       },
+       "hidden": {
+        "array": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "optional": true
+       },
+       "startsAt": {
+        "type": "string",
+        "nullable": true,
+        "alias": "IsoDateTime",
+        "optional": true
+       },
+       "endsAt": {
+        "type": "string",
+        "nullable": true,
+        "alias": "IsoDateTime",
+        "optional": true
+       },
+       "isEnabled": {
+        "type": "boolean",
+        "optional": true
+       },
+       "note": {
+        "type": "string",
+        "optional": true
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "SearchPin",
+   "returns": {
+    "object": {
+     "id": {
+      "type": "number",
+      "alias": "Id"
+     },
+     "query": {
+      "type": "string"
+     },
+     "match": {
+      "enum": [
+       "exact",
+       "contains"
+      ]
+     },
+     "pinned": {
+      "array": {
+       "object": {
+        "serviceId": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "position": {
+         "type": "number"
+        },
+        "title": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "hidden": {
+      "array": {
+       "object": {
+        "serviceId": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "title": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "startsAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "endsAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "isEnabled": {
+      "type": "boolean"
+     },
+     "note": {
+      "type": "string"
+     },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     },
+     "updatedAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     }
+    }
+   }
+  },
+  {
+   "key": "PATCH /admin/search/synonyms/:id",
+   "fn": "updateSearchSynonym",
+   "file": "src/features/storefront/api/search.ts",
+   "line": 59,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "Partial<CreateSynonymBody>",
+     "shape": {
+      "object": {
+       "kind": {
+        "enum": [
+         "multi",
+         "one_way"
+        ],
+        "optional": true
+       },
+       "root": {
+        "type": "string",
+        "nullable": true,
+        "optional": true
+       },
+       "terms": {
+        "array": {
+         "type": "string"
+        },
+        "optional": true
+       },
+       "isEnabled": {
+        "type": "boolean",
+        "optional": true
+       },
+       "note": {
+        "type": "string",
+        "optional": true
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "SearchSynonym",
+   "returns": {
+    "object": {
+     "id": {
+      "type": "number",
+      "alias": "Id"
+     },
+     "kind": {
+      "enum": [
+       "multi",
+       "one_way"
+      ]
+     },
+     "root": {
+      "type": "string",
+      "nullable": true
+     },
+     "terms": {
+      "array": {
+       "type": "string"
+      }
+     },
+     "isEnabled": {
+      "type": "boolean"
+     },
+     "note": {
+      "type": "string"
+     },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     },
+     "updatedAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     }
+    }
+   }
+  },
+  {
    "key": "PATCH /admin/service-categories/:id",
    "fn": "updateCategory",
    "file": "src/features/services/api/categories.ts",
@@ -27142,7 +28269,7 @@
    "key": "PATCH /admin/service-listings/:id",
    "fn": "updateListing",
    "file": "src/features/storefront/api/listings.ts",
-   "line": 53,
+   "line": 54,
    "params": [
     {
      "name": "id",
@@ -38244,6 +39371,356 @@
    }
   },
   {
+   "key": "POST /admin/search/hidden-terms",
+   "fn": "createHiddenTerm",
+   "file": "src/features/storefront/api/search.ts",
+   "line": 122,
+   "params": [
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "CreateHiddenTermBody",
+     "shape": {
+      "object": {
+       "term": {
+        "type": "string"
+       },
+       "note": {
+        "type": "string",
+        "optional": true
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "HiddenTerm",
+   "returns": {
+    "object": {
+     "id": {
+      "type": "number",
+      "alias": "Id"
+     },
+     "term": {
+      "type": "string"
+     },
+     "note": {
+      "type": "string"
+     },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     }
+    }
+   }
+  },
+  {
+   "key": "POST /admin/search/index/rebuild",
+   "fn": "rebuildSearchIndex",
+   "file": "src/features/storefront/api/search.ts",
+   "line": 168,
+   "params": [
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "void",
+   "returns": {
+    "type": "undefined"
+   }
+  },
+  {
+   "key": "POST /admin/search/pins",
+   "fn": "createSearchPin",
+   "file": "src/features/storefront/api/search.ts",
+   "line": 88,
+   "params": [
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "CreatePinBody",
+     "shape": {
+      "object": {
+       "query": {
+        "type": "string"
+       },
+       "match": {
+        "enum": [
+         "exact",
+         "contains"
+        ]
+       },
+       "pinned": {
+        "array": {
+         "object": {
+          "serviceId": {
+           "type": "number",
+           "alias": "Id"
+          },
+          "position": {
+           "type": "number"
+          }
+         }
+        }
+       },
+       "hidden": {
+        "array": {
+         "type": "number",
+         "alias": "Id"
+        }
+       },
+       "startsAt": {
+        "type": "string",
+        "nullable": true,
+        "alias": "IsoDateTime",
+        "optional": true
+       },
+       "endsAt": {
+        "type": "string",
+        "nullable": true,
+        "alias": "IsoDateTime",
+        "optional": true
+       },
+       "isEnabled": {
+        "type": "boolean",
+        "optional": true
+       },
+       "note": {
+        "type": "string",
+        "optional": true
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "SearchPin",
+   "returns": {
+    "object": {
+     "id": {
+      "type": "number",
+      "alias": "Id"
+     },
+     "query": {
+      "type": "string"
+     },
+     "match": {
+      "enum": [
+       "exact",
+       "contains"
+      ]
+     },
+     "pinned": {
+      "array": {
+       "object": {
+        "serviceId": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "position": {
+         "type": "number"
+        },
+        "title": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "hidden": {
+      "array": {
+       "object": {
+        "serviceId": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "title": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "startsAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "endsAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "isEnabled": {
+      "type": "boolean"
+     },
+     "note": {
+      "type": "string"
+     },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     },
+     "updatedAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     }
+    }
+   }
+  },
+  {
+   "key": "POST /admin/search/synonyms",
+   "fn": "createSearchSynonym",
+   "file": "src/features/storefront/api/search.ts",
+   "line": 51,
+   "params": [
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "CreateSynonymBody",
+     "shape": {
+      "object": {
+       "kind": {
+        "enum": [
+         "multi",
+         "one_way"
+        ]
+       },
+       "root": {
+        "type": "string",
+        "nullable": true,
+        "optional": true
+       },
+       "terms": {
+        "array": {
+         "type": "string"
+        }
+       },
+       "isEnabled": {
+        "type": "boolean",
+        "optional": true
+       },
+       "note": {
+        "type": "string",
+        "optional": true
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "SearchSynonym",
+   "returns": {
+    "object": {
+     "id": {
+      "type": "number",
+      "alias": "Id"
+     },
+     "kind": {
+      "enum": [
+       "multi",
+       "one_way"
+      ]
+     },
+     "root": {
+      "type": "string",
+      "nullable": true
+     },
+     "terms": {
+      "array": {
+       "type": "string"
+      }
+     },
+     "isEnabled": {
+      "type": "boolean"
+     },
+     "note": {
+      "type": "string"
+     },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     },
+     "updatedAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     }
+    }
+   }
+  },
+  {
    "key": "POST /admin/service-categories",
    "fn": "createCategory",
    "file": "src/features/services/api/categories.ts",
@@ -38350,7 +39827,7 @@
    "key": "POST /admin/service-listings",
    "fn": "createListing",
    "file": "src/features/storefront/api/listings.ts",
-   "line": 42,
+   "line": 43,
    "params": [
     {
      "name": "body",
@@ -38566,7 +40043,7 @@
    "key": "POST /admin/service-listings/:id/image",
    "fn": "uploadListingImage",
    "file": "src/features/storefront/api/listings.ts",
-   "line": 68,
+   "line": 69,
    "params": [
     {
      "name": "id",

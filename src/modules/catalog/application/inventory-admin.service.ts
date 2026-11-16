@@ -7,6 +7,7 @@ import { EncryptionService, TokenService } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
 import { AppError } from '../../../common/errors';
 import { AuditService } from '../../platform';
+import { CatalogSignals } from './catalog-signals';
 import type { InventoryCodeStatus } from '../db/schema';
 import {
   INVENTORY_CODE_AAD,
@@ -69,6 +70,7 @@ export class InventoryAdminService {
     private readonly audit: AuditService,
     private readonly encryption: EncryptionService,
     private readonly tokens: TokenService,
+    private readonly signals: CatalogSignals,
   ) {}
 
   /**
@@ -127,6 +129,8 @@ export class InventoryAdminService {
         }));
         imported += await insertCodeRows(tx, chunk);
       }
+      // New codes can put the service in stock for the shop's search (feature 29).
+      if (imported > 0) await this.signals.servicesChanged(tx, [serviceId], 'stock');
       const result = {
         imported,
         duplicates: prepared.repeated + (prepared.codes.length - imported),
@@ -154,7 +158,14 @@ export class InventoryAdminService {
   async void(ids: readonly number[]): Promise<VoidResult> {
     const distinct = [...new Set(ids)];
     return this.db.runInTransaction(async ({ tx }) => {
-      const voidedIds = await voidAvailableCodes(tx, distinct);
+      const voided = await voidAvailableCodes(tx, distinct);
+      const voidedIds = voided.map((row) => row.id);
+      // Fewer codes can take a service out of stock for the shop's search (feature 29).
+      await this.signals.servicesChanged(
+        tx,
+        voided.map((row) => row.serviceId),
+        'stock',
+      );
       const result = { voided: voidedIds.length, skipped: distinct.length - voidedIds.length };
       await this.audit.record(tx, {
         action: 'voided inventory codes',
