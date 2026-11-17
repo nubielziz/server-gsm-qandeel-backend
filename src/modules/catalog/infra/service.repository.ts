@@ -374,6 +374,33 @@ export async function replaceFieldRows(
 }
 
 /**
+ * Puts a field before the service's other fields: their `sort` moves up by one and the new field takes `sort` 0.
+ *
+ * Why: decision 042 (feature 33): the supplier's main box becomes the first field of an adopted service; the other fields keep their
+ * keys, values and order.
+ *
+ * @param db the transaction (the service row is locked)
+ * @param serviceId the service
+ * @param row the new field
+ * @returns the saved field
+ */
+export async function insertFirstFieldRow(
+  db: DbExecutor,
+  serviceId: number,
+  row: Omit<NewServiceField, 'serviceId' | 'sort' | 'id'>,
+): Promise<ServiceField> {
+  await db
+    .update(serviceFields)
+    .set({ sort: sql`${serviceFields.sort} + 1` })
+    .where(eq(serviceFields.serviceId, serviceId));
+  const [saved] = await db
+    .insert(serviceFields)
+    .values({ ...row, serviceId, sort: 0 })
+    .returning();
+  return saved!;
+}
+
+/**
  * Replaces all option lists of a service: deletes the old entries and inserts the new list in order.
  *
  * @param db the transaction (the service row is locked)

@@ -210,6 +210,8 @@ export async function openCheckout(
     currency?: string;
     quantity?: number;
     country?: string;
+    /** The values of the service's order fields (a server service). */
+    inputs?: Record<string, string>;
   } = {},
 ): Promise<{ token: string; session: ReturnType<typeof json> }> {
   const res = await t.app.inject({
@@ -224,6 +226,7 @@ export async function openCheckout(
       currency: options.currency ?? 'GBP',
       imei: APPLE_IMEI,
       ...(options.quantity === undefined ? {} : { quantity: options.quantity }),
+      ...(options.inputs === undefined ? {} : { inputs: options.inputs }),
     },
   });
   if (res.statusCode !== 201) throw new Error(`open checkout answered ${res.statusCode}: ${res.body}`);
@@ -434,6 +437,7 @@ export async function paidOrder(
     country?: string;
     currency?: string;
     card?: TestCard;
+    inputs?: Record<string, string>;
   } = {},
 ): Promise<PaidOrder> {
   const { token } = await openCheckout(t, world, options);

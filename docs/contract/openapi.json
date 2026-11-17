@@ -165711,7 +165711,8 @@
                             "type": "string"
                           },
                           "type": {
-                            "type": "string"
+                            "type": "string",
+                            "description": "The supplier's type name as stored, or `SERVER` when the import makes the IMEI service a server service because its main box asks for something other than an IMEI (decision 042)."
                           },
                           "state": {
                             "type": "string",
@@ -169068,7 +169069,7 @@
     },
     "/admin/suppliers/{id}/sync": {
       "post": {
-        "description": "Runs the supplier-sync job (the worker calls `imeiservicelist` and `accountinfo`) and answers its counts. The API waits up to `timeoutMs` + 5 s: a supplier failure is `409 SUPPLIER_UNAVAILABLE`; a wait that runs out while the job goes on is `504 SUPPLIER_TIMEOUT`. A paused supplier may sync; a disabled one is `409 SUPPLIER_DISABLED`. The sync updates `supplier_services` (a changed credit sets `price_changed_at`; a service no longer listed becomes unavailable), recomputes the effective cost of every linked service and moves the catalog price version.",
+        "description": "Runs the supplier-sync job (the worker calls `imeiservicelist` and `accountinfo`) and answers its counts. The API waits up to `timeoutMs` + 5 s: a supplier failure is `409 SUPPLIER_UNAVAILABLE`; a wait that runs out while the job goes on is `504 SUPPLIER_TIMEOUT`. A paused supplier may sync; a disabled one is `409 SUPPLIER_DISABLED`. The sync updates `supplier_services` (a changed credit sets `price_changed_at`; a service no longer listed becomes unavailable), recomputes the effective cost of every linked service and moves the catalog price version. It also adopts the supplier's main box (decision 042): an IMEI service whose only active link points at a service of this supplier whose main box asks for something other than an IMEI (an ECID, a serial number) becomes a server service with that box as its first field. On every service whose only active link points at this supplier it also makes required the fields the supplier requires (a Dhru Fusion site writes `\"required\": \"on\"`) that were imported as optional; it never makes a field optional. `adopted` counts the services brought in line, each once.",
         "operationId": "postAdminSuppliersByIdSync",
         "parameters": [
           {
@@ -169112,6 +169113,12 @@
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
                     },
+                    "adopted": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "Services this sync brought in line with what their supplier asks for, each counted once: the main box adopted (an IMEI service made a server service with the supplier's box first, decision 042), fields the supplier requires made required, or both; 0 when none."
+                    },
                     "balance": {
                       "type": "string",
                       "pattern": "^-?\\d+\\.\\d{4}$",
@@ -169136,6 +169143,7 @@
                     "added",
                     "changed",
                     "removed",
+                    "adopted",
                     "balance",
                     "balanceCheckedAt"
                   ],
@@ -169146,6 +169154,7 @@
                   "added": 3,
                   "changed": 5,
                   "removed": 0,
+                  "adopted": 0,
                   "balance": "1240.5000",
                   "balanceCheckedAt": "2026-11-07T08:30:00.000Z"
                 }
@@ -270943,6 +270952,9 @@
                         "description": "The custom fields the service needs: `{ type, fieldname, fieldtype, description, fieldoptions, required }` each.",
                         "type": "array",
                         "items": {}
+                      },
+                      "CUSTOM": {
+                        "description": "The main box of the service: `{ allow, customname, customlen, maxlength, regex, ... }`. With `allow` 1 and a `customname` that is not an IMEI, the buyer types that value instead of an IMEI and it is sent as `IMEI`; the import makes such an IMEI service a server service whose first field is that box (decision 042). Kept in the synced entry; not read by the sync."
                       }
                     },
                     "additionalProperties": {}
@@ -271009,7 +271021,7 @@
       "key": "SUPPLIER placeimeiorder+placeimeiorderbulk",
       "action": "placeimeiorder",
       "summary": "Send an order to the supplier",
-      "description": "Places one order and keeps the `REFERENCEID` of the answer (kept to 200 characters) as the supplier reference. An answer without a REFERENCEID is unusable: the order goes to attention, it is never sent again by itself. The bulk variant `placeimeiorderbulk` (parameters keyed by a request id) is described by the Dhru standard but this backend never sends it: each order is its own job, so a refusal never stops another order and every order has its own log row.",
+      "description": "Places one order and keeps the `REFERENCEID` of the answer (kept to 200 characters) as the supplier reference. An answer without a REFERENCEID is unusable: the order goes to attention, it is never sent again by itself. The bulk variant `placeimeiorderbulk` (parameters keyed by a request id) is described by the Dhru standard but this backend never sends it: each order is its own job, so a refusal never stops another order and every order has its own log row. The parameters are sent in the form the supplier reads (`param_format`, decision 042): the classic XML string `<PARAMETERS><ID>..</ID><IMEI>..</IMEI><QNT>..</QNT></PARAMETERS>` (`dhru_xml`, the default of a Dhru supplier) or base64 of a JSON object (`json`).",
       "transport": {
         "method": "POST",
         "path": "<supplier>/api/index.php",
@@ -271029,7 +271041,7 @@
             "description": "The supplier's service id (`supplier_services.remote_id`)."
           },
           "IMEI": {
-            "description": "The main input: the IMEI, or the first required field. Left out when the order has none.",
+            "description": "The main input: the IMEI, else the value of the field whose supplier key is `IMEI` (decision 042), else the first required field. Left out when the order has none.",
             "type": "string"
           },
           "QNT": {
@@ -271039,7 +271051,7 @@
             "description": "The quantity."
           },
           "CUSTOMFIELD": {
-            "description": "The custom field values by the supplier's field names. On the wire it is base64 of this JSON object (decision 026).",
+            "description": "The custom field values by the supplier's field names; never the field sent as `IMEI`. On the wire it is base64 of this JSON object in both parameter forms (decisions 026 and 042).",
             "type": "object",
             "propertyNames": {
               "type": "string"

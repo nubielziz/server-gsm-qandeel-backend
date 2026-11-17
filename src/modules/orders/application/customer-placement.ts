@@ -8,7 +8,7 @@ import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
 import { InventoryStock } from '../../catalog';
 import type { Order } from '../db/schema';
-import { mainInputOf } from '../domain/main-input';
+import { carriedImeiInputs, mainInputOf } from '../domain/main-input';
 import { placementDispatchState } from '../domain/order-machine';
 import {
   type TimelineLine,
@@ -60,7 +60,8 @@ const CURRENCY = 'USD';
  * Codes in stock are delivered at once like a merchant's order (RULES orders 10). The customer already paid the locked price, so
  * nothing here refuses: a service switched off since is still delivered or worked by hand. An order the risk rules hold (feature 18,
  * `holdReason` set) starts `held` through `placementDispatchState({ held })`: it claims no stock, queues no dispatch and carries the
- * hold sentence on its timeline, so the review queue shows why.
+ * hold sentence on its timeline, so the review queue shows why. An IMEI typed while the service was an IMEI service and paid after the
+ * supplier sync made it a server service (decision 042) is kept under the field sent as the supplier's main box (`carriedImeiInputs`).
  *
  * Side effects (on the caller's transaction): inserts `orders` and `order_events`; claims and sells stock codes (not for a held order);
  * posts the settlement of a stock delivery; inserts `outbox_events` (`order.dispatch_requested`, or `order.status_changed` for a stock
@@ -94,13 +95,16 @@ export class CustomerOrderPlacement {
     const service = await storefrontServiceOf(tx, request.serviceId);
     if (!service) throw new Error(`The paid checkout names service ${request.serviceId}, which does not exist.`);
     const fields = await serviceFieldsOf(tx, service.id);
+    // A checkout opened while the service took an IMEI and paid after the sync made it a server service (decision 042): the buyer's
+    // value goes under the field sent as the supplier's main box, so the order is stored and sent as it would have been before.
+    const inputs = carriedImeiInputs({ type: service.type, imei: request.imei, inputs: request.inputs, fields });
     const mainInput = mainInputOf({
       type: service.type,
       imei: request.imei,
       inputs:
         request.imei !== undefined && fields.some((field) => field.key === 'imei')
-          ? { imei: request.imei, ...request.inputs }
-          : request.inputs,
+          ? { imei: request.imei, ...inputs }
+          : inputs,
       fields,
       fileName: undefined,
     });
@@ -132,7 +136,7 @@ export class CustomerOrderPlacement {
       ...(claim ? { resultCode: claim.codes.join('\n'), completedAt: now } : {}),
       imei: mainInput,
       quantity: request.quantity,
-      inputs: { ...request.inputs },
+      inputs: { ...inputs },
       unitPrice: unitPrice.toWire(),
       totalPrice: net.toWire(),
       unitCost: unitCost.toWire(),

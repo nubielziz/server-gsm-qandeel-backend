@@ -3,11 +3,20 @@
 // waits for the job) both run `run`; a sync is one transaction and safe to repeat (resolution orders-suppliers-6, user rule 9).
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
-import { DbService, type DbExecutor } from '../../../infra/db';
-import { CatalogPriceVersion, recomputeEffectiveCost } from '../../catalog';
+import { isMainInputKey, resolvedSupplierKey } from '../../../common/dhru';
+import { DbService, type DbExecutor, type TransactionContext } from '../../../infra/db';
+import { CatalogPriceVersion, ServiceImporter, recomputeEffectiveCost } from '../../catalog';
 import { AuditService } from '../../platform';
 import type { Supplier } from '../db/schema';
+import { fieldsToRequire, mainInputField } from '../domain/import-plan';
+import { supplierMainInput } from '../domain/supplier-main-input';
 import { syncCounts } from '../domain/sync-plan';
+import {
+  type AlignmentCandidate,
+  alignmentCandidates,
+  liveServiceInfo,
+  lockLiveServiceRow,
+} from '../infra/foreign-reads.repository';
 import { insertLog } from '../infra/supplier-log.repository';
 import {
   serviceIdsLinkedToSupplier,
@@ -24,9 +33,40 @@ export interface SyncResult {
   readonly added: number;
   readonly changed: number;
   readonly removed: number;
+  /**
+   * Services this sync brought in line with what their supplier asks for (feature 33), each counted once: an IMEI service made a
+   * `server` service with the supplier's main box first (decision 042), fields the supplier requires made required, or both.
+   */
+  readonly adopted: number;
   readonly balance: string;
   readonly balanceCheckedAt: string;
 }
+
+/**
+ * Whether the sync may adopt a candidate's main box: it is an `imei` service, its supplier service has a main box, and neither a field
+ * (its supplier key, or its key when that is empty) nor the link's field map already names the box `IMEI` (decision 042; the
+ * dispatcher's rule, `resolvedSupplierKey`).
+ *
+ * @param row the candidate as `alignmentCandidates` reads it
+ * @returns true when the service should become a server service with the supplier's box first
+ */
+export function adoptable(row: AlignmentCandidate): boolean {
+  if (row.type !== 'imei' || supplierMainInput(row.raw) === null) return false;
+  if (row.fields.some((field) => isMainInputKey(resolvedSupplierKey(field)))) return false;
+  return !Object.values(row.fieldMap).some((mapped) => typeof mapped === 'string' && isMainInputKey(mapped));
+}
+
+/** The audit phrase of an adopted service (`<actor> <action> <entityLabel>`, the system as the actor). */
+export const ADOPTED_AUDIT_ACTION = "adopted the supplier's input";
+
+/** The audit phrase of a service whose supplier-required fields were made required (feature 33, the system as the actor). */
+export const REQUIRED_AUDIT_ACTION = "made the supplier's required fields required";
+
+/** The fields of a candidate its supplier requires but that are optional (`fieldsToRequire` with the candidate's own data). */
+const toRequire = (row: AlignmentCandidate): string[] => fieldsToRequire(row.fields, row.fieldMap, row.customFields);
+
+/** Whether the sync has anything to do for a candidate: adopt its main box, make fields required, or both. */
+const needsAlignment = (row: AlignmentCandidate): boolean => adoptable(row) || toRequire(row).length > 0;
 
 /** How a sync ended. A failure is a value, not an exception, so the API can answer with the right code. */
 export type SyncOutcome =
@@ -78,10 +118,17 @@ export function writeCallLog(
  * (`accountinfo`), upserts `supplier_services` (a changed credit sets `price_changed_at`, a service no longer listed becomes
  * unavailable), recomputes the effective cost of every linked service and, when one moved, moves the catalog price version after the
  * commit, so price lists, the price floor and the price change scan follow. Both calls are logged with no order. Nothing is written
- * unless both calls worked.
+ * unless both calls worked. In the same transaction it adopts the supplier's main box (decision 042): an IMEI service made before,
+ * whose only active link points at a service of this supplier with a main box that is not an IMEI, becomes a `server` service with
+ * that box first (`ServiceImporter.adoptMainInput`); and on every such service (its only active link at this supplier) it makes required
+ * the fields the supplier requires that the import made optional (`ServiceImporter.requireFields`, feature 33). A field is never made
+ * optional, so a staff member who makes one optional again sees the next sync make it required again.
  *
  * Side effects: two `supplier_api_logs` rows; one transaction that writes `supplier_services`, `suppliers` (balance, check time,
- * `prices_synced_at`), `services` (effective cost) and, when asked, `audit_logs`; the catalog price version after the commit.
+ * `prices_synced_at`), `services` (effective cost; type and category of an adopted one), `service_fields` and `service_categories` (an
+ * adoption; `required` of a repaired field), `outbox_events` (`catalog.services_changed` per adoption) and `audit_logs` (when asked, and
+ * one row per adoption and one per service whose fields were made required);
+ * the catalog price version after the commit.
  */
 @Injectable()
 export class SupplierSync {
@@ -90,6 +137,7 @@ export class SupplierSync {
     private readonly client: SupplierClient,
     private readonly audit: AuditService,
     private readonly priceVersion: CatalogPriceVersion,
+    private readonly importer: ServiceImporter,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -123,6 +171,7 @@ export class SupplierSync {
       await upsertSupplierServices(tx, supplier.id, list.value, now);
       const moved = await recomputeEffectiveCost(tx, await serviceIdsLinkedToSupplier(tx, supplier.id));
       if (moved.length > 0) this.priceVersion.bumpAfterCommit(work);
+      const adopted = await this.alignServices(work, supplier.id);
       await updateSupplier(tx, supplier.id, {
         balance: account.value.credit,
         balanceCheckedAt: now,
@@ -134,10 +183,10 @@ export class SupplierSync {
           entityType: 'supplier',
           entityId: supplier.id,
           entityLabel: supplier.name,
-          after: { ...found, balance: account.value.credit },
+          after: { ...found, adopted, balance: account.value.credit },
         });
       }
-      return found;
+      return { ...found, adopted };
     });
     return { ok: true, result: { ...counts, balance: account.value.credit, balanceCheckedAt: now.toISOString() } };
   }
@@ -159,6 +208,76 @@ export class SupplierSync {
       balanceCheckedAt: this.clock.now(),
     });
     return true;
+  }
+
+  /**
+   * Brings the services of this supplier in line with what it asks for, in the sync's transaction (decision 042, feature 33): adopts the
+   * main box on the IMEI services made before (brief section 6), then makes required the fields the supplier requires that the import
+   * made optional. One audit row per change, each service counted once.
+   *
+   * @returns how many services changed
+   */
+  private async alignServices(work: TransactionContext, supplierId: number): Promise<number> {
+    const { tx } = work;
+    const wanted = (await alignmentCandidates(tx, supplierId)).filter(needsAlignment);
+    if (wanted.length === 0) return 0;
+    // Locks: the supplier row is held since the start of the sync. `recomputeEffectiveCost` above already updated, and so locked, the
+    // linked service rows whose effective cost moved, in no fixed order; here the candidates are locked in id order (a row already
+    // held is a no-op). A deadlock with another writer is possible in principle: Postgres aborts one side, and the sync job retries
+    // (a staff sync answers an error). Then everything is read again under the locks, so a staff change of the links or the fields
+    // (which locks the service row first) either finished before or waits for this commit.
+    for (const row of wanted) await lockLiveServiceRow(tx, row.serviceId);
+    const candidates = (
+      await alignmentCandidates(
+        tx,
+        supplierId,
+        wanted.map((row) => row.serviceId),
+      )
+    ).filter(needsAlignment);
+    let changed = 0;
+    let adoptedAny = false;
+    for (const row of candidates) {
+      let touched = false;
+      const main = adoptable(row) ? supplierMainInput(row.raw) : null;
+      if (main !== null) {
+        const field = mainInputField(main, new Set(row.fields.map((existing) => existing.key)));
+        const done = await this.importer.adoptMainInput(tx, { serviceId: row.serviceId, field });
+        if (done !== null) {
+          touched = true;
+          adoptedAny = true;
+          await this.audit.record(tx, {
+            action: ADOPTED_AUDIT_ACTION,
+            entityType: 'service',
+            entityId: done.serviceId,
+            entityLabel: done.name,
+            before: { type: done.before.type, categoryId: done.before.categoryId },
+            after: {
+              type: done.after.type,
+              categoryId: done.after.categoryId,
+              field: { key: field.key, label: field.label, supplierKey: field.supplierKey },
+            },
+          });
+        }
+      }
+      // After an adoption too: the main box field is new and required; the service's other fields keep their keys.
+      const raised = await this.importer.requireFields(tx, { serviceId: row.serviceId, keys: toRequire(row) });
+      if (raised.length > 0) {
+        touched = true;
+        await this.audit.record(tx, {
+          action: REQUIRED_AUDIT_ACTION,
+          entityType: 'service',
+          entityId: row.serviceId,
+          entityLabel: (await liveServiceInfo(tx, row.serviceId))?.name ?? '',
+          before: { optionalFields: raised },
+          after: { requiredFields: raised },
+        });
+      }
+      if (touched) changed += 1;
+    }
+    // A type and a category are what merchants see: cached price lists start over, as after a staff edit. A field's `required` is
+    // not (a staff save of the fields moves nothing either).
+    if (adoptedAny) this.priceVersion.bumpAfterCommit(work);
+    return changed;
   }
 
   private unavailable(supplier: Supplier, message: string): SyncOutcome {

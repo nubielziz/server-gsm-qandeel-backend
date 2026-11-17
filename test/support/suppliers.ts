@@ -1,17 +1,27 @@
 // Helpers for the suppliers tests (feature 6): a fake Dhru Fusion supplier served by a local Bun server (it speaks the protocol of
-// decision 026 and records every call), the test policy that lets the supplier client reach it over plain http, and rows for a supplier
+// decisions 026 and 042, reading `parameters` as the classic XML string or as base64 of JSON, and records every call), the test policy that lets the supplier client reach it over plain http, and rows for a supplier
 // that points at it, with its services and links.
 import { Global, Module } from '@nestjs/common';
 import { type Database, schema as s } from '../../src/infra/db';
 import { EncryptionService } from '../../src/infra/crypto';
 import { SUPPLIER_TARGET_POLICY, type SupplierTargetPolicy } from '../../src/modules/suppliers';
 
+/** The form a call's `parameters` arrived in: the classic XML string, base64 of JSON, or none sent (decision 042). */
+export type FakeParamForm = 'dhru_xml' | 'json' | 'none';
+
 /** One call the fake supplier received. */
 export interface FakeCall {
   readonly action: string;
   readonly username: string;
   readonly apiKey: string;
-  /** The decoded `parameters` (with `CUSTOMFIELD` decoded too). */
+  /** The form the `parameters` were sent in. */
+  readonly format: FakeParamForm;
+  /** The `parameters` text exactly as posted (`''` when none). */
+  readonly rawParameters: string;
+  /**
+   * The decoded `parameters` (with `CUSTOMFIELD` decoded too). XML values are text, except `QNT`, which the fake reads as a whole
+   * number the way a PHP supplier does (`intval`), so both forms decode to what the call contract describes.
+   */
   readonly parameters: Record<string, unknown>;
 }
 
@@ -45,6 +55,10 @@ export interface FakeService {
   minQnt?: string | number;
   maxQnt?: string | number;
   qntOptions?: string | number;
+  /** The classic main box description (`CUSTOM: { allow, customname, customlen, maxlength, regex, ... }`), sent only when set (decision 042). */
+  custom?: Record<string, unknown>;
+  /** The other fields (`Requires.Custom`), sent only when set. */
+  requiresCustom?: unknown[];
 }
 
 const DEFAULT_SERVICES: FakeService[] = [
@@ -66,6 +80,11 @@ export class FakeDhruSupplier {
   mail = 'ops@fake-supplier.example';
   /** Make every call answer this HTTP status (a supplier that is down), until set back to `0`. */
   forceHttp = 0;
+  /**
+   * The parameter forms the fake reads. A real Dhru Fusion site reads only `dhru_xml`: parameters in another form are not read at all,
+   * so an action that needs `ID` answers `Parameter 'ID' Required`, as the real supplier does. Both by default.
+   */
+  accepts: 'both' | 'dhru_xml' | 'json' = 'both';
   private readonly script: PlaceScript[] = [];
   private readonly server: ReturnType<typeof Bun.serve>;
   private nextReference = 88_100;
@@ -119,6 +138,7 @@ export class FakeDhruSupplier {
     this.services = DEFAULT_SERVICES.map((service) => ({ ...service }));
     this.credit = '1240.50';
     this.forceHttp = 0;
+    this.accepts = 'both';
   }
 
   /** Stops the server. */
@@ -136,16 +156,25 @@ export class FakeDhruSupplier {
   private async handle(request: Request): Promise<Response> {
     const form = new URLSearchParams(await request.text());
     const action = form.get('action') ?? '';
-    const parameters = this.decode(form.get('parameters'));
+    const rawParameters = form.get('parameters') ?? '';
+    const format: FakeParamForm =
+      rawParameters === '' ? 'none' : rawParameters.trimStart().startsWith('<') ? 'dhru_xml' : 'json';
+    const parameters = format === 'dhru_xml' ? fromXml(rawParameters) : this.decode(rawParameters);
     this.calls.push({
       action,
       username: form.get('username') ?? '',
       apiKey: form.get('apiaccesskey') ?? '',
+      format,
+      rawParameters,
       parameters,
     });
     if (this.forceHttp > 0) return new Response('down', { status: this.forceHttp });
     if (form.get('username') !== this.username || form.get('apiaccesskey') !== this.apiKey) {
       return this.json({ ERROR: [{ MESSAGE: 'Authentication Failed' }] });
+    }
+    const unread = format !== 'none' && this.accepts !== 'both' && this.accepts !== format;
+    if (unread && (action === 'placeimeiorder' || action === 'getimeiorder')) {
+      return this.json({ ERROR: [{ MESSAGE: "Parameter 'ID' Required" }] });
     }
     switch (action) {
       case 'accountinfo':
@@ -196,6 +225,8 @@ export class FakeDhruSupplier {
         ...(service.minQnt === undefined ? {} : { MINQNT: service.minQnt }),
         ...(service.maxQnt === undefined ? {} : { MAXQNT: service.maxQnt }),
         ...(service.qntOptions === undefined ? {} : { QNTOPTIONS: service.qntOptions }),
+        ...(service.custom === undefined ? {} : { CUSTOM: service.custom }),
+        ...(service.requiresCustom === undefined ? {} : { 'Requires.Custom': service.requiresCustom }),
         'Requires.Network': 'None',
       };
     }
@@ -205,11 +236,28 @@ export class FakeDhruSupplier {
   private decode(text: string | null): Record<string, unknown> {
     if (!text) return {};
     const parameters = JSON.parse(Buffer.from(text, 'base64').toString('utf8')) as Record<string, unknown>;
-    if (typeof parameters.CUSTOMFIELD === 'string') {
-      parameters.CUSTOMFIELD = JSON.parse(Buffer.from(parameters.CUSTOMFIELD, 'base64').toString('utf8'));
-    }
-    return parameters;
+    return withCustomFields(parameters);
   }
+}
+
+/** Decodes `CUSTOMFIELD` (base64 of a JSON object in both forms). */
+function withCustomFields(parameters: Record<string, unknown>): Record<string, unknown> {
+  if (typeof parameters.CUSTOMFIELD === 'string') {
+    parameters.CUSTOMFIELD = JSON.parse(Buffer.from(parameters.CUSTOMFIELD, 'base64').toString('utf8'));
+  }
+  return parameters;
+}
+
+/** Reads the classic XML string `<PARAMETERS><KEY>value</KEY>...</PARAMETERS>` as the PHP class writes it (no nesting, no attributes). */
+function fromXml(text: string): Record<string, unknown> {
+  const inner = /^\s*<PARAMETERS>([\s\S]*)<\/PARAMETERS>\s*$/.exec(text)?.[1];
+  if (inner === undefined) return {};
+  const parameters: Record<string, unknown> = {};
+  for (const [, key, value] of inner.matchAll(/<([A-Z][A-Z0-9_]*)>([^<]*)<\/\1>/g)) {
+    const decoded = value!.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    parameters[key!] = key === 'QNT' && /^\d+$/.test(decoded) ? Number(decoded) : decoded;
+  }
+  return withCustomFields(parameters);
 }
 
 /** The policy the tests give the supplier client: private addresses and plain http allowed (the fake runs on 127.0.0.1). */

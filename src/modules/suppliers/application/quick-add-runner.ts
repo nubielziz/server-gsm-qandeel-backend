@@ -6,7 +6,7 @@ import { DbService } from '../../../infra/db';
 import { CatalogPriceVersion, ServiceImporter, recomputeEffectiveCost } from '../../catalog';
 import { AuditService, SettingsReader } from '../../platform';
 import type { SupplierImportRunStatus } from '../db/schema';
-import { importableType } from '../domain/import-plan';
+import { importShape } from '../domain/import-plan';
 import { linkUnitCost } from '../domain/link-selection';
 import {
   MAX_ITEM_FAILURES,
@@ -175,7 +175,7 @@ export class QuickAddRunner {
       for (const id of ids) {
         const row = rows.get(id);
         // Re-checked here, inside the transaction: the list was built earlier and a sync or an import may have changed a row since.
-        if (!row || linked.has(id) || !row.isAvailable || importableType(row.type) === undefined) {
+        if (!row || linked.has(id) || !row.isAvailable || importShape(row).type === undefined) {
           skipped += 1;
           continue;
         }

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   amountText,
   dhruEndpoint,
+  dhruParametersXml,
   dhruRequestBody,
   parseDhruAnswer,
   readAccountInfo,
@@ -20,14 +21,79 @@ describe('dhruEndpoint', () => {
   });
 });
 
+describe('dhruParametersXml', () => {
+  it('writes one upper-case element per key, in insertion order, without a declaration or whitespace', () => {
+    expect(dhruParametersXml({ ID: '4411', imei: '352905112490861', Qnt: 2 })).toBe(
+      '<PARAMETERS><ID>4411</ID><IMEI>352905112490861</IMEI><QNT>2</QNT></PARAMETERS>',
+    );
+    expect(dhruParametersXml({ QNT: 1, ID: '7' })).toBe('<PARAMETERS><QNT>1</QNT><ID>7</ID></PARAMETERS>');
+    expect(dhruParametersXml({})).toBe('<PARAMETERS></PARAMETERS>');
+  });
+
+  it('writes numbers and booleans as text and leaves null and undefined out', () => {
+    expect(dhruParametersXml({ A: 0, B: 2.5, C: true, D: false, E: null, F: undefined, G: '' })).toBe(
+      '<PARAMETERS><A>0</A><B>2.5</B><C>true</C><D>false</D><G></G></PARAMETERS>',
+    );
+  });
+
+  it('escapes &, < and > and keeps quotes and text people type in Arabic as typed', () => {
+    // Written as escapes: the repository's English check keeps Arabic script out of the source (decision 039); the data stays readable.
+    const typed = '\u0633\u0644\u0627\u0645';
+    expect(dhruParametersXml({ NOTE: `a&b <c> "d" 'e' ${typed}` })).toBe(
+      `<PARAMETERS><NOTE>a&amp;b &lt;c&gt; "d" 'e' ${typed}</NOTE></PARAMETERS>`,
+    );
+  });
+
+  it('removes the characters XML 1.0 forbids and keeps tab, line feed, carriage return and surrogate pairs', () => {
+    const value = `a\u0000b\u0008c\u000Bd\u000Ce\u001Ff\uFFFEg\uFFFFh\uD800i\uDC00j\t\n\r😀k`;
+    expect(dhruParametersXml({ V: value })).toBe('<PARAMETERS><V>abcdefghij\t\n\r😀k</V></PARAMETERS>');
+  });
+
+  it('throws on a key that cannot be an element name and on a value of another type', () => {
+    expect(() => dhruParametersXml({ '1D': 'x' })).toThrow(/cannot be written as XML/);
+    expect(() => dhruParametersXml({ 'CUSTOM FIELD': 'x' })).toThrow(/cannot be written as XML/);
+    expect(() => dhruParametersXml({ 'A-B': 'x' })).toThrow(/cannot be written as XML/);
+    expect(() => dhruParametersXml({ '': 'x' })).toThrow(/cannot be written as XML/);
+    expect(() => dhruParametersXml({ ID: { nested: 1 } })).toThrow(/cannot be written as XML/);
+    expect(() => dhruParametersXml({ ID: ['1'] })).toThrow(/cannot be written as XML/);
+    expect(() => dhruParametersXml({ ID: Number.NaN })).toThrow(/cannot be written as XML/);
+  });
+});
+
 describe('dhruRequestBody', () => {
-  it('sends the credentials, the action, JSON format and the parameters as base64 JSON (decision 026)', () => {
+  it('sends the parameters of a dhru_xml supplier as the classic XML string (decision 042)', () => {
     const body = dhruRequestBody({
       username: 'gsm-supply',
       apiKey: 'key-1',
       action: 'placeimeiorder',
+      format: 'dhru_xml',
+      parameters: { ID: '4411', IMEI: 'SERIAL-TEST-0001', QNT: 1, CUSTOMFIELD: 'eyJBIjoiYiJ9' },
+    });
+    expect(body.get('requestformat')).toBe('JSON');
+    expect(body.get('parameters')).toBe(
+      '<PARAMETERS><ID>4411</ID><IMEI>SERIAL-TEST-0001</IMEI><QNT>1</QNT><CUSTOMFIELD>eyJBIjoiYiJ9</CUSTOMFIELD></PARAMETERS>',
+    );
+    expect(body.toString()).toContain('parameters=%3CPARAMETERS%3E%3CID%3E4411%3C%2FID%3E');
+    expect(
+      dhruRequestBody({
+        username: 'u',
+        apiKey: 'k',
+        action: 'getimeiorder',
+        format: 'dhru_xml',
+        parameters: { ID: '1' },
+      }).get('parameters'),
+    ).toBe('<PARAMETERS><ID>1</ID></PARAMETERS>');
+  });
+
+  it('sends the credentials, the action, JSON format and the parameters as base64 JSON for a json supplier (decision 026)', () => {
+    const body = dhruRequestBody({
+      username: 'gsm-supply',
+      apiKey: 'key-1',
+      action: 'placeimeiorder',
+      format: 'json',
       parameters: { ID: '4411', IMEI: '352905112490861' },
     });
+    expect(body.get('parameters')).toBe(Buffer.from('{"ID":"4411","IMEI":"352905112490861"}').toString('base64'));
     expect(body.get('username')).toBe('gsm-supply');
     expect(body.get('apiaccesskey')).toBe('key-1');
     expect(body.get('action')).toBe('placeimeiorder');
@@ -39,7 +105,12 @@ describe('dhruRequestBody', () => {
   });
 
   it('leaves the parameters out of an action that takes none', () => {
-    expect(dhruRequestBody({ username: 'u', apiKey: 'k', action: 'accountinfo' }).has('parameters')).toBe(false);
+    expect(
+      dhruRequestBody({ username: 'u', apiKey: 'k', action: 'accountinfo', format: 'dhru_xml' }).has('parameters'),
+    ).toBe(false);
+    expect(
+      dhruRequestBody({ username: 'u', apiKey: 'k', action: 'accountinfo', format: 'json' }).has('parameters'),
+    ).toBe(false);
   });
 });
 

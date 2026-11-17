@@ -54,6 +54,8 @@ export interface ServiceFieldRow {
   readonly required: boolean;
   readonly regex: string;
   readonly sort: number;
+  /** The supplier's name for the field (`''` when none was set). */
+  readonly supplierKey: string;
 }
 
 /**
@@ -74,6 +76,7 @@ export async function serviceFieldsOf(db: DbExecutor, serviceId: number): Promis
       required: s.serviceFields.required,
       regex: s.serviceFields.regex,
       sort: s.serviceFields.sort,
+      supplierKey: s.serviceFields.supplierKey,
     })
     .from(s.serviceFields)
     .where(eq(s.serviceFields.serviceId, serviceId))

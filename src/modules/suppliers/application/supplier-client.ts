@@ -22,7 +22,10 @@ import { SUPPLIER_PLAIN_HTTP_KEY, SUPPLIER_TARGET_POLICY, type SupplierTargetPol
 export const SUPPLIER_KEY_AAD = 'suppliers.api_key_enc';
 
 /** The part of a supplier a call needs. */
-export type CallableSupplier = Pick<Supplier, 'id' | 'driver' | 'baseUrl' | 'username' | 'apiKeyEnc' | 'timeoutMs'>;
+export type CallableSupplier = Pick<
+  Supplier,
+  'id' | 'driver' | 'baseUrl' | 'username' | 'apiKeyEnc' | 'timeoutMs' | 'paramFormat'
+>;
 
 /**
  * Calls suppliers.
@@ -30,7 +33,7 @@ export type CallableSupplier = Pick<Supplier, 'id' | 'driver' | 'baseUrl' | 'use
  * Why: orders-suppliers and decision 026: every supplier call goes through `OutboundHttp` (the SSRF guard, a required timeout, no
  * redirects) behind a driver. The key is decrypted here for the length of the call, never read on a page and never logged. The call
  * policy is `https` in production unless the setting `suppliers.allowPlainHttp` is on; tests provide `SUPPLIER_TARGET_POLICY` to reach
- * a local fake supplier.
+ * a local fake supplier. A Dhru supplier is sent its parameters in the form its row says (`param_format`, decision 042).
  *
  * Side effects: one outbound HTTP exchange per call (metric and log line of `OutboundHttp`); reads the settings snapshot. It writes no
  * log row: the caller does, with the record of the answer.
@@ -125,6 +128,7 @@ export class SupplierClient {
       username: supplier.username,
       apiKey,
       timeoutMs: supplier.timeoutMs,
+      paramFormat: supplier.paramFormat,
       policy: {
         ...(this.policy?.allowPrivateNetwork === undefined
           ? {}

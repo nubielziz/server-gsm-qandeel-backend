@@ -7,7 +7,7 @@ import { DbService } from '../../../infra/db';
 import { CatalogPriceVersion, ServiceImporter, recomputeEffectiveCost } from '../../catalog';
 import { AuditService, SettingsReader } from '../../platform';
 import type { SupplierService } from '../db/schema';
-import { classifyImportItem, importableType, quantityDiffers } from '../domain/import-plan';
+import { classifyImportItem, importShape, importableType, quantityDiffers } from '../domain/import-plan';
 import { supplierQuantityRule } from '../domain/supplier-quantity';
 import { lockLiveServiceRow, linkedServicesOf, liveServiceInfo } from '../infra/foreign-reads.repository';
 import {
@@ -150,10 +150,13 @@ export class SupplierCatalogueService {
         const found = linked.get(row.id) ?? null;
         const { state, cost, previousCost } = classifyImportItem(row, supplier.creditRate, found);
         const rule = supplierQuantityRule(row.raw);
+        // The supplier's type name, unless the import makes the service another type (decision 042: an IMEI service whose main box
+        // is not an IMEI becomes a server service); the console shows the tag upper-cased either way.
+        const shaped = importShape(row).type;
         return {
           supplierServiceId: row.id,
           name: row.name,
-          type: row.type,
+          type: shaped !== undefined && shaped !== importableType(row.type) ? shaped.toUpperCase() : row.type,
           state,
           serviceId: found?.serviceId ?? null,
           serviceName: found?.name ?? null,
@@ -199,7 +202,7 @@ export class SupplierCatalogueService {
         found: linked.get(row.id) ?? null,
         ...classifyImportItem(row, supplier.creditRate, linked.get(row.id) ?? null),
       }));
-      const refused = plan.filter((item) => item.state === 'new' && importableType(item.row.type) === undefined);
+      const refused = plan.filter((item) => item.state === 'new' && importShape(item.row).type === undefined);
       if (refused.length > 0) {
         const names = refused.map((item) => `"${item.row.name}" (${item.row.type})`).join(', ');
         throw invalid(

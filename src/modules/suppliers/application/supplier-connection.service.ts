@@ -118,6 +118,7 @@ export class SupplierConnectionService {
           added: outcome.result.added,
           changed: outcome.result.changed,
           removed: outcome.result.removed,
+          adopted: outcome.result.adopted,
         },
       }),
     );

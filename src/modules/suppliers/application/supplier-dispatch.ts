@@ -2,6 +2,7 @@
 // success, reject and timeout): send one order to its supplier exactly once and record what the supplier answered.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
+import { isMainInputKey, resolvedSupplierKey } from '../../../common/dhru';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService } from '../../../infra/db';
@@ -42,7 +43,8 @@ export class SupplierBusyError extends Error {
  * (`dispatch_state = 'pending' AND sent_at IS NULL`), so a second run never sends twice, then calls `placeimeiorder` outside any
  * transaction. A REFERENCEID moves the order to `sent` (status `processing`, the reference stored once); an explicit refusal, a timeout,
  * any other failure or no eligible link moves it to `needs_attention` with the reason, the hold kept and nothing re-sent. A run that
- * finds a claim whose answer was never recorded does not send again: it moves the order to `needs_attention`.
+ * finds a claim whose answer was never recorded does not send again: it moves the order to `needs_attention`. The supplier's main box
+ * travels as `IMEI`: the IMEI of an IMEI order, else the value of the field whose supplier key is `IMEI` (decision 042).
  *
  * Side effects: one `supplier_api_logs` row per call, the claim (`orders.sent_at`, supplier columns, a `dispatch` event), the result
  * (`sent` or `needs_attention` with its event, `order.status_changed` outbox row), a lease in the supplier's semaphore.
@@ -211,7 +213,10 @@ export class SupplierDispatch {
     };
   }
 
-  /** What `placeimeiorder` is sent: the main input for an IMEI service, the custom fields under the supplier's own names. */
+  /**
+   * What `placeimeiorder` is sent: the main input (the IMEI of an IMEI order, else the value of the field whose supplier key is `IMEI`)
+   * and the other custom fields under the supplier's own names.
+   */
   private async placeInput(
     order: Order,
     remoteId: string,
@@ -219,18 +224,27 @@ export class SupplierDispatch {
   ): Promise<PlaceOrderInput> {
     const maps = await serviceFieldMaps(this.db.db, order.serviceId);
     const customFields: Record<string, string> = {};
+    // Decision 042: a value whose supplier key is `IMEI` (any case, after the link's field map) is the supplier's main box: it travels
+    // as the `IMEI` parameter, never inside CUSTOMFIELD. With several, the first by the service's field order wins.
+    let main: { rank: number; value: string } | null = null;
     for (const [key, value] of Object.entries(order.inputs)) {
       if (typeof value !== 'string' || value.trim() === '') continue;
-      const mapped = fieldMap[key];
-      const supplierKey =
-        typeof mapped === 'string' && mapped !== ''
-          ? mapped
-          : maps.find((field) => field.key === key)?.supplierKey || key;
+      const supplierKey = resolvedSupplierKey(
+        maps.find((field) => field.key === key) ?? { key, supplierKey: '' },
+        fieldMap[key],
+      );
+      if (isMainInputKey(supplierKey)) {
+        const found = maps.findIndex((field) => field.key === key);
+        const rank = found === -1 ? maps.length : found;
+        if (main === null || rank < main.rank) main = { rank, value: value.trim() };
+        continue;
+      }
       customFields[supplierKey] = value;
     }
+    const ownImei = order.type === 'imei' && order.imei !== null && order.imei !== '' ? order.imei : null;
     return {
       remoteServiceId: remoteId,
-      input: order.type === 'imei' && order.imei !== null && order.imei !== '' ? order.imei : null,
+      input: ownImei ?? main?.value ?? null,
       quantity: order.quantity,
       customFields,
     };

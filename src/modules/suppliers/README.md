@@ -4,7 +4,7 @@ Map domain C. The suppliers we buy from: supplier accounts, their service catalo
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
-Decisions that shape this module: 023 outbound HTTP, 026 Dhru compatibility, 020 queues and outbox, 019 credential encryption, 021 rate limiting, 025 order state machine, 031 clock. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 023 outbound HTTP, 026 Dhru compatibility, 042 real Dhru Fusion suppliers (feature 33), 020 queues and outbox, 019 credential encryption, 021 rate limiting, 025 order state machine, 031 clock. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
 
@@ -15,9 +15,9 @@ Three Nest modules: `SuppliersAdminModule` (routes and use cases, needs the data
 
 ## The supplier client (decision 026)
 
-`SupplierClient` is the only place that calls suppliers. It decrypts the key for one call (AES-GCM with a key id, AAD `suppliers.api_key_enc`; the hint is the first 5 characters, written with the ciphertext and never decrypted on read), picks the driver (`dhru`; `rest` answers "REST suppliers are not supported yet" until a REST supplier exists) and calls through `OutboundHttp` (SSRF guard, required timeout `suppliers.timeout_ms`, no redirects). The Dhru request is a form post to `<baseUrl>/api/index.php` with `username`, `apiaccesskey`, `action`, `requestformat=JSON` and `parameters` = base64 of a JSON object (`CUSTOMFIELD` is base64 JSON again). Actions: `accountinfo`, `imeiservicelist`, `placeimeiorder`, `getimeiorder`. Production needs `https`; the setting `suppliers.allowPlainHttp` (editable in the settings screen) is the admin-visible opt-out. Tests provide `SUPPLIER_TARGET_POLICY` to reach a local fake supplier.
+`SupplierClient` is the only place that calls suppliers. It decrypts the key for one call (AES-GCM with a key id, AAD `suppliers.api_key_enc`; the hint is the first 5 characters, written with the ciphertext and never decrypted on read), picks the driver (`dhru`; `rest` answers "REST suppliers are not supported yet" until a REST supplier exists) and calls through `OutboundHttp` (SSRF guard, required timeout `suppliers.timeout_ms`, no redirects). The Dhru request is a form post to `<baseUrl>/api/index.php` with `username`, `apiaccesskey`, `action`, `requestformat=JSON` and `parameters` in the form the supplier's row says (`suppliers.param_format`, decision 042): `dhru_xml` (the default of every Dhru supplier) is the classic XML string `<PARAMETERS><ID>..</ID><IMEI>..</IMEI><QNT>..</QNT></PARAMETERS>` that a Dhru Fusion site reads (`dhruParametersXml`: upper-case keys, `&`, `<`, `>` escaped, characters XML forbids removed), `json` is base64 of a JSON object (the standards v6.1 form of decision 026). `CUSTOMFIELD` is base64 of a JSON object in both. No route sets the form yet. Actions: `accountinfo`, `imeiservicelist`, `placeimeiorder`, `getimeiorder`. Production needs `https`; the setting `suppliers.allowPlainHttp` (editable in the settings screen) is the admin-visible opt-out. Tests provide `SUPPLIER_TARGET_POLICY` to reach a local fake supplier.
 
-Every call returns a record that the caller writes to `supplier_api_logs`: `http_status` (0 without an HTTP answer), `duration_ms` (the time waited), `error` (`''` when fine) and the `outcome` `ok | error | timeout` (`timeout` = no HTTP answer in time; `error` = anything else: network error, HTTP >= 400, unusable body, a Dhru ERROR even on HTTP 200). Credentials and IMEIs are masked in the stored bodies (`redactBody`); a service list keeps only its count. `SupplierThrottle` applies `max_concurrency` (a semaphore) and `rate_limit_per_min` (the `supplier` limiter).
+Every call returns a record that the caller writes to `supplier_api_logs` (the readable, redacted `request` names the `format` its parameters were sent in): `http_status` (0 without an HTTP answer), `duration_ms` (the time waited), `error` (`''` when fine) and the `outcome` `ok | error | timeout` (`timeout` = no HTTP answer in time; `error` = anything else: network error, HTTP >= 400, unusable body, a Dhru ERROR even on HTTP 200). Credentials and IMEIs are masked in the stored bodies (`redactBody`); a service list keeps only its count. `SupplierThrottle` applies `max_concurrency` (a semaphore) and `rate_limit_per_min` (the `supplier` limiter).
 
 ## Dispatch, poll and sync
 
@@ -96,7 +96,7 @@ Staff permissions the routes need: `suppliers:read`, `suppliers:create`, `suppli
 
 ## Events
 
-Outbox events produced: `supplier.quick_add` (queue `imports`, job `supplier_quick_add`, payload `{ runId, supplierId }`, aggregate `supplier_import_runs`; `QuickAddOutbox`, written by `POST /admin/suppliers/:id/quick-add`). Consumed: `order.dispatch_requested` (queue `supplier-dispatch`, payload `{ orderId }`, written by the orders module) and `supplier.quick_add` (queue `imports`, `QuickAddProcessor` in the worker). Audit phrases written (the console prints `<actor> <action> <entityLabel>`): `added supplier`, `edited supplier`, `paused supplier`, `resumed supplier`, `disabled supplier`, `enabled supplier`, `deleted supplier`, `tested connection to`, `synced services from`, `imported services from`, `started quick add from` (the staff member, when the run is queued), `quick added services from` (the system, when the run ends), `changed supplier links of` (entity `service`), and on orders `dispatched order`, `changed supplier of`, `fetched supplier result of`.
+Outbox events produced: `supplier.quick_add` (queue `imports`, job `supplier_quick_add`, payload `{ runId, supplierId }`, aggregate `supplier_import_runs`; `QuickAddOutbox`, written by `POST /admin/suppliers/:id/quick-add`). Consumed: `order.dispatch_requested` (queue `supplier-dispatch`, payload `{ orderId }`, written by the orders module) and `supplier.quick_add` (queue `imports`, `QuickAddProcessor` in the worker). Audit phrases written (the console prints `<actor> <action> <entityLabel>`): `added supplier`, `edited supplier`, `paused supplier`, `resumed supplier`, `disabled supplier`, `enabled supplier`, `deleted supplier`, `tested connection to`, `synced services from`, `imported services from`, `started quick add from` (the staff member, when the run is queued), `quick added services from` (the system, when the run ends), `changed supplier links of` (entity `service`), `adopted the supplier's input` and `made the supplier's required fields required` (entity `service`, the system, by the sync: feature 33), and on orders `dispatched order`, `changed supplier of`, `fetched supplier result of`.
 
 ## Jobs and schedules
 
@@ -126,6 +126,57 @@ preview sends, per item, `minQty`, `maxQty`, `qtyOptions` (the supplier's rule; 
 `quantityDiffers` (a live linked service whose own three values differ; `false` for `new` and for an archived link). The REST driver
 has no service list, so there is nothing to copy. An order's quantity is still sent to the supplier as `QNT`; a rule staff set wider
 than the supplier's is not refused here: the supplier refuses the order and the rejection path refunds it.
+
+## The supplier's main box (feature 33, decision 042)
+
+The classic service list describes the main box of an IMEI service as `CUSTOM: { allow, customname, customlen, maxlength, regex, ... }`:
+with `allow` on, the buyer types what `customname` says (an ECID, a serial number) instead of an IMEI, and the value travels as the `IMEI`
+parameter; `Requires.Custom` lists the other fields. Our `imei` type keeps its meaning (a real 15-digit IMEI with a Luhn digit).
+
+- `supplierMainInput(raw)` (`domain/supplier-main-input.ts`) reads the box from `supplier_services.raw`: `null` unless `CUSTOM` is an
+  object, `allow` is `"1"`, `1` or `true`, and `customname` has text that does not only say IMEI (`imei`, `imeino`, `imeinumber` after
+  dropping all but letters and digits). Else the label (spaces collapsed, 120 characters), `maxLength` (`maxlength` 1-500, else `null`),
+  `minLength` (`customlen` 1 to the maximum, else 1). The supplier's own `regex` is never used: it is untrusted text that may be written
+  for another engine (PHP's `\A`, `[[:alnum:]]`) and match nothing, or backtrack without end on every order check; staff can type a
+  pattern on the field later. `isalpha`, `bulk` and `custominfo` are not used either.
+- `importShape(row)` (`domain/import-plan.ts`) is what a supplier service becomes: an `imei` one with a main box is a `server` service whose
+  first field is the box (`mainInputField`: required text, supplier key `IMEI`, the key in lower snake case and unique, the regex
+  `^.{min,max}$` from the lengths when the supplier gives a maximum, else none), followed by the `Requires.Custom` fields; anything else is `importableType` and
+  `importedFields` as before. The import, the preview (its `type` tag says `SERVER` then) and the quick add read the type from it.
+- One rule says which field is the supplier's main box (`src/common/dhru/main-input-key.ts`): its supplier name resolves as the link's
+  `field_map[key]`, else the field's `supplier_key`, else its `key` (`resolvedSupplierKey`), and the box is the one that resolves to
+  `IMEI` in any case (`isMainInputKey`). The dispatch sends that value as the `IMEI` parameter when the order has no IMEI of its own
+  (the first such field by the service's field order wins), never inside `CUSTOMFIELD`; `orders.imei` already holds it (the first
+  required field). **This also changes existing services:** a `server` service with a field whose supplier key (or key, or link map
+  value) is `IMEI` is sent that value as the `IMEI` parameter from now on, no longer inside `CUSTOMFIELD`.
+- A shop checkout opened while a service took an IMEI and paid after an adoption keeps the buyer's value: the store placement puts it
+  under the main box field (`carriedImeiInputs`, orders module) when that field has no value of its own.
+- **Adoption on sync.** In the sync's transaction, after the services are stored: every live `imei` service whose only active link (in
+  all; inactive links do not count) points at a service of this supplier with a main box is adopted, by service id, unless a field
+  (by supplier key, or key when that is empty) or that link's `field_map` already names `IMEI` (the same rule, `adoptable`). The
+  candidates are locked in id order (some may already be locked by the effective cost recompute, in no fixed order) and read again. The catalog's `ServiceImporter.adoptMainInput` makes it a `server` service in the
+  `server` category of the same name (an existing one is reused as it is, with its own switch and groups; only a category created for
+  the move copies the old one's switch and groups) and puts the box first; price,
+  cost, status, quantities, SLA, links and listing stay. Each adoption writes the search index's `catalog.services_changed` event and
+  one audit row (`adopted the supplier's input`, entity `service`, the system as the actor, `before { type, categoryId }`, `after
+  { type, categoryId, field { key, label, supplierKey } }`); the catalog price version moves after the commit.
+- **Required fields (feature 33, second review round).** A Dhru Fusion site describes a `Requires.Custom` field as `{ type, fieldname,
+  fieldtype, description, fieldoptions, required, regexpr, adminonly }` and writes a set flag as `"on"` (an unset one as `""`).
+  `isSupplierFlagOn` (`domain/import-plan.ts`) reads a flag: `true`, `1`, or text that is `on`, `1`, `yes`, `true`, `required` or `y`
+  (trimmed, any case). `importedFields` makes such a field required, reads `fieldtype` `radio` as a `select` (like `dropdown`, options
+  from `fieldoptions`) and leaves out a field marked `adminonly` (the supplier's own staff fill it). `regexpr` is never used (decision
+  042: untrusted).
+- **Repair on sync.** In the same step and under the same guards as the adoption (live; the only active link in all points at this
+  supplier; any type), `fieldsToRequire` lists the service's optional fields whose supplier name (`resolvedSupplierKey`: the link's
+  `field_map`, else the supplier key, else the key) is the `fieldname` of a field the supplier requires (exactly, then without case
+  and spaces) and not `adminonly`; the catalog's `ServiceImporter.requireFields` sets only their `required` (label, type, options,
+  pattern, sort and key stay), like a staff save of the fields (nothing for the shop or the search index, no price version). One audit
+  row per changed service (`made the supplier's required fields required`, entity `service`, the system, `before { optionalFields }`,
+  `after { requiredFields }`). A service adopted in the same sync has its other fields checked after the adoption. **A field is never
+  made optional by the sync**: staff who make such a field optional again will see the next sync make it required again, because the
+  supplier refuses the order without it.
+- `SyncResult.adopted` (and the `synced services from` row) counts the services the sync brought in line with what their supplier asks
+  for, each once: the main box adopted, required fields raised, or both. A second sync changes nothing.
 
 ## Quick add (feature 26, B214)
 

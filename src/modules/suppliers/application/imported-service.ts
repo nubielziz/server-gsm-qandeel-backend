@@ -4,7 +4,7 @@ import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
 import { type ServiceImporter, defaultMinProfit } from '../../catalog';
 import type { SupplierImportServiceStatus, SupplierService } from '../db/schema';
-import { importableType, importedFields } from '../domain/import-plan';
+import { importShape } from '../domain/import-plan';
 import { slaMinutesOf } from '../domain/sla-time';
 import { supplierQuantityRule } from '../domain/supplier-quantity';
 import { insertFirstLink } from '../infra/supplier-catalogue.repository';
@@ -18,7 +18,7 @@ export const SLA_BOUNDS = { min: 1, max: 525_600 } as const;
 
 /** What {@link createImportedService} needs to make one service. */
 export interface ImportedServiceArgs {
-  /** The supplier service; its type must be importable (`importableType`). */
+  /** The supplier service; its type must be importable (`importShape(row).type`). */
   readonly row: SupplierService;
   /** What the supplier charges: `credit x credit_rate`, in USD. */
   readonly cost: Money;
@@ -51,7 +51,8 @@ export const suggestedPrice = (cost: Money): Money => cost.add(defaultMinProfit(
  * Creates the catalog service of a supplier service and links it at priority 1.
  *
  * Why: orders-suppliers-10 and B213: a new item becomes a service with the `POST /admin/services` defaults, the category of its type and
- * group, the suggested price, the supplier's custom fields and the supplier's quantity rule, written at creation only. The picker's
+ * group, the suggested price, the supplier's custom fields and the supplier's quantity rule, written at creation only. The type and the
+ * fields are `importShape`'s: an IMEI service whose main box is not an IMEI is a `server` service with that box first (decision 042). The picker's
  * import (always `active`) and the quick add (`active` or `disabled`) both come here.
  *
  * Side effects: inserts `service_categories` (when the group has none yet), `services`, `service_fields` and `service_supplier_links`
@@ -69,7 +70,8 @@ export async function createImportedService(
   args: ImportedServiceArgs,
 ): Promise<ImportedServiceResult> {
   const { row, cost, defaultSla, status } = args;
-  const type = importableType(row.type);
+  // An IMEI service whose main box is not an IMEI becomes a server service with that box first (decision 042).
+  const { type, fields } = importShape(row);
   if (type === undefined)
     throw new Error(`The supplier service ${row.id} has a type that cannot be imported: ${row.type}.`);
   // The supplier's rule is copied here, at creation only; a later import or sync never touches the quantities (B213).
@@ -84,7 +86,7 @@ export async function createImportedService(
     basePrice: suggestedPrice(cost).toWire(),
     slaMinutes: slaMinutesOf(row.time, defaultSla),
     quantity,
-    fields: importedFields(row.customFields),
+    fields,
     status,
   });
   await insertFirstLink(tx, made.serviceId, row.id);

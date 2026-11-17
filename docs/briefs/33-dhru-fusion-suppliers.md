@@ -31,6 +31,16 @@ state, spawns agents, calls a real supplier, or touches the databases `gsm` and 
   supplier key is `IMEI` (any case) as the `IMEI` parameter, never inside `CUSTOMFIELD`.
 - **Services made before this are adopted on the supplier's next sync**: an `imei` service whose only active link points at
   such a supplier service becomes a `server` service with that field, with one audit row; the sync says how many.
+- **The supplier's own pattern (`CUSTOM.regex`) is never used** (added after the review): it is untrusted text that would run
+  on every order check. It may be written for PHP and match nothing, or backtrack without end. The field's pattern comes from
+  the supplier's lengths only; staff can type a pattern on the field.
+- **A shop checkout opened before an adoption keeps the buyer's value** (added after the review): the order is placed with the
+  typed value as the main box, as it would have gone before the sync.
+- **A field the supplier requires is required here** (added on 2026-11-17 evening, from the owner's question and the owner's
+  data: a Dhru Fusion site says `"required": "on"`, which the import did not read, so 635 of 637 fields were imported as
+  optional). The import reads `on`; `radio` is a list of options; an `adminonly` field is left out. The sync repairs the
+  services made before under the adoption's guards and never makes a field optional. `adopted` counts every service the
+  sync brought in line with its supplier, once.
 - Money and order rules do not change: no automatic re-send, the hold is kept, every call writes its log row.
 
 ## 3. The protocol (`src/modules/suppliers/domain/dhru-protocol.ts`, `application/supplier-driver.ts`, `supplier-client.ts`)
@@ -55,15 +65,15 @@ state, spawns agents, calls a real supplier, or touches the databases `gsm` and 
 - New pure function `supplierMainInput(raw)`: reads `raw.CUSTOM`. It answers `null` unless `CUSTOM` is an object, `allow` is
   `"1"`, `1` or `true`, and `customname` has text. A name that only says IMEI (after lower-casing and dropping everything
   but letters and digits: `imei`, `imeino`, `imeinumber`) is `null` too: that service takes a real IMEI. Otherwise it answers
-  `{ label, minLength, maxLength, pattern }`: `label` is `customname` with its spaces collapsed, at most 120 characters;
+  `{ label, minLength, maxLength }`: `label` is `customname` with its spaces collapsed, at most 120 characters;
   `maxLength` is `maxlength` when it is a whole number from 1 to 500, else `null`; `minLength` is `customlen` when it is a
-  whole number from 1 to `maxLength`, else 1; `pattern` is `CUSTOM.regex` when it has text and compiles as a `RegExp`
-  (a pattern wrapped in `/.../flags` is unwrapped first), else `''`. `isalpha`, `bulk` and `custominfo` are not used.
+  whole number from 1 to `maxLength`, else 1. `regex`, `isalpha`, `bulk` and `custominfo` are not used (the review found
+  that a supplier's pattern can match nothing or hang the order check: see section 2).
 - New pure function `importShape(row)` answers what the service is in our catalog: `{ type, fields }`. With a main input and
   an importable type of `imei`: type `server` and fields `[main, ...importedFields(customFields)]`, where `main` is
   `{ key, label, fieldType: 'text', options: [], required: true, supplierKey: 'IMEI', sort: 0, regex }`; `key` is the label in
-  lower snake case (the rule `importedFields` uses, unique against the other keys); `regex` is `pattern`, or
-  `^.{min,max}$` built from the lengths when `maxLength` is not null, or `''`; the other fields follow with `sort` from 1.
+  lower snake case (the rule `importedFields` uses, unique against the other keys); `regex` is `^.{min,max}$` built from
+  the lengths when `maxLength` is not null, else `''`; the other fields follow with `sort` from 1.
   Otherwise: `importableType(row.type)` and `importedFields(row.customFields)` as today. A `server`, `remote` or `file`
   supplier service is never changed by `CUSTOM`.
 - `ImportedField` gains `regex` (`''` for the fields of `Requires.Custom`); `ServiceImporter.create` stores it instead of the
@@ -77,11 +87,21 @@ A value whose supplier key is `IMEI` (compared without case, after the link's `f
 When the order has no IMEI of its own (`input` would be `null`), it becomes `input`. `orders.imei` already holds it for a
 `server` service (`mainInputOf`), so the console and the bulk reply show it as the order's input.
 
+**Which field is the supplier's main box** (one rule, used by the dispatcher and by the adoption's guard): a value's supplier
+key is the link's `field_map[key]`, else the field's `supplierKey`, else the field's `key`; the field is the main box when
+that resolves to `IMEI`, compared without case.
+
+**A checkout opened before an adoption** (`customer-placement.ts`): when the request carries an IMEI and the service is no
+longer `imei`, the value goes under the service's main-box field when that field has no value; `orders.imei` then holds it.
+
 ## 6. Adoption on sync (`SupplierSync.run`, catalog `ServiceImporter`)
 
 - After the supplier's services are stored, in the same transaction: for every own service that (a) is not archived, (b) is
-  of type `imei`, (c) has no field whose supplier key is `IMEI` (any case), (d) has exactly one active link in all, and it
-  points at a service of **this** supplier whose stored answer has a main input (section 4): adopt it. Order by service id.
+  of type `imei`, (c) has no field that is already a main box by the rule of section 5 (its supplier key, or its key when
+  that is empty, or a value of the link's `field_map`), (d) has exactly one active link in all, and it points at a service
+  of **this** supplier whose stored answer has a main input (section 4): adopt it. Order by service id. A `server` category
+  that already exists under the same name is reused as it is; only a category created for the move copies the old one's
+  switch and groups.
 - `ServiceImporter.adoptMainInput(tx, { serviceId, field })` (the catalog owns its tables): the type becomes `server`; the
   category becomes the `server` category with the same name as the current one (created when missing, as `create` does);
   the field is inserted before the existing ones (their `sort` moves up by one; keys stay unique); nothing else of the
@@ -129,5 +149,6 @@ supplier and places a real order.
 
 A console control and an API field for the parameter format; our own Dhru server reading the classic XML from a merchant's
 client (decision 026 reads base64 of JSON only: check with the first merchant that connects a classic Dhru site);
-`CUSTOM.isalpha`, `custominfo` and `bulk`; showing the supplier's main box name on an `imei` service without changing its
-type (a wire change in three frontends).
+`CUSTOM.regex` (untrusted: decision 042), `isalpha`, `custominfo` and `bulk`; showing the supplier's main box name on an
+`imei` service without changing its type (a wire change in three frontends); two syncs of different suppliers creating the
+same category at the same moment (one fails on the unique name and is repeated: the import has the same race).

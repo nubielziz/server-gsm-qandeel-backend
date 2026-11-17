@@ -10,6 +10,7 @@ import {
   DHRU_ACTIONS,
   type AccountInfo,
   type DhruAction,
+  type DhruParamFormat,
   type RemoteService,
   type SupplierOrderStatus,
   dhruEndpoint,
@@ -29,6 +30,11 @@ export interface DriverContext {
   /** The decrypted API key; it lives only for the call and is never stored or logged. */
   readonly apiKey: string;
   readonly timeoutMs: number;
+  /**
+   * The form the supplier reads `parameters` in (`suppliers.param_format`, decision 042): the classic XML string or base64 of JSON.
+   * The REST driver ignores it.
+   */
+  readonly paramFormat: DhruParamFormat;
   /** The call policy of the environment (tests reach a local server over plain http). */
   readonly policy: Pick<HttpRequestOptions, 'allowPrivateNetwork' | 'httpsOnly' | 'lookup'>;
 }
@@ -98,7 +104,7 @@ function failure<T>(
   };
 }
 
-/** The Dhru Fusion v6.1 driver. */
+/** The Dhru Fusion driver: the parameters in the supplier's own form (decision 042). */
 export class DhruDriver implements SupplierDriver {
   constructor(private readonly http: DriverHttp) {}
 
@@ -178,7 +184,11 @@ export class DhruDriver implements SupplierDriver {
     read: (payload: Record<string, unknown>) => { ok: true; value: T } | { ok: false; message: string },
     describe?: (value: T) => Record<string, unknown>,
   ): Promise<DriverCall<T>> {
-    const request = redactBody({ action, ...(parameters === undefined ? {} : { parameters }) });
+    // `format` tells support which form the parameters were sent in (decision 042); the parameters stay readable and redacted.
+    const request = redactBody({
+      action,
+      ...(parameters === undefined ? {} : { format: context.paramFormat, parameters }),
+    });
     const started = performance.now();
     let result: HttpResult;
     try {
@@ -190,12 +200,13 @@ export class DhruDriver implements SupplierDriver {
           username: context.username,
           apiKey: context.apiKey,
           action,
+          format: context.paramFormat,
           ...(parameters === undefined
             ? {}
             : {
                 parameters: {
                   ...parameters,
-                  // Custom fields travel as base64 JSON inside the parameters (decision 026).
+                  // Custom fields travel as base64 JSON inside the parameters, in both forms (decisions 026 and 042).
                   ...(parameters.CUSTOMFIELD === undefined
                     ? {}
                     : { CUSTOMFIELD: Buffer.from(JSON.stringify(parameters.CUSTOMFIELD), 'utf8').toString('base64') }),

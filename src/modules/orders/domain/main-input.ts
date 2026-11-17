@@ -1,5 +1,7 @@
 // The main input of an order (RESOLUTIONS orders-suppliers-2): the one value stored in `orders.imei` for every service type,
-// written by one helper that every placement path (portal, Dhru, REST v1, store, admin) calls. Pure; no database.
+// written by one helper that every placement path (portal, Dhru, REST v1, store, admin) calls, and the carry of a shop IMEI onto the
+// supplier's main box field after the service's type changed (decision 042). Pure; no database.
+import { isMainInputKey, resolvedSupplierKey } from '../../../common/dhru';
 
 /** The part of a service field the helper needs. */
 export interface MainInputField {
@@ -58,4 +60,40 @@ export function mainInputOf(source: MainInputSource): string | null {
       return first ? clean(source.inputs[first.key]) : clean(source.fileName);
     }
   }
+}
+
+/** A service field as {@link carriedImeiInputs} reads it: its key, its supplier key and its place in the form. */
+export interface CarryField {
+  readonly key: string;
+  readonly supplierKey: string;
+  readonly sort: number;
+  readonly id: number;
+}
+
+/**
+ * Puts an IMEI typed for a service that is no longer an IMEI service under the field sent as the supplier's main box.
+ *
+ * Why: decision 042 (feature 33): the supplier sync can make an `imei` service a `server` service whose first field is the supplier's
+ * main box (an ECID, a serial number). A shop checkout opened before that and paid after it carries the buyer's value as its IMEI; it
+ * must reach the order exactly as before the change: in that field (so `orders.imei` holds it through {@link mainInputOf}, staff see
+ * it and the dispatch sends it as `IMEI`). The field is the first by form order whose supplier key, or key when that is empty, is
+ * `IMEI` in any case (`resolvedSupplierKey`, the dispatcher's rule); a value the buyer gave that field wins.
+ *
+ * @param source the service type, the IMEI the buyer gave, the field values and the service's fields
+ * @returns the field values with the IMEI added, or the values as given when the service takes an IMEI, no IMEI was given, no field
+ *   is the main box, or that field already has a value
+ */
+export function carriedImeiInputs(source: {
+  readonly type: MainInputSource['type'];
+  readonly imei: string | undefined;
+  readonly inputs: Readonly<Record<string, string>>;
+  readonly fields: readonly CarryField[];
+}): Readonly<Record<string, string>> {
+  const imei = source.imei?.trim() ?? '';
+  if (source.type === 'imei' || imei === '') return source.inputs;
+  const box = [...source.fields]
+    .sort((a, b) => a.sort - b.sort || a.id - b.id)
+    .find((field) => isMainInputKey(resolvedSupplierKey(field)));
+  if (!box || (source.inputs[box.key]?.trim() ?? '') !== '') return source.inputs;
+  return { ...source.inputs, [box.key]: imei };
 }

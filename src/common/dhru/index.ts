@@ -23,3 +23,4 @@ export {
 } from './dhru-envelope';
 export type { DhruItemAnswer } from './dhru-envelope';
 export { DhruModule } from './dhru.module';
+export { MAIN_INPUT_SUPPLIER_KEY, isMainInputKey, resolvedSupplierKey } from './main-input-key';

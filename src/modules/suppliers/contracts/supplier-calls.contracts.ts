@@ -1,4 +1,4 @@
-// The four calls this backend makes to a supplier's Dhru Fusion v6.1 API (decision 026): the `SUPPLIER ...` keys of the map (stage 6). They are
+// The four calls this backend makes to a supplier's Dhru Fusion API (decisions 026 and 042): the `SUPPLIER ...` keys of the map (stage 6). They are
 // not routes we serve; each contract holds what the client sends and the answer it accepts, and `domain/dhru-protocol.ts` reads every answer through it.
 import { z } from 'zod';
 import { type SupplierCallParamsOf, defineSupplierCall } from '../../../common/contract';
@@ -92,6 +92,14 @@ const ServiceEntry = z.looseObject({
     .describe(
       'The custom fields the service needs: `{ type, fieldname, fieldtype, description, fieldoptions, required }` each.',
     ),
+  CUSTOM: z
+    .unknown()
+    .optional()
+    .describe(
+      'The main box of the service: `{ allow, customname, customlen, maxlength, regex, ... }`. With `allow` 1 and a `customname` that ' +
+        'is not an IMEI, the buyer types that value instead of an IMEI and it is sent as `IMEI`; the import makes such an IMEI service a ' +
+        'server service whose first field is that box (decision 042). Kept in the synced entry; not read by the sync.',
+    ),
 });
 
 /** One group of the list. */
@@ -159,13 +167,17 @@ const PlaceOrderParams = z.object({
   IMEI: z
     .string()
     .optional()
-    .describe('The main input: the IMEI, or the first required field. Left out when the order has none.'),
+    .describe(
+      'The main input: the IMEI, else the value of the field whose supplier key is `IMEI` (decision 042), else the first required ' +
+        'field. Left out when the order has none.',
+    ),
   QNT: z.number().int().min(1).describe('The quantity.'),
   CUSTOMFIELD: z
     .record(z.string(), z.string())
     .optional()
     .describe(
-      "The custom field values by the supplier's field names. On the wire it is base64 of this JSON object (decision 026).",
+      "The custom field values by the supplier's field names; never the field sent as `IMEI`. On the wire it is base64 of this JSON " +
+        'object in both parameter forms (decisions 026 and 042).',
     ),
 });
 
@@ -184,7 +196,9 @@ export const placeOrderCall = defineSupplierCall({
     'Places one order and keeps the `REFERENCEID` of the answer (kept to 200 characters) as the supplier reference. An answer without a ' +
     'REFERENCEID is unusable: the order goes to attention, it is never sent again by itself. The bulk variant `placeimeiorderbulk` (parameters ' +
     'keyed by a request id) is described by the Dhru standard but this backend never sends it: each order is its own job, so a refusal never ' +
-    'stops another order and every order has its own log row.',
+    'stops another order and every order has its own log row. The parameters are sent in the form the supplier reads (`param_format`, ' +
+    'decision 042): the classic XML string `<PARAMETERS><ID>..</ID><IMEI>..</IMEI><QNT>..</QNT></PARAMETERS>` (`dhru_xml`, the default ' +
+    'of a Dhru supplier) or base64 of a JSON object (`json`).',
   sendsBulk: false,
   params: PlaceOrderParams,
   success: z.looseObject({

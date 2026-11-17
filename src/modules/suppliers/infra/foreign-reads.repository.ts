@@ -1,5 +1,6 @@
 // Read-only lookups into tables other modules own, kept in this one file: the services a supplier service is linked to (name, code,
-// status, SLA, cost), the custom fields of a service (to map an order's inputs to the supplier's field names) and whether it exists.
+// status, SLA, cost), the custom fields of a service (to map an order's inputs to the supplier's field names), whether it exists, and
+// the services the sync may bring in line with their supplier (decision 042, feature 33).
 //
 // DEVIATION to resolve later: decision 016 wants these reads through the owning module's public service. The catalog exports no
 // service reader, so this file reads `services` and `service_fields` with plain selects, like the other modules' foreign-read files.
@@ -125,4 +126,63 @@ export async function serviceFieldMaps(db: DbExecutor, serviceId: number): Promi
     .from(s.serviceFields)
     .where(eq(s.serviceFields.serviceId, serviceId))
     .orderBy(asc(s.serviceFields.sort), asc(s.serviceFields.id));
+}
+
+/** A service the supplier sync may bring in line with its supplier (feature 33): the one active link's stored entry and field map, and its fields. */
+export interface AlignmentCandidate {
+  readonly serviceId: number;
+  /** The service's type: only an `imei` service can adopt the supplier's main box. */
+  readonly type: string;
+  /** The supplier's stored entry of the linked supplier service (`supplier_services.raw`). */
+  readonly raw: Record<string, unknown>;
+  /** The linked supplier service's `Requires.Custom` list (`supplier_services.custom_fields`). */
+  readonly customFields: unknown[];
+  /** The one active link's `field_map` (the service's field key to the supplier's name). */
+  readonly fieldMap: Record<string, unknown>;
+  /** The service's fields in order: their keys, supplier keys and whether they are required. */
+  readonly fields: Array<{ key: string; supplierKey: string; required: boolean }>;
+}
+
+/**
+ * Finds the services the sync of a supplier may bring in line with what the supplier asks for.
+ *
+ * Why: decision 042 and feature 33 (brief section 6, second review round): a live service whose only active link (in all) points at a
+ * service of this supplier. Whether it adopts the main box (`adoptable`) or has fields to make required (`fieldsToRequire`) are the
+ * caller's pure rules, so the type, the stored entry, the `Requires.Custom` list, the field map and the fields ride along.
+ *
+ * @param db the sync's transaction
+ * @param supplierId the supplier
+ * @param serviceIds when given, only these services (the re-read under the row locks)
+ * @returns the candidates, by service id
+ */
+export async function alignmentCandidates(
+  db: DbExecutor,
+  supplierId: number,
+  serviceIds?: readonly number[],
+): Promise<AlignmentCandidate[]> {
+  if (serviceIds !== undefined && serviceIds.length === 0) return [];
+  return db
+    .select({
+      serviceId: s.services.id,
+      type: s.services.type,
+      raw: s.supplierServices.raw,
+      customFields: s.supplierServices.customFields,
+      fieldMap: s.serviceSupplierLinks.fieldMap,
+      fields: sql<
+        Array<{ key: string; supplierKey: string; required: boolean }>
+      >`coalesce((select json_agg(json_build_object('key', f.key, 'supplierKey', f.supplier_key, 'required', f.required) order by f.sort, f.id) from ${s.serviceFields} f where f.service_id = ${s.services.id}), '[]'::json)`,
+    })
+    .from(s.serviceSupplierLinks)
+    .innerJoin(s.supplierServices, eq(s.supplierServices.id, s.serviceSupplierLinks.supplierServiceId))
+    .innerJoin(s.services, eq(s.services.id, s.serviceSupplierLinks.serviceId))
+    .where(
+      and(
+        eq(s.supplierServices.supplierId, supplierId),
+        eq(s.serviceSupplierLinks.isActive, true),
+        sql`${s.services.archivedAt} is null`,
+        ...(serviceIds === undefined ? [] : [inArray(s.services.id, [...serviceIds])]),
+        sql`(select count(*) from ${s.serviceSupplierLinks} l where l.service_id = ${s.services.id} and l.is_active) = 1`,
+      ),
+    )
+    .orderBy(asc(s.services.id));
 }

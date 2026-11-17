@@ -337,7 +337,11 @@ export const syncSupplier = defineRoute({
     '`timeoutMs` + 5 s: a supplier failure is `409 SUPPLIER_UNAVAILABLE`; a wait that runs out while the job goes on is `504 ' +
     'SUPPLIER_TIMEOUT`. A paused supplier may sync; a disabled one is `409 SUPPLIER_DISABLED`. The sync updates `supplier_services` ' +
     '(a changed credit sets `price_changed_at`; a service no longer listed becomes unavailable), recomputes the effective cost of every ' +
-    'linked service and moves the catalog price version.',
+    "linked service and moves the catalog price version. It also adopts the supplier's main box (decision 042): an IMEI service whose " +
+    'only active link points at a service of this supplier whose main box asks for something other than an IMEI (an ECID, a serial ' +
+    'number) becomes a server service with that box as its first field. On every service whose only active link points at this ' +
+    'supplier it also makes required the fields the supplier requires (a Dhru Fusion site writes `"required": "on"`) that were imported ' +
+    'as optional; it never makes a field optional. `adopted` counts the services brought in line, each once.',
   tags: ['suppliers'],
   surface: 'admin',
   access: 'staff-permission',
@@ -350,6 +354,14 @@ export const syncSupplier = defineRoute({
       added: z.number().int(),
       changed: z.number().int(),
       removed: z.number().int(),
+      adopted: z
+        .number()
+        .int()
+        .describe(
+          'Services this sync brought in line with what their supplier asks for, each counted once: the main box adopted (an IMEI ' +
+            "service made a server service with the supplier's box first, decision 042), fields the supplier requires made " +
+            'required, or both; 0 when none.',
+        ),
       balance: zMoney,
       balanceCheckedAt: zIsoDateTime,
     }),
@@ -369,6 +381,7 @@ export const syncSupplier = defineRoute({
       added: 3,
       changed: 5,
       removed: 0,
+      adopted: 0,
       balance: '1240.5000',
       balanceCheckedAt: '2026-11-07T08:30:00.000Z',
     },
@@ -472,7 +485,12 @@ export const previewImport = defineRoute({
         z.object({
           supplierServiceId: zId,
           name: z.string(),
-          type: z.string(),
+          type: z
+            .string()
+            .describe(
+              "The supplier's type name as stored, or `SERVER` when the import makes the IMEI service a server service because its " +
+                'main box asks for something other than an IMEI (decision 042).',
+            ),
           state: z.enum(['new', 'matching', 'changed']),
           serviceId: zId.nullable(),
           serviceName: z.string().nullable(),

@@ -1,8 +1,9 @@
-// The Dhru Fusion v6.1 client side (decision 026): the request an outbound supplier call sends and how each answer is read. Pure,
+// The Dhru Fusion client side (decisions 026 and 042): the request an outbound supplier call sends and how each answer is read. Pure,
 // so the fake supplier of the tests and the real one are judged by the same code. Serves the supplier calls of stage 6; every answer is
 // read through the schema of its contract (`contracts/supplier-calls.contracts.ts`).
 import { Decimal } from 'decimal.js';
 import { accountInfoCall, getOrderCall, placeOrderCall, serviceListCall } from '../contracts/supplier-calls.contracts';
+import type { SupplierParamFormat } from '../db/schema';
 import { amountText } from './amount-text';
 
 export { amountText };
@@ -32,23 +33,83 @@ export function dhruEndpoint(baseUrl: string): string {
   return /\.php$/i.test(trimmed) ? trimmed : `${trimmed}/api/index.php`;
 }
 
+/**
+ * The two forms a Dhru supplier reads `parameters` in (decision 042): `dhru_xml` is the plain XML string of the classic Dhru client,
+ * `json` is base64 of a JSON object (the standards v6.1 form of decision 026). The values of `suppliers.param_format`.
+ */
+export type DhruParamFormat = SupplierParamFormat;
+
 /** What a call needs to build the request body. */
 export interface DhruRequestInput {
   readonly username: string;
   readonly apiKey: string;
   readonly action: DhruAction;
-  /** The action's parameters; sent as base64 of their JSON (decision 026). */
+  /** The form the supplier reads `parameters` in (its `param_format`); no default here on purpose. */
+  readonly format: DhruParamFormat;
+  /** The action's parameters, written in {@link DhruRequestInput.format}. */
   readonly parameters?: Readonly<Record<string, unknown>>;
+}
+
+/** A parameter name of the classic XML form: upper case letters, digits and `_`, starting with a letter. */
+const XML_KEY = /^[A-Z][A-Z0-9_]*$/;
+
+/** Whether a code point may stand in an XML 1.0 document (the controls but tab, line feed and carriage return, U+FFFE, U+FFFF and lone surrogates may not). */
+function xmlAllowed(codePoint: number): boolean {
+  if (codePoint < 0x20) return codePoint === 0x09 || codePoint === 0x0a || codePoint === 0x0d;
+  if (codePoint >= 0xd800 && codePoint <= 0xdfff) return false;
+  return codePoint !== 0xfffe && codePoint !== 0xffff;
+}
+
+/** The text of one XML value: forbidden characters removed, `&`, `<` and `>` escaped. */
+function xmlText(value: string): string {
+  let out = '';
+  // Iterating a string yields code points: a valid surrogate pair arrives whole, a lone surrogate alone.
+  for (const char of value) {
+    if (!xmlAllowed(char.codePointAt(0)!)) continue;
+    out += char === '&' ? '&amp;' : char === '<' ? '&lt;' : char === '>' ? '&gt;' : char;
+  }
+  return out;
+}
+
+/**
+ * Writes Dhru parameters as the classic XML string.
+ *
+ * Why: decision 042 (feature 33): a Dhru Fusion site reads `parameters` only as the plain XML string the classic Dhru client builds
+ * (`<PARAMETERS><ID>..</ID><IMEI>..</IMEI></PARAMETERS>`, upper-case keys, no base64); base64 of JSON is refused with
+ * `Parameter 'ID' Required`.
+ *
+ * @param parameters the parameters, in the order they are written; `null` and `undefined` values are left out
+ * @returns `<PARAMETERS>` + one `<KEY>value</KEY>` per own key + `</PARAMETERS>`, without a declaration or whitespace
+ * @throws {Error} when a key, upper-cased, is not `^[A-Z][A-Z0-9_]*$`, or a value is not a string, a finite number or a boolean (the
+ *   keys and values come from the typed call contracts, so this is a programming error)
+ */
+export function dhruParametersXml(parameters: Readonly<Record<string, unknown>>): string {
+  let xml = '<PARAMETERS>';
+  for (const name of Object.keys(parameters)) {
+    const key = name.toUpperCase();
+    if (!XML_KEY.test(key)) throw new Error(`A Dhru parameter name cannot be written as XML: ${JSON.stringify(name)}.`);
+    const value = parameters[name];
+    if (value === null || value === undefined) continue;
+    let text: string;
+    if (typeof value === 'string') text = value;
+    else if (typeof value === 'boolean') text = String(value);
+    else if (typeof value === 'number' && Number.isFinite(value)) text = String(value);
+    else throw new Error(`The Dhru parameter ${key} has a value that cannot be written as XML (${typeof value}).`);
+    xml += `<${key}>${xmlText(text)}</${key}>`;
+  }
+  return `${xml}</PARAMETERS>`;
 }
 
 /**
  * Builds the form body of a Dhru call.
  *
- * Why: decision 026: `application/x-www-form-urlencoded` with `username`, `apiaccesskey`, `action`, `requestformat=JSON` and
- * `parameters` = base64 of a JSON object.
+ * Why: decisions 026 and 042: `application/x-www-form-urlencoded` with `username`, `apiaccesskey`, `action`, `requestformat=JSON` and
+ * `parameters` in the supplier's form: the classic XML string ({@link dhruParametersXml}) for `dhru_xml`, base64 of a JSON object for
+ * `json`. The caller has already turned `CUSTOMFIELD` into base64 of JSON (both forms carry it that way).
  *
- * @param input the credentials, the action and its parameters
+ * @param input the credentials, the action, the supplier's parameter form and the parameters
  * @returns the body to post
+ * @throws {Error} from {@link dhruParametersXml} for a parameter that cannot be written as XML
  */
 export function dhruRequestBody(input: DhruRequestInput): URLSearchParams {
   const body = new URLSearchParams({
@@ -58,7 +119,12 @@ export function dhruRequestBody(input: DhruRequestInput): URLSearchParams {
     requestformat: 'JSON',
   });
   if (input.parameters !== undefined) {
-    body.set('parameters', Buffer.from(JSON.stringify(input.parameters), 'utf8').toString('base64'));
+    body.set(
+      'parameters',
+      input.format === 'dhru_xml'
+        ? dhruParametersXml(input.parameters)
+        : Buffer.from(JSON.stringify(input.parameters), 'utf8').toString('base64'),
+    );
   }
   return body;
 }

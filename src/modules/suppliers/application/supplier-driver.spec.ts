@@ -9,6 +9,7 @@ const context: DriverContext = {
   username: 'gsm-supply',
   apiKey: 'secret-key',
   timeoutMs: 1500,
+  paramFormat: 'json',
   policy: {},
 };
 
@@ -70,6 +71,37 @@ describe('DhruDriver', () => {
     const body = request!.body as URLSearchParams;
     const parameters = JSON.parse(Buffer.from(body.get('parameters')!, 'base64').toString('utf8'));
     expect(JSON.parse(Buffer.from(parameters.CUSTOMFIELD, 'base64').toString('utf8'))).toEqual({ AccountUser: 'ali' });
+  });
+
+  it('sends a dhru_xml supplier the classic XML string, CUSTOMFIELD as base64 JSON inside it, and says the form in the record', async () => {
+    const stand = http(answer({ SUCCESS: [{ MESSAGE: 'Order received', REFERENCEID: 5513 }] }));
+    const call = await new DhruDriver(stand).placeOrder(
+      { ...context, paramFormat: 'dhru_xml' },
+      { remoteServiceId: '4411', input: 'SERIAL-TEST-0001', quantity: 1, customFields: { Model: 'A&B' } },
+    );
+    expect(call).toMatchObject({ ok: true, value: { reference: '5513' } });
+    const customField = Buffer.from('{"Model":"A&B"}', 'utf8').toString('base64');
+    expect((stand.sent[0]!.body as URLSearchParams).get('parameters')).toBe(
+      `<PARAMETERS><ID>4411</ID><IMEI>SERIAL-TEST-0001</IMEI><QNT>1</QNT><CUSTOMFIELD>${customField}</CUSTOMFIELD></PARAMETERS>`,
+    );
+    expect(call.record.request).toEqual({
+      action: 'placeimeiorder',
+      format: 'dhru_xml',
+      parameters: { ID: '4411', IMEI: '••••••••0001', QNT: 1, CUSTOMFIELD: { Model: 'A&B' } },
+    });
+
+    const get = http(answer({ ID: '1', ERROR: [{ MESSAGE: 'NoResultFound' }] }));
+    const status = await new DhruDriver(get).getOrder({ ...context, paramFormat: 'dhru_xml' }, '1');
+    expect((get.sent[0]!.body as URLSearchParams).get('parameters')).toBe('<PARAMETERS><ID>1</ID></PARAMETERS>');
+    expect(status).toMatchObject({ ok: false, kind: 'refused', message: 'NoResultFound' });
+    expect(status.record).toMatchObject({ request: { format: 'dhru_xml' }, error: 'NoResultFound', outcome: 'error' });
+  });
+
+  it('says no form in the record of a call without parameters', async () => {
+    const stand = http(answer({ SUCCESS: [{ AccoutInfo: { credit: '1.00' } }] }));
+    const call = await new DhruDriver(stand).accountInfo({ ...context, paramFormat: 'dhru_xml' });
+    expect(call.record.request).toEqual({ action: 'accountinfo' });
+    expect((stand.sent[0]!.body as URLSearchParams).has('parameters')).toBe(false);
   });
 
   it('is a refusal (outcome error, HTTP 200) when the supplier answers ERROR', async () => {

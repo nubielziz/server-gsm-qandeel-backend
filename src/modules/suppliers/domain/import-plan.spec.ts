@@ -1,6 +1,16 @@
-// Unit tests of the import rules: classification of a picked item, the type check and the mapping of custom fields.
+// Unit tests of the import rules: classification of a picked item, the type check, the mapping of custom fields and what a supplier
+// service becomes in the catalog (decision 042: the supplier's own main box).
 import { describe, expect, it } from 'bun:test';
-import { classifyImportItem, importableType, importedFields, quantityDiffers } from './import-plan';
+import {
+  classifyImportItem,
+  fieldsToRequire,
+  importShape,
+  importableType,
+  importedFields,
+  isSupplierFlagOn,
+  mainInputField,
+  quantityDiffers,
+} from './import-plan';
 
 describe('classifyImportItem', () => {
   const item = { credit: '19.8000' };
@@ -76,6 +86,7 @@ describe('importedFields', () => {
         required: true,
         supplierKey: 'Account User',
         sort: 0,
+        regex: '',
       },
       {
         key: 'model',
@@ -85,6 +96,7 @@ describe('importedFields', () => {
         required: false,
         supplierKey: 'Model',
         sort: 1,
+        regex: '',
       },
       {
         key: 'account_user_2',
@@ -94,7 +106,208 @@ describe('importedFields', () => {
         required: false,
         supplierKey: 'account user',
         sort: 2,
+        regex: '',
       },
     ]);
+  });
+});
+
+// Sample entries shaped like a classic Dhru service list; the names, ids and numbers are made up for these tests.
+const ecidEntry = {
+  SERVICEID: '9101',
+  SERVICENAME: 'Sample ECID lookup',
+  CREDIT: '3.0000',
+  CUSTOM: {
+    allow: '1',
+    bulk: '0',
+    customname: 'ECID',
+    custominfo: 'Hex ECID',
+    customlen: '13',
+    maxlength: '16',
+    regex: '',
+    isalpha: '1',
+  },
+};
+
+describe('importShape', () => {
+  it('makes an IMEI service whose main box is an ECID a server service with that box first, regex from the lengths', () => {
+    expect(importShape({ type: 'IMEI', customFields: [], raw: ecidEntry })).toEqual({
+      type: 'server',
+      fields: [
+        {
+          key: 'ecid',
+          label: 'ECID',
+          fieldType: 'text',
+          options: [],
+          required: true,
+          supplierKey: 'IMEI',
+          sort: 0,
+          regex: '^.{13,16}$',
+        },
+      ],
+    });
+  });
+
+  it('puts the Requires.Custom fields after the main box, from sort 1, with a unique key', () => {
+    const raw = { CUSTOM: { allow: 1, customname: 'Serial Number', maxlength: 12 } };
+    const shape = importShape({
+      type: 'imei',
+      customFields: [
+        { fieldname: 'Serial Number', fieldtype: 'text', required: '1' },
+        { fieldname: 'Model', fieldtype: 'dropdown', fieldoptions: 'A, B' },
+      ],
+      raw,
+    });
+    expect(shape.type).toBe('server');
+    expect(shape.fields.map((field) => [field.key, field.supplierKey, field.sort, field.regex])).toEqual([
+      ['serial_number_2', 'IMEI', 0, '^.{1,12}$'],
+      ['serial_number', 'Serial Number', 1, ''],
+      ['model', 'Model', 2, ''],
+    ]);
+  });
+
+  it('keeps a box named only IMEI (any spelling) as an imei service', () => {
+    for (const customname of ['IMEI', 'imei no', 'IMEI Number', ' I.M.E.I ']) {
+      const raw = { CUSTOM: { allow: '1', customname, maxlength: '15' } };
+      expect(importShape({ type: 'IMEI', customFields: [], raw }), customname).toEqual({ type: 'imei', fields: [] });
+    }
+  });
+
+  it('keeps an imei service when the box is not allowed, missing or unnamed', () => {
+    for (const custom of [
+      { allow: '0', customname: 'ECID' },
+      { allow: '1', customname: '  ' },
+      'ECID',
+      null,
+      ['ECID'],
+    ]) {
+      expect(importShape({ type: 'IMEI', customFields: [], raw: { CUSTOM: custom } }).type).toBe('imei');
+    }
+    expect(importShape({ type: 'IMEI', customFields: [], raw: {} }).type).toBe('imei');
+  });
+
+  it('never changes a server, remote or file service, nor makes an unknown type importable', () => {
+    const raw = { CUSTOM: { allow: '1', customname: 'Username' } };
+    const fields = [{ fieldname: 'Username', fieldtype: 'text', required: '1' }];
+    for (const type of ['SERVER', 'Remote', 'file']) {
+      const shape = importShape({ type, customFields: fields, raw });
+      expect(shape.type).toBe(type.toLowerCase() as 'server');
+      expect(shape.fields.map((field) => field.supplierKey)).toEqual(['Username']);
+    }
+    expect(importShape({ type: 'Credits', customFields: [], raw }).type).toBeUndefined();
+  });
+
+  it("takes the 'SN OR IMEI' box as a main input with the length pattern, never the supplier's own regex", () => {
+    const raw = {
+      CUSTOM: {
+        allow: true,
+        customname: 'SN  OR\tIMEI',
+        customlen: '8',
+        maxlength: '15',
+        regex: '/^[A-Z0-9]{8,15}$/i',
+      },
+    };
+    const [main] = importShape({ type: 'IMEI', customFields: [], raw }).fields;
+    expect(main).toMatchObject({
+      key: 'sn_or_imei',
+      label: 'SN OR IMEI',
+      supplierKey: 'IMEI',
+      regex: '^.{8,15}$',
+    });
+    for (const regex of ['^(\\w+\\s?)+$', '\\A\\d+\\z', '/^[0-9]+$/']) {
+      const shaped = importShape({
+        type: 'IMEI',
+        customFields: [],
+        raw: { CUSTOM: { allow: '1', customname: 'SN', regex } },
+      });
+      expect(shaped.fields[0]!.regex, regex).toBe('');
+    }
+  });
+});
+
+describe('mainInputField', () => {
+  it('has no pattern without a maximum, and a key that avoids the keys already used', () => {
+    const field = mainInputField({ label: 'Lock Code', minLength: 4, maxLength: null }, new Set(['lock_code']));
+    expect(field).toEqual({
+      key: 'lock_code_2',
+      label: 'Lock Code',
+      fieldType: 'text',
+      options: [],
+      required: true,
+      supplierKey: 'IMEI',
+      sort: 0,
+      regex: '',
+    });
+  });
+});
+
+describe('isSupplierFlagOn', () => {
+  it('is on for true, 1 and the texts on, 1, yes, true, required, y (trimmed, any case)', () => {
+    for (const value of [true, 1, 'on', ' ON ', '1', 'yes', 'True', 'required', 'Y']) {
+      expect(isSupplierFlagOn(value), String(value)).toBe(true);
+    }
+    for (const value of ['', 'off', '0', 'no', 0, false, null, undefined, 2, 'checked', {}]) {
+      expect(isSupplierFlagOn(value), JSON.stringify(value) ?? 'undefined').toBe(false);
+    }
+  });
+});
+
+describe('importedFields reads a Dhru Fusion field description', () => {
+  // Shaped like a real Dhru Fusion entry; names and options are made up.
+  const fusion = (over: Record<string, unknown>) => ({
+    type: 'serviceimei',
+    fieldname: 'Sample Field',
+    fieldtype: 'text',
+    description: '',
+    fieldoptions: '',
+    required: '',
+    regexpr: '',
+    adminonly: '',
+    ...over,
+  });
+
+  it('makes "on" required and "" optional, reads radio as a select, leaves adminonly out and never uses regexpr', () => {
+    const fields = importedFields([
+      fusion({ fieldname: 'Account Email', required: 'on', regexpr: '^(\\w+\\s?)+$' }),
+      fusion({ fieldname: 'Note' }),
+      fusion({ fieldname: 'Plan', fieldtype: 'radio', fieldoptions: 'Basic, Pro', required: 'on' }),
+      fusion({ fieldname: 'Staff Ref', required: 'on', adminonly: 'on' }),
+    ]);
+    expect(
+      fields.map((field) => [field.key, field.required, field.fieldType, field.options, field.regex, field.sort]),
+    ).toEqual([
+      ['account_email', true, 'text', [], '', 0],
+      ['note', false, 'text', [], '', 1],
+      ['plan', true, 'select', ['Basic', 'Pro'], '', 2],
+    ]);
+  });
+});
+
+describe('fieldsToRequire', () => {
+  const supplier = [
+    { fieldname: 'Account Email', required: 'on' },
+    { fieldname: 'Region', required: 'on' },
+    { fieldname: 'Note', required: '' },
+    { fieldname: 'Staff Ref', required: 'on', adminonly: 'on' },
+  ];
+
+  it('lists the optional fields whose supplier name matches a required supplier field, exactly or without case and spaces', () => {
+    const fields = [
+      { key: 'account_email', supplierKey: 'Account Email', required: false },
+      { key: 'region', supplierKey: ' region ', required: false },
+      { key: 'note', supplierKey: 'Note', required: false },
+      { key: 'staff_ref', supplierKey: 'Staff Ref', required: false },
+    ];
+    expect(fieldsToRequire(fields, {}, supplier)).toEqual(['account_email', 'region']);
+  });
+
+  it("reads the link's field map first, then the key when the supplier key is empty, and never lists a required field", () => {
+    const fields = [
+      { key: 'mail', supplierKey: 'Other', required: false },
+      { key: 'Region', supplierKey: '', required: false },
+      { key: 'account', supplierKey: 'Account Email', required: true },
+    ];
+    expect(fieldsToRequire(fields, { mail: 'Account Email' }, supplier)).toEqual(['mail', 'Region']);
+    expect(fieldsToRequire(fields, {}, [])).toEqual([]);
   });
 });

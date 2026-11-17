@@ -286,7 +286,9 @@ Refreshes supplier services, prices and balances.
   carries `runId`).
 - **Idempotency:** a sync takes the supplier row `FOR UPDATE`, upserts `supplier_services` by `(supplier_id, remote_id)` in one transaction (a
   changed credit sets `price_changed_at`; a service not listed is marked unavailable), recomputes the effective cost of every linked service and
-  moves the catalog price version after the commit; nothing is written unless both supplier calls worked. It is safe to repeat. A staff request
+  moves the catalog price version after the commit; nothing is written unless both supplier calls worked. In the same transaction it adopts the
+  supplier's main box on the IMEI services made before decision 042 (feature 33: type `server`, the box first, one `catalog.services_changed`
+  event and one audit row each); an adopted service no longer matches, so a repeat adopts none. It is safe to repeat. A staff request
   has the job id `manual-sync-<supplier id>-<ms>` and `attempts: 1` (a click is its own retry); `supplier_sync` returns its outcome (a supplier
   failure is a value, so the API answers `409 SUPPLIER_UNAVAILABLE`), and the API answers `504 SUPPLIER_TIMEOUT` when the job is still
   running after `timeout_ms + 5 s` (the job goes on).

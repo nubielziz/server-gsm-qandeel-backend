@@ -122,6 +122,20 @@ sent as `0` (sorted as 0); a body year is a whole number from 1990 to next year 
   Feature 26 (supplier quick add, B214): `ImportedServiceInput.status` (`active` when omitted, or `disabled`) sets the state the new
   service starts in, and `create` also returns `categoryCreated` (true when the group's category did not exist and was made for it),
   so the quick add can count the categories a run created. The picker's import passes neither and behaves as before.
+  Feature 33 (decision 042): a field of `ImportedServiceInput.fields` carries its `regex` (the supplier's main box gets `^.{min,max}$`
+  from its lengths, never the supplier's own pattern; the `Requires.Custom` fields `''`), which `create` stores. `ServiceImporter.adoptMainInput(tx, { serviceId, field })` is the supplier
+  sync's adoption of an IMEI service made before the decision whose supplier's main box is not an IMEI: under the service's row lock it
+  re-checks the service (live, `imei`, no field whose supplier key, or key when that is empty, is `IMEI` in any case: the
+  dispatcher's rule in `src/common/dhru/main-input-key.ts`; the new key free; else it answers `null` and writes nothing), moves it
+  to type `server` and the `server` category of the same name (an existing one, found ignoring case, is reused as it is with its own
+  switch and groups; only a category created for the move copies the old one's switch and groups; locked `FOR SHARE` as a staff edit locks it), puts the field first (the others' `sort` moves up by one, their keys stay) and,
+  like `PATCH /admin/services/:id`, writes `catalog.services_changed` (reason `service`). Price, cost, status, quantities, SLA, links
+  and listing stay. The caller moves the catalog price version after the commit and writes the audit row (`adopted the supplier's
+  input`). `ServiceImporter.requireFields(tx, { serviceId, keys })` (feature 33, second review round) is the sync's repair of the
+  fields a supplier requires that the import made optional: under the service's row lock it sets only `required` on those of the keys
+  that are optional (nothing else of a field changes, a field is never made optional) and answers the keys it changed; like a staff save
+  of the fields (`PUT /admin/services/:id/fields`) it writes nothing for the shop or the search index; the caller writes the audit row.
+  `ServiceImporter` now injects `CatalogSignals` (the supplier engine module provides both for the worker).
 - **Price protection** (user rule 9, MISMATCHES B117): `ListedPrices.record(db, clientId, entries, at)` remembers the last price
   listed to a merchant (table `listed_prices`, written only when the price changes); the three portal routes call it, and so do 7a's
   lists (`GET /v1/services[/:id]`, `imeiservicelist`). `checkPriceChange(listed, current, tolerance, { floorRaised? })` is the pure guard feature 5 calls at placement: above the
@@ -283,8 +297,9 @@ Feature 29 (storefront search, decision 038): `CatalogSignals` (`application/cat
 (`{ serviceIds, reason }`, 1-50 ids per event, aggregate `services`; reason `service`, `price`, `options` or `stock`) and
 `catalog.category_changed` (`{ categoryId }`, aggregate `service_categories`) in the writer's own transaction: service create, edit,
 archive and delete, every group price set, the option lists, an inventory import and void, the stock claim of an order placement,
-a category edit and delete, and (one per category) a merchant group delete that removed the group from categories. Supplier
-imports (Quick add) write none: imported services have no listing. The routes (queue `search-index`, job `search_sync`) are
+a category edit and delete, (one per category) a merchant group delete that removed the group from categories, and the supplier
+sync's adoption of a main box (feature 33: a type and category change, like a staff edit). Supplier imports (Quick add) write none:
+imported services have no listing. The routes (queue `search-index`, job `search_sync`) are
 registered by the storefront's search module. `StorefrontServices` gained `pricedPage`, `pricedAmong`, `serviceIdsOfCategory` and
 `optionLabels` for the index.
 

@@ -50,6 +50,7 @@ const context = (overrides: Partial<DriverContext> = {}): DriverContext => ({
   username: fake.username,
   apiKey: fake.apiKey,
   timeoutMs: 2000,
+  paramFormat: 'dhru_xml',
   policy: {},
   ...overrides,
 });
@@ -63,6 +64,7 @@ async function raw(action: DhruAction, parameters?: Record<string, unknown>): Pr
       username: fake.username,
       apiKey: fake.apiKey,
       action,
+      format: 'dhru_xml',
       ...(parameters ? { parameters } : {}),
     }),
   });
@@ -86,7 +88,12 @@ describe('the fake supplier answers every call in the shape of its contract', ()
     const bad = await (
       await fetch(dhruEndpoint(fake.url), {
         method: 'POST',
-        body: dhruRequestBody({ username: fake.username, apiKey: 'wrong', action: DHRU_ACTIONS.accountInfo }),
+        body: dhruRequestBody({
+          username: fake.username,
+          apiKey: 'wrong',
+          action: DHRU_ACTIONS.accountInfo,
+          format: 'dhru_xml',
+        }),
       })
     ).json();
     expect(bad).toMatchObject({ ERROR: [{ MESSAGE: 'Authentication Failed' }] });

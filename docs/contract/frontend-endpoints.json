@@ -41582,6 +41582,9 @@
      "removed": {
       "type": "number"
      },
+     "adopted": {
+      "type": "number"
+     },
      "balance": {
       "type": "string",
       "alias": "Money"
