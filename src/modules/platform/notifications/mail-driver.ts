@@ -76,14 +76,23 @@ export function smtpOptions(smtpUrl: string): Record<string, unknown> {
   };
 }
 
-/** nodemailer error codes that mean the message itself or its address is refused for good. */
+/**
+ * nodemailer error codes that mean the message itself or its address is refused for good when no server answer comes with them
+ * (nodemailer's own checks: no recipient, an invalid address, a message too large). nodemailer also gives these codes to every
+ * refused MAIL FROM, RCPT TO and DATA answer, 4xx included; then the answer's code decides.
+ */
 const PERMANENT_CODES = new Set(['EENVELOPE', 'EMESSAGE']);
+
+/** SMTP answers to a refused login: a wrong, revoked or rotated key in `MAIL_SMTP_URL`, not a fault of the message. */
+const AUTH_REPLIES = new Set([530, 534, 535]);
 
 /**
  * Decides what a nodemailer failure means.
  *
- * Why: an SMTP 5xx answer (a mailbox that does not exist, a refused sender) will not change on a retry; a 4xx answer, a timeout and a
- * dropped connection will. The text is cleaned of addresses before it is stored.
+ * Why: an SMTP 5xx answer (a mailbox that does not exist, a refused sender) will not change on a retry; a 4xx answer (a provider's
+ * rate limit or a busy server), a timeout and a dropped connection will. A refused login is not permanent either: it is the
+ * configuration, so the queue keeps retrying while the key is fixed instead of failing every message at once. The text is cleaned of
+ * addresses before it is stored.
  *
  * @param error whatever the transporter threw
  * @returns a {@link DeliveryError} with a safe reason
@@ -99,8 +108,10 @@ export function classifyMailError(error: unknown): DeliveryError {
         ? info.message
         : 'The mail server refused the message.';
   const reason = redactAddresses(raw);
+  const loginRefused = code === 'EAUTH' || (responseCode !== undefined && AUTH_REPLIES.has(responseCode));
   const permanent =
-    (responseCode !== undefined && responseCode >= 500) || (code !== undefined && PERMANENT_CODES.has(code));
+    !loginRefused &&
+    (responseCode !== undefined ? responseCode >= 500 : code !== undefined && PERMANENT_CODES.has(code));
   return new DeliveryError(reason, { permanent, cause: error });
 }
 

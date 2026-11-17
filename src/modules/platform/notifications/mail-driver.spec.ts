@@ -52,6 +52,39 @@ describe('classifyMailError', () => {
     expect(classifyMailError(undefined).message).toBe('The mail server refused the message.');
   });
 
+  it('decides a refused envelope or message by the server answer when there is one (nodemailer codes 4xx answers EENVELOPE too)', () => {
+    // A provider's rate limit or a busy server at MAIL FROM, RCPT TO or DATA: retried, never lost on the first attempt.
+    expect(
+      classifyMailError({ code: 'EENVELOPE', responseCode: 451, response: '451 4.7.1 Too many requests' }).permanent,
+    ).toBe(false);
+    expect(
+      classifyMailError({ code: 'EENVELOPE', responseCode: 421, response: '421 Service not available' }).permanent,
+    ).toBe(false);
+    expect(
+      classifyMailError({ code: 'EMESSAGE', responseCode: 452, response: '452 Insufficient storage' }).permanent,
+    ).toBe(false);
+    // A sender on a domain the provider has not verified will not change on a retry.
+    expect(
+      classifyMailError({
+        code: 'EENVELOPE',
+        responseCode: 550,
+        response: '550 The example.com domain is not verified.',
+      }).permanent,
+    ).toBe(true);
+    expect(classifyMailError({ code: 'EMESSAGE', responseCode: 554, response: '554 Message rejected' }).permanent).toBe(
+      true,
+    );
+  });
+
+  it('retries a refused login: a wrong or rotated key is the configuration, not the message', () => {
+    expect(
+      classifyMailError({ code: 'EAUTH', responseCode: 535, response: '535 Authentication credentials invalid' })
+        .permanent,
+    ).toBe(false);
+    expect(classifyMailError({ code: 'EAUTH', message: 'Missing credentials for "PLAIN"' }).permanent).toBe(false);
+    expect(classifyMailError({ responseCode: 530, response: '530 Authentication required' }).permanent).toBe(false);
+  });
+
   it('never keeps a full address in the reason, and keeps it short', () => {
     const error = classifyMailError({
       responseCode: 550,
