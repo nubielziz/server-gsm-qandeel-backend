@@ -13,6 +13,7 @@ import { TicketThreadService } from '../../src/modules/support/application/ticke
 import { type AdminApi, adminWith } from '../support/admin-api';
 import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches, insertMerchant } from '../support/auth';
+import { insertGateway } from '../support/billing';
 import { DAY, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 import { eventually } from '../support/infra';
@@ -425,5 +426,30 @@ describe('the retention', () => {
     expect(await db.select().from(s.files).where(eq(s.files.id, old))).toEqual([]);
     // A second run finds nothing more.
     expect(await t.app.get(TicketAttachmentService).applyRetention()).toEqual({ days: 180, tickets: 0, files: 0 });
+  });
+
+  it('keeps a file that a payment method uses as its logo (feature 32), and still deletes the one nothing uses', async () => {
+    const { db } = await testDb();
+    const customer = await makeCustomer(t);
+    const ticket = await insertSupportTicket(db, {
+      requesterId: customer.id,
+      status: 'resolved',
+      resolvedAt: new Date(clock.nowMs() - 200 * DAY),
+    });
+    const logo = await fileRow('customer', customer.id);
+    const plain = await fileRow('customer', customer.id);
+    await insertSupportMessage(db, ticket.id, {
+      authorType: 'customer',
+      authorId: customer.id,
+      fileIds: [logo.id, plain.id],
+    });
+    const gatewayId = await insertGateway(t, db, { isManual: true, logoFileId: logo.id });
+
+    await setSupportSetting(t, 'attachmentRetentionDays', 180);
+    expect(await t.app.get(TicketAttachmentService).applyRetention()).toEqual({ days: 180, tickets: 1, files: 1 });
+    expect((await db.select().from(s.files)).map((row) => row.id)).toEqual([logo.id]);
+    // The logo is still the method's: the foreign key alone (ON DELETE SET NULL) would have emptied it silently.
+    const [gateway] = await db.select().from(s.paymentGateways).where(eq(s.paymentGateways.id, gatewayId));
+    expect(gateway!.logoFileId).toBe(logo.id);
   });
 });

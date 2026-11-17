@@ -125,7 +125,13 @@ export function nextWebhookSecrets(
   return { secrets, changed };
 }
 
-/** The driver ids and codes whose name is the top-up method itself. */
+/**
+ * The driver ids and codes whose name is the top-up method itself.
+ *
+ * Why: feature 32 adds the drivers of the ready-made crypto methods (`crypto_transfer`, `binance_pay`, and the two automatic ones that
+ * wait for their connection): their payments are `usdt`. The ready-made bank-like ones (`bank_transfer`, `vodafone_cash`,
+ * `fawry_transfer`, `instapay`) are manual and already fall to `bank`.
+ */
 const METHOD_BY_NAME: Readonly<Record<string, TopupMethod>> = {
   bank: 'bank',
   wise: 'wise',
@@ -133,6 +139,10 @@ const METHOD_BY_NAME: Readonly<Record<string, TopupMethod>> = {
   stripe: 'card',
   usdt: 'usdt',
   crypto: 'usdt',
+  crypto_transfer: 'usdt',
+  binance_pay: 'usdt',
+  nowpayments: 'usdt',
+  binance_pay_auto: 'usdt',
 };
 
 /**

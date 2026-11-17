@@ -120,6 +120,7 @@ export async function deleteUnreferencedFiles(
       and not exists (select 1 from payments where receipt_file_id = f.id)
       and not exists (select 1 from data_requests where file_id = f.id)
       and not exists (select 1 from service_listings where image_file_id = f.id or og_file_id = f.id)
+      and not exists (select 1 from payment_gateways where logo_file_id = f.id)
     returning f.id, f.bucket, f.key
   `);
   return (result.rows as { id: string | number; bucket: string; key: string }[]).map((row) => ({

@@ -1,7 +1,7 @@
 {
  "generatedBy": "scripts/extract-frontend-contract.mjs",
  "frontend": "../frontend-admin",
- "count": 321,
+ "count": 324,
  "endpoints": [
   {
    "key": "DELETE /admin/alert-rules/:id",
@@ -417,7 +417,48 @@
    "key": "DELETE /admin/payment-gateways/:id",
    "fn": "deleteGateway",
    "file": "src/features/settings/api/gateways.ts",
-   "line": 59,
+   "line": 62,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "void",
+   "returns": {
+    "type": "undefined"
+   }
+  },
+  {
+   "key": "DELETE /admin/payment-gateways/:id/logo",
+   "fn": "removeGatewayLogo",
+   "file": "src/features/settings/api/gateways.ts",
+   "line": 92,
    "params": [
     {
      "name": "id",
@@ -2123,8 +2164,8 @@
         "kind": {
          "enum": [
           "email",
-          "country",
           "card",
+          "country",
           "imei",
           "domain",
           "device"
@@ -2219,8 +2260,8 @@
      "kind": {
       "enum": [
        "email",
-       "country",
        "card",
+       "country",
        "imei",
        "domain",
        "device"
@@ -12359,10 +12400,74 @@
    }
   },
   {
+   "key": "GET /admin/payment-gateway-presets",
+   "fn": "listGatewayPresets",
+   "file": "src/features/settings/api/gateways.ts",
+   "line": 72,
+   "params": [
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "GatewayPreset[]",
+   "returns": {
+    "array": {
+     "object": {
+      "key": {
+       "type": "string"
+      },
+      "name": {
+       "type": "string"
+      },
+      "kind": {
+       "enum": [
+        "manual",
+        "automatic"
+       ]
+      },
+      "available": {
+       "type": "boolean"
+      },
+      "driver": {
+       "type": "string"
+      },
+      "methodType": {
+       "enum": [
+        "bank",
+        "card",
+        "usdt",
+        "wise"
+       ]
+      },
+      "instructions": {
+       "type": "string"
+      }
+     }
+    }
+   }
+  },
+  {
    "key": "GET /admin/payment-gateways",
    "fn": "listGateways",
    "file": "src/features/settings/api/gateways.ts",
-   "line": 22,
+   "line": 23,
    "params": [
     {
      "name": "query",
@@ -12549,6 +12654,14 @@
          "nullable": true,
          "alias": "Money",
          "optional": true
+        },
+        "preset": {
+         "type": "string",
+         "nullable": true
+        },
+        "logoUrl": {
+         "type": "string",
+         "nullable": true
         }
        }
       }
@@ -12563,7 +12676,7 @@
    "key": "GET /admin/payment-gateways/:id",
    "fn": "getGateway",
    "file": "src/features/settings/api/gateways.ts",
-   "line": 31,
+   "line": 32,
    "params": [
     {
      "name": "id",
@@ -12687,6 +12800,14 @@
       "nullable": true,
       "alias": "Money",
       "optional": true
+     },
+     "preset": {
+      "type": "string",
+      "nullable": true
+     },
+     "logoUrl": {
+      "type": "string",
+      "nullable": true
      }
     }
    }
@@ -27054,7 +27175,7 @@
    "key": "PATCH /admin/payment-gateways/:id",
    "fn": "updateGateway",
    "file": "src/features/settings/api/gateways.ts",
-   "line": 50,
+   "line": 53,
    "params": [
     {
      "name": "id",
@@ -27068,18 +27189,14 @@
     {
      "name": "body",
      "optional": false,
-     "typeText": "Partial<CreateGatewayBody>",
+     "typeText": "Partial<Omit<CreateGatewayBody, \"preset\">>",
      "shape": {
       "object": {
-       "code": {
-        "type": "string",
-        "optional": true
-       },
-       "driver": {
-        "type": "string",
-        "optional": true
-       },
        "name": {
+        "type": "string",
+        "optional": true
+       },
+       "code": {
         "type": "string",
         "optional": true
        },
@@ -27089,6 +27206,10 @@
          "b2b",
          "both"
         ],
+        "optional": true
+       },
+       "driver": {
+        "type": "string",
         "optional": true
        },
        "feePercent": {
@@ -27270,6 +27391,14 @@
       "nullable": true,
       "alias": "Money",
       "optional": true
+     },
+     "preset": {
+      "type": "string",
+      "nullable": true
+     },
+     "logoUrl": {
+      "type": "string",
+      "nullable": true
      }
     }
    }
@@ -30233,8 +30362,8 @@
      "kind": {
       "enum": [
        "email",
-       "country",
        "card",
+       "country",
        "imei",
        "domain",
        "device"
@@ -37252,7 +37381,7 @@
    "key": "POST /admin/payment-gateways",
    "fn": "createGateway",
    "file": "src/features/settings/api/gateways.ts",
-   "line": 40,
+   "line": 43,
    "params": [
     {
      "name": "body",
@@ -37326,6 +37455,10 @@
        "secondaryWebhookSecret": {
         "type": "string",
         "nullable": true,
+        "optional": true
+       },
+       "preset": {
+        "type": "string",
         "optional": true
        }
       }
@@ -37444,6 +37577,162 @@
       "nullable": true,
       "alias": "Money",
       "optional": true
+     },
+     "preset": {
+      "type": "string",
+      "nullable": true
+     },
+     "logoUrl": {
+      "type": "string",
+      "nullable": true
+     }
+    }
+   }
+  },
+  {
+   "key": "POST /admin/payment-gateways/:id/logo",
+   "fn": "uploadGatewayLogo",
+   "file": "src/features/settings/api/gateways.ts",
+   "line": 83,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "FormData",
+     "shape": {
+      "type": "FormData"
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "PaymentGateway",
+   "returns": {
+    "object": {
+     "id": {
+      "type": "number",
+      "alias": "Id"
+     },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     },
+     "name": {
+      "type": "string"
+     },
+     "code": {
+      "type": "string"
+     },
+     "driver": {
+      "type": "string"
+     },
+     "feePercent": {
+      "type": "string",
+      "alias": "Decimal"
+     },
+     "feeFixed": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "minAmount": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "maxAmount": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "allowedGroupIds": {
+      "array": {
+       "type": "number",
+       "alias": "Id"
+      }
+     },
+     "supportsRefunds": {
+      "type": "boolean"
+     },
+     "supports3ds": {
+      "type": "boolean"
+     },
+     "isManual": {
+      "type": "boolean"
+     },
+     "instructions": {
+      "type": "string"
+     },
+     "holdHours": {
+      "type": "number"
+     },
+     "isActive": {
+      "type": "boolean"
+     },
+     "audience": {
+      "enum": [
+       "b2c",
+       "b2b",
+       "both"
+      ]
+     },
+     "updatedAt": {
+      "type": "string",
+      "alias": "IsoDateTime",
+      "optional": true
+     },
+     "secretHint": {
+      "type": "string",
+      "nullable": true,
+      "optional": true
+     },
+     "webhookSecretHint": {
+      "type": "string",
+      "nullable": true,
+      "optional": true
+     },
+     "secondaryWebhookSecretHint": {
+      "type": "string",
+      "nullable": true,
+      "optional": true
+     },
+     "volume30d": {
+      "type": "string",
+      "nullable": true,
+      "alias": "Money",
+      "optional": true
+     },
+     "preset": {
+      "type": "string",
+      "nullable": true
+     },
+     "logoUrl": {
+      "type": "string",
+      "nullable": true
      }
     }
    }

@@ -1,7 +1,8 @@
 // StorefrontMoney: the read-only money facts the storefront needs (feature 14a): the currencies it offers, the tax rate in force
 // for a buyer's country and the B2C payment methods that are on. The shop prices and locks; this file only reads.
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import type { DbExecutor } from '../../../infra/db';
+import { PublicImages } from '../../platform';
 import {
   findCurrencyByCode,
   findOfferedCurrencies,
@@ -40,6 +41,10 @@ export interface StorefrontPaymentMethod {
   readonly code: string;
   readonly name: string;
   readonly supports3ds: boolean;
+  /** The ready-made method it was made from (feature 32), `null` for a custom method. */
+  readonly preset: string | null;
+  /** The public path of the logo staff uploaded (`/store/v1/media/<name>`), `null` when none. */
+  readonly logoUrl: string | null;
 }
 
 /**
@@ -53,6 +58,13 @@ export interface StorefrontPaymentMethod {
  */
 @Injectable()
 export class StorefrontMoney {
+  /**
+   * @param images the public pictures, to turn a method's uploaded logo into its public path. Optional because this class lives in the
+   *   global `MoneyModule`, which an app built without a database also loads (its `FilesModule` is left out there); no route reads
+   *   `paymentMethods` in such an app.
+   */
+  constructor(@Optional() private readonly images?: PublicImages) {}
+
   /**
    * Lists the currencies the storefront offers.
    *
@@ -157,16 +169,24 @@ export class StorefrontMoney {
    * one without a driver; only gateways `/pay` accepts are listed now (manual ones are for store balance top-ups).
    *
    * @param db the database or a transaction
-   * @returns the active, automatic gateways with a driver, meant for B2C or both audiences
+   * @returns the active, automatic gateways with a driver, meant for B2C or both audiences, each with its `preset` and the `logoUrl` of an
+   *   uploaded logo (feature 32; a ready-made automatic method cannot be added yet, so a custom one is the usual case)
    */
   async paymentMethods(db: DbExecutor): Promise<StorefrontPaymentMethod[]> {
     const payable = (await findStorefrontGateways(db)).filter(
       (gateway) => !gateway.isManual && driverFor(gateway.driver) !== undefined,
     );
+    const logos =
+      (await this.images?.urlsOf(
+        db,
+        payable.map((gateway) => gateway.logoFileId),
+      )) ?? new Map<number, string>();
     return payable.map((gateway) => ({
       code: gateway.code,
       name: gateway.name,
       supports3ds: gateway.supports3ds,
+      preset: gateway.preset,
+      logoUrl: logos.get(gateway.logoFileId ?? 0) ?? null,
     }));
   }
 }

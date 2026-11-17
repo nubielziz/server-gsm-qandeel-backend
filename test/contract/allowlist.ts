@@ -34,6 +34,16 @@ export const ALLOWLIST: readonly AllowlistEntry[] = [
       'Feature 22: the picture upload is a multipart body (one part `file`); the console builds a FormData from a File, which the contract extractor cannot see as a typed body.',
   },
   {
+    route: 'POST /admin/payment-gateways/:id/logo',
+    part: 'request',
+    path: 'body',
+    rule: 'unconstrained',
+    mismatch: 'B232',
+    reason:
+      'Feature 32: the logo upload is a multipart body (one part `file`); the console passes a FormData, which the contract extractor ' +
+      'cannot see as a typed body (the same case as the listing picture, B184).',
+  },
+  {
     route: 'GET /admin/permissions',
     part: 'fixture',
     path: '[]',

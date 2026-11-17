@@ -22,6 +22,16 @@ export const PaymentMethodSchema = z.object({
   currency: z.string(),
   holdHours: z.number().int(),
   instructions: z.string().describe('The transfer details of a manual method; empty for an automatic one.'),
+  preset: z
+    .string()
+    .nullable()
+    .describe('The key of the ready-made method it was made from (feature 32); null for a custom method. Always sent.'),
+  logoUrl: z
+    .string()
+    .nullable()
+    .describe(
+      'The public path of the logo staff uploaded (`/store/v1/media/<name>`); null when none, then show the bundled logo of `preset`. Always sent.',
+    ),
 });
 
 /** An invoice as the merchant sees it (B163): never a storefront receipt. */
@@ -72,6 +82,8 @@ const method = {
   currency: 'USD',
   holdHours: 24,
   instructions: 'IBAN JO94 CBJO 0010 0000 0000 0131 000302',
+  preset: null,
+  logoUrl: null,
 };
 const invoice = {
   id: 312,

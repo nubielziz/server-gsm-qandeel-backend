@@ -1,0 +1,80 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": [
+    {
+      "key": "bank_transfer",
+      "name": "Bank transfer",
+      "kind": "manual",
+      "available": true,
+      "driver": "bank_transfer",
+      "methodType": "bank",
+      "instructions": "Bank: ________, account name: ________, IBAN: ________. Write your top-up number as the reference and upload the receipt."
+    },
+    {
+      "key": "crypto_transfer",
+      "name": "Crypto transfer",
+      "kind": "manual",
+      "available": true,
+      "driver": "crypto_transfer",
+      "methodType": "usdt",
+      "instructions": "Send USDT on the ________ network to the address ________ and upload a screenshot with the transaction hash."
+    },
+    {
+      "key": "vodafone_cash",
+      "name": "Vodafone Cash",
+      "kind": "manual",
+      "available": true,
+      "driver": "vodafone_cash",
+      "methodType": "bank",
+      "instructions": "Send the amount to the Vodafone Cash number ________ and upload a screenshot of the transfer. Write your top-up number in the note."
+    },
+    {
+      "key": "fawry_transfer",
+      "name": "Fawry",
+      "kind": "manual",
+      "available": true,
+      "driver": "fawry_transfer",
+      "methodType": "bank",
+      "instructions": "Pay the amount through Fawry to the account ________ and upload a photo or screenshot of the receipt. Write your top-up number in the note."
+    },
+    {
+      "key": "instapay",
+      "name": "InstaPay",
+      "kind": "manual",
+      "available": true,
+      "driver": "instapay",
+      "methodType": "bank",
+      "instructions": "Send the amount by InstaPay to the address ________ and upload a screenshot of the transfer. Write your top-up number in the note."
+    },
+    {
+      "key": "binance_pay",
+      "name": "Binance Pay",
+      "kind": "manual",
+      "available": true,
+      "driver": "binance_pay",
+      "methodType": "usdt",
+      "instructions": "Send the amount by Binance Pay to the Pay ID ________ and upload a screenshot of the transfer. Write your top-up number in the note."
+    },
+    {
+      "key": "nowpayments",
+      "name": "NOWPayments",
+      "kind": "automatic",
+      "available": false,
+      "driver": "nowpayments",
+      "methodType": "usdt",
+      "instructions": ""
+    },
+    {
+      "key": "binance_pay_auto",
+      "name": "Binance Pay (automatic)",
+      "kind": "automatic",
+      "available": false,
+      "driver": "binance_pay_auto",
+      "methodType": "usdt",
+      "instructions": ""
+    }
+  ]
+}

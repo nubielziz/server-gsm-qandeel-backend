@@ -24,6 +24,8 @@
     "secretHint": "••••fa0",
     "webhookSecretHint": "••••1388",
     "secondaryWebhookSecretHint": null,
-    "volume30d": "1313.1000"
+    "volume30d": "1313.1000",
+    "preset": null,
+    "logoUrl": null
   }
 }

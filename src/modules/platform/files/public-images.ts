@@ -46,6 +46,8 @@ export interface StorePublicImageInput {
   readonly filename: string;
   /** The staff member who uploads it (the `files` owner). */
   readonly staffId: number;
+  /** The smallest width and height accepted, in pixels: omitted for a service picture (200); a logo passes `PUBLIC_LOGO_MIN_SIDE`. */
+  readonly minSide?: number;
 }
 
 /** A picture read for the media route. */
@@ -84,7 +86,7 @@ export class PublicImages {
    *   `too_large_dimensions`, `rotated`); `PAYLOAD_TOO_LARGE` (over 2 MiB); `UNAVAILABLE` (storage is down)
    */
   async store(db: DbExecutor, input: StorePublicImageInput): Promise<StoredPublicImage> {
-    const inspected = inspectImage(input.bytes);
+    const inspected = inspectImage(input.bytes, { minSide: input.minSide });
     if (!inspected.ok) {
       if (inspected.code === 'too_large') throw new AppError('PAYLOAD_TOO_LARGE', { detail: inspected.message });
       throw new AppError('VALIDATION_FAILED', {

@@ -5,6 +5,11 @@
 export const PUBLIC_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 /** The smallest width and height accepted, in pixels. */
 export const PUBLIC_IMAGE_MIN_SIDE = 200;
+/**
+ * The smallest width and height of a logo, in pixels (a payment method's logo, feature 32): a logo is shown small and a wordmark is short,
+ * so the 200 pixels a service picture needs would refuse most of them.
+ */
+export const PUBLIC_LOGO_MIN_SIDE = 64;
 /** The largest width and height accepted, in pixels. */
 export const PUBLIC_IMAGE_MAX_SIDE = 4096;
 
@@ -56,7 +61,17 @@ const MESSAGES: Record<ImageRefusalCode, string> = {
   rotated: 'Save the picture upright and upload it again.',
 };
 
-const refuse = (code: ImageRefusalCode): RefusedImage => ({ ok: false, code, message: MESSAGES[code] });
+const refuse = (code: ImageRefusalCode, message: string = MESSAGES[code]): RefusedImage => ({
+  ok: false,
+  code,
+  message,
+});
+
+/** What a caller may change about the checks of {@link inspectImage}. */
+export interface InspectImageOptions {
+  /** The smallest width and height accepted, in pixels. Default {@link PUBLIC_IMAGE_MIN_SIDE}; a logo passes {@link PUBLIC_LOGO_MIN_SIDE}. */
+  readonly minSide?: number;
+}
 
 /** Thrown inside a walk when the structure is truncated or inconsistent; turned into `corrupt`. */
 class Corrupt extends Error {}
@@ -80,12 +95,14 @@ interface Walked {
  * polyglot never passes as a picture; the container is walked without decoding pixels (no memory bomb), the metadata segments that hold
  * GPS positions, camera serials and authors are removed, and the bytes after the end marker are cut. A JPEG with an EXIF rotation is
  * refused, because dropping the EXIF would show it turned. The rules apply in this order: size, type, structure (and animation),
- * dimensions, rotation. The output is a pure function of the input.
+ * dimensions, rotation. The output is a pure function of the input. A logo (feature 32) passes the same checks with a smaller minimum.
  *
  * @param input the uploaded bytes
+ * @param options the smallest side to accept, when it is not a service picture's
  * @returns the accepted picture with its cleaned bytes, or the refusal with its code and message
  */
-export function inspectImage(input: Uint8Array): InspectedImage | RefusedImage {
+export function inspectImage(input: Uint8Array, options: InspectImageOptions = {}): InspectedImage | RefusedImage {
+  const minSide = options.minSide ?? PUBLIC_IMAGE_MIN_SIDE;
   if (input.length === 0) return refuse('empty');
   if (input.length > PUBLIC_IMAGE_MAX_BYTES) return refuse('too_large');
   const format = sniff(input);
@@ -99,7 +116,9 @@ export function inspectImage(input: Uint8Array): InspectedImage | RefusedImage {
     throw error;
   }
   const { width, height } = walked;
-  if (width < PUBLIC_IMAGE_MIN_SIDE || height < PUBLIC_IMAGE_MIN_SIDE) return refuse('too_small');
+  if (width < minSide || height < minSide) {
+    return refuse('too_small', `The picture must be at least ${minSide} x ${minSide} pixels.`);
+  }
   if (width > PUBLIC_IMAGE_MAX_SIDE || height > PUBLIC_IMAGE_MAX_SIDE) return refuse('too_large_dimensions');
   if (walked.orientation >= 2 && walked.orientation <= 8) return refuse('rotated');
   const kind = KINDS[format];

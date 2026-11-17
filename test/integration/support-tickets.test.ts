@@ -245,7 +245,9 @@ describe('GET /admin/support-tickets', () => {
     expect(await subjects('q=alex')).toEqual(['Done']);
     expect(await subjects('q=zain')).toEqual(['Merchant']);
     expect(await subjects('q=sf-1')).toEqual(['First (SF-1)']);
-    expect(await subjects('q=T-90')).toHaveLength(4);
+    // The fixture numbers tickets T-9001, T-9002, ... across the whole test process, so `T-9` is what these four always share
+    // (`T-90` broke when an earlier file of the batch added one ticket and the four straddled T-9099 and T-9100, 2026-11-17).
+    expect(await subjects('q=T-9')).toHaveLength(4);
     // The status words are the console's: `closed` and `pending_customer` are not accepted.
     expect((await admin.get('/admin/support-tickets?status=closed')).status).toBe(422);
     expect((await admin.get('/admin/support-tickets?status=pending_customer')).status).toBe(422);

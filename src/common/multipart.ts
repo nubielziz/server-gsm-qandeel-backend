@@ -1,5 +1,5 @@
 // Multipart form bodies (decision 026 note, B157): the routes that accept them (a Dhru call, `POST /v1/files`, `POST /client/files`, the
-// service picture of feature 22, `POST /admin/service-listings/:id/image`, and the ticket attachments of feature 28) get their text fields and uploaded files as one plain object before the guards run, so Dhru credentials in a multipart body are read like
+// service picture of feature 22, `POST /admin/service-listings/:id/image`, the payment method logo of feature 32, `POST /admin/payment-gateways/:id/logo`, and the ticket attachments of feature 28) get their text fields and uploaded files as one plain object before the guards run, so Dhru credentials in a multipart body are read like
 // those of a form body, and the maintenance stage sees the Dhru `action`.
 import type { FastifyInstance } from 'fastify';
 import { AppError } from './errors';
@@ -25,6 +25,8 @@ export const MULTIPART_ROUTES: ReadonlySet<string> = new Set([
   '/client/files',
   '/store/v1/files',
   '/admin/service-listings/:id/image',
+  // Feature 32: the logo staff upload for a payment method (a public picture, the same checks as the service picture).
+  '/admin/payment-gateways/:id/logo',
   // Feature 28: the attachments of the support chat, uploaded by the holder of a ticket link and by staff.
   '/store/v1/tickets/:token/files',
   '/admin/support-tickets/:id/files',

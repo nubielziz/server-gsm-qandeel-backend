@@ -151,6 +151,8 @@ const ADDITIONS: Record<string, string[]> = {
   blocklist_entries: ['customer_id'],
   // Feature 22 (storefront catalog): first publication, 30-day sales for the popularity sort, the service picture.
   service_listings: ['listed_at', 'sales_30d', 'image_file_id'],
+  // Feature 32 (migration 0040): the ready-made method a payment method was made from, and the logo staff uploaded for it.
+  payment_gateways: ['preset', 'logo_file_id'],
 };
 
 /**

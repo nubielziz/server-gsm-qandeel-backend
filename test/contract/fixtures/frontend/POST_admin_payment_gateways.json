@@ -26,6 +26,8 @@
     "webhookSecretHint": null,
     "secondaryWebhookSecretHint": null,
     "volume30d": null,
+    "preset": null,
+    "logoUrl": null,
     "id": 5
   }
 }

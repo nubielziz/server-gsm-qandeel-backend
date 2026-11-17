@@ -134,6 +134,26 @@ export const GATEWAY_AUDIENCES = ['b2b', 'b2c', 'both'] as const;
 export type GatewayAudience = (typeof GATEWAY_AUDIENCES)[number];
 
 /**
+ * The keys of the ready-made payment methods (the catalog in `domain/gateway-presets.ts`).
+ *
+ * Why: feature 32 (decision 041, B232): a method made from the catalog remembers its preset, which names the logo each frontend
+ * ships. The list is closed by `payment_gateways_preset_check`; a new preset needs a migration.
+ */
+export const GATEWAY_PRESET_KEYS = [
+  'bank_transfer',
+  'crypto_transfer',
+  'vodafone_cash',
+  'fawry_transfer',
+  'instapay',
+  'binance_pay',
+  'nowpayments',
+  'binance_pay_auto',
+] as const;
+
+/** One value of {@link GATEWAY_PRESET_KEYS}. */
+export type GatewayPresetKey = (typeof GATEWAY_PRESET_KEYS)[number];
+
+/**
  * What a payment pays for: a wallet top-up or a B2C order.
  *
  * Why: the console's payment wire enum (GET /admin/payments).
@@ -511,12 +531,18 @@ export const paymentGateways = pgTable(
     instructions: text().notNull().default(''),
     holdHours: integer().notNull().default(0),
     isActive: boolean().notNull().default(true),
+    /** the catalog entry the method was made from (feature 32); null for a custom method; never changes */
+    preset: text().$type<GatewayPresetKey>(),
+    /** the logo staff uploaded (a public picture under `media/`, feature 32); null for none; it wins over the preset's logo */
+    logoFileId: bigId().references((): AnyPgColumn => files.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     uniqueIndex('payment_gateways_code_uq').on(t.code),
+    index('payment_gateways_logo_file_id_idx').on(t.logoFileId),
     check('payment_gateways_audience_check', inList(t.audience, GATEWAY_AUDIENCES)),
+    check('payment_gateways_preset_check', sql`${t.preset} is null or ${inList(t.preset, GATEWAY_PRESET_KEYS)}`),
     check('payment_gateways_fee_check', sql`${t.feePercent} between 0 and 100 and ${t.feeFixed} >= 0`),
     check('payment_gateways_limits_check', sql`${t.minAmount} >= 0 and ${t.maxAmount} >= 0`),
   ],

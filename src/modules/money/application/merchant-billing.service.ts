@@ -9,7 +9,7 @@ import { APP_CONFIG, type AppConfig } from '../../../config';
 import { type DbExecutor, DbService, isUniqueViolation } from '../../../infra/db';
 import { OutboundHttp } from '../../../infra/http';
 import { ClientGroupDirectory } from '../../catalog';
-import { PROOF_MIME_TYPES, SettingsReader, StoredFiles } from '../../platform';
+import { PROOF_MIME_TYPES, PublicImages, SettingsReader, StoredFiles } from '../../platform';
 import { BASE_CURRENCY } from '../domain/accounts';
 import { checkDepositAmount, depositFee, topupMethodOf } from '../domain/gateway-rules';
 import {
@@ -96,6 +96,7 @@ export class MerchantBillingService {
     private readonly files: StoredFiles,
     private readonly documents: InvoiceDocuments,
     private readonly http: OutboundHttp,
+    private readonly images: PublicImages,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(CLOCK) private readonly clock: Clock,
     @Optional() @Inject(GATEWAY_HTTP_POLICY) private readonly policy?: GatewayHttpPolicy,
@@ -105,11 +106,17 @@ export class MerchantBillingService {
    * Lists the payment methods open to a merchant.
    *
    * @param clientId the signed-in merchant
-   * @returns the methods by name (one page: there are few)
+   * @returns the methods by name (one page: there are few), each with its `preset` and the `logoUrl` of an uploaded logo
    */
   async methods(clientId: number): Promise<{ rows: WirePaymentMethod[]; total: number }> {
     const { gateways, depositLimit } = await this.methodsOf(this.db.db, clientId);
-    const rows = gateways.map((gateway) => paymentMethodToWire(gateway, depositLimit));
+    const logos = await this.images.urlsOf(
+      this.db.db,
+      gateways.map((gateway) => gateway.logoFileId),
+    );
+    const rows = gateways.map((gateway) =>
+      paymentMethodToWire(gateway, depositLimit, logos.get(gateway.logoFileId ?? 0) ?? null),
+    );
     return { rows, total: rows.length };
   }
 

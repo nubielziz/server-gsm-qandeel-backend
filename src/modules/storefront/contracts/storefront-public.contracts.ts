@@ -189,7 +189,23 @@ export const getStoreConfig = defineRoute({
           label: z.string(),
         }),
       ),
-      paymentMethods: z.array(z.object({ code: z.string(), name: z.string(), supports3ds: z.boolean() })),
+      paymentMethods: z.array(
+        z.object({
+          code: z.string(),
+          name: z.string(),
+          supports3ds: z.boolean(),
+          preset: z
+            .string()
+            .nullable()
+            .describe('The key of the ready-made method it was made from; null for a custom method (feature 32).'),
+          logoUrl: z
+            .string()
+            .nullable()
+            .describe(
+              'The public path of the logo staff uploaded; null when none, then show the bundled logo of `preset` (feature 32).',
+            ),
+        }),
+      ),
       policies: z.object({ guestCheckout: z.boolean(), withdrawalWaiver: z.boolean(), imeiPrecheck: z.boolean() }),
       legalDocuments: z.array(
         z.object({
@@ -209,7 +225,7 @@ export const getStoreConfig = defineRoute({
         { code: 'GBP', name: 'British pound', decimals: 2, fxRate: '0.80185000' },
       ],
       taxRates: [{ country: 'GB', region: '', ratePercent: '20.0000', taxType: 'vat', label: 'UK VAT' }],
-      paymentMethods: [{ code: 'card', name: 'Card gateway', supports3ds: true }],
+      paymentMethods: [{ code: 'card', name: 'Card gateway', supports3ds: true, preset: null, logoUrl: null }],
       policies: { guestCheckout: true, withdrawalWaiver: true, imeiPrecheck: true },
       legalDocuments: [{ type: 'terms', version: '3.2', effectiveFrom: '2025-11-22T12:00:00.000Z' }],
     },

@@ -4,18 +4,18 @@
   "domain": "E",
   "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
   "counts": {
-    "rows": 55,
-    "endpoints": 71,
+    "rows": 58,
+    "endpoints": 74,
     "bySurface": {
       "dhru": 1,
       "v1": 2,
       "client": 7,
-      "admin": 49,
+      "admin": 52,
       "hooks": 2,
       "events": 2,
       "store": 8
     },
-    "frontendCalled": 49
+    "frontendCalled": 52
   },
   "stages": [
     3,
@@ -24,7 +24,8 @@
     11,
     14,
     16,
-    21
+    21,
+    32
   ],
   "ownedTables": [
     {
@@ -1242,7 +1243,7 @@
       "description": "Payment gateways: fees, limits and merchant groups.",
       "frontend": {
         "file": "src/features/settings/api/gateways.ts",
-        "line": 20,
+        "line": 21,
         "fn": "listGateways"
       }
     },
@@ -1275,7 +1276,7 @@
       "description": "Payment gateways: fees, limits and merchant groups.",
       "frontend": {
         "file": "src/features/settings/api/gateways.ts",
-        "line": 29,
+        "line": 30,
         "fn": "getGateway"
       }
     },
@@ -1308,7 +1309,7 @@
       "description": "Payment gateways: fees, limits and merchant groups.",
       "frontend": {
         "file": "src/features/settings/api/gateways.ts",
-        "line": 38,
+        "line": 41,
         "fn": "createGateway"
       }
     },
@@ -1341,7 +1342,7 @@
       "description": "Payment gateways: fees, limits and merchant groups.",
       "frontend": {
         "file": "src/features/settings/api/gateways.ts",
-        "line": 48,
+        "line": 51,
         "fn": "updateGateway"
       }
     },
@@ -1374,7 +1375,7 @@
       "description": "Payment gateways: fees, limits and merchant groups.",
       "frontend": {
         "file": "src/features/settings/api/gateways.ts",
-        "line": 57,
+        "line": 60,
         "fn": "deleteGateway"
       }
     },
@@ -2884,6 +2885,121 @@
         "spec": "B-TBD customer-wallet-routes"
       },
       "successStatus": 200
+    },
+    {
+      "key": "GET /admin/payment-gateway-presets",
+      "method": "GET",
+      "path": "/admin/payment-gateway-presets",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "List the catalog of ready-made payment methods (bank transfer, crypto transfer, Vodafone Cash, Fawry, InstaPay, Binance Pay and the two coming soon).",
+      "access": "staff-permission",
+      "permission": "payments:gateways",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "payments:gateways",
+      "stage": 32,
+      "tables": [],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/payment-gateway-presets",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/payment-gateway-presets"
+      },
+      "module": "money",
+      "description": "List the catalog of ready-made payment methods (bank transfer, crypto transfer, Vodafone Cash, Fawry, InstaPay, Binance Pay and the two coming soon).",
+      "frontend": {
+        "file": "src/features/settings/api/gateways.ts",
+        "line": 70,
+        "fn": "listGatewayPresets"
+      },
+      "addition": {
+        "file": "scripts/map-additions/32.mjs",
+        "spec": "B232"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/payment-gateways/:id/logo",
+      "method": "POST",
+      "path": "/admin/payment-gateways/:id/logo",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "Upload the logo of a payment method.",
+      "access": "staff-permission",
+      "permission": "payments:gateways",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "payments:gateways",
+      "stage": 32,
+      "tables": [
+        "payment_gateways",
+        "files",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/payment-gateways/:id/logo",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/payment-gateways/:id/logo"
+      },
+      "module": "money",
+      "description": "Upload the logo of a payment method.",
+      "frontend": {
+        "file": "src/features/settings/api/gateways.ts",
+        "line": 81,
+        "fn": "uploadGatewayLogo"
+      },
+      "addition": {
+        "file": "scripts/map-additions/32.mjs",
+        "spec": "B232"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "DELETE /admin/payment-gateways/:id/logo",
+      "method": "DELETE",
+      "path": "/admin/payment-gateways/:id/logo",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "billing",
+      "descriptionAr": "Remove the uploaded logo of a payment method.",
+      "access": "staff-permission",
+      "permission": "payments:gateways",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "payments:gateways",
+      "stage": 32,
+      "tables": [
+        "payment_gateways",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin DELETE /admin/payment-gateways/:id/logo",
+        "method": "DELETE",
+        "ops": null,
+        "path": "/admin/payment-gateways/:id/logo"
+      },
+      "module": "money",
+      "description": "Remove the uploaded logo of a payment method.",
+      "frontend": {
+        "file": "src/features/settings/api/gateways.ts",
+        "line": 90,
+        "fn": "removeGatewayLogo"
+      },
+      "addition": {
+        "file": "scripts/map-additions/32.mjs",
+        "spec": "B232"
+      },
+      "successStatus": 204
     }
   ],
   "scenarios": [

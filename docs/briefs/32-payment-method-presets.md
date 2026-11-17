@@ -79,13 +79,18 @@ with the index `payment_gateways_logo_file_id_idx`. Both go into `ADDITIONS` of 
     as `GET /admin/permissions` answers): `{ key, name, kind: 'manual' | 'automatic', available: boolean, driver, methodType:
     'bank' | 'card' | 'usdt' | 'wise', instructions }`.
   - `POST /admin/payment-gateways/:id/logo` (multipart, one part `file`; the checks, sizes and `422` codes of the listing
-    picture, `413` over 2 MiB) -> `200`, the gateway row. `DELETE /admin/payment-gateways/:id/logo` -> `204` (also when there
+    picture, `413` over 2 MiB; **the smallest logo is 64 x 64 pixels**, not the 200 of a listing picture: the lead's hand walk
+    of 2026-11-17 showed that an ordinary logo is refused otherwise) -> `200`, the gateway row. `DELETE /admin/payment-gateways/:id/logo` -> `204` (also when there
     was none). Each writes an audit row (`uploaded logo for` / `removed logo of`, the entity type and label the gateway routes
     use). `404` for an unknown gateway.
 - **Changed:**
   - `POST /admin/payment-gateways` takes an optional `preset`. With it: the key must be known (`422` `preset` `unknown`) and
     available (`422` `preset` `unavailable`), `isManual` must be the preset's kind (`422` `isManual` `preset_kind`) and
-    `driver` the preset's driver (`422` `driver` `preset_driver`). `PATCH` does not change a preset (the key is stripped).
+    `driver` the preset's driver (`422` `driver` `preset_driver`). `PATCH` does not change a preset (the key is stripped),
+    and a method made from a preset keeps the preset's kind and driver: a `PATCH` whose merged row differs answers the same
+    `422` `isManual` `preset_kind` / `driver` `preset_driver` (added after the backend review: a Vodafone Cash row patched
+    into an automatic card gateway would show the wrong logo on a card payment); the `unknown` and `unavailable` checks
+    belong to a create only, so an existing row stays editable. The console shows both fields as fixed for such a method.
     Several methods may come from one preset (two bank accounts).
   - The gateway row of the five admin routes gains `preset: string | null` and `logoUrl: string | null` (the uploaded logo's
     public path `/store/v1/media/<name>`, `null` when none).

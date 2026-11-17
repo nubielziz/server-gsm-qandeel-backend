@@ -42,9 +42,15 @@ export interface GatewaySecretHints {
  * @param row the gateway row
  * @param hints the hints of the stored credential and webhook secrets
  * @param volume30d the money taken in the last 30 days (a 4-decimal amount)
+ * @param logoUrl the public path of the uploaded logo (`/store/v1/media/<name>`), `null` when none (feature 32)
  * @returns the console's gateway
  */
-export function gatewayToWire(row: PaymentGateway, hints: GatewaySecretHints, volume30d: string): WireGateway {
+export function gatewayToWire(
+  row: PaymentGateway,
+  hints: GatewaySecretHints,
+  volume30d: string,
+  logoUrl: string | null,
+): WireGateway {
   return {
     id: row.id,
     code: row.code,
@@ -67,6 +73,8 @@ export function gatewayToWire(row: PaymentGateway, hints: GatewaySecretHints, vo
     secretHint: hints.secretHint,
     webhookSecretHint: hints.webhookSecretHint,
     secondaryWebhookSecretHint: hints.secondaryWebhookSecretHint,
+    preset: row.preset,
+    logoUrl,
     volume30d,
   };
 }
@@ -197,9 +205,14 @@ function noteOf(row: Payment, firstDeposit: boolean, customer: boolean): string 
  *
  * @param row the gateway row
  * @param depositLimit the merchant group's `deposit_limit` (`0.0000` = none)
+ * @param logoUrl the public path of the uploaded logo (`/store/v1/media/<name>`), `null` when none (feature 32)
  * @returns the portal's payment method; `maxAmount` is the lower of the gateway maximum and the group limit
  */
-export function paymentMethodToWire(row: PaymentGateway, depositLimit: string): WirePaymentMethod {
+export function paymentMethodToWire(
+  row: PaymentGateway,
+  depositLimit: string,
+  logoUrl: string | null,
+): WirePaymentMethod {
   return {
     id: row.id,
     code: row.code,
@@ -213,6 +226,8 @@ export function paymentMethodToWire(row: PaymentGateway, depositLimit: string): 
     currency: 'USD',
     holdHours: row.holdHours,
     instructions: row.isManual ? row.instructions : '',
+    preset: row.preset,
+    logoUrl,
   };
 }
 

@@ -98,6 +98,15 @@ describe('topupMethodOf', () => {
     expect(topupMethodOf('mystery', true)).toBe('bank');
     expect(topupMethodOf('mystery', false)).toBe('card');
   });
+
+  it('reads usdt from the drivers of the ready-made crypto methods and bank from the other ready-made ones (feature 32)', () => {
+    for (const driver of ['crypto_transfer', 'binance_pay', 'nowpayments', 'binance_pay_auto']) {
+      expect(topupMethodOf(driver, true), driver).toBe('usdt');
+    }
+    for (const driver of ['bank_transfer', 'vodafone_cash', 'fawry_transfer', 'instapay']) {
+      expect(topupMethodOf(driver, true), driver).toBe('bank');
+    }
+  });
 });
 
 describe('depositFee and effectiveMaxAmount', () => {

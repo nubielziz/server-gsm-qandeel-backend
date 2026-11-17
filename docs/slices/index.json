@@ -77,18 +77,18 @@
       "module": "money",
       "name": "Money (ledger, wallets, invoices, payments, refunds, disputes, tax, currencies)",
       "domain": "E",
-      "rows": 55,
-      "endpoints": 71,
+      "rows": 58,
+      "endpoints": 74,
       "bySurface": {
         "dhru": 1,
         "v1": 2,
         "client": 7,
-        "admin": 49,
+        "admin": 52,
         "hooks": 2,
         "events": 2,
         "store": 8
       },
-      "frontendCalled": 49,
+      "frontendCalled": 52,
       "stages": [
         3,
         7,
@@ -96,7 +96,8 @@
         11,
         14,
         16,
-        21
+        21,
+        32
       ],
       "tables": 11,
       "scenarios": [

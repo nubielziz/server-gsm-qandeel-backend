@@ -26,7 +26,9 @@
       "secretHint": "••••fa0",
       "webhookSecretHint": "••••1388",
       "secondaryWebhookSecretHint": null,
-      "volume30d": "1313.1000"
+      "volume30d": "1313.1000",
+      "preset": null,
+      "logoUrl": null
     },
     {
       "id": 2,
@@ -49,7 +51,9 @@
       "secretHint": "••••1029",
       "webhookSecretHint": "••••145b",
       "secondaryWebhookSecretHint": null,
-      "volume30d": "227.8700"
+      "volume30d": "227.8700",
+      "preset": null,
+      "logoUrl": null
     },
     {
       "id": 3,
@@ -75,7 +79,9 @@
       "secretHint": null,
       "webhookSecretHint": null,
       "secondaryWebhookSecretHint": null,
-      "volume30d": null
+      "volume30d": null,
+      "preset": null,
+      "logoUrl": null
     },
     {
       "id": 4,
@@ -98,7 +104,9 @@
       "secretHint": null,
       "webhookSecretHint": null,
       "secondaryWebhookSecretHint": null,
-      "volume30d": null
+      "volume30d": null,
+      "preset": null,
+      "logoUrl": null
     }
   ]
 }

@@ -88,9 +88,10 @@ describe('GET /store/v1/config', () => {
     ]);
     const config = body(await get('/store/v1/config'));
     expect(config.policies).toEqual({ guestCheckout: false, withdrawalWaiver: true, imeiPrecheck: true });
+    // Feature 32: each method also says the ready-made method it was made from and its uploaded logo (both null for these rows).
     expect(config.paymentMethods).toEqual([
-      { code: 'card', name: 'Card gateway', supports3ds: true },
-      { code: 'crypto', name: 'Crypto gateway', supports3ds: false },
+      { code: 'card', name: 'Card gateway', supports3ds: true, preset: null, logoUrl: null },
+      { code: 'crypto', name: 'Crypto gateway', supports3ds: false, preset: null, logoUrl: null },
     ]);
   });
 

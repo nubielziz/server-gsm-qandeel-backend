@@ -1,0 +1,5 @@
+ALTER TABLE "payment_gateways" ADD COLUMN "preset" text;--> statement-breakpoint
+ALTER TABLE "payment_gateways" ADD COLUMN "logo_file_id" bigint;--> statement-breakpoint
+ALTER TABLE "payment_gateways" ADD CONSTRAINT "payment_gateways_logo_file_id_files_id_fk" FOREIGN KEY ("logo_file_id") REFERENCES "public"."files"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "payment_gateways_logo_file_id_idx" ON "payment_gateways" USING btree ("logo_file_id");--> statement-breakpoint
+ALTER TABLE "payment_gateways" ADD CONSTRAINT "payment_gateways_preset_check" CHECK ("payment_gateways"."preset" is null or "payment_gateways"."preset" in ('bank_transfer', 'crypto_transfer', 'vodafone_cash', 'fawry_transfer', 'instapay', 'binance_pay', 'nowpayments', 'binance_pay_auto'));

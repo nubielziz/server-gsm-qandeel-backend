@@ -9,7 +9,7 @@ import {
   pngImage,
   webpImage,
 } from '../../../../test/support/images';
-import { type InspectedImage, PUBLIC_IMAGE_MAX_BYTES, inspectImage } from './image-inspect';
+import { type InspectedImage, PUBLIC_IMAGE_MAX_BYTES, PUBLIC_LOGO_MIN_SIDE, inspectImage } from './image-inspect';
 
 const accepted = (bytes: Uint8Array): InspectedImage => {
   const result = inspectImage(bytes);
@@ -161,6 +161,26 @@ describe('inspectImage: refusals', () => {
     expect(codeOf(jpegImage(300, 199))).toBe('too_small');
     expect(codeOf(webpImage(4097, 300))).toBe('too_large_dimensions');
     expect(codeOf(jpegImage(300, 4097))).toBe('too_large_dimensions');
+  });
+
+  it('takes a smaller minimum for a logo: 64 pixels on each side, and says that size when it refuses one', () => {
+    const logo = { minSide: PUBLIC_LOGO_MIN_SIDE };
+    expect(PUBLIC_LOGO_MIN_SIDE).toBe(64);
+    // A square mark and a wide, short wordmark: both too small for a service picture, both fine as a logo.
+    for (const picture of [pngImage(128, 128), webpImage(300, 64), jpegImage(64, 64)]) {
+      expect(inspectImage(picture)).toMatchObject({ ok: false, code: 'too_small' });
+      expect(inspectImage(picture, logo)).toMatchObject({ ok: true });
+    }
+    expect(inspectImage(pngImage(63, 300), logo)).toEqual({
+      ok: false,
+      code: 'too_small',
+      message: 'The picture must be at least 64 x 64 pixels.',
+    });
+    expect(inspectImage(pngImage(199, 300))).toMatchObject({
+      message: 'The picture must be at least 200 x 200 pixels.',
+    });
+    // The other limits do not move.
+    expect(inspectImage(webpImage(4097, 300), logo)).toMatchObject({ ok: false, code: 'too_large_dimensions' });
   });
 
   it('refuses a JPEG whose EXIF turns it (orientation 2 to 8), with the message to save it upright', () => {

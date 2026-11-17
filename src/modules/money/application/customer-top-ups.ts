@@ -10,7 +10,7 @@ import { APP_CONFIG, type AppConfig } from '../../../config';
 import { type DbExecutor, DbService, isUniqueViolation } from '../../../infra/db';
 import { OutboundHttp } from '../../../infra/http';
 import { RateLimitService } from '../../../infra/rate-limit';
-import { PROOF_MIME_TYPES, SettingsReader, StoredFiles } from '../../platform';
+import { PROOF_MIME_TYPES, PublicImages, SettingsReader, StoredFiles } from '../../platform';
 import type { TopUpDetailSchema } from '../contracts/customer-topups.contracts';
 import type { Invoice, Payment, PaymentGateway } from '../db/schema';
 import { BASE_CURRENCY } from '../domain/accounts';
@@ -141,6 +141,7 @@ export class CustomerTopUps {
     private readonly screening: TopUpScreeningHooks,
     private readonly limits: RateLimitService,
     private readonly http: OutboundHttp,
+    private readonly images: PublicImages,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(CLOCK) private readonly clock: Clock,
     @Optional() @Inject(GATEWAY_HTTP_POLICY) private readonly policy?: GatewayHttpPolicy,
@@ -150,14 +151,18 @@ export class CustomerTopUps {
    * The methods the customer may top up through, with the effective limits.
    *
    * @param query the parsed list request (`name` sort)
-   * @returns the methods (none while the balance is switched off)
+   * @returns the methods (none while the balance is switched off), each with its `preset` and the `logoUrl` of an uploaded logo
    */
   async methods(query: ParsedListQuery<'name'>): Promise<{ rows: WirePaymentMethod[]; total: number }> {
     const policy = await this.wallets.policy();
     if (!policy.enabled) return { rows: [], total: 0 };
     const gateways = (await listTopUpGateways(this.db.db)).filter((gateway) => offered(gateway, policy));
+    const logos = await this.images.urlsOf(
+      this.db.db,
+      gateways.map((gateway) => gateway.logoFileId),
+    );
     const rows = gateways.map((gateway) => {
-      const wire = paymentMethodToWire(gateway, policy.maxTopUp.toWire());
+      const wire = paymentMethodToWire(gateway, policy.maxTopUp.toWire(), logos.get(gateway.logoFileId ?? 0) ?? null);
       const min = Money.of(gateway.minAmount);
       return {
         ...wire,

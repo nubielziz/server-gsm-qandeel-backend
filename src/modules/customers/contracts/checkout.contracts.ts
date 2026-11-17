@@ -81,7 +81,23 @@ export const CheckoutSessionSchema = z.object({
     granted: z.array(z.enum(CONSENT_PURPOSES)).describe('What is granted now (the latest record of each purpose).'),
     complete: z.boolean(),
   }),
-  paymentMethods: z.array(z.object({ code: z.string(), name: z.string(), supports3ds: z.boolean() })),
+  paymentMethods: z.array(
+    z.object({
+      code: z.string(),
+      name: z.string(),
+      supports3ds: z.boolean(),
+      preset: z
+        .string()
+        .nullable()
+        .describe('The key of the ready-made method it was made from; null for a custom method (feature 32).'),
+      logoUrl: z
+        .string()
+        .nullable()
+        .describe(
+          'The public path of the logo staff uploaded; null when none, then show the bundled logo of `preset` (feature 32).',
+        ),
+    }),
+  ),
   balancePayable: z
     .boolean()
     .describe(
@@ -116,7 +132,7 @@ const SESSION_EXAMPLE = {
     display: { net: '3.2000', tax: '0.6400', gross: '3.8400' },
   },
   consent: { required: ['terms', 'privacy', 'withdrawal_waiver'], granted: [], complete: false },
-  paymentMethods: [{ code: 'card', name: 'Card gateway', supports3ds: true }],
+  paymentMethods: [{ code: 'card', name: 'Card gateway', supports3ds: true, preset: null, logoUrl: null }],
   balancePayable: false,
   trackingToken: null,
 } as const;

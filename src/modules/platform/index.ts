@@ -120,9 +120,10 @@ export {
   PUBLIC_IMAGE_MAX_BYTES,
   PUBLIC_IMAGE_MAX_SIDE,
   PUBLIC_IMAGE_MIN_SIDE,
+  PUBLIC_LOGO_MIN_SIDE,
   inspectImage,
 } from './files/image-inspect';
-export type { ImageRefusalCode, InspectedImage, RefusedImage } from './files/image-inspect';
+export type { ImageRefusalCode, InspectImageOptions, InspectedImage, RefusedImage } from './files/image-inspect';
 export { NotificationEventsModule } from './notifications/notification-events.module';
 export { NotificationTransportModule } from './notifications/notification-transport.module';
 export { MAIL_PROBE_TOKEN, MailHealthProbe, MailHealthProbeModule } from './notifications/mail-health-probe';

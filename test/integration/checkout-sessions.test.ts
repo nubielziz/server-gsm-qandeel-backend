@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 import { eq } from 'drizzle-orm';
 import { schema as s } from '../../src/infra/db';
 import { EncryptionService } from '../../src/infra/crypto';
+import { StorageService } from '../../src/infra/storage';
 import { CHECKOUT_IMEI_AAD } from '../../src/modules/customers';
 import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches } from '../support/auth';
@@ -595,8 +596,47 @@ describe('GET /store/v1/checkout-sessions/:token', () => {
     expect(res.headers['cache-control']).toBe('no-store');
     expect(body(res)).toEqual({
       ...opened,
-      paymentMethods: [{ code: 'card', name: 'Card gateway', supports3ds: true }],
+      paymentMethods: [{ code: 'card', name: 'Card gateway', supports3ds: true, preset: null, logoUrl: null }],
     });
+  });
+
+  it('carries the public path of the uploaded logo of a method (feature 32), and null for one without', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    const name = `${'ab'.repeat(32)}.png`;
+    const [logo] = await db
+      .insert(s.files)
+      .values({
+        bucket: t.app.get(StorageService).bucket,
+        key: `media/${name}`,
+        filename: 'logo.png',
+        mime: 'image/png',
+        size: 1234,
+        sha256: 'ab'.repeat(32),
+        ownerType: 'staff',
+        ownerId: 1,
+      })
+      .returning({ id: s.files.id });
+    await db.insert(s.paymentGateways).values([
+      {
+        code: 'card',
+        driver: 'stripe',
+        name: 'Card gateway',
+        audience: 'b2c',
+        supports3ds: true,
+        logoFileId: logo!.id,
+      },
+      { code: 'crypto', driver: 'crypto', name: 'Crypto gateway', audience: 'both' },
+    ]);
+    const opened = body(await open(valid(world)));
+    const res = await show(opened.token);
+    expect(res.statusCode).toBe(200);
+    expect(body(res).paymentMethods).toEqual([
+      { code: 'card', name: 'Card gateway', supports3ds: true, preset: null, logoUrl: `/store/v1/media/${name}` },
+      { code: 'crypto', name: 'Crypto gateway', supports3ds: false, preset: null, logoUrl: null },
+    ]);
+    // The same view the session opens with.
+    expect(opened.paymentMethods).toEqual(body(res).paymentMethods);
   });
 
   it('answers 404 with the same words for an unknown, a malformed and a nearly right token', async () => {

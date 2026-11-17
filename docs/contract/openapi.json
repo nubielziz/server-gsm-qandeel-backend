@@ -103393,6 +103393,292 @@
         "x-gsm-surface": "admin"
       }
     },
+    "/admin/payment-gateway-presets": {
+      "get": {
+        "description": "The catalog of ready-made payment methods in its order (a plain array, no paging, no `x-total-count`): bank transfer, crypto transfer, Vodafone Cash, Fawry, InstaPay, Binance Pay, NOWPayments and Binance Pay (automatic). Each has the `key` a method remembers as its `preset`, the `driver` and `methodType` it stands for, and a template of the transfer details. An entry with `available: false` is shown as \"Coming soon\" and cannot be added yet. Nothing is stored: a method exists only once staff add it with `POST /admin/payment-gateways`.",
+        "operationId": "getAdminPaymentGatewayPresets",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "description": "The stable key a method remembers (`preset`); a frontend names its bundled logo by it."
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "manual",
+                          "automatic"
+                        ],
+                        "description": "Manual: staff review each receipt. Automatic: a gateway confirms the payment (it needs a driver)."
+                      },
+                      "available": {
+                        "type": "boolean",
+                        "description": "False: shown as \"Coming soon\"; a create that names it is refused (422 on `preset`, `unavailable`)."
+                      },
+                      "driver": {
+                        "type": "string",
+                        "description": "The driver name a method made from it must use."
+                      },
+                      "methodType": {
+                        "type": "string",
+                        "enum": [
+                          "bank",
+                          "card",
+                          "usdt",
+                          "wise"
+                        ],
+                        "description": "The top-up method its payments carry."
+                      },
+                      "instructions": {
+                        "type": "string",
+                        "description": "A template of the transfer details with blanks (`________`) for staff to fill in; empty for an automatic one."
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "name",
+                      "kind",
+                      "available",
+                      "driver",
+                      "methodType",
+                      "instructions"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "example": [
+                  {
+                    "key": "vodafone_cash",
+                    "name": "Vodafone Cash",
+                    "kind": "manual",
+                    "available": true,
+                    "driver": "vodafone_cash",
+                    "methodType": "bank",
+                    "instructions": "Send the amount to the Vodafone Cash number ________ and upload a screenshot of the transfer. Write your top-up number in the note."
+                  }
+                ]
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to do this.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FORBIDDEN"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "staffSession": []
+          }
+        ],
+        "summary": "Ready-made payment methods",
+        "tags": [
+          "settings"
+        ],
+        "x-gsm-access": "staff-permission",
+        "x-gsm-key": "GET /admin/payment-gateway-presets",
+        "x-gsm-permission": "payments:gateways",
+        "x-gsm-session-stages": [
+          "active"
+        ],
+        "x-gsm-surface": "admin"
+      }
+    },
     "/admin/payment-gateways": {
       "get": {
         "description": "The payment gateways with their fees, limits and merchant groups, never their secrets. `secretHint`, `webhookSecretHint` and `secondaryWebhookSecretHint` show that a credential is stored; `volume30d` is the money taken in the last 30 days.",
@@ -103638,6 +103924,20 @@
                           "null"
                         ]
                       },
+                      "preset": {
+                        "description": "The key of the ready-made method this one was made from (`GET /admin/payment-gateway-presets`); null for a custom method. It never changes. Always sent.",
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "logoUrl": {
+                        "description": "The public path of the logo staff uploaded (`/store/v1/media/<name>`); null when none, then a frontend shows the bundled logo of `preset`. Always sent.",
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
                       "volume30d": {
                         "description": "Money taken through the gateway in the last 30 days, in USD (payments captured, not pending, failed or rejected).",
                         "anyOf": [
@@ -103673,7 +103973,9 @@
                       "instructions",
                       "holdHours",
                       "isActive",
-                      "createdAt"
+                      "createdAt",
+                      "preset",
+                      "logoUrl"
                     ],
                     "additionalProperties": false
                   }
@@ -103704,6 +104006,8 @@
                     "secretHint": null,
                     "webhookSecretHint": null,
                     "secondaryWebhookSecretHint": null,
+                    "preset": null,
+                    "logoUrl": null,
                     "volume30d": "4350.0000"
                   }
                 ]
@@ -104014,7 +104318,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "Adds a gateway. `secret` (the API credential), `webhookSecret` and `secondaryWebhookSecret` are write-only and stored encrypted. Validation (422 with the field): a non-blank name, driver and code (lower-case letters, digits, `-` and `_`); a code that no other gateway uses; audience b2c, b2b or both; a fee of 0 to 100 percent; money fields of 0 or more (a maximum above zero is not below the minimum); whole `holdHours` from 0 to 720; `allowedGroupIds` that are existing client groups; a `secondaryWebhookSecret` of 1 to 500 characters, only next to a first webhook secret. Audited.",
+        "description": "Adds a gateway. `secret` (the API credential), `webhookSecret` and `secondaryWebhookSecret` are write-only and stored encrypted. `preset` makes it a ready-made method of the catalog (its logo, kind and driver are the catalog entry's). Validation (422 with the field): a non-blank name, driver and code (lower-case letters, digits, `-` and `_`); a code that no other gateway uses; audience b2c, b2b or both; a fee of 0 to 100 percent; money fields of 0 or more (a maximum above zero is not below the minimum); whole `holdHours` from 0 to 720; `allowedGroupIds` that are existing client groups; a `secondaryWebhookSecret` of 1 to 500 characters, only next to a first webhook secret. Audited.",
         "operationId": "postAdminPaymentGateways",
         "parameters": [],
         "requestBody": {
@@ -104083,6 +104387,13 @@
                   },
                   "isActive": {
                     "type": "boolean"
+                  },
+                  "preset": {
+                    "description": "The key of a ready-made method (`GET /admin/payment-gateway-presets`) this one is made from. Leave it out (or `null`) for a custom method. Checked on create only: an unknown key is 422 on `preset` (`unknown`), a method that is not available yet is 422 on `preset` (`unavailable`), `isManual` that is not the preset kind is 422 on `isManual` (`preset_kind`), a `driver` that is not the preset driver is 422 on `driver` (`preset_driver`). Several methods may come from one preset.",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   },
                   "secret": {
                     "description": "Write-only: the API credential of the gateway, stored encrypted.",
@@ -104302,6 +104613,20 @@
                         "null"
                       ]
                     },
+                    "preset": {
+                      "description": "The key of the ready-made method this one was made from (`GET /admin/payment-gateway-presets`); null for a custom method. It never changes. Always sent.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "logoUrl": {
+                      "description": "The public path of the logo staff uploaded (`/store/v1/media/<name>`); null when none, then a frontend shows the bundled logo of `preset`. Always sent.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "volume30d": {
                       "description": "Money taken through the gateway in the last 30 days, in USD (payments captured, not pending, failed or rejected).",
                       "anyOf": [
@@ -104337,7 +104662,9 @@
                     "instructions",
                     "holdHours",
                     "isActive",
-                    "createdAt"
+                    "createdAt",
+                    "preset",
+                    "logoUrl"
                   ],
                   "additionalProperties": false
                 },
@@ -104366,6 +104693,8 @@
                   "secretHint": null,
                   "webhookSecretHint": null,
                   "secondaryWebhookSecretHint": null,
+                  "preset": null,
+                  "logoUrl": null,
                   "volume30d": "4350.0000"
                 }
               }
@@ -104849,6 +105178,20 @@
                         "null"
                       ]
                     },
+                    "preset": {
+                      "description": "The key of the ready-made method this one was made from (`GET /admin/payment-gateway-presets`); null for a custom method. It never changes. Always sent.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "logoUrl": {
+                      "description": "The public path of the logo staff uploaded (`/store/v1/media/<name>`); null when none, then a frontend shows the bundled logo of `preset`. Always sent.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "volume30d": {
                       "description": "Money taken through the gateway in the last 30 days, in USD (payments captured, not pending, failed or rejected).",
                       "anyOf": [
@@ -104884,7 +105227,9 @@
                     "instructions",
                     "holdHours",
                     "isActive",
-                    "createdAt"
+                    "createdAt",
+                    "preset",
+                    "logoUrl"
                   ],
                   "additionalProperties": false
                 },
@@ -104913,6 +105258,8 @@
                   "secretHint": null,
                   "webhookSecretHint": null,
                   "secondaryWebhookSecretHint": null,
+                  "preset": null,
+                  "logoUrl": null,
                   "volume30d": "4350.0000"
                 }
               }
@@ -105305,7 +105652,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "Changes the fields sent (the on/off switch sends `{ isActive }`). The code never changes (it is part of the webhook address): a different code is 422 on `code`. A non-empty `secret` or `webhookSecret` replaces the stored one; leaving it out keeps it. `secondaryWebhookSecret` sets the second webhook secret, `null` removes it, leaving it out keeps it. The merged gateway is validated as on create. Validation (422 with the field): a non-blank name, driver and code (lower-case letters, digits, `-` and `_`); a code that no other gateway uses; audience b2c, b2b or both; a fee of 0 to 100 percent; money fields of 0 or more (a maximum above zero is not below the minimum); whole `holdHours` from 0 to 720; `allowedGroupIds` that are existing client groups; a `secondaryWebhookSecret` of 1 to 500 characters, only next to a first webhook secret. Audited.",
+        "description": "Changes the fields sent (the on/off switch sends `{ isActive }`). The code never changes (it is part of the webhook address): a different code is 422 on `code`. A non-empty `secret` or `webhookSecret` replaces the stored one; leaving it out keeps it. `secondaryWebhookSecret` sets the second webhook secret, `null` removes it, leaving it out keeps it. A `preset` in the body is ignored: the preset of a method never changes, and a method made from one keeps its kind and driver: a merged `isManual` that is not the preset kind is 422 on `isManual` (`preset_kind`), a merged `driver` that is not the preset driver is 422 on `driver` (`preset_driver`). A custom method may still change both. The merged gateway is validated as on create. Validation (422 with the field): a non-blank name, driver and code (lower-case letters, digits, `-` and `_`); a code that no other gateway uses; audience b2c, b2b or both; a fee of 0 to 100 percent; money fields of 0 or more (a maximum above zero is not below the minimum); whole `holdHours` from 0 to 720; `allowedGroupIds` that are existing client groups; a `secondaryWebhookSecret` of 1 to 500 characters, only next to a first webhook secret. Audited.",
         "operationId": "patchAdminPaymentGatewaysById",
         "parameters": [
           {
@@ -105572,6 +105919,20 @@
                         "null"
                       ]
                     },
+                    "preset": {
+                      "description": "The key of the ready-made method this one was made from (`GET /admin/payment-gateway-presets`); null for a custom method. It never changes. Always sent.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "logoUrl": {
+                      "description": "The public path of the logo staff uploaded (`/store/v1/media/<name>`); null when none, then a frontend shows the bundled logo of `preset`. Always sent.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "volume30d": {
                       "description": "Money taken through the gateway in the last 30 days, in USD (payments captured, not pending, failed or rejected).",
                       "anyOf": [
@@ -105607,7 +105968,9 @@
                     "instructions",
                     "holdHours",
                     "isActive",
-                    "createdAt"
+                    "createdAt",
+                    "preset",
+                    "logoUrl"
                   ],
                   "additionalProperties": false
                 },
@@ -105636,6 +105999,8 @@
                   "secretHint": null,
                   "webhookSecretHint": null,
                   "secondaryWebhookSecretHint": null,
+                  "preset": null,
+                  "logoUrl": null,
                   "volume30d": "4350.0000"
                 }
               }
@@ -106544,6 +106909,1379 @@
         "x-gsm-access": "staff-permission",
         "x-gsm-audit": true,
         "x-gsm-key": "DELETE /admin/payment-gateways/:id",
+        "x-gsm-permission": "payments:gateways",
+        "x-gsm-session-stages": [
+          "active"
+        ],
+        "x-gsm-surface": "admin"
+      }
+    },
+    "/admin/payment-gateways/{id}/logo": {
+      "post": {
+        "description": "`multipart/form-data` with one part named `file`: a JPEG, PNG or WebP picture, at most 2 MiB, 64 to 4096 pixels on each side (the checks of a service picture, with a logo's smaller minimum). The type is read from the content; the picture is cleaned before it is stored and stored once under the SHA-256 of the cleaned bytes. It becomes the `logoUrl` of the method (replacing the previous one) and wins over the bundled logo of its `preset`. Refusals are `422` on `file` with the code: `empty`, `unsupported_type`, `corrupt`, `animated`, `too_small`, `too_large_dimensions`, `rotated`; more than 2 MiB is `413`. A JSON or form body has no file part, so it is `422` on `file`; a body of a type the API does not read is `415`. Audited (`uploaded logo for`).",
+        "operationId": "postAdminPaymentGatewaysByIdLogo",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Numeric record id.",
+            "schema": {
+              "x-gsm-alias": "Id",
+              "description": "Numeric record id.",
+              "type": "string",
+              "pattern": "^[1-9]\\d{0,15}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The file to upload (one multipart form part)."
+                  }
+                },
+                "required": [
+                  "file"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "x-gsm-alias": "Id",
+                      "description": "Numeric record id.",
+                      "examples": [
+                        42
+                      ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "The lower-case code; it is the `:gateway` of `/webhooks/payments/:gateway` and never changes."
+                    },
+                    "driver": {
+                      "type": "string",
+                      "description": "The code that talks to the gateway: `card`, `crypto`, `bank`, `wise`, or any name."
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "audience": {
+                      "type": "string",
+                      "enum": [
+                        "b2b",
+                        "b2c",
+                        "both"
+                      ],
+                      "description": "Who may pay with it: storefront customers (b2c), merchants (b2b) or both."
+                    },
+                    "feePercent": {
+                      "type": "string",
+                      "maxLength": 40,
+                      "pattern": "^-?\\d+(\\.\\d+)?$",
+                      "x-gsm-alias": "Decimal",
+                      "description": "The percent fee, 4 decimals.",
+                      "examples": [
+                        "19.0000"
+                      ]
+                    },
+                    "feeFixed": {
+                      "type": "string",
+                      "pattern": "^-?\\d+\\.\\d{4}$",
+                      "x-gsm-alias": "Money",
+                      "description": "The fixed fee added to the percent.",
+                      "examples": [
+                        "12.4900"
+                      ]
+                    },
+                    "minAmount": {
+                      "type": "string",
+                      "pattern": "^-?\\d+\\.\\d{4}$",
+                      "x-gsm-alias": "Money",
+                      "description": "The smallest payment; `0.0000` = no minimum.",
+                      "examples": [
+                        "12.4900"
+                      ]
+                    },
+                    "maxAmount": {
+                      "type": "string",
+                      "pattern": "^-?\\d+\\.\\d{4}$",
+                      "x-gsm-alias": "Money",
+                      "description": "The largest payment; `0.0000` = no maximum.",
+                      "examples": [
+                        "12.4900"
+                      ]
+                    },
+                    "allowedGroupIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "x-gsm-alias": "Id",
+                        "description": "Numeric record id.",
+                        "examples": [
+                          42
+                        ]
+                      },
+                      "description": "The merchant groups that may use it; empty = every group."
+                    },
+                    "supportsRefunds": {
+                      "type": "boolean"
+                    },
+                    "supports3ds": {
+                      "type": "boolean"
+                    },
+                    "isManual": {
+                      "type": "boolean",
+                      "description": "True when staff review each payment (bank, Wise); false when the gateway confirms it."
+                    },
+                    "instructions": {
+                      "type": "string",
+                      "description": "What a merchant sees for a manual gateway (the transfer details)."
+                    },
+                    "holdHours": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "Automatic gateway: hours a confirmed payment waits instead of 10 minutes. Manual: the review window."
+                    },
+                    "isActive": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "x-gsm-alias": "IsoDateTime",
+                      "description": "ISO 8601 UTC time with milliseconds.",
+                      "examples": [
+                        "2026-03-01T09:30:00.000Z"
+                      ]
+                    },
+                    "updatedAt": {
+                      "description": "When the row last changed; always sent.",
+                      "type": "string",
+                      "format": "date-time",
+                      "x-gsm-alias": "IsoDateTime",
+                      "examples": [
+                        "2026-03-01T09:30:00.000Z"
+                      ]
+                    },
+                    "secretHint": {
+                      "description": "`••••` and the last 4 characters of the stored API credential; null when none. Never the secret.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "webhookSecretHint": {
+                      "description": "`••••` and the last 4 characters of the stored webhook signing secret; null when none (the gateway's webhooks are then refused). Always sent.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "secondaryWebhookSecretHint": {
+                      "description": "The same for the second webhook secret (a second endpoint, or the new one while rotating); null when none. Always sent.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "preset": {
+                      "description": "The key of the ready-made method this one was made from (`GET /admin/payment-gateway-presets`); null for a custom method. It never changes. Always sent.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "logoUrl": {
+                      "description": "The public path of the logo staff uploaded (`/store/v1/media/<name>`); null when none, then a frontend shows the bundled logo of `preset`. Always sent.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "volume30d": {
+                      "description": "Money taken through the gateway in the last 30 days, in USD (payments captured, not pending, failed or rejected).",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^-?\\d+\\.\\d{4}$",
+                          "x-gsm-alias": "Money",
+                          "description": "Decimal string with exactly 4 fraction digits.",
+                          "examples": [
+                            "12.4900"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "code",
+                    "driver",
+                    "name",
+                    "audience",
+                    "feePercent",
+                    "feeFixed",
+                    "minAmount",
+                    "maxAmount",
+                    "allowedGroupIds",
+                    "supportsRefunds",
+                    "supports3ds",
+                    "isManual",
+                    "instructions",
+                    "holdHours",
+                    "isActive",
+                    "createdAt",
+                    "preset",
+                    "logoUrl"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "id": 3,
+                  "code": "bank",
+                  "driver": "bank",
+                  "name": "Bank transfer",
+                  "audience": "b2b",
+                  "feePercent": "0.0000",
+                  "feeFixed": "0.0000",
+                  "minAmount": "50.0000",
+                  "maxAmount": "50000.0000",
+                  "allowedGroupIds": [
+                    2,
+                    3
+                  ],
+                  "supportsRefunds": false,
+                  "supports3ds": false,
+                  "isManual": true,
+                  "instructions": "IBAN JO94 CBJO 0010 0000 0000 0131 000302, reference: your merchant email",
+                  "holdHours": 24,
+                  "isActive": true,
+                  "createdAt": "2026-10-01T09:00:00.000Z",
+                  "updatedAt": "2026-10-01T09:00:00.000Z",
+                  "secretHint": null,
+                  "webhookSecretHint": null,
+                  "secondaryWebhookSecretHint": null,
+                  "preset": null,
+                  "logoUrl": "/store/v1/media/9f2b1c7a4d6e8f003a5b7c9d1e2f4a6b8c0d2e4f61728394a5b6c7d8e9f0a1b2.png",
+                  "volume30d": "4350.0000"
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to do this.\nCSRF_FAILED: The security check for this request failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FORBIDDEN",
+                        "CSRF_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CSRF_FAILED": {
+                    "summary": "The security check for this request failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/csrf-failed",
+                      "title": "The security check for this request failed.",
+                      "status": 403,
+                      "code": "CSRF_FAILED",
+                      "detail": "The security check for this request failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: The requested item was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 404
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_FOUND"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "NOT_FOUND": {
+                    "summary": "The requested item was not found.",
+                    "value": {
+                      "type": "https://errors.gsm.example/not-found",
+                      "title": "The requested item was not found.",
+                      "status": 404,
+                      "code": "NOT_FOUND",
+                      "detail": "The requested item was not found.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "PAYLOAD_TOO_LARGE: The request is too large.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 413
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "PAYLOAD_TOO_LARGE"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "PAYLOAD_TOO_LARGE": {
+                    "summary": "The request is too large.",
+                    "value": {
+                      "type": "https://errors.gsm.example/payload-too-large",
+                      "title": "The request is too large.",
+                      "status": 413,
+                      "code": "PAYLOAD_TOO_LARGE",
+                      "detail": "The request is too large.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "UNSUPPORTED_MEDIA_TYPE: This content type is not supported.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 415
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNSUPPORTED_MEDIA_TYPE"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNSUPPORTED_MEDIA_TYPE": {
+                    "summary": "This content type is not supported.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unsupported-media-type",
+                      "title": "This content type is not supported.",
+                      "status": 415,
+                      "code": "UNSUPPORTED_MEDIA_TYPE",
+                      "detail": "This content type is not supported.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: You are sending requests too quickly.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 429
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "RATE_LIMITED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "RATE_LIMITED": {
+                    "summary": "You are sending requests too quickly.",
+                    "value": {
+                      "type": "https://errors.gsm.example/rate-limited",
+                      "title": "You are sending requests too quickly.",
+                      "status": 429,
+                      "code": "RATE_LIMITED",
+                      "detail": "You are sending requests too quickly.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "retry-after": {
+                "description": "Seconds to wait before the next request.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "UNAVAILABLE: The service is temporarily unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 503
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAVAILABLE"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAVAILABLE": {
+                    "summary": "The service is temporarily unavailable.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unavailable",
+                      "title": "The service is temporarily unavailable.",
+                      "status": 503,
+                      "code": "UNAVAILABLE",
+                      "detail": "The service is temporarily unavailable.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "staffSession": []
+          }
+        ],
+        "summary": "Upload the logo of a payment method",
+        "tags": [
+          "settings"
+        ],
+        "x-gsm-access": "staff-permission",
+        "x-gsm-audit": true,
+        "x-gsm-key": "POST /admin/payment-gateways/:id/logo",
+        "x-gsm-permission": "payments:gateways",
+        "x-gsm-session-stages": [
+          "active"
+        ],
+        "x-gsm-surface": "admin"
+      },
+      "delete": {
+        "description": "The method has no uploaded logo any more (`logoUrl` becomes `null`; a frontend shows the bundled logo of its `preset`, or an icon). The stored file is kept. Answers `204` also when there was no logo. Audited (`removed logo of`).",
+        "operationId": "deleteAdminPaymentGatewaysByIdLogo",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Numeric record id.",
+            "schema": {
+              "x-gsm-alias": "Id",
+              "description": "Numeric record id.",
+              "type": "string",
+              "pattern": "^[1-9]\\d{0,15}$"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body.",
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to do this.\nCSRF_FAILED: The security check for this request failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FORBIDDEN",
+                        "CSRF_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CSRF_FAILED": {
+                    "summary": "The security check for this request failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/csrf-failed",
+                      "title": "The security check for this request failed.",
+                      "status": 403,
+                      "code": "CSRF_FAILED",
+                      "detail": "The security check for this request failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: The requested item was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 404
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_FOUND"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "NOT_FOUND": {
+                    "summary": "The requested item was not found.",
+                    "value": {
+                      "type": "https://errors.gsm.example/not-found",
+                      "title": "The requested item was not found.",
+                      "status": 404,
+                      "code": "NOT_FOUND",
+                      "detail": "The requested item was not found.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "staffSession": []
+          }
+        ],
+        "summary": "Remove the logo of a payment method",
+        "tags": [
+          "settings"
+        ],
+        "x-gsm-access": "staff-permission",
+        "x-gsm-audit": true,
+        "x-gsm-key": "DELETE /admin/payment-gateways/:id/logo",
         "x-gsm-permission": "payments:gateways",
         "x-gsm-session-stages": [
           "active"
@@ -214058,6 +215796,20 @@
                       "instructions": {
                         "type": "string",
                         "description": "The transfer details of a manual method; empty for an automatic one."
+                      },
+                      "preset": {
+                        "description": "The key of the ready-made method it was made from (feature 32); null for a custom method. Always sent.",
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "logoUrl": {
+                        "description": "The public path of the logo staff uploaded (`/store/v1/media/<name>`); null when none, then show the bundled logo of `preset`. Always sent.",
+                        "type": [
+                          "string",
+                          "null"
+                        ]
                       }
                     },
                     "required": [
@@ -214072,7 +215824,9 @@
                       "maxAmount",
                       "currency",
                       "holdHours",
-                      "instructions"
+                      "instructions",
+                      "preset",
+                      "logoUrl"
                     ],
                     "additionalProperties": false
                   }
@@ -214090,7 +215844,9 @@
                     "maxAmount": "5000.0000",
                     "currency": "USD",
                     "holdHours": 24,
-                    "instructions": "IBAN JO94 CBJO 0010 0000 0000 0131 000302"
+                    "instructions": "IBAN JO94 CBJO 0010 0000 0000 0131 000302",
+                    "preset": null,
+                    "logoUrl": null
                   }
                 ]
               }
@@ -231702,12 +233458,28 @@
                           },
                           "supports3ds": {
                             "type": "boolean"
+                          },
+                          "preset": {
+                            "description": "The key of the ready-made method it was made from; null for a custom method (feature 32).",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "logoUrl": {
+                            "description": "The public path of the logo staff uploaded; null when none, then show the bundled logo of `preset` (feature 32).",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
                           "code",
                           "name",
-                          "supports3ds"
+                          "supports3ds",
+                          "preset",
+                          "logoUrl"
                         ],
                         "additionalProperties": false
                       }
@@ -231788,7 +233560,9 @@
                     {
                       "code": "card",
                       "name": "Card gateway",
-                      "supports3ds": true
+                      "supports3ds": true,
+                      "preset": null,
+                      "logoUrl": null
                     }
                   ],
                   "balancePayable": false,
@@ -232406,12 +234180,28 @@
                           },
                           "supports3ds": {
                             "type": "boolean"
+                          },
+                          "preset": {
+                            "description": "The key of the ready-made method it was made from; null for a custom method (feature 32).",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "logoUrl": {
+                            "description": "The public path of the logo staff uploaded; null when none, then show the bundled logo of `preset` (feature 32).",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
                           "code",
                           "name",
-                          "supports3ds"
+                          "supports3ds",
+                          "preset",
+                          "logoUrl"
                         ],
                         "additionalProperties": false
                       }
@@ -232492,7 +234282,9 @@
                     {
                       "code": "card",
                       "name": "Card gateway",
-                      "supports3ds": true
+                      "supports3ds": true,
+                      "preset": null,
+                      "logoUrl": null
                     }
                   ],
                   "balancePayable": false,
@@ -234823,12 +236615,28 @@
                           },
                           "supports3ds": {
                             "type": "boolean"
+                          },
+                          "preset": {
+                            "description": "The key of the ready-made method it was made from; null for a custom method (feature 32).",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "logoUrl": {
+                            "description": "The public path of the logo staff uploaded; null when none, then show the bundled logo of `preset` (feature 32).",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
                           "code",
                           "name",
-                          "supports3ds"
+                          "supports3ds",
+                          "preset",
+                          "logoUrl"
                         ],
                         "additionalProperties": false
                       }
@@ -234935,7 +236743,9 @@
                     {
                       "code": "card",
                       "name": "Card gateway",
-                      "supports3ds": true
+                      "supports3ds": true,
+                      "preset": null,
+                      "logoUrl": null
                     }
                   ],
                   "policies": {
@@ -244471,6 +246281,20 @@
                       "instructions": {
                         "type": "string",
                         "description": "The transfer details of a manual method; empty for an automatic one."
+                      },
+                      "preset": {
+                        "description": "The key of the ready-made method it was made from (feature 32); null for a custom method. Always sent.",
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "logoUrl": {
+                        "description": "The public path of the logo staff uploaded (`/store/v1/media/<name>`); null when none, then show the bundled logo of `preset`. Always sent.",
+                        "type": [
+                          "string",
+                          "null"
+                        ]
                       }
                     },
                     "required": [
@@ -244485,7 +246309,9 @@
                       "maxAmount",
                       "currency",
                       "holdHours",
-                      "instructions"
+                      "instructions",
+                      "preset",
+                      "logoUrl"
                     ],
                     "additionalProperties": false
                   }
@@ -244503,7 +246329,9 @@
                     "maxAmount": "500.0000",
                     "currency": "USD",
                     "holdHours": 0,
-                    "instructions": "Send the amount by CliQ to GSMSHOP and write the top-up number in the note."
+                    "instructions": "Send the amount by CliQ to GSMSHOP and write the top-up number in the note.",
+                    "preset": null,
+                    "logoUrl": null
                   }
                 ]
               }

@@ -281,6 +281,13 @@
       "when": 1794857784829,
       "tag": "0039_english_only_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1794922717343,
+      "tag": "0040_payment_method_presets",
+      "breakpoints": true
     }
   ]
 }

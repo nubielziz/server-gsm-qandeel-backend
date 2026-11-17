@@ -1,8 +1,18 @@
-// Route contracts of the payment gateways (map domain E, stage 8, routes /admin/payment-gateways). Shapes match the console's
-// `PaymentGateway` and `CreateGatewayBody` (docs/contract/endpoints/money.md).
+// Route contracts of the payment gateways (map domain E, stage 8, routes /admin/payment-gateways) and, beyond the map, the catalog of
+// ready-made methods and the logo of a method (feature 32, spec B232). Shapes match the console's `PaymentGateway` and `CreateGatewayBody`
+// (docs/contract/endpoints/money.md).
 import { z } from 'zod';
-import { defineRoute, listQuery, zDecimal, zId, zIdParam, zIsoDateTime, zMoney } from '../../../common/contract';
-import { GATEWAY_AUDIENCES } from '../db/schema';
+import {
+  defineRoute,
+  listQuery,
+  zDecimal,
+  zId,
+  zIdParam,
+  zIsoDateTime,
+  zMoney,
+  zUploadedFile,
+} from '../../../common/contract';
+import { GATEWAY_AUDIENCES, TOPUP_METHODS } from '../db/schema';
 
 /** A payment gateway as the console shows it: never the secret, only a hint that one is stored. */
 export const PaymentGatewaySchema = z.object({
@@ -52,6 +62,18 @@ export const PaymentGatewaySchema = z.object({
     .describe(
       'The same for the second webhook secret (a second endpoint, or the new one while rotating); null when none. Always sent.',
     ),
+  preset: z
+    .string()
+    .nullable()
+    .describe(
+      'The key of the ready-made method this one was made from (`GET /admin/payment-gateway-presets`); null for a custom method. It never changes. Always sent.',
+    ),
+  logoUrl: z
+    .string()
+    .nullable()
+    .describe(
+      'The public path of the logo staff uploaded (`/store/v1/media/<name>`); null when none, then a frontend shows the bundled logo of `preset`. Always sent.',
+    ),
   volume30d: zMoney
     .nullable()
     .optional()
@@ -82,7 +104,39 @@ const bank = {
   secretHint: null,
   webhookSecretHint: null,
   secondaryWebhookSecretHint: null,
+  preset: null,
+  logoUrl: null,
   volume30d: '4350.0000',
+};
+
+/** A ready-made payment method of the catalog (feature 32). */
+export const GatewayPresetSchema = z.object({
+  key: z.string().describe('The stable key a method remembers (`preset`); a frontend names its bundled logo by it.'),
+  name: z.string(),
+  kind: z
+    .enum(['manual', 'automatic'])
+    .describe('Manual: staff review each receipt. Automatic: a gateway confirms the payment (it needs a driver).'),
+  available: z
+    .boolean()
+    .describe('False: shown as "Coming soon"; a create that names it is refused (422 on `preset`, `unavailable`).'),
+  driver: z.string().describe('The driver name a method made from it must use.'),
+  methodType: z.enum(TOPUP_METHODS).describe('The top-up method its payments carry.'),
+  instructions: z
+    .string()
+    .describe(
+      'A template of the transfer details with blanks (`________`) for staff to fill in; empty for an automatic one.',
+    ),
+});
+
+const presetExample = {
+  key: 'vodafone_cash',
+  name: 'Vodafone Cash',
+  kind: 'manual' as const,
+  available: true,
+  driver: 'vodafone_cash',
+  methodType: 'bank' as const,
+  instructions:
+    'Send the amount to the Vodafone Cash number ________ and upload a screenshot of the transfer. Write your top-up number in the note.',
 };
 
 /** The body of `POST /admin/payment-gateways`: the console's `CreateGatewayBody` plus the optional webhook secrets. */
@@ -102,6 +156,17 @@ const CreateGatewayBody = z.object({
   instructions: z.string(),
   holdHours: z.number(),
   isActive: z.boolean(),
+  preset: z
+    .string()
+    .trim()
+    .nullable()
+    .optional()
+    .describe(
+      'The key of a ready-made method (`GET /admin/payment-gateway-presets`) this one is made from. Leave it out (or `null`) for a custom method. ' +
+        'Checked on create only: an unknown key is 422 on `preset` (`unknown`), a method that is not available yet is 422 on `preset` ' +
+        '(`unavailable`), `isManual` that is not the preset kind is 422 on `isManual` (`preset_kind`), a `driver` that is not the preset driver ' +
+        'is 422 on `driver` (`preset_driver`). Several methods may come from one preset.',
+    ),
   secret: z.string().optional().describe('Write-only: the API credential of the gateway, stored encrypted.'),
   webhookSecret: z
     .string()
@@ -173,6 +238,7 @@ export const createGateway = defineRoute({
   summary: 'Add a payment gateway',
   description:
     'Adds a gateway. `secret` (the API credential), `webhookSecret` and `secondaryWebhookSecret` are write-only and stored encrypted. ' +
+    "`preset` makes it a ready-made method of the catalog (its logo, kind and driver are the catalog entry's). " +
     `${VALIDATION} Audited.`,
   tags: ['settings'],
   surface: 'admin',
@@ -203,6 +269,25 @@ export const createGateway = defineRoute({
   },
 });
 
+/** `GET /admin/payment-gateway-presets`. */
+export const listGatewayPresets = defineRoute({
+  key: 'GET /admin/payment-gateway-presets',
+  summary: 'Ready-made payment methods',
+  description:
+    'The catalog of ready-made payment methods in its order (a plain array, no paging, no `x-total-count`): bank transfer, crypto ' +
+    'transfer, Vodafone Cash, Fawry, InstaPay, Binance Pay, NOWPayments and Binance Pay (automatic). Each has the `key` a method remembers ' +
+    'as its `preset`, the `driver` and `methodType` it stands for, and a template of the transfer details. An entry with `available: false` ' +
+    'is shown as "Coming soon" and cannot be added yet. Nothing is stored: a method exists only once staff add it with ' +
+    '`POST /admin/payment-gateways`.',
+  tags: ['settings'],
+  surface: 'admin',
+  access: 'staff-permission',
+  permission: 'payments:gateways',
+  success: { status: 200, schema: z.array(GatewayPresetSchema) },
+  errors: ['UNAUTHORIZED', 'FORBIDDEN'],
+  examples: { response: [presetExample] },
+});
+
 /** `PATCH /admin/payment-gateways/:id`. */
 export const updateGateway = defineRoute({
   key: 'PATCH /admin/payment-gateways/:id',
@@ -211,13 +296,16 @@ export const updateGateway = defineRoute({
     'Changes the fields sent (the on/off switch sends `{ isActive }`). The code never changes (it is part of the webhook address): ' +
     'a different code is 422 on `code`. A non-empty `secret` or `webhookSecret` replaces the stored one; leaving it out keeps it. ' +
     '`secondaryWebhookSecret` sets the second webhook secret, `null` removes it, leaving it out keeps it. ' +
+    'A `preset` in the body is ignored: the preset of a method never changes, and a method made from one keeps its kind and driver: ' +
+    'a merged `isManual` that is not the preset kind is 422 on `isManual` (`preset_kind`), a merged `driver` that is not the preset driver is 422 on ' +
+    '`driver` (`preset_driver`). A custom method may still change both. ' +
     `The merged gateway is validated as on create. ${VALIDATION} Audited.`,
   tags: ['settings'],
   surface: 'admin',
   access: 'staff-permission',
   permission: 'payments:gateways',
   params: z.object({ id: zIdParam }),
-  body: CreateGatewayBody.partial(),
+  body: CreateGatewayBody.omit({ preset: true }).partial(),
   success: { status: 200, schema: PaymentGatewaySchema },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'VALIDATION_FAILED'],
   examples: { request: { isActive: false }, response: { ...bank, isActive: false } },
@@ -236,4 +324,58 @@ export const deleteGateway = defineRoute({
   params: z.object({ id: zIdParam }),
   success: { status: 204 },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'GATEWAY_IN_USE', 'VALIDATION_FAILED'],
+});
+
+/** `POST /admin/payment-gateways/:id/logo`: upload the logo of a payment method. */
+export const uploadGatewayLogo = defineRoute({
+  key: 'POST /admin/payment-gateways/:id/logo',
+  summary: 'Upload the logo of a payment method',
+  description:
+    '`multipart/form-data` with one part named `file`: a JPEG, PNG or WebP picture, at most 2 MiB, 64 to 4096 pixels on each side ' +
+    "(the checks of a service picture, with a logo's smaller minimum). The type is read from the content; the picture is cleaned before it is stored and stored once " +
+    'under the SHA-256 of the cleaned bytes. It becomes the `logoUrl` of the method (replacing the previous one) and wins over the bundled ' +
+    'logo of its `preset`. Refusals are `422` on `file` with the code: `empty`, `unsupported_type`, `corrupt`, `animated`, `too_small`, ' +
+    '`too_large_dimensions`, `rotated`; more than 2 MiB is `413`. A JSON or form body has no file part, so it is `422` on `file`; a ' +
+    'body of a type the API does not read is `415`. Audited (`uploaded logo for`).',
+  tags: ['settings'],
+  surface: 'admin',
+  access: 'staff-permission',
+  permission: 'payments:gateways',
+  params: z.object({ id: zIdParam }),
+  bodyType: 'multipart',
+  body: z.object({ file: zUploadedFile }),
+  success: { status: 200, schema: PaymentGatewaySchema },
+  errors: [
+    'UNAUTHORIZED',
+    'FORBIDDEN',
+    'CSRF_FAILED',
+    'NOT_FOUND',
+    'VALIDATION_FAILED',
+    'PAYLOAD_TOO_LARGE',
+    'UNSUPPORTED_MEDIA_TYPE',
+    'RATE_LIMITED',
+    'UNAVAILABLE',
+  ],
+  examples: {
+    response: {
+      ...bank,
+      logoUrl: '/store/v1/media/9f2b1c7a4d6e8f003a5b7c9d1e2f4a6b8c0d2e4f61728394a5b6c7d8e9f0a1b2.png',
+    },
+  },
+});
+
+/** `DELETE /admin/payment-gateways/:id/logo`: remove the uploaded logo of a payment method. */
+export const removeGatewayLogo = defineRoute({
+  key: 'DELETE /admin/payment-gateways/:id/logo',
+  summary: 'Remove the logo of a payment method',
+  description:
+    'The method has no uploaded logo any more (`logoUrl` becomes `null`; a frontend shows the bundled logo of its `preset`, or an icon). ' +
+    'The stored file is kept. Answers `204` also when there was no logo. Audited (`removed logo of`).',
+  tags: ['settings'],
+  surface: 'admin',
+  access: 'staff-permission',
+  permission: 'payments:gateways',
+  params: z.object({ id: zIdParam }),
+  success: { status: 204 },
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND'],
 });

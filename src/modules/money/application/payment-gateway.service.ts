@@ -1,16 +1,24 @@
 // PaymentGatewayService: the staff routes on payment gateways (map routes /admin/payment-gateways): list, read, add, change and
-// delete, each write audited.
+// delete, each write audited; and, beyond the map (feature 32, B232), the catalog of ready-made methods and the logo of a method.
 import { isDeepStrictEqual } from 'node:util';
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
+import type { UploadedFile } from '../../../common/multipart';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError, type FieldError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { type DbExecutor, DbService } from '../../../infra/db';
 import { isUniqueViolation } from '../../../infra/db/pg-errors';
 import { ClientGroupDirectory } from '../../catalog';
-import { AuditService } from '../../platform';
+import { AuditService, PUBLIC_LOGO_MIN_SIDE, PUBLIC_MEDIA_PATH, PublicImages } from '../../platform';
 import type { NewPaymentGateway, PaymentGateway } from '../db/schema';
+import {
+  GATEWAY_PRESETS,
+  type GatewayPreset,
+  presetOf,
+  presetPinProblems,
+  presetProblems,
+} from '../domain/gateway-presets';
 import {
   type GatewayFields,
   type WebhookSecretChange,
@@ -41,6 +49,8 @@ export interface CreateGatewayInput extends GatewayFields, WebhookSecretChange {
   readonly isManual: boolean;
   readonly isActive: boolean;
   readonly secret?: string | undefined;
+  /** The key of the ready-made method this one is made from (feature 32); `undefined` for a custom method. Checked on create only. */
+  readonly preset?: string | null | undefined;
 }
 
 /** What a change may carry. */
@@ -72,6 +82,7 @@ function snapshotOf(row: PaymentGateway, webhookSecrets = 0): Record<string, unk
     code: row.code,
     driver: row.driver,
     name: row.name,
+    preset: row.preset,
     audience: row.audience,
     feePercent: row.feePercent,
     feeFixed: row.feeFixed,
@@ -120,9 +131,17 @@ const fixed = (text: string): string => Money.of(text).toWire();
  * characters). The code never changes because it is part of the webhook
  * address (`/webhooks/payments/:gateway`). A gateway with any payment or invoice cannot be deleted (B70).
  *
- * Side effects: `create`, `update` and `delete` write `payment_gateways` and one audit row each.
+ * Feature 32 (B232, decision 041): `presets` lists the catalog of ready-made methods; `create` takes an optional `preset` that must be a known,
+ * available entry whose kind and driver the request keeps (the method remembers it in `payment_gateways.preset`, which never changes);
+ * `uploadLogo` and `removeLogo` set the method's own public logo. No money rule is touched: a method made from a preset is an ordinary
+ * gateway row.
  *
- * @see docs/contract/endpoints/money.md (GET|POST|PATCH|DELETE /admin/payment-gateways)
+ * Side effects: `create`, `update` and `delete` write `payment_gateways` and one audit row each; `uploadLogo` stores one object under
+ * `media/` and one `files` row (through `PublicImages`), sets `payment_gateways.logo_file_id` and writes an audit row; `removeLogo` clears it
+ * and writes an audit row.
+ *
+ * @see docs/contract/endpoints/money.md (GET|POST|PATCH|DELETE /admin/payment-gateways, GET /admin/payment-gateway-presets, POST|DELETE
+ *   /admin/payment-gateways/:id/logo)
  */
 @Injectable()
 export class PaymentGatewayService {
@@ -131,8 +150,20 @@ export class PaymentGatewayService {
     private readonly audit: AuditService,
     private readonly vault: GatewayCredentialsVault,
     private readonly groups: ClientGroupDirectory,
+    private readonly images: PublicImages,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
+
+  /**
+   * Lists the catalog of ready-made payment methods.
+   *
+   * Why: the console's "Ready-made methods" section (feature 32): staff add a method from an entry in one step.
+   *
+   * @returns the entries in their fixed order (nothing is read from the database)
+   */
+  presets(): GatewayPreset[] {
+    return GATEWAY_PRESETS.map((preset) => ({ ...preset }));
+  }
 
   /**
    * Lists gateways.
@@ -163,11 +194,12 @@ export class PaymentGatewayService {
    *
    * @param input the request body
    * @returns the new gateway
-   * @throws {AppError} `VALIDATION_FAILED` for a bad field, a code another gateway uses, a group that does not exist, or a second webhook
-   *   secret without a first
+   * @throws {AppError} `VALIDATION_FAILED` for a bad field, a code another gateway uses, a group that does not exist, a second webhook
+   *   secret without a first, or a `preset` that is unknown (`preset` `unknown`), not available yet (`preset` `unavailable`), of another
+   *   kind than `isManual` (`isManual` `preset_kind`) or of another driver (`driver` `preset_driver`)
    */
   async create(input: CreateGatewayInput): Promise<WireGateway> {
-    const errors = await this.problems(input, input.allowedGroupIds);
+    const errors = [...(await this.problems(input, input.allowedGroupIds)), ...presetProblems(input)];
     if (errors.length > 0) throw refuse(...errors);
     const { secrets } = webhookSecretsAfter([], input);
     const row = await this.db.runInTransaction(async ({ tx }) => {
@@ -179,6 +211,8 @@ export class PaymentGatewayService {
           code: input.code,
           driver: input.driver,
           name: input.name,
+          // `presetProblems` passed: the key is a catalog entry (or absent for a custom method).
+          preset: presetOf(input.preset)?.key ?? null,
           audience: input.audience as PaymentGateway['audience'],
           feePercent: input.feePercent,
           feeFixed: fixed(input.feeFixed),
@@ -219,8 +253,9 @@ export class PaymentGatewayService {
    * @param id the gateway id
    * @param input the fields to change
    * @returns the changed gateway
-   * @throws {AppError} `NOT_FOUND`; `VALIDATION_FAILED` for an invalid merged gateway, a code change, a group that does not exist, or a
-   *   second webhook secret without a first
+   * @throws {AppError} `NOT_FOUND`; `VALIDATION_FAILED` for an invalid merged gateway, a code change, a group that does not exist, a
+   *   second webhook secret without a first, or (a method made from a preset) a merged `isManual` that is not the preset's kind
+   *   (`isManual` `preset_kind`) or a merged `driver` that is not the preset's (`driver` `preset_driver`), checked before any write
    */
   async update(id: number, input: UpdateGatewayInput): Promise<WireGateway> {
     const row = await this.db.runInTransaction(async ({ tx }) => {
@@ -251,7 +286,11 @@ export class PaymentGatewayService {
         isActive: input.isActive ?? current.isActive,
       };
       // Only the groups of this request are looked up: the ones already stored may have been deleted since.
-      const errors = await this.problems(merged, input.allowedGroupIds ?? [], tx);
+      const errors = [
+        ...(await this.problems(merged, input.allowedGroupIds ?? [], tx)),
+        // A method made from a preset keeps the kind and the driver of its entry (the preset itself never changes).
+        ...presetPinProblems(current.preset, merged),
+      ];
       if (errors.length > 0) throw refuse(...errors);
       const changes: Partial<NewPaymentGateway> = {
         driver: merged.driver,
@@ -317,6 +356,79 @@ export class PaymentGatewayService {
     });
   }
 
+  /**
+   * Sets the uploaded logo of a payment method.
+   *
+   * Why: feature 32 (B232): a method of staff's own has no bundled logo, so staff upload one; it wins over the preset's logo. The picture is
+   * checked, cleaned and stored first, outside the transaction (`PublicImages.store`: object, then the `files` row, as the listing picture,
+   * but from 64 pixels on each side: a logo is small, and a wordmark is short);
+   * then, under the gateway row's lock, the method points at it. A replaced logo's file stays (it is content-addressed and may be shared).
+   *
+   * @param id the gateway id
+   * @param file the uploaded part `file`
+   * @param staffId the staff member who uploads it (the owner of the `files` row)
+   * @returns the gateway with its new `logoUrl`
+   * @throws {AppError} `NOT_FOUND`; `VALIDATION_FAILED` (422 on `file`: `empty`, `unsupported_type`, `corrupt`, `animated`, `too_small`,
+   *   `too_large_dimensions`, `rotated`); `PAYLOAD_TOO_LARGE` (over 2 MiB); `UNAVAILABLE` (storage is down)
+   */
+  async uploadLogo(id: number, file: UploadedFile, staffId: number): Promise<WireGateway> {
+    // No object or file row for a gateway that does not exist.
+    if (!(await findGateway(this.db.db, id))) throw notFound();
+    const image = await this.images.store(this.db.db, {
+      bytes: file.data,
+      filename: file.filename,
+      staffId,
+      minSide: PUBLIC_LOGO_MIN_SIDE,
+    });
+    const row = await this.db.runInTransaction(async ({ tx }) => {
+      const current = await findGateway(tx, id, true);
+      if (!current) throw notFound();
+      const updated = await updateGateway(tx, id, { logoFileId: image.fileId, updatedAt: this.clock.now() });
+      await this.audit.record(tx, {
+        action: 'uploaded logo for',
+        entityType: 'payment_gateway',
+        entityId: id,
+        entityLabel: current.name,
+        before: { logo: await this.logoNameOf(tx, current.logoFileId) },
+        after: { logo: image.name, width: image.width, height: image.height, size: image.size },
+      });
+      return updated;
+    });
+    return (await this.wireOf(this.db.db, [row]))[0]!;
+  }
+
+  /**
+   * Removes the uploaded logo of a payment method.
+   *
+   * Why: feature 32; staff may take a wrong logo down. The stored file stays. It answers the same when there was no logo and is audited
+   * either way (every staff write leaves an audit row).
+   *
+   * @param id the gateway id
+   * @throws {AppError} `NOT_FOUND`
+   */
+  async removeLogo(id: number): Promise<void> {
+    await this.db.runInTransaction(async ({ tx }) => {
+      const current = await findGateway(tx, id, true);
+      if (!current) throw notFound();
+      if (current.logoFileId !== null) await updateGateway(tx, id, { logoFileId: null, updatedAt: this.clock.now() });
+      await this.audit.record(tx, {
+        action: 'removed logo of',
+        entityType: 'payment_gateway',
+        entityId: id,
+        entityLabel: current.name,
+        before: { logo: await this.logoNameOf(tx, current.logoFileId) },
+        after: { logo: null },
+      });
+    });
+  }
+
+  /** The stored name of a logo (`<sha256>.<ext>`), or `null` when the method has none. */
+  private async logoNameOf(db: DbExecutor, fileId: number | null): Promise<string | null> {
+    if (fileId === null) return null;
+    const url = (await this.images.urlsOf(db, [fileId])).get(fileId);
+    return url === undefined ? null : url.slice(PUBLIC_MEDIA_PATH.length);
+  }
+
   /** Every problem of a gateway: its fields, a code that is taken, and the requested groups that do not exist. */
   private async problems(
     fields: CreateGatewayInput,
@@ -338,11 +450,18 @@ export class PaymentGatewayService {
     return errors;
   }
 
-  /** The wire of gateways with their secret hints and 30-day volumes (two aggregate queries for the whole page). */
+  /** The wire of gateways with their secret hints, 30-day volumes and logo paths (three aggregate queries for the whole page). */
   private async wireOf(db: DbExecutor, rows: readonly PaymentGateway[]): Promise<WireGateway[]> {
     const ids = rows.map((row) => row.id);
     const since = new Date(this.clock.nowMs() - 30 * DAY_MS);
-    const [topups, orders] = await Promise.all([topupVolumes(db, ids, since), orderPaymentBaseAmounts(db, ids, since)]);
+    const [topups, orders, logos] = await Promise.all([
+      topupVolumes(db, ids, since),
+      orderPaymentBaseAmounts(db, ids, since),
+      this.images.urlsOf(
+        db,
+        rows.map((row) => row.logoFileId),
+      ),
+    ]);
     const volumes = new Map<number, Money>(
       [...topups].map(([gatewayId, total]) => [gatewayId, Money.of(total)] as const),
     );
@@ -356,7 +475,12 @@ export class PaymentGatewayService {
         webhookSecretHint: secretHintOf(credentials.webhookSecrets[0]),
         secondaryWebhookSecretHint: secretHintOf(credentials.webhookSecrets[1]),
       };
-      return gatewayToWire(row, hints, (volumes.get(row.id) ?? Money.zero()).toWire());
+      return gatewayToWire(
+        row,
+        hints,
+        (volumes.get(row.id) ?? Money.zero()).toWire(),
+        logos.get(row.logoFileId ?? 0) ?? null,
+      );
     });
   }
 }

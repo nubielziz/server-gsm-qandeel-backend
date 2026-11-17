@@ -87,6 +87,8 @@ export const listMyTopUpMethods = defineRoute({
         currency: 'USD',
         holdHours: 0,
         instructions: 'Send the amount by CliQ to GSMSHOP and write the top-up number in the note.',
+        preset: null,
+        logoUrl: null,
       },
     ],
   },

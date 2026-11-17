@@ -78,6 +78,9 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 | `POST /admin/customers/:id/wallet/freeze` | admin | staff-permission `wallet:adjust` | 21 | `freezeCustomerWallet` |
 | `POST /admin/customers/:id/wallet/unfreeze` | admin | staff-permission `wallet:adjust` | 21 | `unfreezeCustomerWallet` |
 | `GET /admin/customer-wallets` | admin | staff-permission `wallet:read` | 21 | `listCustomerWallets` |
+| `GET /admin/payment-gateway-presets` | admin | staff-permission `payments:gateways` | 32 | `listGatewayPresets` |
+| `POST /admin/payment-gateways/:id/logo` | admin | staff-permission `payments:gateways` | 32 | `uploadGatewayLogo` |
+| `DELETE /admin/payment-gateways/:id/logo` | admin | staff-permission `payments:gateways` | 32 | `removeGatewayLogo` |
 
 ## DHRU accountinfo
 
@@ -242,7 +245,7 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 ## GET /admin/payment-gateways
 
 - **Map**: Payment gateways: fees, limits and merchant groups. (البوابات: الرسوم والحدود والفئات) · staff-permission `payments:gateways` · stage 8 · tables payment_gateways
-- **Frontend**: `listGateways` (src/features/settings/api/gateways.ts:22) · params `query?: ListQuery` · returns `ListResult<PaymentGateway>` · success 200 · assumed contract
+- **Frontend**: `listGateways` (src/features/settings/api/gateways.ts:23) · params `query?: ListQuery` · returns `ListResult<PaymentGateway>` · success 200 · assumed contract
 - **Query**: _start=0&_end=200&_sort=name&_order=asc, no filters (hooks/useGateways.ts:13-23). Mock q searches name, code, driver.
 - **Response**: JSON array + x-total-count. Row = payment_gateways columns without config_enc and webhook_secret_enc: audience b2c|b2b|both; feePercent percent decimal string; feeFixed, minAmount, maxAmount 4-dp money (0 = no limit on that side); allowedGroupIds [] = all merchant groups; holdHours integer; instructions text. Extra: secretHint = '••••' + last 4 characters of the stored secret, null when none (never the secret); volume30d = Σ payments.amount through the gateway, any purpose, with captured_at >= now() - 30 days and status NOT IN ('pending','failed','rejected'), in base currency USD (money, 4 dp); order payments convert with the checkout session's locked fx_rate (B111), top-ups are issued in the base currency.
 - **Errors**: 403 FORBIDDEN (caller lacks payments:gateways)
@@ -252,7 +255,7 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 ## GET /admin/payment-gateways/:id
 
 - **Map**: Payment gateways: fees, limits and merchant groups. (البوابات: الرسوم والحدود والفئات) · staff-permission `payments:gateways` · stage 8 · tables payment_gateways
-- **Frontend**: `getGateway` (src/features/settings/api/gateways.ts:31) · params `id: number` · returns `PaymentGateway` · success 200 · assumed contract
+- **Frontend**: `getGateway` (src/features/settings/api/gateways.ts:32) · params `id: number` · returns `PaymentGateway` · success 200 · assumed contract
 - **Request**: :id numeric gateway id.
 - **Response**: Same row as the list (secretHint, volume30d; never the secret).
 - **Errors**: 404 NOT_FOUND (no gateway with that id); 403 FORBIDDEN (caller lacks payments:gateways)
@@ -261,7 +264,7 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 ## POST /admin/payment-gateways
 
 - **Map**: Payment gateways: fees, limits and merchant groups. (البوابات: الرسوم والحدود والفئات) · staff-permission `payments:gateways` · stage 8 · tables payment_gateways
-- **Frontend**: `createGateway` (src/features/settings/api/gateways.ts:40) · params `body: CreateGatewayBody` · returns `PaymentGateway` · success 201 · assumed contract
+- **Frontend**: `createGateway` (src/features/settings/api/gateways.ts:43) · params `body: CreateGatewayBody` · returns `PaymentGateway` · success 201 · assumed contract
 - **Request**: Full body (GatewayDialog.tsx:34-53): decimals as typed text ('2.9', '0.30'); secret optional and write-only (the driver's API credential: encrypted into config_enc as {"secret": "..."}, decision 019, never echoed; secretHint = '••••' + its last 4 characters, read from config_enc); optional write-only webhookSecret (backend addition the console does not send yet, extra request fields are additive) goes encrypted to webhook_secret_enc, and can also be set by the seed or ops. Validation (mock gatewayRoutes.ts:30-71): name, driver, code non-blank; code unique; audience b2c|b2b|both; feePercent 0-100; money fields >= 0; when maxAmount > 0 it must be >= minAmount (error on maxAmount); holdHours integer 0-720; allowedGroupIds positive ids of existing client_groups. Audit.
 - **Response**: The created gateway: secretHint set when a secret was given, volume30d null or 0.0000, no secret field.
 - **Errors**: 422 VALIDATION_FAILED (blank name/code/driver, code taken ('Another payment method already uses this code.'), bad audience, fee outside 0-100, bad amount, max below min, holdHours outside 0-720, bad group ids); 403 FORBIDDEN (caller lacks payments:gateways)
@@ -270,7 +273,7 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 ## PATCH /admin/payment-gateways/:id
 
 - **Map**: Payment gateways: fees, limits and merchant groups. (البوابات: الرسوم والحدود والفئات) · staff-permission `payments:gateways` · stage 8 · tables payment_gateways
-- **Frontend**: `updateGateway` (src/features/settings/api/gateways.ts:50) · params `id: number`, `body: Partial<CreateGatewayBody>` · returns `PaymentGateway` · success 200 · assumed contract
+- **Frontend**: `updateGateway` (src/features/settings/api/gateways.ts:53) · params `id: number`, `body: Partial<Omit<CreateGatewayBody, "preset">>` · returns `PaymentGateway` · success 200 · assumed contract
 - **Request**: Only the changed fields (GatewayDialog.tsx:56-77); the card switch sends {isActive}. code is never sent: it is immutable because it is part of /webhooks/payments/:gateway (M162); refuse a code change with 422. A non-empty secret replaces the stored one; no secret keeps it. Validate the merged row like create. Turning off the last storefront gateway is allowed (the console asks first). Audit. webhookSecret (optional, write-only) replaces webhook_secret_enc the same way; a missing key keeps the stored one. Each driver declares where its webhook signature key comes from: a driver whose provider signs with the API secret uses config_enc, otherwise a missing webhook_secret_enc makes /webhooks/payments/:code answer 400 WEBHOOK_SIGNATURE_INVALID. secretHint reads config_enc.
 - **Response**: The updated gateway (same shape as a list row).
 - **Errors**: 404 NOT_FOUND (no gateway with that id); 422 VALIDATION_FAILED (invalid field or code change); 403 FORBIDDEN (caller lacks payments:gateways)
@@ -279,7 +282,7 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 ## DELETE /admin/payment-gateways/:id
 
 - **Map**: Payment gateways: fees, limits and merchant groups. (البوابات: الرسوم والحدود والفئات) · staff-permission `payments:gateways` · stage 8 · tables payment_gateways
-- **Frontend**: `deleteGateway` (src/features/settings/api/gateways.ts:59) · params `id: number` · returns `void` · success 204 · assumed contract
+- **Frontend**: `deleteGateway` (src/features/settings/api/gateways.ts:62) · params `id: number` · returns `void` · success 204 · assumed contract
 - **Request**: No body.
 - **Response**: 204, empty body.
 - **Errors**: 409 GATEWAY_IN_USE (payments reference the gateway); 404 NOT_FOUND (no gateway with that id); 403 FORBIDDEN (caller lacks payments:gateways)
@@ -617,4 +620,19 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 
 - **Map addition** (B-TBD customer-wallet-routes, `scripts/map-additions/21.mjs`): Customer balances, with negative and held ones. (قائمة أرصدة الزبائن: السالب والمجمّد) · staff-permission `wallet:read` · stage 21 · tables ledger_accounts, customers · success 200
 - **Frontend**: `listCustomerWallets` (src/features/finance/api/customerWallets.ts:13) · params `query?: ListQuery` · returns `ListResult<CustomerWalletRow>`
+
+## GET /admin/payment-gateway-presets
+
+- **Map addition** (B232, `scripts/map-additions/32.mjs`): List the catalog of ready-made payment methods (bank transfer, crypto transfer, Vodafone Cash, Fawry, InstaPay, Binance Pay and the two coming soon). · staff-permission `payments:gateways` · stage 32 · tables - · success 200
+- **Frontend**: `listGatewayPresets` (src/features/settings/api/gateways.ts:72) · params none · returns `GatewayPreset[]`
+
+## POST /admin/payment-gateways/:id/logo
+
+- **Map addition** (B232, `scripts/map-additions/32.mjs`): Upload the logo of a payment method. · staff-permission `payments:gateways` · stage 32 · tables payment_gateways, files, audit_logs · success 200
+- **Frontend**: `uploadGatewayLogo` (src/features/settings/api/gateways.ts:83) · params `id: number`, `body: FormData` · returns `PaymentGateway`
+
+## DELETE /admin/payment-gateways/:id/logo
+
+- **Map addition** (B232, `scripts/map-additions/32.mjs`): Remove the uploaded logo of a payment method. · staff-permission `payments:gateways` · stage 32 · tables payment_gateways, audit_logs · success 204
+- **Frontend**: `removeGatewayLogo` (src/features/settings/api/gateways.ts:92) · params `id: number` · returns `void`
 

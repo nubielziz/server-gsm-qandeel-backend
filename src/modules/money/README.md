@@ -203,6 +203,28 @@ services as they appear (identity, catalog 4a, suppliers 6, customers 14b). Noth
     the provider, save it as the first, then remove the second.
   - **Crypto driver.** Stays off: it needs an `apiBase` no admin field sets, speaks a custom protocol, and the licence question is open
     (ROADMAP). Not changed.
+- **Ready-made payment methods with logos (feature 32, decision 041, spec B232).** A catalog of eight methods lives in code
+  (`domain/gateway-presets.ts`: `GATEWAY_PRESETS`, `presetOf`, `presetProblems`): bank transfer, crypto transfer, Vodafone Cash, Fawry,
+  InstaPay and Binance Pay (manual, available) and NOWPayments and Binance Pay (automatic) as *not available* (coming soon). Each entry has a
+  key, a name, its kind, the driver name, the top-up method it stands for (`bank` or `usdt`; `METHOD_BY_NAME` in `gateway-rules.ts` reads the four
+  `usdt` drivers) and a template of the transfer details with blanks. Nothing is inserted by a migration: every environment starts with no method.
+  - **Data** (migration `0040_payment_method_presets`): `payment_gateways.preset` (CHECK `payment_gateways_preset_check` over `GATEWAY_PRESET_KEYS`, null for a
+    custom method) and `payment_gateways.logo_file_id` (a public picture, `ON DELETE SET NULL`, indexed). `POST /admin/payment-gateways` takes an
+    optional `preset`: an unknown key is `422` on `preset` (`unknown`), an entry that is not available is `422` on `preset` (`unavailable`), `isManual`
+    other than the entry's kind is `422` on `isManual` (`preset_kind`), a `driver` other than the entry's is `422` on `driver` (`preset_driver`). Several
+    methods may come from one preset; `PATCH` never changes it (the key is stripped) and keeps its promise: the merged `isManual` and `driver` of a preset-made method must still be the entry's (`422` `preset_kind` / `preset_driver`; no `unknown` or `unavailable` check, an existing row stays editable).
+  - **Routes beyond the map** (`scripts/map-additions/32.mjs`, `payments:gateways`): `GET /admin/payment-gateway-presets` (the catalog, a plain array),
+    `POST /admin/payment-gateways/:id/logo` (multipart part `file`; `PublicImages.store`: a clean JPEG, PNG or WebP of at most 2 MiB and 64 to 4096 pixels on each side, stored once under
+    its SHA-256 as the listing picture is; the `422` codes on `file`, `413`, `415`; `/admin/payment-gateways/:id/logo` is in `MULTIPART_ROUTES`) and
+    `DELETE /admin/payment-gateways/:id/logo` (`204` also when there was none). Audit `uploaded logo for` and `removed logo of`, entity `payment_gateway`.
+  - **Wire.** The gateway row of the five admin routes, `PaymentMethodSchema` (`GET /client/payment-methods`, `GET /store/v1/me/wallet/top-up-methods`) and the
+    items of `paymentMethods` (`GET /store/v1/config`, a checkout session) answer `preset` (the key or `null`) and `logoUrl` (`/store/v1/media/<name>` or
+    `null`). A reader shows `logoUrl`, else the bundled logo of `preset`, else an icon. `StorefrontMoney` takes `PublicImages` as an optional dependency
+    (it lives in the global module that a database-less test app loads without the files module).
+  - **Money rules do not change.** A method made from a preset is an ordinary gateway row: the ledger, fees, limits, crediting, the review of a top-up, the
+    webhook and the checkout are untouched. A manual method tops up a merchant wallet or a store balance through the existing review (the payment's
+    `method_type` is `bank` or `usdt` as `topupMethodOf` reads from the driver); a shop order is still paid by an automatic gateway with a driver or from the store
+    balance. None of the eight driver names has code behind it (`driverFor` answers `undefined`), so a later feature adds each automatic driver and flips `available`.
 
 ## Public API (`index.ts`)
 
@@ -212,7 +234,7 @@ helpers, the wire ref types (`toWireRefType`, `storedRefTypesOf`) and the stale-
 database handle): `currencies` / `offered` / `defaultCurrency` / `byCode` (the currencies the shop offers, `is_storefront` and
 `is_active`), `taxInForce(db, country, at, region?)` and `taxRatesInForce(db, at)` (the tax window whose `valid_from` is at most the
 moment and whose `valid_to` is empty or after it; a regional window wins over the national one), `paymentMethods` (active gateways
-for the B2C or both audiences: code, name, 3DS support). `WalletService` is exported by `MoneyAdminModule`
+for the B2C or both audiences: code, name, 3DS support, `preset`, `logoUrl`). `WalletService` is exported by `MoneyAdminModule`
 (the routes and the services that read the database; a database-less test app leaves it out). Other modules import only
 `src/modules/money/index.ts` (lint rule `gsm/module-boundaries`).
 
@@ -250,6 +272,10 @@ Beyond the map (feature 21, `scripts/map-additions/21.mjs`, built): `GET /store/
 `POST /admin/customers/:id/wallet/adjust|freeze|unfreeze` (`wallet:adjust`, `Idempotency-Key`). Changed additively: `GET /admin/payments*`
 (`customer`, `dispute`, filters `owner`, `customerId`), the refund and payments-report wires (method `balance`), the dispute webhook
 (top-up disputes). `POST /store/v1/checkout-sessions/:token/balance-payment` is the customers module's (it calls `CustomerWalletPayments`).
+
+Beyond the map (feature 32, `scripts/map-additions/32.mjs`, built): `GET /admin/payment-gateway-presets`, `POST|DELETE /admin/payment-gateways/:id/logo`
+(`payments:gateways`). Changed additively: the gateway row (`preset`, `logoUrl`), `POST /admin/payment-gateways` (`preset`), `GET /client/payment-methods`,
+`GET /store/v1/me/wallet/top-up-methods` and the shop's `paymentMethods` (`preset`, `logoUrl`).
 
 ### Admin console (43)
 

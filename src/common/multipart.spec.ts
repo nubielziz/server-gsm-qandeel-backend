@@ -88,6 +88,7 @@ describe('the multipart limits', () => {
     expect(MULTIPART_MAX_BYTES).toBeGreaterThan(25 * 1024 * 1024);
     expect(MULTIPART_MAX_BYTES).toBeLessThan(26 * 1024 * 1024);
     expect([...MULTIPART_ROUTES].sort()).toEqual([
+      '/admin/payment-gateways/:id/logo',
       '/admin/service-listings/:id/image',
       '/admin/support-tickets/:id/files',
       '/api/index.php',

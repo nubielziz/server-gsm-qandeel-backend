@@ -115,6 +115,9 @@ describe('GET /client/payment-methods', () => {
       currency: 'USD',
       holdHours: 0,
       instructions: 'IBAN JO94 0001',
+      // Feature 32: the ready-made method it was made from and its uploaded logo (a method inserted by hand has neither).
+      preset: null,
+      logoUrl: null,
     });
     expect(second).toMatchObject({
       kind: 'automatic',
