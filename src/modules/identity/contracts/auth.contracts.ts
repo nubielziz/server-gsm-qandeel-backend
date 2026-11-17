@@ -105,7 +105,7 @@ export const staffSetupTwoFactor = defineRoute({
     response: {
       secret: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
       otpauthUrl:
-        'otpauth://totp/GSM%20Supply:rami%40gsm-supply.example?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=GSM%20Supply',
+        'otpauth://totp/IMEI-HUB:rami%40gsm-supply.example?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=IMEI-HUB',
       qrSvg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 29 29"></svg>',
     },
   },

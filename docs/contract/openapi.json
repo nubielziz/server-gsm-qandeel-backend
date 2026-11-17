@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "GSM Supplier API: internal reference",
+    "title": "IMEI-HUB API: internal reference",
     "version": "1.0.0",
     "description": "Every route of the API: admin console, merchant portal, storefront, REST API v1, Dhru Fusion, incoming webhooks and system routes. Generated from the route contracts; the public subset is `/openapi.json`.\n\nEach operation shows its access kind (`x-gsm-access`), the permission a staff route, or the scope an API key, needs (`x-gsm-permission`) and the manifest key (`x-gsm-key`).\n\n**Conventions.** JSON bodies use camelCase names. Money is a string with exactly four decimals (`\"12.4900\"`), timestamps are ISO 8601 UTC with milliseconds (`\"2026-03-01T09:30:00.000Z\"`) and ids are numbers. Errors are `application/problem+json` with a stable `code`; quote the `requestId` when you contact support.\n\n**Supplier calls.** Calls this backend makes to a supplier's Dhru Fusion API (`POST <supplier>/api/index.php`); they are no routes of this API. Schemas and examples are in `x-gsm-supplier-calls`.\n\n- `accountinfo`: Our balance at the supplier.\n- `imeiservicelist`: The supplier's services and their cost.\n- `placeimeiorder`: Send an order to the supplier. Bulk variant `placeimeiorderbulk`: never sent.\n- `getimeiorder`: Ask the supplier for the status of an order. Bulk variant `getimeiorderbulk`: never sent."
   },
@@ -8835,7 +8835,7 @@
                 },
                 "example": {
                   "secret": "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
-                  "otpauthUrl": "otpauth://totp/GSM%20Supply:rami%40gsm-supply.example?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=GSM%20Supply",
+                  "otpauthUrl": "otpauth://totp/IMEI-HUB:rami%40gsm-supply.example?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=IMEI-HUB",
                   "qrSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 29 29\"></svg>"
                 }
               }
@@ -92672,7 +92672,7 @@
                   "subject": "Your wallet balance is low",
                   "body": "Hi Zain Mobile Hub,\n\nYour available balance is 42.5000 USD, below your alert level of 50.0000 USD.",
                   "format": "text",
-                  "from": "GSM <noreply@gsm.local>",
+                  "from": "IMEI-HUB <noreply@gsm.local>",
                   "note": "A sample with made-up details."
                 }
               }
@@ -218504,7 +218504,7 @@
                 },
                 "example": {
                   "secret": "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
-                  "otpauthUrl": "otpauth://totp/GSM%20Supply:ali%40example.com?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=GSM%20Supply",
+                  "otpauthUrl": "otpauth://totp/IMEI-HUB:ali%40example.com?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=IMEI-HUB",
                   "qrSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 29 29\"></svg>"
                 }
               }

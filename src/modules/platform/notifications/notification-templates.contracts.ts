@@ -193,7 +193,7 @@ export const previewNotificationTemplate = defineRoute({
       subject: 'Your wallet balance is low',
       body: 'Hi Zain Mobile Hub,\n\nYour available balance is 42.5000 USD, below your alert level of 50.0000 USD.',
       format: 'text',
-      from: 'GSM <noreply@gsm.local>',
+      from: 'IMEI-HUB <noreply@gsm.local>',
       note: 'A sample with made-up details.',
     },
   },

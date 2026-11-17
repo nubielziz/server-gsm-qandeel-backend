@@ -85,7 +85,7 @@ describe('gen-openapi.ts', () => {
     const dir = await scratch();
     await generate(['--dir', dir]);
     const file = join(dir, 'openapi.public.json');
-    await writeFile(file, (await readFile(file, 'utf8')).replace('"GSM Supplier API"', '"Edited by hand"'));
+    await writeFile(file, (await readFile(file, 'utf8')).replace('"IMEI-HUB API"', '"Edited by hand"'));
     const result = await generate(['--check', '--dir', dir]);
     expect(result.code).toBe(1);
     expect(result.stderr).toContain('openapi.public.json is out of date: first difference at line');

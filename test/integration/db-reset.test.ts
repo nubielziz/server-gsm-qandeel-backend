@@ -606,7 +606,7 @@ const productionEnv = (databaseUrl: string): Record<string, string> => ({
   ENCRYPTION_ACTIVE_KID: 'k1',
   METRICS_TOKEN: 'm'.repeat(32),
   MAIL_SMTP_URL: 'smtps://mailer:pw@smtp.gsm.example:465',
-  MAIL_FROM: 'GSM <noreply@gsm.example>',
+  MAIL_FROM: 'IMEI-HUB <noreply@gsm.example>',
   TURNSTILE_SECRET_KEY: 'turnstile-secret-for-tests',
   // Feature 29: required in production while search is on.
   TYPESENSE_URL: 'http://typesense.internal:8108',

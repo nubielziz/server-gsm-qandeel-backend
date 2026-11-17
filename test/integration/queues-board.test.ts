@@ -48,7 +48,7 @@ describe('GET /admin/queues', () => {
     const page = await t.app.inject({ method: 'GET', url: '/admin/queues', headers: api.session.headers });
     expect(page.statusCode).toBe(200);
     expect(page.headers['content-type']).toContain('text/html');
-    expect(page.body).toContain('GSM queues');
+    expect(page.body).toContain('IMEI-HUB queues');
   });
 
   it('lists every queue through the board API, read-only', async () => {

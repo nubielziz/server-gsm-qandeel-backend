@@ -66,7 +66,7 @@ export class InvoiceDocuments {
       title: 'Invoice',
       subtitle: `${invoice.number}  -  ${status}  -  issued ${day(invoice.createdAt)}`,
       createdAt: this.clock.now(),
-      footer: 'GSM',
+      footer: 'IMEI-HUB',
       blocks: [
         {
           kind: 'facts' as const,

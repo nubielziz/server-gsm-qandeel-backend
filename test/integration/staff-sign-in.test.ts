@@ -236,7 +236,7 @@ describe('first sign-in: authenticator setup', () => {
     expect(setup.headers['cache-control']).toBe('no-store');
     const body = setup.json<{ secret: string; otpauthUrl: string; qrSvg: string }>();
     expect(body.secret).toMatch(/^[A-Z2-7]{32}$/);
-    expect(body.otpauthUrl).toStartWith('otpauth://totp/GSM%20Supply:');
+    expect(body.otpauthUrl).toStartWith('otpauth://totp/IMEI-HUB:');
     expect(body.otpauthUrl).toContain(`secret=${body.secret}`);
     expect(body.qrSvg).toStartWith('<svg');
 

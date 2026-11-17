@@ -10,7 +10,7 @@ export const STAFF_TOTP_AAD = 'staff_users.totp_secret_enc';
 /** The additional authenticated data of `clients.totp_secret_enc` (merchant 2FA, feature 2b): a staff secret does not decrypt there. */
 export const CLIENT_TOTP_AAD = 'clients.totp_secret_enc';
 /** The name an authenticator app shows for the account. */
-export const TOTP_ISSUER = 'GSM Supply';
+export const TOTP_ISSUER = 'IMEI-HUB';
 /** Seconds a code is valid: a time step (RFC 6238 default). */
 export const TOTP_PERIOD_SECONDS = 30;
 

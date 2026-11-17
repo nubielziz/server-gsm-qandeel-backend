@@ -38,7 +38,7 @@ const production = (): Record<string, string> => ({
   ENCRYPTION_ACTIVE_KID: 'k1',
   METRICS_TOKEN: 'metrics-token-for-prometheus',
   MAIL_SMTP_URL: 'smtps://mailer:pw@smtp.provider.example:465',
-  MAIL_FROM: 'GSM <noreply@gsm.example>',
+  MAIL_FROM: 'IMEI-HUB <noreply@gsm.example>',
   TURNSTILE_SECRET_KEY: 'turnstile-secret-for-tests',
   TYPESENSE_URL: 'http://typesense:8108/',
 });
@@ -298,7 +298,7 @@ describe('ARGON2_* (decision 007)', () => {
 describe('MAIL_* and TELEGRAM_* (decision 033)', () => {
   it('defaults to the Mailpit of compose.yaml outside production and leaves Telegram unset', () => {
     const config = parseEnv({});
-    expect(config.mail).toEqual({ smtpUrl: 'smtp://localhost:1025', from: 'GSM <noreply@gsm.local>' });
+    expect(config.mail).toEqual({ smtpUrl: 'smtp://localhost:1025', from: 'IMEI-HUB <noreply@gsm.local>' });
     expect(config.telegram).toEqual({ botToken: undefined, botUsername: undefined, webhookSecret: undefined });
   });
 

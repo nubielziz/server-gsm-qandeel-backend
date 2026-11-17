@@ -127,7 +127,7 @@ export function statementDocument(data: StatementData): PdfDocument {
     title: 'Account statement',
     subtitle: `${data.merchant.name}  -  ${data.from} to ${data.to}  -  ${BASE_CURRENCY}`,
     createdAt: data.createdAt,
-    footer: `GSM   Generated ${minute(data.createdAt)} UTC`,
+    footer: `IMEI-HUB   Generated ${minute(data.createdAt)} UTC`,
     blocks: [
       {
         kind: 'facts',

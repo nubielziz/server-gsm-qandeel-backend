@@ -289,7 +289,7 @@ describe('GET /docs and GET /reference (Scalar pages)', () => {
     expect(pub.statusCode).toBe(200);
     expect(pub.headers['content-type']).toBe('text/html; charset=utf-8');
     expect(pub.headers['cache-control']).toBe('public, max-age=300');
-    expect(pub.body).toContain('<title>GSM Supplier API</title>');
+    expect(pub.body).toContain('<title>IMEI-HUB API</title>');
     expect(pub.body).toContain(`<script src="${SCALAR_BUNDLE_URL}" integrity="sha384-`);
     expect(pub.body).toContain('"/v1/t/orders"');
     expect(pub.body).not.toContain('/admin/t/orders');
@@ -298,7 +298,7 @@ describe('GET /docs and GET /reference (Scalar pages)', () => {
     expect(internal.statusCode).toBe(200);
     expect(internal.headers['content-type']).toBe('text/html; charset=utf-8');
     expect(internal.headers['cache-control']).toBe('private, no-store');
-    expect(internal.body).toContain('<title>GSM Supplier API: internal reference</title>');
+    expect(internal.body).toContain('<title>IMEI-HUB API: internal reference</title>');
     expect(internal.body).toContain('"/admin/t/orders"');
   });
 

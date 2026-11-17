@@ -80,7 +80,7 @@ export const PRODUCTION_ENV: Record<string, string> = {
   ENCRYPTION_ACTIVE_KID: 'k1',
   METRICS_TOKEN: 'm'.repeat(32),
   MAIL_SMTP_URL: 'smtps://mailer:pw@smtp.gsm.example:465',
-  MAIL_FROM: 'GSM <noreply@gsm.example>',
+  MAIL_FROM: 'IMEI-HUB <noreply@gsm.example>',
   LOG_LEVEL: 'warn',
   TURNSTILE_SECRET_KEY: 'turnstile-secret-for-tests',
   // Feature 29: the search engine of production; the keys are the process keys a production API and worker require.

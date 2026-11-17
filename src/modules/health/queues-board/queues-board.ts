@@ -44,7 +44,7 @@ export class QueuesBoard implements OnApplicationBootstrap {
     createBullBoard({
       queues: this.queues.list().map(([, queue]) => new BullMQAdapter(queue, { readOnlyMode: true })),
       serverAdapter,
-      options: { uiConfig: { boardTitle: 'GSM queues' } },
+      options: { uiConfig: { boardTitle: 'IMEI-HUB queues' } },
     });
     void fastify.register(
       (scope, _options, done) => {

@@ -12,7 +12,7 @@ import {
 } from './mail-driver';
 
 const MAIL = {
-  from: 'GSM <noreply@gsm.local>',
+  from: 'IMEI-HUB <noreply@gsm.local>',
   to: 'ops@zainmobilehub.example',
   subject: 'Hello',
   text: 'Hi',

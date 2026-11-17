@@ -142,7 +142,7 @@ export class DisputeService {
       title: 'Dispute evidence',
       subtitle: `${label(dispute.id)}  -  SF-${dispute.orderId ?? 0}`,
       createdAt: now,
-      footer: 'GSM',
+      footer: 'IMEI-HUB',
       blocks: [
         {
           kind: 'facts',

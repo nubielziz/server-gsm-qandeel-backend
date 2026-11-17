@@ -131,7 +131,7 @@ describe('buildPublicDocument: the filter', () => {
 
   it('uses the public title and version, not the raw ones', () => {
     const doc = buildPublicDocument(rawDocument());
-    expect(doc.info.title).toBe('GSM Supplier API');
+    expect(doc.info.title).toBe('IMEI-HUB API');
     expect(doc.info.version).toBe('1.0.0');
   });
 

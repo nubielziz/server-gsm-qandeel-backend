@@ -429,7 +429,7 @@ describe('POST /admin/notification-templates/:id/preview', () => {
       subject: 'Your wallet balance is low',
       body: expect.stringContaining('Hi Zain Mobile Hub,'),
       format: 'text',
-      from: 'GSM <noreply@gsm.local>',
+      from: 'IMEI-HUB <noreply@gsm.local>',
       note: 'A sample with made-up details.',
     });
     expect(res.body.body).toContain('42.5000 USD');

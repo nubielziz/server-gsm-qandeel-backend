@@ -8,7 +8,7 @@
     "message": "Authenticated.",
     "httpStatus": 200,
     "durationMs": 310,
-    "accountName": "GSM Supply",
+    "accountName": "IMEI-HUB",
     "balance": "1850.0000"
   }
 }

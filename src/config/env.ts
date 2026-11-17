@@ -256,7 +256,7 @@ export const DEV_DEFAULTS = {
   corsOrigins: 'http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174',
   // The Mailpit of compose.yaml (decision 033): SMTP on 1025, a web UI on 8025 with every message.
   mailSmtpUrl: 'smtp://localhost:1025',
-  mailFrom: 'GSM <noreply@gsm.local>',
+  mailFrom: 'IMEI-HUB <noreply@gsm.local>',
   // The Typesense node of compose.yaml (feature 29): its bootstrap key serves as both process keys outside production.
   typesenseUrl: 'http://localhost:8108',
   typesenseKey: 'gsm-typesense-dev',

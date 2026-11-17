@@ -73,7 +73,7 @@ const CONVENTIONS =
 const SERVERS = [{ url: '/', description: 'The server that serves this document' }];
 
 const PUBLIC_INFO = {
-  title: 'GSM Supplier API',
+  title: 'IMEI-HUB API',
   version: API_VERSION,
   description: [
     'REST API v1 and the Dhru Fusion compatible endpoint for GSM merchants, plus the webhook events we send.',
@@ -83,7 +83,7 @@ const PUBLIC_INFO = {
 };
 
 const INTERNAL_INFO = {
-  title: 'GSM Supplier API: internal reference',
+  title: 'IMEI-HUB API: internal reference',
   version: API_VERSION,
   description: [
     'Every route of the API: admin console, merchant portal, storefront, REST API v1, Dhru Fusion, incoming webhooks and system routes. Generated from the route contracts; the public subset is `/openapi.json`.',

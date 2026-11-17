@@ -114,7 +114,7 @@ describe('NotificationService.enqueue and the send job', () => {
     expect(sent?.sentAt).toEqual(clock.now());
     expect(mailbox(t).sent).toEqual([
       {
-        from: 'GSM <noreply@gsm.local>',
+        from: 'IMEI-HUB <noreply@gsm.local>',
         to: 'ops@zainmobilehub.example',
         subject: 'Your wallet balance is low',
         text: expect.stringContaining('Your available balance is 42.50 USD, below your alert level of 50.00 USD.'),
