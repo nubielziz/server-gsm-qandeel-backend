@@ -6,7 +6,6 @@ import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { DbService } from '../../../infra/db';
 import type { CustomerPrincipal, RequestMeta } from '../../identity';
-import type { CustomerLocale } from '../domain/customer-input';
 import { profileChanges } from '../domain/profile-edit';
 import { findCredentials } from '../infra/customer-credentials.repository';
 import { findCustomerById, updateCustomerRow } from '../infra/customer.repository';
@@ -20,7 +19,6 @@ export interface UpdateMeInput {
   readonly name?: string | undefined;
   readonly phone?: string | undefined;
   readonly country?: string | undefined;
-  readonly locale?: CustomerLocale | undefined;
   readonly currency?: string | undefined;
   readonly marketingOptIn?: boolean | undefined;
 }
@@ -28,10 +26,10 @@ export interface UpdateMeInput {
 /**
  * Serves the signed-in customer's account.
  *
- * Why: the storefront account page shows the details and lets the customer choose language, currency and marketing consent
- * (map: "Change language, currency and marketing consent"). A consent is proof: a change writes a `consent_records` row with the
- * request address and time, and a withdrawn consent is a new row with `granted = false` (RESOLUTIONS b2c-12, b2c-14). The
- * customer reads only their own orders: the id comes from the session.
+ * Why: the storefront account page shows the details and lets the customer choose currency and marketing consent (the map also
+ * names a language: it is gone, decision 039). A consent is proof: a change writes a `consent_records` row with the request
+ * address and time, and a withdrawn consent is a new row with `granted = false` (RESOLUTIONS b2c-12, b2c-14). The customer reads
+ * only their own orders: the id comes from the session.
  *
  * Side effects: `updateMe` writes `customers` and, when the marketing choice changed, `consent_records`. No audit row: a customer's own
  * edit writes none.
@@ -59,7 +57,7 @@ export class CustomerAccountService {
   }
 
   /**
-   * Changes the name, phone, country, language, currency and marketing consent.
+   * Changes the name, phone, country, currency and marketing consent.
    *
    * Why: feature 24B: the account page edits the customer's own details with the staff edit's rules (`profileChanges`,
    * `CustomerProfileRules`): "changed" is judged against the locked row, a changed country must have a current tax rate and re-derives
@@ -98,7 +96,6 @@ export class CustomerAccountService {
       const profile = profileChanges(customer, input, derived);
       const changes = {
         ...profile.columns,
-        ...(input.locale !== undefined ? { locale: input.locale } : {}),
         ...(input.currency !== undefined ? { currency: input.currency } : {}),
         ...(input.marketingOptIn !== undefined ? { marketingOptIn: input.marketingOptIn } : {}),
       };

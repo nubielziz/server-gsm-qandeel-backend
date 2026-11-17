@@ -142,7 +142,7 @@ export class KycService {
         before: { kycStatus: 'pending' },
         after: { kycStatus: status, note, submissionId: id },
       });
-      // Tell the merchant (transactional email in the merchant's language); a rejection carries the note they also read in `GET /client/kyc`.
+      // Tell the merchant (transactional email); a rejection carries the note they also read in `GET /client/kyc`.
       if (merchant) await this.lifecycleMails.kycDecided({ tx }, merchant, status, note);
     });
     return this.get(id);

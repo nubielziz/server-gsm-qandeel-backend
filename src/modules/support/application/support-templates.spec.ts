@@ -1,12 +1,12 @@
 // Unit tests of the support events and their default templates (feature 17): every template belongs to a registered event and channel and
-// uses only that event's placeholders, every event is covered, and the data sections of migrations 0016 and 0032 are exactly what
-// `supportTemplatesSql()` and `supportReplyLinkSql()` write, so code and SQL cannot drift.
+// uses only that event's placeholders, every event is covered, every row of the code is found in migration 0016 or made by an update of
+// migration 0032 (the files keep the shape they shipped with), and `supportTemplatesSql()` and `supportReplyLinkSql()` write today's shape.
 import { describe, expect, it } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { bodyUpdates, insertedTemplates } from '../../../../test/support/applied-templates';
 import { NotificationEventRegistry } from '../../platform';
 import { SUPPORT_EVENTS } from './support-events';
 import {
-  CONVERSATION_LINK_LINES,
+  CONVERSATION_LINK_LINE,
   SUPPORT_DEFAULT_TEMPLATES,
   supportReplyLinkSql,
   supportTemplatesSql,
@@ -66,8 +66,8 @@ describe('SUPPORT_DEFAULT_TEMPLATES', () => {
     }
   });
 
-  it('are unique per event, channel, audience and language', () => {
-    const keys = SUPPORT_DEFAULT_TEMPLATES.map((t) => `${t.event}|${t.channel}|${t.audience}|${t.locale}`);
+  it('are unique per event, channel and audience', () => {
+    const keys = SUPPORT_DEFAULT_TEMPLATES.map((t) => `${t.event}|${t.channel}|${t.audience}`);
     expect(new Set(keys).size).toBe(keys.length);
   });
 
@@ -87,12 +87,37 @@ describe('SUPPORT_DEFAULT_TEMPLATES', () => {
   });
 });
 
-describe('migration 0016_support_tickets', () => {
-  it('holds exactly the INSERT that supportTemplatesSql() writes', () => {
-    const migration = readFileSync(new URL('../../../../drizzle/0016_support_tickets.sql', import.meta.url), 'utf8');
-    const start = migration.indexOf('INSERT INTO "notification_templates"');
-    expect(start).toBeGreaterThan(0);
-    expect(migration.slice(start).trim()).toBe(supportTemplatesSql());
+const keyOf = (t: { event: string; channel: string; audience: string }) => `${t.event}|${t.channel}|${t.audience}`;
+
+describe('migrations 0016_support_tickets and 0032_support_reply_link', () => {
+  // The English rows of 0016 as they shipped, and the guarded updates of 0032 (the files also hold the Arabic rows migration 0035 deletes).
+  const shipped = insertedTemplates('0016_support_tickets.sql').filter((row) => row.locale === 'en');
+  const updates = bodyUpdates('0032_support_reply_link.sql').filter((row) => row.locale === 'en');
+
+  it('ship every template of the code: as 0016 inserted it, or with the body 0032 gives the row 0016 shipped', () => {
+    expect(shipped.map(keyOf).sort()).toEqual(SUPPORT_DEFAULT_TEMPLATES.map(keyOf).sort());
+    for (const template of SUPPORT_DEFAULT_TEMPLATES) {
+      const first = shipped.find((row) => keyOf(row) === keyOf(template))!;
+      expect(first.subject, keyOf(template)).toBe(template.subject);
+      const update = updates.find((row) => keyOf(row) === keyOf(template));
+      if (update === undefined) {
+        expect(first.body, keyOf(template)).toBe(template.body);
+      } else {
+        // 0032 changes a row only while it still holds the body 0016 shipped, and leaves it with the body the code has today.
+        expect(update.from, keyOf(template)).toBe(first.body);
+        expect(update.to, keyOf(template)).toBe(template.body);
+      }
+    }
+    // The updates are the merchant's two replies.
+    expect(updates.map(keyOf).sort()).toEqual(['support.reply|email|merchant', 'support.reply|telegram|merchant']);
+  });
+
+  it('are installed today by supportTemplatesSql(), without a language', () => {
+    const insert = supportTemplatesSql();
+    expect(insert).toContain('("event", "channel", "audience", "subject", "body", "is_active")');
+    expect(insert).toEndWith('ON CONFLICT ("event", "channel", "audience") DO NOTHING;');
+    expect(insert.match(/, true\)/g)).toHaveLength(SUPPORT_DEFAULT_TEMPLATES.length);
+    expect(insert).toContain(CONVERSATION_LINK_LINE);
   });
 });
 
@@ -100,20 +125,23 @@ describe('the conversation link of the merchant reply (feature 28, migration 003
   it('ends the merchant email and Telegram reply with the portal link, and leaves every other template alone', () => {
     const merchant = SUPPORT_DEFAULT_TEMPLATES.filter((t) => t.event === 'support.reply' && t.audience === 'merchant');
     expect(merchant).toHaveLength(2);
-    for (const template of merchant) expect(template.body.endsWith(CONVERSATION_LINK_LINES.en)).toBe(true);
+    for (const template of merchant) expect(template.body.endsWith(CONVERSATION_LINK_LINE)).toBe(true);
     const customer = SUPPORT_DEFAULT_TEMPLATES.find((t) => t.event === 'support.reply' && t.audience === 'customer')!;
     expect(withConversationLink(customer)).toBe(customer);
-    expect(withConversationLink({ ...merchant[0]!, locale: 'ar', body: 'x' }).body).toBe(
-      `x\n${CONVERSATION_LINK_LINES.ar}`,
-    );
+    expect(withConversationLink({ ...merchant[0]!, body: 'x' }).body).toBe(`x\n${CONVERSATION_LINK_LINE}`);
   });
 
-  it('migration 0032 holds exactly the guarded updates that supportReplyLinkSql() writes', () => {
-    const migration = readFileSync(new URL('../../../../drizzle/0032_support_reply_link.sql', import.meta.url), 'utf8');
-    const start = migration.indexOf('UPDATE "notification_templates"');
-    expect(start).toBeGreaterThan(0);
-    expect(migration.slice(start).trim()).toBe(supportReplyLinkSql());
-    // Four rows (English and Arabic, email and Telegram), each only where the body is still the shipped one.
-    expect(supportReplyLinkSql().match(/AND "body" = /g)).toHaveLength(4);
+  it('is written by supportReplyLinkSql() as two guarded updates, without a language, that 0032 holds for English', () => {
+    const sql = supportReplyLinkSql();
+    // Two rows (email and Telegram), each only where the body is still the shipped one.
+    expect(sql.match(/AND "body" = /g)).toHaveLength(2);
+    expect(sql).not.toContain('locale');
+    for (const update of bodyUpdates('0032_support_reply_link.sql').filter((row) => row.locale === 'en')) {
+      const quote = (text: string) => `'${text.replace(/'/g, "''")}'`;
+      expect(sql).toContain(
+        `UPDATE "notification_templates" SET "body" = ${quote(update.to)}\nWHERE "event" = ${quote(update.event)} AND "channel" = ` +
+          `${quote(update.channel)} AND "audience" = ${quote(update.audience)} AND "body" = ${quote(update.from)};`,
+      );
+    }
   });
 });

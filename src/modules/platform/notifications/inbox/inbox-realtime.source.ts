@@ -1,6 +1,6 @@
 // The inbox as a real-time source (feature 27, decision 037): turns an inbox doorbell into `notification.created`,
 // `notification.read` and `unread.changed` frames for the owner's open streams, replays what a reconnect missed and sends the count
-// after `ready`. Every query carries the owner's two keys; the text is made in the viewer's language. API only.
+// after `ready`. Every query carries the owner's two keys; the text is made for the viewer. API only.
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { DbService } from '../../../../infra/db';
 import {
@@ -54,9 +54,8 @@ function ownerOf(viewer: StreamViewer): InboxOwner | undefined {
   return viewer.kind === 'ticket' ? undefined : { type: viewer.kind, id: viewer.id };
 }
 
-/** What the viewer's saved account says: the language without a `?locale=` and the `{{name}}` of a broadcast. */
+/** What the viewer's saved account says: the `{{name}}` of a broadcast. */
 interface Saved {
-  readonly locale: string | null;
   readonly name: string;
 }
 
@@ -64,8 +63,8 @@ interface Saved {
  * The inbox source of the live streams.
  *
  * Why: owner request (2026-11-15): a notification appears at once. The doorbell carries ids only; this source re-reads the item
- * with the owner's keys (`visibleTo`), so nothing of another person can be rendered, and renders it per viewer in the page's
- * language, else the saved one, else English, exactly as the inbox lists do (`inboxView`).
+ * with the owner's keys (`visibleTo`), so nothing of another person can be rendered, and renders it per viewer (the account's
+ * name fills `{{name}}`), exactly as the inbox lists do (`inboxView`).
  *
  * Side effects: reads `notification_inbox`, `notification_campaigns` and the recipient's account; registers itself with the hub's
  * source registry at module start.
@@ -250,17 +249,16 @@ export class InboxRealtimeSource implements RealtimeSource, OnModuleInit {
     };
   }
 
-  /** The reader of the inbox lists: the page language, else the saved one, else English; the account's name. */
+  /** The reader of the inbox lists: the audience and the account's name. */
   private readerOf(viewer: StreamViewer): InboxReader {
     const saved = this.saved.get(viewer);
     return {
       audience: audienceOf(viewer.kind === 'ticket' ? 'customer' : viewer.kind),
-      locale: viewer.locale ?? saved?.locale ?? 'en',
       name: saved?.name ?? viewer.name,
     };
   }
 
-  /** Reads the viewer's saved language and name once per stream, and remembers the viewer for a `recount`. */
+  /** Reads the viewer's saved name once per stream, and remembers the viewer for a `recount`. */
   private async prime(viewer: StreamViewer, owner: InboxOwner): Promise<void> {
     const watched = this.watched.get(owner.type)!;
     // Re-adding moves the viewer to the end: the first entries are the ones not seen for the longest.
@@ -271,7 +269,7 @@ export class InboxRealtimeSource implements RealtimeSource, OnModuleInit {
     let loading = this.loading.get(viewer);
     if (!loading) {
       loading = recipientOf(this.db.db, owner.type, owner.id).then((recipient) => {
-        this.saved.set(viewer, { locale: recipient?.locale ?? null, name: recipient?.name ?? viewer.name });
+        this.saved.set(viewer, { name: recipient?.name ?? viewer.name });
       });
       this.loading.set(viewer, loading);
     }

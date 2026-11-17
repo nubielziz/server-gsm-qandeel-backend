@@ -164,14 +164,12 @@ export {
   withoutTelegram,
 } from './notifications/merchant-preferences';
 export type { EventChoice } from './notifications/merchant-preferences';
-export { DEFAULT_TEMPLATES, defaultTemplatesSql } from './notifications/default-templates';
-export { ARABIC_DEFAULT_TEMPLATES, arabicTemplatesSql } from './notifications/arabic-templates';
-export type { ArabicTemplate } from './notifications/arabic-templates';
+export { DEFAULT_TEMPLATES, defaultTemplatesSql, templatesInsertSql } from './notifications/default-templates';
 export type { DefaultTemplate } from './notifications/default-templates';
 export { redactAddresses } from './notifications/masking';
 // Feature 23 (notification center): the registries other modules use (audience providers, in-app texts), the in-app writer, the
 // campaign engine (fan-out, sweep, bulk sender) and the job-run port that health provides.
-export { NOTIFICATION_CENTER_MIGRATION, ARABIC_TEMPLATES_MIGRATION } from './notifications/campaigns/migration-names';
+export { NOTIFICATION_CENTER_MIGRATION } from './notifications/campaigns/migration-names';
 export {
   NO_COUNTS,
   NotificationAudiences,

@@ -37,7 +37,7 @@ const AccountDetails = z.looseObject({
 /**
  * `accountinfo`: our balance at the supplier (the connection test, the sync and the balance check).
  *
- * Why: the map row `SUPPLIER accountinfo` (رصيدنا عند المورد); the balance feeds the supplier health and the low-balance alert.
+ * Why: the map row `SUPPLIER accountinfo` (our balance at the supplier); the balance feeds the supplier health and the low-balance alert.
  */
 export const accountInfoCall = defineSupplierCall({
   key: 'SUPPLIER accountinfo',
@@ -108,7 +108,7 @@ const ServiceGroup = z.looseObject({
 /**
  * `imeiservicelist`: the supplier's services and their cost (the price sync and the import).
  *
- * Why: the map row `SUPPLIER imeiservicelist` (خدمات المورد وتكلفتها للمزامنة); the credit of each service is the cost the pricing rules start from.
+ * Why: the map row `SUPPLIER imeiservicelist` (the supplier's services and their cost, for the sync); the credit of each service is the cost the pricing rules start from.
  */
 export const serviceListCall = defineSupplierCall({
   key: 'SUPPLIER imeiservicelist',
@@ -175,7 +175,7 @@ export type PlaceOrderParameters = SupplierCallParamsOf<typeof placeOrderCall>;
 /**
  * `placeimeiorder`: sends an order to the supplier and stores its REFERENCEID as `supplier_ref` (the dispatch job).
  *
- * Why: the map row `SUPPLIER placeimeiorder · bulk` (إرسال الطلب وحفظ supplier_ref); the REFERENCEID is how the poll job asks for the result.
+ * Why: the map row `SUPPLIER placeimeiorder · bulk` (send the order and save supplier_ref); the REFERENCEID is how the poll job asks for the result.
  */
 export const placeOrderCall = defineSupplierCall({
   key: 'SUPPLIER placeimeiorder+placeimeiorderbulk',
@@ -212,7 +212,7 @@ export type GetOrderParameters = SupplierCallParamsOf<typeof getOrderCall>;
 /**
  * `getimeiorder`: asks the supplier for the status and the result of an order (the poll job and staff's fetch).
  *
- * Why: the map row `SUPPLIER getimeiorder · bulk` (سحب الحالة والنتيجة): STATUS 4 completes the order, STATUS 3 rejects it and releases the hold.
+ * Why: the map row `SUPPLIER getimeiorder · bulk` (fetch the status and the result): STATUS 4 completes the order, STATUS 3 rejects it and releases the hold.
  */
 export const getOrderCall = defineSupplierCall({
   key: 'SUPPLIER getimeiorder+getimeiorderbulk',

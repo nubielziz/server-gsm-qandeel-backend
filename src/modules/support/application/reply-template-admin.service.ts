@@ -25,7 +25,6 @@ export interface WireTemplate {
   readonly id: number;
   readonly title: string;
   readonly category: TicketCategory;
-  readonly locale: string;
   readonly body: string;
   readonly shortcut: string;
   readonly createdBy: number | null;
@@ -33,11 +32,10 @@ export interface WireTemplate {
   readonly updatedAt: string;
 }
 
-/** The five fields of a template, as the contract parses them. */
+/** The four fields of a template, as the contract parses them. */
 export interface TemplateInput {
   readonly title: string;
   readonly category: TicketCategory;
-  readonly locale: string;
   readonly body: string;
   readonly shortcut: string;
 }
@@ -58,7 +56,6 @@ function toWire(row: ReplyTemplate): WireTemplate {
     id: row.id,
     title: row.title,
     category: row.category,
-    locale: row.locale,
     body: row.body,
     shortcut: shortcutToWire(row.shortcut),
     createdBy: row.createdBy,
@@ -71,7 +68,6 @@ function toWire(row: ReplyTemplate): WireTemplate {
 const snapshotOf = (row: ReplyTemplate) => ({
   title: row.title,
   category: row.category,
-  locale: row.locale,
   body: row.body,
   shortcut: shortcutToWire(row.shortcut),
 });
@@ -79,7 +75,7 @@ const snapshotOf = (row: ReplyTemplate) => ({
 /**
  * Reads and changes reply templates.
  *
- * Why: RULES support 7: the canned replies of the composer. Title, category, language and text are required; the shortcut is optional
+ * Why: RULES support 7: the canned replies of the composer. Title, category and text are required; the shortcut is optional
  * and unique among the non-empty ones (`409 SHORTCUT_TAKEN`, checked before the write and again from the unique index, so two requests
  * at once never answer 500). The server stores the text raw: the console fills `{{name}}`, `{{order}}` and `{{eta}}`. Replies already
  * sent keep their text, so a delete is a hard delete. Every write is audited.
@@ -121,7 +117,7 @@ export class ReplyTemplateAdminService {
   /**
    * Creates a template.
    *
-   * @param input the five fields
+   * @param input the four fields
    * @param staffId the author (`created_by`)
    * @returns the new template
    * @throws {AppError} `SHORTCUT_TAKEN` (409) when another template has the shortcut
@@ -139,7 +135,6 @@ export class ReplyTemplateAdminService {
         row = await insertTemplate(tx, {
           title: input.title,
           category: input.category,
-          locale: input.locale,
           body: input.body,
           shortcut,
           createdBy: staffId,
@@ -183,7 +178,6 @@ export class ReplyTemplateAdminService {
         row = await updateTemplate(tx, id, {
           ...(changes.title === undefined ? {} : { title: changes.title }),
           ...(changes.category === undefined ? {} : { category: changes.category }),
-          ...(changes.locale === undefined ? {} : { locale: changes.locale }),
           ...(changes.body === undefined ? {} : { body: changes.body }),
           ...(shortcut === undefined ? {} : { shortcut }),
           updatedAt: this.clock.now(),

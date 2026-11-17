@@ -38,7 +38,7 @@ async function seed() {
   const demo = await loadDemoState();
   return db.transaction(async (tx) => {
     // The migration's own templates are gone after resetDb: put them back, as a migrated database has them.
-    await seedDefaultTemplates(tx as never);
+    await seedDefaultTemplates(tx);
     return { identity: await seedIdentity(tx, demo, config), platform: await seedPlatform(tx, demo, config) };
   });
 }
@@ -64,11 +64,9 @@ describe.skipIf(!frontendPresent)('the 12a seed', () => {
       ['support.reply', true],
       ['checkout.abandoned', true],
     ]);
-    expect(customer[0]).toMatchObject({
-      channel: 'email',
-      locale: 'en',
-      subject: 'Your order {{orderId}} is confirmed',
-    });
+    expect(customer[0]).toMatchObject({ channel: 'email', subject: 'Your order {{orderId}} is confirmed' });
+    // One template per event, channel and audience (decision 039): the row has no language.
+    expect(customer[0]).not.toHaveProperty('locale');
     // The seeded reply mail is the text the support module ships, so a reply on a seeded database carries the message and the ticket link.
     const shipped = SUPPORT_DEFAULT_TEMPLATES.find(
       (row) => row.event === 'support.reply' && row.audience === 'customer',
@@ -155,7 +153,9 @@ describe.skipIf(!frontendPresent)('the notification center seed (feature 23)', (
       createdBy: { id: 1 },
       delivery: { inApp: { delivered: 3, read: 2 }, email: { queued: 0, sent: 3, failed: 0 } },
     });
-    expect(sent.body.content.ar.title).toBe('صيانة مجدولة يوم الجمعة');
+    // One title and one body (decision 039): no per-language wrapper.
+    expect(sent.body.content).toMatchObject({ title: 'Scheduled maintenance on Friday' });
+    expect(Object.keys(sent.body.content).sort()).toEqual(['body', 'title']);
     const ramadan = await owner.get('/admin/notification-campaigns/2');
     expect(ramadan.body).toMatchObject({ purpose: 'marketing', channels: ['email'] });
     expect(new Date(ramadan.body.scheduledAt).getTime()).toBeGreaterThan(Date.parse(list.body[0].createdAt));
@@ -167,7 +167,7 @@ describe.skipIf(!frontendPresent)('the notification center seed (feature 23)', (
 });
 
 describe('the support reply template of the seed', () => {
-  const reply = { event: 'support.reply', channel: 'email', audience: 'customer', locale: 'en' } as const;
+  const reply = { event: 'support.reply', channel: 'email', audience: 'customer' } as const;
 
   it('finds the shipped template', () => {
     expect(requireSupportTemplate(SUPPORT_DEFAULT_TEMPLATES, reply)).toMatchObject(reply);
@@ -176,7 +176,7 @@ describe('the support reply template of the seed', () => {
   it('throws an error that names the missing template, not an undefined access', () => {
     const without = SUPPORT_DEFAULT_TEMPLATES.filter((row) => row.event !== 'support.reply');
     expect(() => requireSupportTemplate(without, reply)).toThrow(
-      'The default template support.reply (email, customer, en) is missing from SUPPORT_DEFAULT_TEMPLATES.',
+      'The default template support.reply (email, customer) is missing from SUPPORT_DEFAULT_TEMPLATES.',
     );
   });
 });

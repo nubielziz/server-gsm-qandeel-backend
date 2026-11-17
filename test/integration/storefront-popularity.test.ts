@@ -70,15 +70,9 @@ const salesOf = async () => {
 };
 
 describe('PopularityRefresh', () => {
-  it('counts the non-rejected orders of the last 30 days per service from every channel and writes them to every language row', async () => {
+  it("counts the non-rejected orders of the last 30 days per service from every channel and writes them to the service's listing", async () => {
     const { db } = await testDb();
     const world = await storefrontWorld(db);
-    const arListing = (
-      await db
-        .insert(s.serviceListings)
-        .values({ serviceId: world.att.serviceId, locale: 'ar', slug: 'att-ar', publicTitle: 'AT&T', isListed: true })
-        .returning({ id: s.serviceListings.id })
-    )[0]!.id;
     const customer = await insertCustomerRow(db);
     const merchant = await insertMerchant(db);
     const att = world.att.serviceId;
@@ -90,11 +84,10 @@ describe('PopularityRefresh', () => {
     // Older than the window: not counted.
     await insertStoreOrder(db, att, customer, { createdAt: new Date(clock.nowMs() - 31 * DAY) });
 
-    expect(await refresh.refresh()).toEqual({ services: 2, changed: 3 });
+    expect(await refresh.refresh()).toEqual({ services: 2, changed: 2 });
     expect(await salesOf()).toEqual({
       [world.icloud.listingId]: 1,
       [world.att.listingId]: 3,
-      [arListing]: 3,
     });
   });
 

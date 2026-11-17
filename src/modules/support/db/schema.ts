@@ -206,9 +206,9 @@ export type TicketMessage = typeof ticketMessages.$inferSelect;
 export type NewTicketMessage = typeof ticketMessages.$inferInsert;
 
 /**
- * Ready-made reply templates for staff, by category and language.
+ * Ready-made reply templates for staff, by category.
  *
- * Why: Ready-made replies for staff by category and language, with a shortcut (routes /admin/reply-templates).
+ * Why: Ready-made replies for staff by category, with a shortcut (routes /admin/reply-templates).
  */
 export const replyTemplates = pgTable(
   'reply_templates',
@@ -216,7 +216,6 @@ export const replyTemplates = pgTable(
     id: pk(),
     title: text().notNull(),
     category: text().$type<TicketCategory>().notNull().default('other'),
-    locale: text().notNull().default('en'),
     body: text().notNull(),
     /** unique case-insensitively when set (SHORTCUT_TAKEN) */
     shortcut: text(),

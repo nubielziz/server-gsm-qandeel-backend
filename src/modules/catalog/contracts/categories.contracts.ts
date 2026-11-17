@@ -1,6 +1,6 @@
 // Route contracts of the service categories (map domain B, routes /admin/service-categories, stage 4): list, show, create,
 // change and delete. Shapes match the console's ServiceCategory (docs/contract/endpoints/catalog.md, RESOLUTIONS catalog-6,
-// catalog-10 and catalog-13).
+// catalog-10 and catalog-13). English only (decision 039, B224): a category has one name, `name`.
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam } from '../../../common/contract';
 import { SERVICE_TYPES } from '../db/schema';
@@ -12,9 +12,6 @@ const ServiceTypeField = z.enum(SERVICE_TYPES);
 const CategoryRow = z.object({
   id: zId,
   name: z.string(),
-  nameAr: z
-    .string()
-    .describe("The Arabic name the storefront shows; `''` when none (the storefront then shows `name`)."),
   type: ServiceTypeField,
   allowedGroupIds: z.array(zId).describe('The merchant groups that can see the category; empty means every group.'),
   sort: z.number().int().min(0),
@@ -30,7 +27,6 @@ const CategoryRow = z.object({
 const CATEGORY_EXAMPLE = {
   id: 4,
   name: 'Carrier unlock',
-  nameAr: 'فك شبكات المشغّلين',
   type: 'imei',
   allowedGroupIds: [],
   sort: 4,
@@ -40,8 +36,6 @@ const CATEGORY_EXAMPLE = {
 
 /** The category name: trimmed, 1 to 80 characters. */
 const CategoryName = z.string().trim().min(1, 'Enter a name.').max(80, 'Use at most 80 characters.');
-/** The Arabic name: trimmed, at most 80 characters; an empty text clears it. */
-const CategoryNameAr = z.string().trim().max(80, 'Use at most 80 characters.');
 const GroupIds = z.array(zId).max(200, 'Choose at most 200 groups.');
 const SortField = z.number().int('Enter a whole number.').min(0, 'Enter a whole number, 0 or more.').max(1_000_000);
 
@@ -86,15 +80,14 @@ export const createCategory = defineRoute({
   summary: 'Create a service category',
   description:
     'A name is unique within its type, ignoring case and surrounding spaces: a repeat is `422` on `name` (also when two ' +
-    'requests race). Unknown group ids are `422` on `allowedGroupIds`. Fields left out: `nameAr` empty (the storefront shows ' +
-    '`name`), `allowedGroupIds` empty, `sort` last, `isActive` true.',
+    'requests race). Unknown group ids are `422` on `allowedGroupIds`. Fields left out: `allowedGroupIds` empty, `sort` last, ' +
+    '`isActive` true.',
   tags: ['service-categories'],
   surface: 'admin',
   access: 'staff-permission',
   permission: 'catalog:create',
   body: z.object({
     name: CategoryName,
-    nameAr: CategoryNameAr.optional(),
     type: ServiceTypeField,
     allowedGroupIds: GroupIds.optional(),
     sort: SortField.optional(),
@@ -105,7 +98,6 @@ export const createCategory = defineRoute({
   examples: {
     request: {
       name: 'Carrier unlock',
-      nameAr: 'فك شبكات المشغّلين',
       type: 'imei',
       allowedGroupIds: [],
       sort: 4,
@@ -120,7 +112,7 @@ export const updateCategory = defineRoute({
   key: 'PATCH /admin/service-categories/:id',
   summary: 'Change a service category',
   description:
-    'Only the keys sent change (`nameAr` is the optional Arabic name of the storefront; an empty text clears it). The name stays unique within the type (the new type too when only the type changes). A type ' +
+    'Only the keys sent change. The name stays unique within the type (the new type too when only the type changes). A type ' +
     'change is `422` on `type` while live services are in the category: they must move first (archived services follow ' +
     'the change).',
   tags: ['service-categories'],
@@ -131,7 +123,6 @@ export const updateCategory = defineRoute({
   body: z
     .object({
       name: CategoryName.optional(),
-      nameAr: CategoryNameAr.optional(),
       type: ServiceTypeField.optional(),
       allowedGroupIds: GroupIds.optional(),
       sort: SortField.optional(),

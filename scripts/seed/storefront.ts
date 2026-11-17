@@ -1,7 +1,8 @@
 // Seeder of the storefront module (features 14a and 15): the demo's retail prices (the `b2c_retail` group prices), its 14 service
-// listings, its 8 TAC catalogue entries, the landing and content pages, the help articles and the legal documents. Mirrors the
-// frontend mocks (src/features/storefront/mocks/seed.ts of the frontend): the same ids, slugs, titles, statuses and versions; the
-// texts the demo does not have are short made-up ones, as in the mock. Runs after the catalog seeder.
+// listings, its 8 TAC catalogue entries, the landing and content pages, the help articles and the legal documents, and two old
+// addresses for the website's e2e (feature 30). Mirrors the frontend mocks (src/features/storefront/mocks/seed.ts of the frontend):
+// the same ids, slugs, titles, statuses and versions; the texts the demo does not have are short made-up ones, as in the mock. Runs
+// after the catalog seeder.
 import { eq } from 'drizzle-orm';
 import { schema as s, type DbExecutor } from '../../src/infra/db';
 import { deliveryTimeText } from '../../src/modules/catalog';
@@ -42,7 +43,8 @@ interface DemoPage {
 interface DemoLegal {
   type: string;
   version: string;
-  lang: string;
+  /** `EN`, or another code in an older demo file; absent in a newer one (decision 039). */
+  lang?: string | undefined;
   effective: number;
   current: boolean;
   needs: boolean;
@@ -83,7 +85,21 @@ const LEGAL_TYPE: Readonly<Record<string, (typeof s.LEGAL_DOCUMENT_TYPES)[number
 const bodyFor = (title: string) => `# ${title}\n\nText for ${title} goes here.`;
 
 /**
- * Seeds the retail prices, listings, TAC catalogue, pages, help articles and legal documents of the demo.
+ * An old service address that leads to the page of a seeded service (feature 30, decision 039, plan section 4.5).
+ *
+ * Why: the website's e2e opens the old address of this slug under the retired second-language prefix and must end on the English page of the service of
+ * {@link LEGACY_DEMO_TARGET_SLUG}. The lead inserts the same row by SQL into a database that is not seeded afresh (plan 30, L4).
+ */
+export const LEGACY_DEMO_SERVICE_SLUG = 'legacy-demo-service';
+
+/** The seeded listing (listed and priced in the demo) whose service {@link LEGACY_DEMO_SERVICE_SLUG} leads to. */
+export const LEGACY_DEMO_TARGET_SLUG = 'icloud-clean-lost-check';
+
+/** An old service address with no known service: the website's e2e follows it to the service list. */
+export const LEGACY_DEMO_GONE_SLUG = 'legacy-demo-gone';
+
+/**
+ * Seeds the retail prices, listings, TAC catalogue, pages, help articles, legal documents and old addresses of the demo.
  *
  * Why: the storefront (feature 14a) sells only what staff priced for the retail group and listed, recognises devices by TAC and
  * records consent against the current legal documents; the console's Storefront page (Services on sale, Landing pages, Content
@@ -91,12 +107,14 @@ const bodyFor = (title: string) => `# ${title}\n\nText for ${title} goes here.`;
  * English listing per IMEI service, as the mock); a listing the demo marks locked is stored switched off (the lock itself is
  * derived, B53). Pages take the landing pages first and then the content pages. The legal documents are the demo's six versions
  * plus one draft refund policy (1.5) so that Publish has something to publish (the demo has none; the mock adds it too).
- * Retail prices are the `b2c_retail` group rows of the demo's `retail` map. The demo's services (and the retail group) must
- * already exist: the identity and catalog seeders run first.
+ * Retail prices are the `b2c_retail` group rows of the demo's `retail` map. The two old addresses (`legacy_slugs`, feature 30)
+ * let the website's e2e follow an address in another language: one to the service of {@link LEGACY_DEMO_TARGET_SLUG}, one with
+ * no service. The demo's services (and the retail group) must already exist: the identity and catalog seeders run first.
  *
  * @param db the transaction to write with
  * @param demo the loaded frontend demo state
- * @returns one report per table: retail prices, listings, TAC catalogue, pages, help articles, legal documents
+ * @returns one report per table: retail prices, listings, TAC catalogue, pages, help articles, legal documents, old addresses
+ * @throws {Error} when the demo no longer has the listing {@link LEGACY_DEMO_TARGET_SLUG}
  */
 export async function seedStorefront(db: DbExecutor, demo: DemoSeed): Promise<SeedReport[]> {
   const services = demoRows<DemoService>(demo, 'services');
@@ -131,7 +149,6 @@ export async function seedStorefront(db: DbExecutor, demo: DemoSeed): Promise<Se
         {
           id: index + 1,
           serviceId,
-          locale: 'en',
           slug: listing.slug,
           publicTitle: listing.title,
           summary: `Delivered in ${deliveryTimeText(service.sla)}.`,
@@ -177,7 +194,6 @@ export async function seedStorefront(db: DbExecutor, demo: DemoSeed): Promise<Se
       id: index + 1,
       kind: page.kind,
       slug: page.slug,
-      locale: 'en',
       title: page.title,
       bodyMd: bodyFor(page.title),
       seoTitle: page.title,
@@ -196,7 +212,6 @@ export async function seedStorefront(db: DbExecutor, demo: DemoSeed): Promise<Se
     category: article.cat,
     question: article.q,
     answerMd: `Short answer to "${article.q}".`,
-    locale: 'en',
     sort: index + 1,
     isPublished: article.status === 'published',
     helpfulYes: article.yes,
@@ -207,24 +222,27 @@ export async function seedStorefront(db: DbExecutor, demo: DemoSeed): Promise<Se
   const help = await insertRows(db, s.helpArticles, helpRows);
   await syncIdentity(db, s.helpArticles);
 
-  const legalRows = demoRows<DemoLegal>(demo, 'legal').map((document, index) => ({
-    id: index + 1,
-    type: LEGAL_TYPE[document.type] ?? ('terms' as const),
-    version: document.version,
-    locale: document.lang.toLowerCase(),
-    bodyMd: bodyFor(`${document.type} v${document.version}`),
-    effectiveFrom: toDate(document.effective),
-    isCurrent: document.current,
-    requiresReacceptance: document.needs,
-    createdAt: new Date(document.effective),
-    updatedAt: new Date(document.effective),
-  }));
+  // English only (decision 039): the console's demo file still has one Arabic version of the terms (`lang` AR, the same 3.2); it is
+  // left out, so every type has one version in force and the seeded consent proofs point at the English one. A row with no `lang`
+  // is English.
+  const legalRows = demoRows<DemoLegal>(demo, 'legal')
+    .filter((document) => document.lang === undefined || document.lang.toUpperCase() === 'EN')
+    .map((document, index) => ({
+      id: index + 1,
+      type: LEGAL_TYPE[document.type] ?? ('terms' as const),
+      version: document.version,
+      bodyMd: bodyFor(`${document.type} v${document.version}`),
+      effectiveFrom: toDate(document.effective),
+      isCurrent: document.current,
+      requiresReacceptance: document.needs,
+      createdAt: new Date(document.effective),
+      updatedAt: new Date(document.effective),
+    }));
   // The demo has no draft version, so one is added for the Publish button to work on.
   legalRows.push({
     id: legalRows.length + 1,
     type: 'refund',
     version: '1.5',
-    locale: 'en',
     bodyMd: bodyFor('Refund policy v1.5'),
     effectiveFrom: null,
     isCurrent: false,
@@ -235,5 +253,27 @@ export async function seedStorefront(db: DbExecutor, demo: DemoSeed): Promise<Se
   const legal = await insertRows(db, s.legalDocuments, legalRows);
   await syncIdentity(db, s.legalDocuments);
 
-  return [prices, listings, tac, pages, help, legal];
+  const [target] = await db
+    .select({ serviceId: s.serviceListings.serviceId })
+    .from(s.serviceListings)
+    .where(eq(s.serviceListings.slug, LEGACY_DEMO_TARGET_SLUG))
+    .limit(1);
+  if (target === undefined)
+    throw new Error(`The demo has no listing ${LEGACY_DEMO_TARGET_SLUG} for the old demo address.`);
+  // The id is an identity column (`generated always`): `insertRows` writes it with OVERRIDING SYSTEM VALUE, so a second run adds nothing.
+  const legacyRows: Array<typeof s.legacySlugs.$inferInsert & { id: number }> = [
+    {
+      id: 1,
+      kind: 'service',
+      slug: LEGACY_DEMO_SERVICE_SLUG,
+      serviceId: target.serviceId,
+      createdAt: created,
+      updatedAt: created,
+    },
+    { id: 2, kind: 'service', slug: LEGACY_DEMO_GONE_SLUG, serviceId: null, createdAt: created, updatedAt: created },
+  ];
+  const legacy = await insertRows(db, s.legacySlugs, legacyRows);
+  await syncIdentity(db, s.legacySlugs);
+
+  return [prices, listings, tac, pages, help, legal, legacy];
 }

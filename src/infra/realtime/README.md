@@ -34,8 +34,8 @@ routes belong to the `identity` module (it owns sessions, principals and the gua
 3. Every API process has one dedicated subscriber connection (`gsm-realtime-sub`, `RedisService.createSubscriberConnection()`,
    reconnects for ever and resubscribes itself). On a message the hub finds the source of the `topic` and asks it to `resolve` the
    doorbell into deliveries, with at most 4 doorbells in flight (the pool has 10 connections) and a waiting list of 1000.
-4. The source **re-reads Postgres with the viewer's own keys** (`recipient_type` and `recipient_id`), renders the frame in the viewer's
-   language and returns it with the audience keys it is for (`u:customer:42`). Nothing is trusted from the message, so a lost or
+4. The source **re-reads Postgres with the viewer's own keys** (`recipient_type` and `recipient_id`), renders the frame for the viewer
+   and returns it with the audience keys it is for (`u:customer:42`). Nothing is trusted from the message, so a lost or
    forged doorbell loses or leaks nothing.
 5. The hub serialises each delivery once per key (once per connection when `data` is a function of the viewer) and writes it to the
    connections of those keys. A connection that does not read is dropped, never buffered.

@@ -4,17 +4,22 @@ import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime } from '../../../common/contract';
 import { LEGAL_DOCUMENT_TYPES, type LegalDocumentType } from '../db/schema';
 import { LEGAL_VERSION_MAX_LENGTH, LEGAL_VERSION_PATTERN } from '../domain/legal';
-import { BODY_MAX, LocaleField, STOREFRONT_LOCALES, requiredMarkdown } from './shared';
+import { BODY_MAX, requiredMarkdown } from './shared';
 
 /** A version as the console reads it. */
 const LegalRow = z.object({
   id: zId,
   type: z.string().describe('`terms`, `privacy`, `refund` or `cookies`.'),
   version: z.string().describe("Text such as `'3.2'`."),
-  locale: z.string(),
+  locale: z
+    .string()
+    .describe(
+      'Read-only archive tag (decision 039): `en` for every version that can be created or published; another code only on a ' +
+        'retired earlier version kept as the proof of what a person accepted.',
+    ),
   bodyMd: z.string(),
   effectiveFrom: zIsoDateTime.nullable().describe('`null` until published; kept after the version is replaced.'),
-  isCurrent: z.boolean().describe('One per type and language.'),
+  isCurrent: z.boolean().describe('One per type.'),
   requiresReacceptance: z.boolean(),
   createdAt: zIsoDateTime,
   acceptedCount: z
@@ -44,18 +49,17 @@ export const listLegalDocuments = defineRoute({
   summary: 'List legal document versions',
   description:
     'Every version of every document. The console groups them: current (`isCurrent`), draft (not current, `effectiveFrom` ' +
-    'null) and earlier (not current, `effectiveFrom` set). Filters: `type`, `locale` and `isCurrent`. `q` is a contains over the ' +
-    'type and the version. Default order: type.',
+    'null) and earlier (not current, `effectiveFrom` set). An earlier version in another language (its `locale` is not `en`) is ' +
+    'kept for the record. Filters: `type` and `isCurrent`. `q` is a contains over the type and the version. Default order: type.',
   tags: ['legal-documents'],
   surface: 'admin',
   access: 'staff-permission',
   permission: 'legal:read',
   query: listQuery({
-    sorts: ['type', 'version', 'locale', 'effectiveFrom', 'createdAt', 'id'],
+    sorts: ['type', 'version', 'effectiveFrom', 'createdAt', 'id'],
     defaultSort: { field: 'type', order: 'asc' },
     filters: {
       type: { type: 'enum', values: LEGAL_DOCUMENT_TYPES },
-      locale: { type: 'enum', values: STOREFRONT_LOCALES },
       isCurrent: { type: 'boolean' },
     },
     search: ['type', 'version'],
@@ -86,8 +90,8 @@ export const createLegalDocument = defineRoute({
   description:
     'A draft: not current, `effectiveFrom` null. A version text is never edited afterwards (there is no edit route). The ' +
     'version text is 1 to 32 characters of letters, digits, dots, hyphens and underscores. A version that already exists for ' +
-    'that type and language is `409 VERSION_EXISTS` on `version` (also when two requests race). `requiresReacceptance` defaults ' +
-    'to true.',
+    'that type is `409 VERSION_EXISTS` on `version` (also when two requests race). The text is English (`locale` is `en`). ' +
+    '`requiresReacceptance` defaults to true.',
   tags: ['legal-documents'],
   surface: 'admin',
   access: 'staff-permission',
@@ -100,7 +104,6 @@ export const createLegalDocument = defineRoute({
         error: 'Choose a document: terms, privacy, refund or cookies.',
       })
       .meta({ description: '`terms`, `privacy`, `refund` or `cookies`.', examples: ['terms'] }),
-    locale: LocaleField,
     version: z
       .string()
       .trim()
@@ -112,7 +115,7 @@ export const createLegalDocument = defineRoute({
   success: { status: 201, schema: LegalRow },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'VALIDATION_FAILED', 'VERSION_EXISTS'],
   examples: {
-    request: { type: 'terms', locale: 'en', version: '3.3', bodyMd: '# Terms of service', requiresReacceptance: true },
+    request: { type: 'terms', version: '3.3', bodyMd: '# Terms of service', requiresReacceptance: true },
     response: { ...LEGAL_EXAMPLE, version: '3.3', effectiveFrom: null, isCurrent: false, acceptedCount: null },
   },
 });
@@ -122,10 +125,10 @@ export const publishLegalDocument = defineRoute({
   key: 'POST /admin/legal-documents/:id/publish',
   summary: 'Publish a legal document version',
   description:
-    'In one transaction the version in force for the same type and language stops being current (its `effectiveFrom` is kept) ' +
+    'In one transaction the version in force for the same type stops being current (its `effectiveFrom` is kept) ' +
     'and this one becomes current with `effectiveFrom` now. New consents reference it from then on; `requiresReacceptance` ' +
     'makes signed-in customers accept it again at their next checkout. Audited as `published legal document`. Only a draft ' +
-    'can be published: the version already in force is `409 ALREADY_CURRENT`, a replaced one `409 NOT_A_DRAFT`.',
+    'can be published: the version already in force is `409 ALREADY_CURRENT`, a replaced or retired one `409 NOT_A_DRAFT`.',
   tags: ['legal-documents'],
   surface: 'admin',
   access: 'staff-permission',

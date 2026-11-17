@@ -6,7 +6,6 @@ import { DbService } from '../../../infra/db';
 import { AuditService } from '../../platform';
 import type { NewContentPage } from '../db/schema';
 import {
-  GENERATED_LOCALE,
   STOREFRONT_GENERATE_MAX_COMBINATIONS,
   STOREFRONT_GENERATE_MAX_PER_RUN,
   cleanList,
@@ -132,7 +131,6 @@ export class PageGeneratorService {
       }
       const taken = await takenSlugs(
         tx,
-        GENERATED_LOCALE,
         drafts.map((draft) => draft.slug),
       );
       const fresh = drafts.filter((draft) => !taken.has(draft.slug));
@@ -141,7 +139,6 @@ export class PageGeneratorService {
       const rows: NewContentPage[] = fresh.map((draft) => ({
         kind: 'model',
         slug: draft.slug,
-        locale: GENERATED_LOCALE,
         title: draft.title,
         bodyMd: draftBody(draft),
         status: 'draft',

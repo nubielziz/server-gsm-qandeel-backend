@@ -17,7 +17,7 @@ import { containsText, jpegImage, pngImage, webpImage } from '../support/images'
 import { multipartRequest } from '../support/machine-orders';
 import { freshClientIp } from '../support/pipeline-routes';
 import { CONSOLE_ORIGIN } from '../support/staff-console';
-import { type StorefrontWorld, insertListing, storefrontWorld } from '../support/storefront';
+import { type StorefrontWorld, storefrontWorld } from '../support/storefront';
 
 const clock = new TestClock('2026-11-07T12:00:00.000Z');
 let t: TestApp;
@@ -75,9 +75,7 @@ const auditActions = async () =>
   (await (await testDb()).db.select().from(s.auditLogs).orderBy(s.auditLogs.id)).map((row) => row.action);
 
 describe('POST /admin/service-listings/:id/image', () => {
-  it('cleans and stores the picture once under its SHA-256, links it to every language and audits it', async () => {
-    const { db } = await testDb();
-    const arabic = await insertListing(db, world.att.serviceId, { locale: 'ar', slug: 'att-ar', isListed: true });
+  it("cleans and stores the picture once under its SHA-256, links it to the service's one listing and audits it", async () => {
     const input = jpegImage(640, 480, { exifOrientation: 1, comment: 'shot by Rami', tail: new Uint8Array([1, 2, 3]) });
     const clean = jpegImage(640, 480);
     const name = `${sha256(clean)}.jpg`;
@@ -99,10 +97,9 @@ describe('POST /admin/service-listings/:id/image', () => {
       filename: 'evilgpj.jpg',
     });
     const rows = await listingRows(world.att.serviceId);
-    expect(rows.map((row) => [row.id, row.imageFileId])).toEqual([
-      [world.att.listingId, file!.id],
-      [arabic, file!.id],
-    ]);
+    expect(rows.map((row) => [row.id, row.imageFileId])).toEqual([[world.att.listingId, file!.id]]);
+    // Another service's listing keeps its own (no) picture.
+    expect((await listingRows(world.icloud.serviceId)).map((row) => row.imageFileId)).toEqual([null]);
     // The stored object is the cleaned picture: no EXIF, no comment, no tail.
     const object = await t.app.get(StorageService).get(`media/${name}`);
     const chunks: Buffer[] = [];
@@ -214,16 +211,14 @@ describe('POST /admin/service-listings/:id/image', () => {
 });
 
 describe('DELETE /admin/service-listings/:id/image', () => {
-  it('removes the picture from every language, keeps the file, audits it, and answers 204 again when there is none', async () => {
-    const { db } = await testDb();
-    await insertListing(db, world.att.serviceId, { locale: 'ar', slug: 'att-ar' });
+  it('removes the picture of the listing, keeps the file, audits it, and answers 204 again when there is none', async () => {
     const name = (json(await upload(world.att.listingId, jpegImage(400, 300))).imageUrl as string).slice(
       '/store/v1/media/'.length,
     );
 
     const removed = await admin.delete(`/admin/service-listings/${world.att.listingId}/image`);
     expect(removed.status).toBe(204);
-    expect((await listingRows(world.att.serviceId)).map((row) => row.imageFileId)).toEqual([null, null]);
+    expect((await listingRows(world.att.serviceId)).map((row) => row.imageFileId)).toEqual([null]);
     expect(await fileRows()).toHaveLength(1);
     expect((await admin.get(`/admin/service-listings/${world.att.listingId}`)).body.imageUrl).toBeNull();
 
@@ -241,7 +236,7 @@ describe('DELETE /admin/service-listings/:id/image', () => {
 });
 
 describe('the picture on the listings and the cards', () => {
-  it('shows imageUrl on the admin rows, the public cards and the page, and a new language inherits the picture', async () => {
+  it('shows imageUrl on the admin rows, the public cards and the page', async () => {
     const url = json(await upload(world.icloud.listingId, jpegImage(400, 300))).imageUrl as string;
 
     const rows = (await admin.get('/admin/service-listings')).body as Array<{ id: number; imageUrl: string | null }>;
@@ -259,15 +254,6 @@ describe('the picture on the listings and the cards', () => {
     expect(json(await t.app.inject({ method: 'GET', url: `/store/v1/services/${world.icloud.slug}` })).imageUrl).toBe(
       url,
     );
-
-    const created = await admin.post('/admin/service-listings', {
-      serviceId: world.icloud.serviceId,
-      locale: 'ar',
-      publicTitle: 'فحص آيكلاود',
-      slug: 'icloud-check-ar',
-    });
-    expect(created.status).toBe(201);
-    expect(created.body.imageUrl).toBe(url);
   });
 });
 

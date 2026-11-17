@@ -24,12 +24,11 @@ beforeEach(async () => {
   await clearIdentityCaches(t);
   const { db } = await testDb();
   world = await storefrontWorld(db);
-  // A second listing in Arabic brings the Vodafone network next to the AT&T of the first world.
-  await insertListing(db, world.att.serviceId, {
-    locale: 'ar',
-    slug: 'att-ar',
+  // A third service's listing brings the Vodafone network next to the AT&T of the first world.
+  await insertListing(db, await insertService(db, world.icloud.categoryId, { name: 'Vodafone UK Unlock' }), {
+    slug: 'vodafone-uk-unlock',
     carrier: 'Vodafone',
-    publicTitle: 'AT&T',
+    publicTitle: 'Vodafone UK Unlock',
   });
   await db.insert(s.tacCatalog).values([
     { tac: '35389011', brand: 'Apple', model: 'A2633', marketingName: 'iPhone 13', source: 'demo' },
@@ -75,7 +74,6 @@ describe('POST /admin/content-pages/generate', () => {
     expect(res.body.created[0]).toMatchObject({
       kind: 'model',
       slug: 'unlock-iphone-12-on-atandt',
-      locale: 'en',
       title: 'Unlock iPhone 12 on AT&T',
       status: 'draft',
       publishedAt: null,
@@ -135,16 +133,15 @@ describe('POST /admin/content-pages/generate', () => {
   });
 
   it('skips and counts only the distinct combinations that already have a page, and merges those that repeat inside the run', async () => {
-    await insertPageRow(await db(), { slug: 'unlock-iphone-13-on-atandt', locale: 'en', kind: 'model' });
-    await insertPageRow(await db(), { slug: 'unlock-iphone-13-on-vodafone', locale: 'ar', kind: 'model' });
+    await insertPageRow(await db(), { slug: 'unlock-iphone-13-on-atandt', kind: 'model' });
     const res = await generate({
       brands: ['Apple'],
       models: ['iPhone 13', 'iPhone-13'],
       networks: ['AT&T', 'Vodafone'],
     });
     expect(res.status).toBe(200);
-    // iPhone 13 x AT&T exists; the Arabic page does not block the English one; `iPhone-13` repeats the slugs of `iPhone 13`, which are
-    // merged before counting, so only the one page that exists is skipped.
+    // iPhone 13 x AT&T exists; `iPhone-13` repeats the slugs of `iPhone 13`, which are merged before counting, so only the one page
+    // that exists is skipped.
     expect(titles(res)).toEqual(['Unlock iPhone 13 on Vodafone']);
     expect(res.body.skipped).toBe(1);
     const again = await generate({ brands: ['Apple'], models: ['iPhone 13'], networks: ['AT&T', 'Vodafone'] });
@@ -184,7 +181,7 @@ describe('POST /admin/content-pages/generate', () => {
 
   it('skips a carrier of the listings that cannot make a slug and counts it, instead of refusing the whole "all networks" run', async () => {
     const { db } = await testDb();
-    // Two more services (a listing is one per service and language), each sold under a carrier with no Latin letter or digit.
+    // Two more services (a listing is one per service), each sold under a carrier with no Latin letter or digit.
     const category = await insertCategory(db, { name: 'Odd carriers' });
     for (const [slug, carrier] of [
       ['odd-carrier-1', 'شبكة'],
@@ -239,7 +236,7 @@ describe('POST /admin/content-pages/generate', () => {
 
   it('allows exactly 50, and counts the combinations that already have a page before it judges the cap', async () => {
     const models = Array.from({ length: 17 }, (_, i) => `Model ${i + 1}`);
-    await insertPageRow(await db(), { slug: 'unlock-model-1-on-atandt', locale: 'en', kind: 'model' });
+    await insertPageRow(await db(), { slug: 'unlock-model-1-on-atandt', kind: 'model' });
     const res = await generate({ brands: [], models, networks: ['AT&T', 'EE', 'Three'] });
     expect(res.status).toBe(200);
     expect(res.body.created).toHaveLength(50);

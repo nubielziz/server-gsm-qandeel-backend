@@ -5,7 +5,7 @@ import { CLOCK, type Clock } from '../../../common/clock';
 import type { BodyOf, ResultOf } from '../../../common/contract';
 import { type FieldError, AppError } from '../../../common/errors';
 import { DbService, type DbExecutor } from '../../../infra/db';
-import { CurrentLegalDocuments, FALLBACK_LOCALE, StorefrontPolicies, type LegalDocumentRef } from '../../storefront';
+import { CurrentLegalDocuments, StorefrontPolicies, type LegalDocumentRef } from '../../storefront';
 import type { recordCheckoutConsents } from '../contracts/checkout.contracts';
 import type { ConsentPurpose, ConsentRecord, Customer, NewConsentRecord } from '../db/schema';
 import {
@@ -64,7 +64,7 @@ export class ConsentService {
    * Records the consents of a session.
    *
    * @param sessionId the session the token resolved to
-   * @param body the purposes with their answers and the language of the texts
+   * @param body the purposes with their answers
    * @param origin the visitor's address and user agent
    * @param signedInCustomerId the customer the request is signed in as, when it carries a usable customer session
    * @returns the record of each purpose sent and where the session's consent now stands
@@ -84,8 +84,6 @@ export class ConsentService {
         errors: [{ field: `consents.${duplicate}.purpose`, code: 'duplicate', message: 'List each purpose once.' }],
       });
     }
-    const locale = body.locale ?? FALLBACK_LOCALE;
-
     return this.db.runInTransaction(async ({ tx }) => {
       const session = await lockCheckoutSession(tx, sessionId);
       if (!session) throw new AppError('NOT_FOUND', { detail: 'This link is not valid.' });
@@ -108,7 +106,8 @@ export class ConsentService {
           documents.set(item.purpose, null);
           continue;
         }
-        const document = await this.legal.current(tx, type, locale);
+        // The version in force of the type: one per type, and English (decision 039).
+        const document = await this.legal.current(tx, type);
         if (document === undefined) {
           problems.push({
             field: `consents.${index}.purpose`,
@@ -171,10 +170,7 @@ export class ConsentService {
                 {
                   purpose: record.purpose,
                   granted: record.granted,
-                  document:
-                    document === null
-                      ? null
-                      : { type: document.type, version: document.version, locale: document.locale },
+                  document: document === null ? null : { type: document.type, version: document.version },
                   recordedAt: record.createdAt.toISOString(),
                 },
               ];

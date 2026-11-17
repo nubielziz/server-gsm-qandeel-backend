@@ -14,7 +14,7 @@ Slice B1 built the index side (documents, sync, rebuild, reconcile, terms; `sear
 | --- | --- |
 | `GET /store/v1/search/suggest` | the ghost text, up to 6 completions, up to 6 services (then nearby ones) with Postgres prices, up to 4 filter chips, "did you mean", the popular searches for an empty text, an IMEI intent. Limiter `search-suggest` (1200 a minute per address). |
 | `GET /store/v1/search` | the results page: the exact cards of `GET /store/v1/services`, facet counts (each group ignores its own selection), the price span (page 1, at most 1000 matches), "did you mean". Limiter `ip`. |
-| `GET /store/v1/services?q=` | unchanged array shape and `x-total-count`; on an English list the match set and the order come from the engine (`relevance` is the default sort while `q` is set), with a price sort or price bounds over the best 1000 (`x-search-truncated`). `locale=ar` stays the database search. |
+| `GET /store/v1/services?q=` | unchanged array shape and `x-total-count`; the match set and the order come from the engine (`relevance` is the default sort while `q` is set), with a price sort or price bounds over the best 1000 (`x-search-truncated`). The database search answers only when the engine is off, down or not ready (decision 038). |
 | `/admin/search/*` | the console tools: synonyms, pin rules, hidden popular terms, the report, a preview, the index status and "Rebuild index" (`storefront:read`, `storefront:update`, `storefront:publish`; every write audited, with its outbox event). |
 
 Both public routes send `x-search-engine: typesense|fallback`.
@@ -22,7 +22,7 @@ Both public routes send `x-search-engine: typesense|fallback`.
 ## One request
 
 `SuggestService` / `ResultsService` / `StorefrontCatalogService.list` → `SearchMatches` or the suggest engine part → `SearchEngine.run`
-(circuit, metrics, fallback) → `TypesenseClient` (one `multi_search`) → `SearchResolver` (re-check with `SearchableIds`, English listing,
+(circuit, metrics, fallback) → `TypesenseClient` (one `multi_search`) → `SearchResolver` (re-check with `SearchableIds`, the listing,
 price with `StorefrontQuotes.pricedSellable`) → cards (`StorefrontCatalogService.cards`, the same code as the list).
 
 - **Suggest engine part** (ghost, completions, candidate ids with matched tokens, filter chips, did-you-mean) is cached 30 s per typed
@@ -71,12 +71,14 @@ real shop but not what case 51 describes. The load script builds terms from ever
 
 - Prices: never in the index; `search-resolver.ts` and `StorefrontQuotes` price from Postgres on every request.
 - Merchant, REST v1, Dhru and console searches: unchanged (merchant prices are personal and recorded).
-- Arabic: `/ar` keeps `GET /store/v1/services` and the database search until Arabic is switched off.
+- Other languages: none since decision 039 (feature 30). A service has one listing, and the searchable rule asks the same
+  `listedServiceIds` as the checkout, so what the search shows and what can be bought agree. A visitor may still type Arabic: it is
+  normalised like any text and answers 200 with no hits (`test/search/golden.test.ts`).
 
 ## Postgres queries per suggest
 
 A warm suggest (engine part and cards cached) runs 12 Postgres queries: the retail group, the currency, the searchable rule (3: sellable,
-retail price row, English listing), `RetailPrices.quotes` (6: it re-reads the service, the groups, the group prices and the pricing
+retail price row, switched-on listing), `RetailPrices.quotes` (6: it re-reads the service, the groups, the group prices and the pricing
 rules), and the stock flag. The plan's target of 4 is not reachable with catalog's public reads; reaching it needs a catalog method that
 answers "sellable, priced and in stock" for a page of ids in one query (a later B-entry). `test/integration/search-api.test.ts` asserts the
 measured 12 so a regression shows.

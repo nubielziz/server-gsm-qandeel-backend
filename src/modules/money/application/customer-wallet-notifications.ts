@@ -1,6 +1,7 @@
-// The notification events of the customer wallet (feature 21): what a storefront customer is told about their store balance, with English and
-// Arabic default templates. Migration `CUSTOMER_WALLET_RULES_MIGRATION` inserts the same rows; a spec keeps the two equal (lead rule L2).
-import type { NotificationEventDefinition } from '../../platform';
+// The notification events of the customer wallet (feature 21): what a storefront customer is told about their store balance, with English
+// default templates. Migration `CUSTOMER_WALLET_RULES_MIGRATION` inserted them (with Arabic twins that migration 0035 deletes); a spec finds
+// every row of this file in it.
+import { type NotificationEventDefinition, templatesInsertSql } from '../../platform';
 
 /**
  * The file name (without `.sql`) of the custom migration of feature 21: the "below zero ⇒ frozen" trigger and the wallet templates.
@@ -82,110 +83,64 @@ export const CUSTOMER_WALLET_EVENTS: readonly NotificationEventDefinition[] = [
   }),
 ];
 
-/** One default template of a wallet event, in English or Arabic. */
+/** One default template of a wallet event (an email to the customer). */
 export interface CustomerWalletTemplate {
   readonly event: string;
   readonly channel: 'email';
   readonly audience: 'customer';
-  readonly locale: 'en' | 'ar';
   readonly subject: string;
   readonly body: string;
 }
 
-const template = (event: string, locale: 'en' | 'ar', subject: string, body: string): CustomerWalletTemplate => ({
+const template = (event: string, subject: string, body: string): CustomerWalletTemplate => ({
   event,
   channel: 'email',
   audience: 'customer',
-  locale,
   subject,
   body,
 });
 
 /**
- * The ten default templates (five events, English and Arabic), with the plan's exact texts.
+ * The five default templates (one English email per event), with the plan's exact texts.
  *
- * Why: a missing template sends nothing (RULES settings 10); lead rule L2: customer events ship `en` and `ar` defaults.
+ * Why: a missing template sends nothing (RULES settings 10), so the wallet mails come with the migration. English only (decision 039).
  */
 export const CUSTOMER_WALLET_TEMPLATES: readonly CustomerWalletTemplate[] = [
   template(
     WALLET_TOPUP_CREDITED_EVENT,
-    'en',
     'Your balance was topped up',
     'Hi {{customerName}},\n\nWe added {{amount}} to your store balance (top-up {{reference}}). Your balance is now {{balance}}.\n\nIf you did not make this top-up, reply to this email.',
   ),
   template(
-    WALLET_TOPUP_CREDITED_EVENT,
-    'ar',
-    'تم شحن رصيدك',
-    'مرحباً {{customerName}}،\n\nأضفنا {{amount}} إلى رصيدك في المتجر (عملية الشحن {{reference}}). رصيدك الآن {{balance}}.\n\nإذا لم تقم بهذه العملية، ردّ على هذه الرسالة.',
-  ),
-  template(
     WALLET_TOPUP_REJECTED_EVENT,
-    'en',
     'We could not accept your top-up {{reference}}',
     'Hi {{customerName}},\n\nWe could not accept your top-up of {{amount}} ({{reference}}).\n\nReason: {{reason}}\n\nNothing was added to your balance. You can start a new top-up, or reply to this email if you think this is a mistake.',
   ),
   template(
-    WALLET_TOPUP_REJECTED_EVENT,
-    'ar',
-    'تعذّر قبول عملية الشحن {{reference}}',
-    'مرحباً {{customerName}}،\n\nتعذّر علينا قبول عملية شحن الرصيد بمبلغ {{amount}} ({{reference}}).\n\nالسبب: {{reason}}\n\nلم يُضَف أي مبلغ إلى رصيدك. يمكنك بدء عملية شحن جديدة، أو الرد على هذه الرسالة إذا كنت ترى أن هناك خطأ.',
-  ),
-  template(
     WALLET_ADJUSTED_EVENT,
-    'en',
     'Your store balance changed',
     'Hi {{customerName}},\n\nOur team changed your store balance by {{change}}. Your balance is now {{balance}}.\n\nIf you did not expect this, reply to this email.',
   ),
   template(
-    WALLET_ADJUSTED_EVENT,
-    'ar',
-    'تغيّر رصيدك في المتجر',
-    'مرحباً {{customerName}}،\n\nعدّل فريقنا رصيدك في المتجر بمقدار {{change}}. رصيدك الآن {{balance}}.\n\nإذا لم تكن تتوقع ذلك، ردّ على هذه الرسالة.',
-  ),
-  template(
     WALLET_FROZEN_EVENT,
-    'en',
     'Your store balance is on hold',
     'Hi {{customerName}},\n\nPaying from your store balance is on hold while we review a payment on your account. Your orders and your sign-in are not affected.\n\nReply to this email if you need help.',
   ),
   template(
-    WALLET_FROZEN_EVENT,
-    'ar',
-    'رصيدك في المتجر موقوف مؤقتاً',
-    'مرحباً {{customerName}}،\n\nأوقفنا الدفع من رصيدك في المتجر مؤقتاً ريثما نراجع عملية دفع في حسابك. طلباتك وتسجيل دخولك لا يتأثران.\n\nردّ على هذه الرسالة إذا احتجت إلى مساعدة.',
-  ),
-  template(
     WALLET_ORDER_REFUNDED_EVENT,
-    'en',
     'We returned {{amount}} to your store balance',
     'Hi {{customerName}},\n\nWe refunded {{amount}} for order {{orderId}} ("{{service}}") to your store balance. You can use it for another order.',
-  ),
-  template(
-    WALLET_ORDER_REFUNDED_EVENT,
-    'ar',
-    'أعدنا {{amount}} إلى رصيدك في المتجر',
-    'مرحباً {{customerName}}،\n\nأعدنا {{amount}} عن الطلب {{orderId}} («{{service}}») إلى رصيدك في المتجر. يمكنك استخدامه في طلب آخر.',
   ),
 ];
 
 /**
- * Writes the wallet templates as the SQL the migration holds.
+ * Writes the wallet templates as the SQL that installs them (today's shape: no language, one per event, channel and audience).
  *
- * Why: the migration is plain SQL, so the text is written once here and pasted; a spec compares the migration's data section with this
- * function (the support module's pattern).
+ * Why: the text is written once here; the applied migration keeps the shape it shipped with (decision 027), so the spec finds every row
+ * of this file in it, and the test support runs this SQL.
  *
  * @returns one `INSERT ... ON CONFLICT DO NOTHING` statement for every wallet template
  */
 export function customerWalletTemplatesSql(): string {
-  const quote = (text: string) => `'${text.replace(/'/g, "''")}'`;
-  const rows = CUSTOMER_WALLET_TEMPLATES.map(
-    (t) =>
-      `  (${quote(t.event)}, ${quote(t.channel)}, ${quote(t.audience)}, ${quote(t.locale)}, ${quote(t.subject)}, ${quote(t.body)}, true)`,
-  );
-  return [
-    'INSERT INTO "notification_templates" ("event", "channel", "audience", "locale", "subject", "body", "is_active") VALUES',
-    rows.join(',\n'),
-    'ON CONFLICT ("event", "channel", "audience", "locale") DO NOTHING;',
-  ].join('\n');
+  return templatesInsertSql(CUSTOMER_WALLET_TEMPLATES);
 }

@@ -1,6 +1,7 @@
 // Sample addition rows for test/unit/map-additions.test.ts (stage 99 belongs to the tooling test): never loaded by the real tools.
 // Four rows, five endpoints: one console-called action, one public Turnstile route, one CRUD row, and a row whose path matches
 // another module's matcher (its own `module` must win). One row flag (feature 24A): Turnstile added to a public map row.
+// English only (decision 039): the Turnstile route writes its auth text in English, and the last row has no Arabic sentence.
 import { R } from '../../../../scripts/lib/map-additions.mjs';
 
 export const rows = [
@@ -26,7 +27,7 @@ export const rows = [
     'POST',
     '/store/v1/w0-sample/check',
     'اختبار الأدوات: فحص عام',
-    'عام + Turnstile',
+    'public + Turnstile',
     99,
     ['services', 'listed_prices'],
     {
@@ -47,7 +48,7 @@ export const rows = [
     'clients',
     'GET',
     '/admin/customers/:id/w0-sample',
-    'اختبار الأدوات: قراءة المحفظة',
+    undefined,
     'wallet:read',
     99,
     ['ledger_accounts', 'idempotency_keys'],

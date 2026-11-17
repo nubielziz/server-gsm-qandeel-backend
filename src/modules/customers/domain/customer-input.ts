@@ -9,12 +9,6 @@ export const MAX_NAME_LENGTH = 120;
 export const MAX_PHONE_LENGTH = 40;
 /** The most characters of the internal note (the console's dialog limit, customers.md PATCH). */
 export const MAX_NOTES_LENGTH = 300;
-/** The languages a customer can use (the console's LOCALES). */
-export const CUSTOMER_LOCALES = ['en', 'ar'] as const;
-
-/** One value of {@link CUSTOMER_LOCALES}. */
-export type CustomerLocale = (typeof CUSTOMER_LOCALES)[number];
-
 /**
  * Tidies a name: trimmed, and every run of white space made one space.
  *

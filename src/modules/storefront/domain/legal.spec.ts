@@ -24,9 +24,9 @@ describe('legalState', () => {
 });
 
 describe('legalLabel', () => {
-  it('writes the demo label: type, language in capitals, version', () => {
-    expect(legalLabel({ type: 'terms', locale: 'en', version: '3.2' })).toBe('Terms of service (EN) 3.2');
-    expect(legalLabel({ type: 'cookies', locale: 'ar', version: '1.0' })).toBe('Cookie policy (AR) 1.0');
+  it('writes the label: type and version, no language', () => {
+    expect(legalLabel({ type: 'terms', version: '3.2' })).toBe('Terms of service 3.2');
+    expect(legalLabel({ type: 'cookies', version: '1.0' })).toBe('Cookie policy 1.0');
   });
 });
 

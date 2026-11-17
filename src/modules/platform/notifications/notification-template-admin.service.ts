@@ -28,7 +28,7 @@ import {
   templateExists,
   updateTemplate,
 } from './notification-template.repository';
-import { checkLocale, checkTemplateFields, placeholdersOf, renderMessage } from './template-rules';
+import { checkTemplateFields, placeholdersOf, renderMessage } from './template-rules';
 
 /** A template on the wire. */
 export interface WireTemplate {
@@ -36,7 +36,6 @@ export interface WireTemplate {
   readonly event: string;
   readonly channel: NotificationChannel;
   readonly audience: NotificationAudience;
-  readonly locale: string;
   readonly subject: string;
   readonly body: string;
   readonly isActive: boolean;
@@ -53,7 +52,6 @@ export interface UpdateTemplateInput {
   readonly event?: string;
   readonly channel?: NotificationChannel;
   readonly audience?: NotificationAudience;
-  readonly locale?: string;
   readonly subject?: string;
   readonly body?: string;
   readonly isActive?: boolean;
@@ -71,7 +69,7 @@ export interface TemplatePreview {
 const DAY_MS = 86_400_000;
 const refuse = (...errors: FieldError[]) => new AppError('VALIDATION_FAILED', { errors });
 const notFound = () => new AppError('NOT_FOUND', { detail: 'No notification template with this id.' });
-const FIXED_FIELDS = ['event', 'channel', 'audience', 'locale'] as const;
+const FIXED_FIELDS = ['event', 'channel', 'audience'] as const;
 
 /** The recipient type a template audience matches (identity-platform-11). */
 function recipientTypeOf(audience: NotificationAudience): NotificationRecipientType {
@@ -84,7 +82,6 @@ function snapshotOf(row: NotificationTemplate): Record<string, unknown> {
     event: row.event,
     channel: row.channel,
     audience: row.audience,
-    locale: row.locale,
     subject: row.subject,
     body: row.body,
     isActive: row.isActive,
@@ -92,14 +89,14 @@ function snapshotOf(row: NotificationTemplate): Record<string, unknown> {
 }
 
 /** The label the audit log shows. */
-const labelOf = (row: NotificationTemplate) => `${row.event} (${row.channel}, ${row.audience}, ${row.locale})`;
+const labelOf = (row: NotificationTemplate) => `${row.event} (${row.channel}, ${row.audience})`;
 
 /**
  * Reads and changes notification templates.
  *
  * Why: RULES settings 10: staff write the texts the system sends. A template exists only for an event of the registry, uses only that
- * event's placeholders, is unique per event, channel, audience and language, and fixes those four fields at create. Turning one off
- * means "send nothing" (the delivery honours it). Every write is audited with before and after (RULES settings 12).
+ * event's placeholders, is unique per event, channel and audience (no language: decision 039, B226), and fixes those three fields at
+ * create. Turning one off means "send nothing" (the delivery honours it). Every write is audited with before and after (RULES settings 12).
  *
  * Side effects: writes `notification_templates` and one `audit_logs` row per write.
  */
@@ -144,32 +141,31 @@ export class NotificationTemplateAdminService {
   /**
    * Adds a template.
    *
-   * @param input the event, channel, audience, language, texts and switch
+   * @param input the event, channel, audience, texts and switch
    * @returns the stored template
    * @throws {AppError} `VALIDATION_FAILED` for an unknown event (on `event`), an event not sent to the audience (on `audience`) or by the channel
-   *   (on `channel`), a bad language, an email without a subject, an empty body, a placeholder the event does not offer, or a second template for
-   *   the same event, channel, audience and language (on `event`)
+   *   (on `channel`), an email without a subject, an empty body, a placeholder the event does not offer, or a second template for the same
+   *   event, channel and audience (on `event`, code `duplicate`)
    */
   async create(input: CreateTemplateInput): Promise<WireTemplate> {
     const resolved = this.definitionFor(input.event, input.audience, input.channel);
-    const localeProblem = checkLocale(input.locale);
     // A bad event hides which placeholders are fine, so the texts are checked only against a real event.
-    if ('errors' in resolved) throw refuse(...resolved.errors, ...(localeProblem ? [localeProblem] : []));
+    if ('errors' in resolved) throw refuse(...resolved.errors);
     const subject = input.channel === 'email' ? input.subject : '';
-    const errors = [
-      ...(localeProblem ? [localeProblem] : []),
-      ...checkTemplateFields({ channel: input.channel, subject, body: input.body }, resolved.definition.variables),
-    ];
+    const errors = checkTemplateFields(
+      { channel: input.channel, subject, body: input.body },
+      resolved.definition.variables,
+    );
     if (errors.length > 0) throw refuse(...errors);
 
     const duplicate = refuse({
       field: 'event',
       code: 'duplicate',
-      message: 'A template for this event, channel and language already exists.',
+      message: 'A template for this event, channel and audience already exists.',
     });
     try {
       return await this.db.runInTransaction(async ({ tx }) => {
-        const key = { event: input.event, channel: input.channel, audience: input.audience, locale: input.locale };
+        const key = { event: input.event, channel: input.channel, audience: input.audience };
         if (await templateExists(tx, key)) throw duplicate;
         const now = this.clock.now();
         const row = await insertTemplate(tx, {
@@ -202,7 +198,7 @@ export class NotificationTemplateAdminService {
    * @param id the template id
    * @param input the fields to change
    * @returns the stored template
-   * @throws {AppError} `NOT_FOUND`; `VALIDATION_FAILED` for a change of event, channel, audience or language (on that field), an email without a
+   * @throws {AppError} `NOT_FOUND`; `VALIDATION_FAILED` for a change of event, channel or audience (on that field), an email without a
    *   subject, an empty body, or a placeholder the event does not offer
    */
   async update(id: number, input: UpdateTemplateInput): Promise<WireTemplate> {
@@ -379,7 +375,6 @@ function toWire(row: NotificationTemplate, sentLast30Days: number): WireTemplate
     event: row.event,
     channel: row.channel,
     audience: row.audience,
-    locale: row.locale,
     subject: row.subject,
     body: row.body,
     isActive: row.isActive,

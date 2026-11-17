@@ -1,5 +1,6 @@
 // Integration tests of the transactional emails staff actions send a merchant (feature 20, slice B): approval, suspension, reactivation,
-// the security notice and the language of each, plus what a suspension does to open links and to the merchant's sign-in.
+// the security notice and the one English template of each (decision 039), plus what a suspension does to open links and to the merchant's
+// sign-in.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { DbService, schema as s } from '../../src/infra/db';
@@ -84,37 +85,36 @@ describe('approval and reactivation', () => {
     expect(mail!.text).toContain(t.config.http.portalBaseUrl);
   });
 
-  it('reactivating a suspended merchant writes one merchant.reactivated notification, in the merchant language', async () => {
-    const english = await makeMerchant(t, { status: 'suspended' });
-    const arabic = await makeMerchant(t, { status: 'suspended', locale: 'ar', name: 'متجر زين' });
+  it('reactivating a suspended merchant writes one merchant.reactivated notification, and every merchant gets the one template', async () => {
+    const first = await makeMerchant(t, { status: 'suspended', name: 'Zain Mobile Hub' });
+    const second = await makeMerchant(t, { status: 'suspended', name: 'Cedar Phones' });
     const api = await staff();
-    await api.patch(`/admin/clients/${english.id}`, { status: 'active' });
-    await api.patch(`/admin/clients/${arabic.id}`, { status: 'active' });
+    await api.patch(`/admin/clients/${first.id}`, { status: 'active' });
+    await api.patch(`/admin/clients/${second.id}`, { status: 'active' });
     expect((await rows()).map((row) => row.event)).toEqual(['merchant.reactivated', 'merchant.reactivated']);
 
     await sendAllQueued(t);
     const byTo = new Map(mailbox(t).sent.map((mail) => [mail.to, mail]));
-    expect(byTo.get(english.email)?.subject).toBe('Your merchant account is active again');
-    expect(byTo.get(arabic.email)?.subject).toBe('تمت إعادة تفعيل حساب التاجر الخاص بك');
-    expect(byTo.get(arabic.email)?.text).toContain('مرحباً متجر زين،');
+    expect(byTo.get(first.email)?.subject).toBe('Your merchant account is active again');
+    expect(byTo.get(first.email)?.text).toContain('Hi Zain Mobile Hub,');
+    expect(byTo.get(second.email)?.subject).toBe('Your merchant account is active again');
+    expect(byTo.get(second.email)?.text).toContain('Hi Cedar Phones,');
+    expect(byTo.get(second.email)?.html).toBeUndefined();
   });
 
-  it('a language with no template falls back to English, and a switched-off template sends nothing while the request still succeeds', async () => {
+  it('a missing or switched-off template sends nothing while the request still succeeds (nothing stands in for it)', async () => {
     const { db } = await testDb();
     const merchant = await makeMerchant(t, { status: 'pending' });
     const api = await staff();
-    // Only the Arabic row is off: the merchant is Arabic, so the English template answers.
-    await db
-      .update(s.notificationTemplates)
-      .set({ isActive: false })
-      .where(and(eq(s.notificationTemplates.event, 'merchant.approved'), eq(s.notificationTemplates.locale, 'ar')));
-    await db.update(s.clients).set({ locale: 'ar' }).where(eq(s.clients.id, merchant.id));
+    // The approval's one template is gone: no notification, and the approval itself goes through.
+    await db.delete(s.notificationTemplates).where(eq(s.notificationTemplates.event, 'merchant.approved'));
     expect((await api.patch(`/admin/clients/${merchant.id}`, { status: 'active' })).status).toBe(200);
+    expect(await rows()).toEqual([]);
     await sendAllQueued(t);
-    expect(mailbox(t).sent.map((mail) => mail.subject)).toEqual(['Your merchant account is approved']);
+    expect(mailbox(t).sent).toEqual([]);
+    expect((await clientRow(merchant.id)).status).toBe('active');
 
-    // Every language off: nothing is queued at all.
-    mailbox(t).reset();
+    // Switched off: nothing is queued at all.
     const other = await makeMerchant(t, { status: 'suspended' });
     await db
       .update(s.notificationTemplates)
@@ -196,25 +196,29 @@ describe('suspension', () => {
 describe('the security notice', () => {
   const KINDS: readonly SecurityNoticeKind[] = ['temporary_password', 'twofa_reset', 'api_key_created'];
 
-  it('names a fixed sentence per action in the merchant language, never anything else', async () => {
-    const english = await makeMerchant(t, { name: 'English Shop' });
-    const arabic = await makeMerchant(t, { name: 'متجر', locale: 'ar' });
+  it('names the fixed sentence of the action, the same for every merchant, never anything else', async () => {
+    const first = await makeMerchant(t, { name: 'English Shop' });
+    const second = await makeMerchant(t, { name: 'Cedar Phones' });
     const mails = t.app.get(MerchantLifecycleMails);
     const db = t.app.get(DbService);
     for (const kind of KINDS) {
       await db.runInTransaction(async (work) => {
-        await mails.securityNotice(work, english.row, kind);
-        await mails.securityNotice(work, arabic.row, kind);
+        await mails.securityNotice(work, first.row, kind);
+        await mails.securityNotice(work, second.row, kind);
       });
     }
     await sendAllQueued(t);
     const sent = mailbox(t).sent;
     expect(sent).toHaveLength(6);
     for (const kind of KINDS) {
-      const en = sent.find((mail) => mail.to === english.email && mail.text.includes(SECURITY_NOTICE_PHRASES[kind].en));
-      const ar = sent.find((mail) => mail.to === arabic.email && mail.text.includes(SECURITY_NOTICE_PHRASES[kind].ar));
-      expect(en?.subject).toBe('A security change on your merchant account');
-      expect(ar?.subject).toBe('تغيير أمني في حساب التاجر الخاص بك');
+      for (const merchant of [first, second]) {
+        const mail = sent.find((m) => m.to === merchant.email && m.text.includes(SECURITY_NOTICE_PHRASES[kind]));
+        expect(mail?.subject, `${kind} ${merchant.email}`).toBe('A security change on your merchant account');
+        expect(mail?.text).toBe(
+          `Hi ${merchant.row.name},\n\nOur support team made this change to your account: ${SECURITY_NOTICE_PHRASES[kind]}.\n\n` +
+            'If you did not ask for it, reply to this email or contact our support team at once.',
+        );
+      }
     }
   });
 
@@ -225,36 +229,37 @@ describe('the security notice', () => {
     await api.post(`/admin/clients/${withTwoFactor.id}/password`, { mode: 'temporary_password' });
     await sendAllQueued(t);
     const texts = mailbox(t).sent.map((mail) => mail.text);
-    expect(texts.some((text) => text.includes(SECURITY_NOTICE_PHRASES.twofa_reset.en))).toBe(true);
-    expect(texts.some((text) => text.includes(SECURITY_NOTICE_PHRASES.temporary_password.en))).toBe(true);
+    expect(texts.some((text) => text.includes(SECURITY_NOTICE_PHRASES.twofa_reset))).toBe(true);
+    expect(texts.some((text) => text.includes(SECURITY_NOTICE_PHRASES.temporary_password))).toBe(true);
   });
 });
 
-describe('the language of merchant mail', () => {
-  it('every lifecycle event has an English and an Arabic template that renders', async () => {
-    const english = await makeMerchant(t);
-    const arabic = await makeMerchant(t, { locale: 'ar' });
+describe('the templates of merchant mail', () => {
+  it('every lifecycle event has one English template that renders, with every placeholder filled', async () => {
+    const merchant = await makeMerchant(t, { name: 'Zain Mobile Hub' });
     const mails = t.app.get(MerchantLifecycleMails);
     await t.app.get(DbService).runInTransaction(async (work) => {
-      for (const client of [english.row, arabic.row]) {
-        await mails.approved(work, client);
-        await mails.suspended(work, client);
-        await mails.reactivated(work, client);
-        await mails.kycDecided(work, client, 'approved', '');
-        await mails.kycDecided(work, client, 'rejected', 'The photo is not readable.');
-        await mails.securityNotice(work, client, 'twofa_reset');
-      }
+      await mails.approved(work, merchant.row);
+      await mails.suspended(work, merchant.row);
+      await mails.reactivated(work, merchant.row);
+      await mails.kycDecided(work, merchant.row, 'approved', '');
+      await mails.kycDecided(work, merchant.row, 'rejected', 'The photo is not readable.');
+      await mails.securityNotice(work, merchant.row, 'twofa_reset');
     });
     await sendAllQueued(t);
     const sent = mailbox(t).sent;
-    expect(sent).toHaveLength(12);
-    expect(sent.filter((mail) => mail.to === english.email).every((mail) => /^[\x20-\x7e]+$/.test(mail.subject))).toBe(
-      true,
-    );
-    expect(sent.filter((mail) => mail.to === arabic.email).every((mail) => /[؀-ۿ]/.test(mail.subject))).toBe(true);
-    // No placeholder is left unfilled.
+    expect(sent.map((mail) => mail.subject)).toEqual([
+      'Your merchant account is approved',
+      'Your merchant account is suspended',
+      'Your merchant account is active again',
+      'Your identity verification is approved',
+      'Your identity verification needs attention',
+      'A security change on your merchant account',
+    ]);
+    // Plain text mails: no HTML part, and no placeholder is left unfilled.
+    expect(sent.every((mail) => mail.html === undefined)).toBe(true);
     expect(sent.some((mail) => /\{\{/.test(mail.text) || /\{\{/.test(mail.subject))).toBe(false);
-    const rejected = sent.find((mail) => mail.to === arabic.email && mail.subject === 'توثيق هويتك يحتاج إلى مراجعة');
-    expect(rejected?.text).toContain('The photo is not readable.');
+    const rejected = sent.find((mail) => mail.subject === 'Your identity verification needs attention');
+    expect(rejected?.text).toContain('Reason: The photo is not readable.');
   });
 });

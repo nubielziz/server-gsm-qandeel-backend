@@ -14,7 +14,13 @@ listings, content pages, help articles and legal documents and the three public 
 (`scripts/seed/storefront.ts`), and the page generator (feature 19: `POST /admin/content-pages/generate`). Feature 16 built
 `PATCH /admin/storefront/settings` (below). Feature 22 (the storefront catalog backend) added the listing content editor, the
 catalog filters and sorts, `GET /store/v1/categories`, the availability flag, the popularity job, the public page list, the slug
-alternates, the help vote and the service picture (upload, removal, `imageUrl`; section "Feature 22" below).
+alternates (removed by feature 30), the help vote and the service picture (upload, removal, `imageUrl`; section "Feature 22" below).
+
+Feature 30 (English only, decision 039, B224) made the listings and the catalog English only: a service has one listing, a slug is
+unique for the site, no listing or catalog route takes or answers a language, and the old addresses of content that existed only in
+another language are answered by `GET /store/v1/legacy-slugs/:kind/:slug` (section "Feature 30: old addresses" below). The same feature
+made pages, help articles and legal documents English only (migration 0037): a page slug is unique for the site, no page or article
+has a language, and `legal_documents.locale` stays only as an archive tag (section "Legal documents: the one exception" below).
 
 Feature 29 (decision 038) added the English search: `GET /store/v1/search/suggest`, `GET /store/v1/search`, the engine path of
 `GET /store/v1/services?q=` and the console's `/admin/search/*` tools; everything of it is in `search/` (its own README) and section
@@ -33,8 +39,8 @@ tables).
   retail group: catalog's `StorefrontServices`, the merchant catalog's visibility rule, catalog-3) AND staff priced it for the
   retail group (a `service_group_prices` row: without it the shop would fall back to the B2B base price, which is not a retail
   price). `StorefrontQuotes.listedSellable` is the one rule behind the list, the page, the checkout and the pre-order IMEI check:
-  sellable for the retail group AND a `service_listings` row with `is_listed` on (in any language), so an unlisted service cannot be
-  bought by guessing its id. The list's total is exact (the sellable ids go into the SQL). Nothing staff-only is ever sent: no cost, supplier, floor,
+  sellable for the retail group AND its one `service_listings` row with `is_listed` on, so an unlisted service cannot be
+  bought by guessing its id. The search asks the same `listedServiceIds`, so what it shows and what can be bought agree. The list's total is exact (the sellable ids go into the SQL). Nothing staff-only is ever sent: no cost, supplier, floor,
   `locked` flag or supplier field name.
 - **The price** (`application/storefront-quotes.ts`, `domain/retail-quote.ts`): the retail price staff set for the `b2c_retail` group,
   lifted to the storefront floor, as net USD. The floor is the one catalog's `RetailPrices.quotes` works out,
@@ -49,12 +55,12 @@ tables).
   keyed by merchant and service. A storefront visitor has no merchant, so the public lists write nothing there; the same guarantee
   (what the buyer saw is what is charged) is kept by the checkout session, which locks the net, the tax rate and the exchange rate
   at the moment it opens and never recomputes them, and by `StorefrontQuotes`, which prices the list, the page and the session.
-- **Wire** (money is 4-decimal text): the list row is `{ id (the service id), slug, locale, title, summary, brand, network, country,
+- **Wire** (money is 4-decimal text): the list row is `{ id (the service id), slug, title, summary, brand, network, country,
   isFeatured, type, deliveryTime, price: { currency, fxRate, net, tax, gross, taxRate, taxCountry } }`; the page adds
   `descriptionMd, etaText, requirementsMd, seoTitle, seoDescription, quantity { min, max, options }, fields [{ key, label, fieldType,
-  options, required }], faqs [{ question, answerMd }]` (the published help articles linked to the service, in the page's language).
+  options, required }], faqs [{ question, answerMd }]` (the published help articles linked to the service).
   The list is the simple-rest dialect (`_start`, `_end` up to 100 rows, `_sort` featured|sort|title, default featured first, then
-  `sort`, then title; filters `brand`, `network`, `country` (case-insensitive), `featured`, `locale` (default `en`); `q` over
+  `sort`, then title; filters `brand`, `network`, `country` (case-insensitive), `featured`; `locale` is an unknown parameter (422); `q` over
   title, summary, brand and network) with `x-total-count`; the buyer's `buyerCountry`, `region` and `currency` are extra query
   parameters. `GET /store/v1/config` answers the offered currencies with their locked rate, the tax windows in force, the active
   B2C payment gateways (`code`, `name`, `supports3ds`), the three policy switches and the current legal documents. The three
@@ -63,9 +69,8 @@ tables).
   `settings` table (RULES settings 5; feature 16 builds the route that writes them), read through the platform's `SettingsService`;
   a key that is unset or not a boolean means on.
 - **Legal documents** (`application/legal-documents.ts`): the one read of the version in force. `CurrentLegalDocuments.current(db,
-  type, locale)` is the current version of a document in a language, falling back to English (what a consent records);
-  `currentWithBody` is the version in force in exactly one language with its text (the public page route, 404 otherwise); `find`
-  reads a version by id; `listCurrent` feeds the storefront config. The console's Legal page publishes into the same
+  type)` is the current version of a document (what a consent records); `currentWithBody` is the same version with its text (the
+  public page route, 404 otherwise); `find` reads a version by id (a retired version too); `listCurrent` feeds the storefront config. The console's Legal page publishes into the same
   `is_current` flag, so a consent always references the version the console shows as current.
 
 - **Policies** (feature 16, `PATCH /admin/storefront/settings`, permission `settings:storefront`): `StorefrontSettingsService` writes the eight policy keys of the console's Policies tab as flat keys of the settings table: the switches `guestCheckout`, `require3ds`,
@@ -78,8 +83,8 @@ tables).
 ## Public API (`index.ts`)
 
 `StorefrontQuotes` (retail group, buyer context, priced services, the amounts of a purchase), `CurrentLegalDocuments` (with
-`FALLBACK_LOCALE` and the one `LegalDocumentRef`), `StorefrontPolicies`, `inCurrency`, the request schemas `zCountryCode`,
-`zCurrencyCode`, `zLocale`, `LEGAL_DOCUMENT_TYPES`, `LEGAL_TYPE_LABEL`, and the modules: `StorefrontModule` (global, no connection
+the one `LegalDocumentRef`), `StorefrontPolicies`, `inCurrency`, the request schemas `zCountryCode`,
+`zCurrencyCode`, `LEGAL_DOCUMENT_TYPES`, `LEGAL_TYPE_LABEL`, and the modules: `StorefrontModule` (global, no connection
 needed; it provides `CurrentLegalDocuments` and imports `StorefrontPublicModule`), `StorefrontPublicModule` (the public catalog
 routes; it needs the database) and `StorefrontContentModule` (the admin and public content routes; it needs the database, so a test
 app built without one leaves it out, like `CatalogAdminModule`). Other modules import only `src/modules/storefront/index.ts` (lint
@@ -97,10 +102,10 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 
 | Table | What it holds |
 |---|---|
-| `service_listings` | The public service page in the storefront: title, slug, content and SEO fields per language; the facts of the service (brand, carrier, country, featured, position) are kept equal on every language row; `listed_at`, `sales_30d` (job only) and `image_file_id` (feature 22). |
-| `content_pages` | Landing pages, static pages and the blog, in several languages. |
-| `help_articles` | The help centre and FAQ; an article can be linked to a service. |
-| `legal_documents` | Terms, privacy, refund and cookie documents, with archived versions. |
+| `service_listings` | The public service page in the storefront, one per service: title, slug (unique for the site), content, SEO fields and the facts of the service (brand, carrier, country, featured, position); `listed_at`, `sales_30d` (job only) and `image_file_id` (feature 22). The map's `locale` column is dropped (feature 30, migration 0036). |
+| `content_pages` | Landing pages, static pages and the blog; the slug is unique for the site. The map's `locale` column is dropped (feature 30, migration 0037). |
+| `help_articles` | The help centre and FAQ; an article can be linked to a service. The map's `locale` column is dropped (feature 30, migration 0037). |
+| `legal_documents` | Terms, privacy, refund and cookie documents, with archived versions. `locale` stays as an archive tag (feature 30, section "Legal documents: the one exception"). |
 
 ## Routes
 
@@ -114,17 +119,17 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 |---|---|---|
 | `GET /admin/service-listings` | `storefront:read` | Listings with the service join, retail price, storefront floor, margin, 30-day storefront sales, the lock and the content fields (no Markdown bodies); filters `isListed`, `locked`, `isFeatured`; sorts include `listedAt`, `sort`. |
 | `GET /admin/service-listings/:id` | `storefront:read` | One listing with `descriptionMd` and `requirementsMd`. |
-| `POST /admin/service-listings` | `storefront:create` | A service on the storefront in one language, not on the site yet, with optional content (`LISTING_EXISTS`, `LISTING_LOCKED`). |
-| `PATCH /admin/service-listings/:id` | `storefront:update` | The "On the site" switch, the retail price (floor 422, `SERVICE_DISABLED`, `LISTING_LOCKED`) and the content: title, slug (`LISTING_EXISTS` on `slug`), summary, description, requirements, delivery note, SEO (this language) and brand, carrier, country, featured, position (every language of the service). |
-| `POST /admin/service-listings/:id/image` | `storefront:update` | (22) Multipart part `file`: a JPEG, PNG or WebP of at most 2 MiB, 200 to 4096 px, checked and cleaned by `PublicImages`; becomes the picture of the service in every language. `422` on `file` with the refusal code, `413` over 2 MiB. Audited `uploaded image for`. |
-| `DELETE /admin/service-listings/:id/image` | `storefront:update` | (22) Removes the picture from every language (`204`, also when there was none); the file stays. Audited `removed image of`. |
-| `GET /admin/content-pages` | `storefront:read` | Landing and content pages; filters `kind` (repeatable), `status`, `locale`; `q` over title and slug. |
+| `POST /admin/service-listings` | `storefront:create` | A service on the storefront, not on the site yet, with optional content (`LISTING_EXISTS`: the service already has a listing, or the slug is taken; `LISTING_LOCKED`). |
+| `PATCH /admin/service-listings/:id` | `storefront:update` | The "On the site" switch, the retail price (floor 422, `SERVICE_DISABLED`, `LISTING_LOCKED`) and the content: title, slug (`LISTING_EXISTS` on `slug`), summary, description, requirements, delivery note, SEO, brand, carrier, country, featured, position. |
+| `POST /admin/service-listings/:id/image` | `storefront:update` | (22) Multipart part `file`: a JPEG, PNG or WebP of at most 2 MiB, 200 to 4096 px, checked and cleaned by `PublicImages`; becomes the picture of the service. `422` on `file` with the refusal code, `413` over 2 MiB. Audited `uploaded image for`. |
+| `DELETE /admin/service-listings/:id/image` | `storefront:update` | (22) Removes the picture of the service (`204`, also when there was none); the file stays. Audited `removed image of`. |
+| `GET /admin/content-pages` | `storefront:read` | Landing and content pages; filters `kind` (repeatable), `status`; `q` over title and slug. |
 | `GET /admin/content-pages/:id` | `storefront:read` | One page. |
 | `POST /admin/content-pages` | `storefront:create` | A draft written by the signed-in staff member (`SLUG_TAKEN`). |
-| `PATCH /admin/content-pages/:id` | `storefront:update` | Text, slug, language and SEO; never kind or status. |
+| `PATCH /admin/content-pages/:id` | `storefront:update` | Text, slug and SEO; never kind or status. |
 | `POST /admin/content-pages/:id/publish` | `storefront:publish` | Publish or hide (`published` boolean). |
 | `POST /admin/content-pages/generate` | `storefront:create` | Draft landing pages for brand x model x network (`422` over 50 new drafts); feature 19. |
-| `GET /admin/help-articles` | `storefront:read` | Articles with votes; filters `isPublished`, `category`, `locale`. |
+| `GET /admin/help-articles` | `storefront:read` | Articles with votes; filters `isPublished`, `category`. |
 | `GET /admin/help-articles/:id` | `storefront:read` | One article. |
 | `POST /admin/help-articles` | `storefront:create` | A new article, last in the order. |
 | `PATCH /admin/help-articles/:id` | `storefront:update` | Edit, and the publish switch (`isPublished`, B58). |
@@ -137,19 +142,20 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 
 | Route | What it does |
 |---|---|
-| `GET /store/v1/pages/:slug?locale=` | A live content page (`published`, or `noindex` with `noindex: true`), or the legal document in force for the slugs `terms`, `privacy`, `refund`, `cookies` (`kind: legal`, with the version a consent references). A draft is 404. |
-| `GET /store/v1/help?locale=&q=&category=` | The published articles of one language, in staff order, with the derived slug and the votes. |
+| `GET /store/v1/pages/:slug` | A live content page (`published`, or `noindex` with `noindex: true`), or the legal document in force for the slugs `terms`, `privacy`, `refund`, `cookies` (`kind: legal`, with the version a consent references). A draft is 404. |
+| `GET /store/v1/help?q=&category=` | The published articles, in staff order, with the derived slug and the votes. |
 | `GET /store/v1/help/:slug` | One published article; only the id at the start of the slug counts. |
-| `GET /store/v1/pages?locale=&kind=&q=&_sort=` | (22) The live pages of a language without their bodies (`published`, or `noindex` with `noindex: true`); never drafts or legal documents; sorts `publishedAt` (default, newest first), `title`; up to 100 rows. |
+| `GET /store/v1/pages?kind=&q=&_sort=` | (22) The live pages without their bodies (`published`, or `noindex` with `noindex: true`); never drafts or legal documents; sorts `publishedAt` (default, newest first), `title`; up to 100 rows. |
 | `POST /store/v1/help/:slug/vote` | (22) `{ helpful }` -> `204`; one counted vote per visitor IP and article per day, repeats accepted and ignored with the same `204`; `updatedAt` does not move. |
-| `GET /store/v1/categories?locale=` | (22) The catalog categories that hold a listed, sellable, priced service in the language, with `serviceCount`, in category order. |
+| `GET /store/v1/categories` | (22) The catalog categories that hold a listed, sellable, priced service, with `serviceCount`, in category order (one name per category since feature 30). |
+| `GET /store/v1/legacy-slugs/:kind/:slug` | (30) Where an old address in another language leads now: `{ path, slug }` (section "Feature 30: old addresses"). |
 
 ## Rules built
 
 - **Retail price and floor** (b2c-7, catalog-12): `floorPrice` = `max(round(base x 1.10, 2), effective cost + minimum profit for the
   b2c_retail group)` from `RetailPrices.quotes`, the same function the group-price page uses for its retail row; `service.cost` is
   the effective cost, so cost, `marginPct` and `floorPrice` agree. `retailPrice` is the retail group row of `service_group_prices`
-  (every language shares it). A price of zero or less, or under the floor, is 422 on `retailPrice`.
+  (it belongs to the service and its one listing). A price of zero or less, or under the floor, is 422 on `retailPrice`.
 - **Locked** (B53): the service's category lists groups and the retail group is not among them ("B2B only ..."), or the service is
   not active ("Service disabled"). Create is 409 `LISTING_LOCKED`; switching a disabled service on is `SERVICE_DISABLED` (checked
   first), a B2B-only one `LISTING_LOCKED`; pricing a locked service is `LISTING_LOCKED`; switching off is always allowed. The SQL
@@ -158,7 +164,7 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
   service delete (archive vs delete) and the group-price replace never interleave with it. An archived service is gone: its
   listings are absent from the lists and 404 on show and change (catalog-3).
 - **Slugs**: lower-case words joined by hyphens, at most 120 characters; made from the title with the demo's `slugOf` when not
-  typed, refused (not changed) when typed wrongly, 422 on `slug` when the title has no Latin letter or digit. Unique per language
+  typed, refused (not changed) when typed wrongly, 422 on `slug` when the title has no Latin letter or digit. Unique for the site
   (409 `SLUG_TAKEN` for pages, `LISTING_EXISTS` for listings) and checked again from the unique index, so a race answers 409. A
   content page may not use `terms`, `privacy`, `refund` or `cookies`: the public pages route serves the legal documents under them.
 - **Pages**: always created as drafts; `published_at` is set from the injected clock on every publish (a page that is already live
@@ -166,32 +172,35 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
   `canonicalUrl` (ANSWERS storefront Q8).
 - **Help**: a new article goes last (`sort` = max + 1 in the insert statement). The table has no slug column, so the public slug is
   `<id>-<words of the question>` and only the id counts when it is read back.
-- **Legal**: a version's text never changes. Publish swaps the current version of its type and language in one transaction
-  serialised by an advisory lock per type and language (`ALREADY_CURRENT`, `NOT_A_DRAFT`); `acceptedCount` counts granted consents
-  and is null for a version never published.
+- **Legal**: a version's text never changes. Publish swaps the current version of its type in one transaction serialised by an
+  advisory lock per type (`ALREADY_CURRENT`, `NOT_A_DRAFT`); `acceptedCount` counts granted consents and is null for a version never
+  published. English only: a new version is always `en`, one version is in force per type and it is English (section "Legal
+  documents: the one exception").
+  
 - **Audit** (demo phrases, ANSWERS audit Q3): `created listing for`, `listed on storefront`, `unlisted from storefront`, `changed
   retail price of`, `edited listing of` (entity `listing`); `created page`, `edited page`, `published page`, `unpublished page` (`content_page`);
   `created help article`, `edited help article`, `published help article`, `unpublished help article` (`help_article`);
-  `created legal document`, `published legal document` (`legal`, label `Terms of service (EN) 3.2`); `generated landing pages` (`content_page`,
+  `created legal document`, `published legal document` (`legal`, label `Terms of service 3.2`); `generated landing pages` (`content_page`,
   label `12 drafts`, feature 19).
 - **Seed** (`scripts/seed/storefront.ts`, last in the order; one seeder, reports in this order): the 14 retail prices, the mock's 14
-  listings (ids 1 to 14), the 8 TAC catalogue entries, 14 landing and 6 content pages, 12 help articles and 7 legal versions (one
-  draft refund policy 1.5).
+  listings (ids 1 to 14), the 8 TAC catalogue entries, 14 landing and 6 content pages, 12 help articles and 6 legal versions (one
+  draft refund policy 1.5). The console's demo file also has an Arabic version of the terms (`lang` `AR`): the seed skips a demo legal row
+  whose `lang` is present and not `EN`, so every seeded version is English.
 
 ## Feature 22: the storefront catalog backend (`docs/briefs/22-store-catalog.md`)
 
-- **Listing content.** `PATCH /admin/service-listings/:id` and `POST` write the content of a listing. Per language: `publicTitle`,
-  `slug`, `summary`, `descriptionMd`, `requirementsMd`, `etaText`, `seoTitle`, `seoDescription`. Facts of the service, written to
-  **every language row** under the service lock (like `retailPrice`): `brand`, `carrier`, `country` (upper case), `isFeatured`, `sort`;
-  a new listing copies them from the service's oldest listing. Lock order: the service row, then every listing row of the service in id
-  order (the popularity job locks rows in the same order). Every refusal is decided before the first write. The audit row
+- **Listing content.** `PATCH /admin/service-listings/:id` and `POST` write the content of a listing: `publicTitle`, `slug`,
+  `summary`, `descriptionMd`, `requirementsMd`, `etaText`, `seoTitle`, `seoDescription` and the facts of the service `brand`,
+  `carrier`, `country` (upper case), `isFeatured`, `sort`, all on the service's one row (feature 30: before it the facts were copied to
+  every language row). Lock order: the service row, then the listing row (the popularity job locks listing rows only, in id order).
+  Every refusal is decided before the first write. The audit row
   `edited listing of` keeps the fields that changed; Markdown bodies are recorded as `{ length }`, never as text. Changing the slug
   changes the public address (staff are told in the console).
 - **`listed_at`** is the first publication: set by the first switch-on (`coalesce`), never reset by off and on. The migration back-fills
   rows already on the site with `created_at`.
-- **Cards** gain `category { id, slug, name }` (`<id>-<words>` from the English name, the Arabic name for `ar` when staff set one),
-  `availability`, `deliveryMinutes` (`services.sla_minutes`), `etaText` (the listing's delivery note), `listedAt`. The service page also
-  carries `alternates` (listed pages of the same service in the other language).
+- **Cards** gain `category { id, slug, name }` (`<id>-<words>` from the name), `availability`, `deliveryMinutes`
+  (`services.sla_minutes`), `etaText` (the listing's delivery note), `listedAt`. (The service page's `alternates` and the category's
+  second name went with feature 30.)
 - **Availability** is a flag, never a count: `in_stock` when the available inventory codes cover the smallest order (the smallest pack,
   else `min_qty`), else `on_request`; both can be bought. The SQL test `IN_STOCK_SQL` (catalog, bounded by the smallest order on the
   partial index) is the twin of `coversSmallestOrder`; the `availability` filter narrows the sellable ids in SQL.
@@ -204,11 +213,11 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
   minutes. It stores the non-rejected orders of the last 30 days (every channel, counted by `salesCountsByService` in `infra/foreign-reads.repository.ts`, a documented foreign read: importing the orders barrel from here closed a load-order cycle, decision 032) in
   `service_listings.sales_30d`, in one statement that writes only the rows whose value changed and never moves `updated_at`. The
   shop shows the order only (`_sort=popular`), never the number.
-- **Page list, alternates, vote.** See the routes above. The vote consumes the limiter `help-vote` first; a refused point does nothing
+- **Page list, vote.** See the routes above. The vote consumes the limiter `help-vote` first; a refused point does nothing
   and answers `204` like a counted one.
 - **Service picture** (slice C). `service_listings.image_file_id` points at a `files` row the platform's `PublicImages` stored
   (`media/<sha256>.<ext>` in the private bucket, owner `staff`). Like the other facts it describes the service: an upload or a removal
-  writes every language row under the service lock and the rows' locks (id order); a new listing copies it from the oldest one.
+  writes the listing row under the service lock and the row's lock.
   `uploadImage` checks the listing, stores the picture outside the transaction (object, then the row; the same bytes are one object and
   one row), then links it. A replaced or removed picture's file stays (content-addressed; another service may show it; a purge job is
   out of scope). The audit rows carry the picture's name (`before`/`after`), its dimensions and size. Rows, cards and the service page
@@ -225,16 +234,16 @@ listings (a read of `tac_catalog` in `infra/foreign-reads.repository.ts`, the on
 A typed model is generated as typed; the brand in `template_params` is the catalogue's (the typed brands first when two share a name), else the one
 brand typed, else empty.
 
-For each model x network (model by model): title `Unlock <model> on <network>`, slug `slugOf(title)`, language `en`, kind `model`, status `draft`,
+For each model x network (model by model): title `Unlock <model> on <network>`, slug `slugOf(title)`, kind `model`, status `draft`,
 `template_params { brand, model, network }`, `author_id` the signed-in staff member, a short Markdown body. Combinations that repeat
-an earlier one of the run (`iPhone 13` and `iPhone-13`) are merged before counting; the distinct combinations whose slug exists in `en`, or that a
+an earlier one of the run (`iPhone 13` and `iPhone-13`) are merged before counting; the distinct combinations whose slug exists, or that a
 parallel run made first, are skipped and counted in `skipped`. A catalogue model with no Latin letter or digit cannot make a slug: it is left out and
 counted in `unusableModels` (in the answer only when above 0, and always in the audit entry), never a `422`; a listing carrier with no Latin letter or
 digit is left out of an "all networks" run the same way and counted in `unusableNetworks`. If more than `STOREFRONT_GENERATE_MAX_PER_RUN` (50, a code
 constant, b2c-15) new drafts remain, nothing is created: `422 VALIDATION_FAILED`, detail `This run would create N pages; the limit is 50 per run. Narrow
 the lists.`, `errors: []` (no field). The same `422` and sentence (N = the combinations) cover more than 20 000 combinations (a safety bound), and an "all models" run whose catalogue read returns more than 20 000 models (the read stops
 at 20 001, N = 20001; judged before any unusable name is dropped, or a cut-off catalogue would pass); a typed
-model or network with no Latin letter or digit is `422` on `models` or `networks` (it cannot make a slug). The insert is `ON CONFLICT (locale, slug) DO NOTHING`, so two requests at once
+model or network with no Latin letter or digit is `422` on `models` or `networks` (it cannot make a slug). The insert is `ON CONFLICT (slug) DO NOTHING`, so two requests at once
 never create a page twice and never answer an error. One audit entry `generated landing pages` (entity `content_page`, label `N drafts`, ids in `after`),
 also when nothing was created. Nothing is published.
 
@@ -243,7 +252,7 @@ also when nothing was created. Nothing is published.
 The English storefront search (`search/README.md` has the flow, the fallback and the statistics). Public routes and the console's
 `/admin/search/*` tools share `SearchHttpModule`; the index side (documents, sync, rebuild, terms) is `SearchIndexModule` and
 `SearchWorkerModule`. `GET /store/v1/services` keeps its contract; `relevance` is a new sort (the first of the default order, skipped
-without `q`, on `locale=ar` and on fallback) and `x-search-engine` / `x-search-truncated` are new response headers.
+without `q` and on fallback) and `x-search-engine` / `x-search-truncated` are new response headers.
 
 **Ranking values after tuning on the golden set** (`test/search/golden.test.ts`; all in `search/domain/ranking.ts`): `query_by`
 `title,title_words,codes,joins,models,brand,carrier,networks,country_names,category,summary` with weights `10,9,10,8,6,6,5,4,5,4,2`;
@@ -253,6 +262,33 @@ without `q`, on `locale=ar` and on fallback) and `x-search-engine` / `x-search-t
 `_text_match:desc,_eval(in_stock:true):desc,popularity:desc`. Changed from the plan: `synonym_num_typos` 0 (was 1: with 1 the query
 `uk unlock` matched every unlock service through the phrase `sim unlock`), and the completion search takes no typo when the typed text
 holds a digit.
+
+## Feature 30: old addresses (English only, decision 039, `docs/briefs/30-english-only.md` section 4.5)
+
+`legacy_slugs` (this module's `additionalTables`; `kind` `service|page|help`, `slug`, `service_id` NULL or a service, cascading) holds
+the addresses migration 0035 took from the listings, live pages and published help articles it deleted (for `help` the article id the
+address starts with). Nothing writes it afterwards; the demo seed adds `legacy-demo-service` (the service of the seeded listing
+`icloud-clean-lost-check`) and `legacy-demo-gone` (no service) for the website's e2e. `GET /store/v1/legacy-slugs/:kind/:slug`
+(public, the store's `ip` limiter, no cache header, like `GET /store/v1/pages/:slug`; a strict query: any parameter is 422) answers
+`{ path, slug }`: a service whose page answers now (switched on, sellable and priced, `StorefrontQuotes.onSale`) gives
+`/services/<slug>`, any other service `/services` with `slug: null`; a page gives `/`, a help article `/help` (only the leading id of
+the slug counts). An address that was never retired is 404. The website asks only after its own lookup found nothing.
+
+## Legal documents: the one exception (English only, decision 039, `docs/briefs/30-english-only.md` section 4.4)
+
+A legal document version in another language that a consent record references is the proof of what a person accepted
+(`consent_records.legal_document_id`, `ON DELETE RESTRICT`), so migration 0035 retires it (`is_current = false`, the text and the dates
+unchanged) instead of deleting it, and migration 0037 keeps `legal_documents.locale` as an archive tag. The rules from then on:
+
+- `legal_documents_locale_check`: a version in force is English (`locale = 'en' OR NOT is_current`); `legal_documents_current_uq` is one
+  version in force per type; `legal_documents_version_uq (type, locale, version)` is unchanged, so a retired version and an English one may
+  carry the same text (`3.2`).
+- `POST /admin/legal-documents` takes no language and writes `en` (the repository sets it); `VERSION_EXISTS` looks at English versions only.
+  Publish works on a draft only: a retired version answers `409 NOT_A_DRAFT`. `findCurrent(type)`, `retireCurrent(type)` and the publish
+  lock (`pg_advisory_xact_lock` on the type) take no language.
+- Staff see a retired version in `GET /admin/legal-documents` (an "earlier" row: not current, `effectiveFrom` set; its read-only `locale` is
+  not `en`; `acceptedCount` is its consents) and `GET /admin/legal-documents/:id` (its text). `/store/v1/config`, `/store/v1/pages/<type>`
+  and the checkout consents read the version in force, which is English. Evidence packs and the data export print type and version only.
 
 ## Scenarios
 
@@ -292,7 +328,7 @@ request (only the browser caches the answers, 30 s): the legal page must always 
 per-IP limit protects the reads. The search keeps display-only keys, all registered in `docs/cache-keys.md`: `search-card:{serviceId}`,
 `suggest:{sha1(p)}`, `search-facet-labels` (under the `search` version), `search-popular`, the two index locks and the day counters of the
 statistics. Prices, availability and the searchable rule are never cached. A listing's retail price write moves the
-catalog price version after its commit (owner: catalog). A server-side cache with keys per language, country and currency, deleted
+catalog price version after its commit (owner: catalog). A server-side cache with keys per country and currency, deleted
 after the commit of listing, price, tax or currency changes, is the next step if the public routes need it.
 
 ## Audit resolutions

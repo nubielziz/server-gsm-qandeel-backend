@@ -251,7 +251,8 @@ function moduleDoc(mod) {
     const x = byKey.get(e.key);
     out.push(`## ${e.key}`, '');
     const label = e.addition ? `**Map addition** (${e.addition.spec}, \`${e.addition.file}\`)` : '**Map**';
-    out.push(`- ${label}: ${e.description} (${e.descriptionAr}) · ${e.access}${e.permission ? ` \`${e.permission}\`` : ''} · stage ${e.stage} · tables ${e.tables.join(', ') || '-'}${e.dhruResponse ? ` · Dhru response \`${e.dhruResponse}\`` : ''}${e.successStatus ? ` · success ${e.successStatus}` : ''}`);
+    // The map's sentence in brackets only when it says something else: a row beyond the map without Arabic reads its English twice.
+    out.push(`- ${label}: ${e.description}${e.descriptionAr === e.description ? '' : ` (${e.descriptionAr})`} · ${e.access}${e.permission ? ` \`${e.permission}\`` : ''} · stage ${e.stage} · tables ${e.tables.join(', ') || '-'}${e.dhruResponse ? ` · Dhru response \`${e.dhruResponse}\`` : ''}${e.successStatus ? ` · success ${e.successStatus}` : ''}`);
     if (fe) {
       const params = fe.params.filter((p) => p.name !== 'init' && p.name !== 'signal').map((p) => `\`${p.name}${p.optional ? '?' : ''}: ${p.typeText}\``).join(', ');
       out.push(`- **Frontend**: \`${fe.fn}\` (${fe.file}:${fe.line}) · params ${params || 'none'} · returns \`${fe.returnsText}\`${x ? ` · success ${x.record.successStatus}${x.record.assumed ? ' · assumed contract' : ''}` : ''}`);

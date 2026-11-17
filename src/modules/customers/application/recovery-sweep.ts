@@ -47,24 +47,20 @@ export class RecoverySweep {
   /**
    * Lists the checkouts that are due now and can be mailed now.
    *
-   * Why: a checkout whose customer's language has no usable `checkout.abandoned` template (and English is missing or off too) cannot be
-   * mailed; if the selection kept taking it, the same oldest {@link REMINDER_BATCH_SIZE} could fill every tick and starve the rest. It
-   * is left out until a template is switched on; the manual send still answers `no_template` / `template_off` for it.
+   * Why: while the `checkout.abandoned` email has no switched-on template, no checkout can be mailed, and every tick would read and
+   * refuse the same oldest {@link REMINDER_BATCH_SIZE} again. Nothing is selected until the template is on (the one template of the
+   * event serves every customer, decision 039); the manual send still answers `no_template` / `template_off`.
    *
-   * @returns their ids, oldest first (at most {@link REMINDER_BATCH_SIZE})
+   * @returns their ids, oldest first (at most {@link REMINDER_BATCH_SIZE}); none while the template is missing or off
    */
   async due(): Promise<number[]> {
-    const languages = await this.notifications.writableLanguages(this.db.db, {
+    const writable = await this.notifications.templateIsOn(this.db.db, {
       event: ABANDONED_EVENT,
       channel: 'email',
       audience: 'customer',
     });
-    return dueRecoveryIds(
-      this.db.db,
-      await this.clockOf(),
-      REMINDER_BATCH_SIZE,
-      languages.anyLanguage ? undefined : languages.locales,
-    );
+    if (!writable) return [];
+    return dueRecoveryIds(this.db.db, await this.clockOf(), REMINDER_BATCH_SIZE);
   }
 
   /**

@@ -19,7 +19,7 @@ import { MerchantAuthTokens } from './merchant-auth-tokens';
 /**
  * Applies a staff edit of a merchant's details.
  *
- * Why: LEAD-DECISIONS section 6 (merchant management): staff change name, company, phone, country, language, address, tax id, internal
+ * Why: LEAD-DECISIONS section 6 (merchant management): staff change name, company, phone, country, address, tax id, internal
  * notes and the email (plan sections 4.1 and 5.1.2). An email change voids every open link (a verification link carries no email snapshot, so
  * an old one would prove the new address), clears the verification and sends a new verification (or the invitation while there is no password)
  * to the new address; the merchant's sessions stay (O-3).

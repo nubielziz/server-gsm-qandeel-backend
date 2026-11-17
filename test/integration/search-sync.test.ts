@@ -176,7 +176,6 @@ describe('the change signals (each writer, in its own transaction)', () => {
       (
         await admin.post('/admin/service-listings', {
           serviceId: newId,
-          locale: 'en',
           publicTitle: 'Samsung FRP Remove',
         })
       ).status,
@@ -259,12 +258,9 @@ describe('the change signals (each writer, in its own transaction)', () => {
 });
 
 describe('the sync (search_sync through the alias)', () => {
-  it('rebuilds only the searchable services: English and listed, retail priced, sellable; the alias links both sets', async () => {
+  it('rebuilds only the searchable services: listed, retail priced, sellable; the alias links both sets', async () => {
     const database = await db();
     const world = await storefrontWorld(database);
-    const arabicOnly = await insertService(database, world.icloud.categoryId, { name: 'Arabic only', code: 'AR-ONLY' });
-    await insertRetailPrice(database, arabicOnly, world.groups.retail, '5.0000');
-    await insertListing(database, arabicOnly, { locale: 'ar', publicTitle: 'فك شبكة', slug: 'ar-only' });
     const unlisted = await insertService(database, world.icloud.categoryId, { name: 'Unlisted', code: 'UNLISTED' });
     await insertRetailPrice(database, unlisted, world.groups.retail, '5.0000');
     await insertListing(database, unlisted, { publicTitle: 'Unlisted unlock', isListed: false });
@@ -290,7 +286,7 @@ describe('the sync (search_sync through the alias)', () => {
     expect(JSON.stringify(hit.hits[0]?.document)).not.toMatch(/25\.99|17\.28|13\.5/);
   });
 
-  it('follows a listing switched off, on, retitled, and English off with Arabic on', async () => {
+  it('follows a listing switched off, on and retitled', async () => {
     const database = await db();
     const world = await storefrontWorld(database);
     await rebuild();
@@ -307,11 +303,6 @@ describe('the sync (search_sync through the alias)', () => {
     ).toBe(200);
     await runSearchOutbox(t);
     expect(await indexedIds(t.prefix, 'cricket')).toEqual([att]);
-
-    await insertListing(database, world.att.serviceId, { locale: 'ar', publicTitle: 'فك شبكة', slug: 'att-ar' });
-    expect((await admin.patch(`/admin/service-listings/${world.att.listingId}`, { isListed: false })).status).toBe(200);
-    await runSearchOutbox(t);
-    expect(await indexedIds(t.prefix)).toEqual([String(world.icloud.serviceId)]);
   });
 
   it('follows a category switched off, a group price set without the retail row, a stock sale and a missing first publication', async () => {

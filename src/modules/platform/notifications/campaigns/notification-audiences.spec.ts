@@ -21,7 +21,7 @@ const provider = (type: AudienceProvider['type']): AudienceProvider => ({
 
 const dialect = new PgDialect();
 const text = (query: ReturnType<typeof reachableSql>) => dialect.sqlToQuery(query).sql;
-const FLAGS = { inApp: sql`IN_APP`, email: sql`EMAIL`, telegram: sql`TELEGRAM`, arabic: sql`ARABIC` };
+const FLAGS = { inApp: sql`IN_APP`, email: sql`EMAIL`, telegram: sql`TELEGRAM` };
 
 describe('NotificationAudiences', () => {
   it('registers one provider per type and finds it', () => {
@@ -57,11 +57,10 @@ describe('reachableSql', () => {
 });
 
 describe('audienceCountFields', () => {
-  it('counts the total, the reachable people, each channel and the reachable people by language', () => {
+  it('counts the total, the reachable people and each channel', () => {
     const fields = audienceCountFields(FLAGS, ['email']);
-    expect(Object.keys(fields).sort()).toEqual(['ar', 'email', 'en', 'inApp', 'reachable', 'telegram', 'total']);
-    expect(text(fields.ar)).toContain('((EMAIL)) and (ARABIC)');
-    expect(text(fields.en)).toContain('((EMAIL)) and not (ARABIC)');
+    expect(Object.keys(fields).sort()).toEqual(['email', 'inApp', 'reachable', 'telegram', 'total']);
+    expect(text(fields.reachable)).toContain('((EMAIL))');
   });
 });
 

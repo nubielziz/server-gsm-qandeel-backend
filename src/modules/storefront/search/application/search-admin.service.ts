@@ -13,7 +13,7 @@ import { StorefrontServices } from '../../../catalog';
 import { JobRunsService } from '../../../health';
 import { AuditService } from '../../../platform';
 import type { SearchHiddenTerm, SearchPin, SearchSynonym } from '../../db/schema';
-import { listedServiceIdsIn } from '../../infra/listing.repository';
+import { listedServiceIds } from '../../infra/listing.repository';
 import { normaliseQuery } from '../domain/normalise';
 import { RELEVANCE_SORT, resultsSearch } from '../domain/ranking';
 import { SERVICES_SCHEMA_VERSION } from '../domain/services-schema';
@@ -611,7 +611,7 @@ export class SearchAdminService {
     }
   }
 
-  /** How many services the shop may sell and has an English page for: counted for at most 20 000 services. */
+  /** How many services the shop may sell and has a switched-on page for: counted for at most 20 000 services. */
   private async expectedDocuments(): Promise<number> {
     const db = this.db.db;
     const groupId = await this.searchable.retailGroupId(db);
@@ -621,7 +621,7 @@ export class SearchAdminService {
     for (let page = 0; page < EXPECTED_PAGES; page += 1) {
       const ids = await this.services.pricedPage(db, groupId, after, EXPECTED_PAGE_SIZE);
       if (ids.length === 0) break;
-      count += (await listedServiceIdsIn(db, ids, 'en')).size;
+      count += (await listedServiceIds(db, ids)).size;
       after = ids[ids.length - 1]!;
       if (ids.length < EXPECTED_PAGE_SIZE) break;
     }
@@ -640,14 +640,14 @@ export class SearchAdminService {
     return { startsAt: start, endsAt: end };
   }
 
-  /** A pinned or hidden service must have a switched-on English page (422 with the field). */
+  /** A pinned or hidden service must have a switched-on page (422 with the field). */
   private async requireListed(
     tx: DbExecutor,
     pinned: readonly number[],
     hidden: readonly number[],
     input: PinInput,
   ): Promise<void> {
-    const listed = await listedServiceIdsIn(tx, [...pinned, ...hidden], 'en');
+    const listed = await listedServiceIds(tx, [...pinned, ...hidden]);
     const problems: RuleProblem[] = [];
     if (input.pinned !== undefined) {
       pinned.forEach((serviceId, index) => {

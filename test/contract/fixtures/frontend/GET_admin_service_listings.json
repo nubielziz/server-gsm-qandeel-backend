@@ -8,7 +8,6 @@
     {
       "id": 1,
       "serviceId": 1,
-      "locale": "en",
       "slug": "icloud-clean-lost-check",
       "publicTitle": "iCloud Clean / Lost Check",
       "summary": "",
@@ -42,7 +41,6 @@
     {
       "id": 2,
       "serviceId": 2,
-      "locale": "en",
       "slug": "apple-warranty-and-activation-date",
       "publicTitle": "Apple Warranty & Activation Date",
       "summary": "",
@@ -76,7 +74,6 @@
     {
       "id": 3,
       "serviceId": 3,
-      "locale": "en",
       "slug": "samsung-info-kg-frp-region",
       "publicTitle": "Samsung Info (KG / FRP / Region)",
       "summary": "",
@@ -110,7 +107,6 @@
     {
       "id": 4,
       "serviceId": 4,
-      "locale": "en",
       "slug": "blacklist-status-gsma",
       "publicTitle": "Blacklist Status (GSMA)",
       "summary": "",
@@ -144,7 +140,6 @@
     {
       "id": 5,
       "serviceId": 5,
-      "locale": "en",
       "slug": "atandt-usa-premier-unlock",
       "publicTitle": "AT&T USA Premier Unlock",
       "summary": "",
@@ -178,7 +173,6 @@
     {
       "id": 6,
       "serviceId": 6,
-      "locale": "en",
       "slug": "t-mobile-usa-unlock",
       "publicTitle": "T-Mobile USA Unlock",
       "summary": "",
@@ -212,7 +206,6 @@
     {
       "id": 7,
       "serviceId": 7,
-      "locale": "en",
       "slug": "verizon-usa-clean-unlock",
       "publicTitle": "Verizon iPhone Unlock",
       "summary": "",
@@ -246,7 +239,6 @@
     {
       "id": 8,
       "serviceId": 8,
-      "locale": "en",
       "slug": "vodafone-uk-iphone-unlock",
       "publicTitle": "Vodafone UK iPhone Unlock",
       "summary": "",
@@ -280,7 +272,6 @@
     {
       "id": 9,
       "serviceId": 9,
-      "locale": "en",
       "slug": "ee-uk-unlock",
       "publicTitle": "EE UK Unlock",
       "summary": "",
@@ -314,7 +305,6 @@
     {
       "id": 10,
       "serviceId": 10,
-      "locale": "en",
       "slug": "orange-france-unlock",
       "publicTitle": "Orange France Unlock",
       "summary": "",
@@ -348,7 +338,6 @@
     {
       "id": 11,
       "serviceId": 11,
-      "locale": "en",
       "slug": "mdm-removal-iphone-premium",
       "publicTitle": "MDM Removal, iPhone Premium",
       "summary": "",
@@ -382,7 +371,6 @@
     {
       "id": 12,
       "serviceId": 12,
-      "locale": "en",
       "slug": "icloud-lost-mode-removal",
       "publicTitle": "iCloud Lost Mode Removal",
       "summary": "",
@@ -416,7 +404,6 @@
     {
       "id": 13,
       "serviceId": 13,
-      "locale": "en",
       "slug": "samsung-kg-lock-fix",
       "publicTitle": "Samsung KG Lock Fix",
       "summary": "",
@@ -450,7 +437,6 @@
     {
       "id": 14,
       "serviceId": 14,
-      "locale": "en",
       "slug": "xiaomi-mi-account-clean",
       "publicTitle": "Xiaomi Mi Account Clean",
       "summary": "",

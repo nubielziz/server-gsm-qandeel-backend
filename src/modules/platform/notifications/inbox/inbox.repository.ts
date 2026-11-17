@@ -184,7 +184,7 @@ function notCancelled(): SQL {
 export async function listInboxRows(
   db: DbExecutor,
   owner: InboxOwner,
-  query: ParsedListQuery<'createdAt' | 'id', { unread?: 'true' | 'false'; locale?: 'en' | 'ar' }>,
+  query: ParsedListQuery<'createdAt' | 'id', { unread?: 'true' | 'false' }>,
 ): Promise<{ rows: InboxRow[]; total: number }> {
   const read =
     query.extra.unread === 'true'

@@ -422,7 +422,6 @@ describe('the merchant row', () => {
     expect(created.status, JSON.stringify(created.body)).toBe(201);
     const { body } = await row(api, created.body.id);
     expect(body).toMatchObject({
-      locale: 'en',
       address: '',
       taxId: '',
       internalNotes: '',

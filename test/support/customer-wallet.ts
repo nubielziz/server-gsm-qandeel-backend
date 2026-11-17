@@ -2,23 +2,21 @@
 import { and, eq } from 'drizzle-orm';
 import { Money } from '../../src/common/money';
 import { type Database, schema as s } from '../../src/infra/db';
-import { CUSTOMER_WALLET_TEMPLATES, customerAdjust, customerTopup, postTransaction } from '../../src/modules/money';
+import { customerAdjust, customerTopup, customerWalletTemplatesSql, postTransaction } from '../../src/modules/money';
 import { SettingsReader } from '../../src/modules/platform';
 import type { LightMyRequestResponse } from 'fastify';
 import type { TestApp } from './app';
+import { installTemplates } from './notifications';
 import { APPLE_IMEI, type StorefrontWorld } from './storefront';
 import type { StoreClient } from './store';
 
 /**
- * Inserts the ten default wallet templates (the reset empties the table the migration filled), so the wallet mails are written.
+ * Inserts the five default wallet templates (the reset empties the table the migration filled), so the wallet mails are written.
  *
  * @param db the test database
  */
 export async function insertWalletTemplates(db: Database): Promise<void> {
-  await db
-    .insert(s.notificationTemplates)
-    .values(CUSTOMER_WALLET_TEMPLATES.map((template) => ({ ...template, isActive: true })))
-    .onConflictDoNothing();
+  await installTemplates(db, customerWalletTemplatesSql());
 }
 
 /**

@@ -1,6 +1,6 @@
 // Drizzle queries on `notification_templates` (platform module, feature 12a): the list with its filters, the row a change locks, the
-// writes, and the one lookup the delivery needs: the template of an event, channel, audience and language, with `en` as the fallback.
-import { and, eq, inArray, ne, sql } from 'drizzle-orm';
+// writes, and the one lookup the delivery needs: the template of an event, channel and audience (one each, decision 039).
+import { and, eq, ne, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../infra/db';
 import {
@@ -14,7 +14,7 @@ import {
 /** The columns the template list may be sorted by (wire names). */
 export type TemplateSortField = 'event' | 'channel' | 'audience' | 'createdAt' | 'id';
 
-/** The name of the unique constraint on (event, channel, audience, locale). */
+/** The name of the unique constraint on (event, channel, audience). */
 export const TEMPLATE_UNIQUE = 'notification_templates_event_uq';
 
 const COLUMNS: ListColumns = {
@@ -22,7 +22,6 @@ const COLUMNS: ListColumns = {
   event: notificationTemplates.event,
   channel: notificationTemplates.channel,
   audience: notificationTemplates.audience,
-  locale: notificationTemplates.locale,
   subject: notificationTemplates.subject,
   isActive: notificationTemplates.isActive,
   createdAt: notificationTemplates.createdAt,
@@ -32,7 +31,7 @@ const COLUMNS: ListColumns = {
  * Lists templates.
  *
  * @param db the database or a transaction
- * @param query the parsed list request (filters `audience`, `channel`, `isActive`, `event`, `locale`; `q` over event and subject)
+ * @param query the parsed list request (filters `audience`, `channel`, `isActive`, `event`; `q` over event and subject)
  * @returns the page and the exact total for the filter
  */
 export async function listTemplateRows(
@@ -74,19 +73,22 @@ export async function findTemplate(
   return row;
 }
 
+/** What makes a template unique: its event, channel and audience. */
+export interface TemplateKey {
+  readonly event: string;
+  readonly channel: NotificationChannel;
+  readonly audience: NotificationAudience;
+}
+
 /**
- * Tells whether another template has the same event, channel, audience and language.
+ * Tells whether another template has the same event, channel and audience.
  *
  * @param db the database or a transaction
- * @param key the four fields that make a template unique
+ * @param key the three fields that make a template unique
  * @param exceptId a row to leave out (the one being changed)
  * @returns true when such a row exists
  */
-export async function templateExists(
-  db: DbExecutor,
-  key: { event: string; channel: NotificationChannel; audience: NotificationAudience; locale: string },
-  exceptId?: number,
-): Promise<boolean> {
+export async function templateExists(db: DbExecutor, key: TemplateKey, exceptId?: number): Promise<boolean> {
   const [row] = await db
     .select({ id: notificationTemplates.id })
     .from(notificationTemplates)
@@ -95,7 +97,6 @@ export async function templateExists(
         eq(notificationTemplates.event, key.event),
         eq(notificationTemplates.channel, key.channel),
         eq(notificationTemplates.audience, key.audience),
-        eq(notificationTemplates.locale, key.locale),
         exceptId === undefined ? undefined : ne(notificationTemplates.id, exceptId),
       ),
     )
@@ -149,21 +150,16 @@ export async function deleteTemplate(db: DbExecutor, id: number): Promise<void> 
 /**
  * Finds the template a message is written with.
  *
- * Why: RULES settings 10: the template of (event, channel, audience, the recipient's language), falling back to `en`. The recipient's
- * own language wins while its template is switched on. When that template is missing or switched off, the English one takes over if
- * it is switched on, so a customer of a language whose template staff turned off still gets the mail (feature 19). Only when no
- * template can be used does the caller get a row that is off (or nothing), and it reads `isActive` of the row it gets back.
+ * Why: RULES settings 10: the template of (event, channel, audience); there is one, because templates have no language (decision 039,
+ * B226). The caller reads `isActive` of the row it gets back: a switched-off template sends nothing (`template_off`), a missing one
+ * nothing either (`no_template`).
  *
  * @param db the database or a transaction
- * @param key the event, channel, audience and the recipient's language
- * @returns the language's row if it is on, else the English row if it is on, else the language's row, else the English row (the two last
- *   can be off), else `undefined`
+ * @param key the event, channel and audience
+ * @returns the template, switched on or off, or `undefined`
  */
-export async function findTemplateFor(
-  db: DbExecutor,
-  key: { event: string; channel: NotificationChannel; audience: NotificationAudience; locale: string },
-): Promise<NotificationTemplate | undefined> {
-  const rows = await db
+export async function findTemplateFor(db: DbExecutor, key: TemplateKey): Promise<NotificationTemplate | undefined> {
+  const [row] = await db
     .select()
     .from(notificationTemplates)
     .where(
@@ -171,40 +167,8 @@ export async function findTemplateFor(
         eq(notificationTemplates.event, key.event),
         eq(notificationTemplates.channel, key.channel),
         eq(notificationTemplates.audience, key.audience),
-        inArray(notificationTemplates.locale, [key.locale, 'en']),
       ),
-    );
-  const own = rows.find((row) => row.locale === key.locale);
-  const english = rows.find((row) => row.locale === 'en');
-  if (own?.isActive) return own;
-  if (english?.isActive) return english;
-  return own ?? english;
-}
-
-/**
- * Lists the languages that have a switched-on template for a message.
- *
- * Why: the automatic recovery reminder must not keep selecting checkouts whose customers cannot be mailed right now; it asks which
- * languages can be written in (see {@link findTemplateFor}: English covers every language).
- *
- * @param db the database or a transaction
- * @param key the event, channel and audience
- * @returns the locales of the active templates, alphabetical
- */
-export async function activeTemplateLocales(
-  db: DbExecutor,
-  key: { event: string; channel: NotificationChannel; audience: NotificationAudience },
-): Promise<string[]> {
-  const rows = await db
-    .select({ locale: notificationTemplates.locale })
-    .from(notificationTemplates)
-    .where(
-      and(
-        eq(notificationTemplates.event, key.event),
-        eq(notificationTemplates.channel, key.channel),
-        eq(notificationTemplates.audience, key.audience),
-        eq(notificationTemplates.isActive, true),
-      ),
-    );
-  return rows.map((row) => row.locale).sort();
+    )
+    .limit(1);
+  return row;
 }

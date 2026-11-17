@@ -157,38 +157,39 @@ describe('NotificationService.enqueue and the send job', () => {
     expect(await outboxRows()).toEqual([]);
   });
 
-  it("writes to a recipient in the English template when the recipient's language has none or has it off, and tells which languages can be written in", async () => {
+  it('writes to every recipient with the one template of the event, and tells whether that template can be written now', async () => {
     const [customer] = await db
       .insert(s.customers)
-      .values({ email: 'sam@mail.example', name: 'Sam', locale: 'ar' })
+      .values({ email: 'sam@mail.example', name: 'Sam' })
       .returning({ id: s.customers.id });
     const input = {
       event: 'checkout.abandoned',
       recipient: { type: 'customer' as const, id: customer!.id },
       channel: 'email' as const,
     };
+    const key = { event: 'checkout.abandoned', channel: 'email' as const, audience: 'customer' as const };
     const check = () => service().check(db, input);
-    const languages = () =>
-      service().writableLanguages(db, { event: 'checkout.abandoned', channel: 'email', audience: 'customer' });
+    const writable = () => service().templateIsOn(db, key);
     expect(await check()).toEqual({ skipped: 'no_template' });
-    expect(await languages()).toEqual({ anyLanguage: false, locales: [] });
+    expect(await writable()).toBe(false);
 
     await insertRecoveryTemplate(db);
     expect(await check()).toHaveProperty('recipient');
-    expect(await languages()).toEqual({ anyLanguage: true, locales: ['en'] });
+    expect(await writable()).toBe(true);
 
-    // The language's own template, off: the English one still covers it.
-    await insertRecoveryTemplate(db, { locale: 'ar', isActive: false });
-    expect(await check()).toHaveProperty('recipient');
-    expect(await languages()).toEqual({ anyLanguage: true, locales: ['en'] });
-
-    // Both off: nothing can be written; with only the language's own on, only that language can.
+    // Off: nothing stands in for it (templates have no language to fall back on, decision 039).
     await db.update(s.notificationTemplates).set({ isActive: false });
     expect(await check()).toEqual({ skipped: 'template_off' });
-    expect(await languages()).toEqual({ anyLanguage: false, locales: [] });
-    await db.update(s.notificationTemplates).set({ isActive: true }).where(eq(s.notificationTemplates.locale, 'ar'));
+    expect(await writable()).toBe(false);
+    await db.update(s.notificationTemplates).set({ isActive: true });
     expect(await check()).toHaveProperty('recipient');
-    expect(await languages()).toEqual({ anyLanguage: false, locales: ['ar'] });
+    expect(await writable()).toBe(true);
+
+    // Another audience's template of the same event and channel is another template: it does not make this one writable.
+    await db.delete(s.notificationTemplates);
+    await insertRecoveryTemplate(db, { audience: 'merchant' });
+    expect(await check()).toEqual({ skipped: 'no_template' });
+    expect(await writable()).toBe(false);
   });
 
   it('keeps a suspended merchant from messages that are not transactional, but not from the mails it needs', async () => {

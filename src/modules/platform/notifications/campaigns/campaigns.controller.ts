@@ -113,7 +113,7 @@ export class CampaignsController {
    * Renders a campaign.
    *
    * @param params the id
-   * @param body the language, channel and audience
+   * @param body the channel and audience
    * @returns the preview
    * @route POST /admin/notification-campaigns/:id/preview
    */
@@ -129,7 +129,7 @@ export class CampaignsController {
    * Sends a test to the caller.
    *
    * @param params the id
-   * @param body the channels and language
+   * @param body the channels
    * @returns the channels a message was made for
    * @route POST /admin/notification-campaigns/:id/test
    */
@@ -138,7 +138,7 @@ export class CampaignsController {
     @Param() params: ParamsOf<typeof testCampaign>,
     @Body() body: BodyOf<typeof testCampaign>,
   ): Promise<ResultOf<typeof testCampaign>> {
-    return this.sending.test(params.id, body.channels, body.locale);
+    return this.sending.test(params.id, body.channels);
   }
 
   /**

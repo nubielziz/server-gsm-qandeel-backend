@@ -3,7 +3,7 @@
 import { and, eq, isNull, lt, or, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
 import { lower } from '../../../infra/db/columns';
-import { type Client, type ClientLocale, type NewClient, clients } from '../db/schema';
+import { type Client, type NewClient, clients } from '../db/schema';
 
 /**
  * Finds a merchant by email, ignoring case.
@@ -174,7 +174,6 @@ export interface ClientProfilePatch {
   readonly company?: string;
   readonly phone?: string;
   readonly country?: string;
-  readonly locale?: ClientLocale;
   readonly address?: string;
   readonly taxId?: string;
 }
@@ -182,7 +181,7 @@ export interface ClientProfilePatch {
 /**
  * Updates the profile fields the merchant may edit.
  *
- * Why: B130: name, company, phone and country, and (feature 20) language, address and tax id; the email, username and group are never
+ * Why: B130: name, company, phone and country, and (feature 20) address and tax id; the email, username and group are never
  * editable here.
  *
  * @param db the database or a transaction
@@ -200,7 +199,6 @@ export async function saveClientProfile(
     ...(patch.company === undefined ? {} : { company: patch.company }),
     ...(patch.phone === undefined ? {} : { phone: patch.phone }),
     ...(patch.country === undefined ? {} : { country: patch.country }),
-    ...(patch.locale === undefined ? {} : { locale: patch.locale }),
     ...(patch.address === undefined ? {} : { address: patch.address }),
     ...(patch.taxId === undefined ? {} : { taxId: patch.taxId }),
   };

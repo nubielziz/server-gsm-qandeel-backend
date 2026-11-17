@@ -3,7 +3,7 @@
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime } from '../../../../common/contract';
 import { NOTIFICATION_CAMPAIGN_PURPOSES, NOTIFICATION_CAMPAIGN_STATUSES } from '../../db/schema';
-import { CAMPAIGN_LOCALES, zAudienceSpec } from './audience-spec';
+import { zAudienceSpec } from './audience-spec';
 import { CAMPAIGN_CHANNELS, MAX_CAMPAIGN_BODY_LENGTH, MAX_NAME_LENGTH, MAX_TITLE_LENGTH } from './campaign-rules';
 
 const zChannel = z.enum(CAMPAIGN_CHANNELS);
@@ -14,14 +14,9 @@ const zChannels = z
   .refine((list) => new Set(list).size === list.length, 'A channel is listed twice.')
   .describe('`in_app`, `email`, `telegram` (Telegram reaches merchants only).');
 
-const zText = z.strictObject({
+const zContent = z.strictObject({
   title: z.string().min(1).max(MAX_TITLE_LENGTH).describe('Plain text; `{{name}}` is the only placeholder.'),
   body: z.string().min(1).max(MAX_CAMPAIGN_BODY_LENGTH).describe('Plain text with line breaks; `{{name}}` only.'),
-});
-
-const zContent = z.strictObject({
-  en: zText,
-  ar: zText.nullable().optional().describe('Optional; English is used when it is missing.'),
 });
 
 const zPath = z.string().max(200);
@@ -87,7 +82,6 @@ const zAudiencePreview = z.object({
   reachable: z.number().int().describe('People at least one chosen channel reaches.'),
   byType: z.object({ staff: z.number().int(), client: z.number().int(), customer: z.number().int() }),
   byChannel: z.object({ inApp: z.number().int(), email: z.number().int(), telegram: z.number().int() }),
-  byLocale: z.object({ en: z.number().int(), ar: z.number().int() }),
   excluded: z.object({
     noConsent: z.number().int(),
     optedOut: z.number().int(),
@@ -114,14 +108,8 @@ const zRecipient = z.object({
 
 const AUDIENCE_EXAMPLE = { staff: {}, merchants: {}, customers: { hasAccount: true } };
 const CONTENT_EXAMPLE = {
-  en: {
-    title: 'Scheduled maintenance on Friday',
-    body: 'Hello {{name}},\nThe portal will be read-only on Friday from 02:00 to 03:00 UTC.',
-  },
-  ar: {
-    title: 'صيانة مجدولة يوم الجمعة',
-    body: 'مرحباً {{name}}،\nستكون البوابة للقراءة فقط يوم الجمعة من 02:00 إلى 03:00 بتوقيت UTC.',
-  },
+  title: 'Scheduled maintenance on Friday',
+  body: 'Hello {{name}},\nThe portal will be read-only on Friday from 02:00 to 03:00 UTC.',
 };
 const CAMPAIGN_EXAMPLE = {
   id: 1,
@@ -203,7 +191,7 @@ export const createCampaign = defineRoute({
   key: 'POST /admin/notification-campaigns',
   summary: 'Create a campaign',
   description:
-    'Saves a campaign as a draft: a name, a purpose, the channels, the audience, the message in English (Arabic optional) and an ' +
+    'Saves a campaign as a draft: a name, a purpose, the channels, the audience, the message (a title and a body) and an ' +
     'optional site link per audience. Text is plain text with `{{name}}` as the only placeholder; HTML is refused. Nothing is sent.',
   permission: 'broadcasts:send',
   body: z.strictObject(inputShape),
@@ -270,7 +258,7 @@ export const previewAudience = defineRoute({
   key: 'POST /admin/notification-campaigns/audience-preview',
   summary: 'Count an audience',
   description:
-    'Counts the people an audience reaches with the chosen channels and purpose: in total, by type, channel and language, and ' +
+    'Counts the people an audience reaches with the chosen channels and purpose: in total, by type and channel, and ' +
     'who is left out and why. Answers counts only, never names or addresses. Reads counts only; nothing is written.',
   permission: 'broadcasts:read',
   audit: false,
@@ -288,25 +276,23 @@ export const previewAudience = defineRoute({
       reachable: 1208,
       byType: { staff: 6, client: 402, customer: 800 },
       byChannel: { inApp: 1208, email: 1190, telegram: 0 },
-      byLocale: { en: 950, ar: 258 },
       excluded: { noConsent: 0, optedOut: 18, noTelegram: 0, noAccount: 0 },
     },
   },
 });
 
-/** `POST /admin/notification-campaigns/:id/preview`: the message in one language and channel. */
+/** `POST /admin/notification-campaigns/:id/preview`: the message in one channel. */
 export const previewCampaign = defineRoute({
   ...COMMON,
   key: 'POST /admin/notification-campaigns/:id/preview',
   summary: 'Preview a campaign',
   description:
-    'Renders the campaign for one language, channel and audience with a sample name. `body` is the HTML part for email and the ' +
-    'text for in-app and Telegram; `note` says when Arabic falls back to English. Renders with sample data; nothing is sent or written.',
+    'Renders the campaign for one channel and audience with a sample name. `body` is the HTML part for email and the ' +
+    'text for in-app and Telegram; `note` says the preview uses sample data. Nothing is sent or written.',
   permission: 'broadcasts:read',
   audit: false,
   params: ID,
   body: z.strictObject({
-    locale: z.enum(CAMPAIGN_LOCALES),
     channel: zChannel,
     audience: z.enum(['staff', 'merchant', 'customer']).optional().describe('Default `customer`.'),
   }),
@@ -322,7 +308,7 @@ export const previewCampaign = defineRoute({
   },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'VALIDATION_FAILED'],
   examples: {
-    request: { locale: 'en', channel: 'in_app' },
+    request: { channel: 'in_app' },
     response: {
       subject: 'Scheduled maintenance on Friday',
       body: 'Hello Daniel,\nThe portal will be read-only on Friday from 02:00 to 03:00 UTC.',
@@ -339,7 +325,7 @@ export const testCampaign = defineRoute({
   key: 'POST /admin/notification-campaigns/:id/test',
   summary: 'Send a test to yourself',
   description:
-    'Sends the campaign to the signed-in staff member only: an in-app item and an email (default both, in English). Allowed for a ' +
+    'Sends the campaign to the signed-in staff member only: an in-app item and an email (default both). Allowed for a ' +
     'draft or scheduled campaign; the campaign itself does not change.',
   permission: 'broadcasts:send',
   params: ID,
@@ -350,11 +336,10 @@ export const testCampaign = defineRoute({
       .max(2)
       .refine((list) => new Set(list).size === list.length, 'A channel is listed twice.')
       .optional(),
-    locale: z.enum(CAMPAIGN_LOCALES).optional(),
   }),
   success: { status: 202, schema: z.object({ queued: z.array(z.enum(['in_app', 'email'])) }) },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'VALIDATION_FAILED', 'INVALID_TRANSITION'],
-  examples: { request: { channels: ['in_app', 'email'], locale: 'en' }, response: { queued: ['in_app', 'email'] } },
+  examples: { request: { channels: ['in_app', 'email'] }, response: { queued: ['in_app', 'email'] } },
 });
 
 /** `POST /admin/notification-campaigns/:id/send`: send now. */

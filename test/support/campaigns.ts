@@ -61,10 +61,7 @@ export const CAMPAIGN_INPUT = {
   purpose: 'service',
   channels: ['in_app', 'email'],
   audience: { staff: {}, merchants: {}, customers: { hasAccount: true } },
-  content: {
-    en: { title: 'Maintenance for {{name}}', body: 'The portal is read-only on Friday.' },
-    ar: { title: 'صيانة لـ {{name}}', body: 'البوابة للقراءة فقط يوم الجمعة.' },
-  },
+  content: { title: 'Maintenance for {{name}}', body: 'The portal is read-only on Friday.' },
   link: { customer: '/account/orders', merchant: '/merchant/wallet' },
 };
 

@@ -42,15 +42,13 @@ const extra: {
   frp: number;
   frpListing: number;
   network: number;
-  arabic: number;
-  arabicListing: number;
+  unlisted: number;
   categoryId: number;
 } = {
   frp: 0,
   frpListing: 0,
   network: 0,
-  arabic: 0,
-  arabicListing: 0,
+  unlisted: 0,
   categoryId: 0,
 };
 const db = async () => (await testDb()).db;
@@ -72,7 +70,7 @@ const publicGet = (app: SearchTestApp, url: string, headers: Record<string, stri
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test bodies are untyped JSON: the default keeps assertions short
 const json = <T = any>(res: { body: string }): T => JSON.parse(res.body) as T;
 
-/** Builds the world: the usual two services plus a Samsung one, a second Samsung spelling and an Arabic-only service. */
+/** Builds the world: the usual two services plus a Samsung one, a second Samsung spelling and a priced service whose page is off. */
 async function buildWorld(): Promise<void> {
   const database = await db();
   world = await storefrontWorld(database);
@@ -80,8 +78,8 @@ async function buildWorld(): Promise<void> {
   const cheap = { cost: '0.0800', effectiveCost: '0.0800', basePrice: '0.1300', minProfit: null };
   extra.frp = await insertService(database, extra.categoryId, { name: 'Samsung FRP Bypass', ...cheap });
   extra.network = await insertService(database, extra.categoryId, { name: 'Samsung Network Unlock', ...cheap });
-  extra.arabic = await insertService(database, extra.categoryId, { name: 'Arabic only', ...cheap });
-  for (const serviceId of [extra.frp, extra.network, extra.arabic])
+  extra.unlisted = await insertService(database, extra.categoryId, { name: 'Zircon Unlock', ...cheap });
+  for (const serviceId of [extra.frp, extra.network, extra.unlisted])
     await insertRetailPrice(database, serviceId, world.groups.retail, '9.9900');
   extra.frpListing = await insertListing(database, extra.frp, {
     slug: 'samsung-frp-bypass',
@@ -98,11 +96,10 @@ async function buildWorld(): Promise<void> {
     country: 'GB',
     sales30d: 20,
   });
-  extra.arabicListing = await insertListing(database, extra.arabic, {
-    locale: 'ar',
-    slug: 'arabic-only',
-    publicTitle: 'فك شبكة',
-    isListed: true,
+  await insertListing(database, extra.unlisted, {
+    slug: 'zircon-unlock',
+    publicTitle: 'Zircon Unlock',
+    isListed: false,
   });
 }
 
@@ -116,6 +113,9 @@ beforeAll(async () => {
   await resetDb();
   t = await createSearchTestApp({ clock });
   apps.push(t);
+  // The reset restarted the ids: a role that the file before this one left in the cache (5 minutes) would lend its
+  // permissions to the first role made here, and that staff member would be refused.
+  await clearIdentityCaches(t);
   await buildWorld();
   await buildIndex(t);
 });
@@ -225,10 +225,10 @@ describe('GET /store/v1/search/suggest', () => {
       .where(eq(s.serviceListings.id, extra.frpListing));
   });
 
-  it('never shows an Arabic-only service or a service whose English page is off', async () => {
-    const body = json(await publicGet(t, '/store/v1/search/suggest?q=arabic'));
+  it('never shows a sellable, priced service whose page is off', async () => {
+    const body = json(await publicGet(t, '/store/v1/search/suggest?q=zircon'));
     expect(body.services).toEqual([]);
-    const res = json(await publicGet(t, '/store/v1/search?q=arabic'));
+    const res = json(await publicGet(t, '/store/v1/search?q=zircon'));
     expect(res.hits).toEqual([]);
   });
 
@@ -262,7 +262,7 @@ describe('GET /store/v1/search', () => {
       'samsung-frp-bypass',
       'samsung-network-unlock',
     ]);
-    const list = json(await publicGet(t, '/store/v1/services?locale=en&brand=samsung&_end=10'));
+    const list = json(await publicGet(t, '/store/v1/services?brand=samsung&_end=10'));
     const card = (slug: string, from: Array<{ slug: string }>) => from.find((entry) => entry.slug === slug);
     expect(card('samsung-frp-bypass', body.hits)).toEqual(card('samsung-frp-bypass', list));
     expect(body.priceRange).toEqual({ min: '9.9900', max: '9.9900' });
@@ -361,11 +361,7 @@ describe('GET /store/v1/services?q=', () => {
     expect(json<Array<{ slug: string }>>(res)).toHaveLength(2);
   });
 
-  it('is the database search for the Arabic list and without q, and adds no header there', async () => {
-    const arabic = await publicGet(t, '/store/v1/services?q=%D9%81%D9%83&locale=ar');
-    expect(arabic.statusCode).toBe(200);
-    expect(arabic.headers['x-search-engine']).toBeUndefined();
-    expect(json<Array<{ slug: string }>>(arabic).map((card) => card.slug)).toEqual(['arabic-only']);
+  it('is the database list without q, and adds no header there', async () => {
     const plain = await publicGet(t, '/store/v1/services');
     expect(plain.headers['x-search-engine']).toBeUndefined();
     expect(plain.headers['x-total-count']).toBe('4');
@@ -516,9 +512,11 @@ describe('the statistics', () => {
     expect(await readDay()).toEqual({});
   });
 
-  it('counts the services list with q on an English list too, and not the Arabic one', async () => {
+  it('counts the services list with q too, and not a request the list refuses', async () => {
     await publicGet(t, '/store/v1/services?q=samsung%20frp', { 'user-agent': browser });
-    await publicGet(t, '/store/v1/services?q=%D9%81%D9%83&locale=ar', { 'user-agent': browser });
+    // `locale` is an unknown parameter since decision 039: a 422 is never counted.
+    const refused = await publicGet(t, '/store/v1/services?q=samsung&locale=tr', { 'user-agent': browser });
+    expect(refused.statusCode).toBe(422);
     expect(Object.keys(await readDay())).toEqual(['s:samsung frp']);
   });
 
@@ -695,19 +693,19 @@ describe('the console search tools', () => {
     expect(
       (await admin.post('/admin/search/pins', { query: 'unlock', match: 'contains', pinned: [], hidden: [] })).status,
     ).toBe(201);
-    const arabicOnly = await admin.post('/admin/search/pins', {
-      query: 'arabic',
+    const pinnedUnlisted = await admin.post('/admin/search/pins', {
+      query: 'zircon',
       match: 'exact',
-      pinned: [{ serviceId: extra.arabic, position: 1 }],
+      pinned: [{ serviceId: extra.unlisted, position: 1 }],
       hidden: [],
     });
-    expect(arabicOnly.status).toBe(422);
-    expect(arabicOnly.body.errors[0].field).toBe('pinned.0.serviceId');
+    expect(pinnedUnlisted.status).toBe(422);
+    expect(pinnedUnlisted.body.errors[0].field).toBe('pinned.0.serviceId');
     const hiddenUnlisted = await admin.post('/admin/search/pins', {
-      query: 'arabic',
+      query: 'zircon',
       match: 'exact',
       pinned: [],
-      hidden: [extra.arabic],
+      hidden: [extra.unlisted],
     });
     expect(hiddenUnlisted.body.errors[0].field).toBe('hidden.0');
     expect(

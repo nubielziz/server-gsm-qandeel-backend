@@ -1,7 +1,9 @@
-// Unit tests of the customer wallet notification events and templates (feature 21, plan § 5.8): every event has English and Arabic email
-// templates that use only its variables, and the custom migration holds exactly what `customerWalletTemplatesSql()` writes.
+// Unit tests of the customer wallet notification events and templates (feature 21, plan § 5.8): every event has one English email
+// template that uses only its variables, the custom migration that shipped them holds each row, and `customerWalletTemplatesSql()`
+// writes today's shape (no language, decision 039).
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import { insertedTemplates } from '../../../../test/support/applied-templates';
 import { NotificationEventRegistry } from '../../platform';
 import {
   CUSTOMER_WALLET_EVENTS,
@@ -34,17 +36,16 @@ describe('CUSTOMER_WALLET_EVENTS', () => {
 });
 
 describe('CUSTOMER_WALLET_TEMPLATES', () => {
-  it('give every event an English and an Arabic email that use only its variables', () => {
+  it('give every event one English email that uses only its variables', () => {
     for (const definition of CUSTOMER_WALLET_EVENTS) {
-      for (const locale of ['en', 'ar'] as const) {
-        const template = CUSTOMER_WALLET_TEMPLATES.find((t) => t.event === definition.key && t.locale === locale);
-        expect(template, `${definition.key} ${locale}`).toBeDefined();
-        const used = [...placeholdersOf(template!.subject), ...placeholdersOf(template!.body)];
-        expect(used.filter((name) => !definition.variables.includes(name))).toEqual([]);
-        expect(template!.subject.trim()).not.toBe('');
-      }
+      const own = CUSTOMER_WALLET_TEMPLATES.filter((t) => t.event === definition.key);
+      expect(own, definition.key).toHaveLength(1);
+      const used = [...placeholdersOf(own[0]!.subject), ...placeholdersOf(own[0]!.body)];
+      expect(used.filter((name) => !definition.variables.includes(name))).toEqual([]);
+      expect(own[0]!.subject.trim()).not.toBe('');
+      expect(`${own[0]!.subject} ${own[0]!.body}`, definition.key).toMatch(/^[\x20-\x7e\n]+$/);
     }
-    expect(CUSTOMER_WALLET_TEMPLATES).toHaveLength(10);
+    expect(CUSTOMER_WALLET_TEMPLATES).toHaveLength(5);
   });
 });
 
@@ -54,10 +55,19 @@ describe(`migration ${CUSTOMER_WALLET_RULES_MIGRATION}`, () => {
     'utf8',
   );
 
-  it('holds exactly the INSERT that customerWalletTemplatesSql() writes', () => {
-    const start = migration.indexOf('INSERT INTO "notification_templates"');
-    expect(start).toBeGreaterThan(0);
-    expect(migration.slice(start).trim()).toBe(customerWalletTemplatesSql());
+  it('holds every template of the code, in English, with the same event, channel, audience, subject and body', () => {
+    // The file also holds the Arabic rows it shipped with (migration 0035 deletes them): every English row is one of the code's.
+    const english = insertedTemplates(`${CUSTOMER_WALLET_RULES_MIGRATION}.sql`).filter((row) => row.locale === 'en');
+    expect(english).toHaveLength(CUSTOMER_WALLET_TEMPLATES.length);
+    for (const template of CUSTOMER_WALLET_TEMPLATES)
+      expect(english, template.event).toContainEqual({ ...template, locale: 'en' });
+  });
+
+  it('has its templates installed today by customerWalletTemplatesSql(), without a language', () => {
+    const insert = customerWalletTemplatesSql();
+    expect(insert).toContain('("event", "channel", "audience", "subject", "body", "is_active")');
+    expect(insert).toEndWith('ON CONFLICT ("event", "channel", "audience") DO NOTHING;');
+    expect(insert.match(/, true\)/g)).toHaveLength(CUSTOMER_WALLET_TEMPLATES.length);
   });
 
   it('creates the deferred "below zero is frozen" trigger', () => {

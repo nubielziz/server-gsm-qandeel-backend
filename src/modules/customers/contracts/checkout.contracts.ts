@@ -177,7 +177,6 @@ const ConsentBody = z.object({
     .describe(
       'One entry per purpose. `granted: false` records a refusal or a withdrawal (a new row, nothing is overwritten).',
     ),
-  locale: z.enum(['en', 'ar']).optional().describe('The language of the texts the buyer saw (default `en`).'),
 });
 
 /** `POST /store/v1/checkout-sessions/:token/consents`. */
@@ -206,7 +205,7 @@ export const recordCheckoutConsents = defineRoute({
         z.object({
           purpose: z.enum(CONSENT_PURPOSES),
           granted: z.boolean(),
-          document: z.object({ type: z.string(), version: z.string(), locale: z.string() }).nullable(),
+          document: z.object({ type: z.string(), version: z.string() }).nullable(),
           recordedAt: zIsoDateTime,
         }),
       ),
@@ -227,13 +226,13 @@ export const recordCheckoutConsents = defineRoute({
         {
           purpose: 'terms',
           granted: true,
-          document: { type: 'terms', version: '3.2', locale: 'en' },
+          document: { type: 'terms', version: '3.2' },
           recordedAt: '2026-11-07T12:01:00.000Z',
         },
         {
           purpose: 'privacy',
           granted: true,
-          document: { type: 'privacy', version: '2.1', locale: 'en' },
+          document: { type: 'privacy', version: '2.1' },
           recordedAt: '2026-11-07T12:01:00.000Z',
         },
         { purpose: 'withdrawal_waiver', granted: true, document: null, recordedAt: '2026-11-07T12:01:00.000Z' },

@@ -6,7 +6,6 @@
   "body": {
     "id": 1,
     "serviceId": 1,
-    "locale": "en",
     "slug": "icloud-clean-lost-check",
     "publicTitle": "iCloud Clean / Lost Check",
     "summary": "",

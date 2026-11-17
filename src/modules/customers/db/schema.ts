@@ -99,7 +99,6 @@ export const customers = pgTable(
     name: text().notNull().default(''),
     phone: text().notNull().default(''),
     country: text().notNull().default(''),
-    locale: text().notNull().default('en'),
     /** preferred display currency */
     currency: text().references((): AnyPgColumn => currencies.code, { onDelete: 'restrict' }),
     hasAccount: boolean().notNull().default(false),

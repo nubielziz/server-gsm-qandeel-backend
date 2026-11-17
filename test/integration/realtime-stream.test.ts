@@ -103,7 +103,7 @@ afterEach(async () => {
 describe('a stream', () => {
   it('passes the guard and the contract interceptor as a hijacked reply: SSE headers, retry, ready first, then the count', async () => {
     const { headers } = await customer();
-    const s = await stream('/store/v1/me/stream?locale=en', headers);
+    const s = await stream('/store/v1/me/stream', headers);
     expect(s.status).toBe(200);
     expect(s.headers['content-type']).toBe('text/event-stream; charset=utf-8');
     expect(s.headers['cache-control']).toBe('no-cache, no-transform');
@@ -121,6 +121,13 @@ describe('a stream', () => {
     expect(s.retryMs).toBeLessThanOrEqual(5000);
     expect(await s.next()).toMatchObject({ event: 'unread.changed', data: { unread: 0 } });
     expect(hubOf().size).toBe(1);
+  });
+
+  it('drops a `locale` query like any unknown key: the language parameter is gone (decision 039)', async () => {
+    const { headers } = await customer();
+    const s = await stream('/store/v1/me/stream?locale=en', headers);
+    expect(s.status).toBe(200);
+    expect((await s.next()).event).toBe('ready');
   });
 
   it('answers 401 without a session on each surface, as problem+json before any stream', async () => {

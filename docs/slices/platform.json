@@ -1609,7 +1609,7 @@
       "description": "Render a campaign for one language and channel.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 91,
+        "line": 90,
         "fn": "previewCampaign"
       },
       "addition": {
@@ -1651,7 +1651,7 @@
       "description": "Send a test to yourself.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 100,
+        "line": 99,
         "fn": "sendCampaignTest"
       },
       "addition": {
@@ -1691,7 +1691,7 @@
       "description": "Send a campaign now.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 114,
+        "line": 113,
         "fn": "sendCampaign"
       },
       "addition": {
@@ -1730,7 +1730,7 @@
       "description": "Schedule or reschedule a campaign.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 123,
+        "line": 122,
         "fn": "scheduleCampaign"
       },
       "addition": {
@@ -1769,7 +1769,7 @@
       "description": "Cancel a scheduled or running campaign.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 136,
+        "line": 135,
         "fn": "cancelCampaign"
       },
       "addition": {
@@ -1808,7 +1808,7 @@
       "description": "The recipients of a campaign on one channel.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 145,
+        "line": 144,
         "fn": "listCampaignRecipients"
       },
       "addition": {

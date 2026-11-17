@@ -31,28 +31,24 @@ export class PublicContentController {
    * Gets a page.
    *
    * @param params the slug
-   * @param query the language
    * @returns the live content page or the legal document in force
    * @route GET /store/v1/pages/:slug
    */
   @Route(getPublicPage)
-  page(
-    @Param() params: ParamsOf<typeof getPublicPage>,
-    @Query() query: QueryOf<typeof getPublicPage>,
-  ): Promise<ResultOf<typeof getPublicPage>> {
-    return this.content.page(params.slug, query.locale);
+  page(@Param() params: ParamsOf<typeof getPublicPage>): Promise<ResultOf<typeof getPublicPage>> {
+    return this.content.page(params.slug);
   }
 
   /**
    * Lists published help articles.
    *
-   * @param query the parsed list request (its `extra.locale` is the language)
+   * @param query the parsed list request
    * @returns the rows and the total
    * @route GET /store/v1/help
    */
   @Route(listPublicHelp)
   helpList(@Query() query: QueryOf<typeof listPublicHelp>): Promise<ResultOf<typeof listPublicHelp>> {
-    return this.content.helpList(query, query.extra.locale);
+    return this.content.helpList(query);
   }
 
   /**
@@ -68,15 +64,15 @@ export class PublicContentController {
   }
 
   /**
-   * Lists the live pages of a language.
+   * Lists the live pages.
    *
-   * @param query the parsed list request (its `extra.locale` is the language)
+   * @param query the parsed list request
    * @returns the rows and the total
    * @route GET /store/v1/pages
    */
   @Route(listPublicPages)
   pageList(@Query() query: QueryOf<typeof listPublicPages>): Promise<ResultOf<typeof listPublicPages>> {
-    return this.content.pageList(query, query.extra.locale);
+    return this.content.pageList(query);
   }
 
   /**

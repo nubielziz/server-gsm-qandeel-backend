@@ -4,7 +4,7 @@
     "content-type": "application/json"
   },
   "body": {
-    "id": 6,
+    "id": 5,
     "type": "terms",
     "version": "3.1",
     "locale": "en",

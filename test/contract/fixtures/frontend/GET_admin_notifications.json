@@ -13,7 +13,6 @@
       "event": "order.received",
       "payload": {
         "orderId": "SF-20431",
-        "locale": "en",
         "templateId": 1
       },
       "status": "sent",
@@ -30,7 +29,6 @@
       "event": "order.completed",
       "payload": {
         "orderId": "SF-20430",
-        "locale": "en",
         "templateId": 2
       },
       "status": "sent",
@@ -47,7 +45,6 @@
       "event": "order.failed",
       "payload": {
         "orderId": "SF-20429",
-        "locale": "en",
         "templateId": 3
       },
       "status": "sent",
@@ -64,7 +61,6 @@
       "event": "support.reply",
       "payload": {
         "orderId": "SF-20428",
-        "locale": "en",
         "templateId": 4
       },
       "status": "failed",
@@ -81,7 +77,6 @@
       "event": "checkout.abandoned",
       "payload": {
         "orderId": "SF-20427",
-        "locale": "en",
         "templateId": 5
       },
       "status": "sent",
@@ -98,7 +93,6 @@
       "event": "payment.failed",
       "payload": {
         "orderId": "SF-20426",
-        "locale": "en",
         "templateId": 6
       },
       "status": "queued",
@@ -115,7 +109,6 @@
       "event": "order.completed",
       "payload": {
         "orderId": "SF-20425",
-        "locale": "en",
         "templateId": 7
       },
       "status": "sent",
@@ -132,7 +125,6 @@
       "event": "deposit.approved",
       "payload": {
         "orderId": "SF-20424",
-        "locale": "en",
         "templateId": 8
       },
       "status": "sent",
@@ -149,7 +141,6 @@
       "event": "order.received",
       "payload": {
         "orderId": "SF-20423",
-        "locale": "en",
         "templateId": 1
       },
       "status": "sent",
@@ -166,7 +157,6 @@
       "event": "order.completed",
       "payload": {
         "orderId": "SF-20422",
-        "locale": "en",
         "templateId": 2
       },
       "status": "sent",
@@ -183,7 +173,6 @@
       "event": "order.failed",
       "payload": {
         "orderId": "SF-20421",
-        "locale": "en",
         "templateId": 3
       },
       "status": "failed",
@@ -200,7 +189,6 @@
       "event": "support.reply",
       "payload": {
         "orderId": "SF-20420",
-        "locale": "en",
         "templateId": 4
       },
       "status": "sent",
@@ -217,7 +205,6 @@
       "event": "checkout.abandoned",
       "payload": {
         "orderId": "SF-20419",
-        "locale": "en",
         "templateId": 5
       },
       "status": "sent",
@@ -234,7 +221,6 @@
       "event": "payment.failed",
       "payload": {
         "orderId": "SF-20418",
-        "locale": "en",
         "templateId": 6
       },
       "status": "sent",
@@ -251,7 +237,6 @@
       "event": "order.completed",
       "payload": {
         "orderId": "SF-20417",
-        "locale": "en",
         "templateId": 7
       },
       "status": "sent",
@@ -268,7 +253,6 @@
       "event": "deposit.approved",
       "payload": {
         "orderId": "SF-20416",
-        "locale": "en",
         "templateId": 8
       },
       "status": "sent",
@@ -285,7 +269,6 @@
       "event": "order.received",
       "payload": {
         "orderId": "SF-20415",
-        "locale": "en",
         "templateId": 1
       },
       "status": "queued",
@@ -302,7 +285,6 @@
       "event": "order.completed",
       "payload": {
         "orderId": "SF-20414",
-        "locale": "en",
         "templateId": 2
       },
       "status": "failed",
@@ -319,7 +301,6 @@
       "event": "order.failed",
       "payload": {
         "orderId": "SF-20413",
-        "locale": "en",
         "templateId": 3
       },
       "status": "sent",
@@ -336,7 +317,6 @@
       "event": "support.reply",
       "payload": {
         "orderId": "SF-20412",
-        "locale": "en",
         "templateId": 4
       },
       "status": "sent",
@@ -353,7 +333,6 @@
       "event": "checkout.abandoned",
       "payload": {
         "orderId": "SF-20411",
-        "locale": "en",
         "templateId": 5
       },
       "status": "sent",
@@ -370,7 +349,6 @@
       "event": "payment.failed",
       "payload": {
         "orderId": "SF-20410",
-        "locale": "en",
         "templateId": 6
       },
       "status": "sent",
@@ -387,7 +365,6 @@
       "event": "order.completed",
       "payload": {
         "orderId": "SF-20409",
-        "locale": "en",
         "templateId": 7
       },
       "status": "sent",
@@ -404,7 +381,6 @@
       "event": "deposit.approved",
       "payload": {
         "orderId": "SF-20408",
-        "locale": "en",
         "templateId": 8
       },
       "status": "sent",
@@ -421,7 +397,6 @@
       "event": "order.received",
       "payload": {
         "orderId": "SF-20407",
-        "locale": "en",
         "templateId": 1
       },
       "status": "failed",

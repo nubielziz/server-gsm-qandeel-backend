@@ -1,5 +1,6 @@
 // LegalDocumentAdminService: the use cases of the legal document routes (map domain H, stage 15): list, show, create a draft
-// version and publish it. A version's text never changes; publishing swaps the current version of its type and language.
+// version and publish it. A version's text never changes; publishing swaps the current version of its type. English only
+// (decision 039): a new version is English; a retired version in another language is read here as history and never published.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import type { ParsedListQuery } from '../../../common/contract';
@@ -37,7 +38,6 @@ export interface LegalDocumentView {
 /** The fields of `POST /admin/legal-documents`. */
 export interface CreateLegalDocumentInput {
   readonly type: LegalDocumentType;
-  readonly locale: string;
   readonly version: string;
   readonly bodyMd: string;
   readonly requiresReacceptance?: boolean | undefined;
@@ -72,7 +72,6 @@ function toView(version: LegalDocument, accepted: number | undefined): LegalDocu
 
 const snapshot = (version: LegalDocument) => ({
   type: version.type,
-  locale: version.locale,
   version: version.version,
   isCurrent: version.isCurrent,
   effectiveFrom: version.effectiveFrom?.toISOString() ?? null,
@@ -83,8 +82,10 @@ const snapshot = (version: LegalDocument) => ({
  *
  * Why: the terms, privacy, refund and cookie policies are versioned; a customer's consent points at the version in force when
  * it was given (RESOLUTIONS b2c-14), so a version is never edited, only replaced by a newer one. Publishing makes a draft the
- * one version in force for its type and language: the old one stops being current (its `effective_from` stays), the new one
- * takes effect now, in one transaction, serialised per type and language so two publishes never both become current.
+ * one version in force for its type: the old one stops being current (its `effective_from` stays), the new one takes effect now,
+ * in one transaction, serialised per type so two publishes never both become current. A version in another language that a
+ * consent references (retired by migration 0035) is listed and shown with its read-only `locale` and consent count; it is never
+ * published again (`NOT_A_DRAFT`) and the CHECK `legal_documents_locale_check` would refuse it anyway.
  *
  * Side effects: writes `legal_documents` and `audit_logs` (entity `legal`).
  *
@@ -130,19 +131,18 @@ export class LegalDocumentAdminService {
   /**
    * Creates a draft version.
    *
-   * @param input the type, language, version text and body
+   * @param input the type, version text and body (the version is English)
    * @param staffId the signed-in staff member (`created_by`)
    * @returns the new draft
    * @throws {AppError} `VERSION_EXISTS` (409 on `version`)
    */
   async create(input: CreateLegalDocumentInput, staffId: number): Promise<LegalDocumentView> {
     return this.db.runInTransaction(async ({ tx }) => {
-      if (await versionExists(tx, input.type, input.locale, input.version)) throw versionTaken(input.version);
+      if (await versionExists(tx, input.type, input.version)) throw versionTaken(input.version);
       let version;
       try {
         version = await insertVersion(tx, {
           type: input.type,
-          locale: input.locale,
           version: input.version,
           bodyMd: input.bodyMd,
           requiresReacceptance: input.requiresReacceptance ?? true,
@@ -166,19 +166,19 @@ export class LegalDocumentAdminService {
   }
 
   /**
-   * Publishes a draft version: it becomes the one in force for its type and language.
+   * Publishes a draft version: it becomes the one in force for its type.
    *
    * @param id the version id
    * @returns the published version
    * @throws {AppError} `NOT_FOUND` (404); `ALREADY_CURRENT` (409: it is the version in force); `NOT_A_DRAFT` (409: it was in
-   *   force once and has been replaced)
+   *   force once and has been replaced or retired)
    */
   async publish(id: number): Promise<LegalDocumentView> {
     return this.db.runInTransaction(async ({ tx }) => {
       const found = await findVersion(tx, id);
       if (!found) throw notFound();
       // The publish lock first, then the row, then the state: the check below judges what the previous publish committed.
-      await lockPublish(tx, found.type, found.locale);
+      await lockPublish(tx, found.type);
       const draft = await findVersion(tx, id, true);
       if (!draft) throw notFound();
       const state = legalState(draft);
@@ -190,7 +190,7 @@ export class LegalDocumentAdminService {
           detail: `Version ${draft.version} was in force before and has been replaced. Create a new version instead.`,
         });
       }
-      const replaced = await retireCurrent(tx, draft.type, draft.locale);
+      const replaced = await retireCurrent(tx, draft.type);
       const published = await makeCurrent(tx, id, this.clock.now());
       await this.audit.record(tx, {
         action: 'published legal document',

@@ -3,23 +3,13 @@
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime } from '../../../common/contract';
 import { CONTENT_PAGE_KINDS, CONTENT_PAGE_STATUSES } from '../db/schema';
-import {
-  BODY_MAX,
-  LocaleField,
-  STOREFRONT_LOCALES,
-  SeoDescriptionField,
-  SeoTitleField,
-  SlugField,
-  markdown,
-  titleField,
-} from './shared';
+import { BODY_MAX, SeoDescriptionField, SeoTitleField, SlugField, markdown, titleField } from './shared';
 
 /** A page as the console reads it. */
 export const ContentPageRow = z.object({
   id: zId,
   kind: z.enum(CONTENT_PAGE_KINDS),
-  slug: z.string(),
-  locale: z.string(),
+  slug: z.string().describe('Unique for the site.'),
   title: z.string(),
   bodyMd: z.string().describe('The full Markdown, as stored; the editors start from the row.'),
   seoTitle: z.string().describe("`''` when none."),
@@ -42,7 +32,6 @@ const PAGE_EXAMPLE = {
   id: 1,
   kind: 'carrier',
   slug: 'unlock-iphone-on-atandt',
-  locale: 'en',
   title: 'Unlock iPhone on AT&T',
   bodyMd: '# Unlock iPhone on AT&T\n\nHow the unlock works.',
   seoTitle: 'Unlock iPhone on AT&T',
@@ -74,7 +63,6 @@ export const listContentPages = defineRoute({
     filters: {
       kind: { type: 'enum', values: CONTENT_PAGE_KINDS },
       status: { type: 'enum', values: CONTENT_PAGE_STATUSES },
-      locale: { type: 'enum', values: STOREFRONT_LOCALES },
     },
     search: ['title', 'slug'],
   }),
@@ -104,7 +92,7 @@ export const createContentPage = defineRoute({
   description:
     'Always a draft (`publishedAt` null) written by the signed-in staff member. Without `slug` the server makes one from the ' +
     'title; a typed slug must be lower-case words joined by hyphens, and `terms`, `privacy`, `refund` and `cookies` belong to ' +
-    'the legal documents. A slug already used in that language is `409 SLUG_TAKEN` on `slug` (also when two requests race). ' +
+    'the legal documents. A slug already used by another page is `409 SLUG_TAKEN` on `slug` (also when two requests race). ' +
     '`bodyMd` keeps its whitespace; HTML inside is stored as sent and rendered only by the storefront.',
   tags: ['content-pages'],
   surface: 'admin',
@@ -113,7 +101,6 @@ export const createContentPage = defineRoute({
   body: z.object({
     kind: z.enum(CONTENT_PAGE_KINDS),
     title: titleField('Enter a title.'),
-    locale: LocaleField,
     slug: SlugField.optional(),
     bodyMd: markdown(BODY_MAX),
     seoTitle: SeoTitleField.optional(),
@@ -122,7 +109,7 @@ export const createContentPage = defineRoute({
   success: { status: 201, schema: ContentPageRow },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'VALIDATION_FAILED', 'SLUG_TAKEN'],
   examples: {
-    request: { kind: 'static', title: 'About us', locale: 'en', bodyMd: '# About us' },
+    request: { kind: 'static', title: 'About us', bodyMd: '# About us' },
     response: {
       ...PAGE_EXAMPLE,
       kind: 'static',
@@ -134,14 +121,14 @@ export const createContentPage = defineRoute({
   },
 });
 
-/** `PATCH /admin/content-pages/:id`: change the text, slug, language or SEO of a page. */
+/** `PATCH /admin/content-pages/:id`: change the text, slug or SEO of a page. */
 export const updateContentPage = defineRoute({
   key: 'PATCH /admin/content-pages/:id',
   summary: 'Change a content page',
   description:
     'Only the keys sent change; never `kind` or `status` (the publish route changes the status). An empty title or slug is ' +
-    '`422`; an empty SEO field clears it. The slug stays unique per language, judged against the new language when both change ' +
-    '(`409 SLUG_TAKEN`). A page that is live stays live: its new text is public at once.',
+    '`422`; an empty SEO field clears it. The slug stays unique for the site (`409 SLUG_TAKEN`). A page that is live stays live: ' +
+    'its new text is public at once.',
   tags: ['content-pages'],
   surface: 'admin',
   access: 'staff-permission',
@@ -151,7 +138,6 @@ export const updateContentPage = defineRoute({
     .object({
       title: titleField('Enter a title.').optional(),
       slug: SlugField.min(1, 'Enter a slug.').optional(),
-      locale: LocaleField.optional(),
       bodyMd: markdown(BODY_MAX).optional(),
       seoTitle: SeoTitleField.optional(),
       seoDescription: SeoDescriptionField.optional(),

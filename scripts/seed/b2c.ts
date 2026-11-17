@@ -160,6 +160,8 @@ export async function seedB2c(db: DbExecutor, demo: DemoSeed, config?: AppConfig
       row.decimals,
     ]),
   );
+  // One version is in force per type and it is English (decision 039: `legal_documents_current_uq` and the locale CHECK), so the
+  // proofs below point at the English version whatever the order of the rows.
   const legal = new Map(
     (
       await db

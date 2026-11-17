@@ -146,24 +146,21 @@ const DAY_MS = 24 * HOUR_MS;
  * `undefined` error at import time.
  *
  * @param templates the support module's default templates
- * @param key the event, channel, audience and language of the template
+ * @param key the event, channel and audience of the template
  * @returns the template
  * @throws {Error} when no template has this key (the message names it)
  */
 export function requireSupportTemplate(
   templates: readonly DefaultTemplate[],
-  key: Pick<DefaultTemplate, 'event' | 'channel' | 'audience' | 'locale'>,
+  key: Pick<DefaultTemplate, 'event' | 'channel' | 'audience'>,
 ): DefaultTemplate {
   const found = templates.find(
     (template) =>
-      template.event === key.event &&
-      template.channel === key.channel &&
-      template.audience === key.audience &&
-      template.locale === key.locale,
+      template.event === key.event && template.channel === key.channel && template.audience === key.audience,
   );
   if (!found) {
     throw new Error(
-      `The default template ${key.event} (${key.channel}, ${key.audience}, ${key.locale}) is missing from SUPPORT_DEFAULT_TEMPLATES.`,
+      `The default template ${key.event} (${key.channel}, ${key.audience}) is missing from SUPPORT_DEFAULT_TEMPLATES.`,
     );
   }
   return found;
@@ -174,7 +171,6 @@ const SUPPORT_REPLY_DEFAULT = requireSupportTemplate(SUPPORT_DEFAULT_TEMPLATES, 
   event: 'support.reply',
   channel: 'email',
   audience: 'customer',
-  locale: 'en',
 });
 
 /**
@@ -261,7 +257,6 @@ async function seedNotifications(db: DbExecutor, demo: DemoSeed): Promise<SeedRe
       event: CUSTOMER_TEMPLATES[row.id]!.event,
       channel: 'email' as const,
       audience: 'customer' as const,
-      locale: 'en',
       subject: CUSTOMER_TEMPLATES[row.id]!.subject,
       body: CUSTOMER_TEMPLATES[row.id]!.body,
       isActive: row.on,
@@ -279,7 +274,6 @@ async function seedNotifications(db: DbExecutor, demo: DemoSeed): Promise<SeedRe
           eq(s.notificationTemplates.event, CUSTOMER_TEMPLATES[row.id]!.event),
           eq(s.notificationTemplates.channel, 'email'),
           eq(s.notificationTemplates.audience, 'customer'),
-          eq(s.notificationTemplates.locale, 'en'),
           ne(s.notificationTemplates.isActive, row.on),
         ),
       );
@@ -355,22 +349,13 @@ const SEED_MERCHANT_ID = 1;
 
 const SEED_CAMPAIGN_CONTENT = {
   maintenance: {
-    en: {
-      title: 'Scheduled maintenance on Friday',
-      body: 'Hello {{name}},\nThe portal will be read-only on Friday from 02:00 to 03:00 UTC. Orders placed before then are not affected.',
-    },
-    ar: {
-      title: 'صيانة مجدولة يوم الجمعة',
-      body: 'مرحباً {{name}}،\nستكون البوابة للقراءة فقط يوم الجمعة من 02:00 إلى 03:00 بتوقيت UTC. لا تتأثر الطلبات المقدمة قبل ذلك.',
-    },
+    title: 'Scheduled maintenance on Friday',
+    body: 'Hello {{name}},\nThe portal will be read-only on Friday from 02:00 to 03:00 UTC. Orders placed before then are not affected.',
   },
-  ramadan: {
-    en: { title: 'Ramadan offer', body: 'Hello {{name}},\nAll iPhone unlocks are 15% off during Ramadan.' },
-    ar: { title: 'عرض رمضان', body: 'مرحباً {{name}}،\nخصم 15% على جميع خدمات فك قفل الآيفون خلال شهر رمضان.' },
-  },
+  ramadan: { title: 'Ramadan offer', body: 'Hello {{name}},\nAll iPhone unlocks are 15% off during Ramadan.' },
   services: {
-    en: { title: 'New unlock services', body: 'Hello {{name}},\nWe added new unlock services for Samsung and Xiaomi.' },
-    ar: { title: 'خدمات فك قفل جديدة', body: 'مرحباً {{name}}،\nأضفنا خدمات فك قفل جديدة لأجهزة سامسونج وشاومي.' },
+    title: 'New unlock services',
+    body: 'Hello {{name}},\nWe added new unlock services for Samsung and Xiaomi.',
   },
 } as const;
 

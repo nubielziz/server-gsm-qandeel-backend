@@ -42,8 +42,8 @@ export interface SyncResult {
  * Applies a change to the search index.
  *
  * Why: decision 038 ("one writer"): the documents of the services an event names are rebuilt from Postgres and written whole, so the
- * job is idempotent and a late or repeated run writes what Postgres says now. Ids that fail the searchable rule (unlisted, Arabic only,
- * unpriced, hidden category, archived) are deleted first, then the rest is upserted in batches of 500. A refused line never stops the
+ * job is idempotent and a late or repeated run writes what Postgres says now. Ids that fail the searchable rule (unlisted, unpriced,
+ * hidden category, archived) are deleted first, then the rest is upserted in batches of 500. A refused line never stops the
  * others (its id and error go to `last_error`); the engine being unavailable throws (the queue retries for about an hour); a missing
  * alias completes without writes (the rebuild and its reconcile cover the change); a refusal of the whole request is unrecoverable.
  *

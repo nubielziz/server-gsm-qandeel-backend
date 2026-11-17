@@ -7,7 +7,6 @@
     "event": "order.completed",
     "channel": "email",
     "audience": "staff",
-    "locale": "en",
     "subject": "Harvest sample text.",
     "body": "Harvest sample text.",
     "isActive": false,

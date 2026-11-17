@@ -35,6 +35,7 @@ bun run dev:worker            # worker process: queue workers, schedulers, outbo
 |---|---|
 | `typecheck` | TypeScript (strict) reports an error |
 | `lint` | ESLint reports an error: type-aware rules, TSDoc on exports, module boundaries, `process.env`, `console` and wall-clock (`Date.now()`, `new Date()`) rules |
+| `english:check` | Arabic script, the `ar` locale or right-to-left layout code is back in `src`, `test`, `scripts`, `deploy`, `drizzle` (from migration 0040) or the compose and env files, outside the short allowlist of `scripts/english-only.config.json`; or a protected group C file (the PDF shaping, the fonts, `bidi-js`, `@pdf-lib/fontkit`) lost what it protects (decision 039). The script is the same file in the console and the website |
 | `routes:check` | `docs/route-manifest.json` or `docs/slices/*` are stale against the map and the additions |
 | `contract:check` | the extracted frontend contract or the contract docs are stale |
 | `docs:openapi:check` | `docs/contract/openapi.json` or `openapi.public.json` differ from what the contracts generate |

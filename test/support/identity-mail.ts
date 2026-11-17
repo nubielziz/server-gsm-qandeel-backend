@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { CacheKeys } from '../../src/infra/cache';
 import { schema as s, type Database } from '../../src/infra/db';
 import { RedisService } from '../../src/infra/redis';
-import { IDENTITY_DEFAULT_TEMPLATES, MERCHANT_MAIL_EVENTS, STAFF_MAIL_EVENTS } from '../../src/modules/identity';
+import { MERCHANT_MAIL_EVENTS, STAFF_MAIL_EVENTS, identityTemplatesSql } from '../../src/modules/identity';
 import {
   EmailVerificationMailProcessor,
   MerchantInvitedMailProcessor,
@@ -16,7 +16,7 @@ import {
 import type { OutboxJobData } from '../../src/modules/platform';
 import type { TestApp } from './app';
 import { testDb } from './db';
-import { seedDefaultTemplates } from './notifications';
+import { installTemplates, seedDefaultTemplates } from './notifications';
 
 /**
  * Inserts the default templates of the platform and of the identity events (`resetDb` empties the table, so the migrations' rows are gone).
@@ -25,10 +25,7 @@ import { seedDefaultTemplates } from './notifications';
  */
 export async function seedIdentityTemplates(db: Database): Promise<void> {
   await seedDefaultTemplates(db);
-  await db
-    .insert(s.notificationTemplates)
-    .values(IDENTITY_DEFAULT_TEMPLATES.map((template) => ({ ...template, isActive: true })))
-    .onConflictDoNothing();
+  await installTemplates(db, identityTemplatesSql());
 }
 
 /**

@@ -11,8 +11,8 @@ import { CurrentCustomer } from './current-customer';
 /**
  * The storefront customer's account routes.
  *
- * Why: the account page shows the customer's details, lets them choose language, currency and marketing consent, and lists
- * their orders (map stage 14). Every route acts on the session's own customer: no id comes from the request.
+ * Why: the account page shows the customer's details, lets them choose currency and marketing consent, and lists their
+ * orders (map stage 14). Every route acts on the session's own customer: no id comes from the request.
  *
  * @route GET /store/v1/me
  * @route PATCH /store/v1/me
@@ -46,7 +46,7 @@ export class StoreAccountController {
   }
 
   /**
-   * Changes language, currency and marketing consent.
+   * Changes name, phone, country, currency and marketing consent.
    *
    * @param customer the session's customer
    * @param body the fields to change

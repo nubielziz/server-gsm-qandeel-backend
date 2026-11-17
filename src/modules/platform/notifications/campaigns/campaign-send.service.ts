@@ -20,7 +20,6 @@ import { AUDIENCE_TYPE_ORDER, type AudienceSpec, parseStoredAudience, selections
 import { AudiencePreviewService } from './audience-preview.service';
 import { BROADCAST_TEST_EVENT } from './broadcast-events';
 import { CampaignAdminService, campaignNotFound, currentStaff, notNow } from './campaign-admin.service';
-import { pickText } from './campaign-render';
 import {
   CAMPAIGN_FANOUT_EVENT,
   CANCELLABLE_STATUSES,
@@ -188,28 +187,23 @@ export class CampaignSendService {
   }
 
   /**
-   * Sends a campaign to its author only: an in-app item and/or an email, in one language.
+   * Sends a campaign to its author only: an in-app item and/or an email.
    *
    * @param id the campaign
    * @param channels `in_app`, `email` (default both)
-   * @param locale `en` or `ar` (default `en`; Arabic falls back to English when the campaign has none)
    * @returns the channels a message was made for
    * @throws {AppError} `NOT_FOUND`; `INVALID_TRANSITION` when the campaign is no longer a draft or scheduled
    */
-  async test(
-    id: number,
-    channels: readonly TestChannel[] = ['in_app', 'email'],
-    locale: 'en' | 'ar' = 'en',
-  ): Promise<{ queued: TestChannel[] }> {
+  async test(id: number, channels: readonly TestChannel[] = ['in_app', 'email']): Promise<{ queued: TestChannel[] }> {
     const staff = currentStaff();
     return this.db.runInTransaction(async ({ tx }) => {
       const row = await findCampaign(tx, id);
       if (!row) throw campaignNotFound();
       if (!SENDABLE_STATUSES.includes(row.status)) throw notNow(row, 'tested');
-      const picked = pickText(contentOf(row), locale);
+      const content = contentOf(row);
       const variables = {
-        title: renderText(picked.text.title, { name: staff.name }, 'text'),
-        body: renderText(picked.text.body, { name: staff.name }, 'text'),
+        title: renderText(content.title, { name: staff.name }, 'text'),
+        body: renderText(content.body, { name: staff.name }, 'text'),
       };
       const queued: TestChannel[] = [];
       const recipient = { type: 'staff' as const, id: staff.id };
@@ -220,7 +214,7 @@ export class CampaignSendService {
       if (channels.includes('email')) {
         const result = await this.notifications.enqueueInline(
           { tx },
-          { event: BROADCAST_TEST_EVENT, recipient, channel: 'email', variables, locale: picked.locale },
+          { event: BROADCAST_TEST_EVENT, recipient, channel: 'email', variables },
         );
         if (result.status === 'queued') queued.push('email');
       }
@@ -229,7 +223,7 @@ export class CampaignSendService {
         entityType: 'notification_campaign',
         entityId: id,
         entityLabel: row.name,
-        after: { channels: queued, locale: picked.locale },
+        after: { channels: queued },
       });
       return { queued };
     });

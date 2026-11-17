@@ -126,15 +126,15 @@ afterEach(async () => {
 });
 
 describe('an event item', () => {
-  it("reaches the owner's streams in under a second, in each stream's language, with the count", async () => {
+  it("reaches each of the owner's streams in under a second, in English, with the count", async () => {
     const { db } = await testDb();
-    const customerId = await insertCustomer(db, { name: 'Dana', locale: 'ar' });
+    const customerId = await insertCustomer(db, { name: 'Dana' });
     const { headers } = await sessionHeaders({ type: 'customer', id: customerId });
-    const english = await started(await stream('/store/v1/me/stream?locale=en', headers));
-    const saved = await started(await stream('/store/v1/me/stream', headers));
+    const first = await started(await stream('/store/v1/me/stream', headers));
+    const second = await started(await stream('/store/v1/me/stream', headers));
     const startedAt = performance.now();
     await enqueue(orderMail(customerId, '4021'));
-    const frame = await english.next('notification.created');
+    const frame = await first.next('notification.created');
     expect(performance.now() - startedAt).toBeLessThan(1000);
     expect(frame.id).toMatch(/(^|-)i\d+(-|$)/);
     expect(frame.data).toMatchObject({
@@ -146,17 +146,15 @@ describe('an event item', () => {
         title: 'Order 4021 completed',
         body: 'Your order for Vodafone UK iPhone Unlock is complete.',
         link: '/account/orders',
-        locale: 'en',
         readAt: null,
         campaignId: null,
         event: 'order.completed',
       },
     });
-    // Without `?locale=` the stream speaks the customer's saved language.
-    expect((await saved.next('notification.created')).data).toMatchObject({
-      item: { title: 'تم تنفيذ طلبك 4021', locale: 'ar' },
-      unread: 1,
-    });
+    // The second stream of the same person gets the same item; an item carries no language (decision 039).
+    const other = await second.next('notification.created');
+    expect(other.data).toMatchObject({ item: { title: 'Order 4021 completed' }, unread: 1 });
+    expect(other.data.item).not.toHaveProperty('locale');
     // The doorbell carried ids only: no text, no name, no email address.
     const rung = await eventually(() => doorbells.find((text) => text.includes('"op":"created"')));
     expect(JSON.parse(rung)).toMatchObject({
@@ -166,7 +164,7 @@ describe('an event item', () => {
       type: 'customer',
       ids: [customerId],
     });
-    expect(rung).not.toMatch(/Order|Dana|Vodafone|@|تم/);
+    expect(rung).not.toMatch(/Order|Dana|Vodafone|@/);
   });
 
   it('rings nothing for a rolled-back transaction', async () => {
@@ -290,7 +288,7 @@ describe('campaigns', () => {
     const { db } = await testDb();
     const ids = [
       await insertCustomer(db, { name: 'Dana' }),
-      await insertCustomer(db, { name: 'Omar', locale: 'ar' }),
+      await insertCustomer(db, { name: 'Omar' }),
       await insertCustomer(db, { name: 'Lina' }),
     ];
     const offline = await insertCustomer(db);
@@ -306,7 +304,7 @@ describe('campaigns', () => {
     const frames = await Promise.all(streams.map((s) => s.next('notification.created')));
     expect(frames.map((frame) => frame.data.item.title)).toEqual([
       'Maintenance for Dana',
-      'صيانة لـ Omar',
+      'Maintenance for Omar',
       'Maintenance for Lina',
     ]);
     for (const frame of frames) expect(frame.data).toMatchObject({ unread: 1, live: true, item: { campaignId: id } });

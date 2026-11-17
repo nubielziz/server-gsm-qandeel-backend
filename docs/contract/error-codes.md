@@ -102,7 +102,7 @@ console shows through their title and detail.
 | SERVICE_IN_USE | 409 | Retired: no route answers it (DELETE /admin/services/:id archives a service that is referenced and deletes it otherwise, B-entry catalog-3); the console mock still answers it. | any | yes |
 | SETTLEMENT_PENDING | 409 | PATCH /admin/payment-gateways/:id with settlements pending (test only). | any | yes |
 | SHORTCUT_TAKEN | 409 | Reply template shortcut already used. | `POST /admin/reply-templates`, `PATCH /admin/reply-templates/:id` | yes |
-| SLUG_TAKEN | 409 | Content page slug already used in the locale (with errors[{field:"slug"}]). | `POST /admin/content-pages`, `PATCH /admin/content-pages/:id` | yes |
+| SLUG_TAKEN | 409 | Content page slug already used by another page (a slug is unique for the site; with errors[{field:"slug"}]). | `POST /admin/content-pages`, `PATCH /admin/content-pages/:id` | yes |
 | SUPPLIER_DISABLED | 409 | POST /admin/suppliers/:id/sync on a disabled supplier. | `POST /admin/orders/:id/change-supplier`, `POST /admin/orders/:id/dispatch`, `POST /admin/suppliers/:id/sync` | yes |
 | SUPPLIER_IN_USE | 409 | DELETE /admin/suppliers/:id while services route to it. | `DELETE /admin/suppliers/:id` | yes |
 | SUPPLIER_REFUSED | 409 | POST /admin/orders/:id/dispatch refused by the supplier (test only). | any | yes |

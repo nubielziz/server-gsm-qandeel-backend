@@ -20,9 +20,9 @@ OpenAPI description of the stream routes points here. Plans: `docs/briefs/27-rea
 - Plain `GET`, same origin, cookies as for any request. Success is `200`, `Content-Type: text/event-stream; charset=utf-8`,
   `Cache-Control: no-cache, no-transform` (the `no-transform` is load-bearing: a Next rewrite and a compressing proxy would
   otherwise buffer the stream), `X-Accel-Buffering: no`.
-- Query: `locale` = `en` or `ar` (the page language: the text of every item comes in it; without it the person's saved language, else
-  English) and `cursor` (the last event `id` the page saw, at most 64 characters). Header: `Last-Event-ID` (the browser's own
-  reconnect; it wins over `cursor`). A cursor that is malformed or names an unknown source is ignored: the stream starts fresh.
+- Query: `cursor` (the last event `id` the page saw, at most 64 characters). There is no language parameter: the text of every item
+  is English (decision 039). Header: `Last-Event-ID` (the browser's own reconnect; it wins over `cursor`). A cursor that is malformed
+  or names an unknown source is ignored: the stream starts fresh.
 - Same-site only (`originCheck`): a request whose `Sec-Fetch-Site` is not `same-origin` or `same-site` (for example `cross-site`) is
   `403 CSRF_FAILED`; without that header the `Origin` must be one of the CORS origins. An `EventSource` from the page's own origin
   sends `same-origin`.
@@ -55,8 +55,7 @@ Order on a new stream: `retry`, `ready`, the replay (`notification.created` with
 one can come before `unread.changed`: do not treat `unread.changed` as the end of the replay, use `live`. `hb` arrives every 15
 seconds.
 
-Known limits (they heal on the next event or poll): a doorbell resolved before a new stream has primed its reader is rendered
-in English for a viewer without `?locale=`, and with several doorbells in flight an older unread count can be written after a
+Known limit (it heals on the next event or poll): with several doorbells in flight an older unread count can be written after a
 newer one.
 
 ## Events
@@ -88,13 +87,13 @@ data: 1794735015
 
 An in-app item was made for the viewer, or (with `live: false`) is replayed after a reconnect. `item` is exactly the item of the
 inbox lists (`zInboxItem`: `GET /store/v1/me/notifications`, `GET /client/notifications`, `GET /admin/inbox`), with `title` and
-`body` in the viewer's language as plain text (render as text, never as HTML). `unread` is the viewer's fresh count, capped at 100
+`body` in English as plain text (render as text, never as HTML). `unread` is the viewer's fresh count, capped at 100
 (show `99+` when it is 100). `live: false` marks a replayed item: no toast. The `id` is `i<item.id>`.
 
 ```
 id: i41
 event: notification.created
-data: {"item":{"id":41,"category":"announcement","title":"Scheduled maintenance on Friday","body":"Hello Daniel,\nThe portal will be read-only on Friday from 02:00 to 03:00 UTC.","link":null,"locale":"en","readAt":null,"createdAt":"2026-11-10T09:06:00.000Z","campaignId":1,"event":null},"unread":3,"live":true}
+data: {"item":{"id":41,"category":"announcement","title":"Scheduled maintenance on Friday","body":"Hello Daniel,\nThe portal will be read-only on Friday from 02:00 to 03:00 UTC.","link":null,"readAt":null,"createdAt":"2026-11-10T09:06:00.000Z","campaignId":1,"event":null},"unread":3,"live":true}
 
 ```
 
@@ -103,7 +102,7 @@ A replayed item (the second example; an event item with a link):
 ```
 id: i42
 event: notification.created
-data: {"item":{"id":42,"category":"order","title":"Order 1042 completed","body":"Your order for iPhone 15 unlock is complete.","link":"/account/orders","locale":"en","readAt":null,"createdAt":"2026-11-15T09:20:11.000Z","campaignId":null,"event":"order.completed"},"unread":4,"live":false}
+data: {"item":{"id":42,"category":"order","title":"Order 1042 completed","body":"Your order for iPhone 15 unlock is complete.","link":"/account/orders","readAt":null,"createdAt":"2026-11-15T09:20:11.000Z","campaignId":null,"event":"order.completed"},"unread":4,"live":false}
 
 ```
 

@@ -1,12 +1,12 @@
 // The in-app texts of event items (feature 23, plan section 9.2): per audience and event, a category, an optional site link and the
-// title and body in English and Arabic, filled from the event's own variables at read time.
+// title and body in English (decision 039), filled from the event's own variables at read time.
 import { Injectable, type OnApplicationBootstrap } from '@nestjs/common';
 import type { NotificationAudience, NotificationInboxCategory } from '../../db/schema';
 import { NotificationEventRegistry } from '../notification-events';
 import { placeholdersOf, renderText } from '../template-rules';
 import { BUILT_IN_INBOX_TEXTS } from './built-in-inbox-texts';
 
-/** The title and body of one language. */
+/** The title and body of an in-app text. */
 export interface InboxText {
   readonly title: string;
   readonly body: string;
@@ -19,13 +19,13 @@ export interface InboxTextDefinition {
   readonly category: NotificationInboxCategory;
   /** A site-relative path (no language prefix), or none. */
   readonly link?: string;
-  readonly texts: { readonly en: InboxText; readonly ar: InboxText };
+  readonly text: InboxText;
 }
 
 /**
  * The registry of in-app texts.
  *
- * Why: S5 and S9: the in-app text of an event is defined in code next to the event, in both languages; an event without a text
+ * Why: S5 and S9: the in-app text of an event is defined in code next to the event, in English; an event without a text
  * makes no in-app item (events whose variables hold a secret, such as sign-in links, never register one). A text may use only its
  * event's variables: the check runs once every module registered its events (`onApplicationBootstrap`) and fails the boot.
  */
@@ -40,18 +40,15 @@ export class InboxTextRegistry implements OnApplicationBootstrap {
   /**
    * Adds a text.
    *
-   * @param definition the audience, event, category, link and texts
+   * @param definition the audience, event, category, link and text
    * @throws {Error} when the audience and event already have a text, or a text is empty (boot-time mistakes)
    */
   register(definition: InboxTextDefinition): void {
     const id = `${definition.audience}:${definition.event}`;
     if (this.texts.has(id))
       throw new Error(`An in-app text for "${definition.event}" (${definition.audience}) exists.`);
-    for (const locale of ['en', 'ar'] as const) {
-      const text = definition.texts[locale];
-      if (text.title.trim() === '' || text.body.trim() === '')
-        throw new Error(`The ${locale} in-app text of "${definition.event}" (${definition.audience}) is empty.`);
-    }
+    if (definition.text.title.trim() === '' || definition.text.body.trim() === '')
+      throw new Error(`The in-app text of "${definition.event}" (${definition.audience}) is empty.`);
     this.texts.set(id, definition);
   }
 
@@ -100,14 +97,10 @@ export function inboxTextProblems(texts: readonly InboxTextDefinition[], events:
       problems.push(`The in-app text of "${text.event}" names an event that ${text.audience} does not have.`);
       continue;
     }
-    for (const locale of ['en', 'ar'] as const) {
-      const used = placeholdersOf(`${text.texts[locale].title}\n${text.texts[locale].body}`);
-      const unknown = used.filter((name) => !definition.variables.includes(name));
-      if (unknown.length > 0)
-        problems.push(
-          `The ${locale} in-app text of "${text.event}" uses ${unknown.join(', ')}, which the event lacks.`,
-        );
-    }
+    const used = placeholdersOf(`${text.text.title}\n${text.text.body}`);
+    const unknown = used.filter((name) => !definition.variables.includes(name));
+    if (unknown.length > 0)
+      problems.push(`The in-app text of "${text.event}" uses ${unknown.join(', ')}, which the event lacks.`);
   }
   return problems;
 }
@@ -116,21 +109,16 @@ export function inboxTextProblems(texts: readonly InboxTextDefinition[], events:
  * Renders an event item's text.
  *
  * @param definition the registered text
- * @param locale the reader's language (`ar...` reads Arabic, anything else English)
  * @param variables the item's stored values
  * @returns the title, body and link (plain text; never HTML)
  */
 export function renderInboxText(
   definition: InboxTextDefinition,
-  locale: string,
   variables: Readonly<Record<string, string>>,
-): { title: string; body: string; link: string | null; locale: 'en' | 'ar' } {
-  const picked = locale.startsWith('ar') ? 'ar' : 'en';
-  const text = definition.texts[picked];
+): { title: string; body: string; link: string | null } {
   return {
-    title: renderText(text.title, variables, 'text'),
-    body: renderText(text.body, variables, 'text'),
+    title: renderText(definition.text.title, variables, 'text'),
+    body: renderText(definition.text.body, variables, 'text'),
     link: definition.link ?? null,
-    locale: picked,
   };
 }

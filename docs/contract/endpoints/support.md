@@ -147,7 +147,7 @@ Effects: inserts a staff message (is_internal false) and delivers it on the chan
 - **Map**: Canned replies (macros) with order variables. (ردود جاهزة (macros) بمتغيرات الطلب) · staff-permission `support:*` · stage 17 · tables reply_templates
 - **Frontend**: `listReplyTemplates` (src/features/support/api/templates.ts:24) · params `query?: ListQuery` · returns `ListResult<ReplyTemplate>` · success 200 · assumed contract
 - **Query**: _start=0&_end=200&_sort=title&_order=asc (hooks/useTemplates.ts:9-16). q is accepted (title, body, shortcut).
-- **Response**: JSON array + x-total-count. Row: id, title, category (ticket category words), locale en|ar, body (raw, with {{name}}, {{order}}, {{eta}}), shortcut ('' when none), createdBy (staff id or null), createdAt, updatedAt. When the total exceeds 200, the view says so. Shortcut: shortcut is trimmed; empty or whitespace-only is stored as NULL and read back as ''; the unique index on lower(shortcut) WHERE shortcut IS NOT NULL stays, so many templates without a shortcut are allowed and SHORTCUT_TAKEN compares lower case among non-empty shortcuts only.
+- **Response**: JSON array + x-total-count. Row: id, title, category (ticket category words), body (raw, with {{name}}, {{order}}, {{eta}}), shortcut ('' when none), createdBy (staff id or null), createdAt, updatedAt. When the total exceeds 200, the view says so. Shortcut: shortcut is trimmed; empty or whitespace-only is stored as NULL and read back as ''; the unique index on lower(shortcut) WHERE shortcut IS NOT NULL stays, so many templates without a shortcut are allowed and SHORTCUT_TAKEN compares lower case among non-empty shortcuts only.
 - **Errors**: 403 FORBIDDEN (caller lacks support:read)
 - **Mock**: src/features/support/mocks/templateHandlers.ts (Seeded from demo S.macros, converted to {{ }} variables (mocks/store.ts:105).)
 
@@ -164,9 +164,9 @@ Effects: inserts a staff message (is_internal false) and delivers it on the chan
 
 - **Map**: Canned replies (macros) with order variables. (ردود جاهزة (macros) بمتغيرات الطلب) · staff-permission `support:*` · stage 17 · tables reply_templates
 - **Frontend**: `createReplyTemplate` (src/features/support/api/templates.ts:44) · params `body: CreateTemplateBody` · returns `ReplyTemplate` · success 201 · assumed contract
-- **Request**: Body {title, category, locale, body, shortcut}, all trimmed. shortcut may be ''; otherwise it must start with '/' and be unique (lib/templateForm.ts:15-23). created_by = staff. Shortcut: shortcut is trimmed; empty or whitespace-only is stored as NULL and read back as ''; the unique index on lower(shortcut) WHERE shortcut IS NOT NULL stays, so many templates without a shortcut are allowed and SHORTCUT_TAKEN compares lower case among non-empty shortcuts only.
+- **Request**: Body {title, category, body, shortcut}, all trimmed. shortcut may be ''; otherwise it must start with '/' and be unique (lib/templateForm.ts:15-23). created_by = staff. Shortcut: shortcut is trimmed; empty or whitespace-only is stored as NULL and read back as ''; the unique index on lower(shortcut) WHERE shortcut IS NOT NULL stays, so many templates without a shortcut are allowed and SHORTCUT_TAKEN compares lower case among non-empty shortcuts only.
 - **Response**: 201 with the ReplyTemplate.
-- **Errors**: 422 VALIDATION_FAILED (errors[].field is one of title|body|category|locale|shortcut (mocks/templateHandlers.ts:15-33)); 409 SHORTCUT_TAKEN (another template has this non-empty shortcut. The detail names it; send no errors[] (templateHandlers.ts:36-42).); 403 FORBIDDEN (caller lacks support:create)
+- **Errors**: 422 VALIDATION_FAILED (errors[].field is one of title|body|category|shortcut (mocks/templateHandlers.ts:15-33)); 409 SHORTCUT_TAKEN (another template has this non-empty shortcut. The detail names it; send no errors[] (templateHandlers.ts:36-42).); 403 FORBIDDEN (caller lacks support:create)
 - **Mock**: src/features/support/mocks/templateHandlers.ts (Seeded from demo S.macros, converted to {{ }} variables (mocks/store.ts:105).)
 
 ## PATCH /admin/reply-templates/:id

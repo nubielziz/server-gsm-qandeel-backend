@@ -19,7 +19,6 @@ interface DemoCustomer {
   email: string;
   country: string;
   cur: string;
-  locale: string;
   hasAccount: boolean;
   optIn: boolean;
   risk: 'low' | 'med' | 'high';
@@ -66,7 +65,6 @@ export async function seedCustomers(db: DbExecutor, demo: DemoSeed): Promise<See
       name: c.name,
       phone: c.phone,
       country: c.country,
-      locale: c.locale,
       currency: c.cur,
       hasAccount: c.hasAccount,
       createdBy: c.createdBy === 'admin' ? MOCK_STAFF_ID : null,

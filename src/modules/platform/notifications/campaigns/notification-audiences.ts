@@ -20,8 +20,6 @@ export interface AudienceQuery extends TypeSelection {
 /** One eligible person of an audience, with the channels that may reach them. */
 export interface AudienceMember {
   readonly id: number;
-  /** `en` or `ar`; merchants and staff read English until feature 20's `clients.locale`. */
-  readonly locale: string;
   /** Can see an inbox (customers: has an account). */
   readonly inApp: boolean;
   /** May be emailed for this purpose (merchants: the announcement email switch). */
@@ -39,9 +37,6 @@ export interface AudienceCounts {
   readonly inApp: number;
   readonly email: number;
   readonly telegram: number;
-  /** Reachable people by language. */
-  readonly en: number;
-  readonly ar: number;
   /** Customers left out by a marketing purpose (no consent); 0 for the other types. */
   readonly noConsent: number;
 }
@@ -90,8 +85,6 @@ export const NO_COUNTS: AudienceCounts = {
   inApp: 0,
   email: 0,
   telegram: 0,
-  en: 0,
-  ar: 0,
   noConsent: 0,
 };
 
@@ -100,8 +93,6 @@ export interface AudienceFlagsSql {
   readonly inApp: SQL;
   readonly email: SQL;
   readonly telegram: SQL;
-  /** True when the person reads Arabic. */
-  readonly arabic: SQL;
 }
 
 /**
@@ -136,8 +127,6 @@ export function audienceCountFields(flags: AudienceFlagsSql, channels: readonly 
     inApp: sql<number>`(count(*) filter (where ${flags.inApp}))::int`,
     email: sql<number>`(count(*) filter (where ${flags.email}))::int`,
     telegram: sql<number>`(count(*) filter (where ${flags.telegram}))::int`,
-    en: sql<number>`(count(*) filter (where ${reach} and not (${flags.arabic})))::int`,
-    ar: sql<number>`(count(*) filter (where ${reach} and (${flags.arabic})))::int`,
   };
 }
 

@@ -17,7 +17,6 @@ const COLUMNS: ListColumns = {
   body: replyTemplates.body,
   shortcut: replyTemplates.shortcut,
   category: replyTemplates.category,
-  locale: replyTemplates.locale,
   createdAt: replyTemplates.createdAt,
   updatedAt: replyTemplates.updatedAt,
 };

@@ -1,21 +1,7 @@
-// Field schemas the storefront content contracts share (feature 15): the two languages, titles, slugs and Markdown bodies.
-// Shapes follow the console's types (frontend src/features/storefront/types); limits are the server's own.
+// Field schemas the storefront content contracts share (feature 15): titles, slugs and Markdown bodies. English only (decision 039,
+// B224): there is no language field. Shapes follow the console's types (frontend src/features/storefront/types); limits are the
+// server's own.
 import { z } from 'zod';
-import { STOREFRONT_LOCALES, type StorefrontLocale } from '../domain/locales';
-
-/**
- * A language of the storefront on the wire.
- *
- * Why: the console types `locale` as a plain string, so the schema is a string checked against `en` and `ar` (an enum would
- * fail the shape parity test in the request direction).
- */
-export const LocaleField = z
-  .string()
-  .trim()
-  .refine((value): value is StorefrontLocale => (STOREFRONT_LOCALES as readonly string[]).includes(value), {
-    error: 'Choose a language: en or ar.',
-  })
-  .meta({ description: 'The language: `en` or `ar`.', examples: ['en'] });
 
 /**
  * A title, trimmed, 1 to 200 characters.
@@ -81,5 +67,3 @@ export const BODY_MAX = 200_000;
 
 /** The largest help answer, in characters. */
 export const ANSWER_MAX = 50_000;
-
-export { STOREFRONT_LOCALES };

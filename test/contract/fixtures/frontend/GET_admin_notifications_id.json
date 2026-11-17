@@ -11,7 +11,6 @@
     "event": "order.received",
     "payload": {
       "orderId": "SF-20431",
-      "locale": "en",
       "templateId": 1
     },
     "status": "sent",

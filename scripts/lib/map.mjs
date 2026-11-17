@@ -33,9 +33,18 @@ const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 const PERMISSION = /^[a-z_]+:(\*|[a-z_]+)$/;
 
 // Raw auth text of the map (Arabic) -> normalised access per surface. Unknown text throws: decide, never guess.
+// English only (decision 039): a row beyond the map may also write the access name itself (`public`, `staff-session`, ...),
+// on the surfaces where the map's word means it, so no new row needs an Arabic word. The map's own rows keep their words.
 const ACCESS = {
-  admin: { 'عام': 'public', 'جلسة': 'staff-session' },
-  client: { 'عام': 'public', 'عام + Turnstile': 'public', 'جلسة': 'merchant-session' },
+  admin: { 'عام': 'public', 'جلسة': 'staff-session', 'public': 'public', 'staff-session': 'staff-session' },
+  client: {
+    'عام': 'public',
+    'عام + Turnstile': 'public',
+    'جلسة': 'merchant-session',
+    'public': 'public',
+    'public + Turnstile': 'public',
+    'merchant-session': 'merchant-session',
+  },
   store: {
     'عام': 'public',
     'عام + Turnstile': 'public',
@@ -46,18 +55,32 @@ const ACCESS = {
     'رمز الرابط': 'link-token',
     'جلسة الزبون': 'customer-session',
     'رمز التذكرة': 'ticket-token',
+    'public': 'public',
+    'public + Turnstile': 'public',
+    'checkout-token': 'checkout-token',
+    'checkout-token + Idempotency-Key': 'checkout-token',
+    'tracking-token': 'tracking-token',
+    'link-token': 'link-token',
+    'customer-session': 'customer-session',
+    'ticket-token': 'ticket-token',
   },
   dhru: { 'username + apiaccesskey': 'dhru-credentials' },
-  hooks: { 'توقيع البوابة': 'gateway-signature', 'secret بالرابط': 'url-secret' },
+  hooks: {
+    'توقيع البوابة': 'gateway-signature',
+    'secret بالرابط': 'url-secret',
+    'gateway-signature': 'gateway-signature',
+    'url-secret': 'url-secret',
+  },
   events: { 'HMAC-SHA256': 'outbound-hmac' },
   supplier: { 'حسابنا عند المورد': 'outbound-supplier-account' },
-  system: { 'عام': 'public', 'شبكة داخلية أو token': 'internal-or-token' },
+  system: { 'عام': 'public', 'شبكة داخلية أو token': 'internal-or-token', 'public': 'public', 'internal-or-token': 'internal-or-token' },
 };
 
 /**
  * Normalises a row's raw auth text into { access, permission, turnstile, idempotencyKey }.
  * Why: guards, OpenAPI security schemes and the contract tests need machine-readable access rules.
- * Admin "x:y" values are staff permissions; v1 "x:y" values are API key scopes.
+ * Admin "x:y" values are staff permissions; v1 "x:y" values are API key scopes. The map's Arabic words and, for rows beyond the
+ * map, the access names themselves (decision 039) are both accepted.
  * @throws {Error} on auth text the map has not used before.
  */
 export function normaliseAccess(row) {

@@ -105,7 +105,7 @@
     },
     {
       "name": "reply_templates",
-      "description": "Ready-made reply templates for staff, by category and language.",
+      "description": "Ready-made reply templates for staff, by category.",
       "descriptionAr": "قوالب ردود جاهزة للموظفين بحسب الفئة واللغة",
       "b2c": "new",
       "columns": [

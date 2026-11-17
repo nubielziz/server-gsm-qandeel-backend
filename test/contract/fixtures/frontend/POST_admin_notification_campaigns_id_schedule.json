@@ -39,14 +39,8 @@
       "merchants": {}
     },
     "content": {
-      "en": {
-        "title": "New unlock services",
-        "body": "Hello {{name}},\nWe added new unlock services to the catalogue. Take a look."
-      },
-      "ar": {
-        "title": "خدمات فك قفل جديدة",
-        "body": "مرحباً {{name}}،\nأضفنا خدمات فك قفل جديدة إلى الكتالوج. ألقِ نظرة."
-      }
+      "title": "New unlock services",
+      "body": "Hello {{name}},\nWe added new unlock services to the catalogue. Take a look."
     },
     "delivery": {
       "inApp": {

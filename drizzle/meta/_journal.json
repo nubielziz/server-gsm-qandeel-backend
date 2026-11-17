@@ -239,6 +239,48 @@
       "when": 1794780844122,
       "tag": "0033_search",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1794826953216,
+      "tag": "0034_legacy_slugs",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1794826957560,
+      "tag": "0035_english_only_data",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1794841934859,
+      "tag": "0036_english_only_listings",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1794845123261,
+      "tag": "0037_english_only_content",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1794846390050,
+      "tag": "0038_english_only_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1794857784829,
+      "tag": "0039_english_only_accounts",
+      "breakpoints": true
     }
   ]
 }

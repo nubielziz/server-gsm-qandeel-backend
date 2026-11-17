@@ -134,6 +134,7 @@ export {
   CUSTOMER_WALLET_EVENTS,
   CUSTOMER_WALLET_RULES_MIGRATION,
   CUSTOMER_WALLET_TEMPLATES,
+  customerWalletTemplatesSql,
 } from './application/customer-wallet-notifications';
 export { CustomerWallets } from './application/customer-wallets';
 export type {

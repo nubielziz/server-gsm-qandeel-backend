@@ -26,8 +26,6 @@ export interface SellableService {
   readonly type: ServiceType;
   readonly categoryId: number;
   readonly categoryName: string;
-  /** The Arabic category name; `''` when staff set none. */
-  readonly categoryNameAr: string;
   /** The service's own text, shown on its page. */
   readonly info: string;
   /** The delivery time as text (`'1 day'`). */
@@ -44,8 +42,6 @@ export interface SellableService {
 export interface SellableCategory {
   readonly id: number;
   readonly name: string;
-  /** The Arabic name; `''` when staff set none. */
-  readonly nameAr: string;
   readonly type: ServiceType;
   readonly sort: number;
   readonly serviceCount: number;
@@ -199,7 +195,7 @@ export class StorefrontServices {
   async sellable(db: DbExecutor, ids: readonly number[], groupId: number): Promise<Map<number, SellableService>> {
     const rows = await findSellableServices(db, ids, groupId);
     return new Map(
-      rows.map(({ service, categoryId, categoryName, categoryNameAr }) => [
+      rows.map(({ service, categoryId, categoryName }) => [
         service.id,
         {
           id: service.id,
@@ -207,7 +203,6 @@ export class StorefrontServices {
           type: service.type,
           categoryId,
           categoryName,
-          categoryNameAr,
           info: service.info,
           deliveryTime: service.deliveryTime,
           slaMinutes: service.slaMinutes,

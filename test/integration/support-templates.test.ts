@@ -34,7 +34,6 @@ const auditRows = async () => (await testDb()).db.select().from(s.auditLogs).ord
 const NEW_TEMPLATE = {
   title: 'Order is in progress',
   category: 'delay',
-  locale: 'en',
   body: 'Hi {{name}}, your order {{order}} is with the carrier; the usual time is {{eta}}.',
   shortcut: '/progress',
 } as const;
@@ -95,7 +94,6 @@ describe('POST /admin/reply-templates', () => {
     const res = await admin.post('/admin/reply-templates', {
       title: '  ',
       category: 'nope',
-      locale: 'fr',
       body: '',
       shortcut: 'progress',
     });
@@ -106,12 +104,20 @@ describe('POST /admin/reply-templates', () => {
     expect(messages).toEqual({
       title: 'Give the template a title.',
       category: 'Choose a category.',
-      locale: 'Choose a language.',
       body: 'Write the reply text.',
       shortcut: 'A shortcut starts with a slash, like /refund.',
     });
     expect((await admin.post('/admin/reply-templates', { ...NEW_TEMPLATE, shortcut: '/two words' })).status).toBe(422);
-    expect((await admin.post('/admin/reply-templates', { ...NEW_TEMPLATE, locale: 'ar' })).status).toBe(201);
+  });
+
+  it('has no language (decision 039): the template shows none, and a language key an old console sends is ignored', async () => {
+    const res = await admin.post('/admin/reply-templates', { ...NEW_TEMPLATE, locale: 'tr' });
+    expect(res.status).toBe(201);
+    expect(res.body).not.toHaveProperty('locale');
+    expect(await admin.get(`/admin/reply-templates/${res.body.id}`)).toMatchObject({ body: res.body });
+    const [audit] = await auditRows();
+    expect(JSON.stringify(audit)).not.toContain('locale');
+    expect((await admin.get('/admin/reply-templates?locale=en')).status).toBe(422);
   });
 
   it('needs support:create', async () => {
@@ -124,7 +130,7 @@ describe('POST /admin/reply-templates', () => {
 });
 
 describe('GET /admin/reply-templates', () => {
-  it('lists A to Z by title with the total, filters by category and language, and searches the title, text and shortcut', async () => {
+  it('lists A to Z by title with the total, filters by category, and searches the title, text and shortcut', async () => {
     await admin.post('/admin/reply-templates', { ...NEW_TEMPLATE, title: 'Zebra', shortcut: '/z' });
     await admin.post('/admin/reply-templates', {
       ...NEW_TEMPLATE,
@@ -135,7 +141,6 @@ describe('GET /admin/reply-templates', () => {
     await admin.post('/admin/reply-templates', {
       ...NEW_TEMPLATE,
       title: 'Mid',
-      locale: 'ar',
       body: 'marhaba {{name}}',
       shortcut: '',
     });
@@ -145,7 +150,6 @@ describe('GET /admin/reply-templates', () => {
     const titles = async (query: string) =>
       (await admin.get(`/admin/reply-templates?${query}`)).body.map((row: { title: string }) => row.title);
     expect(await titles('category=refund')).toEqual(['Alpha']);
-    expect(await titles('locale=ar')).toEqual(['Mid']);
     expect(await titles('q=marhaba')).toEqual(['Mid']);
     expect(await titles('q=/refund')).toEqual(['Alpha']);
     expect(await titles('q=zebra')).toEqual(['Zebra']);
@@ -184,7 +188,6 @@ describe('PATCH /admin/reply-templates/:id', () => {
       body: 'New text.',
       shortcut: '/progress',
       category: 'delay',
-      locale: 'en',
     });
     expect(res.body.createdAt).toBe('2026-11-08T12:00:00.000Z');
     expect(res.body.updatedAt).toBe('2026-11-08T12:01:00.000Z');

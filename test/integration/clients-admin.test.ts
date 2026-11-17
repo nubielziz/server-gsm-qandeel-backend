@@ -112,7 +112,6 @@ describe('POST /admin/clients', () => {
       kycStatus: 'none',
       group: { id: vip, name: 'VIP', discountPercent: '8.0000' },
       referredBy: null,
-      locale: 'en',
       address: '',
       taxId: '',
       internalNotes: '',
@@ -724,7 +723,6 @@ describe('PATCH /admin/clients/:id, details (feature 20)', () => {
       company: 'Zain', // unchanged
       phone: '+962 7 9999',
       country: 'ae',
-      locale: 'ar',
       address: 'Abdali Boulevard, Amman',
       taxId: 'JO-123',
       internalNotes: 'Pays on Sundays.',
@@ -735,7 +733,6 @@ describe('PATCH /admin/clients/:id, details (feature 20)', () => {
       company: 'Zain',
       phone: '+962 7 9999',
       country: 'AE',
-      locale: 'ar',
       address: 'Abdali Boulevard, Amman',
       taxId: 'JO-123',
       internalNotes: 'Pays on Sundays.',
@@ -749,10 +746,10 @@ describe('PATCH /admin/clients/:id, details (feature 20)', () => {
       actorName: 'Rami K.',
     });
     expect(Object.keys(audit!.before as object).sort()).toEqual(
-      ['address', 'country', 'internalNotes', 'locale', 'name', 'phone', 'taxId'].sort(),
+      ['address', 'country', 'internalNotes', 'name', 'phone', 'taxId'].sort(),
     );
-    expect(audit!.after).toMatchObject({ name: 'Zain Mobile', country: 'AE', locale: 'ar' });
-    expect(audit!.before).toMatchObject({ name: 'Test Merchant', country: 'JO', locale: 'en' });
+    expect(audit!.after).toMatchObject({ name: 'Zain Mobile', country: 'AE' });
+    expect(audit!.before).toMatchObject({ name: 'Test Merchant', country: 'JO' });
   });
 
   it('still writes an audit row, with nothing in before and after, when nothing changes', async () => {
@@ -762,6 +759,18 @@ describe('PATCH /admin/clients/:id, details (feature 20)', () => {
     expect(res.status).toBe(200);
     const [audit] = await auditRows();
     expect(audit).toMatchObject({ action: 'edited details of', before: {}, after: {} });
+  });
+
+  it('has no language (decision 039): the row shows none, and a body with only a language is no details edit (422)', async () => {
+    const merchant = await makeMerchant(t);
+    const api = await editor();
+    const only = await api.patch(`/admin/clients/${merchant.id}`, { locale: 'tr' });
+    expect(only.status).toBe(422);
+    const mixed = await api.patch(`/admin/clients/${merchant.id}`, { locale: 'tr', phone: '+962 6' });
+    expect(mixed.status).toBe(200);
+    expect(mixed.body).not.toHaveProperty('locale');
+    expect(await auditRows()).toHaveLength(1);
+    expect(JSON.stringify((await auditRows())[0])).not.toContain('locale');
   });
 
   it('refuses a mixed body (422 on the first key of the second kind), a bad value (422 on its field) and an unknown merchant (404)', async () => {
@@ -778,7 +787,6 @@ describe('PATCH /admin/clients/:id, details (feature 20)', () => {
       ['name', '   '],
       ['country', 'JOR'],
       ['email', 'not-an-email'],
-      ['locale', 'fr'],
       ['address', 'x'.repeat(301)],
       ['taxId', 'x'.repeat(41)],
       ['internalNotes', 'x'.repeat(2001)],

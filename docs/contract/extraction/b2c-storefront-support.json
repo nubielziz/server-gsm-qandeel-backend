@@ -9,7 +9,7 @@
           "successStatus": 200,
           "query": "Paging _start/_end, 25 per page (customers/lib/filters.ts:11). Filters: status (repeat = IN; tabs send one of active|suspended|blocked), riskLevel (repeat = IN; the Flagged tab sends riskLevel=medium&riskLevel=high, filters.ts:187), country (ISO-2, upper case), hasAccount=true|false. q: case-insensitive contains over name and email only (mocks/customerHandlers.ts:16; country is its own filter, M86). _sort is one of name|country|hasAccount|ordersCount|totalSpent|lastOrderAt|riskLevel|status, with _order asc|desc; default totalSpent desc (filters.ts:76-100). riskLevel sorts by order low<medium<high. Counts: five tab calls (no filter, status=active, riskLevel=medium&riskLevel=high, status=suspended, status=blocked) plus hasAccount=true, each _start=0&_end=1 with no toolbar filter (hooks/useCustomerCounts.ts:20-45). Palette: q=<text>&_start=0&_end=4 with no _sort, so the server's default order applies (lib/paletteSource.ts:10-21).",
           "request": "",
-          "response": "JSON array + x-total-count. Row = customers columns: id, email, emailVerifiedAt, name, phone ('' when none), country, locale (en|ar), currency (currency id, see below), hasAccount, createdBy (staff id; null for self-signup or guest), marketingOptIn, riskLevel low|medium|high, status active|suspended|blocked|anonymized, suspendedAt, suspendedReason and suspendedBy (null unless suspended), internalNotes, lastLoginAt, firstOrderAt, totalSpent (4-dp USD, gross incl. VAT of non-rejected orders, '0.0000' when none), anonymizedAt, createdAt. Plus ordersCount (every order, any status), lastOrderAt (latest order created_at or null) and currencyCode (currencies.code); currency = currencies.id (JSON number) and currencyCode = currencies.code, both null when the customer has no currency: customers.currency stays the ISO code FK to currencies.code (as checkout_sessions and payments do) and every row builder (list, detail, create result, patch result) LEFT JOINs currencies ON currencies.code = customers.currency; request bodies carry no currency (create and a country change derive the code from the country and write the code). Never credential data. Anonymized rows carry name 'Deleted customer' and email deleted-<id>@redacted.invalid.",
+          "response": "JSON array + x-total-count. Row = customers columns: id, email, emailVerifiedAt, name, phone ('' when none), country, currency (currency id, see below), hasAccount, createdBy (staff id; null for self-signup or guest), marketingOptIn, riskLevel low|medium|high, status active|suspended|blocked|anonymized, suspendedAt, suspendedReason and suspendedBy (null unless suspended), internalNotes, lastLoginAt, firstOrderAt, totalSpent (4-dp USD, gross incl. VAT of non-rejected orders, '0.0000' when none), anonymizedAt, createdAt. Plus ordersCount (every order, any status), lastOrderAt (latest order created_at or null) and currencyCode (currencies.code); currency = currencies.id (JSON number) and currencyCode = currencies.code, both null when the customer has no currency: customers.currency stays the ISO code FK to currencies.code (as checkout_sessions and payments do) and every row builder (list, detail, create result, patch result) LEFT JOINs currencies ON currencies.code = customers.currency; request bodies carry no currency (create and a country change derive the code from the country and write the code). Never credential data. Anonymized rows carry name 'Deleted customer' and email deleted-<id>@redacted.invalid.",
           "errors": [
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks customers:read", "ui": "table error state with Retry; page hidden from the menu" }
           ],
@@ -33,10 +33,10 @@
           "key": "POST /admin/customers",
           "successStatus": 201,
           "query": "",
-          "request": "Body {name (trimmed, inner spaces collapsed, >= 2 chars), email (trimmed, lower case), country (ISO-2 the storefront sells to), locale (en|ar), phone? (left out when empty), password: {mode: reset_link|temporary_password}}.\nServer:\n- Inserts customers (has_account true, created_by = staff, status active, risk_level low, marketing_opt_in false, currency from the country) and customer_credentials.\n- reset_link: issues a one-hour, single-use invite auth_token (hash only) and emails it through outbox/notifications.\n- temporary_password: stores the hash of a generated 14-character password, with must_change_password true and password_changed_at now.\n- Writes audit_logs without any password (scenario b2c-account steps 1-2).",
+          "request": "Body {name (trimmed, inner spaces collapsed, >= 2 chars), email (trimmed, lower case), country (ISO-2 the storefront sells to), phone? (left out when empty), password: {mode: reset_link|temporary_password}}.\nServer:\n- Inserts customers (has_account true, created_by = staff, status active, risk_level low, marketing_opt_in false, currency from the country) and customer_credentials.\n- reset_link: issues a one-hour, single-use invite auth_token (hash only) and emails it through outbox/notifications.\n- temporary_password: stores the hash of a generated 14-character password, with must_change_password true and password_changed_at now.\n- Writes audit_logs without any password (scenario b2c-account steps 1-2).",
           "response": "201 with the Customer row (ordersCount 0, totalSpent '0.0000', lastOrderAt null). In temporary_password mode only, the answer also carries temporaryPassword (plaintext, in this answer only). The toast uses name and email; the password dialog shows the password once. Currency fields as in the list: currency = currencies.id (JSON number) and currencyCode = currencies.code, both null when the customer has no currency: customers.currency stays the ISO code FK to currencies.code (as checkout_sessions and payments do) and every row builder (list, detail, create result, patch result) LEFT JOINs currencies ON currencies.code = customers.currency; request bodies carry no currency (create and a country change derive the code from the country and write the code). Route tables also read currencies.",
           "errors": [
-            { "status": 422, "code": "VALIDATION_FAILED", "when": "bad input; errors[].field is one of name|email|country|locale|phone|password.mode (dotted path)", "ui": "message under the field; password.mode goes to the Password choice (AddCustomerDialog.tsx:58)" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "bad input; errors[].field is one of name|email|country|phone|password.mode (dotted path)", "ui": "message under the field; password.mode goes to the Password choice (AddCustomerDialog.tsx:58)" },
             { "status": 409, "code": "EMAIL_TAKEN", "when": "another customer (guest or account) already has the email, compared case-insensitively. The detail names the owner; for a guest it says to open them and use Create account (mocks/customerHandlers.ts:19-26). Send no errors[].", "ui": "detail shown under Email (the code maps to the field only when errors[] is empty)" },
             { "status": 422, "code": "VALIDATION_FAILED", "when": "the email is on the blocklist: errors[{field:'email', message:'This email is blocked.'}], no code", "ui": "message under Email" },
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks customers:create", "ui": "Add customer disabled, with the permission named" }
@@ -48,13 +48,13 @@
           "key": "PATCH /admin/customers/:id",
           "successStatus": 200,
           "query": "",
-          "request": "Partial body: only the changed fields of {name, email, country, locale, phone, internalNotes}. The dialog sends nothing when nothing changed. internalNotes is at most 300 chars (EditCustomerDialog.tsx:114).\n- A different email sets email_verified_at = NULL; when has_account is true it also issues a new email-verification token (auth_tokens) and sends the verification email through the outbox; guests get no email.\n- A country change re-derives currency (mocks/customerHandlers.ts:127-147).\nSame field rules as create. Writes audit_logs with before and after.",
+          "request": "Partial body: only the changed fields of {name, email, country, phone, internalNotes}. The dialog sends nothing when nothing changed. internalNotes is at most 300 chars (EditCustomerDialog.tsx:114).\n- A different email sets email_verified_at = NULL; when has_account is true it also issues a new email-verification token (auth_tokens) and sends the verification email through the outbox; guests get no email.\n- A country change re-derives currency (mocks/customerHandlers.ts:127-147).\nSame field rules as create. Writes audit_logs with before and after.",
           "response": "200 with the updated Customer row (list shape). Currency fields as in the list: currency = currencies.id (JSON number) and currencyCode = currencies.code, both null when the customer has no currency: customers.currency stays the ISO code FK to currencies.code (as checkout_sessions and payments do) and every row builder (list, detail, create result, patch result) LEFT JOINs currencies ON currencies.code = customers.currency; request bodies carry no currency (create and a country change derive the code from the country and write the code). Route tables also read currencies.",
           "errors": [
             { "status": 404, "code": "NOT_FOUND", "when": "no customer with that id", "ui": "dialog error slot" },
             { "status": 409, "code": "ANONYMIZED", "when": "the customer is anonymized and cannot be edited (customerHandlers.ts:116-118)", "ui": "dialog error slot" },
             { "status": 409, "code": "EMAIL_TAKEN", "when": "another customer already uses the new email", "ui": "detail under Email (EditCustomerDialog.tsx:46)" },
-            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[].field is one of name|email|country|locale|phone|internalNotes; also a blocklisted new email: errors[{field:'email', message:'This email is blocked.'}]", "ui": "message under the field" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[].field is one of name|email|country|phone|internalNotes; also a blocklisted new email: errors[{field:'email', message:'This email is blocked.'}]", "ui": "message under the field" },
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks customers:update", "ui": "Edit disabled, with the permission named" }
           ],
           "assumed": true,
@@ -273,14 +273,14 @@
     },
     {
       "feature": "storefront",
-      "summary": "Storefront page with five tabs:\n- Services on sale: listings per service and language, the On the site switch, a retail-price dialog checked against the server's floor, and counts.\n- Landing pages: kind filter, publish and unpublish, and the draft generator.\n- Content and legal: static and blog pages loaded whole; legal versions are written as drafts, then published.\n- Help centre: article CRUD, with the publish switch done through PATCH.\n- TAC catalogue: CRUD without delete.\nFigures are one-row count calls. Every price, floor, margin and lock comes from the server. PATCH /admin/storefront/settings belongs to the settings feature.",
+      "summary": "Storefront page with five tabs:\n- Services on sale: one listing per service, the On the site switch, a retail-price dialog checked against the server's floor, and counts.\n- Landing pages: kind filter, publish and unpublish, and the draft generator.\n- Content and legal: static and blog pages loaded whole; legal versions are written as drafts, then published.\n- Help centre: article CRUD, with the publish switch done through PATCH.\n- TAC catalogue: CRUD without delete.\nFigures are one-row count calls. Every price, floor, margin and lock comes from the server. PATCH /admin/storefront/settings belongs to the settings feature.",
       "endpoints": [
         {
           "key": "GET /admin/service-listings",
           "successStatus": 200,
           "query": "Paging 25. q: contains over publicTitle, slug, service.name and service.code (mocks/listingRoutes.ts:21). Filters isListed=true|false and locked=true|false. _sort publicTitle|isListed, default publicTitle asc (lib/views.ts:22-26). Counts, each with _start=0&_end=1: isListed=true; isListed=false&locked=false; locked=true (components/ListingStats.tsx:10-14; lib/counts.ts:5).",
           "request": "",
-          "response": "JSON array + x-total-count. One row per service and locale:\n- id, serviceId, locale (en|ar), slug, publicTitle, isListed, isFeatured.\n- service {id, name, code, basePrice (B2B base, 4-dp), cost (the effective cost of B117, 4-dp USD, so cost, marginPct and floorPrice agree)}.\n- retailPrice: service_group_prices.price of the b2c_retail group, net USD before VAT, shared by every locale of the service; null when unset.\n- floorPrice: the lowest retail price accepted: the B117 effective floor for the b2c_retail group (effective cost + the minimum profit from pricing_rules), computed by the same resolver function checkout uses (exported by the catalog pricing service of feature 4b).\n- marginPct: (retail - cost) / retail x 100 as a 4-dp decimal string; null without a retail price (mocks/dto.ts:35).\n- orders30d and revenue30d: the service's non-rejected storefront orders of the last 30 days; revenue as net total_price.\n- locked (never public) and lockedReason (text or null).",
+          "response": "JSON array + x-total-count. One row per service (a service has one listing, decision 039):\n- id, serviceId, slug, publicTitle, isListed, isFeatured.\n- service {id, name, code, basePrice (B2B base, 4-dp), cost (the effective cost of B117, 4-dp USD, so cost, marginPct and floorPrice agree)}.\n- retailPrice: service_group_prices.price of the b2c_retail group, net USD before VAT, one per service; null when unset.\n- floorPrice: the lowest retail price accepted: the B117 effective floor for the b2c_retail group (effective cost + the minimum profit from pricing_rules), computed by the same resolver function checkout uses (exported by the catalog pricing service of feature 4b).\n- marginPct: (retail - cost) / retail x 100 as a 4-dp decimal string; null without a retail price (mocks/dto.ts:35).\n- orders30d and revenue30d: the service's non-rejected storefront orders of the last 30 days; revenue as net total_price.\n- locked (never public) and lockedReason (text or null).",
           "errors": [
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks storefront:read", "ui": "tab hidden" }
           ],
@@ -303,11 +303,11 @@
           "key": "POST /admin/service-listings",
           "successStatus": 201,
           "query": "",
-          "request": "Body {serviceId, locale (en|ar), publicTitle, slug?}. Without slug, the server uses slugOf(publicTitle): lower case, & becomes 'and', other non-alphanumerics become '-', and '-' is trimmed at the ends (mocks/http.ts:69-76). A new listing has is_listed false and is_featured false. (service_id, locale) and (locale, slug) are unique.",
+          "request": "Body {serviceId, publicTitle, slug?}. Without slug, the server uses slugOf(publicTitle): lower case, & becomes 'and', other non-alphanumerics become '-', and '-' is trimmed at the ends (mocks/http.ts:69-76). A new listing has is_listed false and is_featured false. service_id and slug are unique (a service has one listing and a slug is unique for the site; decision 039, B224).",
           "response": "201 with the ServiceListing row.",
           "errors": [
-            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[].field is one of serviceId|locale|publicTitle|slug", "ui": "message under the field" },
-            { "status": 409, "code": "LISTING_EXISTS", "when": "the service already has a listing in that locale, or the slug is used; errors[{field: 'serviceId'|'slug'}] (listingRoutes.ts:73-83)", "ui": "message under the named field" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[].field is one of serviceId|publicTitle|slug", "ui": "message under the field" },
+            { "status": 409, "code": "LISTING_EXISTS", "when": "the service already has a listing, or the slug is used; errors[{field: 'serviceId'|'slug'}] (listingRoutes.ts:73-83)", "ui": "message under the named field" },
             { "status": 409, "code": "LISTING_LOCKED", "when": "the service can never be public (listingRoutes.ts:64-71)", "ui": "dialog error slot" },
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks storefront:create (the service menu also needs catalog:read)", "ui": "Add listing disabled" }
           ],
@@ -318,7 +318,7 @@
           "key": "PATCH /admin/service-listings/:id",
           "successStatus": 200,
           "query": "",
-          "request": "Body is any of {isListed: boolean, retailPrice: 4-dp money string, net USD before VAT (components/PriceDialog.tsx:52)}. The switch sends only isListed; the price dialog sends only retailPrice. retailPrice upserts service_group_prices(service_id, b2c_retail group), so it applies to every locale's listing of the service and only to new storefront checkouts. Refuse a price <= 0 or below floorPrice. floorPrice is the same B117 effective floor (effective cost + minimum profit for the b2c_retail group); retailPrice below it is 422 on retailPrice.",
+          "request": "Body is any of {isListed: boolean, retailPrice: 4-dp money string, net USD before VAT (components/PriceDialog.tsx:52)}. The switch sends only isListed; the price dialog sends only retailPrice. retailPrice upserts service_group_prices(service_id, b2c_retail group), so it applies to the service's listing and only to new storefront checkouts. Refuse a price <= 0 or below floorPrice. floorPrice is the same B117 effective floor (effective cost + minimum profit for the b2c_retail group); retailPrice below it is 422 on retailPrice.",
           "response": "200 with the updated row; retailPrice, marginPct and floorPrice are worked out again.",
           "errors": [
             { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[{field: 'retailPrice'}] for a price <= 0, or below the floor, with a message naming the floor (demo text 'Below the floor...', listingRoutes.ts:106-124)", "ui": "message under the price field" },
@@ -333,9 +333,9 @@
         {
           "key": "GET /admin/content-pages",
           "successStatus": 200,
-          "query": "Landing tab: kind repeated (all five landing kinds carrier|model|tool|brand|country, or the one chosen), q (contains over title and slug, mocks/pageRoutes.ts:22), _sort title|status|updatedAt (default updatedAt desc), paging 25 (components/LandingTab.tsx:25-29). Counts: kind x5 plus status=published|draft|noindex, with _start=0&_end=1 (LandingStats.tsx:10-14). Content tab: kind=static&kind=blog&_start=0&_end=200&_sort=title&_order=asc (PagesPanel.tsx:20-24). A locale filter is accepted but not sent.",
+          "query": "Landing tab: kind repeated (all five landing kinds carrier|model|tool|brand|country, or the one chosen), q (contains over title and slug, mocks/pageRoutes.ts:22), _sort title|status|updatedAt (default updatedAt desc), paging 25 (components/LandingTab.tsx:25-29). Counts: kind x5 plus status=published|draft|noindex, with _start=0&_end=1 (LandingStats.tsx:10-14). Content tab: kind=static&kind=blog&_start=0&_end=200&_sort=title&_order=asc (PagesPanel.tsx:20-24).",
           "request": "",
-          "response": "JSON array + x-total-count. Row:\n- id, kind, slug, locale, title.\n- bodyMd: the full Markdown; editors start from the row.\n- seoTitle and seoDescription: '' when none.\n- status draft|published|noindex.\n- publishedAt: null until the first publish.\n- createdAt, updatedAt.\n- visits30d and orders30d: null (no analytics source in the map; landing pages only).\nExtra fields such as canonicalUrl and url are harmless.",
+          "response": "JSON array + x-total-count. Row:\n- id, kind, slug, title.\n- bodyMd: the full Markdown; editors start from the row.\n- seoTitle and seoDescription: '' when none.\n- status draft|published|noindex.\n- publishedAt: null until the first publish.\n- createdAt, updatedAt.\n- visits30d and orders30d: null (no analytics source in the map; landing pages only).\nExtra fields such as canonicalUrl and url are harmless.",
           "errors": [
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks storefront:read", "ui": "tab hidden" }
           ],
@@ -358,11 +358,11 @@
           "key": "POST /admin/content-pages",
           "successStatus": 201,
           "query": "",
-          "request": "Body {kind (one of the seven kinds), title, locale (en|ar), slug? (empty means slugOf(title)), bodyMd (raw Markdown; keep its whitespace), seoTitle?, seoDescription?}. Empty optional fields are left out (ContentPageDialog.tsx:54-62). Created as a draft, with author_id = staff and published_at null.",
+          "request": "Body {kind (one of the seven kinds), title, slug? (empty means slugOf(title)), bodyMd (raw Markdown; keep its whitespace), seoTitle?, seoDescription?}. Empty optional fields are left out (ContentPageDialog.tsx:54-62). Created as a draft, with author_id = staff and published_at null.",
           "response": "201 with the ContentPage.",
           "errors": [
-            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[].field is one of kind|title|locale|slug", "ui": "message under the field" },
-            { "status": 409, "code": "SLUG_TAKEN", "when": "the slug is already used in that locale; errors[{field: 'slug'}] (pageRoutes.ts:36-39)", "ui": "message under Slug" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[].field is one of kind|title|slug", "ui": "message under the field" },
+            { "status": 409, "code": "SLUG_TAKEN", "when": "the slug is already used (a slug is unique for the site); errors[{field: 'slug'}] (pageRoutes.ts:36-39)", "ui": "message under Slug" },
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks storefront:create", "ui": "New page disabled" }
           ],
           "assumed": true,
@@ -372,12 +372,12 @@
           "key": "PATCH /admin/content-pages/:id",
           "successStatus": 200,
           "query": "",
-          "request": "Partial body of {title, slug, locale, bodyMd, seoTitle, seoDescription}, changed fields only. Short fields are trimmed; '' clears an SEO field. Never kind or status (those go through the publish route). An empty title or slug is refused. The slug stays unique per locale, checked against the new locale when both change.",
+          "request": "Partial body of {title, slug, bodyMd, seoTitle, seoDescription}, changed fields only. Short fields are trimmed; '' clears an SEO field. Never kind or status (those go through the publish route). An empty title or slug is refused. The slug stays unique for the site.",
           "response": "200 with the updated page; updatedAt moves forward.",
           "errors": [
             { "status": 404, "code": "NOT_FOUND", "when": "no page with that id", "ui": "dialog error slot" },
             { "status": 422, "code": "VALIDATION_FAILED", "when": "empty title or slug, errors[{field}]", "ui": "message under the field" },
-            { "status": 409, "code": "SLUG_TAKEN", "when": "the slug is used by another page in the locale, with errors[{field: 'slug'}]", "ui": "message under Slug" },
+            { "status": 409, "code": "SLUG_TAKEN", "when": "the slug is used by another page, with errors[{field: 'slug'}]", "ui": "message under Slug" },
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks storefront:update", "ui": "Edit disabled" }
           ],
           "assumed": true,
@@ -401,7 +401,7 @@
           "key": "POST /admin/content-pages/generate",
           "successStatus": 200,
           "query": "",
-          "request": "Body {brands: string[], models: string[], networks: string[]} (split on commas and new lines, trimmed).\nAn empty list means all:\n- brands: distinct tac_catalog.brand.\n- models: tac_catalog marketing_name (else model) of those brands, plus typed models that are not in the catalogue.\n- networks: distinct service_listings.carrier (the mock falls back to AT&T, T-Mobile, Vodafone).\nFor each model x network: title 'Unlock <model> on <network>', slug slugOf(title), locale en, kind model, status draft, template_params {brand, model, network}, and a short draft body. Combinations whose slug already exists in that locale are skipped. Nothing is published.",
+          "request": "Body {brands: string[], models: string[], networks: string[]} (split on commas and new lines, trimmed).\nAn empty list means all:\n- brands: distinct tac_catalog.brand.\n- models: tac_catalog marketing_name (else model) of those brands, plus typed models that are not in the catalogue.\n- networks: distinct service_listings.carrier (the mock falls back to AT&T, T-Mobile, Vodafone).\nFor each model x network: title 'Unlock <model> on <network>', slug slugOf(title), kind model, status draft, template_params {brand, model, network}, and a short draft body. Combinations whose slug already exists are skipped. Nothing is published.",
           "response": "200 with {created: ContentPage[] (the new drafts), skipped: number (combinations that already had a page)}.",
           "errors": [
             { "status": 422, "code": "VALIDATION_FAILED", "when": "the run would create more than 50 new drafts (cap STOREFRONT_GENERATE_MAX_PER_RUN = 50, a code constant with no setting and no console field): the server computes brands x models x networks, removes the combinations that already have a page (counted in skipped) and, if more than 50 remain, refuses the whole run without truncating: detail 'This run would create N pages; the limit is 50 per run. Narrow the lists.', errors [] (no field); the mock silently stops at 6, pageRoutes.ts:27, 85", "ui": "dialog error slot" },
@@ -413,9 +413,9 @@
         {
           "key": "GET /admin/help-articles",
           "successStatus": 200,
-          "query": "Paging 25. q: contains over question and category (mocks/helpRoutes.ts:9). Filter isPublished=true|false; category and locale are accepted. _sort sort|question|category|isPublished, default sort asc (lib/views.ts:36-40). Counts, each with _start=0&_end=1: no filter, isPublished=true, isPublished=false (HelpStats.tsx:10-12).",
+          "query": "Paging 25. q: contains over question and category (mocks/helpRoutes.ts:9). Filter isPublished=true|false; category is accepted. _sort sort|question|category|isPublished, default sort asc (lib/views.ts:36-40). Counts, each with _start=0&_end=1: no filter, isPublished=true, isPublished=false (HelpStats.tsx:10-12).",
           "request": "",
-          "response": "JSON array + x-total-count. Row: id, category (free-text topic), question, answerMd (full), locale, isPublished, helpfulYes and helpfulNo (reader votes), sort, createdAt, updatedAt.",
+          "response": "JSON array + x-total-count. Row: id, category (free-text topic), question, answerMd (full), isPublished, helpfulYes and helpfulNo (reader votes), sort, createdAt, updatedAt.",
           "errors": [
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks storefront:read", "ui": "tab hidden" }
           ],
@@ -438,10 +438,10 @@
           "key": "POST /admin/help-articles",
           "successStatus": 201,
           "query": "",
-          "request": "Body {category, question, answerMd (raw Markdown), locale (en|ar), isPublished? (default false)}. New articles go last (sort = max + 1) with votes 0.",
+          "request": "Body {category, question, answerMd (raw Markdown), isPublished? (default false)}. New articles go last (sort = max + 1) with votes 0.",
           "response": "201 with the HelpArticle.",
           "errors": [
-            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[].field is one of category|question|answerMd|locale", "ui": "message under the field" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[].field is one of category|question|answerMd", "ui": "message under the field" },
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks storefront:create", "ui": "New article disabled" }
           ],
           "assumed": true,
@@ -451,7 +451,7 @@
           "key": "PATCH /admin/help-articles/:id",
           "successStatus": 200,
           "query": "",
-          "request": "Partial body of {category, question, answerMd, locale, isPublished}. The publish switch sends only isPublished. An empty category, question or answerMd is refused.",
+          "request": "Partial body of {category, question, answerMd, isPublished}. The publish switch sends only isPublished. An empty category, question or answerMd is refused.",
           "response": "200 with the updated article.",
           "errors": [
             { "status": 404, "code": "NOT_FOUND", "when": "no article with that id", "ui": "dialog or toast" },
@@ -464,9 +464,9 @@
         {
           "key": "GET /admin/legal-documents",
           "successStatus": 200,
-          "query": "_start=0&_end=200&_sort=type&_order=asc with no filters (components/LegalPanel.tsx:19-23). Filters type, locale and isCurrent are accepted.",
+          "query": "_start=0&_end=200&_sort=type&_order=asc with no filters (components/LegalPanel.tsx:19-23). Filters type and isCurrent are accepted (no locale filter and no locale sort, decision 039, B225).",
           "request": "",
-          "response": "Every version. Row:\n- id, type terms|privacy|refund|cookies (CHECK legal_documents_type_check; labels terms 'Terms of service', privacy 'Privacy policy', refund 'Refund policy', cookies 'Cookie policy'), version (text, e.g. '3.2'), locale, bodyMd.\n- effectiveFrom: null until published, and kept after the version is superseded.\n- isCurrent: one per type and locale.\n- requiresReacceptance, createdAt.\n- acceptedCount: count of granted consent_records with this legal_document_id; null if not counted.\nThe console groups rows: current = isCurrent; draft = not current and effectiveFrom null; earlier = not current and effectiveFrom set (lib/legal.ts:66-74).",
+          "response": "Every version. Row:\n- id, type terms|privacy|refund|cookies (CHECK legal_documents_type_check; labels terms 'Terms of service', privacy 'Privacy policy', refund 'Refund policy', cookies 'Cookie policy'), version (text, e.g. '3.2'), locale (read-only archive tag: 'en', or the code of a retired non-English version kept for the record, B225), bodyMd.\n- effectiveFrom: null until published, and kept after the version is superseded.\n- isCurrent: one version in force per type.\n- requiresReacceptance, createdAt.\n- acceptedCount: count of granted consent_records with this legal_document_id; null if not counted.\nThe console groups rows: current = isCurrent; draft = not current and effectiveFrom null; earlier = not current and effectiveFrom set (lib/legal.ts:66-74).",
           "errors": [
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks legal:read", "ui": "legal half hidden" }
           ],
@@ -489,11 +489,11 @@
           "key": "POST /admin/legal-documents",
           "successStatus": 201,
           "query": "",
-          "request": "Body {type, locale, version, bodyMd, requiresReacceptance (boolean; the mock defaults to true)}. Creates a draft with is_current false, effective_from null and created_by = staff. There is no edit route: a version's text never changes.",
+          "request": "Body {type, version, bodyMd, requiresReacceptance (boolean; the mock defaults to true)}. Creates an English draft (the server writes locale en: there is no locale in the body, B225) with is_current false, effective_from null and created_by = staff. There is no edit route: a version's text never changes.",
           "response": "201 with the new version.",
           "errors": [
-            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[].field is one of type|locale|version|bodyMd", "ui": "message under the field" },
-            { "status": 409, "code": "VERSION_EXISTS", "when": "the version already exists for that type and locale; errors[{field: 'version'}] (legalRoutes.ts:72-78)", "ui": "message under Version" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[].field is one of type|version|bodyMd", "ui": "message under the field" },
+            { "status": 409, "code": "VERSION_EXISTS", "when": "the version already exists for that type; errors[{field: 'version'}] (legalRoutes.ts:72-78)", "ui": "message under Version" },
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks legal:create", "ui": "New version disabled" }
           ],
           "assumed": true,
@@ -503,7 +503,7 @@
           "key": "POST /admin/legal-documents/:id/publish",
           "successStatus": 200,
           "query": "",
-          "request": "No body. In one transaction:\n- Set is_current false on the current version of the same type and locale, keeping its effective_from.\n- Set this version is_current true and effective_from now.\n- Write audit_logs (the approver).\nLater consents reference this version. requires_reacceptance makes signed-in customers accept again (store side).",
+          "request": "No body. In one transaction:\n- Set is_current false on the version in force of the same type, keeping its effective_from.\n- Set this version is_current true and effective_from now.\n- Write audit_logs (the approver).\nLater consents reference this version. requires_reacceptance makes signed-in customers accept again (store side).",
           "response": "200 with the published version.",
           "errors": [
             { "status": 404, "code": "NOT_FOUND", "when": "no version with that id", "ui": "dialog error slot" },
@@ -569,16 +569,16 @@
         }
       ],
       "businessRules": [
-        "The Retail price is service_group_prices.price for the single b2c_retail group: net USD before VAT, one per service, for all locales. Storefront checkouts price from it, add the country's VAT, and lock the result on the session (scenario b2c-paid step 3; service_group_prices description; M182; components/PriceDialog.tsx:52-57).",
+        "The Retail price is service_group_prices.price for the single b2c_retail group: net USD before VAT, one per service. Storefront checkouts price from it, add the country's VAT, and lock the result on the session (scenario b2c-paid step 3; service_group_prices description; M182; components/PriceDialog.tsx:52-57).",
         "Selling below the floor is blocked: refuse retailPrice <= 0 and retailPrice < floorPrice, with 422 on retailPrice. floorPrice = basePrice x 1.10 (demo retailFloor, 12-state-b2c.js:355), and never below the service's own floor, cost + minProfit (map service-listings description; listingRoutes.ts:106-126).",
         "A locked listing cannot be switched on, priced or created: 409 LISTING_LOCKED. Locked means the service is never public: its category is hidden from the b2c_retail group, or the service is disabled. Switching on a listing whose service is disabled answers 409 SERVICE_DISABLED (demo setListed 12-state-b2c.js:356-364; listingRoutes.ts:64-71, 110-141).",
-        "Slugs are made from the title when empty, with the demo's slugOf. They are unique per locale for pages and listings (409 SLUG_TAKEN or LISTING_EXISTS, with errors[].field). Each service has one listing per locale (mocks/http.ts:69-76; pageRoutes.ts:30-39; listingRoutes.ts:72-83).",
+        "Slugs are made from the title when empty, with the demo's slugOf. They are unique for the site, for pages and listings (409 SLUG_TAKEN or LISTING_EXISTS, with errors[].field). Each service has one listing (mocks/http.ts:69-76; pageRoutes.ts:30-39; listingRoutes.ts:72-83).",
         "Content pages:\n- Created as drafts.\n- Status changes only through POST /:id/publish: published true sets published with published_at; false sets draft.\n- PATCH never changes kind or status.\n- The generator only creates drafts and skips slugs that exist.\n(Map content-pages rows; pageRoutes.ts:41-59, 63-117.)",
-        "Legal versions are immutable (there is no edit route).\n- POST creates a draft: is_current false, effective_from null.\n- Publish, in one transaction, retires the current version of the same type and locale (is_current false, effective_from kept) and makes this one current from now. Later consents reference it.\n- An already current version answers 409 ALREADY_CURRENT; a duplicate version per type and locale answers 409 VERSION_EXISTS.\n(Map legal rows; legalRoutes.ts:24-45, 72-78; lib/legal.ts:66-74.)",
+        "Legal versions are immutable (there is no edit route).\n- POST creates a draft: is_current false, effective_from null.\n- Publish, in one transaction, retires the version in force of the same type (is_current false, effective_from kept) and makes this one current from now. Later consents reference it.\n- An already current version answers 409 ALREADY_CURRENT; a duplicate version of a type answers 409 VERSION_EXISTS.\n(Map legal rows; legalRoutes.ts:24-45, 72-78; lib/legal.ts:66-74.)",
         "TAC: exactly 8 digits and unique (409 TAC_TAKEN on tac). brand and model are required; marketingName and releaseYear are optional. Console entries get source manual. No delete (map CRUD[LSCU]; tacRoutes.ts:35-84).",
         "Help articles have no publish route: the switch is PATCH {isPublished} under storefront:update. New articles are unpublished by default and go last in sort order (helpRoutes.ts:39-50; M187).",
         "Permissions (M7, M187):\n- storefront:* rows: storefront:read, storefront:create, storefront:update; page publish: storefront:publish; generator: storefront:create.\n- legal:* rows: legal:read, legal:create; legal publish: legal:publish.\n- TAC: catalog:read, catalog:create, catalog:update.\nPublishes write audit_logs (map tables).",
-        "Languages are en and ar only (mocks/http.ts:79); other locales answer 422 on locale."
+        "English only (decision 039, B224): no language field on a listing, page, help article, category, template, campaign or account, and `locale` is an unknown key. A legal document row keeps a read-only `locale` as an archive tag (B225)."
       ],
       "questions": [
         { "n": 1, "question": "Where does the listing's retail price live? Does PATCH /admin/service-listings/:id take retailPrice, for which languages, and do list rows join service, retailPrice, floorPrice, marginPct, orders30d, revenue30d, locked and lockedReason?", "proposedAnswer": "The price lives in service_group_prices, for the b2c_retail client group (the storefront Retail price). PATCH accepts retailPrice (4-dp, net USD before VAT) and upserts that row, so it applies to the listing of the service in every language. Rows join service {id, name, code, basePrice, cost} and carry:\n- retailPrice or null, and floorPrice.\n- marginPct = (retail - cost) / retail x 100, 4-dp; null without a retail price.\n- orders30d and revenue30d: the service's non-rejected storefront orders of the last 30 days; revenue net.\n- locked and lockedReason.", "basis": "service_group_prices description ('including the storefront Retail price'); scenario b2c-paid step 3; M182; mocks/dto.ts:13-41", "confidence": "high", "needsUser": false },
@@ -775,7 +775,7 @@
           "successStatus": 200,
           "query": "_start=0&_end=200&_sort=title&_order=asc (hooks/useTemplates.ts:9-16). q is accepted (title, body, shortcut).",
           "request": "",
-          "response": "JSON array + x-total-count. Row: id, title, category (ticket category words), locale en|ar, body (raw, with {{name}}, {{order}}, {{eta}}), shortcut ('' when none), createdBy (staff id or null), createdAt, updatedAt. When the total exceeds 200, the view says so. Shortcut: shortcut is trimmed; empty or whitespace-only is stored as NULL and read back as ''; the unique index on lower(shortcut) WHERE shortcut IS NOT NULL stays, so many templates without a shortcut are allowed and SHORTCUT_TAKEN compares lower case among non-empty shortcuts only.",
+          "response": "JSON array + x-total-count. Row: id, title, category (ticket category words), body (raw, with {{name}}, {{order}}, {{eta}}), shortcut ('' when none), createdBy (staff id or null), createdAt, updatedAt. When the total exceeds 200, the view says so. Shortcut: shortcut is trimmed; empty or whitespace-only is stored as NULL and read back as ''; the unique index on lower(shortcut) WHERE shortcut IS NOT NULL stays, so many templates without a shortcut are allowed and SHORTCUT_TAKEN compares lower case among non-empty shortcuts only.",
           "errors": [
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks support:read", "ui": "picker and view error state" }
           ],
@@ -798,10 +798,10 @@
           "key": "POST /admin/reply-templates",
           "successStatus": 201,
           "query": "",
-          "request": "Body {title, category, locale, body, shortcut}, all trimmed. shortcut may be ''; otherwise it must start with '/' and be unique (lib/templateForm.ts:15-23). created_by = staff. Shortcut: shortcut is trimmed; empty or whitespace-only is stored as NULL and read back as ''; the unique index on lower(shortcut) WHERE shortcut IS NOT NULL stays, so many templates without a shortcut are allowed and SHORTCUT_TAKEN compares lower case among non-empty shortcuts only.",
+          "request": "Body {title, category, body, shortcut}, all trimmed. shortcut may be ''; otherwise it must start with '/' and be unique (lib/templateForm.ts:15-23). created_by = staff. Shortcut: shortcut is trimmed; empty or whitespace-only is stored as NULL and read back as ''; the unique index on lower(shortcut) WHERE shortcut IS NOT NULL stays, so many templates without a shortcut are allowed and SHORTCUT_TAKEN compares lower case among non-empty shortcuts only.",
           "response": "201 with the ReplyTemplate.",
           "errors": [
-            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[].field is one of title|body|category|locale|shortcut (mocks/templateHandlers.ts:15-33)", "ui": "message under the field" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[].field is one of title|body|category|shortcut (mocks/templateHandlers.ts:15-33)", "ui": "message under the field" },
             { "status": 409, "code": "SHORTCUT_TAKEN", "when": "another template has this non-empty shortcut. The detail names it; send no errors[] (templateHandlers.ts:36-42).", "ui": "detail under Shortcut (TemplateDialog.tsx:52)" },
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks support:create", "ui": "Add disabled" }
           ],
@@ -844,7 +844,7 @@
         "Internal notes (is_internal) never reach the customer: they are left out of store ticket reads and emails, and included in GET /admin/support-tickets/:id (map note row; GET /store/v1/tickets/:token without internal notes).",
         "Resolve writes resolved_at and an internal system message 'Marked resolved by <staff>. A satisfaction survey is emailed to the customer.', sends the CSAT survey (notification) and writes an audit entry. Reopen clears resolved_at (mocks/ticketHandlers.ts:146-166; demo ticketSet 12-state-b2c.js:200-208; scenario b2c-ticket steps 7-8).",
         "Reply channels: email always (the requester's email); telegram only when the requester has a linked Telegram chat. A channel outside replyChannels answers 422 on channel. Without a channel, the reply uses the ticket's channel when allowed, else email (M148; Composer.tsx:48-51, 91; mocks/ticketHandlers.ts:72-76).",
-        "Templates: title, body, category (the ticket category words) and locale (en|ar) are required. shortcut is optional: '' or starting with '/', and unique when non-empty (409 SHORTCUT_TAKEN). The body is stored raw with {{name}}, {{order}} and {{eta}}. The console fills the variables, and the server stores the reply text as sent (mocks/templateHandlers.ts:15-42; M142, M151).",
+        "Templates: title, body and category (the ticket category words) are required. shortcut is optional: '' or starting with '/', and unique when non-empty (409 SHORTCUT_TAKEN). The body is stored raw with {{name}}, {{order}} and {{eta}}. The console fills the variables, and the server stores the reply text as sent (mocks/templateHandlers.ts:15-42; M142, M151).",
         "The assignee must be an active staff member (422 on assigneeId); null unassigns (mocks/ticketHandlers.ts:127-131; TicketControls.tsx:44).",
         "Permissions (M7):\n- read: support:read.\n- PATCH (priority, assignee, status): support:update.\n- reply and note: support:reply.\n- templates: support:create, support:update, support:delete.\nThe assignee menu reads GET /admin/staff only with staff:read (useAssignees.ts:11). Changes write audit_logs."
       ],
@@ -889,7 +889,7 @@
     "Field errors: errors[].field uses dotted paths (password.mode, AddCustomerDialog.tsx:58). A conflict code maps to a field only when errors[] is empty (src/components/ui/dialogSubmit.ts:59-66). So EMAIL_TAKEN and SHORTCUT_TAKEN go without errors[], while SLUG_TAKEN, VERSION_EXISTS, TAC_TAKEN and LISTING_EXISTS include errors[{field}] (storefront mocks pageRoutes.ts:36-39, legalRoutes.ts:76-77, tacRoutes.ts:12-15, listingRoutes.ts:82).",
     "Business codes these features need in the error catalog (decision 028): EMAIL_TAKEN, ANONYMIZED, NOT_ACTIVE, ACCOUNT_EXISTS, NO_ACCOUNT, NOT_SUSPENDED, NOT_BLOCKED, ALREADY_BLOCKED, REQUEST_CLOSED (all 409); TICKET_RESOLVED, SHORTCUT_TAKEN, LISTING_LOCKED, LISTING_EXISTS, SERVICE_DISABLED, SLUG_TAKEN, ALREADY_CURRENT, VERSION_EXISTS, TAC_TAKEN (all 409); and the proposed EMAIL_BLOCKED (errors[].code), ERASURE_NOT_DONE and NOT_A_DRAFT (customers/mocks/actionHandlers.ts, requestHandlers.ts; support/mocks; storefront/mocks).",
     "Masked emails use the console's format 'ab•••@domain', so masking again in the browser leaves them unchanged (src/lib/format/text.ts:3-6; checkouts/mocks/store.ts:45).",
-    "Locales are en|ar everywhere: customers, listings, pages, help, legal and reply templates (customers/lib/status.ts:63-66; storefront/mocks/http.ts:79; support/lib/status.ts:55).",
+    "English only (decision 039, B224-B227): customers, listings, pages, help, categories, templates and campaigns carry no language; `locale` is an unknown key. Only a legal document row keeps a read-only `locale`, an archive tag (B225).",
     "Temporary customer passwords follow the staff contract (M12, M85): generated by the server, returned once as temporaryPassword, never logged; the client drops them at once (customers/hooks/useCustomerMutations.ts:37, 73, 92).",
     "B2C money: amounts are USD 4-dp strings. Rows that show local money carry fxRate (currency units per USD) and currencyCode, and the console multiplies (src/lib/format/money.ts:63-65; checkouts/components/CheckoutsTable.tsx:81). The retail price is net USD before VAT (storefront/components/PriceDialog.tsx:52).",
     "Names of anonymized customers appear in joins as 'Deleted customer': support requester and author names, data-request customerName and order buyers (customers/mocks/actionHandlers.ts:183-199; customers/mocks/dto.ts:118-120)."

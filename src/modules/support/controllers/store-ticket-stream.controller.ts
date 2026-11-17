@@ -39,7 +39,7 @@ export class StoreTicketStreamController {
    * Opens the stream of the ticket the token resolved to.
    *
    * @param principal the holder of the ticket token
-   * @param query `locale` and `cursor`
+   * @param query `cursor`
    * @param headers `last-event-id`
    * @param request the request (the hub reads its id, route and close)
    * @param reply the reply the hub hijacks
@@ -61,7 +61,6 @@ export class StoreTicketStreamController {
       id: principal.resourceId,
       sessionId: null,
       ip: principal.ip,
-      locale: query.locale ?? null,
       name: '',
       permissions: [],
     };

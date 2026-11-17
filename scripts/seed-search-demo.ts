@@ -67,12 +67,7 @@ async function add(db: DbExecutor): Promise<string> {
     ).map((row) => row.code),
   );
   const takenSlugs = new Set(
-    (
-      await db
-        .select({ slug: s.serviceListings.slug })
-        .from(s.serviceListings)
-        .where(eq(s.serviceListings.locale, 'en'))
-    ).map((row) => row.slug),
+    (await db.select({ slug: s.serviceListings.slug }).from(s.serviceListings)).map((row) => row.slug),
   );
 
   const categoryIds = new Map<string, number>();
@@ -135,7 +130,6 @@ async function add(db: DbExecutor): Promise<string> {
     await db.insert(s.serviceGroupPrices).values({ serviceId, groupId: retail.id, price: figures.price });
     await db.insert(s.serviceListings).values({
       serviceId,
-      locale: 'en',
       slug: entry.slug,
       publicTitle: source.title,
       summary: source.summary,

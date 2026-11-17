@@ -4,10 +4,10 @@
   "domain": "H",
   "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
   "counts": {
-    "rows": 36,
-    "endpoints": 47,
+    "rows": 37,
+    "endpoints": 48,
     "bySurface": {
-      "store": 11,
+      "store": 12,
       "admin": 36
     },
     "frontendCalled": 36
@@ -18,12 +18,13 @@
     16,
     19,
     22,
-    29
+    29,
+    30
   ],
   "ownedTables": [
     {
       "name": "service_listings",
-      "description": "The public service page in the storefront: title, slug and SEO fields per language.",
+      "description": "The public service page in the storefront: title, slug and SEO fields.",
       "descriptionAr": "صفحة الخدمة العامة في المتجر: العنوان والـ slug والـ SEO لكل لغة",
       "b2c": "new",
       "columns": [
@@ -60,7 +61,7 @@
     },
     {
       "name": "content_pages",
-      "description": "Landing pages, static pages and the blog, in several languages.",
+      "description": "Landing pages, static pages and the blog.",
       "descriptionAr": "صفحات الهبوط والصفحات الثابتة والمدونة بعدة لغات",
       "b2c": "new",
       "columns": [
@@ -392,7 +393,7 @@
       "description": "Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked.",
       "frontend": {
         "file": "src/features/storefront/api/listings.ts",
-        "line": 24,
+        "line": 23,
         "fn": "listListings"
       }
     },
@@ -426,7 +427,7 @@
       "description": "Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked.",
       "frontend": {
         "file": "src/features/storefront/api/listings.ts",
-        "line": 32,
+        "line": 31,
         "fn": "getListing"
       }
     },
@@ -460,7 +461,7 @@
       "description": "Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked.",
       "frontend": {
         "file": "src/features/storefront/api/listings.ts",
-        "line": 41,
+        "line": 40,
         "fn": "createListing"
       }
     },
@@ -494,7 +495,7 @@
       "description": "Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked.",
       "frontend": {
         "file": "src/features/storefront/api/listings.ts",
-        "line": 52,
+        "line": 51,
         "fn": "updateListing"
       }
     },
@@ -1132,7 +1133,7 @@
       "description": "Upload the picture of a listed service.",
       "frontend": {
         "file": "src/features/storefront/api/listings.ts",
-        "line": 67,
+        "line": 66,
         "fn": "uploadListingImage"
       },
       "addition": {
@@ -1171,7 +1172,7 @@
       "description": "Remove the picture of a listed service.",
       "frontend": {
         "file": "src/features/storefront/api/listings.ts",
-        "line": 77,
+        "line": 76,
         "fn": "removeListingImage"
       },
       "addition": {
@@ -1855,6 +1856,41 @@
         "spec": "B222"
       },
       "successStatus": 202
+    },
+    {
+      "key": "GET /store/v1/legacy-slugs/:kind/:slug",
+      "method": "GET",
+      "path": "/store/v1/legacy-slugs/:kind/:slug",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "content",
+      "descriptionAr": "Where an old address in another language leads now: the page of the same service, the service list, the home page or the help centre.",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "public",
+      "stage": 30,
+      "tables": [
+        "legacy_slugs",
+        "service_listings"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/legacy-slugs/:kind/:slug",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/legacy-slugs/:kind/:slug"
+      },
+      "module": "storefront",
+      "description": "Where an old address in another language leads now: the page of the same service, the service list, the home page or the help centre.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/30.mjs",
+        "spec": "B224"
+      },
+      "successStatus": 200
     }
   ],
   "scenarios": []

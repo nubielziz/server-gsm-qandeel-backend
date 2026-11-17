@@ -51,26 +51,21 @@ export class InboxService {
   ) {}
 
   /**
-   * Lists the owner's items, newest first, with their text in the reader's language.
+   * Lists the owner's items, newest first, with their text in English.
    *
    * @param owner whose inbox
-   * @param query the parsed request: category filter, sort, range, `unread` and `locale`
+   * @param query the parsed request: category filter, sort, range and `unread`
    * @returns the page and the exact total (items of a cancelled campaign are hidden)
    */
   async list(
     owner: InboxOwner,
-    query: ParsedListQuery<'createdAt' | 'id', { unread?: 'true' | 'false'; locale?: 'en' | 'ar' }>,
+    query: ParsedListQuery<'createdAt' | 'id', { unread?: 'true' | 'false' }>,
   ): Promise<{ rows: WireInboxItem[]; total: number }> {
     const [{ rows, total }, recipient] = await Promise.all([
       listInboxRows(this.db.db, owner, query),
       recipientOf(this.db.db, owner.type, owner.id),
     ]);
-    // `locale` is the page language of the reader; without it a customer reads their saved language, the others English.
-    const reader = {
-      audience: audienceOf(owner.type),
-      locale: query.extra.locale ?? recipient?.locale ?? 'en',
-      name: recipient?.name ?? '',
-    };
+    const reader = { audience: audienceOf(owner.type), name: recipient?.name ?? '' };
     return { rows: rows.map((row) => inboxView(row, reader, this.texts)), total };
   }
 

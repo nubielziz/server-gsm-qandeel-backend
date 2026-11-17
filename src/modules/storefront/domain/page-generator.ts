@@ -13,9 +13,6 @@ export const STOREFRONT_GENERATE_MAX_PER_RUN = 50;
  */
 export const STOREFRONT_GENERATE_MAX_COMBINATIONS = 20_000;
 
-/** The language and kind of every generated draft (the mock and the endpoint doc: `en`, `model`). */
-export const GENERATED_LOCALE = 'en';
-
 /** A model with the brand the catalogue (or the request) puts it under. */
 export interface ModelRef {
   readonly brand: string;
@@ -137,7 +134,7 @@ export interface ModelSplit {
 /**
  * Splits models into those whose name can make a web address and those that cannot.
  *
- * Why: a model name from the TAC catalogue is data the caller cannot fix, so one name with no Latin letter or digit (`هاتف`) must not
+ * Why: a model name from the TAC catalogue is data the caller cannot fix, so one name with no Latin letter or digit (a name in Arabic or CJK script) must not
  * refuse a whole "all models" run: the run skips it and counts it. A name the caller typed is a mistake the caller can fix, so the use
  * case does not use this split for typed models (it answers `422` on `models`, see {@link combinationsOf}).
  *

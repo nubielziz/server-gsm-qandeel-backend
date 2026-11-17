@@ -9,7 +9,7 @@ import { enabledSynonyms } from '../infra/search-tables.repository';
 import { brandAndCarrierSpellings } from '../infra/search-read.repository';
 import { fold } from '../domain/did-you-mean';
 import { normaliseText } from '../domain/normalise';
-import { listedServiceIdsIn } from '../../infra/listing.repository';
+import { listedServiceIds } from '../../infra/listing.repository';
 import type { FacetLabels } from '../domain/suggest-assembly';
 import { SearchableIds } from './searchable-ids';
 import { SEARCH_CACHE_VERSION } from './search-settings-push';
@@ -88,7 +88,7 @@ export class SearchFacetLabels {
     let categories: Array<readonly [number, string]> = [];
     if (groupId !== undefined) {
       const ids = await this.services.priced(db, groupId);
-      const listed = await listedServiceIdsIn(db, ids, 'en');
+      const listed = await listedServiceIds(db, ids);
       categories = (await this.services.categoriesOf(db, [...listed])).map((row) => [row.id, row.name] as const);
     }
     const terms = (await enabledSynonyms(db)).flatMap((row) => [...row.terms, ...(row.root ? [row.root] : [])]);

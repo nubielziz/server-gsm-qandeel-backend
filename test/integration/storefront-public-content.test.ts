@@ -1,6 +1,6 @@
 // Integration tests of the public content routes (feature 15): GET /store/v1/pages/:slug (live content pages, noindex, drafts,
-// the legal documents in force, languages) and GET /store/v1/help and /help/:slug (published articles only, search, topic filter,
-// the derived slug). Anonymous reads on the store surface.
+// the legal documents in force) and GET /store/v1/help and /help/:slug (published articles only, search, topic filter, the derived
+// slug). Anonymous reads on the store surface. English only (decision 039): no page or article has a language.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '../../src/infra/db';
@@ -50,7 +50,6 @@ describe('GET /store/v1/pages/:slug', () => {
     expect(res.body).toMatchObject({
       kind: 'carrier',
       slug: 'unlock-iphone-on-atandt',
-      locale: 'en',
       title: 'Unlock iPhone on AT&T',
       bodyMd: '# Unlock\n\n<b>raw html as stored</b>',
       seoTitle: 'Unlock AT&T',
@@ -66,7 +65,6 @@ describe('GET /store/v1/pages/:slug', () => {
       'canonicalUrl',
       'kind',
       'legal',
-      'locale',
       'noindex',
       'publishedAt',
       'seoDescription',
@@ -88,15 +86,14 @@ describe('GET /store/v1/pages/:slug', () => {
     expect((await get('/store/v1/pages/nothing-here')).status).toBe(404);
   });
 
-  it('keeps languages apart: ?locale= picks the page, English is the default, and a missing translation is 404', async () => {
+  it('takes no language: a ?locale= an older website still sends is ignored, and the page carries none', async () => {
     const { db } = await testDb();
-    await insertPageRow(db, { slug: 'about', locale: 'en', title: 'About us' });
-    await insertPageRow(db, { slug: 'about', locale: 'ar', title: 'من نحن' });
-    await insertPageRow(db, { slug: 'english-only', locale: 'en' });
+    await insertPageRow(db, { slug: 'about', title: 'About us' });
     expect((await get('/store/v1/pages/about')).body.title).toBe('About us');
-    expect((await get('/store/v1/pages/about?locale=ar')).body.title).toBe('من نحن');
-    expect((await get('/store/v1/pages/english-only?locale=ar')).status).toBe(404);
-    expect((await get('/store/v1/pages/about?locale=fr')).status).toBe(422);
+    const old = await get('/store/v1/pages/about?locale=tr');
+    expect(old.status).toBe(200);
+    expect(old.body.title).toBe('About us');
+    expect(old.body).not.toHaveProperty('locale');
   });
 
   it('serves the legal document in force for terms, privacy, refund and cookies, with the version a consent references', async () => {
@@ -116,7 +113,6 @@ describe('GET /store/v1/pages/:slug', () => {
     expect(res.body).toMatchObject({
       kind: 'legal',
       slug: 'terms',
-      locale: 'en',
       title: 'Terms of service',
       bodyMd: '# Terms of service v3.2',
       noindex: false,
@@ -131,15 +127,23 @@ describe('GET /store/v1/pages/:slug', () => {
     });
   });
 
-  it('answers 404 for a legal slug with nothing in force (only drafts or earlier versions) or in another language', async () => {
+  it('answers 404 for a legal slug with nothing in force (only drafts, earlier or retired versions)', async () => {
     const { db } = await testDb();
     await insertLegalRow(db, { type: 'privacy', version: '1.0' });
     await insertLegalRow(db, { type: 'refund', version: '1.0', effectiveFrom: new Date('2026-07-01T09:00:00.000Z') });
+    // A retired version in another language is evidence, never a page (decision 039, section 4.4).
+    await insertLegalRow(db, {
+      type: 'terms',
+      version: '1.0',
+      locale: 'tr',
+      bodyMd: '# Retired text',
+      effectiveFrom: new Date('2026-07-01T09:00:00.000Z'),
+    });
     await insertLegalRow(db, { type: 'cookies', version: '1.0', isCurrent: true, effectiveFrom: new Date() });
     expect((await get('/store/v1/pages/privacy')).status).toBe(404);
     expect((await get('/store/v1/pages/refund')).status).toBe(404);
+    expect((await get('/store/v1/pages/terms')).status).toBe(404);
     expect((await get('/store/v1/pages/cookies')).status).toBe(200);
-    expect((await get('/store/v1/pages/cookies?locale=ar')).status).toBe(404);
   });
 
   it('is a read: no CSRF token and no Turnstile token needed', async () => {
@@ -155,7 +159,7 @@ describe('GET /store/v1/pages/:slug', () => {
 });
 
 describe('GET /store/v1/help', () => {
-  it('lists only the published articles of the language in the staff order, with slugs, votes and the total', async () => {
+  it('lists only the published articles in the staff order, with slugs, votes and the total', async () => {
     const { db } = await testDb();
     const second = await insertArticleRow(db, {
       question: 'Can I cancel my order?',
@@ -165,7 +169,6 @@ describe('GET /store/v1/help', () => {
     });
     const first = await insertArticleRow(db, { question: 'Where is my order?', sort: 1 });
     await insertArticleRow(db, { question: 'A draft', isPublished: false, sort: 3 });
-    await insertArticleRow(db, { question: 'كيف أدفع؟', locale: 'ar', sort: 4 });
     const res = await get('/store/v1/help');
     expect(res.status).toBe(200);
     expect(res.total).toBe(2);
@@ -176,7 +179,6 @@ describe('GET /store/v1/help', () => {
       category: 'Orders',
       question: 'Can I cancel my order?',
       answerMd: 'Usually one to three days.',
-      locale: 'en',
       helpfulYes: 96,
       helpfulNo: 31,
     });
@@ -186,15 +188,13 @@ describe('GET /store/v1/help', () => {
       'helpfulNo',
       'helpfulYes',
       'id',
-      'locale',
       'question',
       'slug',
       'sort',
       'updatedAt',
     ]);
-    expect((await get('/store/v1/help?locale=ar')).body.map((a: { question: string }) => a.question)).toEqual([
-      'كيف أدفع؟',
-    ]);
+    // The list is strict: the language is an unknown key now (the website stops sending it in the same release).
+    expect((await get('/store/v1/help?locale=en')).status).toBe(422);
   });
 
   it('searches the question, the answer and the topic, filters by topic and pages with an exact total', async () => {
@@ -262,7 +262,7 @@ describe('GET /store/v1/help/:slug', () => {
 });
 
 describe('GET /store/v1/pages', () => {
-  it('lists the live pages of a language without their bodies, newest publication first, and never a draft or a legal document', async () => {
+  it('lists the live pages without their bodies, newest publication first, and never a draft or a legal document', async () => {
     const { db } = await testDb();
     await insertPageRow(db, {
       slug: 'about',
@@ -285,7 +285,6 @@ describe('GET /store/v1/pages', () => {
       publishedAt: new Date('2026-08-01T00:00:00Z'),
     });
     await insertPageRow(db, { slug: 'wip', title: 'Work in progress', status: 'draft', publishedAt: null });
-    await insertPageRow(db, { slug: 'arabic', title: 'صفحة', locale: 'ar' });
     await insertLegalRow(db, { type: 'terms', isCurrent: true, effectiveFrom: new Date('2025-01-01T00:00:00Z') });
 
     const res = await get('/store/v1/pages');
@@ -296,7 +295,6 @@ describe('GET /store/v1/pages', () => {
     expect(res.body[0]).toEqual({
       kind: 'blog',
       slug: 'blog-imei',
-      locale: 'en',
       title: 'Find your IMEI',
       seoDescription: 'Three ways.',
       noindex: false,
@@ -306,7 +304,6 @@ describe('GET /store/v1/pages', () => {
     expect(res.body[2].noindex).toBe(true);
     expect(JSON.stringify(res.body)).not.toContain('bodyMd');
     expect(res.body.map((row: { slug: string }) => row.slug)).not.toContain('terms');
-    expect((await get('/store/v1/pages?locale=ar')).body.map((row: { slug: string }) => row.slug)).toEqual(['arabic']);
   });
 
   it('filters by kind, searches the title, sorts, and pages with an exact total', async () => {
@@ -331,7 +328,7 @@ describe('GET /store/v1/pages', () => {
     expect(paged.total).toBe(4);
     expect(paged.body.map((row: { title: string }) => row.title)).toEqual(['Beta', 'Gamma']);
     expect((await get('/store/v1/pages?kind=video')).status).toBe(422);
-    expect((await get('/store/v1/pages?locale=fr')).status).toBe(422);
+    expect((await get('/store/v1/pages?locale=en')).status).toBe(422);
     expect((await get('/store/v1/pages?_sort=body')).status).toBe(422);
     expect((await get('/store/v1/pages?_end=101')).status).toBe(422);
   });

@@ -5,21 +5,23 @@ import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../infra/db';
 import { type LegalDocument, type LegalDocumentType, type NewLegalDocument, legalDocuments } from '../db/schema';
 
-/** The first key of the two-key advisory lock that serialises the publishes of one type and language. */
+/** The first key of the two-key advisory lock that serialises the publishes of one type. */
 const LEGAL_PUBLISH_LOCK = 7_215_001;
+
+/** The archive tag of every version that can be created or published (decision 039: the other values are retired history). */
+const ENGLISH_TAG = 'en';
 
 const COLUMNS: ListColumns = {
   id: legalDocuments.id,
   type: legalDocuments.type,
   version: legalDocuments.version,
-  locale: legalDocuments.locale,
   isCurrent: legalDocuments.isCurrent,
   effectiveFrom: legalDocuments.effectiveFrom,
   createdAt: legalDocuments.createdAt,
 };
 
 /** The sorts the console list accepts. */
-export type LegalDocumentSort = 'type' | 'version' | 'locale' | 'effectiveFrom' | 'createdAt' | 'id';
+export type LegalDocumentSort = 'type' | 'version' | 'effectiveFrom' | 'createdAt' | 'id';
 
 /**
  * Lists versions for `GET /admin/legal-documents`.
@@ -64,43 +66,45 @@ export async function findVersion(db: DbExecutor, id: number, lock = false): Pro
 }
 
 /**
- * Tells whether a version text already exists for a type and language.
+ * Tells whether an English version text already exists for a type.
+ *
+ * Why: a new version is always English, and `legal_documents_version_uq` is `(type, locale, version)`: a retired version of another
+ * language may carry the same text (`3.2`, decision 039, section 4.4) and does not make the text taken.
  *
  * @param db the database or a transaction
  * @param type the document type
- * @param locale the language
  * @param version the version text
  * @returns true when it exists
  */
-export async function versionExists(
-  db: DbExecutor,
-  type: LegalDocumentType,
-  locale: string,
-  version: string,
-): Promise<boolean> {
+export async function versionExists(db: DbExecutor, type: LegalDocumentType, version: string): Promise<boolean> {
   const [row] = await db
     .select({ id: legalDocuments.id })
     .from(legalDocuments)
-    .where(and(eq(legalDocuments.type, type), eq(legalDocuments.locale, locale), eq(legalDocuments.version, version)))
+    .where(
+      and(eq(legalDocuments.type, type), eq(legalDocuments.locale, ENGLISH_TAG), eq(legalDocuments.version, version)),
+    )
     .limit(1);
   return row !== undefined;
 }
 
 /**
- * Inserts a draft version.
+ * Inserts a draft version, tagged English: no version in another language can be created any more (decision 039).
  *
  * @param db the caller's transaction
  * @param values the new row
  * @returns the stored row
  * @throws a unique violation of `legal_documents_version_uq`
  */
-export async function insertVersion(db: DbExecutor, values: NewLegalDocument): Promise<LegalDocument> {
-  const [row] = await db.insert(legalDocuments).values(values).returning();
+export async function insertVersion(db: DbExecutor, values: Omit<NewLegalDocument, 'locale'>): Promise<LegalDocument> {
+  const [row] = await db
+    .insert(legalDocuments)
+    .values({ ...values, locale: ENGLISH_TAG })
+    .returning();
   return row!;
 }
 
 /**
- * Takes the lock that serialises publishes of one type and language, held until the transaction ends.
+ * Takes the lock that serialises publishes of one type, held until the transaction ends.
  *
  * Why: two drafts of the same document published at once would each see the old current version, flip it, and both try to
  * become current (a violation of the one-current index). A row lock cannot cover it because the second publish does not see the
@@ -108,29 +112,23 @@ export async function insertVersion(db: DbExecutor, values: NewLegalDocument): P
  *
  * @param db the caller's transaction
  * @param type the document type
- * @param locale the language
  */
-export async function lockPublish(db: DbExecutor, type: LegalDocumentType, locale: string): Promise<void> {
-  await db.execute(sql`select pg_advisory_xact_lock(${LEGAL_PUBLISH_LOCK}, hashtext(${`${type}|${locale}`}))`);
+export async function lockPublish(db: DbExecutor, type: LegalDocumentType): Promise<void> {
+  await db.execute(sql`select pg_advisory_xact_lock(${LEGAL_PUBLISH_LOCK}, hashtext(${type}))`);
 }
 
 /**
- * Makes the version in force for a type and language stop being current, keeping its `effective_from`.
+ * Makes the version in force for a type stop being current, keeping its `effective_from`.
  *
  * @param db the caller's transaction (the publish lock is held)
  * @param type the document type
- * @param locale the language
  * @returns the version that was replaced, or `undefined` when none was in force
  */
-export async function retireCurrent(
-  db: DbExecutor,
-  type: LegalDocumentType,
-  locale: string,
-): Promise<LegalDocument | undefined> {
+export async function retireCurrent(db: DbExecutor, type: LegalDocumentType): Promise<LegalDocument | undefined> {
   const [row] = await db
     .update(legalDocuments)
     .set({ isCurrent: false })
-    .where(and(eq(legalDocuments.type, type), eq(legalDocuments.locale, locale), eq(legalDocuments.isCurrent, true)))
+    .where(and(eq(legalDocuments.type, type), eq(legalDocuments.isCurrent, true)))
     .returning();
   return row;
 }
@@ -153,36 +151,29 @@ export async function makeCurrent(db: DbExecutor, id: number, effectiveFrom: Dat
 }
 
 /**
- * Finds the version in force for a type and language.
+ * Finds the version in force for a type.
+ *
+ * Why: one version is in force per type (`legal_documents_current_uq`), and it is English (`legal_documents_locale_check`).
  *
  * @param db the database or a transaction
  * @param type the document type
- * @param locale the language
  * @returns the current version, or `undefined` when none is in force
  */
-export async function findCurrent(
-  db: DbExecutor,
-  type: LegalDocumentType,
-  locale: string,
-): Promise<LegalDocument | undefined> {
+export async function findCurrent(db: DbExecutor, type: LegalDocumentType): Promise<LegalDocument | undefined> {
   const [row] = await db
     .select()
     .from(legalDocuments)
-    .where(and(eq(legalDocuments.type, type), eq(legalDocuments.locale, locale), eq(legalDocuments.isCurrent, true)))
+    .where(and(eq(legalDocuments.type, type), eq(legalDocuments.isCurrent, true)))
     .limit(1);
   return row;
 }
 
 /**
- * Lists the version in force of every type and language.
+ * Lists the version in force of every type.
  *
  * @param db the database or a transaction
- * @returns the current versions by type then language
+ * @returns the current versions by type
  */
 export async function listCurrentVersions(db: DbExecutor): Promise<LegalDocument[]> {
-  return db
-    .select()
-    .from(legalDocuments)
-    .where(eq(legalDocuments.isCurrent, true))
-    .orderBy(asc(legalDocuments.type), asc(legalDocuments.locale));
+  return db.select().from(legalDocuments).where(eq(legalDocuments.isCurrent, true)).orderBy(asc(legalDocuments.type));
 }

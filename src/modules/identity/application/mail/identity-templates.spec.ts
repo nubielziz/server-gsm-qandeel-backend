@@ -1,8 +1,8 @@
 // Unit tests of the identity events and their default templates (feature 20): every template belongs to a registered event and channel and
-// uses only that event's placeholders, merchant events have English and Arabic, staff events English, and the custom migration is exactly
-// what `identityTemplatesSql()` writes.
+// uses only that event's placeholders, every event has one English email, the custom migration that shipped them holds each row, and
+// `identityTemplatesSql()` writes today's shape (no language, decision 039).
 import { describe, expect, it } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { insertedTemplates } from '../../../../../test/support/applied-templates';
 import { NotificationEventRegistry } from '../../../platform';
 import { IDENTITY_MAIL_EVENTS } from './identity-mail-events';
 import { IDENTITY_DEFAULT_TEMPLATES, IDENTITY_TEMPLATES_MIGRATION, identityTemplatesSql } from './identity-templates';
@@ -51,9 +51,9 @@ describe('IDENTITY_MAIL_EVENTS', () => {
 describe('IDENTITY_DEFAULT_TEMPLATES', () => {
   it('belong to a registered event and channel, use only that event’s placeholders, and have a subject and a body', () => {
     const events = registry();
-    expect(IDENTITY_DEFAULT_TEMPLATES).toHaveLength(14);
+    expect(IDENTITY_DEFAULT_TEMPLATES).toHaveLength(8);
     for (const template of IDENTITY_DEFAULT_TEMPLATES) {
-      const label = `${template.event} ${template.channel} ${template.audience} ${template.locale}`;
+      const label = `${template.event} ${template.channel} ${template.audience}`;
       const definition = events.get(template.event, template.audience);
       expect(definition, label).toBeDefined();
       expect(definition?.channels, label).toContain(template.channel);
@@ -66,20 +66,18 @@ describe('IDENTITY_DEFAULT_TEMPLATES', () => {
     }
   });
 
-  it('are unique per event, channel, audience and language', () => {
-    const keys = IDENTITY_DEFAULT_TEMPLATES.map((t) => `${t.event}|${t.channel}|${t.audience}|${t.locale}`);
+  it('are unique per event, channel and audience', () => {
+    const keys = IDENTITY_DEFAULT_TEMPLATES.map((t) => `${t.event}|${t.channel}|${t.audience}`);
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('give every merchant event an English and an Arabic email and every staff event an English one', () => {
-    const has = (event: string, audience: string, locale: string) =>
-      IDENTITY_DEFAULT_TEMPLATES.some(
-        (t) => t.event === event && t.audience === audience && t.locale === locale && t.channel === 'email',
-      );
+  it('give every identity event, merchant or staff, one email in English', () => {
     for (const definition of IDENTITY_MAIL_EVENTS) {
-      expect(has(definition.key, definition.audience, 'en'), `${definition.key} en`).toBe(true);
-      if (definition.audience === 'merchant')
-        expect(has(definition.key, 'merchant', 'ar'), `${definition.key} ar`).toBe(true);
+      const own = IDENTITY_DEFAULT_TEMPLATES.filter(
+        (t) => t.event === definition.key && t.audience === definition.audience && t.channel === 'email',
+      );
+      expect(own, definition.key).toHaveLength(1);
+      expect(`${own[0]!.subject} ${own[0]!.body}`, definition.key).toMatch(/^[\x20-\x7e\n’]+$/);
     }
   });
 
@@ -89,12 +87,8 @@ describe('IDENTITY_DEFAULT_TEMPLATES', () => {
       expect(template.body).toContain('{{link}}');
       expect(template.body).toContain('{{expiresAt}}');
     }
-    for (const locale of ['en', 'ar']) {
-      const template = IDENTITY_DEFAULT_TEMPLATES.find(
-        (t) => t.event === 'merchant.kyc_rejected' && t.locale === locale,
-      )!;
-      expect(template.body).toContain('{{reason}}');
-    }
+    const rejected = IDENTITY_DEFAULT_TEMPLATES.find((t) => t.event === 'merchant.kyc_rejected')!;
+    expect(rejected.body).toContain('{{reason}}');
   });
 
   it('never put the staff reason of a suspension in the suspension mail', () => {
@@ -105,13 +99,21 @@ describe('IDENTITY_DEFAULT_TEMPLATES', () => {
 });
 
 describe(`migration ${IDENTITY_TEMPLATES_MIGRATION}`, () => {
-  it('holds exactly the INSERT that identityTemplatesSql() writes', () => {
-    const migration = readFileSync(
-      new URL(`../../../../../drizzle/${IDENTITY_TEMPLATES_MIGRATION}`, import.meta.url),
-      'utf8',
-    );
-    const start = migration.indexOf('INSERT INTO "notification_templates"');
-    expect(start).toBeGreaterThanOrEqual(0);
-    expect(migration.slice(start).trim()).toBe(identityTemplatesSql());
+  it('holds every template of the code, in English, with the same event, channel, audience, subject and body', () => {
+    const shipped = insertedTemplates(IDENTITY_TEMPLATES_MIGRATION);
+    // The file also holds the Arabic rows it shipped with (migration 0035 deletes them): every English row is one of the code's.
+    const english = shipped.filter((row) => row.locale === 'en');
+    expect(english).toHaveLength(IDENTITY_DEFAULT_TEMPLATES.length);
+    for (const template of IDENTITY_DEFAULT_TEMPLATES)
+      expect(english, template.event).toContainEqual({ ...template, locale: 'en' });
+  });
+});
+
+describe('identityTemplatesSql()', () => {
+  it('writes every identity template without a language, keeping a template that exists', () => {
+    const insert = identityTemplatesSql();
+    expect(insert).toContain('("event", "channel", "audience", "subject", "body", "is_active")');
+    expect(insert).toEndWith('ON CONFLICT ("event", "channel", "audience") DO NOTHING;');
+    expect(insert.match(/, true\)/g)).toHaveLength(IDENTITY_DEFAULT_TEMPLATES.length);
   });
 });

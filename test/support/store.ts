@@ -186,7 +186,6 @@ export async function makeCustomer(t: TestApp, overrides: CustomerOverrides = {}
       email: `customer-${unique}@example.com`,
       name: 'Test Customer',
       country: 'GB',
-      locale: 'en',
       hasAccount: guest !== true,
       status: 'active',
       ...columns,

@@ -1,6 +1,6 @@
 // Pure rules of a staff edit of a merchant (feature 20): which of the three kinds of change a PATCH is, and which columns a details edit
 // really changes. No I/O, so the rules are unit-tested.
-import type { Client, ClientLocale, ClientStatus } from '../db/schema';
+import type { Client, ClientStatus } from '../db/schema';
 
 /** The profile keys a details edit may carry. */
 export const DETAIL_KEYS = [
@@ -9,7 +9,6 @@ export const DETAIL_KEYS = [
   'phone',
   'country',
   'email',
-  'locale',
   'address',
   'taxId',
   'internalNotes',
@@ -28,7 +27,6 @@ export interface ClientChangeInput {
   readonly phone?: string | undefined;
   readonly country?: string | undefined;
   readonly email?: string | undefined;
-  readonly locale?: ClientLocale | undefined;
   readonly address?: string | undefined;
   readonly taxId?: string | undefined;
   readonly internalNotes?: string | undefined;
@@ -73,7 +71,6 @@ export interface DetailColumns {
   phone?: string;
   country?: string;
   email?: string;
-  locale?: ClientLocale;
   address?: string;
   taxId?: string;
   internalNotes?: string;
@@ -126,7 +123,6 @@ export function detailChanges(client: Client, input: ClientChangeInput): DetailC
   if (input.company !== undefined) set('company', input.company, client.company, input.company !== client.company);
   if (input.phone !== undefined) set('phone', input.phone, client.phone, input.phone !== client.phone);
   if (input.country !== undefined) set('country', input.country, client.country, input.country !== client.country);
-  if (input.locale !== undefined) set('locale', input.locale, client.locale, input.locale !== client.locale);
   if (input.address !== undefined) set('address', input.address, client.address, input.address !== client.address);
   if (input.taxId !== undefined) set('taxId', input.taxId, client.taxId, input.taxId !== client.taxId);
   if (input.internalNotes !== undefined) {

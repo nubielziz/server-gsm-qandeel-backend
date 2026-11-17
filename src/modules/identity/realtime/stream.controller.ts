@@ -39,7 +39,7 @@ export class StreamController {
    * The staff member's stream.
    *
    * @param principal the signed-in staff member
-   * @param query `locale` and `cursor`
+   * @param query `cursor`
    * @param headers `last-event-id`
    * @param request the request (the hub reads its id, route and close)
    * @param reply the reply the hub hijacks
@@ -62,7 +62,7 @@ export class StreamController {
    * The merchant's stream (also while the merchant waits for approval).
    *
    * @param principal the signed-in merchant
-   * @param query `locale` and `cursor`
+   * @param query `cursor`
    * @param headers `last-event-id`
    * @param request the request
    * @param reply the reply the hub hijacks
@@ -85,7 +85,7 @@ export class StreamController {
    * The customer's stream.
    *
    * @param principal the signed-in customer
-   * @param query `locale` and `cursor`
+   * @param query `cursor`
    * @param headers `last-event-id`
    * @param request the request
    * @param reply the reply the hub hijacks
@@ -111,7 +111,7 @@ export class StreamController {
     request: FastifyRequest,
     reply: FastifyReply,
   ): Promise<void> {
-    const viewer = streamViewerOf(principal, query.locale);
+    const viewer = streamViewerOf(principal);
     return this.hub.open({
       viewer,
       caps: streamCapsOf(viewer, this.limits),

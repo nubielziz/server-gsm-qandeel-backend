@@ -117,7 +117,8 @@ export type NewSetting = typeof settings.$inferInsert;
 /**
  * Email and Telegram templates for staff, merchants and customers.
  *
- * Why: Message templates per event, channel, audience and language (routes /admin/notification-templates).
+ * Why: Message templates per event, channel and audience (routes /admin/notification-templates). The map's `locale` column is dropped:
+ * English is the only language (decision 039, B226), so one template answers an event, channel and audience.
  */
 export const notificationTemplates = pgTable(
   'notification_templates',
@@ -127,7 +128,6 @@ export const notificationTemplates = pgTable(
     event: text().notNull(),
     channel: text().$type<NotificationChannel>().notNull(),
     audience: text().$type<NotificationAudience>().notNull(),
-    locale: text().notNull().default('en'),
     subject: text().notNull().default(''),
     body: text().notNull(),
     isActive: boolean().notNull().default(true),
@@ -135,7 +135,7 @@ export const notificationTemplates = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    unique('notification_templates_event_uq').on(t.event, t.channel, t.audience, t.locale),
+    unique('notification_templates_event_uq').on(t.event, t.channel, t.audience),
     check('notification_templates_channel_check', inList(t.channel, NOTIFICATION_CHANNELS)),
     check('notification_templates_audience_check', inList(t.audience, NOTIFICATION_AUDIENCES)),
   ],
@@ -201,7 +201,7 @@ export type NotificationInboxCategory = (typeof NOTIFICATION_INBOX_CATEGORIES)[n
  * Messages staff write once and send to an audience (feature 23, notification center).
  *
  * Why: a broadcast is one row plus a chunked fan-out, never one outbox event per recipient (L5); the row keeps the audience,
- * the content in English and Arabic, the state machine, the fan-out cursor and the planned counters.
+ * the content (one title and one body, decision 039), the state machine, the fan-out cursor and the planned counters.
  */
 export const notificationCampaigns = pgTable(
   'notification_campaigns',
@@ -214,7 +214,7 @@ export const notificationCampaigns = pgTable(
     channels: textList(),
     /** the validated audience spec (`campaigns/audience-spec.ts`) */
     audience: jsonb().$type<Record<string, unknown>>().notNull(),
-    /** `{ en: { title, body }, ar?: { title, body } }` */
+    /** `{ title, body }` (migration 0035 turned the old `{ en, ar? }` into this) */
     content: jsonb().$type<Record<string, unknown>>().notNull(),
     /** `{ staff?, merchant?, customer? }` site-relative paths, or null */
     link: jsonb().$type<Record<string, unknown>>(),

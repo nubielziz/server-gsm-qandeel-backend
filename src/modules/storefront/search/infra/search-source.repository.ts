@@ -1,6 +1,6 @@
-// Reads of the storefront's own tables that the search documents are built from (feature 29, plan section 4.1): the English listing
-// rows of some services. Catalog facts come through catalog's public StorefrontServices.
-import { and, eq, inArray } from 'drizzle-orm';
+// Reads of the storefront's own tables that the search documents are built from (feature 29, plan section 4.1): the listing rows of
+// some services. Catalog facts come through catalog's public StorefrontServices.
+import { inArray } from 'drizzle-orm';
 import type { DbExecutor } from '../../../../infra/db';
 import { serviceListings } from '../../db/schema';
 
@@ -21,14 +21,14 @@ export interface EnglishListingRow {
 }
 
 /**
- * Reads the English listings of some services.
+ * Reads the listings of some services.
  *
- * Why: plan section 4.1: cards and documents are built only from English listing rows (the facts are equal on every language row,
- * the texts are not).
+ * Why: plan section 4.1: cards and documents are built from the service's listing, which is English and one per service since
+ * decision 039.
  *
  * @param db the database or a transaction
  * @param serviceIds the services
- * @returns the English listing of each service that has one, by service id
+ * @returns the listing of each service that has one, by service id
  */
 export async function englishListingsOf(
   db: DbExecutor,
@@ -51,6 +51,6 @@ export async function englishListingsOf(
       createdAt: serviceListings.createdAt,
     })
     .from(serviceListings)
-    .where(and(eq(serviceListings.locale, 'en'), inArray(serviceListings.serviceId, [...new Set(serviceIds)])));
+    .where(inArray(serviceListings.serviceId, [...new Set(serviceIds)]));
   return new Map(rows.map((row) => [row.serviceId, row]));
 }

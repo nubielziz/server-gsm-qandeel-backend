@@ -1,9 +1,11 @@
-// HTTP controller of the public storefront catalog (map domain H, stage 14): configuration, the service list and one service page.
-// Thin: the rules live in StorefrontCatalogService. The answers carry a short Cache-Control for the browser.
+// HTTP controller of the public storefront catalog (map domain H, stage 14): configuration, the service list, one service page, the
+// category menu and the old addresses of feature 30. Thin: the rules live in StorefrontCatalogService. The catalog answers carry a
+// short Cache-Control for the browser.
 import { Controller, Param, Query, Req, Res } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
 import { StorefrontCatalogService } from '../application/storefront-catalog.service';
+import { getLegacySlug } from '../contracts/legacy-slugs.contracts';
 import { visitorOf } from '../search/controllers/visitor';
 import {
   getStoreConfig,
@@ -19,12 +21,14 @@ const PUBLIC_CACHE_CONTROL = 'public, max-age=30';
  * The public storefront catalog routes.
  *
  * Why: the shop's start-up configuration, its service list and its service pages are public and read only (map stage 14); the
- * Turnstile and per-IP limit of ALIGNMENT § 7 apply to the writes and to the whole store surface respectively.
+ * Turnstile and per-IP limit of ALIGNMENT § 7 apply to the writes and to the whole store surface respectively (the old-address
+ * route counts against the same `ip` limiter as every public store read).
  *
  * @route GET /store/v1/config
  * @route GET /store/v1/services
  * @route GET /store/v1/services/:slug
  * @route GET /store/v1/categories
+ * @route GET /store/v1/legacy-slugs/:kind/:slug
  */
 @Controller()
 export class StorefrontPublicController {
@@ -69,7 +73,7 @@ export class StorefrontPublicController {
    * Reads one service page.
    *
    * @param params the slug
-   * @param query the language, buyer country, region and currency
+   * @param query the buyer country, region and currency
    * @param reply the reply, for the cache header
    * @returns the page
    * @route GET /store/v1/services/:slug
@@ -81,7 +85,7 @@ export class StorefrontPublicController {
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<ResultOf<typeof showStoreService>> {
     reply.header('cache-control', PUBLIC_CACHE_CONTROL);
-    return this.catalog.page(params.slug, query.locale, {
+    return this.catalog.page(params.slug, {
       country: query.buyerCountry ?? null,
       region: query.region,
       currency: query.currency,
@@ -91,17 +95,28 @@ export class StorefrontPublicController {
   /**
    * Lists the storefront categories with their service counts.
    *
-   * @param query the language
    * @param reply the reply, for the cache header
    * @returns the categories of the menu
    * @route GET /store/v1/categories
    */
   @Route(listStoreCategories)
-  categories(
-    @Query() query: QueryOf<typeof listStoreCategories>,
-    @Res({ passthrough: true }) reply: FastifyReply,
-  ): Promise<ResultOf<typeof listStoreCategories>> {
+  categories(@Res({ passthrough: true }) reply: FastifyReply): Promise<ResultOf<typeof listStoreCategories>> {
     reply.header('cache-control', PUBLIC_CACHE_CONTROL);
-    return this.catalog.categories(query.locale);
+    return this.catalog.categories();
+  }
+
+  /**
+   * Tells where an old address in another language leads now (English only, decision 039).
+   *
+   * Why: the cache headers are those of `GET /store/v1/pages/:slug` (none set here): the website keeps the answer in its own
+   * content cache.
+   *
+   * @param params the kind and the old slug
+   * @returns the path to send the reader on to, and the service page's slug when there is one
+   * @route GET /store/v1/legacy-slugs/:kind/:slug
+   */
+  @Route(getLegacySlug)
+  legacy(@Param() params: ParamsOf<typeof getLegacySlug>): Promise<ResultOf<typeof getLegacySlug>> {
+    return this.catalog.legacyAddress(params.kind, params.slug);
   }
 }

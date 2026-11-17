@@ -339,16 +339,16 @@ export class CampaignAdminService {
   }
 
   /**
-   * Renders a campaign for one language, channel and audience with a sample name; nothing is sent.
+   * Renders a campaign for one channel and audience with a sample name; nothing is sent.
    *
    * @param id the campaign
-   * @param input the language, channel and audience (default customer)
+   * @param input the channel and audience (default customer)
    * @returns the subject, body, format, sender and a note
    * @throws {AppError} `NOT_FOUND`
    */
   async preview(
     id: number,
-    input: { locale: 'en' | 'ar'; channel: CampaignChannel; audience?: NotificationAudience | undefined },
+    input: { channel: CampaignChannel; audience?: NotificationAudience | undefined },
   ): Promise<CampaignPreview> {
     const staff = currentStaff();
     const row = await findCampaign(this.db.db, id);
@@ -358,7 +358,6 @@ export class CampaignAdminService {
     const message = renderCampaign(
       { content: contentOf(row), link: linkOf(row), purpose: row.purpose },
       {
-        locale: input.locale,
         name: audience === 'staff' ? staff.name : SAMPLE_NAMES[audience],
         audience,
         channel: input.channel,
@@ -376,7 +375,6 @@ export class CampaignAdminService {
             : {}),
       },
     );
-    const fellBack = input.locale === 'ar' && message.locale === 'en';
     return {
       subject: message.subject,
       body: message.html ?? message.text,
@@ -389,9 +387,7 @@ export class CampaignAdminService {
               ? `@${this.config.telegram.botUsername}`
               : 'Telegram bot'
             : 'In-app notification',
-      note: fellBack
-        ? 'This campaign has no Arabic text: readers of Arabic get the English one.'
-        : 'A sample with made-up details.',
+      note: 'A sample with made-up details.',
     };
   }
 
@@ -406,7 +402,7 @@ export class CampaignAdminService {
   }
 }
 
-/** The content as stored: Arabic only when given. */
+/** The content as stored: the one title and body. */
 function storedContent(content: CampaignContent): Record<string, unknown> {
-  return { en: { ...content.en }, ...(content.ar ? { ar: { ...content.ar } } : {}) };
+  return { title: content.title, body: content.body };
 }

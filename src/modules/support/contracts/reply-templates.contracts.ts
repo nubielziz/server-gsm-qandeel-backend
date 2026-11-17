@@ -3,7 +3,7 @@
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime } from '../../../common/contract';
 import { TICKET_CATEGORIES } from '../db/schema';
-import { TEMPLATE_LOCALES, isValidShortcut } from '../domain/template-rules';
+import { isValidShortcut } from '../domain/template-rules';
 import { MAX_MESSAGE_LENGTH, TicketCategorySchema } from './shared';
 
 /** A template as the console reads it. */
@@ -11,7 +11,6 @@ export const ReplyTemplateSchema = z.object({
   id: zId,
   title: z.string(),
   category: TicketCategorySchema,
-  locale: z.string().describe('`en` or `ar`.'),
   body: z.string().describe('The raw text with `{{name}}`, `{{order}}` and `{{eta}}`: the console fills them in.'),
   shortcut: z.string().describe("'' when the template has none; otherwise a slash word such as `/refund`."),
   createdBy: zId.nullable(),
@@ -23,7 +22,6 @@ const TEMPLATE_EXAMPLE = {
   id: 3,
   title: 'Order is in progress',
   category: 'delay',
-  locale: 'en',
   body: 'Hi {{name}}, thanks for your patience. Your order {{order}} is with the carrier and the usual time for this service is {{eta}}.',
   shortcut: '/progress',
   createdBy: 1,
@@ -37,11 +35,6 @@ const Body = z
   .trim()
   .min(1, 'Write the reply text.')
   .max(MAX_MESSAGE_LENGTH, `Use at most ${MAX_MESSAGE_LENGTH} characters.`);
-const Locale = z
-  .string()
-  .trim()
-  .refine((value) => (TEMPLATE_LOCALES as readonly string[]).includes(value), 'Choose a language.')
-  .describe('`en` or `ar`.');
 const Shortcut = z
   .string()
   .trim()
@@ -52,7 +45,6 @@ const ID_PARAMS = z.object({ id: zIdParam });
 const CREATE_BODY = z.object({
   title: Title,
   category: TicketCategorySchema,
-  locale: Locale,
   body: Body,
   shortcut: Shortcut,
 });
@@ -62,7 +54,7 @@ export const listReplyTemplates = defineRoute({
   key: 'GET /admin/reply-templates',
   summary: 'Reply templates',
   description:
-    'The canned replies, A to Z by title by default. The console loads them whole (`_end=200`). Filters: `category`, `locale`. `q` is a ' +
+    'The canned replies, A to Z by title by default. The console loads them whole (`_end=200`). Filter: `category`. `q` is a ' +
     'case-insensitive contains over the title, the text and the shortcut.',
   tags: ['reply-templates'],
   surface: 'admin',
@@ -73,7 +65,6 @@ export const listReplyTemplates = defineRoute({
     defaultSort: { field: 'title', order: 'asc' },
     filters: {
       category: { type: 'enum', values: [...TICKET_CATEGORIES], ops: ['eq'] },
-      locale: { type: 'string', ops: ['eq'] },
     },
     search: ['title', 'body', 'shortcut'],
   }),
@@ -101,7 +92,7 @@ export const createReplyTemplate = defineRoute({
   key: 'POST /admin/reply-templates',
   summary: 'Create a reply template',
   description:
-    'All five fields are trimmed. `shortcut` may be `""`; otherwise it starts with `/` and is unique ignoring case: another template ' +
+    'All four fields are trimmed. `shortcut` may be `""`; otherwise it starts with `/` and is unique ignoring case: another template ' +
     'with it is `409 SHORTCUT_TAKEN` (the detail names it; no `errors[]`). An empty shortcut is stored as null, so any number of templates ' +
     'may have none. The text is stored raw: the server renders no variables. `createdBy` is the caller.',
   tags: ['reply-templates'],
@@ -115,7 +106,6 @@ export const createReplyTemplate = defineRoute({
     request: {
       title: 'Order is in progress',
       category: 'delay',
-      locale: 'en',
       body: TEMPLATE_EXAMPLE.body,
       shortcut: '/progress',
     },

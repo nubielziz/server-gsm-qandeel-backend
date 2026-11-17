@@ -7,7 +7,6 @@
     "id": 1,
     "title": "Order is in progress",
     "category": "delay",
-    "locale": "en",
     "body": "Hi {{name}}, thanks for your patience. Your order {{order}} is with the carrier and the usual time for this service is {{eta}}. I will update you as soon as it moves. If it is not done by then, we refund you in full.",
     "shortcut": "",
     "createdBy": 1,

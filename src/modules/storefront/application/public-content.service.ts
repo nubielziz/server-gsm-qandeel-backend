@@ -1,5 +1,5 @@
-// PublicContentService: the use cases of the public content routes (map domain H, stage 15): a page by slug and language (a live
-// content page or the legal document in force) and the help centre. Reads only; nothing here is a decision.
+// PublicContentService: the use cases of the public content routes (map domain H, stage 15): a page by slug (a live content page
+// or the legal document in force) and the help centre. Reads only; nothing here is a decision. English only (decision 039).
 import { Injectable } from '@nestjs/common';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
@@ -25,7 +25,6 @@ export interface PublicPageLegal {
 export interface PublicPageView {
   readonly kind: ContentPageKind | 'legal';
   readonly slug: string;
-  readonly locale: string;
   readonly title: string;
   readonly bodyMd: string;
   readonly seoTitle: string;
@@ -41,7 +40,6 @@ export interface PublicPageView {
 export interface PublicPageListItem {
   readonly kind: ContentPageKind;
   readonly slug: string;
-  readonly locale: string;
   readonly title: string;
   readonly seoDescription: string;
   readonly noindex: boolean;
@@ -52,7 +50,6 @@ export interface PublicPageListItem {
 const toPageListItem = (page: ContentPage): PublicPageListItem => ({
   kind: page.kind,
   slug: page.slug,
-  locale: page.locale,
   title: page.title,
   seoDescription: page.seoDescription,
   noindex: page.status === 'noindex',
@@ -67,7 +64,6 @@ export interface PublicArticleView {
   readonly category: string;
   readonly question: string;
   readonly answerMd: string;
-  readonly locale: string;
   readonly helpfulYes: number;
   readonly helpfulNo: number;
   readonly sort: number;
@@ -84,7 +80,6 @@ function toArticleView(article: HelpArticle): PublicArticleView {
     category: article.category,
     question: article.question,
     answerMd: article.answerMd,
-    locale: article.locale,
     helpfulYes: article.helpfulYes,
     helpfulNo: article.helpfulNo,
     sort: article.sort,
@@ -113,23 +108,21 @@ export class PublicContentService {
   ) {}
 
   /**
-   * Finds a page by slug and language.
+   * Finds a page by slug.
    *
    * @param slug the slug; `terms`, `privacy`, `refund` and `cookies` name the legal document in force
-   * @param locale the language
    * @returns the live content page, or the legal document in force
-   * @throws {AppError} `NOT_FOUND` (404: unknown, a draft, or no legal version in force in that language)
+   * @throws {AppError} `NOT_FOUND` (404: unknown, a draft, or no legal version in force)
    */
-  async page(slug: string, locale: string): Promise<PublicPageView> {
+  async page(slug: string): Promise<PublicPageView> {
     const type = legalTypeOfSlug(slug);
     if (type !== undefined) {
-      const document = await this.legal.currentWithBody(this.db.db, type, locale);
+      const document = await this.legal.currentWithBody(this.db.db, type);
       if (!document?.effectiveFrom) throw pageNotFound();
       const title = LEGAL_TYPE_LABEL[type];
       return {
         kind: 'legal',
         slug: type,
-        locale: document.locale,
         title,
         bodyMd: document.bodyMd,
         seoTitle: title,
@@ -147,12 +140,11 @@ export class PublicContentService {
         },
       };
     }
-    const page = await findLivePage(this.db.db, slug, locale);
+    const page = await findLivePage(this.db.db, slug);
     if (!page) throw pageNotFound();
     return {
       kind: page.kind,
       slug: page.slug,
-      locale: page.locale,
       title: page.title,
       bodyMd: page.bodyMd,
       seoTitle: page.seoTitle,
@@ -166,17 +158,15 @@ export class PublicContentService {
   }
 
   /**
-   * Lists the published help articles of a language.
+   * Lists the published help articles.
    *
    * @param query the parsed list request (`q`, `category`, paging, `sort`)
-   * @param locale the language
    * @returns the page of articles and the exact total
    */
   async helpList(
     query: ParsedListQuery<'sort' | 'question' | 'id', unknown>,
-    locale: string,
   ): Promise<{ rows: PublicArticleView[]; total: number }> {
-    const { rows, total } = await listArticles(this.db.db, query, locale);
+    const { rows, total } = await listArticles(this.db.db, query, true);
     return { rows: rows.map(toArticleView), total };
   }
 
@@ -196,19 +186,17 @@ export class PublicContentService {
   }
 
   /**
-   * Lists the live pages of a language (no bodies).
+   * Lists the live pages (no bodies).
    *
    * Why: feature 22 (D-15a): the blog index and the sitemap. Drafts and legal documents are never listed.
    *
    * @param query the parsed list request (`kind`, `q`, sort, paging)
-   * @param locale the language
    * @returns the page of rows and the exact total
    */
   async pageList(
     query: ParsedListQuery<PublicPageSort, unknown>,
-    locale: string,
   ): Promise<{ rows: PublicPageListItem[]; total: number }> {
-    const { rows, total } = await listLivePages(this.db.db, query, locale);
+    const { rows, total } = await listLivePages(this.db.db, query);
     return { rows: rows.map(toPageListItem), total };
   }
 

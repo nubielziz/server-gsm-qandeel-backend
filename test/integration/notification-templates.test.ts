@@ -8,7 +8,7 @@ import { type AdminApi, adminWith } from '../support/admin-api';
 import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches, insertMerchant } from '../support/auth';
 import { DAY, TestClock } from '../support/clock';
-import { closeTestDb, resetDb, testDb } from '../support/db';
+import { closeTestDb, pgErrorOf, resetDb, testDb } from '../support/db';
 import { mailbox, seedDefaultTemplates, telegramOutbox } from '../support/notifications';
 
 const clock = new TestClock('2026-11-01T10:00:00.000Z');
@@ -41,9 +41,8 @@ const fieldsOf = (body: { errors: Array<{ field: string }> }) => body.errors.map
 // A customer template of an event no migration ships a default for (`support.reply`), so a test can add the first one.
 const customerSupportReply = {
   event: 'support.reply',
-  channel: 'email',
-  audience: 'customer',
-  locale: 'en',
+  channel: 'email' as const,
+  audience: 'customer' as const,
   subject: 'Re: your question',
   body: 'Hi {{customerName}}, we looked into it.',
   isActive: true,
@@ -54,12 +53,10 @@ async function audit() {
   return db.select().from(s.auditLogs).orderBy(s.auditLogs.id);
 }
 
-async function idOf(event: string, channel: 'email' | 'telegram', audience = 'merchant', locale = 'en') {
+async function idOf(event: string, channel: 'email' | 'telegram', audience = 'merchant') {
   const { db } = await testDb();
   const rows = await db.select().from(s.notificationTemplates);
-  return rows.find(
-    (row) => row.event === event && row.channel === channel && row.audience === audience && row.locale === locale,
-  )!.id;
+  return rows.find((row) => row.event === event && row.channel === channel && row.audience === audience)!.id;
 }
 
 describe('GET /admin/notification-templates', () => {
@@ -82,7 +79,6 @@ describe('GET /admin/notification-templates', () => {
       event: 'customer.email_verification',
       channel: 'email',
       audience: 'customer',
-      locale: 'en',
       subject: 'Confirm your email address',
       body: expect.stringContaining('{{customerName}}'),
       isActive: true,
@@ -92,13 +88,12 @@ describe('GET /admin/notification-templates', () => {
     });
   });
 
-  it('filters by audience, channel, switch, event and language, searches the event and the subject, and pages', async () => {
+  it('filters by audience, channel, switch and event, searches the event and the subject, and pages', async () => {
     const { db } = await testDb();
     await db.insert(s.notificationTemplates).values({
       event: 'support.reply',
       channel: 'email',
       audience: 'customer',
-      locale: 'en-GB',
       subject: 'Zebra reply',
       body: 'Hi {{customerName}}',
       isActive: false,
@@ -111,7 +106,6 @@ describe('GET /admin/notification-templates', () => {
     );
     expect(await total('isActive=false')).toBe(1);
     expect(await total('event=wallet.low_balance')).toBe(2);
-    expect(await total('locale=en-GB')).toBe(1);
     expect(await total('q=ZEBRA')).toBe(1);
     expect(await total('q=low_balance')).toBe(2);
     const page = await owner.get('/admin/notification-templates?_sort=id&_order=desc&_start=1&_end=3');
@@ -119,9 +113,13 @@ describe('GET /admin/notification-templates', () => {
     expect(page.total).toBe(DEFAULT_TEMPLATES.length + 1);
     expect(page.body[0].id).toBeGreaterThan(page.body[1].id);
     expect((await owner.get('/admin/notification-templates?audience=robot')).status).toBe(422);
+    // Templates have no language (decision 039): `locale` is an unknown key of this strict list, so it is refused, not ignored.
+    const language = await owner.get('/admin/notification-templates?locale=en');
+    expect(language.status).toBe(422);
+    expect(language.body.code).toBe('VALIDATION_FAILED');
   });
 
-  it('counts the messages sent in the last 30 days per event, channel and kind of recipient, whatever the language', async () => {
+  it('counts the messages sent in the last 30 days per event, channel and kind of recipient', async () => {
     const { db } = await testDb();
     const merchant = await insertMerchant(db);
     const sent = (days: number) => new Date(clock.nowMs() - days * DAY);
@@ -135,22 +133,12 @@ describe('GET /admin/notification-templates', () => {
       { ...base, channel: 'telegram', status: 'sent', sentAt: sent(2) },
       { ...base, recipientType: 'customer', channel: 'email', status: 'sent', sentAt: sent(2) },
     ]);
-    // A second language of the same template shows the same number.
-    await db.insert(s.notificationTemplates).values({
-      event: 'wallet.low_balance',
-      channel: 'email',
-      audience: 'merchant',
-      locale: 'de',
-      subject: 'Guthaben niedrig',
-      body: 'Hallo {{merchantName}}',
-    });
     const rows = (await owner.get('/admin/notification-templates?event=wallet.low_balance')).body;
-    const countOf = (channel: string, locale: string) =>
-      rows.find((row: { channel: string; locale: string }) => row.channel === channel && row.locale === locale)
-        .sentLast30Days;
-    expect(countOf('email', 'en')).toBe(2);
-    expect(countOf('email', 'de')).toBe(2);
-    expect(countOf('telegram', 'en')).toBe(1);
+    expect(rows).toHaveLength(2);
+    const countOf = (channel: string) =>
+      rows.find((row: { channel: string }) => row.channel === channel).sentLast30Days;
+    expect(countOf('email')).toBe(2);
+    expect(countOf('telegram')).toBe(1);
     const one = await owner.get(`/admin/notification-templates/${await idOf('wallet.low_balance', 'email')}`);
     expect(one.body.sentLast30Days).toBe(2);
   });
@@ -181,38 +169,39 @@ describe('GET /admin/notification-templates/:id', () => {
 
 describe('POST /admin/notification-templates', () => {
   it('adds a template for a registered event, with the defaults, and writes the audit entry', async () => {
-    const res = await owner.post('/admin/notification-templates', {
-      ...customerSupportReply,
-      locale: undefined,
-      isActive: undefined,
-    });
+    const res = await owner.post('/admin/notification-templates', { ...customerSupportReply, isActive: undefined });
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ ...customerSupportReply, sentLast30Days: 0 });
+    expect(res.body).not.toHaveProperty('locale');
     const entries = await audit();
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
       action: 'created notification template',
       entityType: 'notification_template',
       entityId: res.body.id,
-      entityLabel: 'support.reply (email, customer, en)',
+      entityLabel: 'support.reply (email, customer)',
       actorName: 'Rami K.',
       before: null,
-      after: { event: 'support.reply', channel: 'email', audience: 'customer', locale: 'en', isActive: true },
+      after: { event: 'support.reply', channel: 'email', audience: 'customer', isActive: true },
     });
+    expect(entries[0]!.after).not.toHaveProperty('locale');
   });
 
   it('keeps a Telegram template without a subject, whatever was sent', async () => {
+    // The merchant's Telegram message of the event ships as a default: take it away, so this one is the first.
+    const { db } = await testDb();
+    await db
+      .delete(s.notificationTemplates)
+      .where(eq(s.notificationTemplates.id, await idOf('order.completed', 'telegram')));
     const res = await owner.post('/admin/notification-templates', {
       event: 'order.completed',
       channel: 'telegram',
       audience: 'merchant',
-      locale: 'en-GB',
       subject: 'ignored',
       body: 'Order {{orderId}} is complete.',
     });
     expect(res.status).toBe(201);
     expect(res.body.subject).toBe('');
-    expect(res.body.locale).toBe('en-GB');
   });
 
   it('refuses an event the system does not send, with 422 on event', async () => {
@@ -259,18 +248,34 @@ describe('POST /admin/notification-templates', () => {
     expect(fieldsOf(channel.body)).toEqual(['channel']);
   });
 
-  it('refuses a second template for the same event, channel, audience and language with 422 on event, also in parallel', async () => {
+  it('refuses a second template for the same event, channel and audience with 422 on event, also in parallel', async () => {
     expect((await owner.post('/admin/notification-templates', customerSupportReply)).status).toBe(201);
     const again = await owner.post('/admin/notification-templates', customerSupportReply);
     expect(again.status).toBe(422);
     expect(again.body.errors[0]).toMatchObject({
       field: 'event',
-      message: 'A template for this event, channel and language already exists.',
+      code: 'duplicate',
+      message: 'A template for this event, channel and audience already exists.',
     });
-    // Another language is a different template.
+    // A language sent along is not part of the key any more (decision 039): it is dropped, and the template is still the duplicate.
+    const tr = await owner.post('/admin/notification-templates', { ...customerSupportReply, locale: 'tr' });
+    expect(tr.status).toBe(422);
+    expect(tr.body.errors[0]).toMatchObject({ field: 'event', code: 'duplicate' });
+    // The same event for another audience is another template.
     expect(
-      (await owner.post('/admin/notification-templates', { ...customerSupportReply, locale: 'en-GB' })).status,
+      (
+        await owner.post('/admin/notification-templates', {
+          ...customerSupportReply,
+          audience: 'merchant',
+          body: 'Hi {{merchantName}}, we looked into it.',
+        })
+      ).status,
     ).toBe(201);
+    // The unique key of the table says the same, whatever the route checks first.
+    const { db } = await testDb();
+    expect(
+      await pgErrorOf(db.insert(s.notificationTemplates).values({ ...customerSupportReply, subject: 'Twin' })),
+    ).toMatchObject({ code: '23505', constraint: 'notification_templates_event_uq' });
 
     const race = {
       ...customerSupportReply,
@@ -284,20 +289,17 @@ describe('POST /admin/notification-templates', () => {
     expect(answers.filter((answer) => answer.status === 422)).toHaveLength(3);
   });
 
-  it('refuses an email without a subject, an empty message, a bad language and a placeholder the event does not offer', async () => {
+  it('refuses an email without a subject, an empty message and a placeholder the event does not offer', async () => {
     const post = (patch: Record<string, unknown>) =>
       owner.post('/admin/notification-templates', { ...customerSupportReply, ...patch });
     expect(fieldsOf((await post({ subject: '  ' })).body)).toEqual(['subject']);
     expect(fieldsOf((await post({ body: '   ' })).body)).toEqual(['body']);
-    expect(fieldsOf((await post({ locale: 'English' })).body)).toEqual(['locale']);
     const typo = await post({ body: 'Hi {{custmerName}}, order {{orderId}}' });
     expect(fieldsOf(typo.body)).toEqual(['body']);
     expect(typo.body.errors[0].message).toContain('{{custmerName}}');
     expect(typo.body.errors[0].message).toContain('{{customerName}}');
-    // `support.reply` offers `{{link}}` (feature 17), so this one asks an event that has none, in a language with no default.
-    expect(fieldsOf((await post({ event: 'order.completed', locale: 'ar', subject: 'Hello {{link}}' })).body)).toEqual([
-      'subject',
-    ]);
+    // `support.reply` offers `{{link}}` (feature 17), so this one asks an event that has none (its texts are checked before the duplicate).
+    expect(fieldsOf((await post({ event: 'order.completed', subject: 'Hello {{link}}' })).body)).toEqual(['subject']);
     expect((await post({ body: undefined })).status).toBe(422);
     expect((await post({ channel: 'sms' })).status).toBe(422);
     expect(await audit()).toEqual([]);
@@ -330,7 +332,7 @@ describe('PATCH /admin/notification-templates/:id', () => {
     const [entry] = await audit();
     expect(entry).toMatchObject({
       action: 'edited notification template',
-      entityLabel: 'wallet.low_balance (email, merchant, en)',
+      entityLabel: 'wallet.low_balance (email, merchant)',
       before: { subject: 'Your wallet balance is low' },
       after: { subject: 'Top up soon' },
     });
@@ -348,25 +350,26 @@ describe('PATCH /admin/notification-templates/:id', () => {
     ]);
   });
 
-  it('fixes event, channel, audience and language after create: another value is 422 on that field, the same value is fine', async () => {
+  it('fixes event, channel and audience after create: another value is 422 on that field, the same value is fine', async () => {
     const id = await idOf('wallet.low_balance', 'email');
     const res = await owner.patch(`/admin/notification-templates/${id}`, {
       event: 'deposit.approved',
       channel: 'telegram',
       audience: 'staff',
-      locale: 'de',
     });
     expect(res.status).toBe(422);
-    expect(fieldsOf(res.body)).toEqual(['event', 'channel', 'audience', 'locale']);
+    expect(fieldsOf(res.body)).toEqual(['event', 'channel', 'audience']);
     expect(res.body.errors[0].code).toBe('immutable');
     const same = await owner.patch(`/admin/notification-templates/${id}`, {
       event: 'wallet.low_balance',
       channel: 'email',
       audience: 'merchant',
-      locale: 'en',
+      // A language sent along is dropped (templates have no language): it is no change and no error.
+      locale: 'tr',
       isActive: false,
     });
     expect(same.status).toBe(200);
+    expect(same.body).not.toHaveProperty('locale');
   });
 
   it('checks the texts it is given, but lets a template with an old placeholder be switched off', async () => {
@@ -405,7 +408,7 @@ describe('DELETE /admin/notification-templates/:id', () => {
     const [entry] = await audit();
     expect(entry).toMatchObject({
       action: 'deleted notification template',
-      entityLabel: 'invoice.paid (telegram, merchant, en)',
+      entityLabel: 'invoice.paid (telegram, merchant)',
       before: { event: 'invoice.paid', channel: 'telegram', body: expect.stringContaining('Invoice') },
       after: null,
     });

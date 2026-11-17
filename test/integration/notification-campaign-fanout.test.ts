@@ -77,7 +77,7 @@ beforeEach(async () => {
   await insertMerchant(db, { telegramChatId: '555' });
   await insertMerchant(db);
   await insertCustomer(db);
-  await insertCustomer(db, { locale: 'ar' });
+  await insertCustomer(db);
   await insertCustomer(db);
   await insertCustomer(db, { hasAccount: false });
 });

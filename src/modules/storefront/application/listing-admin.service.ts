@@ -22,18 +22,15 @@ import {
   salesOf,
 } from '../infra/foreign-reads.repository';
 import {
-  type ListingLanguageChanges,
-  type ListingServiceFacts,
+  type ListingChanges,
   findListing,
   insertListing,
   listingConflict,
-  lockServiceListings,
+  lockListing,
   setListed,
-  setServiceImage,
-  siblingFacts,
+  setListingImage,
   slugTaken,
   updateListingFields,
-  updateServiceFacts,
 } from '../infra/listing.repository';
 
 const DAY_MS = 86_400_000;
@@ -44,7 +41,6 @@ const SALES_WINDOW_DAYS = 30;
 export interface ListingView {
   readonly id: number;
   readonly serviceId: number;
-  readonly locale: string;
   readonly slug: string;
   readonly publicTitle: string;
   readonly summary: string;
@@ -82,7 +78,7 @@ export interface ListingDetailView extends ListingView {
   readonly requirementsMd: string;
 }
 
-/** The content a listing carries beyond its title and slug: per language first, then the facts of the service. */
+/** The content a listing carries beyond its title and slug: its texts, then the facts the shop filters and orders by. */
 export interface ListingContentInput {
   readonly summary?: string | undefined;
   readonly descriptionMd?: string | undefined;
@@ -100,7 +96,6 @@ export interface ListingContentInput {
 /** The fields of `POST /admin/service-listings`. */
 export interface CreateListingInput extends ListingContentInput {
   readonly serviceId: number;
-  readonly locale: string;
   readonly publicTitle: string;
   readonly slug?: string | undefined;
 }
@@ -113,8 +108,8 @@ export interface UpdateListingInput extends ListingContentInput {
   readonly slug?: string | undefined;
 }
 
-/** The columns written to the one listing row (its language). */
-const LANGUAGE_KEYS = [
+/** The columns of the listing row that staff edit (the switch and the retail price have their own writes). */
+const CONTENT_KEYS = [
   'publicTitle',
   'slug',
   'summary',
@@ -123,10 +118,12 @@ const LANGUAGE_KEYS = [
   'etaText',
   'seoTitle',
   'seoDescription',
+  'brand',
+  'carrier',
+  'country',
+  'isFeatured',
+  'sort',
 ] as const;
-
-/** The columns that describe the service and are written to every language row. */
-const FACT_KEYS = ['brand', 'carrier', 'country', 'isFeatured', 'sort'] as const;
 
 /** Markdown bodies never go into the audit log: only their length. */
 const MARKDOWN_KEYS: ReadonlySet<string> = new Set(['descriptionMd', 'requirementsMd']);
@@ -160,7 +157,7 @@ function invalid(field: string, message: string, code = 'invalid'): AppError {
  * write, a switch, a listing create and the catalog's own edits of the service (disable, delete, group prices) never
  * interleave.
  *
- * Side effects: writes `service_listings` (content, facts of the service and its picture on every language row, `listed_at` on the first
+ * Side effects: writes `service_listings` (the content, the facts and the picture of the service's one listing, `listed_at` on the first
  * switch-on), the retail row of `service_group_prices` (through `RetailPrices`) and `audit_logs` (entity `listing`); a picture upload
  * stores an object under `media/` and a `files` row (through `PublicImages`); moves the catalog price version after the commit when the
  * retail price changed. No cache key is touched: nothing is cached for the store catalog.
@@ -205,28 +202,26 @@ export class ListingAdminService {
   }
 
   /**
-   * Creates a listing: a service on the storefront in one language, not on the site yet.
+   * Creates a listing: the service's page on the storefront, not on the site yet.
    *
-   * Why: the content fields may be sent at creation. The facts of the service (`brand`, `carrier`, `country`, `isFeatured`, `sort`)
-   * are shared by every language: the new row copies those it is not sent from the service's oldest listing, and those it is
-   * sent are written to every language row (decision of feature 22).
+   * Why: the content fields may be sent at creation. A service has one listing and a slug is unique for the site (English only,
+   * decision 039, B224): a second listing of the service, or a taken slug, is refused before the insert and, when two requests race,
+   * by the unique keys.
    *
-   * @param input the service, language, title, optional slug and optional content
+   * @param input the service, title, optional slug and optional content
    * @returns the new listing
    * @throws {AppError} `VALIDATION_FAILED` (422 on `serviceId` for an unknown or archived service, on `slug`); `LISTING_LOCKED`
-   *   (409: the service can never be public); `LISTING_EXISTS` (409 with a field: the service already has a listing in the
-   *   language, or the slug is used there)
+   *   (409: the service can never be public); `LISTING_EXISTS` (409 with a field: the service already has a listing, or the slug
+   *   is used)
    */
   async create(input: CreateListingInput): Promise<ListingDetailView> {
     const chosen = chooseSlug(input.slug, input.publicTitle);
     if (!chosen.ok) throw invalid('slug', chosen.message);
-    const sentFacts = definedOf(input, FACT_KEYS) as ListingServiceFacts;
-    const sentContent = definedOf(input, LANGUAGE_KEYS) as ListingLanguageChanges;
-    const hasFacts = Object.keys(sentFacts).length > 0;
+    const sentContent = definedOf(input, CONTENT_KEYS) as ListingChanges;
     return this.db.runInTransaction(async ({ tx }) => {
-      // A shared lock: a service delete (which archives when a listing refers to the service) waits for this insert. Facts sent to
-      // every language need the exclusive lock every other writer of the listings takes.
-      const service = await this.retail.lockLiveService(tx, input.serviceId, hasFacts ? 'update' : 'share');
+      // A shared lock: a service delete (which archives when a listing refers to the service) waits for this insert, and the
+      // insert only adds a row (no other listing of the service exists to write).
+      const service = await this.retail.lockLiveService(tx, input.serviceId, 'share');
       const facts = service && (await findServiceFacts(tx, input.serviceId));
       if (!service || !facts) throw invalid('serviceId', 'Choose a service.');
       const lock = lockOf({
@@ -237,28 +232,23 @@ export class ListingAdminService {
       });
       if (lock.locked) throw new AppError('LISTING_LOCKED', { detail: lockedDetail(lock.reason!) });
 
-      const taken = await listingConflict(tx, input.serviceId, input.locale, chosen.slug);
+      const taken = await listingConflict(tx, input.serviceId, chosen.slug);
       if (taken) throw this.exists(taken, chosen.slug);
-      if (hasFacts) await lockServiceListings(tx, input.serviceId);
-      const inherited = await siblingFacts(tx, input.serviceId);
       let listing;
       try {
         listing = await insertListing(tx, {
           ...sentContent,
-          ...inherited,
-          ...sentFacts,
           serviceId: input.serviceId,
-          locale: input.locale,
           slug: chosen.slug,
           publicTitle: input.publicTitle,
         });
       } catch (error) {
-        if (isUniqueViolation(error, 'service_listings_service_locale_uq')) throw this.exists('serviceId', chosen.slug);
+        // Two creates that race past the check above meet here (the shared service lock lets both insert).
+        if (isUniqueViolation(error, 'service_listings_service_uq')) throw this.exists('serviceId', chosen.slug);
         if (isUniqueViolation(error, 'service_listings_slug_uq')) throw this.exists('slug', chosen.slug);
         throw error;
       }
-      if (hasFacts) await updateServiceFacts(tx, input.serviceId, sentFacts);
-      // The shop's search follows every listing of the service (feature 29).
+      // The shop's search follows the listing of the service (feature 29).
       await this.signals.listingsChanged(tx, [input.serviceId]);
       await this.audit.record(tx, {
         action: 'created listing for',
@@ -266,13 +256,10 @@ export class ListingAdminService {
         entityId: listing.id,
         entityLabel: service.name,
         after: {
-          locale: listing.locale,
           slug: listing.slug,
           publicTitle: listing.publicTitle,
           isListed: false,
-          ...Object.fromEntries(
-            Object.entries({ ...sentContent, ...sentFacts }).map(([key, value]) => [key, auditValue(key, value)]),
-          ),
+          ...Object.fromEntries(Object.entries(sentContent).map(([key, value]) => [key, auditValue(key, value)])),
         },
       });
       const row = (await findListingRow(tx, listing.id))!;
@@ -284,16 +271,15 @@ export class ListingAdminService {
    * Switches a listing on or off the site, sets the retail price of its service and/or edits its content.
    *
    * Why: the console sends `isListed` (the switch), `retailPrice` (the price dialog) or the content fields of the editor. The
-   * service row is locked first, then every listing row of the service (in id order); every refusal is decided before the first
-   * write, so a request with several fields never half applies. Per-language fields change this row; the facts of the service
-   * (`brand`, `carrier`, `country`, `isFeatured`, `sort`) are written to every language row, like `retailPrice` already applies to
-   * every language. The first switch-on sets `listedAt`, which never resets.
+   * service row is locked first, then the listing row; every refusal is decided before the first write, so a request with several
+   * fields never half applies. The content and the facts of the service (`brand`, `carrier`, `country`, `isFeatured`, `sort`) live
+   * on the service's one listing. The first switch-on sets `listedAt`, which never resets.
    *
    * @param id the listing id
    * @param changes the fields to change
    * @returns the updated listing, with its figures worked out again
    * @throws {AppError} `NOT_FOUND` (404); `VALIDATION_FAILED` (422 on `retailPrice`: zero or less, or under the floor; on `slug`:
-   *   not a valid form); `LISTING_EXISTS` (409 on `slug`: used by another listing of the language); `SERVICE_DISABLED` (409:
+   *   not a valid form); `LISTING_EXISTS` (409 on `slug`: used by another listing); `SERVICE_DISABLED` (409:
    *   switching a disabled service on); `LISTING_LOCKED` (409: switching on or pricing a service that can never be public)
    */
   async update(id: number, changes: UpdateListingInput): Promise<ListingDetailView> {
@@ -304,8 +290,8 @@ export class ListingAdminService {
       // The service row first (every writer takes it before anything of the listing): an archived service is gone, so 404.
       const service = await this.retail.lockLiveService(tx, listing.serviceId);
       if (!service) throw notFound();
-      // Then every listing row of the service in id order (the popularity job locks in the same order).
-      const siblings = await lockServiceListings(tx, listing.serviceId);
+      // Then the listing row (the popularity job locks listing rows only, in id order).
+      if (!(await lockListing(tx, id))) throw notFound();
       const row = await findListingRow(tx, id);
       if (!row) throw notFound();
       const lock = lockOf({
@@ -331,19 +317,18 @@ export class ListingAdminService {
         const problem = retailPriceProblem(price, quote.floor);
         if (problem !== null) throw invalid('retailPrice', problem, 'below_floor');
       }
-      const languageChanges = definedOf(changes, LANGUAGE_KEYS) as ListingLanguageChanges;
+      const contentChanges = definedOf(changes, CONTENT_KEYS) as ListingChanges;
       if (changes.slug !== undefined) {
         // `''` means "make it from the title" (as create does); the new title counts when it is sent too.
         const chosen = chooseSlug(changes.slug, changes.publicTitle ?? listing.publicTitle);
         if (!chosen.ok) throw invalid('slug', chosen.message);
-        if (chosen.slug === listing.slug) delete languageChanges.slug;
+        if (chosen.slug === listing.slug) delete contentChanges.slug;
         else {
-          if (await slugTaken(tx, listing.locale, chosen.slug, id)) throw this.exists('slug', chosen.slug);
-          languageChanges.slug = chosen.slug;
+          if (await slugTaken(tx, chosen.slug, id)) throw this.exists('slug', chosen.slug);
+          contentChanges.slug = chosen.slug;
         }
       }
-      const factChanges = definedOf(changes, FACT_KEYS) as ListingServiceFacts;
-      const edited = Object.keys(definedOf(changes, [...LANGUAGE_KEYS, ...FACT_KEYS])).length > 0;
+      const edited = Object.keys(definedOf(changes, CONTENT_KEYS)).length > 0;
 
       if (price !== undefined) {
         const before = await this.retail.set(tx, service.id, price);
@@ -370,23 +355,22 @@ export class ListingAdminService {
         });
       }
       if (edited) {
-        if (Object.keys(languageChanges).length > 0) {
+        if (Object.keys(contentChanges).length > 0) {
           try {
-            await updateListingFields(tx, id, languageChanges);
+            await updateListingFields(tx, id, contentChanges);
           } catch (error) {
             if (isUniqueViolation(error, 'service_listings_slug_uq'))
-              throw this.exists('slug', languageChanges.slug ?? '');
+              throw this.exists('slug', contentChanges.slug ?? '');
             throw error;
           }
         }
-        if (Object.keys(factChanges).length > 0) await updateServiceFacts(tx, listing.serviceId, factChanges);
         // The audit row keeps the fields that differ from what the row held (a request that changes nothing still leaves a row,
         // which the audit interceptor of staff writes needs).
         const stored: Record<string, unknown> = row.listing;
         // The audit records the slug actually stored (normalized, or made from the title for ''), not the raw request value.
-        const sent: Record<string, unknown> = { ...definedOf(changes, LANGUAGE_KEYS), ...factChanges };
-        if (languageChanges.slug === undefined) delete sent.slug;
-        else sent.slug = languageChanges.slug;
+        const sent: Record<string, unknown> = definedOf(changes, CONTENT_KEYS);
+        if (contentChanges.slug === undefined) delete sent.slug;
+        else sent.slug = contentChanges.slug;
         const changedKeys = Object.keys(sent).filter((key) => sent[key] !== stored[key]);
         await this.audit.record(tx, {
           action: 'edited listing of',
@@ -394,12 +378,7 @@ export class ListingAdminService {
           entityId: id,
           entityLabel: service.name,
           before: Object.fromEntries(changedKeys.map((key) => [key, auditValue(key, stored[key])])),
-          after: {
-            ...Object.fromEntries(changedKeys.map((key) => [key, auditValue(key, sent[key])])),
-            ...(Object.keys(factChanges).length > 0
-              ? { appliedToLocales: siblings.map((sibling) => sibling.locale) }
-              : {}),
-          },
+          after: Object.fromEntries(changedKeys.map((key) => [key, auditValue(key, sent[key])])),
         });
       }
       // Any field (the switch, the retail price of the same request, the content, the facts) can change the search document (feature 29).
@@ -410,12 +389,12 @@ export class ListingAdminService {
   }
 
   /**
-   * Sets the picture of the listing's service, in every language.
+   * Sets the picture of the listing's service.
    *
    * Why: feature 22: the shop shows a picture per service. The picture is checked, cleaned and stored first, outside the transaction
-   * (`PublicImages.store`: object, then the `files` row); then, under the service lock and the locks of every listing row of the service
-   * (in id order, like every writer of the listings), every row points at it. A replaced picture's file stays (it is content-addressed,
-   * and the same picture may serve another service).
+   * (`PublicImages.store`: object, then the `files` row); then, under the service lock and the listing row's lock (like every writer
+   * of a listing), the listing points at it. A replaced picture's file stays (it is content-addressed, and the same picture may serve
+   * another service).
    *
    * @param id the listing id
    * @param file the uploaded part `file`
@@ -431,7 +410,7 @@ export class ListingAdminService {
     const image = await this.images.store(this.db.db, { bytes: file.data, filename: file.filename, staffId });
     return this.db.runInTransaction(async ({ tx }) => {
       const { listing, serviceName } = await this.lockImageRows(tx, id);
-      await setServiceImage(tx, listing.serviceId, image.fileId);
+      await setListingImage(tx, id, image.fileId);
       await this.audit.record(tx, {
         action: 'uploaded image for',
         entityType: 'listing',
@@ -445,7 +424,7 @@ export class ListingAdminService {
   }
 
   /**
-   * Removes the picture of the listing's service, in every language.
+   * Removes the picture of the listing's service.
    *
    * Why: feature 22; staff may take a wrong picture down. The stored file stays (a later purge job may remove unreferenced ones). It
    * answers the same when there was no picture, and is audited either way (every staff write leaves an audit row).
@@ -456,7 +435,7 @@ export class ListingAdminService {
   async removeImage(id: number): Promise<void> {
     await this.db.runInTransaction(async ({ tx }) => {
       const { listing, serviceName } = await this.lockImageRows(tx, id);
-      await setServiceImage(tx, listing.serviceId, null);
+      await setListingImage(tx, id, null);
       await this.audit.record(tx, {
         action: 'removed image of',
         entityType: 'listing',
@@ -468,14 +447,13 @@ export class ListingAdminService {
     });
   }
 
-  /** Takes the locks of a picture write (the service row, then every listing row of the service in id order) and rereads the listing. */
+  /** Takes the locks of a picture write (the service row, then the listing row) and rereads the listing under them. */
   private async lockImageRows(tx: DbExecutor, id: number) {
     const found = await findListing(tx, id);
     if (!found) throw notFound();
     const service = await this.retail.lockLiveService(tx, found.serviceId);
     if (!service) throw notFound();
-    const rows = await lockServiceListings(tx, found.serviceId);
-    const listing = rows.find((row) => row.id === id);
+    const listing = await lockListing(tx, id);
     if (!listing) throw notFound();
     return { listing, serviceName: service.name };
   }
@@ -489,10 +467,7 @@ export class ListingAdminService {
 
   /** The 409 answer for a listing that already exists, naming the field the console highlights. */
   private exists(field: 'serviceId' | 'slug', slug: string): AppError {
-    const message =
-      field === 'serviceId'
-        ? 'This service already has a listing in that language.'
-        : `The slug ${slug} is already used.`;
+    const message = field === 'serviceId' ? 'This service already has a listing.' : `The slug ${slug} is already used.`;
     const errors: FieldError[] = [{ field, code: 'duplicate', message }];
     return new AppError('LISTING_EXISTS', { detail: message, errors });
   }
@@ -530,7 +505,6 @@ export class ListingAdminService {
         {
           id: row.listing.id,
           serviceId: row.listing.serviceId,
-          locale: row.listing.locale,
           slug: row.listing.slug,
           publicTitle: row.listing.publicTitle,
           summary: row.listing.summary,

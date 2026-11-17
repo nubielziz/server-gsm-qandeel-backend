@@ -79,7 +79,6 @@ export function operationsRecipientOf(payload: NotificationPayload): Recipient {
     audience: 'staff',
     name: 'Operations',
     email: asString(payload.to) ? payload.to : '',
-    locale: 'en',
     telegramChatId: null,
     prefs: {},
     suspended: false,

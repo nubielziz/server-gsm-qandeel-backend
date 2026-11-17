@@ -26,7 +26,7 @@ export class CustomerInboxController {
   /**
    * Lists the person's notifications.
    *
-   * @param query range, category, `unread` and `locale`
+   * @param query range, category and `unread`
    * @returns the page
    * @route GET /store/v1/me/notifications
    */

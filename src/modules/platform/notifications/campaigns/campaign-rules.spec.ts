@@ -32,28 +32,25 @@ describe('status lists', () => {
 });
 
 describe('contentProblems', () => {
-  const en = { title: 'Hello {{name}}', body: 'Maintenance on Friday.\nThanks.' };
+  const content = { title: 'Hello {{name}}', body: 'Maintenance on Friday.\nThanks.' };
 
-  it('accepts plain text with {{name}} in English and Arabic', () => {
-    expect(contentProblems({ en })).toEqual([]);
-    expect(contentProblems({ en, ar: { title: 'مرحباً {{ name }}', body: 'صيانة يوم الجمعة.' } })).toEqual([]);
-    expect(contentProblems({ en, ar: null })).toEqual([]);
+  it('accepts plain text with {{name}}', () => {
+    expect(contentProblems(content)).toEqual([]);
+    expect(contentProblems({ title: 'Hello {{ name }}', body: 'Thanks.' })).toEqual([]);
   });
 
   it('refuses blank text, other placeholders and HTML, naming the field', () => {
-    expect(fields(contentProblems({ en: { title: '  ', body: 'x' } }))).toEqual(['content.en.title']);
-    expect(contentProblems({ en: { title: 'Hi {{orderId}}', body: 'x' } })[0]).toMatchObject({
-      field: 'content.en.title',
+    expect(fields(contentProblems({ title: '  ', body: 'x' }))).toEqual(['content.title']);
+    expect(contentProblems({ title: 'Hi {{orderId}}', body: 'x' })[0]).toMatchObject({
+      field: 'content.title',
       code: 'unknown_placeholder',
     });
-    expect(contentProblems({ en: { title: 'Hi', body: '<p>Hello</p>' } })[0]).toMatchObject({
-      field: 'content.en.body',
+    expect(contentProblems({ title: 'Hi', body: '<p>Hello</p>' })[0]).toMatchObject({
+      field: 'content.body',
       code: 'html',
       message: 'Write plain text; the email layout is added for you.',
     });
-    expect(fields(contentProblems({ en, ar: { title: 'x', body: '<script>alert(1)</script><br>' } }))).toEqual([
-      'content.ar.body',
-    ]);
+    expect(fields(contentProblems({ title: 'x', body: '<script>alert(1)</script><br>' }))).toEqual(['content.body']);
   });
 
   it('refuses any tag, not only the layout tags templates look for, but keeps plain comparisons', () => {
@@ -64,10 +61,10 @@ describe('contentProblems', () => {
       '<img src=x onerror=alert(1)>',
       '<custom-tag>',
     ]) {
-      expect(fields(contentProblems({ en: { title: 'Hi', body } })), body).toEqual(['content.en.body']);
+      expect(fields(contentProblems({ title: 'Hi', body })), body).toEqual(['content.body']);
     }
     for (const body of ['a < b and c > d', 'I <3 unlocks', 'Prices from 5<10', 'Use -> and <-']) {
-      expect(contentProblems({ en: { title: 'Hi', body } }), body).toEqual([]);
+      expect(contentProblems({ title: 'Hi', body }), body).toEqual([]);
     }
   });
 });
@@ -152,7 +149,7 @@ describe('rowsFor', () => {
     for (const inApp of [true, false]) {
       for (const email of [true, false]) {
         for (const telegram of [true, false]) {
-          const member = { id: 1, locale: 'en', inApp, email, telegram };
+          const member = { id: 1, inApp, email, telegram };
           const all = rowsFor(member, ['in_app', 'email', 'telegram']);
           expect(all).toEqual({
             inApp,

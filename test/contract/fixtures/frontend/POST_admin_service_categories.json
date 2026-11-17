@@ -6,7 +6,6 @@
   "body": {
     "id": 10,
     "name": "Harvest sample",
-    "nameAr": "",
     "type": "imei",
     "allowedGroupIds": [
       1

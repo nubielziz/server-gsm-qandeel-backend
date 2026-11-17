@@ -17,11 +17,11 @@ export const generateContentPages = defineRoute({
   key: 'POST /admin/content-pages/generate',
   summary: 'Generate landing page drafts',
   description:
-    'Makes a draft for each model x network: title `Unlock <model> on <network>`, slug from the title, language `en`, kind `model`, ' +
+    'Makes a draft for each model x network: title `Unlock <model> on <network>`, slug from the title, kind `model`, ' +
     'status `draft`, `template_params` `{brand, model, network}` and a short body. Nothing is published. Empty lists mean everything the ' +
     'site knows: every brand of the TAC catalogue, every model (marketing name, else model) of those brands, every carrier of the service ' +
     'listings. A model that is not in the catalogue is generated when typed. Combinations that repeat an earlier one of the same run ' +
-    '(the same slug) are merged; the distinct combinations whose slug already exists in `en`, or that a parallel run made first, are ' +
+    '(the same slug) are merged; the distinct combinations whose slug already exists, or that a parallel run made first, are ' +
     'skipped and counted in `skipped`. A catalogue model with no Latin letter or digit cannot make a slug: it is left out and counted in ' +
     '`unusableModels` (present only when above 0), never a `422`; so is a listing carrier with no Latin letter or digit on a run with no ' +
     'networks typed, counted in `unusableNetworks` (present only when above 0). ' +
@@ -74,7 +74,6 @@ export const generateContentPages = defineRoute({
           id: 21,
           kind: 'model',
           slug: 'unlock-iphone-13-on-atandt',
-          locale: 'en',
           title: 'Unlock iPhone 13 on AT&T',
           bodyMd: '# Unlock iPhone 13 on AT&T\n\nDraft for review.',
           seoTitle: '',

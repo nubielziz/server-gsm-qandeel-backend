@@ -54,6 +54,7 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 | `GET /admin/search/preview` | admin | staff-permission `storefront:read` | 29 | `getSearchPreview` |
 | `GET /admin/search/index` | admin | staff-permission `storefront:read` | 29 | `getSearchIndex` |
 | `POST /admin/search/index/rebuild` | admin | staff-permission `storefront:publish` | 29 | `rebuildSearchIndex` |
+| `GET /store/v1/legacy-slugs/:kind/:slug` | store | public | 30 |  |
 
 ## GET /store/v1/config
 
@@ -88,12 +89,12 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 ## GET /admin/service-listings
 
 - **Map**: Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked. (الخدمات المعروضة بالمتجر وسعر Retail لكل خدمة؛ منع البيع تحت الحد الأدنى) · staff-permission `storefront:*` · stage 15 · tables service_listings, services
-- **Frontend**: `listListings` (src/features/storefront/api/listings.ts:26) · params `query?: ListQuery` · returns `ListResult<ServiceListing>` · success 200 · assumed contract
+- **Frontend**: `listListings` (src/features/storefront/api/listings.ts:25) · params `query?: ListQuery` · returns `ListResult<ServiceListing>` · success 200 · assumed contract
 - **Query**: Paging 25. q: contains over publicTitle, slug, service.name and service.code (mocks/listingRoutes.ts:21). Filters isListed=true|false and locked=true|false. _sort publicTitle|isListed, default publicTitle asc (lib/views.ts:22-26). Counts, each with _start=0&_end=1: isListed=true; isListed=false&locked=false; locked=true (components/ListingStats.tsx:10-14; lib/counts.ts:5).
-- **Response**: JSON array + x-total-count. One row per service and locale:
-- id, serviceId, locale (en|ar), slug, publicTitle, isListed, isFeatured.
+- **Response**: JSON array + x-total-count. One row per service (a service has one listing, decision 039):
+- id, serviceId, slug, publicTitle, isListed, isFeatured.
 - service {id, name, code, basePrice (B2B base, 4-dp), cost (the effective cost of B117, 4-dp USD, so cost, marginPct and floorPrice agree)}.
-- retailPrice: service_group_prices.price of the b2c_retail group, net USD before VAT, shared by every locale of the service; null when unset.
+- retailPrice: service_group_prices.price of the b2c_retail group, net USD before VAT, one per service; null when unset.
 - floorPrice: the lowest retail price accepted: the B117 effective floor for the b2c_retail group (effective cost + the minimum profit from pricing_rules), computed by the same resolver function checkout uses (exported by the catalog pricing service of feature 4b).
 - marginPct: (retail - cost) / retail x 100 as a 4-dp decimal string; null without a retail price (mocks/dto.ts:35).
 - orders30d and revenue30d: the service's non-rejected storefront orders of the last 30 days; revenue as net total_price.
@@ -105,7 +106,7 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 ## GET /admin/service-listings/:id
 
 - **Map**: Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked. (الخدمات المعروضة بالمتجر وسعر Retail لكل خدمة؛ منع البيع تحت الحد الأدنى) · staff-permission `storefront:*` · stage 15 · tables service_listings, services
-- **Frontend**: `getListing` (src/features/storefront/api/listings.ts:34) · params `id: number` · returns `ServiceListingDetail` · success 200 · assumed contract
+- **Frontend**: `getListing` (src/features/storefront/api/listings.ts:33) · params `id: number` · returns `ServiceListingDetail` · success 200 · assumed contract
 - **Request**: :id is the numeric listing id.
 - **Response**: Same shape as a list row.
 - **Errors**: 404 NOT_FOUND (no listing with that id)
@@ -114,17 +115,17 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 ## POST /admin/service-listings
 
 - **Map**: Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked. (الخدمات المعروضة بالمتجر وسعر Retail لكل خدمة؛ منع البيع تحت الحد الأدنى) · staff-permission `storefront:*` · stage 15 · tables service_listings, services
-- **Frontend**: `createListing` (src/features/storefront/api/listings.ts:43) · params `body: CreateListingBody` · returns `ServiceListingDetail` · success 201 · assumed contract
-- **Request**: Body {serviceId, locale (en|ar), publicTitle, slug?}. Without slug, the server uses slugOf(publicTitle): lower case, & becomes 'and', other non-alphanumerics become '-', and '-' is trimmed at the ends (mocks/http.ts:69-76). A new listing has is_listed false and is_featured false. (service_id, locale) and (locale, slug) are unique.
+- **Frontend**: `createListing` (src/features/storefront/api/listings.ts:42) · params `body: CreateListingBody` · returns `ServiceListingDetail` · success 201 · assumed contract
+- **Request**: Body {serviceId, publicTitle, slug?}. Without slug, the server uses slugOf(publicTitle): lower case, & becomes 'and', other non-alphanumerics become '-', and '-' is trimmed at the ends (mocks/http.ts:69-76). A new listing has is_listed false and is_featured false. service_id and slug are unique (a service has one listing and a slug is unique for the site; decision 039, B224).
 - **Response**: 201 with the ServiceListing row.
-- **Errors**: 422 VALIDATION_FAILED (errors[].field is one of serviceId|locale|publicTitle|slug); 409 LISTING_EXISTS (the service already has a listing in that locale, or the slug is used; errors[{field: 'serviceId'|'slug'}] (listingRoutes.ts:73-83)); 409 LISTING_LOCKED (the service can never be public (listingRoutes.ts:64-71)); 403 FORBIDDEN (caller lacks storefront:create (the service menu also needs catalog:read))
+- **Errors**: 422 VALIDATION_FAILED (errors[].field is one of serviceId|publicTitle|slug); 409 LISTING_EXISTS (the service already has a listing, or the slug is used; errors[{field: 'serviceId'|'slug'}] (listingRoutes.ts:73-83)); 409 LISTING_LOCKED (the service can never be public (listingRoutes.ts:64-71)); 403 FORBIDDEN (caller lacks storefront:create (the service menu also needs catalog:read))
 - **Mock**: src/features/storefront/mocks/listingRoutes.ts (Rows come from mocks/dto.ts (toListing, floorOf) over mocks/seed.ts (demo S.listings, S.services, S.retail, S.orders). Query and body expectations are in api/listings.test.ts.)
 
 ## PATCH /admin/service-listings/:id
 
 - **Map**: Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked. (الخدمات المعروضة بالمتجر وسعر Retail لكل خدمة؛ منع البيع تحت الحد الأدنى) · staff-permission `storefront:*` · stage 15 · tables service_listings, services
-- **Frontend**: `updateListing` (src/features/storefront/api/listings.ts:54) · params `id: number`, `body: UpdateListingBody` · returns `ServiceListingDetail` · success 200 · assumed contract
-- **Request**: Body is any of {isListed: boolean, retailPrice: 4-dp money string, net USD before VAT (components/PriceDialog.tsx:52)}. The switch sends only isListed; the price dialog sends only retailPrice. retailPrice upserts service_group_prices(service_id, b2c_retail group), so it applies to every locale's listing of the service and only to new storefront checkouts. Refuse a price <= 0 or below floorPrice. floorPrice is the same B117 effective floor (effective cost + minimum profit for the b2c_retail group); retailPrice below it is 422 on retailPrice.
+- **Frontend**: `updateListing` (src/features/storefront/api/listings.ts:53) · params `id: number`, `body: UpdateListingBody` · returns `ServiceListingDetail` · success 200 · assumed contract
+- **Request**: Body is any of {isListed: boolean, retailPrice: 4-dp money string, net USD before VAT (components/PriceDialog.tsx:52)}. The switch sends only isListed; the price dialog sends only retailPrice. retailPrice upserts service_group_prices(service_id, b2c_retail group), so it applies to the service's listing and only to new storefront checkouts. Refuse a price <= 0 or below floorPrice. floorPrice is the same B117 effective floor (effective cost + minimum profit for the b2c_retail group); retailPrice below it is 422 on retailPrice.
 - **Response**: 200 with the updated row; retailPrice, marginPct and floorPrice are worked out again.
 - **Errors**: 422 VALIDATION_FAILED (errors[{field: 'retailPrice'}] for a price <= 0, or below the floor, with a message naming the floor (demo text 'Below the floor...', listingRoutes.ts:106-124)); 409 LISTING_LOCKED (switching on or pricing a locked listing); 409 SERVICE_DISABLED (isListed true while the service status is not active (listingRoutes.ts:135-141)); 404 NOT_FOUND (no listing with that id); 403 FORBIDDEN (caller lacks storefront:update)
 - **B54**: The map says this route sets 'the retail price of each service', but service_listings has no price column. The Retail price is service_group_prices for the b2c_retail group (M182). Proposal: add service_group_prices (write) to the route's tables. → Proposal accepted.
@@ -134,9 +135,9 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 
 - **Map**: Landing and content pages: draft, then publish. (صفحات الهبوط والمحتوى: مسودة ثم نشر) · staff-permission `storefront:*` · stage 15 · tables content_pages
 - **Frontend**: `listContentPages` (src/features/storefront/api/contentPages.ts:31) · params `query?: ListQuery` · returns `ListResult<ContentPage>` · success 200 · assumed contract
-- **Query**: Landing tab: kind repeated (all five landing kinds carrier|model|tool|brand|country, or the one chosen), q (contains over title and slug, mocks/pageRoutes.ts:22), _sort title|status|updatedAt (default updatedAt desc), paging 25 (components/LandingTab.tsx:25-29). Counts: kind x5 plus status=published|draft|noindex, with _start=0&_end=1 (LandingStats.tsx:10-14). Content tab: kind=static&kind=blog&_start=0&_end=200&_sort=title&_order=asc (PagesPanel.tsx:20-24). A locale filter is accepted but not sent.
+- **Query**: Landing tab: kind repeated (all five landing kinds carrier|model|tool|brand|country, or the one chosen), q (contains over title and slug, mocks/pageRoutes.ts:22), _sort title|status|updatedAt (default updatedAt desc), paging 25 (components/LandingTab.tsx:25-29). Counts: kind x5 plus status=published|draft|noindex, with _start=0&_end=1 (LandingStats.tsx:10-14). Content tab: kind=static&kind=blog&_start=0&_end=200&_sort=title&_order=asc (PagesPanel.tsx:20-24).
 - **Response**: JSON array + x-total-count. Row:
-- id, kind, slug, locale, title.
+- id, kind, slug, title.
 - bodyMd: the full Markdown; editors start from the row.
 - seoTitle and seoDescription: '' when none.
 - status draft|published|noindex.
@@ -161,18 +162,18 @@ Extra fields such as canonicalUrl and url are harmless.
 
 - **Map**: Landing and content pages: draft, then publish. (صفحات الهبوط والمحتوى: مسودة ثم نشر) · staff-permission `storefront:*` · stage 15 · tables content_pages
 - **Frontend**: `createContentPage` (src/features/storefront/api/contentPages.ts:49) · params `body: CreatePageBody` · returns `ContentPage` · success 201 · assumed contract
-- **Request**: Body {kind (one of the seven kinds), title, locale (en|ar), slug? (empty means slugOf(title)), bodyMd (raw Markdown; keep its whitespace), seoTitle?, seoDescription?}. Empty optional fields are left out (ContentPageDialog.tsx:54-62). Created as a draft, with author_id = staff and published_at null.
+- **Request**: Body {kind (one of the seven kinds), title, slug? (empty means slugOf(title)), bodyMd (raw Markdown; keep its whitespace), seoTitle?, seoDescription?}. Empty optional fields are left out (ContentPageDialog.tsx:54-62). Created as a draft, with author_id = staff and published_at null.
 - **Response**: 201 with the ContentPage.
-- **Errors**: 422 VALIDATION_FAILED (errors[].field is one of kind|title|locale|slug); 409 SLUG_TAKEN (the slug is already used in that locale; errors[{field: 'slug'}] (pageRoutes.ts:36-39)); 403 FORBIDDEN (caller lacks storefront:create)
+- **Errors**: 422 VALIDATION_FAILED (errors[].field is one of kind|title|slug); 409 SLUG_TAKEN (the slug is already used (a slug is unique for the site); errors[{field: 'slug'}] (pageRoutes.ts:36-39)); 403 FORBIDDEN (caller lacks storefront:create)
 - **Mock**: src/features/storefront/mocks/pageRoutes.ts (Seeded from demo S.landing and S.pages (seed.ts:115-119). Generator rules at pageRoutes.ts:63-100; api/contentPages.test.ts.)
 
 ## PATCH /admin/content-pages/:id
 
 - **Map**: Landing and content pages: draft, then publish. (صفحات الهبوط والمحتوى: مسودة ثم نشر) · staff-permission `storefront:*` · stage 15 · tables content_pages
 - **Frontend**: `updateContentPage` (src/features/storefront/api/contentPages.ts:59) · params `id: number`, `body: Partial<Omit<CreatePageBody, "kind">>` · returns `ContentPage` · success 200 · assumed contract
-- **Request**: Partial body of {title, slug, locale, bodyMd, seoTitle, seoDescription}, changed fields only. Short fields are trimmed; '' clears an SEO field. Never kind or status (those go through the publish route). An empty title or slug is refused. The slug stays unique per locale, checked against the new locale when both change.
+- **Request**: Partial body of {title, slug, bodyMd, seoTitle, seoDescription}, changed fields only. Short fields are trimmed; '' clears an SEO field. Never kind or status (those go through the publish route). An empty title or slug is refused. The slug stays unique for the site.
 - **Response**: 200 with the updated page; updatedAt moves forward.
-- **Errors**: 404 NOT_FOUND (no page with that id); 422 VALIDATION_FAILED (empty title or slug, errors[{field}]); 409 SLUG_TAKEN (the slug is used by another page in the locale, with errors[{field: 'slug'}]); 403 FORBIDDEN (caller lacks storefront:update)
+- **Errors**: 404 NOT_FOUND (no page with that id); 422 VALIDATION_FAILED (empty title or slug, errors[{field}]); 409 SLUG_TAKEN (the slug is used by another page, with errors[{field: 'slug'}]); 403 FORBIDDEN (caller lacks storefront:update)
 - **Mock**: src/features/storefront/mocks/pageRoutes.ts (Seeded from demo S.landing and S.pages (seed.ts:115-119). Generator rules at pageRoutes.ts:63-100; api/contentPages.test.ts.)
 
 ## POST /admin/content-pages/:id/publish
@@ -194,7 +195,7 @@ An empty list means all:
 - brands: distinct tac_catalog.brand.
 - models: tac_catalog marketing_name (else model) of those brands, plus typed models that are not in the catalogue.
 - networks: distinct service_listings.carrier (the mock falls back to AT&T, T-Mobile, Vodafone).
-For each model x network: title 'Unlock <model> on <network>', slug slugOf(title), locale en, kind model, status draft, template_params {brand, model, network}, and a short draft body. Combinations whose slug already exists in that locale are skipped. Nothing is published.
+For each model x network: title 'Unlock <model> on <network>', slug slugOf(title), kind model, status draft, template_params {brand, model, network}, and a short draft body. Combinations whose slug already exists are skipped. Nothing is published.
 - **Response**: 200 with {created: ContentPage[] (the new drafts), skipped: number (combinations that already had a page)}.
 - **Errors**: 422 VALIDATION_FAILED (the run would create more than 50 new drafts (cap STOREFRONT_GENERATE_MAX_PER_RUN = 50, a code constant with no setting and no console field): the server computes brands x models x networks, removes the combinations that already have a page (counted in skipped) and, if more than 50 remain, refuses the whole run without truncating: detail 'This run would create N pages; the limit is 50 per run. Narrow the lists.', errors [] (no field); the mock silently stops at 6, pageRoutes.ts:27, 85); 403 FORBIDDEN (caller lacks storefront:create)
 - **B57**: The permission storefront:* on an action row is ambiguous. Proposal: storefront:create, which the console uses as its hint (M186). → POST /admin/content-pages/generate requires storefront:create (frontend M186); PUT /admin/risk/rules keeps the literal risk:*.
@@ -204,8 +205,8 @@ For each model x network: title 'Unlock <model> on <network>', slug slugOf(title
 
 - **Map**: Help center articles. (مقالات مركز المساعدة) · staff-permission `storefront:*` · stage 15 · tables help_articles
 - **Frontend**: `listHelpArticles` (src/features/storefront/api/helpArticles.ts:22) · params `query?: ListQuery` · returns `ListResult<HelpArticle>` · success 200 · assumed contract
-- **Query**: Paging 25. q: contains over question and category (mocks/helpRoutes.ts:9). Filter isPublished=true|false; category and locale are accepted. _sort sort|question|category|isPublished, default sort asc (lib/views.ts:36-40). Counts, each with _start=0&_end=1: no filter, isPublished=true, isPublished=false (HelpStats.tsx:10-12).
-- **Response**: JSON array + x-total-count. Row: id, category (free-text topic), question, answerMd (full), locale, isPublished, helpfulYes and helpfulNo (reader votes), sort, createdAt, updatedAt.
+- **Query**: Paging 25. q: contains over question and category (mocks/helpRoutes.ts:9). Filter isPublished=true|false; category is accepted. _sort sort|question|category|isPublished, default sort asc (lib/views.ts:36-40). Counts, each with _start=0&_end=1: no filter, isPublished=true, isPublished=false (HelpStats.tsx:10-12).
+- **Response**: JSON array + x-total-count. Row: id, category (free-text topic), question, answerMd (full), isPublished, helpfulYes and helpfulNo (reader votes), sort, createdAt, updatedAt.
 - **Errors**: 403 FORBIDDEN (caller lacks storefront:read)
 - **Mock**: src/features/storefront/mocks/helpRoutes.ts (Seeded from demo S.help (seed.ts:154); api/helpArticles.test.ts.)
 
@@ -222,16 +223,16 @@ For each model x network: title 'Unlock <model> on <network>', slug slugOf(title
 
 - **Map**: Help center articles. (مقالات مركز المساعدة) · staff-permission `storefront:*` · stage 15 · tables help_articles
 - **Frontend**: `createHelpArticle` (src/features/storefront/api/helpArticles.ts:40) · params `body: CreateArticleBody` · returns `HelpArticle` · success 201 · assumed contract
-- **Request**: Body {category, question, answerMd (raw Markdown), locale (en|ar), isPublished? (default false)}. New articles go last (sort = max + 1) with votes 0.
+- **Request**: Body {category, question, answerMd (raw Markdown), isPublished? (default false)}. New articles go last (sort = max + 1) with votes 0.
 - **Response**: 201 with the HelpArticle.
-- **Errors**: 422 VALIDATION_FAILED (errors[].field is one of category|question|answerMd|locale); 403 FORBIDDEN (caller lacks storefront:create)
+- **Errors**: 422 VALIDATION_FAILED (errors[].field is one of category|question|answerMd); 403 FORBIDDEN (caller lacks storefront:create)
 - **Mock**: src/features/storefront/mocks/helpRoutes.ts (Seeded from demo S.help (seed.ts:154); api/helpArticles.test.ts.)
 
 ## PATCH /admin/help-articles/:id
 
 - **Map**: Help center articles. (مقالات مركز المساعدة) · staff-permission `storefront:*` · stage 15 · tables help_articles
 - **Frontend**: `updateHelpArticle` (src/features/storefront/api/helpArticles.ts:50) · params `id: number`, `body: Partial<CreateArticleBody>` · returns `HelpArticle` · success 200 · assumed contract
-- **Request**: Partial body of {category, question, answerMd, locale, isPublished}. The publish switch sends only isPublished. An empty category, question or answerMd is refused.
+- **Request**: Partial body of {category, question, answerMd, isPublished}. The publish switch sends only isPublished. An empty category, question or answerMd is refused.
 - **Response**: 200 with the updated article.
 - **Errors**: 404 NOT_FOUND (no article with that id); 422 VALIDATION_FAILED (an empty required field, errors[{field}]); 403 FORBIDDEN (caller lacks storefront:update)
 - **B58**: There is no publish route for articles, so the switch is PATCH isPublished under storefront:update (M187). → Proposal accepted.
@@ -241,11 +242,11 @@ For each model x network: title 'Unlock <model> on <network>', slug slugOf(title
 
 - **Map**: Versions of the terms, privacy policy and refund policy. (نسخ الشروط والخصوصية والاسترجاع) · staff-permission `legal:*` · stage 15 · tables legal_documents
 - **Frontend**: `listLegalDocuments` (src/features/storefront/api/legalDocuments.ts:22) · params `query?: ListQuery` · returns `ListResult<LegalDocument>` · success 200 · assumed contract
-- **Query**: _start=0&_end=200&_sort=type&_order=asc with no filters (components/LegalPanel.tsx:19-23). Filters type, locale and isCurrent are accepted.
+- **Query**: _start=0&_end=200&_sort=type&_order=asc with no filters (components/LegalPanel.tsx:19-23). Filters type and isCurrent are accepted (no locale filter and no locale sort, decision 039, B225).
 - **Response**: Every version. Row:
-- id, type terms|privacy|refund|cookies (CHECK legal_documents_type_check; labels terms 'Terms of service', privacy 'Privacy policy', refund 'Refund policy', cookies 'Cookie policy'), version (text, e.g. '3.2'), locale, bodyMd.
+- id, type terms|privacy|refund|cookies (CHECK legal_documents_type_check; labels terms 'Terms of service', privacy 'Privacy policy', refund 'Refund policy', cookies 'Cookie policy'), version (text, e.g. '3.2'), locale (read-only archive tag: 'en', or the code of a retired non-English version kept for the record, B225), bodyMd.
 - effectiveFrom: null until published, and kept after the version is superseded.
-- isCurrent: one per type and locale.
+- isCurrent: one version in force per type.
 - requiresReacceptance, createdAt.
 - acceptedCount: count of granted consent_records with this legal_document_id; null if not counted.
 The console groups rows: current = isCurrent; draft = not current and effectiveFrom null; earlier = not current and effectiveFrom set (lib/legal.ts:66-74).
@@ -266,9 +267,9 @@ The console groups rows: current = isCurrent; draft = not current and effectiveF
 
 - **Map**: Versions of the terms, privacy policy and refund policy. (نسخ الشروط والخصوصية والاسترجاع) · staff-permission `legal:*` · stage 15 · tables legal_documents
 - **Frontend**: `createLegalDocument` (src/features/storefront/api/legalDocuments.ts:43) · params `body: CreateLegalBody` · returns `LegalDocument` · success 201 · assumed contract
-- **Request**: Body {type, locale, version, bodyMd, requiresReacceptance (boolean; the mock defaults to true)}. Creates a draft with is_current false, effective_from null and created_by = staff. There is no edit route: a version's text never changes.
+- **Request**: Body {type, version, bodyMd, requiresReacceptance (boolean; the mock defaults to true)}. Creates an English draft (the server writes locale en: there is no locale in the body, B225) with is_current false, effective_from null and created_by = staff. There is no edit route: a version's text never changes.
 - **Response**: 201 with the new version.
-- **Errors**: 422 VALIDATION_FAILED (errors[].field is one of type|locale|version|bodyMd); 409 VERSION_EXISTS (the version already exists for that type and locale; errors[{field: 'version'}] (legalRoutes.ts:72-78)); 403 FORBIDDEN (caller lacks legal:create)
+- **Errors**: 422 VALIDATION_FAILED (errors[].field is one of type|version|bodyMd); 409 VERSION_EXISTS (the version already exists for that type; errors[{field: 'version'}] (legalRoutes.ts:72-78)); 403 FORBIDDEN (caller lacks legal:create)
 - **Mock**: src/features/storefront/mocks/legalRoutes.ts (Seeded from demo S.legal (seed.ts:126); api/legalDocuments.test.ts.)
 
 ## POST /admin/legal-documents/:id/publish
@@ -276,7 +277,7 @@ The console groups rows: current = isCurrent; draft = not current and effectiveF
 - **Map**: Approve a new version; it appears in later consents. (اعتماد نسخة جديدة؛ تظهر بالموافقات اللاحقة) · staff-permission `legal:publish` · stage 15 · tables legal_documents, audit_logs
 - **Frontend**: `publishLegalDocument` (src/features/storefront/api/legalDocuments.ts:53) · params `id: number` · returns `LegalDocument` · success 200 · assumed contract
 - **Request**: No body. In one transaction:
-- Set is_current false on the current version of the same type and locale, keeping its effective_from.
+- Set is_current false on the version in force of the same type, keeping its effective_from.
 - Set this version is_current true and effective_from now.
 - Write audit_logs (the approver).
 Later consents reference this version. requires_reacceptance makes signed-in customers accept again (store side).
@@ -312,12 +313,12 @@ Later consents reference this version. requires_reacceptance makes signed-in cus
 ## POST /admin/service-listings/:id/image
 
 - **Map addition** (B-TBD listing-image, `scripts/map-additions/22.mjs`): Upload the picture of a listed service. (رفع صورة الخدمة) · staff-permission `storefront:update` · stage 22 · tables service_listings, files, audit_logs · success 200
-- **Frontend**: `uploadListingImage` (src/features/storefront/api/listings.ts:69) · params `id: number`, `file: File` · returns `ServiceListingDetail`
+- **Frontend**: `uploadListingImage` (src/features/storefront/api/listings.ts:68) · params `id: number`, `file: File` · returns `ServiceListingDetail`
 
 ## DELETE /admin/service-listings/:id/image
 
 - **Map addition** (B-TBD listing-image, `scripts/map-additions/22.mjs`): Remove the picture of a listed service. (إزالة صورة الخدمة) · staff-permission `storefront:update` · stage 22 · tables service_listings, audit_logs · success 204
-- **Frontend**: `removeListingImage` (src/features/storefront/api/listings.ts:79) · params `id: number` · returns `void`
+- **Frontend**: `removeListingImage` (src/features/storefront/api/listings.ts:78) · params `id: number` · returns `void`
 
 ## GET /store/v1/search/suggest
 
@@ -403,4 +404,9 @@ Later consents reference this version. requires_reacceptance makes signed-in cus
 
 - **Map addition** (B222, `scripts/map-additions/29.mjs`): Rebuild the search index. (إعادة بناء فهرس البحث) · staff-permission `storefront:publish` · stage 29 · tables search_index_state, audit_logs · success 202
 - **Frontend**: `rebuildSearchIndex` (src/features/storefront/api/search.ts:168) · params none · returns `void`
+
+## GET /store/v1/legacy-slugs/:kind/:slug
+
+- **Map addition** (B224, `scripts/map-additions/30.mjs`): Where an old address in another language leads now: the page of the same service, the service list, the home page or the help centre. · public · stage 30 · tables legacy_slugs, service_listings · success 200
+- **Frontend**: none.
 

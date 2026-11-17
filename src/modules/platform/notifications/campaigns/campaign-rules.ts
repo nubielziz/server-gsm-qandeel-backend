@@ -43,16 +43,10 @@ export const MIN_SCHEDULE_AHEAD_MS = 60_000;
 /** The latest a campaign may be scheduled: 90 days ahead. */
 export const MAX_SCHEDULE_AHEAD_MS = 90 * 24 * 60 * 60_000;
 
-/** The text of one language. */
-export interface CampaignText {
+/** The content of a campaign: one title and one body (English only, decision 039). */
+export interface CampaignContent {
   readonly title: string;
   readonly body: string;
-}
-
-/** The content of a campaign: English required, Arabic optional. */
-export interface CampaignContent {
-  readonly en: CampaignText;
-  readonly ar?: CampaignText | null | undefined;
 }
 
 /** The site-relative link per audience. */
@@ -126,37 +120,33 @@ export function addStats(a: CampaignStats, b: CampaignStats): CampaignStats {
 const CAMPAIGN_HTML_TAG = /<\/?[A-Za-z][A-Za-z0-9-]*(\s[^<>]*)?\/?>/;
 
 /**
- * Checks the texts of a campaign.
+ * Checks the text of a campaign.
  *
- * Why: S5: campaign text is plain text with `{{name}}` as the only placeholder; English is required. HTML is refused on write (the
- * email layout is added by the server, and the inbox clients render text), so stored content can never become markup.
+ * Why: S5: campaign text is plain text with `{{name}}` as the only placeholder. HTML is refused on write (the email layout is added
+ * by the server, and the inbox clients render text), so stored content can never become markup.
  *
  * @param content the content (lengths are already checked by the contract)
- * @returns the field errors, named `content.<locale>.<title|body>`
+ * @returns the field errors, named `content.title` and `content.body`
  */
 export function contentProblems(content: CampaignContent): FieldError[] {
   const errors: FieldError[] = [];
-  for (const locale of ['en', 'ar'] as const) {
-    const text = content[locale];
-    if (!text) continue;
-    for (const part of ['title', 'body'] as const) {
-      const field = `content.${locale}.${part}`;
-      const value = text[part];
-      if (value.trim() === '') {
-        errors.push({ field, code: 'required', message: 'Write a text.' });
-        continue;
-      }
-      const unknown = unknownPlaceholders(value, CAMPAIGN_PLACEHOLDERS);
-      if (unknown.length > 0) {
-        errors.push({
-          field,
-          code: 'unknown_placeholder',
-          message: `Only {{name}} can be used; remove ${unknown.map((name) => `{{${name}}}`).join(', ')}.`,
-        });
-      }
-      if (CAMPAIGN_HTML_TAG.test(value)) {
-        errors.push({ field, code: 'html', message: 'Write plain text; the email layout is added for you.' });
-      }
+  for (const part of ['title', 'body'] as const) {
+    const field = `content.${part}`;
+    const value = content[part];
+    if (value.trim() === '') {
+      errors.push({ field, code: 'required', message: 'Write a text.' });
+      continue;
+    }
+    const unknown = unknownPlaceholders(value, CAMPAIGN_PLACEHOLDERS);
+    if (unknown.length > 0) {
+      errors.push({
+        field,
+        code: 'unknown_placeholder',
+        message: `Only {{name}} can be used; remove ${unknown.map((name) => `{{${name}}}`).join(', ')}.`,
+      });
+    }
+    if (CAMPAIGN_HTML_TAG.test(value)) {
+      errors.push({ field, code: 'html', message: 'Write plain text; the email layout is added for you.' });
     }
   }
   return errors;

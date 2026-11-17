@@ -9,7 +9,6 @@ const COLUMNS: ListColumns = {
   id: contentPages.id,
   kind: contentPages.kind,
   slug: contentPages.slug,
-  locale: contentPages.locale,
   title: contentPages.title,
   status: contentPages.status,
   updatedAt: contentPages.updatedAt,
@@ -63,16 +62,17 @@ export async function findPage(db: DbExecutor, id: number, lock = false): Promis
 }
 
 /**
- * Tells whether a slug is used in a language, ignoring one page.
+ * Tells whether a slug is used, ignoring one page.
+ *
+ * Why: a slug is unique for the site (decision 039: `content_pages_slug_uq (slug)`).
  *
  * @param db the database or a transaction
- * @param locale the language
  * @param slug the slug
  * @param exceptId the page being changed
  * @returns true when another page uses it
  */
-export async function pageSlugTaken(db: DbExecutor, locale: string, slug: string, exceptId?: number): Promise<boolean> {
-  const same = and(eq(contentPages.locale, locale), eq(contentPages.slug, slug));
+export async function pageSlugTaken(db: DbExecutor, slug: string, exceptId?: number): Promise<boolean> {
+  const same = eq(contentPages.slug, slug);
   const [row] = await db
     .select({ id: contentPages.id })
     .from(contentPages)
@@ -109,33 +109,26 @@ export async function updatePage(db: DbExecutor, id: number, changes: Partial<Ne
 }
 
 /**
- * Finds the page the public route serves: live (`published` or `noindex`) for a slug and language.
+ * Finds the page the public route serves: live (`published` or `noindex`) for a slug.
  *
  * @param db the database or a transaction
  * @param slug the slug
- * @param locale the language
  * @returns the page, or `undefined` for an unknown slug or a draft
  */
-export async function findLivePage(db: DbExecutor, slug: string, locale: string): Promise<ContentPage | undefined> {
+export async function findLivePage(db: DbExecutor, slug: string): Promise<ContentPage | undefined> {
   const [row] = await db
     .select()
     .from(contentPages)
-    .where(
-      and(
-        eq(contentPages.slug, slug),
-        eq(contentPages.locale, locale),
-        inArray(contentPages.status, ['published', 'noindex']),
-      ),
-    )
+    .where(and(eq(contentPages.slug, slug), inArray(contentPages.status, ['published', 'noindex'])))
     .limit(1);
   return row;
 }
 
 /**
- * Inserts several pages, leaving out the ones whose slug is taken in their language.
+ * Inserts several pages, leaving out the ones whose slug is taken.
  *
  * Why: the landing-page generator makes up to 50 drafts in one statement; a draft that another request created a moment earlier is
- * skipped instead of failing the whole run (`ON CONFLICT (locale, slug) DO NOTHING`).
+ * skipped instead of failing the whole run (`ON CONFLICT (slug) DO NOTHING`).
  *
  * @param db the caller's transaction
  * @param values the new rows (at least one)
@@ -146,25 +139,24 @@ export async function insertPagesSkippingTaken(db: DbExecutor, values: NewConten
   const rows = await db
     .insert(contentPages)
     .values(values)
-    .onConflictDoNothing({ target: [contentPages.locale, contentPages.slug] })
+    .onConflictDoNothing({ target: [contentPages.slug] })
     .returning();
   return rows.sort((a, b) => a.id - b.id);
 }
 
 /**
- * Lists which of some slugs are already used in a language.
+ * Lists which of some slugs are already used.
  *
  * @param db the database or a transaction
- * @param locale the language
  * @param slugs the slugs to look for
  * @returns the slugs that exist
  */
-export async function takenSlugs(db: DbExecutor, locale: string, slugs: readonly string[]): Promise<Set<string>> {
+export async function takenSlugs(db: DbExecutor, slugs: readonly string[]): Promise<Set<string>> {
   if (slugs.length === 0) return new Set();
   const rows = await db
     .select({ slug: contentPages.slug })
     .from(contentPages)
-    .where(and(eq(contentPages.locale, locale), inArray(contentPages.slug, [...slugs])));
+    .where(inArray(contentPages.slug, [...slugs]));
   return new Set(rows.map((row) => row.slug));
 }
 
@@ -172,27 +164,20 @@ export async function takenSlugs(db: DbExecutor, locale: string, slugs: readonly
 export type PublicPageSort = 'publishedAt' | 'title' | 'id';
 
 /**
- * Lists the live pages of one language for `GET /store/v1/pages`.
+ * Lists the live pages for `GET /store/v1/pages`.
  *
  * Why: the storefront builds its blog index and sitemap from this list (feature 22, D-15a). Only `published` and `noindex` pages are
  * live; a draft never is, and legal documents are a different table, so they are not listed.
  *
  * @param db the database or a transaction
  * @param query the parsed list request (`kind` filter, `q` over the title, sort, range)
- * @param locale the language
  * @returns the page of rows and the exact total
  */
 export async function listLivePages(
   db: DbExecutor,
   query: ParsedListQuery<PublicPageSort, unknown>,
-  locale: string,
 ): Promise<{ rows: ContentPage[]; total: number }> {
-  const where = listWhere(
-    query,
-    COLUMNS,
-    inArray(contentPages.status, ['published', 'noindex']),
-    eq(contentPages.locale, locale),
-  );
+  const where = listWhere(query, COLUMNS, inArray(contentPages.status, ['published', 'noindex']));
   const [rows, [count]] = await Promise.all([
     db
       .select()

@@ -1,5 +1,5 @@
 // Integration tests of the campaign branch of the delivery and the bulk sender (feature 23, slice B, plan sections 8.2 and 9.1): the
-// language per recipient (Arabic with an RTL part, English otherwise), the link per audience, Telegram for a merchant with a chat, the
+// text and HTML part of an email (English, left to right), the link per audience, Telegram for a merchant with a chat, the
 // send-time re-check (consent withdrawn, a merchant's switch turned off, a suspended person), the per-channel budget and a short
 // Telegram "retry after" waited for inside the attempt.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
@@ -85,9 +85,9 @@ afterAll(async () => {
 });
 
 describe('the campaign branch of the delivery', () => {
-  it('sends Arabic with a right-to-left part to an Arabic customer and English to the others, with the store link', async () => {
-    const en = await insertCustomer(db, { name: 'Sam', email: 'sam@mail.example' });
-    const ar = await insertCustomer(db, { name: 'Huda', email: 'huda@mail.example', locale: 'ar' });
+  it('sends the campaign in English with a left-to-right part to every customer, with the store link', async () => {
+    const sam = await insertCustomer(db, { name: 'Sam', email: 'sam@mail.example' });
+    const huda = await insertCustomer(db, { name: 'Huda', email: 'huda@mail.example' });
     const { rows } = await fannedOut({ channels: ['email'], audience: { customers: {} } });
     for (const row of rows) expect(await sendBroadcast(t, row.id, 'email')).toEqual({ outcome: 'sent' });
     const sent = mailbox(t).sent;
@@ -96,12 +96,12 @@ describe('the campaign branch of the delivery', () => {
     expect(toSam).toMatchObject({ subject: 'Maintenance for Sam' });
     expect(toSam.text).toBe('The portal is read-only on Friday.\n\nhttp://localhost:5175/account/orders');
     expect(toSam.html).toStartWith('<div dir="ltr" lang="en">');
-    expect(toSam.messageId).toMatch(new RegExp(`^<notification-${rows.find((r) => r.recipientId === en)!.id}@`));
-    expect(toHuda).toMatchObject({ subject: 'صيانة لـ Huda' });
-    expect(toHuda.html).toStartWith('<div dir="rtl" lang="ar" style="text-align:right">');
+    expect(toSam.messageId).toMatch(new RegExp(`^<notification-${rows.find((r) => r.recipientId === sam)!.id}@`));
+    expect(toHuda).toMatchObject({ subject: 'Maintenance for Huda' });
+    expect(toHuda.html).toStartWith('<div dir="ltr" lang="en">');
     expect(toHuda.headers).toBeUndefined();
     expect((await campaignMessages(db, rows[0]!.campaignId!)).every((row) => row.status === 'sent')).toBe(true);
-    expect(rows.find((row) => row.recipientId === ar)).toBeDefined();
+    expect(rows.find((row) => row.recipientId === huda)).toBeDefined();
   });
 
   it('sends Telegram to a merchant with a chat, with the site link, and an email to staff without a link', async () => {

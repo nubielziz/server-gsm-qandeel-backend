@@ -19,8 +19,6 @@ export interface Recipient {
   readonly audience: NotificationAudience;
   readonly name: string;
   readonly email: string;
-  /** The language of their messages; merchants and staff have none and read English. */
-  readonly locale: string;
   /** A merchant's linked Telegram chat; always `null` for staff and customers. */
   readonly telegramChatId: string | null;
   /** A merchant's `notification_prefs`; empty for the others. */
@@ -68,7 +66,6 @@ export async function recipientOf(
           status: s.clients.status,
           telegramChatId: s.clients.telegramChatId,
           prefs: s.clients.notificationPrefs,
-          locale: s.clients.locale,
         })
         .from(s.clients)
         .where(eq(s.clients.id, id))
@@ -80,8 +77,6 @@ export async function recipientOf(
           audience: 'merchant',
           name: row.name,
           email: row.email,
-          // The merchant's own language (feature 20); `findTemplateFor` falls back to English when it has no template in it.
-          locale: row.locale,
           telegramChatId: row.telegramChatId,
           prefs: row.prefs,
           suspended: row.status === 'suspended',
@@ -102,7 +97,6 @@ export async function recipientOf(
           audience: 'staff',
           name: row.name,
           email: row.email,
-          locale: 'en',
           telegramChatId: null,
           prefs: {},
           suspended: row.status === 'suspended',
@@ -115,7 +109,6 @@ export async function recipientOf(
         .select({
           name: s.customers.name,
           email: s.customers.email,
-          locale: s.customers.locale,
           status: s.customers.status,
           hasAccount: s.customers.hasAccount,
         })
@@ -130,7 +123,6 @@ export async function recipientOf(
         audience: 'customer',
         name: row.name,
         email: row.email,
-        locale: row.locale,
         telegramChatId: null,
         prefs: {},
         // Suspended and blocked customers get transactional messages only; the customer events that report on their own purchase

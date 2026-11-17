@@ -407,10 +407,10 @@ The merchant portal writes no audit rows (B121). The link token is the platform'
 Staff tools, merchant sign-in changes, the staff link mails and staff-made API keys, all inside this module.
 
 - **Row.** `ClientViews` (`application/client-views.ts`) builds the console's merchant row for the list, `GET /admin/clients/:id` and every
-  change. New keys are optional in the schema and always sent: `locale`, `address`, `taxId`, `internalNotes`, `telegramLinked`, `security`
+  change. New keys are optional in the schema and always sent: `address`, `taxId`, `internalNotes`, `telegramLinked`, `security`
   (`hasPassword`, `mustChangePassword`, `passwordChangedAt`, `twofaEnabled`, `lastLoginAt`, `lastLoginIp`, `activeSessions`, `linkSentAt`,
-  `verificationSentAt`) and `suspension` (`at`, `reason`, `by`). `clients.locale` (`en|ar`) drives the language of every merchant mail
-  (`notification-foreign-reads.ts` reads it); the merchant and staff edit it.
+  `verificationSentAt`) and `suspension` (`at`, `reason`, `by`). A merchant has no language (decision 039): every merchant mail
+  is English.
 - **Edit details** (`PATCH /admin/clients/:id`, a third kind of change next to status and group; `domain/client-details.ts`,
   `ClientDetailsEditor`). An email change clears `email_verified_at`, uses every open link up, sends a verification (or the invitation while there is no
   password) to the new address, keeps the sessions, drops the session and API key cache keys, and counts on the `account-mail` limiter.
@@ -428,8 +428,9 @@ Staff tools, merchant sign-in changes, the staff link mails and staff-made API k
 - **Suspension.** Voids every open link, accepts `pending -> suspended` (this is how an application is declined), and mails the merchant
   (without the staff reason). API keys are refused while suspended and work again after reactivation.
 - **Lifecycle mails** (`MerchantLifecycleMails`): `merchant.approved`, `merchant.suspended`, `merchant.reactivated`, `merchant.kyc_approved`,
-  `merchant.kyc_rejected`, `merchant.security_notice` are transactional, registered at boot by `IdentityMailEventsModule`, with English and Arabic
-  default templates in `drizzle/0025_merchant_management_templates.sql` (`application/mail/identity-templates.ts` keeps the text; a spec keeps both equal).
+  `merchant.kyc_rejected`, `merchant.security_notice` are transactional, registered at boot by `IdentityMailEventsModule`, with English
+  default templates (`application/mail/identity-templates.ts` keeps the text; `drizzle/0025_merchant_management_templates.sql` shipped it, and a spec finds
+  every default row of the code in the applied file).
   KYC decisions and the end of one merchant session are audited under `merchant`.
 - **Staff link mails** (`StaffMailModule`, loaded by the API through `AccessAdminModule` and by the worker): `POST /admin/staff` (onboarding `invite`) and
   `POST /admin/staff/:id/password` (`reset_link`) write `staff.invited` (while the member is `invited`) or `staff.password_reset` with `StaffMailOutbox.enqueue`
@@ -465,8 +466,7 @@ Staff tools, merchant sign-in changes, the staff link mails and staff-made API k
 `MerchantAudience`), registered with `NotificationAudiences` by `IdentityAudienceModule` at boot (imported by `IdentityModule` and the
 worker). Staff: active members, optionally of some roles. Merchants: by status (default active; a listed merchant may be pending),
 group and country, never suspended; their email and Telegram flags are the SQL twin of `choiceFor` for `broadcast.announcement`
-(a Telegram message also needs a linked chat). Merchants read the language of `clients.locale` (feature 20; the `arabic` flag and `page` of
-`merchant-audience.ts`); staff read English. The providers only read `staff_users` and `clients`.
+(a Telegram message also needs a linked chat). Merchants and staff read English. The providers only read `staff_users` and `clients`.
 
 ### Live event streams and session doorbells (feature 27)
 
@@ -573,7 +573,7 @@ Only this module reads and writes these 8 tables (`scripts/module-map.mjs`); oth
 | `GET /client/kyc` | merchant-session | Verification (KYC) status. | 8 |
 | `GET /client/sessions` | merchant-session | Active devices and sessions. | 2 |
 | `PATCH /client/api-keys/:id` | merchant-session | Rename a key or change its allowed IPs. | 7 |
-| `PATCH /client/profile` | merchant-session | Update name, company, phone, country, language, address and tax id. | 2 |
+| `PATCH /client/profile` | merchant-session | Update name, company, phone, country, address and tax id. | 2 |
 | `POST /client/api-keys` | merchant-session | New API key, shown once, with allowed IPs. | 7 |
 | `POST /client/auth/2fa` | public | Complete the sign-in with a TOTP code. | 2 |
 | `POST /client/auth/login` | public | Sign in; asks for a 2FA code when 2FA is enabled. | 2 |

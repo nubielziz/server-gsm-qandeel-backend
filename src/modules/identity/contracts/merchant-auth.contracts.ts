@@ -3,7 +3,6 @@
 // the shapes follow docs/contract/MISMATCHES.md B121 to B129 and ALIGNMENT § 7.
 import { z } from 'zod';
 import { defineRoute, zDecimal, zId, zIsoDateTime } from '../../../common/contract';
-import { CLIENT_LOCALES } from '../db/schema';
 
 /**
  * What the portal does after the password: choose a new password (staff set a temporary one, feature 20), type a code, or the sign-in is
@@ -60,8 +59,6 @@ export const MerchantMeShape = z.object({
   referralCode: z.string(),
   group: z.object({ id: zId, name: z.string(), discountPercent: zDecimal }),
   createdAt: zIsoDateTime,
-  /** The language of the merchant's emails (feature 20). */
-  locale: z.enum(CLIENT_LOCALES),
   address: z.string(),
   taxId: z.string(),
   /** True after staff set a temporary password and until the merchant chooses one: the portal sends them to the change form. */
@@ -84,7 +81,6 @@ export const MERCHANT_ME_EXAMPLE = {
   referralCode: 'GSM7K2QXD',
   group: { id: 1, name: 'Standard', discountPercent: '0.0000' },
   createdAt: '2026-11-01T09:30:00.000Z',
-  locale: 'en',
   address: '',
   taxId: '',
   mustChangePassword: false,

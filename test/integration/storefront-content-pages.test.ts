@@ -1,6 +1,6 @@
-// Integration tests of the content page routes (feature 15): list with kind, status, locale and search filters, show, create (a
-// draft by the signed-in author, slug rules, reserved legal words, races), change (slug per language, SEO fields, never the
-// status) and publish or hide, with the audit rows and permissions.
+// Integration tests of the content page routes (feature 15): list with kind, status and search filters, show, create (a
+// draft by the signed-in author, slug rules, reserved legal words, races), change (slug unique for the site, SEO fields, never the
+// status) and publish or hide, with the audit rows and permissions. English only (decision 039): no page has a language.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '../../src/infra/db';
@@ -64,7 +64,6 @@ describe('GET /admin/content-pages', () => {
       id: old.id,
       kind: 'carrier',
       slug: 'old',
-      locale: 'en',
       title: 'Old',
       bodyMd: '# Old body',
       seoTitle: '',
@@ -74,24 +73,27 @@ describe('GET /admin/content-pages', () => {
       visits30d: null,
       orders30d: null,
     });
+    expect(res.body[0]).not.toHaveProperty('locale');
     expect(typeof res.body[0].publishedAt).toBe('string');
     expect(typeof res.body[0].updatedAt).toBe('string');
   });
 
-  it('filters by repeated kind, status and locale, and counts with _start=0&_end=1', async () => {
+  it('filters by repeated kind and status, counts with _start=0&_end=1, and refuses a language filter', async () => {
     const { db } = await testDb();
     await insertPageRow(db, { kind: 'carrier', slug: 'c1' });
     await insertPageRow(db, { kind: 'brand', slug: 'b1', status: 'draft', publishedAt: null });
     await insertPageRow(db, { kind: 'static', slug: 's1' });
     await insertPageRow(db, { kind: 'blog', slug: 'g1', status: 'noindex' });
-    await insertPageRow(db, { kind: 'blog', slug: 'g2', locale: 'ar' });
+    await insertPageRow(db, { kind: 'blog', slug: 'g2' });
     expect(
       (await admin.get('/admin/content-pages?kind=static&kind=blog&_start=0&_end=200&_sort=title&_order=asc')).total,
     ).toBe(3);
     expect((await admin.get('/admin/content-pages?kind=carrier&_start=0&_end=1')).total).toBe(1);
     expect((await admin.get('/admin/content-pages?status=draft&_start=0&_end=1')).total).toBe(1);
     expect((await admin.get('/admin/content-pages?status=noindex&_start=0&_end=1')).total).toBe(1);
-    expect((await admin.get('/admin/content-pages?locale=ar')).total).toBe(1);
+    // The list is strict: the language filter is an unknown key now (the console stops sending it in the same release).
+    expect((await admin.get('/admin/content-pages?locale=en')).status).toBe(422);
+    expect((await admin.get('/admin/content-pages?locale_ne=en')).status).toBe(422);
     expect((await admin.get('/admin/content-pages?kind=news')).status).toBe(422);
   });
 
@@ -145,7 +147,6 @@ describe('POST /admin/content-pages', () => {
     const res = await admin.post('/admin/content-pages', {
       kind: 'static',
       title: '  About us ',
-      locale: 'en',
       bodyMd: body,
       seoTitle: ' About us | GSM ',
     });
@@ -153,7 +154,6 @@ describe('POST /admin/content-pages', () => {
     expect(res.body).toMatchObject({
       kind: 'static',
       slug: 'about-us',
-      locale: 'en',
       title: 'About us',
       bodyMd: body,
       seoTitle: 'About us | GSM',
@@ -173,46 +173,50 @@ describe('POST /admin/content-pages', () => {
     });
   });
 
-  it('keeps a typed slug, and a slug is unique per language only', async () => {
+  it('keeps a typed slug, and a slug is unique for the site', async () => {
     const first = await admin.post('/admin/content-pages', {
       kind: 'static',
       title: 'About',
-      locale: 'en',
       slug: 'about',
       bodyMd: '',
     });
     expect(first.body.slug).toBe('about');
-    const arabic = await admin.post('/admin/content-pages', {
-      kind: 'static',
-      title: 'عنا',
-      locale: 'ar',
-      slug: 'about',
-      bodyMd: '',
-    });
-    expect(arabic.status).toBe(201);
     const taken = await admin.post('/admin/content-pages', {
       kind: 'blog',
       title: 'Other',
-      locale: 'en',
       slug: 'about',
       bodyMd: '',
     });
     expect(taken.status).toBe(409);
-    expect(taken.body).toMatchObject({ code: 'SLUG_TAKEN', errors: [expect.objectContaining({ field: 'slug' })] });
+    expect(taken.body).toMatchObject({
+      code: 'SLUG_TAKEN',
+      detail: 'The slug about is already used by another page.',
+      errors: [expect.objectContaining({ field: 'slug' })],
+    });
+  });
+
+  it('ignores a language an older console still sends: the page is created and carries none', async () => {
+    const res = await admin.post('/admin/content-pages', {
+      kind: 'static',
+      title: 'Old client',
+      locale: 'tr',
+      bodyMd: '',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body).not.toHaveProperty('locale');
   });
 
   it('makes the slug from the title when none is typed and refuses a title that cannot make one', async () => {
     const res = await admin.post('/admin/content-pages', {
       kind: 'carrier',
       title: 'Unlock iPhone on AT&T',
-      locale: 'en',
       bodyMd: '',
     });
     expect(res.body.slug).toBe('unlock-iphone-on-atandt');
+    // Arabic script typed as a title is data (group C): it is stored as typed but cannot make a Latin-only slug.
     const none = await admin.post('/admin/content-pages', {
       kind: 'static',
       title: 'من نحن',
-      locale: 'ar',
       bodyMd: '',
     });
     expect(none.status).toBe(422);
@@ -220,7 +224,6 @@ describe('POST /admin/content-pages', () => {
     const bad = await admin.post('/admin/content-pages', {
       kind: 'static',
       title: 'X',
-      locale: 'en',
       slug: 'Bad Slug',
       bodyMd: '',
     });
@@ -229,7 +232,7 @@ describe('POST /admin/content-pages', () => {
   });
 
   it('reserves terms, privacy, refund and cookies for the legal documents', async () => {
-    const res = await admin.post('/admin/content-pages', { kind: 'static', title: 'Terms', locale: 'en', bodyMd: '' });
+    const res = await admin.post('/admin/content-pages', { kind: 'static', title: 'Terms', bodyMd: '' });
     expect(res.status).toBe(409);
     expect(res.body).toMatchObject({
       code: 'SLUG_TAKEN',
@@ -241,26 +244,21 @@ describe('POST /admin/content-pages', () => {
   it('maps a race on the same slug to 409, never 500', async () => {
     const results = await Promise.all(
       Array.from({ length: 4 }, () =>
-        admin.post('/admin/content-pages', { kind: 'static', title: 'Racing', locale: 'en', bodyMd: '' }),
+        admin.post('/admin/content-pages', { kind: 'static', title: 'Racing', bodyMd: '' }),
       ),
     );
     expect(results.map((r) => r.status).sort()).toEqual([201, 409, 409, 409]);
   });
 
-  it('refuses an unknown kind, a blank title, a bad language and a missing body on the field', async () => {
-    const res = await admin.post('/admin/content-pages', { kind: 'news', title: ' ', locale: 'de' });
+  it('refuses an unknown kind, a blank title and a missing body on the field', async () => {
+    const res = await admin.post('/admin/content-pages', { kind: 'news', title: ' ' });
     expect(res.status).toBe(422);
-    expect(res.body.errors.map((e: { field: string }) => e.field).sort()).toEqual([
-      'bodyMd',
-      'kind',
-      'locale',
-      'title',
-    ]);
+    expect(res.body.errors.map((e: { field: string }) => e.field).sort()).toEqual(['bodyMd', 'kind', 'title']);
   });
 
   it('needs storefront:create and a CSRF token', async () => {
     const reader = await adminWith(t, ['storefront:read', 'storefront:update']);
-    const payload = { kind: 'static', title: 'About', locale: 'en', bodyMd: '' };
+    const payload = { kind: 'static', title: 'About', bodyMd: '' };
     expect((await reader.post('/admin/content-pages', payload)).status).toBe(403);
     expect((await admin.withoutCsrf('POST', '/admin/content-pages', payload)).status).toBe(403);
   });
@@ -302,11 +300,10 @@ describe('PATCH /admin/content-pages/:id', () => {
     expect(audit?.after).toMatchObject({ title: 'About GSM', seoTitle: '' });
   });
 
-  it('refuses an empty title or slug, keeps the slug unique in the (new) language and ignores kind and status', async () => {
+  it('refuses an empty title or slug, keeps the slug unique for the site and ignores kind and status', async () => {
     const { db } = await testDb();
-    const a = await insertPageRow(db, { slug: 'about', locale: 'en' });
-    await insertPageRow(db, { slug: 'about', locale: 'ar' });
-    const b = await insertPageRow(db, { slug: 'other', locale: 'en' });
+    const a = await insertPageRow(db, { slug: 'about' });
+    const b = await insertPageRow(db, { slug: 'other' });
     expect((await admin.patch(`/admin/content-pages/${a.id}`, { title: '  ' })).body.errors[0].field).toBe('title');
     expect((await admin.patch(`/admin/content-pages/${a.id}`, { slug: '' })).body.errors[0].field).toBe('slug');
     expect((await admin.patch(`/admin/content-pages/${a.id}`, { slug: 'Not Valid' })).body.errors[0].field).toBe(
@@ -315,9 +312,9 @@ describe('PATCH /admin/content-pages/:id', () => {
     const taken = await admin.patch(`/admin/content-pages/${b.id}`, { slug: 'about' });
     expect(taken.status).toBe(409);
     expect(taken.body.code).toBe('SLUG_TAKEN');
-    // Moving the English "about" to Arabic collides with the Arabic "about"; moving it with a new slug does not.
-    expect((await admin.patch(`/admin/content-pages/${a.id}`, { locale: 'ar' })).status).toBe(409);
-    expect((await admin.patch(`/admin/content-pages/${a.id}`, { locale: 'ar', slug: 'about-en' })).status).toBe(200);
+    expect((await admin.patch(`/admin/content-pages/${a.id}`, { slug: 'about-us' })).status).toBe(200);
+    // A language an older console still sends is dropped, so a body with nothing else left is "send at least one field".
+    expect((await admin.patch(`/admin/content-pages/${a.id}`, { locale: 'tr' })).status).toBe(422);
     expect((await admin.patch(`/admin/content-pages/${a.id}`, { slug: 'terms' })).status).toBe(409);
     expect((await admin.patch(`/admin/content-pages/${a.id}`, { kind: 'blog', status: 'draft' })).status).toBe(422);
     expect((await admin.patch(`/admin/content-pages/${a.id}`, {})).status).toBe(422);

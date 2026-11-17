@@ -182,7 +182,6 @@ export async function seedSupport(db: DbExecutor, demo: DemoSeed, config?: AppCo
     id: demoNumericId(macro.id),
     title: macro.title,
     category: macro.cat,
-    locale: 'en',
     body: toApiVariables(macro.body),
     shortcut: null,
     createdBy: author,

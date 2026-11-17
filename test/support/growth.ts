@@ -30,7 +30,6 @@ export async function insertRecoveryTemplate(
     event: 'checkout.abandoned',
     channel: 'email',
     audience: 'customer',
-    locale: 'en',
     ...RECOVERY_TEMPLATE,
     isActive: true,
     ...values,
@@ -48,7 +47,6 @@ export interface AbandonedSpec {
   /** The customer's own switch (`marketing_opt_in`), default `true` when consent is granted. */
   readonly optIn?: boolean;
   readonly customerStatus?: 'active' | 'suspended' | 'blocked';
-  readonly locale?: string;
   readonly recoveryEmailedAt?: Date | null;
   readonly orderId?: number | null;
   readonly status?: 'open' | 'paid' | 'expired';
@@ -91,7 +89,6 @@ export async function insertAbandoned(t: TestApp, db: Database, spec: AbandonedS
       .values({
         email,
         name: spec.name ?? '',
-        locale: spec.locale ?? 'en',
         marketingOptIn: spec.optIn ?? consent === 'granted',
         status: spec.customerStatus ?? 'active',
         createdAt: spec.createdAt,

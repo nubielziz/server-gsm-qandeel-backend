@@ -90,7 +90,7 @@ describe('GET /admin/settings', () => {
       cookie: 'c',
       authorization: 'Bearer x',
       // Not secrets: the words only look alike.
-      keyboardLayout: 'ar',
+      keyboardLayout: 'dvorak',
       tokenizerMode: 'fast',
     });
     const res = await reader.get('/admin/settings');

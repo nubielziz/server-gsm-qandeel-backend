@@ -1,8 +1,8 @@
 // Unit tests of the default templates (features 12a, 14b, 12b and 16): they use only their event's placeholders, cover every merchant event
-// the platform wires, the four customer account mails, both alert events and the five storefront mails of feature 16, and the data sections of
-// migrations 0011, 0012, 0015 and 0017 together are exactly what `defaultTemplatesSql()` writes.
+// the platform wires, the four customer account mails, both alert events and the five storefront mails of feature 16, migrations 0011,
+// 0012, 0015 and 0018 together insert exactly these rows, and `defaultTemplatesSql()` writes today's shape (no language, decision 039).
 import { describe, expect, it } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { insertedTemplates } from '../../../../test/support/applied-templates';
 import { DEFAULT_TEMPLATES, defaultTemplatesSql } from './default-templates';
 import {
   BUILT_IN_EVENTS,
@@ -25,8 +25,8 @@ describe('DEFAULT_TEMPLATES', () => {
     }
   });
 
-  it('are unique per event, channel, audience and language', () => {
-    const keys = DEFAULT_TEMPLATES.map((t) => `${t.event}|${t.channel}|${t.audience}|${t.locale}`);
+  it('are unique per event, channel and audience', () => {
+    const keys = DEFAULT_TEMPLATES.map((t) => `${t.event}|${t.channel}|${t.audience}`);
     expect(new Set(keys).size).toBe(keys.length);
   });
 
@@ -62,7 +62,6 @@ describe('DEFAULT_TEMPLATES', () => {
         (t) => t.event === key && t.audience === 'customer' && t.channel === 'email',
       );
       expect(template, key).toBeDefined();
-      expect(template!.locale).toBe('en');
       expect(template!.subject, key).not.toBe('');
       for (const placeholder of ['{{customerName}}', '{{link}}', '{{expiresAt}}'])
         expect(template!.body, `${key} ${placeholder}`).toContain(placeholder);
@@ -78,13 +77,6 @@ const MIGRATIONS = [
   '0018_refund_declined_template.sql',
 ] as const;
 
-/** The `event|channel|audience|locale` key of every row an INSERT in a migration holds (a row starts with two spaces and a bracket). */
-function keysInInsert(insert: string): string[] {
-  return [...insert.matchAll(/^ {2}\('([^']+)', '([^']+)', '([^']+)', '([^']+)', /gm)].map((m) =>
-    m.slice(1, 5).join('|'),
-  );
-}
-
 /** The customer events feature 16 sends through `StorefrontMails`, with the placeholder each one's text must use to say what it is about. */
 const STOREFRONT_MAILS: ReadonlyArray<readonly [event: string, placeholder: string]> = [
   ['order.received', '{{amount}}'],
@@ -98,7 +90,7 @@ describe('the storefront mails of feature 16', () => {
   it('each ship an English, active-by-default email to the customer, so a migrated database sends them without the development seed', () => {
     for (const [event, placeholder] of STOREFRONT_MAILS) {
       const template = DEFAULT_TEMPLATES.find((t) => t.event === event && t.audience === 'customer');
-      expect(template, event).toMatchObject({ channel: 'email', locale: 'en' });
+      expect(template, event).toMatchObject({ channel: 'email' });
       expect(template!.subject, event).not.toBe('');
       expect(template!.body, `${event} ${placeholder}`).toContain(placeholder);
       expect(template!.body, `${event} name`).toContain('{{customerName}}');
@@ -117,7 +109,7 @@ describe('the storefront mails of feature 16', () => {
 describe('the refund declined mail', () => {
   it('has an English email that names the order, the amount and the reason staff gave', () => {
     const template = DEFAULT_TEMPLATES.find((t) => t.event === 'refund.declined' && t.audience === 'customer');
-    expect(template).toMatchObject({ channel: 'email', locale: 'en' });
+    expect(template).toMatchObject({ channel: 'email' });
     expect(template!.subject).toContain('{{orderId}}');
     for (const placeholder of ['{{customerName}}', '{{orderId}}', '{{amount}}', '{{reason}}'])
       expect(template!.body, placeholder).toContain(placeholder);
@@ -130,28 +122,38 @@ describe('the refund declined mail', () => {
 });
 
 describe('the migrations that insert the default templates', () => {
-  const insertOf = (file: string): string => {
-    const migration = readFileSync(new URL(`../../../../drizzle/${file}`, import.meta.url), 'utf8');
-    const start = migration.indexOf('INSERT INTO "notification_templates"');
-    expect(start, file).toBeGreaterThan(0);
-    return migration.slice(start).trim();
-  };
+  /** The rows each migration inserts, with the key and the texts the code holds (the files keep their `locale` column). */
+  const shipped = MIGRATIONS.flatMap((file) =>
+    insertedTemplates(file).map((row) => ({ file, row, key: `${row.event}|${row.channel}|${row.audience}` })),
+  );
 
-  it('each hold exactly the INSERT that defaultTemplatesSql() writes for the templates it names', () => {
-    for (const file of MIGRATIONS) {
-      const insert = insertOf(file);
-      const keys = new Set(keysInInsert(insert));
-      expect(keys.size, file).toBeGreaterThan(0);
-      const templates = DEFAULT_TEMPLATES.filter((t) => keys.has(`${t.event}|${t.channel}|${t.audience}|${t.locale}`));
-      expect(templates.length, file).toBe(keys.size);
-      expect(insert, file).toBe(defaultTemplatesSql(templates));
+  it('insert only English rows, each a default of the code with the same event, channel, audience, subject and body', () => {
+    const defaults: readonly object[] = DEFAULT_TEMPLATES;
+    for (const { file, row } of shipped) {
+      expect(row.locale, file).toBe('en');
+      const { event, channel, audience, subject, body } = row;
+      expect(defaults, `${file} ${event} ${channel}`).toContainEqual({ event, channel, audience, subject, body });
     }
   });
 
   it('together insert every default template, each once', () => {
-    const inserted = MIGRATIONS.flatMap((file) => keysInInsert(insertOf(file))).sort();
-    const expected = DEFAULT_TEMPLATES.map((t) => `${t.event}|${t.channel}|${t.audience}|${t.locale}`).sort();
+    const inserted = shipped.map(({ key }) => key).sort();
+    const expected = DEFAULT_TEMPLATES.map((t) => `${t.event}|${t.channel}|${t.audience}`).sort();
     expect(inserted).toEqual(expected);
+  });
+});
+
+describe('defaultTemplatesSql()', () => {
+  it('writes every default without a language, switched on, keeping a template that exists (one per event, channel and audience)', () => {
+    const insert = defaultTemplatesSql();
+    expect(insert).toStartWith(
+      'INSERT INTO "notification_templates" ("event", "channel", "audience", "subject", "body", "is_active") VALUES',
+    );
+    expect(insert).toEndWith('ON CONFLICT ("event", "channel", "audience") DO NOTHING;');
+    expect(insert).not.toContain('locale');
+    expect(insert.match(/, true\)/g)).toHaveLength(DEFAULT_TEMPLATES.length);
+    // A quote in a text is doubled, so no text can end the literal.
+    expect(defaultTemplatesSql([{ ...DEFAULT_TEMPLATES[0]!, subject: "It's here" }])).toContain("'It''s here'");
   });
 });
 

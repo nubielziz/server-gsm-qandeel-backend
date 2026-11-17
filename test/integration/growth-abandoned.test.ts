@@ -1,10 +1,10 @@
 // Integration tests of the abandoned checkouts and the recovery send (feature 19): GET /admin/checkouts/abandoned and
 // POST /admin/checkouts/recover against the real API: the list scope and rows, the filters and sorts, the one rule behind the row
 // flag, the filter and the send, the claim that makes a recovery email once-only, and the audit entry.
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '../../src/infra/db';
-import { SettingsReader } from '../../src/modules/platform';
+import { NotificationService, SettingsReader } from '../../src/modules/platform';
 import { type AdminApi, adminWith } from '../support/admin-api';
 import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches } from '../support/auth';
@@ -399,51 +399,33 @@ describe('POST /admin/checkouts/recover', () => {
     expect((await admin.post('/admin/checkouts/recover', { ids: [a.sessionId] })).body.sent).toBe(1);
   });
 
-  it("writes to a customer in the English template when the customer's own language has none, or has it switched off", async () => {
+  it('asks for the template once per request: its refusal answers every checkout after it, and a checkout’s own reason still comes first', async () => {
     const { db } = await testDb();
-    const none = await insertAbandoned(t, db, {
-      serviceId: serviceId(),
-      createdAt: ago(2 * 60 * MINUTE),
-      locale: 'ar',
-    });
-    expect((await admin.post('/admin/checkouts/recover', { ids: [none.sessionId] })).body).toEqual({
-      sent: 1,
-      skipped: [],
-    });
-    await insertRecoveryTemplate(db, { locale: 'ar', isActive: false });
-    const off = await insertAbandoned(t, db, { serviceId: serviceId(), createdAt: ago(3 * 60 * MINUTE), locale: 'ar' });
-    expect((await admin.post('/admin/checkouts/recover', { ids: [off.sessionId] })).body).toEqual({
-      sent: 1,
-      skipped: [],
-    });
-  });
-
-  it("skips a checkout only when its language's template and the English one are both missing or switched off", async () => {
-    const { db } = await testDb();
-    const ar = () => insertAbandoned(t, db, { serviceId: serviceId(), createdAt: ago(2 * 60 * MINUTE), locale: 'ar' });
-    const english = eq(s.notificationTemplates.locale, 'en');
-    await insertRecoveryTemplate(db, { locale: 'ar', isActive: false });
-
-    // The language's template is off and so is the English one.
-    await db.update(s.notificationTemplates).set({ isActive: false }).where(english);
-    const bothOff = await ar();
-    expect((await admin.post('/admin/checkouts/recover', { ids: [bothOff.sessionId] })).body.skipped).toEqual([
-      { id: bothOff.sessionId, reason: 'template_off' },
-    ]);
-
-    // The language's template is off and the English one is gone.
-    await db.delete(s.notificationTemplates).where(english);
-    const englishGone = await ar();
-    expect((await admin.post('/admin/checkouts/recover', { ids: [englishGone.sessionId] })).body.skipped).toEqual([
-      { id: englishGone.sessionId, reason: 'template_off' },
-    ]);
-
-    // Neither exists.
-    await db.delete(s.notificationTemplates);
-    const neither = await ar();
-    expect((await admin.post('/admin/checkouts/recover', { ids: [neither.sessionId] })).body.skipped).toEqual([
-      { id: neither.sessionId, reason: 'no_template' },
-    ]);
+    const at = (hours: number, spec: Partial<Parameters<typeof insertAbandoned>[2]> = {}) =>
+      insertAbandoned(t, db, { serviceId: serviceId(), createdAt: ago(hours * 60 * MINUTE), ...spec });
+    const first = await at(2);
+    const withdrawn = await at(3, { consent: 'withdrawn' });
+    const second = await at(4);
+    await db.update(s.notificationTemplates).set({ isActive: false });
+    const check = spyOn(t.app.get(NotificationService), 'check');
+    try {
+      const res = await admin.post('/admin/checkouts/recover', {
+        ids: [first.sessionId, withdrawn.sessionId, second.sessionId],
+      });
+      expect(res.body).toEqual({
+        sent: 0,
+        skipped: [
+          { id: first.sessionId, reason: 'template_off' },
+          { id: withdrawn.sessionId, reason: 'no_marketing_consent' },
+          { id: second.sessionId, reason: 'template_off' },
+        ],
+      });
+      // One template per event, channel and audience (decision 039): one look answers for every customer of the request.
+      expect(check).toHaveBeenCalledTimes(1);
+    } finally {
+      check.mockRestore();
+    }
+    for (const row of [first, withdrawn, second]) expect(await recoveryEventCount(db, row.sessionId)).toBe(0);
   });
 
   it('refuses a body with no ids, too many, or ids that are not ids, with a 422 on `ids`', async () => {

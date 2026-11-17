@@ -10,7 +10,6 @@
     "name": "Harvest sample",
     "phone": "",
     "country": "GB",
-    "locale": "en",
     "currency": 2,
     "currencyCode": "GBP",
     "hasAccount": true,
@@ -29,6 +28,6 @@
     "createdAt": "2026-10-31T12:00:00.000Z",
     "ordersCount": 0,
     "lastOrderAt": null,
-    "temporaryPassword": "53czmSucge4taw"
+    "temporaryPassword": "ge4tawzbgvmkNY"
   }
 }

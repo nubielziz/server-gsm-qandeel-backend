@@ -1,10 +1,8 @@
-// Field schemas the customers routes share (store and admin): the customer's email, name, country and locale as they are cleaned
+// Field schemas the customers routes share (store and admin): the customer's email, name and country as they are cleaned
 // on the way in, and the closed vocabularies of the wire (docs/contract/endpoints/customers.md).
 import { z } from 'zod';
 import { CUSTOMER_STATUSES, RISK_LEVELS } from '../db/schema';
 import {
-  CUSTOMER_LOCALES,
-  type CustomerLocale,
   MAX_NAME_LENGTH,
   MAX_NOTES_LENGTH,
   MAX_PHONE_LENGTH,
@@ -42,20 +40,6 @@ export const CountryField = z
   .trim()
   .regex(/^[A-Za-z]{2}$/, 'Choose a country.')
   .toUpperCase();
-
-/**
- * The customer's language: `en` or `ar`, typed as a plain string like the console's body type (`locale: string`).
- *
- * Why: the contract tests compare the request with the console's type, and a narrower enum would differ from it; the check is a
- * refinement, so a wrong value is still `422` on `locale`.
- */
-export const LocaleField = z
-  .string()
-  .trim()
-  .refine((value): value is CustomerLocale => (CUSTOMER_LOCALES as readonly string[]).includes(value), {
-    error: 'Choose English or Arabic.',
-  })
-  .describe('`en` or `ar`.');
 
 /** A phone number: trimmed, at most 40 characters, empty for none. */
 export const PhoneField = z.string().trim().max(MAX_PHONE_LENGTH, `Use at most ${MAX_PHONE_LENGTH} characters.`);

@@ -9,7 +9,12 @@ import { seedCatalog } from '../../scripts/seed/catalog';
 import { demoStatePath, loadDemoState } from '../../scripts/seed/demo-state';
 import { seedIdentity } from '../../scripts/seed/identity';
 import { runSeed } from '../../scripts/seed/run';
-import { seedStorefront } from '../../scripts/seed/storefront';
+import {
+  LEGACY_DEMO_GONE_SLUG,
+  LEGACY_DEMO_SERVICE_SLUG,
+  LEGACY_DEMO_TARGET_SLUG,
+  seedStorefront,
+} from '../../scripts/seed/storefront';
 import { adminWith } from '../support/admin-api';
 import { type AdminApi } from '../support/admin-api';
 import { type TestApp, createTestApp } from '../support/app';
@@ -64,7 +69,8 @@ describe.skipIf(!frontendPresent)('the storefront seed through the console route
       ['tac_catalog', 8],
       ['content_pages', 20],
       ['help_articles', 12],
-      ['legal_documents', 7],
+      ['legal_documents', 6],
+      ['legacy_slugs', 2],
     ]);
     const listings = await admin.get('/admin/service-listings?_start=0&_end=200&_sort=id&_order=asc');
     expect(listings.total).toBe(14);
@@ -115,7 +121,7 @@ describe.skipIf(!frontendPresent)('the storefront seed through the console route
     expect((await t.app.inject({ method: 'GET', url: '/store/v1/pages/unlock-vs-jailbreak' })).statusCode).toBe(404);
   });
 
-  it('writes the 12 help articles (one draft) and the 7 legal versions, with the current ones public', async () => {
+  it('writes the 12 help articles (one draft) and the 6 English legal versions, with the current ones public', async () => {
     await seed();
     const help = await admin.get('/admin/help-articles?_start=0&_end=200');
     expect(help.total).toBe(12);
@@ -124,7 +130,7 @@ describe.skipIf(!frontendPresent)('the storefront seed through the console route
     expect(JSON.parse(publicHelp.body)).toHaveLength(11);
 
     const legal = await admin.get('/admin/legal-documents?_start=0&_end=200&_sort=id&_order=asc');
-    expect(legal.total).toBe(7);
+    expect(legal.total).toBe(6);
     const groups = (state: 'current' | 'draft' | 'earlier') =>
       legal.body.filter((v: { isCurrent: boolean; effectiveFrom: string | null }) =>
         state === 'current'
@@ -133,7 +139,7 @@ describe.skipIf(!frontendPresent)('the storefront seed through the console route
             ? !v.isCurrent && v.effectiveFrom === null
             : !v.isCurrent && v.effectiveFrom !== null,
       );
-    expect(groups('current')).toHaveLength(5);
+    expect(groups('current')).toHaveLength(4);
     expect(groups('draft').map((v: { type: string; version: string }) => `${v.type} ${v.version}`)).toEqual([
       'refund 1.5',
     ]);
@@ -142,8 +148,8 @@ describe.skipIf(!frontendPresent)('the storefront seed through the console route
     ]);
     const terms = JSON.parse((await t.app.inject({ method: 'GET', url: '/store/v1/pages/terms' })).body);
     expect(terms).toMatchObject({ kind: 'legal', legal: { type: 'terms', version: '3.2' } });
-    const arabic = JSON.parse((await t.app.inject({ method: 'GET', url: '/store/v1/pages/terms?locale=ar' })).body);
-    expect(arabic.legal.version).toBe('3.2');
+    // The demo's Arabic version of the terms is left out (decision 039): every version is English, one in force per type.
+    expect(legal.body.every((v: { locale: string }) => v.locale === 'en')).toBe(true);
     // Publishing the seeded draft works and replaces nothing else (no refund version was current).
     const draft = groups('draft')[0];
     expect((await admin.post(`/admin/legal-documents/${draft.id}/publish`)).status).toBe(200);
@@ -152,23 +158,22 @@ describe.skipIf(!frontendPresent)('the storefront seed through the console route
   it('is idempotent: a second run inserts nothing and keeps the id sequences usable', async () => {
     await seed();
     const again = await seed();
-    expect(again.map((r) => r.inserted)).toEqual([0, 0, 0, 0, 0, 0]);
+    expect(again.map((r) => r.inserted)).toEqual([0, 0, 0, 0, 0, 0, 0]);
     const { db } = await testDb();
     expect(await db.$count(s.serviceListings)).toBe(14);
+    expect(await db.$count(s.legacySlugs)).toBe(2);
     expect(await db.$count(s.contentPages)).toBe(20);
     // A normal insert after the seed takes the next id.
     const res = await admin.post('/admin/help-articles', {
       category: 'Orders',
       question: 'New?',
       answerMd: 'Yes.',
-      locale: 'en',
     });
     expect(res.status).toBe(201);
     expect(res.body.id).toBe(13);
     const page = await admin.post('/admin/content-pages', {
       kind: 'static',
       title: 'Careers',
-      locale: 'en',
       bodyMd: '',
     });
     expect(page.body.id).toBe(21);
@@ -187,14 +192,14 @@ describe.skipIf(!frontendPresent)('the storefront seed through the public API', 
     await runSeed(db, await loadDemoState(), t.config);
   });
 
-  it('writes the 14 retail prices, the 14 listings, the 8 TAC entries and the 7 legal documents', async () => {
+  it('writes the 14 retail prices, the 14 listings, the 8 TAC entries and the 6 legal documents', async () => {
     const { db } = await testDb();
     const [retail] = await db.select().from(s.clientGroups).where(eq(s.clientGroups.kind, 'b2c_retail'));
     const prices = await db.select().from(s.serviceGroupPrices).where(eq(s.serviceGroupPrices.groupId, retail!.id));
     expect(prices).toHaveLength(14);
     expect(await db.select().from(s.serviceListings)).toHaveLength(14);
     expect(await db.select().from(s.tacCatalog)).toHaveLength(8);
-    expect(await db.select().from(s.legalDocuments)).toHaveLength(7);
+    expect(await db.select().from(s.legalDocuments)).toHaveLength(6);
     const [icloud] = await db
       .select()
       .from(s.serviceListings)
@@ -202,7 +207,6 @@ describe.skipIf(!frontendPresent)('the storefront seed through the public API', 
     expect(icloud).toMatchObject({
       id: 1,
       serviceId: 1,
-      locale: 'en',
       isListed: true,
       isFeatured: true,
       brand: 'Apple',
@@ -225,7 +229,6 @@ describe.skipIf(!frontendPresent)('the storefront seed through the public API', 
       'cookies/en/1.0',
       'privacy/en/2.1',
       'refund/en/1.4',
-      'terms/ar/3.2',
       'terms/en/3.2',
     ]);
   });
@@ -249,6 +252,15 @@ describe.skipIf(!frontendPresent)('the storefront seed through the public API', 
     expect(rows.map((row: { slug: string }) => row.slug)).not.toContain('mdm-removal-iphone-premium');
     // Every price is at least the retail floor of its service.
     for (const row of rows) expect(Number(row.price.net)).toBeGreaterThan(0);
+  });
+
+  it('answers the two old demo addresses the website e2e follows (feature 30): the seeded service page, and the list', async () => {
+    const legacy = async (slug: string) =>
+      t.app.inject({ method: 'GET', url: `/store/v1/legacy-slugs/service/${slug}`, remoteAddress: freshClientIp() });
+    const found = await legacy(LEGACY_DEMO_SERVICE_SLUG);
+    expect(found.statusCode).toBe(200);
+    expect(body(found)).toEqual({ path: `/services/${LEGACY_DEMO_TARGET_SLUG}`, slug: LEGACY_DEMO_TARGET_SLUG });
+    expect(body(await legacy(LEGACY_DEMO_GONE_SLUG))).toEqual({ path: '/services', slug: null });
   });
 
   it('lets a buyer open a checkout and a check an IMEI against the seeded catalogue, end to end', async () => {
@@ -283,7 +295,7 @@ describe.skipIf(!frontendPresent)('the storefront seed through the public API', 
     });
     expect(consents.statusCode).toBe(201);
     expect(body(consents).consent.complete).toBe(true);
-    expect(body(consents).records[0].document).toEqual({ type: 'terms', version: '3.2', locale: 'en' });
+    expect(body(consents).records[0].document).toEqual({ type: 'terms', version: '3.2' });
   });
 
   it('refuses to check out or pre-check a seeded service whose page is switched off (the demo locks id 11)', async () => {
@@ -327,6 +339,7 @@ describe.skipIf(!frontendPresent)('the storefront seed through the public API', 
       'content_pages',
       'help_articles',
       'legal_documents',
+      'legacy_slugs',
     ]);
     expect(second.filter((report) => report.inserted !== 0)).toEqual([]);
   });

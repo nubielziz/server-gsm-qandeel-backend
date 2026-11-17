@@ -37,10 +37,10 @@ customer routes are feature 14b; paying a session (`.../pay`) and creating the o
   minute per address by the pipeline. The view: status, expiry, the service, quantity, masked IMEI and email, the country, currency,
   rate and tax rate, the amounts in USD and in the buyer's currency (`gross` is what is charged), the consent state and the active
   B2C payment methods. The locked numbers never change after the session opens, whatever staff do to prices, tax or rates.
-- **Consents** (RESOLUTIONS b2c-12, b2c-14): body `{ consents: [{ purpose, granted }], locale? }`; purposes `terms`, `privacy`,
+- **Consents** (RESOLUTIONS b2c-12, b2c-14): body `{ consents: [{ purpose, granted }] }`; purposes `terms`, `privacy`,
   `refund_policy`, `withdrawal_waiver`, `marketing`. Each record stores the subject (the session's customer), the current legal
-  document of the purpose's type and language (`terms`, `privacy`, `refund_policy` -> `terms`, `privacy`, `refund`; the waiver and
-  marketing have no document; an English fallback), the session, the buyer's IP and user agent and the clock's time. Records are
+  document of the purpose's type, the version in force (`terms`, `privacy`, `refund_policy` -> `terms`, `privacy`, `refund`; the waiver and
+  marketing have no document), the session, the buyer's IP and user agent and the clock's time. Records are
   append only: a withdrawal is a new row with `granted = false`, the latest row of a purpose decides, and repeating the same
   answer for the same text is a retry that writes nothing. Required before payment: `terms`, `privacy` and, while the policy
   `withdrawalWaiver` is on, `withdrawal_waiver` (`consent.complete`). `422` for a purpose listed twice or without a published
@@ -97,7 +97,7 @@ consents are feature 14a; block, export and anonymize are feature 18 (below).
 - **Account** (`CustomerAccountService`): `GET|PATCH /store/v1/me` (name, phone and country with the staff edit's rules, feature 24B:
   `domain/profile-edit.ts` judges "changed" against the locked row, `CustomerProfileRules` refuses a changed country with no current
   tax rate (`422` on `country`) and re-derives the currency unless the request sends one; email is not editable; no audit row;
-  language, currency of a store-visible currency, marketing consent: a change writes an immutable `consent_records` row with the
+  the currency (a store-visible one) and the marketing consent: a change of consent writes an immutable `consent_records` row with the
   request address) and `GET /store/v1/me/orders` (the session's own
   orders only; foreign read of `orders` in `infra/foreign-reads.repository.ts`).
 - **Admin customers** (`CustomerAdminService`, `CustomerAccountAdminService`, scenario b2c-account): list with the order figures
@@ -163,7 +163,7 @@ resolutions `b2c-10` and `b2c-14`.
   first), `grossAmount`, `recoveryEmailedAt`. The delay is read by the server (`SettingsReader`), so a growth user needs no `settings:read`.
 - **Recover** (`RecoveryQueue.queue`, shared with the reminder): in one transaction the sessions are read `FOR UPDATE OF checkout_sessions` in id
   order (two sends over the same ids never mail one checkout twice and never deadlock), each id is decided again, the template is probed through
-  `NotificationService.check` (once per customer language; a language whose template is missing or switched off falls back to the English template, and the checkout is skipped as `no_template` / `template_off` only when that one is unusable too), and an eligible checkout is claimed (`UPDATE ... WHERE recovery_emailed_at IS NULL`) with
+  `NotificationService.check` (the one template of `checkout.abandoned` serves every customer; the checkout is skipped as `no_template` / `template_off` when it is missing or switched off), and an eligible checkout is claimed (`UPDATE ... WHERE recovery_emailed_at IS NULL`) with
   one outbox event `checkout.recovery` written in the same transaction. The answer is `{ sent, skipped: [{ id, reason }] }` in the order asked (a
   repeated id counts once); `422` on `ids` when empty, over 100 or not ids. One audit entry `sent recovery emails` (entity `checkout`, `before { emails: 0 }`,
   `after { emails, checkoutIds, skipped }`).
@@ -175,8 +175,8 @@ resolutions `b2c-10` and `b2c-14`.
   repeat of the job after a sent or failed row is skipped; a job that ends skipped finishes the earlier row as `failed` with the reason and, unless a row of
   its event was `sent`, takes the claim off again (`recovery_emailed_at = null`, in one transaction), so the checkout is recoverable again.
 - **The automatic reminder** (`RecoverySweep`, scheduler `checkout-recovery-sweep`, queue `maintenance`, job `checkout_recovery_sweep`, every 5
-  minutes): selects at most 200 due checkouts of customers whose language can be mailed now (`NotificationService.writableLanguages`: the language's own
-  switched-on template, or the English one for every language), oldest first, and queues them through the same `RecoveryQueue`, so a manual send after it is
+  minutes): selects at most 200 due checkouts while the `checkout.abandoned` email template is switched on (`NotificationService.templateIsOn`; none is
+  selected while it is missing or off), oldest first, and queues them through the same `RecoveryQueue`, so a manual send after it is
   `already_emailed`. A tick with nothing due writes no `job_runs` row; a tick that queued something is recorded and audited as the system
   (`sent automatic recovery emails`).
 - **Funnel**: `FunnelReportService` calls `storefrontFunnel(db, now, days)` for `days` 7, 30 (default) or 90 (`422` on `days` otherwise), the same
@@ -188,7 +188,7 @@ resolutions `b2c-10` and `b2c-14`.
 
 `notifications/customer-audience.ts` is the customer audience provider of the platform's notification center, registered with
 `NotificationAudiences` by `CustomerNotificationsModule` at boot (imported by `CustomersModule` and the worker). It selects active
-customers (suspended, blocked and anonymized ones never), by account, country and language, and for a marketing campaign only those
+customers (suspended, blocked and anonymized ones never), by account and country, and for a marketing campaign only those
 whose `marketing_opt_in` is on and whose latest marketing consent record grants it (`consentSql`, the recovery mail's predicate). The
 same predicate answers the preview count, the fan-out's pages and the send-time check, so consent withdrawn after the fan-out stops the
 message. The provider only reads `customers` and `consent_records`.
@@ -257,8 +257,8 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 | Route | Access | What it does | Stage |
 |---|---|---|---|
 | `GET /store/v1/checkout-sessions/:token` | checkout-token | Session status, the locked price and the available payment methods. | 14 |
-| `GET /store/v1/me` | customer-session | My account: details, currency, language and marketing consent. | 14 |
-| `PATCH /store/v1/me` | customer-session | Change name, phone, country, language, currency and marketing consent. | 14 |
+| `GET /store/v1/me` | customer-session | My account: details, currency and marketing consent. | 14 |
+| `PATCH /store/v1/me` | customer-session | Change name, phone, country, currency and marketing consent. | 14 |
 | `POST /store/v1/auth/login` | public | Sign in with email and password; refuses a suspended account and locks temporarily after repeated failures. | 14 |
 | `POST /store/v1/auth/logout` | customer-session | End the session. | 14 |
 | `POST /store/v1/auth/magic-link` | public | Email a sign-in link instead of a password (second sign-in option). | 14 |

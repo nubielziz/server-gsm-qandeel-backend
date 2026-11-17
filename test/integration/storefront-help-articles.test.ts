@@ -1,5 +1,6 @@
-// Integration tests of the help article routes (feature 15): list with the publish, topic and language filters and search, show,
-// create (last in the order, no votes), change and the publish switch (PATCH isPublished under storefront:update), audit and permissions.
+// Integration tests of the help article routes (feature 15): list with the publish and topic filters and search, show, create (last
+// in the order, no votes), change and the publish switch (PATCH isPublished under storefront:update), audit and permissions.
+// English only (decision 039): no article has a language.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { schema as s } from '../../src/infra/db';
 import { type AdminApi, adminWith } from '../support/admin-api';
@@ -40,24 +41,25 @@ describe('GET /admin/help-articles', () => {
     expect(res.body[0]).toMatchObject({
       answerMd: 'The **full** answer.',
       category: 'Orders',
-      locale: 'en',
       isPublished: true,
       helpfulYes: 0,
       helpfulNo: 0,
       sort: 1,
     });
+    expect(res.body[0]).not.toHaveProperty('locale');
     expect(res.body[1]).toMatchObject({ helpfulYes: 5, helpfulNo: 1 });
   });
 
-  it('filters by isPublished, topic and language, counts with _start=0&_end=1, and searches question and topic', async () => {
+  it('filters by isPublished and topic, counts with _start=0&_end=1, and searches question and topic', async () => {
     const { db } = await testDb();
     await insertArticleRow(db, { question: 'Where is my order?', category: 'Orders' });
     await insertArticleRow(db, { question: 'Why was I charged VAT?', category: 'Payments', isPublished: false });
-    await insertArticleRow(db, { question: 'كيف أدفع؟', category: 'Payments', locale: 'ar' });
+    await insertArticleRow(db, { question: 'How do I pay?', category: 'Payments' });
     expect((await admin.get('/admin/help-articles?isPublished=true&_start=0&_end=1')).total).toBe(2);
     expect((await admin.get('/admin/help-articles?isPublished=false&_start=0&_end=1')).total).toBe(1);
     expect((await admin.get('/admin/help-articles?category=Payments')).total).toBe(2);
-    expect((await admin.get('/admin/help-articles?locale=ar')).total).toBe(1);
+    // The list is strict: the language filter is an unknown key now (the console stops sending it in the same release).
+    expect((await admin.get('/admin/help-articles?locale=en')).status).toBe(422);
     expect((await admin.get('/admin/help-articles?q=vat')).total).toBe(1);
     expect((await admin.get('/admin/help-articles?q=payments')).total).toBe(2);
     expect((await admin.get('/admin/help-articles?_sort=question&_order=asc')).status).toBe(200);
@@ -88,14 +90,12 @@ describe('POST /admin/help-articles', () => {
       category: ' IMEI ',
       question: ' How do I find my IMEI? ',
       answerMd: answer,
-      locale: 'en',
     });
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({
       category: 'IMEI',
       question: 'How do I find my IMEI?',
       answerMd: answer,
-      locale: 'en',
       isPublished: false,
       helpfulYes: 0,
       helpfulNo: 0,
@@ -113,7 +113,6 @@ describe('POST /admin/help-articles', () => {
       category: 'IMEI',
       question: 'Q2',
       answerMd: 'A2',
-      locale: 'en',
       isPublished: true,
     });
     expect(published.body).toMatchObject({ isPublished: true, sort: 9 });
@@ -122,7 +121,7 @@ describe('POST /admin/help-articles', () => {
   it('puts every parallel create at the end and loses none of them', async () => {
     const results = await Promise.all(
       Array.from({ length: 4 }, (_, i) =>
-        admin.post('/admin/help-articles', { category: 'Orders', question: `Q${i}`, answerMd: 'A', locale: 'en' }),
+        admin.post('/admin/help-articles', { category: 'Orders', question: `Q${i}`, answerMd: 'A' }),
       ),
     );
     expect(results.every((r) => r.status === 201)).toBe(true);
@@ -133,27 +132,23 @@ describe('POST /admin/help-articles', () => {
     expect((await admin.get('/admin/help-articles?_start=0&_end=10')).total).toBe(4);
   });
 
-  it('refuses a blank topic, question and answer, and an unknown language, on the field', async () => {
-    const res = await admin.post('/admin/help-articles', {
-      category: ' ',
-      question: '',
-      answerMd: '   ',
-      locale: 'de',
-    });
+  it('refuses a blank topic, question and answer on the field', async () => {
+    const res = await admin.post('/admin/help-articles', { category: ' ', question: '', answerMd: '   ' });
     expect(res.status).toBe(422);
-    expect(res.body.errors.map((e: { field: string }) => e.field).sort()).toEqual([
-      'answerMd',
-      'category',
-      'locale',
-      'question',
-    ]);
+    expect(res.body.errors.map((e: { field: string }) => e.field).sort()).toEqual(['answerMd', 'category', 'question']);
+  });
+
+  it('ignores a language an older console still sends: the article is created and carries none', async () => {
+    const res = await admin.post('/admin/help-articles', { category: 'a', question: 'b', answerMd: 'c', locale: 'tr' });
+    expect(res.status).toBe(201);
+    expect(res.body).not.toHaveProperty('locale');
   });
 
   it('needs storefront:create', async () => {
     const reader = await adminWith(t, ['storefront:read', 'storefront:update']);
-    expect(
-      (await reader.post('/admin/help-articles', { category: 'a', question: 'b', answerMd: 'c', locale: 'en' })).status,
-    ).toBe(403);
+    expect((await reader.post('/admin/help-articles', { category: 'a', question: 'b', answerMd: 'c' })).status).toBe(
+      403,
+    );
   });
 });
 

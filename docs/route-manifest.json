@@ -10,20 +10,20 @@
     "rowFlags": "the same files may add Turnstile to a public client or store map row (rowFlags, feature 24A); the endpoint then has turnstile true and rowFlag { file, spec }"
   },
   "counts": {
-    "rows": 371,
+    "rows": 372,
     "tables": 66,
     "scenarios": 13,
     "surfaces": 9,
     "moneyEvents": 13,
     "accounts": 14,
-    "endpoints": 479,
+    "endpoints": 480,
     "map": {
       "rows": 274,
       "endpoints": 382
     },
     "additions": {
-      "rows": 97,
-      "endpoints": 97
+      "rows": 98,
+      "endpoints": 98
     },
     "frontendRoutes": 321,
     "bySurface": {
@@ -56,8 +56,8 @@
         "endpoints": 4
       },
       "store": {
-        "rows": 58,
-        "endpoints": 58
+        "rows": 59,
+        "endpoints": 59
       },
       "system": {
         "rows": 4,
@@ -98,8 +98,8 @@
         "endpoints": 33
       },
       "storefront": {
-        "rows": 36,
-        "endpoints": 47
+        "rows": 37,
+        "endpoints": 48
       },
       "risk": {
         "rows": 11,
@@ -9970,7 +9970,7 @@
       "description": "Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked.",
       "frontend": {
         "file": "src/features/storefront/api/listings.ts",
-        "line": 24,
+        "line": 23,
         "fn": "listListings"
       }
     },
@@ -10004,7 +10004,7 @@
       "description": "Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked.",
       "frontend": {
         "file": "src/features/storefront/api/listings.ts",
-        "line": 32,
+        "line": 31,
         "fn": "getListing"
       }
     },
@@ -10038,7 +10038,7 @@
       "description": "Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked.",
       "frontend": {
         "file": "src/features/storefront/api/listings.ts",
-        "line": 41,
+        "line": 40,
         "fn": "createListing"
       }
     },
@@ -10072,7 +10072,7 @@
       "description": "Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked.",
       "frontend": {
         "file": "src/features/storefront/api/listings.ts",
-        "line": 52,
+        "line": 51,
         "fn": "updateListing"
       }
     },
@@ -13966,7 +13966,7 @@
       "description": "Upload the picture of a listed service.",
       "frontend": {
         "file": "src/features/storefront/api/listings.ts",
-        "line": 67,
+        "line": 66,
         "fn": "uploadListingImage"
       },
       "addition": {
@@ -14005,7 +14005,7 @@
       "description": "Remove the picture of a listed service.",
       "frontend": {
         "file": "src/features/storefront/api/listings.ts",
-        "line": 77,
+        "line": 76,
         "fn": "removeListingImage"
       },
       "addition": {
@@ -14279,7 +14279,7 @@
       "description": "Render a campaign for one language and channel.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 91,
+        "line": 90,
         "fn": "previewCampaign"
       },
       "addition": {
@@ -14321,7 +14321,7 @@
       "description": "Send a test to yourself.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 100,
+        "line": 99,
         "fn": "sendCampaignTest"
       },
       "addition": {
@@ -14361,7 +14361,7 @@
       "description": "Send a campaign now.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 114,
+        "line": 113,
         "fn": "sendCampaign"
       },
       "addition": {
@@ -14400,7 +14400,7 @@
       "description": "Schedule or reschedule a campaign.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 123,
+        "line": 122,
         "fn": "scheduleCampaign"
       },
       "addition": {
@@ -14439,7 +14439,7 @@
       "description": "Cancel a scheduled or running campaign.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 136,
+        "line": 135,
         "fn": "cancelCampaign"
       },
       "addition": {
@@ -14478,7 +14478,7 @@
       "description": "The recipients of a campaign on one channel.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 145,
+        "line": 144,
         "fn": "listCampaignRecipients"
       },
       "addition": {
@@ -16531,6 +16531,41 @@
         "spec": "B222"
       },
       "successStatus": 202
+    },
+    {
+      "key": "GET /store/v1/legacy-slugs/:kind/:slug",
+      "method": "GET",
+      "path": "/store/v1/legacy-slugs/:kind/:slug",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "content",
+      "descriptionAr": "Where an old address in another language leads now: the page of the same service, the service list, the home page or the help centre.",
+      "access": "public",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "public",
+      "stage": 30,
+      "tables": [
+        "legacy_slugs",
+        "service_listings"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store GET /store/v1/legacy-slugs/:kind/:slug",
+        "method": "GET",
+        "ops": null,
+        "path": "/store/v1/legacy-slugs/:kind/:slug"
+      },
+      "module": "storefront",
+      "description": "Where an old address in another language leads now: the page of the same service, the service list, the home page or the help centre.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/30.mjs",
+        "spec": "B224"
+      },
+      "successStatus": 200
     }
   ]
 }

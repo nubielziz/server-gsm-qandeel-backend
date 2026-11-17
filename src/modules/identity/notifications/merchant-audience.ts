@@ -31,8 +31,6 @@ const FLAGS: AudienceFlagsSql = {
   inApp: sql`true`,
   email: switchSql('email'),
   telegram: sql`(${clients.telegramChatId} is not null and ${switchSql('telegram')})`,
-  // Feature 20's `clients.locale` (`en|ar`): the language of the merchant's campaign messages (and `page` below).
-  arabic: sql`(${clients.locale} = 'ar')`,
 };
 
 /**
@@ -102,7 +100,6 @@ export class MerchantAudience implements AudienceProvider {
     const rows = await db
       .select({
         id: clients.id,
-        locale: clients.locale,
         email: FLAGS.email.mapWith(Boolean),
         telegram: FLAGS.telegram.mapWith(Boolean),
       })
@@ -112,7 +109,6 @@ export class MerchantAudience implements AudienceProvider {
       .limit(limit);
     return rows.map((row) => ({
       id: row.id,
-      locale: row.locale,
       inApp: true,
       email: row.email,
       telegram: row.telegram,

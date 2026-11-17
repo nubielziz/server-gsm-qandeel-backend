@@ -6,7 +6,7 @@ import { AppError } from '../../../common/errors';
 import type { DbExecutor } from '../../../infra/db';
 import { ClientGroupDirectory, type ClientGroupRef } from '../../catalog';
 import { MerchantWallets } from '../../money';
-import type { Client, ClientLocale, ClientStatus } from '../db/schema';
+import type { Client, ClientStatus } from '../db/schema';
 import { type ClientRow, findClientRow } from '../infra/client-admin.repository';
 import { countLiveSessionsOf } from '../infra/session-admin.repository';
 import { grants } from '../security/permission-grammar';
@@ -55,7 +55,6 @@ export interface ClientView {
   readonly kycStatus: Client['kycStatus'];
   readonly group: { id: number; name: string; discountPercent: string } | null;
   readonly referredBy: { id: number; name: string } | null;
-  readonly locale: ClientLocale;
   readonly address: string;
   readonly taxId: string;
   readonly internalNotes: string;
@@ -158,7 +157,6 @@ function toView(
     kycStatus: client.kycStatus,
     group: group ? { id: group.id, name: group.name, discountPercent: group.discountPercent } : null,
     referredBy,
-    locale: client.locale,
     address: client.address,
     taxId: client.taxId,
     internalNotes: client.internalNotes,

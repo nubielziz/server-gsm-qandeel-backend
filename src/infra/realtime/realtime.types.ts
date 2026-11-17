@@ -12,7 +12,7 @@ export type StreamViewerKind = 'staff' | 'client' | 'customer' | 'ticket';
 /**
  * The person behind one open stream, as the guard authenticated them.
  *
- * Why: a source renders every event for the viewer with the viewer's rights and language (decision 037: nothing is trusted
+ * Why: a source renders every event for the viewer with the viewer's rights (decision 037: nothing is trusted
  * from the doorbell); the hub keys connections by kind and id and closes them by session.
  */
 export interface StreamViewer {
@@ -22,8 +22,6 @@ export interface StreamViewer {
   readonly sessionId: number | null;
   /** The client address of the request (the per-address cap). */
   readonly ip: string;
-  /** The page language the client asked for (`?locale=`), or `null` (the source falls back to the saved language, then `en`). */
-  readonly locale: 'en' | 'ar' | null;
   /** The display name of the account (the value of `{{name}}` in a broadcast). */
   readonly name: string;
   /** The staff member's permissions (a source may add keys for them); `[]` for every other kind. */
@@ -50,8 +48,8 @@ export interface Doorbell {
 /**
  * One event a source wants written to a stream.
  *
- * Why: `data` is rendered once for every connection of a key, or per connection when it depends on the viewer (the text of an
- * inbox item in the viewer's language); a frame with a `cursor` gets an `id:` line, so a reconnect can say what it saw.
+ * Why: `data` is rendered once for every connection of a key, or per connection when it depends on the viewer (the `{{name}}` of an
+ * inbox item); a frame with a `cursor` gets an `id:` line, so a reconnect can say what it saw.
  */
 export interface Frame {
   /** The event name (`notification.created`). */

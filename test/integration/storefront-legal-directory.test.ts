@@ -1,5 +1,6 @@
 // The legal documents read and the retail price provider other modules use (features 14a and 15): the version in force a consent
 // references (the very version the console's Legal page shows as current), and the retail price and storefront floor of a service.
+// English only (decision 039): one version is in force per type, and it is English.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { Money } from '../../src/common/money';
 import { RetailPrices } from '../../src/modules/catalog';
@@ -28,7 +29,7 @@ afterAll(async () => {
 });
 
 describe('CurrentLegalDocuments', () => {
-  it('finds the version in force of a type and language, and a version by id', async () => {
+  it('finds the version in force of a type, and a version by id', async () => {
     const { db } = await testDb();
     const legal = t.app.get(CurrentLegalDocuments);
     const current = await insertLegalRow(db, {
@@ -37,60 +38,43 @@ describe('CurrentLegalDocuments', () => {
       effectiveFrom: new Date('2026-10-01T09:00:00.000Z'),
     });
     const draft = await insertLegalRow(db, { version: '3.3' });
-    expect(await legal.current(db, 'terms', 'en')).toEqual({
+    expect(await legal.current(db, 'terms')).toEqual({
       id: current.id,
       type: 'terms',
-      locale: 'en',
       version: '3.2',
       effectiveFrom: new Date('2026-10-01T09:00:00.000Z'),
       isCurrent: true,
       requiresReacceptance: false,
     });
-    expect(await legal.current(db, 'privacy', 'en')).toBeUndefined();
+    expect(await legal.current(db, 'privacy')).toBeUndefined();
     expect(await legal.find(db, draft.id)).toMatchObject({ version: '3.3', isCurrent: false, effectiveFrom: null });
     expect(await legal.find(db, 999999)).toBeUndefined();
   });
 
-  it('falls back to English for a language with nothing in force, while the page read stays in one language', async () => {
+  it('never reads a retired version in another language as the version in force, but still finds it by id', async () => {
     const { db } = await testDb();
     const legal = t.app.get(CurrentLegalDocuments);
     const english = await insertLegalRow(db, { version: '3.2', isCurrent: true, effectiveFrom: new Date() });
-    // Arabic has only a draft, so nothing is in force in Arabic.
-    await insertLegalRow(db, { version: '3.2', locale: 'ar' });
-    expect((await legal.current(db, 'terms', 'ar'))?.id).toBe(english.id);
-    expect(await legal.currentWithBody(db, 'terms', 'ar')).toBeUndefined();
-    expect((await legal.currentWithBody(db, 'terms', 'en'))?.bodyMd).toBe('# Terms');
-
-    // Once Arabic has a version in force, it is the one a consent in Arabic records.
-    const arabic = await insertLegalRow(db, {
-      version: '3.3',
-      locale: 'ar',
-      isCurrent: true,
-      effectiveFrom: new Date(),
+    // The same text `3.2` in another language, taken out of force by migration 0035 and kept as the proof of what a person accepted.
+    const retired = await insertLegalRow(db, {
+      version: '3.2',
+      locale: 'tr',
+      bodyMd: '# Retired text',
+      effectiveFrom: new Date('2026-06-01T09:00:00.000Z'),
     });
-    expect((await legal.current(db, 'terms', 'ar'))?.id).toBe(arabic.id);
-    expect((await legal.currentWithBody(db, 'terms', 'ar'))?.id).toBe(arabic.id);
+    expect((await legal.current(db, 'terms'))?.id).toBe(english.id);
+    expect((await legal.currentWithBody(db, 'terms'))?.bodyMd).toBe('# Terms');
+    expect(await legal.find(db, retired.id)).toMatchObject({ id: retired.id, version: '3.2', isCurrent: false });
   });
 
-  it('lists every version in force, by type then language', async () => {
+  it('lists every version in force, by type', async () => {
     const { db } = await testDb();
     const legal = t.app.get(CurrentLegalDocuments);
     await insertLegalRow(db, { type: 'terms', version: '3.2', isCurrent: true, effectiveFrom: new Date() });
-    await insertLegalRow(db, {
-      type: 'terms',
-      version: '3.2',
-      locale: 'ar',
-      isCurrent: true,
-      effectiveFrom: new Date(),
-    });
     await insertLegalRow(db, { type: 'privacy', version: '2.1', isCurrent: true, effectiveFrom: new Date() });
     await insertLegalRow(db, { type: 'privacy', version: '2.2' });
     const current = await legal.listCurrent(db);
-    expect(current.map((doc) => `${doc.type}/${doc.locale}/${doc.version}`)).toEqual([
-      'privacy/en/2.1',
-      'terms/ar/3.2',
-      'terms/en/3.2',
-    ]);
+    expect(current.map((doc) => `${doc.type}/${doc.version}`)).toEqual(['privacy/2.1', 'terms/3.2']);
   });
 
   it('reads the very version the console shows as current: publishing a draft moves the read at once', async () => {
@@ -103,14 +87,14 @@ describe('CurrentLegalDocuments', () => {
       effectiveFrom: new Date('2026-10-01T09:00:00.000Z'),
     });
     const draft = await insertLegalRow(db, { version: '3.3' });
-    expect((await legal.current(db, 'terms', 'en'))?.id).toBe(old.id);
+    expect((await legal.current(db, 'terms'))?.id).toBe(old.id);
 
     expect((await staff.post(`/admin/legal-documents/${draft.id}/publish`)).status).toBe(200);
     const shown = await staff.get('/admin/legal-documents?isCurrent=true&_start=0&_end=10');
     expect(shown.body.map((row: { id: number }) => row.id)).toEqual([draft.id]);
-    expect((await legal.current(db, 'terms', 'en'))?.id).toBe(draft.id);
-    expect((await legal.current(db, 'terms', 'en'))?.version).toBe('3.3');
-    expect((await legal.currentWithBody(db, 'terms', 'en'))?.id).toBe(draft.id);
+    expect((await legal.current(db, 'terms'))?.id).toBe(draft.id);
+    expect((await legal.current(db, 'terms'))?.version).toBe('3.3');
+    expect((await legal.currentWithBody(db, 'terms'))?.id).toBe(draft.id);
     expect((await legal.find(db, old.id))?.isCurrent).toBe(false);
   });
 });

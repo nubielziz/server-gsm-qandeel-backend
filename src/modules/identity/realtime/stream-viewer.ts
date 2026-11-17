@@ -18,13 +18,12 @@ export interface StreamLimits {
  * (feature 28 adds the support key for `support:read`). The name is the account's display name the session holds.
  *
  * @param principal the authenticated caller of the stream route
- * @param locale the page language of the query, if any
  * @returns the viewer
  * @throws {AppError} `UNAUTHORIZED` for a principal that is not a session of staff, a merchant or a customer
  */
-export function streamViewerOf(principal: Principal | undefined, locale: 'en' | 'ar' | undefined): StreamViewer {
+export function streamViewerOf(principal: Principal | undefined): StreamViewer {
   if (!principal) throw new AppError('UNAUTHORIZED');
-  const common = { ip: principal.ip, locale: locale ?? null } as const;
+  const common = { ip: principal.ip } as const;
   switch (principal.kind) {
     case 'staff':
       return {

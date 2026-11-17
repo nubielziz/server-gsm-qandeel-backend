@@ -96,7 +96,6 @@ async function fill(db: Database, count: number, firstId: number): Promise<{ row
         const source = part[index]!;
         return {
           serviceId: row.id,
-          locale: 'en',
           slug: `load-${row.id}`,
           publicTitle: source.title,
           summary: source.summary,

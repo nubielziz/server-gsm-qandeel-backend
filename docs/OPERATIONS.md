@@ -99,7 +99,9 @@ data in it is fake.
 
 ## 3. Upgrades and rollback
 
-Migrations are additive by rule (a new release's schema works with the previous release's code), so the order below is safe:
+Migrations are additive by rule (a new release's schema works with the previous release's code), so the order below is safe.
+**One release is not: release 30 (English only, decision 039)** drops columns the previous code reads and deletes content in
+other languages after an export. It has its own order (below, "Release 30"); never run the old API on its migrated database.
 
 ```bash
 git pull
@@ -118,6 +120,50 @@ gsmc up -d api worker
 itself went wrong, restore the backup taken in step 1 (section 4) into a new database and ask for help before switching to it.
 
 Other images (`console`, `site`) change the same way: build, set the tag, `gsmc up -d console`.
+
+### Release 30: English only (not additive)
+
+Release 30 removes Arabic as a language of the system (decision 039). Its migrations `0035`-`0039` delete the stored content in
+other languages (templates, service listings, pages, help articles, reply templates, legal versions nobody accepted), retire the
+legal versions people accepted, rewrite the campaigns that targeted other languages, and drop the language columns. **The old
+API fails on the new schema** (Drizzle names every column it reads), so the API and the worker stop for the migration, and the
+backend, console and site images change together. The database must be at the previous release (migration `0033`) before it
+starts: the export refuses an older one.
+
+The deleted content is kept in one file per database, written by `scripts/english-only-export.ts` (in the image). Migration
+`0035` refuses to delete anything without a fresh export of that database: it compares the counts the export wrote into
+`job_runs` (job `english_only_export`) with the live data, and refuses when such a row was added or removed, or content was
+edited, since the export ("out of date", "content changed after the export": run the export again). It also refuses while a legal document type has a version in
+force in another language and none in English ("publish an English version of these documents first").
+
+1. Backup: `gsmc run --rm -T backup pg-backup.sh`, and wait for it to finish (section 4).
+2. Build the three new images (backend, `console`, `site`). **While everything still runs**, prove that the export can run where
+   the migration runs. Make a host folder the image's user can write (the image runs as `bun`, uid 1000 in `oven/bun`;
+   `gsmc run --rm migrate id -u` says so):
+   ```bash
+   install -d -m 700 -o 1000 -g 1000 <host folder>
+   gsmc run --rm -v <host folder>:/out migrate bun scripts/english-only-export.ts --check --out /out
+   ```
+   Read the report: services switched on only in another language, or with no English listing (a listed one loses its page; a
+   checkout session already open for one can still be paid), templates, pages and help articles with no English twin, legal types with no English version in force,
+   the campaigns by fate (the finished ones too), search settings in Arabic script (left as they are). `--check` writes nothing.
+   It fails here, with the shop up, when the script is not in the image, the folder cannot be written or the database is at
+   the wrong level (exit 3).
+3. `gsmc stop api worker` (no campaign is then mid-send, nothing is written).
+4. Export: `gsmc run --rm -v <host folder>:/out migrate bun scripts/english-only-export.ts --out /out`. It writes
+   `english-only-<database>-<UTC time>.json` (mode 0600; content and ids, no secret), reads it back, and only then writes its
+   marker. Copy the file to the backup storage: it is the only copy of the deleted content besides the dumps.
+5. `gsmc run --rm migrate` (it refuses without step 4).
+6. `gsmc up -d api worker console site`.
+7. Check `/health?strict=1`, open one `/ar/…` address (it answers 308 to the same path under `/en`), and reload open console
+   and site tabs.
+
+**If step 4 or 5 fails,** the database is unchanged (all pending migrations run in one transaction): set the previous image tags,
+`gsmc up -d api worker`, and find the cause with the shop up. **Rollback after step 5:** restore the dump of step 1 into a new
+database (section 4) and start the previous images; there is no down-migration. The export file tells how a deleted row is put
+back (`howToRestore`). Exit codes of the export: 0 written and verified, or nothing to export (no file, no marker needed); 3 the
+database is not at `0033` or `0034`, or already migrated; 1 any other error (a missing or unwritable `--out` folder, no
+`DATABASE_URL`; nothing half-written is left).
 
 ## 4. Backups and the restore drill
 

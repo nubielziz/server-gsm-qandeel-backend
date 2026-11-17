@@ -6,7 +6,6 @@
   "body": {
     "title": "Harvest sample",
     "category": "refund",
-    "locale": "en",
     "body": "Harvest sample text.",
     "shortcut": "/harvest",
     "createdBy": 1,

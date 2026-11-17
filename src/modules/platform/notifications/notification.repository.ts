@@ -344,7 +344,7 @@ export function sentCountKey(key: SentCountKey): string {
  * Counts the notifications sent since a moment, per event, channel and recipient type.
  *
  * Why: identity-platform-11: `sentLast30Days` of a template is the count of `sent` notifications with the same event, channel and
- * recipient type since `now - 30 days`, across all locales. One grouped query serves a whole page of templates.
+ * recipient type since `now - 30 days`. One grouped query serves a whole page of templates.
  *
  * @param db the database or a transaction
  * @param since the start of the window, from the injected clock

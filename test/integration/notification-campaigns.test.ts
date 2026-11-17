@@ -66,14 +66,14 @@ describe('POST /admin/notification-campaigns', () => {
   it('refuses HTML, an unknown placeholder, a blank text, a link that leaves the site and an empty audience, by field', async () => {
     const res = await owner.post('/admin/notification-campaigns', {
       ...CAMPAIGN_INPUT,
-      content: { en: { title: '  ', body: '<b>Hi</b> {{orderId}}' }, ar: { title: 'ok', body: 'ok' } },
+      content: { title: '  ', body: '<b>Hi</b> {{orderId}}' },
       link: { customer: 'https://evil.example/x', merchant: '//evil.example' },
       audience: {},
     });
     expect(res.status).toBe(422);
     expect(res.body.code).toBe('VALIDATION_FAILED');
     expect(fieldsOf(res.body).sort()).toEqual(
-      ['audience', 'content.en.body', 'content.en.body', 'content.en.title', 'link.customer', 'link.merchant'].sort(),
+      ['audience', 'content.body', 'content.body', 'content.title', 'link.customer', 'link.merchant'].sort(),
     );
   });
 
@@ -124,7 +124,7 @@ describe('the broadcasts permissions', () => {
         '/admin/notification-campaigns/audience-preview',
         { audience: { staff: {} }, channels: ['in_app'], purpose: 'service' },
       ],
-      ['POST', `/admin/notification-campaigns/${id}/preview`, { locale: 'en', channel: 'email' }],
+      ['POST', `/admin/notification-campaigns/${id}/preview`, { channel: 'email' }],
       ['POST', `/admin/notification-campaigns/${id}/test`, {}],
       ['POST', `/admin/notification-campaigns/${id}/send`, { confirmRecipients: 1 }],
       ['POST', `/admin/notification-campaigns/${id}/schedule`, { scheduledAt: at(DAY) }],
@@ -142,9 +142,7 @@ describe('the broadcasts permissions', () => {
     const reader = await adminWith(t, ['broadcasts:read']);
     expect((await reader.get('/admin/notification-campaigns')).status).toBe(200);
     expect((await reader.get(`/admin/notification-campaigns/${id}`)).status).toBe(200);
-    expect(
-      (await reader.post(`/admin/notification-campaigns/${id}/preview`, { locale: 'en', channel: 'email' })).status,
-    ).toBe(200);
+    expect((await reader.post(`/admin/notification-campaigns/${id}/preview`, { channel: 'email' })).status).toBe(200);
     expect((await reader.patch(`/admin/notification-campaigns/${id}`, { name: 'x' })).status).toBe(403);
     expect((await reader.post(`/admin/notification-campaigns/${id}/cancel`)).status).toBe(403);
   });
@@ -193,6 +191,41 @@ describe('GET /admin/notification-campaigns/:id', () => {
     const res = await owner.get('/admin/notification-campaigns/999999');
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('NOT_FOUND');
+  });
+
+  it('shows a finished campaign whose stored audience has no segment left, and refuses a copy of it until staff choose one', async () => {
+    // What migration 0035 leaves of a campaign that was for another language only: the same row with no `customers` segment
+    // (decision 039, plan 4.6). A segment that is present with no filter would mean every customer, so the key is gone instead.
+    const finished = await createDraft(owner);
+    const { db } = await testDb();
+    await db
+      .update(s.notificationCampaigns)
+      .set({ status: 'sent', audience: {} })
+      .where(eq(s.notificationCampaigns.id, finished.id));
+    const detail = await owner.get(`/admin/notification-campaigns/${finished.id}`);
+    expect(detail.status).toBe(200);
+    expect(detail.body).toMatchObject({ status: 'sent', audience: {} });
+
+    // The console's Duplicate sends the stored audience as it is: it reaches nobody, so the copy is refused as `empty`.
+    const copy = await owner.post('/admin/notification-campaigns', {
+      ...CAMPAIGN_INPUT,
+      name: 'Copy',
+      audience: detail.body.audience,
+    });
+    expect(copy.status).toBe(422);
+    expect(copy.body.errors[0]).toMatchObject({ field: 'audience', code: 'empty' });
+
+    // A draft the migration left in this state is refused at send, and staff can choose an audience again.
+    const draft = await createDraft(owner);
+    await db.update(s.notificationCampaigns).set({ audience: {} }).where(eq(s.notificationCampaigns.id, draft.id));
+    const send = await owner.post(`/admin/notification-campaigns/${draft.id}/send`, { confirmRecipients: 1 });
+    expect(send.status).toBe(422);
+    expect(send.body.errors[0]).toMatchObject({ field: 'audience', code: 'empty' });
+    const chosen = await owner.patch(`/admin/notification-campaigns/${draft.id}`, {
+      audience: { customers: { hasAccount: true } },
+    });
+    expect(chosen.status).toBe(200);
+    expect(chosen.body.audience).toEqual({ customers: { hasAccount: true } });
   });
 });
 
@@ -258,54 +291,54 @@ describe('DELETE /admin/notification-campaigns/:id', () => {
 });
 
 describe('POST /admin/notification-campaigns/:id/preview', () => {
-  it('renders an Arabic email right to left with a sample name and the link of the audience, and writes nothing', async () => {
+  it('renders an email with a sample name and the link of the audience, and writes nothing', async () => {
     const draft = await createDraft(owner);
     const { db } = await testDb();
     const before = (await db.select().from(s.auditLogs)).length;
     const res = await owner.post(`/admin/notification-campaigns/${draft.id}/preview`, {
-      locale: 'ar',
       channel: 'email',
       audience: 'customer',
     });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
-      subject: 'صيانة لـ Daniel',
+      subject: 'Maintenance for Daniel',
       format: 'html',
       note: 'A sample with made-up details.',
     });
-    expect(res.body.body).toStartWith('<div dir="rtl" lang="ar"');
+    expect(res.body.body).toStartWith('<div dir="ltr" lang="en"');
     expect(res.body.body).toContain('/account/orders');
     expect((await db.select().from(s.auditLogs)).length).toBe(before);
   });
 
-  it('says when Arabic falls back to English, renders Telegram as text and uses the caller name for staff', async () => {
-    const draft = await createDraft(owner, { content: { en: CAMPAIGN_INPUT.content.en } });
-    const ar = await owner.post(`/admin/notification-campaigns/${draft.id}/preview`, {
-      locale: 'ar',
-      channel: 'in_app',
-    });
-    expect(ar.body).toMatchObject({ subject: 'Maintenance for Daniel', format: 'text' });
-    expect(ar.body.note).toContain('no Arabic text');
+  it('renders Telegram as text, uses the caller name for staff and refuses a language sent along', async () => {
+    const draft = await createDraft(owner);
+    const inApp = await owner.post(`/admin/notification-campaigns/${draft.id}/preview`, { channel: 'in_app' });
+    expect(inApp.body).toMatchObject({ subject: 'Maintenance for Daniel', format: 'text' });
     const staff = await owner.post(`/admin/notification-campaigns/${draft.id}/preview`, {
-      locale: 'en',
       channel: 'telegram',
       audience: 'staff',
     });
     expect(staff.body).toMatchObject({ subject: 'Maintenance for Rami K.', format: 'text' });
-    expect(
-      (await owner.post('/admin/notification-campaigns/999999/preview', { locale: 'en', channel: 'email' })).status,
-    ).toBe(404);
-    expect(
-      (await owner.post(`/admin/notification-campaigns/${draft.id}/preview`, { locale: 'fr', channel: 'email' }))
-        .status,
-    ).toBe(422);
+    expect((await owner.post('/admin/notification-campaigns/999999/preview', { channel: 'email' })).status).toBe(404);
+    // A language is no part of the request any more (decision 039): the strict body refuses `locale` like any unknown key.
+    for (const url of ['preview', 'test']) {
+      const refused = await owner.post(`/admin/notification-campaigns/${draft.id}/${url}`, {
+        locale: 'tr',
+        channel: 'in_app',
+        channels: ['in_app'],
+      });
+      expect(refused.status, url).toBe(422);
+    }
+    expect((await owner.post(`/admin/notification-campaigns/${draft.id}/preview`, { channel: 'sms' })).status).toBe(
+      422,
+    );
   });
 });
 
 describe('POST /admin/notification-campaigns/:id/test', () => {
   it('makes an in-app item and one transactional email for the caller only, with an audit row', async () => {
     const draft = await createDraft(owner);
-    const res = await owner.post(`/admin/notification-campaigns/${draft.id}/test`, { locale: 'ar' });
+    const res = await owner.post(`/admin/notification-campaigns/${draft.id}/test`, {});
     expect(res.status).toBe(202);
     expect(res.body).toEqual({ queued: ['in_app', 'email'] });
     const { db } = await testDb();
@@ -316,7 +349,7 @@ describe('POST /admin/notification-campaigns/:id/test', () => {
       recipientId: owner.staffId,
       event: 'broadcast.test',
       campaignId: null,
-      variables: { title: 'صيانة لـ Rami K.', body: 'البوابة للقراءة فقط يوم الجمعة.' },
+      variables: { title: 'Maintenance for Rami K.', body: 'The portal is read-only on Friday.' },
     });
     const rows = await db.select().from(s.notifications);
     expect(rows).toHaveLength(1);
@@ -330,7 +363,7 @@ describe('POST /admin/notification-campaigns/:id/test', () => {
     expect(events).toHaveLength(1);
     expect((await campaignAudit(db, draft.id)).at(-1)).toMatchObject({
       action: 'sent test notification',
-      after: { channels: ['in_app', 'email'], locale: 'ar' },
+      after: { channels: ['in_app', 'email'] },
     });
     // Nothing of the campaign itself moved.
     expect((await campaignRow(db, draft.id)).status).toBe('draft');
@@ -416,7 +449,6 @@ describe('templates of the announcement events', () => {
       event: 'broadcast.announcement',
       channel: 'email',
       audience: 'merchant',
-      locale: 'en',
       subject: 'x',
       body: 'y',
       format: 'text',

@@ -39,14 +39,8 @@
       "customers": {}
     },
     "content": {
-      "en": {
-        "title": "Ramadan offer: 10% off all top-ups",
-        "body": "Hello {{name}},\nTop up your wallet this month and get 10% extra."
-      },
-      "ar": {
-        "title": "عرض رمضان: خصم 10% على كل الشحنات",
-        "body": "مرحباً {{name}}،\nاشحن محفظتك هذا الشهر واحصل على 10% إضافية."
-      }
+      "title": "Ramadan offer: 10% off all top-ups",
+      "body": "Hello {{name}},\nTop up your wallet this month and get 10% extra."
     },
     "delivery": {
       "inApp": {

@@ -171,7 +171,7 @@ Sends emails and Telegram messages.
     transition, or the approval of a refund request for an order the system rejected), `payment.failed` (the gateway's failure event) and `refund.declined` (the decline) are written with
     `NotificationService.enqueue` in the transaction of the change they report, so each is a `notifications` row (dedupe key `order.received:<order>`, `order.completed:<order>:<n>`,
     `order.failed:<order>`, `payment.failed:<payment>`, `refund.declined:<refund>`) plus a `notification.send` event that commits and rolls back with the change.
-  - The store balance mails (feature 21, `CustomerWalletMails` in the money module, events registered at boot by `CustomerWalletEventRegistration`, `en` and `ar`
+  - The store balance mails (feature 21, `CustomerWalletMails` in the money module, events registered at boot by `CustomerWalletEventRegistration`, English
     templates) have no job of their own either: `wallet.topup_credited` (a credited top-up), `wallet.topup_rejected` (a rejected one), `wallet.adjusted` (a staff
     adjustment), `wallet.frozen` (a hold by staff or a top-up dispute) and `wallet.order_refunded` (a balance-paid order refunded to the balance, instead of
     `order.failed`) are written with `NotificationService.enqueue` in the transaction of the change (dedupe keys `wallet.topup_credited:<payment>`,
@@ -225,7 +225,7 @@ limiter is per queue, so a broadcast of 50 000 messages never slows a password r
 - **Jobs:** `notification.send` (`BroadcastSendProcessor`, `src/modules/platform/notifications/campaigns/broadcast-send.processor.ts`): sends one campaign
   row of `notifications` through `NotificationDelivery.deliver`, whose campaign branch re-reads the campaign (cancelled: the row fails with
   `The campaign was cancelled.`), the recipient and its eligibility now (suspended, consent withdrawn for marketing, the merchant's announcement switch
-  turned off: the row fails with the reason), renders the campaign in the recipient's language (`ar` falls back to `en`) and sends it. Added by the
+  turned off: the row fails with the reason), renders the campaign (one title and one body, English) and sends it. Added by the
   campaign fan-out with `QueuesService.addBulk`, after each chunk's commit.
 - **Payload:** `{ notificationId, channel }` (the row and `email` or `telegram`; never an address or a text).
 - **Idempotency:** the job id is `notification-<row id>`, so the fan-out, a repeated chunk or a later re-add makes one job per row. The send is guarded
@@ -513,7 +513,7 @@ Sends an approved storefront refund to its payment gateway (scenario b2c-refund 
 
 The automatic reminder of abandoned checkouts (feature 19, RULES checkouts 3): emails, once, the checkouts that waited `abandonedMinutes` and whose customer agreed to marketing email.
 
-- **Trigger:** the scheduler `checkout-recovery-sweep` every 5 minutes (`*/5 * * * *`). A tick selects the due checkouts (`canRecoverSql`: consent and an active customer, no recovery email yet, not paid, created at least `abandonedMinutes` ago (the storefront policy, 5 to 1440, default 60) and at most 30 days ago), at most 200, oldest first (`checkout_sessions_created_idx`), and only customers whose language can be written in now (the language's own switched-on `checkout.abandoned` template, or the English one, which covers every language), so checkouts that cannot be mailed never fill the batch and block the others.
+- **Trigger:** the scheduler `checkout-recovery-sweep` every 5 minutes (`*/5 * * * *`). A tick selects the due checkouts (`canRecoverSql`: consent and an active customer, no recovery email yet, not paid, created at least `abandonedMinutes` ago (the storefront policy, 5 to 1440, default 60) and at most 30 days ago), at most 200, oldest first (`checkout_sessions_created_idx`), and only while the `checkout.abandoned` email template is switched on (nothing is selected while it is missing or off), so checkouts that cannot be mailed never fill the batch and block the others.
 - **Payload:** none (a manual run carries `{ runId }`). The tick reads everything from Postgres.
 - **What it does:** in one transaction it runs the manual send's own `RecoveryQueue`: reads the selected sessions `FOR UPDATE` in id order, decides each again (the rule can have changed since the selection), probes the `checkout.abandoned` template, claims the checkout (`recovery_emailed_at`, guarded by `IS NULL`) and writes one `checkout.recovery` outbox event for it (queue `notifications`, above). It sends no mail itself.
 - **Idempotency:** the claim. A checkout is mailed at most once whether the reminder, a staff send or two ticks reach it first; the loser of a race finds `recovery_emailed_at` set and skips it. A staff send after the reminder answers `already_emailed`.

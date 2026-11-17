@@ -65,7 +65,6 @@ describe('scenario b2c-account: managing a customer account', () => {
       name: 'Daniel Whitmore',
       email,
       country: 'GB',
-      locale: 'en',
       password: { mode: 'reset_link' },
     });
     expect((await staff.post('/admin/customers', body('taken@example.com'))).body).toMatchObject({

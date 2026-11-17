@@ -9,7 +9,6 @@ const stored = {
   company: 'Zain',
   phone: '',
   country: 'JO',
-  locale: 'en',
   address: '',
   taxId: '',
   internalNotes: '',
@@ -39,11 +38,16 @@ describe('kindOfClientChange', () => {
 
 describe('detailChanges', () => {
   it('keeps only the keys whose value differs from the stored one', () => {
-    const result = detailChanges(stored, { name: 'Zain Mobile Hub', phone: '+962 7', country: 'JO', locale: 'ar' });
+    const result = detailChanges(stored, {
+      name: 'Zain Mobile Hub',
+      phone: '+962 7',
+      country: 'JO',
+      address: 'Abdali',
+    });
     expect(result).toEqual({
-      columns: { phone: '+962 7', locale: 'ar' },
-      before: { phone: '', locale: 'en' },
-      after: { phone: '+962 7', locale: 'ar' },
+      columns: { phone: '+962 7', address: 'Abdali' },
+      before: { phone: '', address: '' },
+      after: { phone: '+962 7', address: 'Abdali' },
       emailChanged: false,
       nameChanged: false,
     });

@@ -6,7 +6,6 @@
   "body": {
     "id": 1,
     "name": "Apple",
-    "nameAr": "",
     "type": "imei",
     "allowedGroupIds": [],
     "sort": 1,

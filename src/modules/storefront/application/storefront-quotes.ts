@@ -142,6 +142,25 @@ export class StorefrontQuotes {
   }
 
   /**
+   * Finds which of some services are on sale now: sellable for the retail group, listed, and with a retail price.
+   *
+   * Why: the rule that serves `GET /store/v1/services/:slug` (`price` answers for exactly these), without a buyer: the buyer's
+   * currency and tax change the price shown, never whether the page exists. An old address of a service (decision 039, plan 30
+   * section 4.5) leads to the page of that service only when the page answers.
+   *
+   * @param db the database or a transaction
+   * @param serviceIds the services to look at
+   * @param retailGroupId the retail group (from {@link StorefrontQuotes.retailGroupId})
+   * @returns the ids on sale (the others are absent)
+   */
+  async onSale(db: DbExecutor, serviceIds: readonly number[], retailGroupId: number): Promise<Set<number>> {
+    const sellable = await this.listedSellable(db, serviceIds, retailGroupId);
+    const quotes = await this.retail.quotes(db, [...sellable.keys()], this.clock.now());
+    // The same test as `pricedSellable`: only a price staff set for the retail group is a retail price.
+    return new Set([...sellable.keys()].filter((id) => (quotes.get(id)?.retailPrice ?? null) !== null));
+  }
+
+  /**
    * Prices some services.
    *
    * @param db the database or a transaction
@@ -160,7 +179,7 @@ export class StorefrontQuotes {
   /**
    * Prices services that already passed the sellable and listed rule.
    *
-   * Why: feature 29: the search re-checks its hits with its own rule (`SearchableIds`: sellable, priced, an English listing) and must
+   * Why: feature 29: the search re-checks its hits with its own rule (`SearchableIds`: sellable, priced, a switched-on listing) and must
    * not read the sellable and listing rows a second time to price the survivors; `priced` is this after `listedSellable`.
    *
    * @param db the database or a transaction

@@ -230,7 +230,7 @@
           "successStatus": 200,
           "query": "_start=0&_end=200&_sort=event&_order=asc plus audience=customer|merchant|staff (absent when the console asks for all audiences) and channel=email|telegram (hooks/useTemplates.ts:18-31, EmailsTab.tsx:24-28). An isActive filter is documented but not sent.",
           "request": "",
-          "response": "JSON array + x-total-count. Row = notification_templates columns; event is the key text (order.completed); channel email|telegram; audience customer|merchant|staff. Optional sentLast30Days = count of notifications with the same event, the same channel, recipient_type = the audience mapping (audience customer→customer, staff→staff, merchant→client; notifications.recipient_type is closed to staff|client|customer), status 'sent' and sent_at >= now() − 30 days; the count spans all locales, so every locale row of the same (event, channel, audience) shows the same number (null or absent hides the column, M170). GET /admin/notifications sends recipientType as stored.",
+          "response": "JSON array + x-total-count. Row = notification_templates columns; event is the key text (order.completed); channel email|telegram; audience customer|merchant|staff. Optional sentLast30Days = count of notifications with the same event, the same channel, recipient_type = the audience mapping (audience customer→customer, staff→staff, merchant→client; notifications.recipient_type is closed to staff|client|customer), status 'sent' and sent_at >= now() − 30 days; there is one template per (event, channel, audience), and templates have no language (decision 039, B226) (null or absent hides the column, M170). GET /admin/notifications sends recipientType as stored.",
           "errors": [
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks notifications:read", "ui": "Customer emails tab hidden" }
           ],
@@ -254,10 +254,10 @@
           "key": "POST /admin/notification-templates",
           "successStatus": 201,
           "query": "",
-          "request": "Body {event, channel, audience, locale, subject, body, isActive}. event = dot-separated lowercase key such as order.completed; locale 'en' or 'en-GB' style; an email needs a subject; Telegram templates send subject ''; body non-blank (mock templateRoutes.ts:34-63). Placeholders use double braces {{customerName}}. (event, channel, audience, locale) is unique: a duplicate is a 422 on event (templateRoutes.ts:116-125). Audit.",
+          "request": "Body {event, channel, audience, subject, body, isActive}. event = dot-separated lowercase key such as order.completed; templates have no language (decision 039, B226: a `locale` sent along is an unknown key and is dropped); an email needs a subject; Telegram templates send subject ''; body non-blank (mock templateRoutes.ts:34-63). Placeholders use double braces {{customerName}}. (event, channel, audience) is unique: a duplicate is a 422 on event (templateRoutes.ts:116-125). Audit.",
           "response": "The created template.",
           "errors": [
-            { "status": 422, "code": "VALIDATION_FAILED", "when": "bad event key or duplicate ('A template for this event, channel and language already exists.'), bad channel/audience/locale, missing subject for email, empty body", "ui": "messages under the dialog fields" },
+            { "status": 422, "code": "VALIDATION_FAILED", "when": "bad event key or duplicate ('A template for this event, channel and audience already exists.'), bad channel/audience, missing subject for email, empty body", "ui": "messages under the dialog fields" },
             { "status": 403, "code": "FORBIDDEN", "when": "caller lacks notifications:create", "ui": "dialog error slot" }
           ],
           "assumed": true,
@@ -267,7 +267,7 @@
           "key": "PATCH /admin/notification-templates/:id",
           "successStatus": 200,
           "query": "",
-          "request": "Only the changed subject, body, isActive (TemplateDialog.tsx:62-65); the Send switch sends {isActive}. event, channel, audience and locale are fixed after create (the dialog locks them, TemplateDialog.tsx:47): refuse a change with 422. Turning off the customer emails order.received, order.completed, order.failed is allowed (the console confirms first, lib/templates.ts:52-61). Audit.",
+          "request": "Only the changed subject, body, isActive (TemplateDialog.tsx:62-65); the Send switch sends {isActive}. event, channel and audience are fixed after create (the dialog locks them, TemplateDialog.tsx:47): refuse a change with 422. Turning off the customer emails order.received, order.completed, order.failed is allowed (the console confirms first, lib/templates.ts:52-61). Audit.",
           "response": "The updated template.",
           "errors": [
             { "status": 404, "code": "NOT_FOUND", "when": "no template with that id", "ui": "dialog error slot" },
@@ -379,7 +379,7 @@
         "Currencies: rateToBase = units per 1 USD (M167), > 0; markupPercent 0-10; decimals 0-4; code ^[A-Z]{3}$ unique; USD is the base (rate 1, no markup, no refresh); a manual rate change stamps rateUpdatedAt; isStale = non-base and rateUpdatedAt null or older than 24 h, the same rule as the dashboard fx_stale item (settings/lib/currencies.ts:8-27; dashboard/mocks/attentionStorefront.ts:83-94). Storefront prices use the session's locked fx (scenario b2c-paid step 3).",
         "refresh-fx refreshes all active non-base currencies in one provider call, stamps rateUpdatedAt, reports refreshed/failed/source and writes audit_logs (map tables currencies, audit_logs; M164).",
         "Tax rates: country immutable after create; ratePercent 0-100; validFrom required, validTo null or >= validFrom; no delete (map ops LSCU, M163); the server picks the rate in force for the customer's country at checkout (scenario b2c-paid step 3), so overlapping windows for one country and region must be refused.",
-        "Templates: unique per (event, channel, audience, locale) -> 422 on event; email needs a subject; event/channel/audience/locale fixed after create; an inactive template is not sent; preview never sends and leaves unknown {{placeholders}} visible (mock templateRoutes.ts:14-63, 116-125).",
+        "Templates: unique per (event, channel, audience), with no language (decision 039, B226) -> 422 on event; email needs a subject; event/channel/audience fixed after create; an inactive template is not sent; preview never sends and leaves unknown {{placeholders}} visible (mock templateRoutes.ts:14-63, 116-125).",
         "Notification log and webhook log are read-only; recipients are masked server-side; a webhook retry is refused for delivered (409 DELIVERY_SUCCEEDED) and otherwise queues a new signed attempt immediately (mock logRoutes.ts:22-42; map EVENT rows outbound-hmac).",
         "Every write in this feature (settings, policies, gateways, currencies, refresh, tax, templates, retry) writes audit_logs with before/after (map PATCH /admin/settings and refresh-fx tables; demo logAudit in 12-state-b2c.js:405-425)."
       ],

@@ -1,8 +1,8 @@
-// Renders a campaign's message for one person and one channel (feature 23, plan section 6): language pick with English fallback,
-// `{{name}}`, the absolute link, the RTL HTML part of an email, the marketing footer and one-click unsubscribe headers. Pure.
+// Renders a campaign's message for one person and one channel (feature 23, plan section 6): `{{name}}`, the absolute link, the HTML
+// part of an email, the marketing footer and one-click unsubscribe headers. English only (decision 039). Pure.
 import type { NotificationAudience, NotificationCampaignPurpose } from '../../db/schema';
 import { TELEGRAM_MAX_TEXT, emailHtml, renderText } from '../template-rules';
-import type { CampaignContent, CampaignLink, CampaignText } from './campaign-rules';
+import type { CampaignContent, CampaignLink } from './campaign-rules';
 import type { CampaignChannel } from './notification-audiences';
 
 /** What a campaign stores that rendering needs. */
@@ -14,8 +14,6 @@ export interface RenderableCampaign {
 
 /** Who and where the message is for. */
 export interface RenderTarget {
-  /** The reader's language (`en`, `ar`, `ar-JO`, ...). */
-  readonly locale: string;
   /** The value of `{{name}}`. */
   readonly name: string;
   readonly audience: NotificationAudience;
@@ -38,20 +36,6 @@ export interface RenderedCampaign {
   readonly html?: string;
   /** Extra email headers (`List-Unsubscribe`). */
   readonly headers?: Readonly<Record<string, string>>;
-  /** Which language was used (`ar` falls back to `en` when the campaign has no Arabic). */
-  readonly locale: 'en' | 'ar';
-}
-
-/**
- * Picks the text of a language, falling back to English.
- *
- * @param content the campaign's content
- * @param locale the reader's language
- * @returns the text and the language it is in
- */
-export function pickText(content: CampaignContent, locale: string): { text: CampaignText; locale: 'en' | 'ar' } {
-  if (locale.startsWith('ar') && content.ar) return { text: content.ar, locale: 'ar' };
-  return { text: content.en, locale: 'en' };
 }
 
 /**
@@ -76,53 +60,50 @@ export function linkFor(
  * Renders a campaign for one person and channel.
  *
  * Why: one function makes what the worker sends and what the preview shows. Email: subject = title, a text part and an escaped
- * HTML part (right to left for Arabic); Telegram: title, a blank line, the body, cut at the Bot API limit; in-app: title and body.
+ * HTML part; Telegram: title, a blank line, the body, cut at the Bot API limit; in-app: title and body.
  * A link is added when the campaign has one for the audience and the site's address is known (a staff email carries none). A
  * marketing email carries a way out: the unsubscribe link and headers for a customer, the preferences page for a merchant.
  *
  * @param campaign the content, link and purpose
- * @param target the reader's language, name, audience, channel and addresses
+ * @param target the reader's name, audience, channel and addresses
  * @returns the message
  */
 export function renderCampaign(campaign: RenderableCampaign, target: RenderTarget): RenderedCampaign {
-  const picked = pickText(campaign.content, target.locale);
   const variables = { name: target.name };
-  const title = renderText(picked.text.title, variables, 'text');
-  const body = renderText(picked.text.body, variables, 'text');
+  const title = renderText(campaign.content.title, variables, 'text');
+  const body = renderText(campaign.content.body, variables, 'text');
   const link =
     target.channel === 'in_app'
       ? undefined
       : target.baseUrl === undefined
         ? undefined
         : linkFor(campaign.link, target.audience, target.baseUrl);
-  const arabic = picked.locale === 'ar';
   const parts = [body];
   if (link) parts.push(link);
 
   if (target.channel === 'telegram') {
     const text = [title, '', ...parts].join('\n').slice(0, TELEGRAM_MAX_TEXT);
-    return { subject: title, text, locale: picked.locale };
+    return { subject: title, text };
   }
-  if (target.channel === 'in_app') return { subject: title, text: body, locale: picked.locale };
+  if (target.channel === 'in_app') return { subject: title, text: body };
 
   let headers: Record<string, string> | undefined;
   if (campaign.purpose === 'marketing') {
     if (target.unsubscribe) {
-      parts.push(`${arabic ? 'لإلغاء الاشتراك:' : 'Unsubscribe:'} ${target.unsubscribe.pageUrl}`);
+      parts.push(`Unsubscribe: ${target.unsubscribe.pageUrl}`);
       headers = {
         'List-Unsubscribe': `<${target.unsubscribe.oneClickUrl}>`,
         'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
       };
     } else if (target.preferencesUrl) {
-      parts.push(`${arabic ? 'إدارة الإشعارات:' : 'Manage notifications:'} ${target.preferencesUrl}`);
+      parts.push(`Manage notifications: ${target.preferencesUrl}`);
     }
   }
   const text = parts.join('\n\n');
   return {
     subject: title,
     text,
-    html: emailHtml(text, picked.locale),
+    html: emailHtml(text),
     ...(headers ? { headers } : {}),
-    locale: picked.locale,
   };
 }

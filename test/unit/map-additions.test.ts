@@ -173,7 +173,8 @@ describe('the guards of the loader', () => {
     ['an empty path segment', good({ p: '/admin//x' }), 'path segment "" is not a name or :param'],
     ['a repeated parameter', good({ p: '/admin/:id/x/:id' }), 'path repeats the parameter :id'],
     ['the auth text "session"', good({ a: 'session' }), 'unknown auth value "session"'],
-    ['a missing f', good({ f: undefined }), 'f (the Arabic sentence)'],
+    ['an empty f', good({ f: '' }), 'f (the Arabic sentence), when given, must be'],
+    ['a two-line f', good({ f: 'one\ntwo' }), 'f (the Arabic sentence), when given, must be'],
     ['a missing en', good({ en: undefined }), 'en (the English sentence)'],
     ['a two-line en', good({ en: 'one\ntwo' }), 'en (the English sentence)'],
     ['a missing module', good({ module: undefined }), 'module "undefined" is not a module'],
@@ -216,6 +217,53 @@ describe('the guards of the loader', () => {
       expect(text).toContain('scripts/map-additions/x.mjs row 1 (');
       expect(text).toContain(expected);
     });
+
+  it('accepts a row without the Arabic sentence and gives it the English one (decision 039)', () => {
+    for (const f of [undefined, null]) {
+      const [row] = map.checkAdditions([{ file: 'scripts/map-additions/x.mjs', rows: [good({ f })] }]);
+      expect(row?.f, String(f)).toBe('Tooling test row.');
+      expect(map.expandRow(row!)[0]).toMatchObject({ descriptionAr: 'Tooling test row.' });
+    }
+    // a row that has one keeps it
+    expect(map.checkAdditions([{ file: 'scripts/map-additions/x.mjs', rows: [good()] }])[0]?.f).toBe('اختبار الأدوات');
+  });
+
+  it('accepts the access names as auth text on the surfaces where the map has the word (decision 039)', () => {
+    const where: Record<string, Record<string, unknown>> = {
+      admin: {},
+      client: { s: 'client', g: 'orders', m: 'GET', p: '/client/w0-x' },
+      store: { s: 'store', g: 'catalog', m: 'GET', p: '/store/v1/w0-x' },
+      hooks: { s: 'hooks', g: null, p: '/webhooks/w0/:gateway' },
+      system: { s: 'system', g: null, m: 'GET', p: '/w0-status' },
+    };
+    const cases: Array<[string, string, Record<string, unknown>]> = [
+      ['admin', 'public', { access: 'public' }],
+      ['admin', 'staff-session', { access: 'staff-session' }],
+      ['client', 'public', { access: 'public', turnstile: false }],
+      ['client', 'public + Turnstile', { access: 'public', turnstile: true }],
+      ['client', 'merchant-session', { access: 'merchant-session' }],
+      ['store', 'public', { access: 'public', turnstile: false }],
+      ['store', 'public + Turnstile', { access: 'public', turnstile: true }],
+      ['store', 'checkout-token', { access: 'checkout-token', idempotencyKey: false }],
+      ['store', 'checkout-token + Idempotency-Key', { access: 'checkout-token', idempotencyKey: true }],
+      ['store', 'tracking-token', { access: 'tracking-token' }],
+      ['store', 'link-token', { access: 'link-token' }],
+      ['store', 'customer-session', { access: 'customer-session' }],
+      ['store', 'ticket-token', { access: 'ticket-token' }],
+      ['hooks', 'gateway-signature', { access: 'gateway-signature' }],
+      ['hooks', 'url-secret', { access: 'url-secret' }],
+      ['system', 'public', { access: 'public' }],
+      ['system', 'internal-or-token', { access: 'internal-or-token' }],
+    ];
+    for (const [surface, a, expected] of cases) {
+      const row = good({ ...where[surface], a, f: undefined });
+      expect(message(row), `${surface} ${a}`).toBe('');
+      expect(map.expandRow(row)[0], `${surface} ${a}`).toMatchObject({ ...expected, permission: null, authRaw: a });
+    }
+    // a name keeps to its surface: a merchant session is no staff session
+    expect(message(good({ a: 'merchant-session' }))).toContain('unknown auth value "merchant-session"');
+    expect(message(good({ ...where.store, a: 'staff-session' }))).toContain('unknown auth value "staff-session"');
+  });
 
   it('accepts 302 on a GET and on a CRUD list', () => {
     expect(message(good({ m: 'GET', successStatus: 302 }))).toBe('');
@@ -516,11 +564,22 @@ describe('the route tools pick the sample rows up', () => {
       addition: { file: `${FIXTURES}/sample.mjs`, spec: 'B-TBD w0-sample-ping' },
       frontend: { file: 'src/features/w0-sample/api/sample.ts', fn: 'pingSample' },
     });
-    expect(by.get(CHECK)).toMatchObject({ access: 'public', turnstile: true, permission: null });
+    expect(by.get(CHECK)).toMatchObject({
+      access: 'public',
+      turnstile: true,
+      permission: null,
+      authRaw: 'public + Turnstile',
+    });
     expect(by.get(CHECK)?.successStatus).toBeUndefined();
     expect(by.get(LIST)).toMatchObject({ permission: 'settings:*', successStatus: 200, op: 'list' });
     expect(by.get(CREATE)).toMatchObject({ permission: 'settings:*', successStatus: 201, op: 'create' });
-    expect(by.get(WALLET)).toMatchObject({ permission: 'wallet:read', module: 'money' });
+    // a row without the Arabic sentence (decision 039) carries its English one in its place
+    expect(by.get(WALLET)).toMatchObject({
+      permission: 'wallet:read',
+      module: 'money',
+      description: 'Tooling sample: read a customer wallet figure.',
+      descriptionAr: 'Tooling sample: read a customer wallet figure.',
+    });
     expect(by.get(WALLET)?.successStatus).toBeUndefined();
     // A map endpoint gets no new field.
     expect(by.get('GET /health')?.addition).toBeUndefined();
@@ -593,7 +652,14 @@ describe('the route tools pick the sample rows up', () => {
     expect(line).toContain('Tooling sample: ping.');
     expect(line).toContain('staff-permission `settings:update`');
     expect(line).toContain('success 204');
+    expect(line).toContain('Tooling sample: ping. (اختبار الأدوات: نبضة) · ');
     expect(text).toContain('- **Map**: ');
+    // the bracket only when the two sentences differ (decision 039)
+    const money = await readFile(join(docs, 'contract', 'endpoints', 'money.md'), 'utf8');
+    const wallet = money.slice(money.indexOf(`## ${WALLET}`)).split('\n');
+    const walletLine = wallet.find((candidate) => candidate.startsWith('- **Map addition**')) ?? '';
+    expect(walletLine).toContain('- **Map addition** (B-TBD w0-sample-wallet, ');
+    expect(walletLine).toContain(': Tooling sample: read a customer wallet figure. · staff-permission `wallet:read`');
   });
 
   it('the console-tag check refuses a console route that is in neither the map nor the additions', async () => {

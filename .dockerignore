@@ -23,6 +23,7 @@ scripts/*
 !scripts/setup.ts
 !scripts/first-run.ts
 !scripts/search-keys.ts
+!scripts/english-only-export.ts
 !scripts/lib
 scripts/lib/*
 !scripts/lib/first-run-flow.ts

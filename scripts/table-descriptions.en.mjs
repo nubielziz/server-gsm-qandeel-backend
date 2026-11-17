@@ -70,8 +70,8 @@ export const tableDescriptions = {
   files: 'S3 files and their metadata.',
 
   // H. Storefront and content
-  service_listings: 'The public service page in the storefront: title, slug and SEO fields per language.',
-  content_pages: 'Landing pages, static pages and the blog, in several languages.',
+  service_listings: 'The public service page in the storefront: title, slug and SEO fields.',
+  content_pages: 'Landing pages, static pages and the blog.',
   help_articles: 'The help centre and FAQ; an article can be linked to a service.',
   legal_documents: 'Terms, privacy, refund and cookie documents, with archived versions.',
 
@@ -89,7 +89,7 @@ export const tableDescriptions = {
   support_tickets:
     'Support tickets from storefront customers and merchants, linked to an order, with an SLA deadline.',
   ticket_messages: 'Ticket messages from the customer, a staff member or the system, plus internal notes.',
-  reply_templates: 'Ready-made reply templates for staff, by category and language.',
+  reply_templates: 'Ready-made reply templates for staff, by category.',
 
   // K. Risk and compliance
   imei_checks: 'IMEI checks: blacklist, lock and iCloud, free or before an order, with a cache.',

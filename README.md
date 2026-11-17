@@ -19,7 +19,7 @@ Requirements: Bun ≥ 1.4.4 (`npm i -g bun`), Docker with Compose, and the front
 bun install --frozen-lockfile
 cp .env.example .env
 docker compose up -d          # Postgres, queue Redis, cache Redis, MinIO (+ bucket init), Prometheus
-bun run check                 # typecheck + lint + route manifest/slices + contract docs + OpenAPI documents + tests
+bun run check                 # typecheck + lint + english-only guard + route manifest/slices + contract docs + OpenAPI documents + tests
 bun run dev                   # API on :3000 (GET /health, GET /metrics, API docs at /docs and /reference)
 bun run dev:worker            # worker process: queue workers, schedulers, outbox relay (its own /metrics on :9464)
 ```
@@ -191,6 +191,7 @@ is not on this machine. It also checks that Postgres, both Redis servers and the
 | `bun run typecheck` | `tsc --noEmit` (TypeScript 6, decision 003) |
 | `bun run lint` / `lint:fix` | ESLint (type-aware typescript-eslint, TSDoc on exports, module boundaries, `process.env` only in `src/config`, no `console` in `src`); `lint:fix` applies the safe fixes |
 | `bun run format` / `format:check` | Prettier over the code (Markdown, YAML and generated JSON are left alone) |
+| `bun run english:check` | English only (decision 039): fail when Arabic script, the `ar` locale or right-to-left layout code is back in the code, outside the allowlist of `scripts/english-only.config.json` (Arabic text that people and suppliers type is data and stays: PDF shaping, CSV, plain-text mails) |
 | `bun run docs:openapi` | Regenerate `docs/contract/openapi.json` (every route) and `openapi.public.json` (REST v1, Dhru reference, webhook events) from the route contracts, without any infrastructure |
 | `bun run docs:openapi:check` | Fail when those two files differ from what the contracts generate (CI) |
 | `bun run test` | Unit tests (`src/**/*.spec.ts`), integration tests (`test/integration`) and the lint-rule tests (`test/lint`) with `bun test` |
@@ -204,7 +205,7 @@ is not on this machine. It also checks that Postgres, both Redis servers and the
 | `bun run setup [--email <address> --name "<full name>" [--password-stdin]]` | The first run on a fresh server, production included: applies the migrations, creates the base currency, system ledger accounts and Owner role, and asks for the first admin in a terminal (or takes it from the options; see "First run on a server") |
 | `bun run db:reset [--seed \| --setup [--email ... --name ... [--password-stdin]]]` | Development only: drop and recreate the database, migrate, empty Redis and the files bucket, then seed the demo or run the first run, which asks for the first admin in a terminal (see "Start fresh in development") |
 | `bun run bench:argon2` | Print the time of one argon2id hash for candidate settings (aim for 50-150 ms on the production host) |
-| `bun run check` | Everything CI runs: typecheck, lint, route manifest, contract docs, OpenAPI documents, tests |
+| `bun run check` | Everything CI runs: typecheck, lint, the English-only guard, route manifest, contract docs, OpenAPI documents, tests |
 | `scripts/ci.sh` | The CI pipeline in one command: `bun install --frozen-lockfile`, start the Docker services, `bun run check`; exits non-zero on any failure |
 
 ## CI

@@ -228,33 +228,39 @@ describe('the recovery mail job', () => {
     expect(mailbox(t).sent).toHaveLength(1);
   });
 
-  it("writes in the English template when the customer's own language has none or has it switched off, and in the language's own when it is on", async () => {
+  it('writes with the one template of the event as it stands when the mail goes out, for every customer', async () => {
     const { db } = await testDb();
-    const ar = { locale: 'ar' };
-    const mailTo = async () => {
+    const mailTo = async (name: string) => {
       mailbox(t).reset();
-      const { job } = await queued(ar);
+      const { job } = await queued({ name });
       expect(await runRecoveryMail(t, job)).toEqual({ sent: true });
-      return mailbox(t).sent[0]?.subject;
+      return mailbox(t).sent[0];
     };
-    // No template in the language.
-    expect(await mailTo()).toBe('You left something behind');
-    // A template in the language that is switched off.
-    await insertRecoveryTemplate(db, { locale: 'ar', subject: 'تذكير', isActive: false });
-    expect(await mailTo()).toBe('You left something behind');
-    // Switched on, it is the one used.
-    await db.update(s.notificationTemplates).set({ isActive: true }).where(eq(s.notificationTemplates.locale, 'ar'));
-    expect(await mailTo()).toBe('تذكير');
+    expect((await mailTo('Sam Cole'))?.subject).toBe('You left something behind');
+    // Staff change the template's text: the next mail is written with it, whoever the customer is (templates have no language).
+    await db
+      .update(s.notificationTemplates)
+      .set({ subject: 'Your unlock is waiting', body: 'Hi {{customerName}}, finish here: {{link}}' })
+      .where(eq(s.notificationTemplates.event, 'checkout.abandoned'));
+    const changed = await mailTo('Dana Price');
+    expect(changed?.subject).toBe('Your unlock is waiting');
+    expect(changed?.text).toStartWith('Hi Dana Price, finish here: http://localhost:5175/checkout/resume?token=');
+    expect(changed?.html).toBeUndefined();
   });
 
-  it('ends skipped only when the language and the English template are both unusable, and the claim goes back', async () => {
+  it('ends skipped when the template was switched off or deleted after the checkout was queued, and the claim goes back', async () => {
     const { db } = await testDb();
-    await insertRecoveryTemplate(db, { locale: 'ar', subject: 'تذكير', isActive: false });
-    const { checkout, job } = await queued({ locale: 'ar' });
+    const off = await queued({});
     await db.update(s.notificationTemplates).set({ isActive: false });
-    expect(await runRecoveryMail(t, job)).toEqual({ sent: false, skipped: 'template_off' });
+    expect(await runRecoveryMail(t, off.job)).toEqual({ sent: false, skipped: 'template_off' });
+    expect((await claimOf(db, off.checkout.sessionId))?.recoveryEmailedAt).toBeNull();
+
+    await db.update(s.notificationTemplates).set({ isActive: true });
+    const gone = await queued({});
+    await db.delete(s.notificationTemplates);
+    expect(await runRecoveryMail(t, gone.job)).toEqual({ sent: false, skipped: 'no_template' });
+    expect((await claimOf(db, gone.checkout.sessionId))?.recoveryEmailedAt).toBeNull();
     expect(mailbox(t).sent).toEqual([]);
-    expect((await claimOf(db, checkout.sessionId))?.recoveryEmailedAt).toBeNull();
   });
 
   it('sends nothing for a checkout that was paid meanwhile, a customer who was suspended meanwhile, or one that is gone', async () => {
@@ -414,36 +420,31 @@ describe('the automatic reminder', () => {
     expect((await recoveryJobs(db)).map((job) => job.aggregateId)).toContain(a.sessionId);
   });
 
-  it('selects only the checkouts that can be mailed now, so checkouts that cannot never fill the batch and block the others', async () => {
+  it('selects nothing while the template is off or missing, so checkouts that cannot be mailed never fill the batch', async () => {
     const { db } = await testDb();
-    // English is off; only Arabic has a switched-on template. The three oldest checkouts are English, so they cannot be mailed.
-    const english = [];
-    for (const hours of [9, 8, 7])
-      english.push(await insertAbandoned(t, db, { serviceId: serviceId(), createdAt: ago(hours * 60 * MINUTE) }));
-    const arabic = await insertAbandoned(t, db, {
-      serviceId: serviceId(),
-      createdAt: ago(2 * 60 * MINUTE),
-      locale: 'ar',
-    });
+    const rows = [];
+    for (const hours of [9, 8, 7, 2])
+      rows.push(await insertAbandoned(t, db, { serviceId: serviceId(), createdAt: ago(hours * 60 * MINUTE) }));
+    const sweep = t.app.get(RecoverySweep);
+    // The selection itself has no language: the oldest due checkouts, up to the limit.
+    expect(await dueRecoveryIds(db, { now: clock.now(), delayMinutes: 60 }, 3)).toEqual(
+      rows.slice(0, 3).map((row) => row.sessionId),
+    );
+    // The one template of the event decides for every checkout at once.
     await db.update(s.notificationTemplates).set({ isActive: false });
-    await insertRecoveryTemplate(db, { locale: 'ar', subject: 'تذكير' });
+    expect(await sweep.due()).toEqual([]);
+    await db.delete(s.notificationTemplates);
+    expect(await sweep.due()).toEqual([]);
+    // A customer email of another event, or the event for another audience, does not make the reminder writable.
+    await insertRecoveryTemplate(db, { event: 'support.reply' });
+    await insertRecoveryTemplate(db, { audience: 'merchant' });
+    expect(await sweep.due()).toEqual([]);
+    expect(await tick()).toEqual({ due: 0, queued: 0, skipped: 0 });
+    for (const row of rows) expect((await claimOf(db, row.sessionId))?.recoveryEmailedAt).toBeNull();
 
-    // A batch of three would be all English without the filter; with it, the Arabic checkout is the only one selected.
-    expect(await dueRecoveryIds(db, { now: clock.now(), delayMinutes: 60 }, 3, ['ar'])).toEqual([arabic.sessionId]);
-    expect(await dueRecoveryIds(db, { now: clock.now(), delayMinutes: 60 }, 3, [])).toEqual([]);
-    expect(await t.app.get(RecoverySweep).due()).toEqual([arabic.sessionId]);
-    expect(await tick()).toEqual({ due: 1, queued: 1, skipped: 0 });
-
-    // The English checkouts are untouched and become selectable the moment English is switched on, even though Arabic stays on.
-    for (const row of english) expect((await claimOf(db, row.sessionId))?.recoveryEmailedAt).toBeNull();
-    await db.update(s.notificationTemplates).set({ isActive: true }).where(eq(s.notificationTemplates.locale, 'en'));
-    expect(await t.app.get(RecoverySweep).due()).toEqual(english.map((row) => row.sessionId));
-  });
-
-  it('selects every language while the English template is on, because it covers a language without a template of its own', async () => {
-    const { db } = await testDb();
-    const ar = await insertAbandoned(t, db, { serviceId: serviceId(), createdAt: ago(2 * 60 * MINUTE), locale: 'ar' });
-    expect(await t.app.get(RecoverySweep).due()).toEqual([ar.sessionId]);
+    // On again: every due checkout is selectable, oldest first.
+    await insertRecoveryTemplate(db);
+    expect(await sweep.due()).toEqual(rows.map((row) => row.sessionId));
   });
 
   it('takes the oldest first and no more than the batch limit', async () => {

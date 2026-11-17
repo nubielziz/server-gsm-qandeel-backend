@@ -21,7 +21,6 @@ export interface SellableServiceRow {
   readonly service: Service;
   readonly categoryId: number;
   readonly categoryName: string;
-  readonly categoryNameAr: string;
 }
 
 /**
@@ -43,7 +42,6 @@ export async function findSellableServices(
       service: services,
       categoryId: serviceCategories.id,
       categoryName: serviceCategories.name,
-      categoryNameAr: serviceCategories.nameAr,
     })
     .from(services)
     .innerJoin(serviceCategories, eq(serviceCategories.id, services.categoryId))
@@ -269,7 +267,6 @@ export async function findInStockIds(db: DbExecutor, ids: readonly number[]): Pr
 export interface CategoryCountRow {
   readonly id: number;
   readonly name: string;
-  readonly nameAr: string;
   readonly type: ServiceType;
   readonly sort: number;
   readonly serviceCount: number;
@@ -288,7 +285,6 @@ export async function countServicesByCategory(db: DbExecutor, ids: readonly numb
     .select({
       id: serviceCategories.id,
       name: serviceCategories.name,
-      nameAr: serviceCategories.nameAr,
       type: serviceCategories.type,
       sort: serviceCategories.sort,
       serviceCount: sql<number>`count(*)::int`,

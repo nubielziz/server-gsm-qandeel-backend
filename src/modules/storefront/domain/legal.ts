@@ -58,13 +58,14 @@ export function legalState(version: { isCurrent: boolean; effectiveFrom: Date | 
 }
 
 /**
- * Names a version for the audit log: `Terms of service (EN) 3.2`.
+ * Names a version for the audit log: `Terms of service 3.2`.
  *
- * Why: the demo logs `type (LANG) version` as the label of a legal document entry.
+ * Why: the demo logs the type and the version as the label of a legal document entry; English only (decision 039), so the label
+ * names no language.
  *
- * @param version the type, language and version text
+ * @param version the type and version text
  * @returns the label
  */
-export function legalLabel(version: { type: LegalDocumentType; locale: string; version: string }): string {
-  return `${LEGAL_TYPE_LABEL[version.type]} (${version.locale.toUpperCase()}) ${version.version}`;
+export function legalLabel(version: { type: LegalDocumentType; version: string }): string {
+  return `${LEGAL_TYPE_LABEL[version.type]} ${version.version}`;
 }

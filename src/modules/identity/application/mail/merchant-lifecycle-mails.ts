@@ -4,7 +4,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../../../../config';
 import type { TransactionContext } from '../../../../infra/db';
 import { NotificationService } from '../../../platform';
-import type { Client, ClientLocale } from '../../db/schema';
+import type { Client } from '../../db/schema';
 import {
   MERCHANT_APPROVED_EVENT,
   MERCHANT_KYC_APPROVED_EVENT,
@@ -18,34 +18,26 @@ import {
 export type SecurityNoticeKind = 'temporary_password' | 'twofa_reset' | 'api_key_created';
 
 /**
- * The fixed sentence of each security notice, by language (`{{change}}` of `merchant.security_notice`).
+ * The fixed sentence of each security notice (`{{change}}` of `merchant.security_notice`).
  *
- * Why: the staff action decides the words, never free text, so the notice cannot carry a secret or a staff opinion.
+ * Why: the staff action decides the words, never free text, so the notice cannot carry a secret or a staff opinion. One sentence per kind:
+ * every merchant reads English (decision 039).
  */
-export const SECURITY_NOTICE_PHRASES: Readonly<Record<SecurityNoticeKind, Readonly<Record<ClientLocale, string>>>> = {
-  temporary_password: {
-    en: 'a temporary password was set for your account; you will choose a new one when you sign in',
-    ar: 'تم تعيين كلمة مرور مؤقتة لحسابك، وستختار كلمة جديدة عند تسجيل الدخول',
-  },
-  twofa_reset: {
-    en: 'two-factor sign-in was turned off for your account',
-    ar: 'تم إيقاف التحقق بخطوتين لحسابك',
-  },
-  api_key_created: {
-    en: 'a new API key was created for your account',
-    ar: 'تم إنشاء مفتاح API جديد لحسابك',
-  },
+export const SECURITY_NOTICE_PHRASES: Readonly<Record<SecurityNoticeKind, string>> = {
+  temporary_password: 'a temporary password was set for your account; you will choose a new one when you sign in',
+  twofa_reset: 'two-factor sign-in was turned off for your account',
+  api_key_created: 'a new API key was created for your account',
 };
 
 /** A merchant as these mails need it. */
-type Recipient = Pick<Client, 'id' | 'name' | 'locale'>;
+type Recipient = Pick<Client, 'id' | 'name'>;
 
 /**
  * Writes the lifecycle emails of a merchant.
  *
  * Why: LEAD-DECISIONS section 6 and O-6: a merchant is told when staff approve, suspend or reactivate the account, decide a KYC request, or
  * change something security-relevant (a temporary password, a 2FA reset, a staff-made API key). All are transactional: always sent, whatever the
- * preferences, and also to a suspended merchant. The language is the merchant's `locale`, picked by the notification delivery. The suspension
+ * preferences, and also to a suspended merchant. The mail is the event's one English template (decision 039). The suspension
  * mail does not carry the staff reason (it is an internal note); the KYC rejection carries the note the merchant already reads in `GET /client/kyc`.
  *
  * Side effects: each call inserts a `notifications` row and an `outbox_events` row in the caller's transaction. A missing or switched-off template
@@ -122,13 +114,13 @@ export class MerchantLifecycleMails {
    *
    * @param work the caller's transaction
    * @param client the merchant
-   * @param kind what staff did; the sentence is chosen by the merchant's language
+   * @param kind what staff did; it decides the sentence
    * @returns once the notification and its outbox event are written
    */
   securityNotice(work: Pick<TransactionContext, 'tx'>, client: Recipient, kind: SecurityNoticeKind): Promise<void> {
     return this.send(work, MERCHANT_SECURITY_NOTICE_EVENT, client, {
       merchantName: client.name,
-      change: SECURITY_NOTICE_PHRASES[kind][client.locale],
+      change: SECURITY_NOTICE_PHRASES[kind],
     });
   }
 

@@ -97,6 +97,28 @@ await this.db.runInTransaction(async ({ tx, afterCommit }) => {
 - Not enforced by the database: appending a balanced pair of lines to an older ledger transaction. `postTransaction`
   always creates a new header with its lines, and it is the only writer of ledger rows.
 
+## A data migration that refuses: `0035` (English only, decision 039)
+
+Release 30 is the one release that is not additive (`docs/OPERATIONS.md`, "Release 30"). `0035_english_only_data.sql` is a custom
+migration that deletes the content in other languages (the schema migrations `0036`-`0039` then drop the language columns), and
+it starts with a guard, one `DO` block:
+
+- It refuses while a legal document type has a version in force in another language and none in English.
+- It counts what the release deletes (eleven counts, one `jsonb_build_object`). When everything is zero it passes; otherwise it
+  needs the marker of `scripts/english-only-export.ts`: the newest succeeded `job_runs` row with `job = 'english_only_export'`,
+  whose `result.counts` must equal the live counts, and no counted row other than a person's saved language may have an
+  `updated_at` after the marker's `started_at` (the export's snapshot time). The export script repeats the guard's expression word for word
+  (`COUNTS_SQL`; a test compares the two texts).
+- Template rows inserted by migrations `0023`, `0025` and `0027` earlier in the same run (a fresh database: all pending
+  migrations run in one transaction and `now()` is its start) are not content and are not counted.
+- A database whose name ends in `_test` skips the guard (the tests truncate every table) unless it is forced on with
+  `ALTER DATABASE <name> SET gsm.english_only_guard = 'on'`, as `test/integration/english-only-migration.test.ts` does on its
+  scratch databases. Those tests fill a database at `0034` with raw SQL and migrate it to the newest file; after the migration
+  they assert by id only, so they stay valid while `0036`-`0039` drop the columns.
+
+`legacy_slugs` (storefront, `0034`) remembers the addresses in other languages that `0035` deletes; nothing writes it later
+except the demo seed.
+
 ## Tests
 
 `test/integration/db-*.test.ts` run against `gsm_test`, which the first database test of a run migrates
@@ -165,8 +187,8 @@ Types and nullability that the map and decision 027 do not settle (guesses):
   without decrypting it.
 - Defaults: `currencies.decimals` 2, `client_groups.kind` `b2b`, `services.cost_currency` and `suppliers.currency` `USD`,
   free-text fields without a meaning `''`, initial states from the sources (`pending`, `new`, `firing`, ...).
-- Extra constraints read from error codes and scenarios: one default and one retail merchant group, one current legal
-  document per type and locale, one current commission assignment per merchant, one payment per gateway reference, unique
+- Extra constraints read from error codes and scenarios: one default and one retail merchant group, one legal document
+  version in force per type (decision 039), one current commission assignment per merchant, one payment per gateway reference, unique
   `(client_id, idempotency_key)` on orders, unique non-void inventory `code_hash`, `(scope = 'global') = (target_id is null)`
   on pricing rules.
 
@@ -203,4 +225,4 @@ lead's migration `0003` adds their CHECKs, and each feature that owns a column s
 - From migration `0003`: `services.effective_cost` is a derived column the catalog module maintains (`recomputeEffectiveCost`, B117): the greater of
   `services.cost` and the first active supplier link's `credit x credit_rate`; floors, `belowFloor` and the `cost` on the wire
   read it.
-  document per type and locale, one current assignment per merchant (`commission_assignments` with `ends_at` null), one payment per gateway reference, unique
+  Also: one legal document version in force per type, one current assignment per merchant (`commission_assignments` with `ends_at` null), one payment per gateway reference, unique

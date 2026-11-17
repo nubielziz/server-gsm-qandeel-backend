@@ -51,16 +51,17 @@ export const CONTENT_PAGE_STATUSES = ['draft', 'published', 'noindex'] as const;
 export type ContentPageStatus = (typeof CONTENT_PAGE_STATUSES)[number];
 
 /**
- * The public service page in the storefront: title, slug and SEO fields per language.
+ * The public service page in the storefront: title, slug, SEO fields and the facts the shop filters by; one per service.
  *
- * Why: The public service page of the storefront, per language: title, slug and SEO (routes /admin/service-listings).
+ * Why: The public service page of the storefront: title, slug and SEO (routes /admin/service-listings). English only (decision
+ * 039, B224): the map's `locale` column is dropped (`REMOVED` in test/schema/structure.test.ts), a service has one listing and a
+ * slug is unique for the site.
  */
 export const serviceListings = pgTable(
   'service_listings',
   {
     id: pk(),
     serviceId: fk((): AnyPgColumn => services.id).notNull(),
-    locale: text().notNull().default('en'),
     slug: text().notNull(),
     publicTitle: text().notNull(),
     summary: text().notNull().default(''),
@@ -80,14 +81,15 @@ export const serviceListings = pgTable(
     listedAt: timestampTz(),
     /** non-rejected orders of the service in the last 30 days, written only by the popularity job (feature 22) */
     sales30d: integer('sales_30d').notNull().default(0),
-    /** the service's picture (a `files` row under `media/`); shared by every language row of the service (feature 22) */
+    /** the service's picture (a `files` row under `media/`; feature 22) */
     imageFileId: fk((): AnyPgColumn => files.id),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
-    unique('service_listings_service_locale_uq').on(t.serviceId, t.locale),
-    unique('service_listings_slug_uq').on(t.locale, t.slug),
+    // One listing per service (also the index behind the foreign key) and one slug for the site (decision 039).
+    unique('service_listings_service_uq').on(t.serviceId),
+    unique('service_listings_slug_uq').on(t.slug),
     index('service_listings_listed_idx').on(t.isListed, t.sort),
     index('service_listings_public_title_idx').on(t.publicTitle),
     index('service_listings_og_file_id_idx').on(t.ogFileId),
@@ -102,9 +104,10 @@ export type ServiceListing = typeof serviceListings.$inferSelect;
 export type NewServiceListing = typeof serviceListings.$inferInsert;
 
 /**
- * Landing pages, static pages and the blog, in several languages.
+ * Landing pages, static pages and the blog.
  *
- * Why: Landing pages, static pages and the blog, in several languages (routes /admin/content-pages).
+ * Why: Landing pages, static pages and the blog (routes /admin/content-pages). English only (decision 039, B224): the map's
+ * `locale` column is dropped (`REMOVED` in test/schema/structure.test.ts) and a slug is unique for the site.
  */
 export const contentPages = pgTable(
   'content_pages',
@@ -112,7 +115,6 @@ export const contentPages = pgTable(
     id: pk(),
     kind: text().$type<ContentPageKind>().notNull(),
     slug: text().notNull(),
-    locale: text().notNull().default('en'),
     title: text().notNull(),
     bodyMd: text().notNull().default(''),
     seoTitle: text().notNull().default(''),
@@ -126,7 +128,7 @@ export const contentPages = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    unique('content_pages_slug_uq').on(t.locale, t.slug),
+    unique('content_pages_slug_uq').on(t.slug),
     check('content_pages_kind_check', inList(t.kind, CONTENT_PAGE_KINDS)),
     check('content_pages_status_check', inList(t.status, CONTENT_PAGE_STATUSES)),
     index('content_pages_kind_status_idx').on(t.kind, t.status),
@@ -144,7 +146,8 @@ export type NewContentPage = typeof contentPages.$inferInsert;
 /**
  * The help centre and FAQ; an article can be linked to a service.
  *
- * Why: The help centre and FAQ; an article can be linked to a service (routes /admin/help-articles).
+ * Why: The help centre and FAQ; an article can be linked to a service (routes /admin/help-articles). English only (decision 039,
+ * B224): the map's `locale` column is dropped (`REMOVED` in test/schema/structure.test.ts).
  */
 export const helpArticles = pgTable(
   'help_articles',
@@ -154,7 +157,6 @@ export const helpArticles = pgTable(
     category: text().notNull(),
     question: text().notNull(),
     answerMd: text().notNull(),
-    locale: text().notNull().default('en'),
     serviceId: fk((): AnyPgColumn => services.id),
     sort: integer().notNull().default(0),
     isPublished: boolean().notNull().default(false),
@@ -188,7 +190,11 @@ export type LegalDocumentType = (typeof LEGAL_DOCUMENT_TYPES)[number];
 /**
  * Terms, privacy, refund and cookie documents, with archived versions.
  *
- * Why: Terms, privacy, refund and cookie documents with archived versions (routes /admin/legal-documents).
+ * Why: Terms, privacy, refund and cookie documents with archived versions (routes /admin/legal-documents). English only (decision
+ * 039, B224), with one exception: `locale` stays as an archive tag. A version in another language that a consent record references
+ * is the proof of what a person accepted, so migration 0035 retires it (`is_current = false`) instead of deleting it. Every version
+ * that can be created or published is `en`: `legal_documents_locale_check` forbids a non-English version in force, and
+ * `legal_documents_current_uq` allows one version in force per type.
  */
 export const legalDocuments = pgTable(
   'legal_documents',
@@ -196,6 +202,7 @@ export const legalDocuments = pgTable(
     id: pk(),
     type: text().$type<LegalDocumentType>().notNull(),
     version: text().notNull(),
+    /** The archive tag: `en`, or the code of a retired version kept as evidence (never in force: the CHECK). */
     locale: text().notNull().default('en'),
     bodyMd: text().notNull(),
     /** null while the version is a draft (NOT_A_DRAFT) */
@@ -210,8 +217,9 @@ export const legalDocuments = pgTable(
     check('legal_documents_type_check', inList(t.type, LEGAL_DOCUMENT_TYPES)),
     unique('legal_documents_version_uq').on(t.type, t.locale, t.version),
     uniqueIndex('legal_documents_current_uq')
-      .on(t.type, t.locale)
+      .on(t.type)
       .where(sql`${t.isCurrent}`),
+    check('legal_documents_locale_check', sql`${t.locale} = 'en' or not ${t.isCurrent}`),
     index('legal_documents_created_by_idx').on(t.createdBy),
   ],
 );
@@ -418,3 +426,52 @@ export const searchIndexState = pgTable(
 
 /** A row read from `search_index_state`. */
 export type SearchIndexState = typeof searchIndexState.$inferSelect;
+
+// --- Old addresses (feature 30, English only, decision 039, plan section 4.5) --------------------------------------------------------
+// Owned by storefront (`additionalTables` in scripts/module-map.mjs). Migration 0035 fills it once from the addresses in other
+// languages it deletes; nothing writes it after that (the demo seed adds two rows for the website's e2e).
+
+/**
+ * Kinds of an old storefront address: a service page, a content page or a help article.
+ *
+ * Why: decision 039 (plan 30 section 4.5): `GET /store/v1/legacy-slugs/:kind/:slug` answers for these three; the help centre
+ * addresses an article by its leading id, so a `help` slug is that id.
+ */
+export const LEGACY_SLUG_KINDS = ['service', 'page', 'help'] as const;
+
+/** One value of {@link LEGACY_SLUG_KINDS}. */
+export type LegacySlugKind = (typeof LEGACY_SLUG_KINDS)[number];
+
+/**
+ * An address in another language that no longer exists, remembered so the English page that receives it can send the reader on.
+ *
+ * Why: decision 039 (English only): every URL under the retired second-language prefix answers 308 to the same path under `/en`; when that path names a service,
+ * page or help article that only existed in another language, the website asks this table where to go (the English page of the
+ * same service, else the list; a page: the home page; a help article: the help centre). `service_id` cascades: an old address
+ * must never keep a service from being deleted, and a deleted service's old address is simply gone (404).
+ */
+export const legacySlugs = pgTable(
+  'legacy_slugs',
+  {
+    id: pk(),
+    kind: text().$type<LegacySlugKind>().notNull(),
+    /** the old slug; for `help` the article id the old address started with */
+    slug: text().notNull(),
+    /** the service of an old service address; null for a page or a help article, or when no service is known */
+    serviceId: fk((): AnyPgColumn => services.id, 'cascade'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique('legacy_slugs_kind_slug_uq').on(t.kind, t.slug),
+    check('legacy_slugs_kind_check', inList(t.kind, LEGACY_SLUG_KINDS)),
+    check('legacy_slugs_service_check', sql`${t.serviceId} is null or ${t.kind} = 'service'`),
+    index('legacy_slugs_service_id_idx').on(t.serviceId),
+  ],
+);
+
+/** A row read from `legacy_slugs`. */
+export type LegacySlug = typeof legacySlugs.$inferSelect;
+
+/** A row to insert into `legacy_slugs`. */
+export type NewLegacySlug = typeof legacySlugs.$inferInsert;

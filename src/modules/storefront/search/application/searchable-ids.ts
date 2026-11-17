@@ -1,9 +1,9 @@
 // SearchableIds: the one rule of what the storefront search may hold and show (feature 29, plan section 4.1), used by the index build
-// and by every re-check of a hit: sellable for the retail group, a retail price row, an English listing with `is_listed`.
+// and by every re-check of a hit: sellable for the retail group, a retail price row, a listing with `is_listed`.
 import { Injectable } from '@nestjs/common';
 import type { DbExecutor } from '../../../../infra/db';
 import { ClientGroupDirectory, type SellableService, StorefrontServices } from '../../../catalog';
-import { listedServiceIdsIn } from '../../infra/listing.repository';
+import { listedServiceIds } from '../../infra/listing.repository';
 
 /** The services that passed the rule, and the retail group it was judged for. */
 export interface Searchable {
@@ -18,9 +18,9 @@ export interface Searchable {
  *
  * Why: decision 038 ("every hit is re-checked"): the engine's documents are derived, so the build and every page of hits pass the
  * same rule against Postgres: catalog's sellable view for the retail group (live, active, active category, group allowed), a retail
- * price row (`service_group_prices` of the retail group) and a switched-on English listing (`listedServiceIdsIn(..., 'en')`; the
- * checkout's `listedServiceIds` accepts any language, the search does not). Merchant-only, unlisted, unpriced, Arabic-only and archived
- * services fail it.
+ * price row (`service_group_prices` of the retail group) and a switched-on listing (`listedServiceIds`, the same question the
+ * checkout asks: a service has one listing since decision 039, so what the search shows and what can be bought agree). Merchant-only,
+ * unlisted, unpriced and archived services fail it.
  *
  * Side effects: none (three reads).
  */
@@ -54,7 +54,7 @@ export class SearchableIds {
     if (groupId === undefined || ids.length === 0) return { retailGroupId: groupId, services: new Map() };
     const sellable = await this.services.sellable(db, ids, groupId);
     const priced = await this.services.pricedAmong(db, [...sellable.keys()], groupId);
-    const listed = await listedServiceIdsIn(db, [...priced], 'en');
+    const listed = await listedServiceIds(db, [...priced]);
     return {
       retailGroupId: groupId,
       services: new Map([...sellable].filter(([id]) => priced.has(id) && listed.has(id))),

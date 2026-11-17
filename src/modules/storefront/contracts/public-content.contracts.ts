@@ -4,8 +4,6 @@
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIsoDateTime } from '../../../common/contract';
 import { CONTENT_PAGE_KINDS } from '../db/schema';
-import { DEFAULT_LOCALE } from '../domain/locales';
-import { LocaleField } from './shared';
 
 /** The version of a legal document a page carries, so a checkout can reference it in a consent. */
 const PageLegal = z.object({
@@ -20,7 +18,6 @@ const PageLegal = z.object({
 const PublicPage = z.object({
   kind: z.enum([...CONTENT_PAGE_KINDS, 'legal']),
   slug: z.string(),
-  locale: z.string(),
   title: z.string(),
   bodyMd: z.string().describe('Markdown as stored; HTML inside is rendered only by the storefront.'),
   seoTitle: z.string().describe("`''` when none; the storefront falls back to the title."),
@@ -39,7 +36,6 @@ const PublicArticle = z.object({
   category: z.string(),
   question: z.string(),
   answerMd: z.string(),
-  locale: z.string(),
   helpfulYes: z.number().int().min(0),
   helpfulNo: z.number().int().min(0),
   sort: z.number().int(),
@@ -50,7 +46,6 @@ const PublicArticle = z.object({
 const PageListItem = z.object({
   kind: z.enum(CONTENT_PAGE_KINDS),
   slug: z.string(),
-  locale: z.string(),
   title: z.string(),
   seoDescription: z.string().describe("`''` when none."),
   noindex: z.boolean().describe('The page is live but must stay out of search results and sitemaps.'),
@@ -61,7 +56,6 @@ const PageListItem = z.object({
 const PAGE_EXAMPLE = {
   kind: 'static',
   slug: 'about',
-  locale: 'en',
   title: 'About us',
   bodyMd: '# About us',
   seoTitle: 'About us',
@@ -79,7 +73,6 @@ const ARTICLE_EXAMPLE = {
   category: 'IMEI',
   question: 'How do I find my IMEI?',
   answerMd: 'Dial *#06# on the phone.',
-  locale: 'en',
   helpfulYes: 301,
   helpfulNo: 12,
   sort: 10,
@@ -91,14 +84,13 @@ export const getPublicPage = defineRoute({
   key: 'GET /store/v1/pages/:slug',
   summary: 'Get a public page',
   description:
-    'A content or landing page by slug and language (`?locale=`, default `en`): only a `published` or `noindex` page (`noindex` ' +
-    'is live with `noindex: true`); a draft is `404`. The slugs `terms`, `privacy`, `refund` and `cookies` answer the legal ' +
-    'document of that type in force in that language (`kind: legal`, with `legal` naming the version); no version in force is `404`.',
+    'A content or landing page by slug: only a `published` or `noindex` page (`noindex` is live with `noindex: true`); a draft is ' +
+    '`404`. The slugs `terms`, `privacy`, `refund` and `cookies` answer the legal document of that type in force (`kind: legal`, ' +
+    'with `legal` naming the version); no version in force is `404`.',
   tags: ['storefront-public'],
   surface: 'store',
   access: 'public',
   params: z.object({ slug: z.string().min(1).max(120) }),
-  query: z.object({ locale: LocaleField.default(DEFAULT_LOCALE) }),
   success: { status: 200, schema: PublicPage },
   errors: ['VALIDATION_FAILED', 'NOT_FOUND'],
   examples: { response: PAGE_EXAMPLE },
@@ -109,7 +101,7 @@ export const listPublicHelp = defineRoute({
   key: 'GET /store/v1/help',
   summary: 'List help articles',
   description:
-    'The published articles of one language (`?locale=`, default `en`), in the staff order (`sort`). `q` is a contains over the ' +
+    'The published articles, in the staff order (`sort`). `q` is a contains over the ' +
     'question, the answer and the topic; `category` filters by topic. Paged like every list (`x-total-count`).',
   tags: ['storefront-public'],
   surface: 'store',
@@ -119,7 +111,6 @@ export const listPublicHelp = defineRoute({
     defaultSort: { field: 'sort', order: 'asc' },
     filters: { category: { type: 'string', ops: ['eq'] } },
     search: ['question', 'answerMd', 'category'],
-    extra: { locale: LocaleField.default(DEFAULT_LOCALE) },
   }),
   success: { status: 200, schema: PublicArticle },
   errors: ['VALIDATION_FAILED'],
@@ -142,12 +133,12 @@ export const getPublicHelp = defineRoute({
   examples: { response: ARTICLE_EXAMPLE },
 });
 
-/** `GET /store/v1/pages`: the live content pages of a language, without their bodies. */
+/** `GET /store/v1/pages`: the live content pages, without their bodies. */
 export const listPublicPages = defineRoute({
   key: 'GET /store/v1/pages',
   summary: 'List the published pages',
   description:
-    'The live content pages of one language (`?locale=`, default `en`): status `published`, or `noindex` (live, flagged ' +
+    'The live content pages: status `published`, or `noindex` (live, flagged ' +
     '`noindex: true`: leave those out of a sitemap). Drafts are never listed, and neither are the legal documents (read them by ' +
     'slug at `GET /store/v1/pages/:slug`). Filter by `kind`; `q` is a contains over the title; sort by `publishedAt` (default, newest ' +
     'first) or `title`; pages of up to 100 rows with `x-total-count`. Bodies are not included: fetch a page by slug. Public; ' +
@@ -161,7 +152,6 @@ export const listPublicPages = defineRoute({
     filters: { kind: { type: 'enum', values: CONTENT_PAGE_KINDS, ops: ['eq'] } },
     search: ['title'],
     maxPage: 100,
-    extra: { locale: LocaleField.default(DEFAULT_LOCALE) },
   }),
   success: { status: 200, schema: PageListItem },
   errors: ['VALIDATION_FAILED'],
@@ -170,7 +160,6 @@ export const listPublicPages = defineRoute({
       {
         kind: 'blog',
         slug: 'how-to-find-your-imei',
-        locale: 'en',
         title: 'How to find your IMEI',
         seoDescription: 'Three ways to find the IMEI of a phone.',
         noindex: false,

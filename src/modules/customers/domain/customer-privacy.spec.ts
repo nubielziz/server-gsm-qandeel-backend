@@ -47,7 +47,6 @@ describe('buildCustomerExport', () => {
     name: 'Daniel Whitmore',
     phone: '',
     country: 'GB',
-    locale: 'en',
     currency: 'GBP',
     hasAccount: true,
     marketingOptIn: true,
@@ -134,6 +133,9 @@ describe('buildCustomerExport', () => {
     const profile = file.profile as Record<string, unknown>;
     for (const key of ['internalNotes', 'riskLevel', 'suspendedReason']) expect(profile, key).not.toHaveProperty(key);
     expect(profile).toMatchObject({ id: expect.any(Number), email: expect.any(String), name: expect.any(String) });
+    // Format 2 (decision 039): a customer has no saved language, so the profile carries none.
+    expect(file.format).toBe(2);
+    expect(profile).not.toHaveProperty('locale');
     expect(JSON.stringify(file)).not.toContain('VIP');
   });
 

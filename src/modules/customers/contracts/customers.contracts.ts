@@ -7,7 +7,6 @@ import {
   CountryField,
   CustomerStatusWire,
   EmailField,
-  LocaleField,
   NameField,
   NotesField,
   PasswordModeField,
@@ -28,7 +27,6 @@ export const CustomerSchema = z.object({
   name: z.string(),
   phone: z.string(),
   country: z.string(),
-  locale: z.string(),
   currency: zId.nullable().describe('The id of the currency the customer pays in; null when none (B148).'),
   currencyCode: z.string().nullable().optional().describe('The ISO code of that currency; null when none.'),
   hasAccount: z.boolean(),
@@ -95,7 +93,6 @@ const sample = {
   name: 'Daniel Whitmore',
   phone: '+447700900123',
   country: 'GB',
-  locale: 'en',
   currency: 2,
   currencyCode: 'GBP',
   hasAccount: true,
@@ -201,7 +198,6 @@ export const createCustomer = defineRoute({
     name: NameField,
     email: EmailField,
     country: CountryField,
-    locale: LocaleField,
     phone: PhoneField.optional(),
     password: z.object({ mode: PasswordModeField }),
   }),
@@ -212,7 +208,6 @@ export const createCustomer = defineRoute({
       name: 'Daniel Whitmore',
       email: 'daniel.whitmore@example.com',
       country: 'GB',
-      locale: 'en',
       phone: '+447700900123',
       password: { mode: 'reset_link' },
     },
@@ -225,7 +220,7 @@ export const updateCustomer = defineRoute({
   key: 'PATCH /admin/customers/:id',
   summary: 'Edit a customer',
   description:
-    'Changes the fields sent: `name`, `email`, `country`, `locale`, `phone`, `internalNotes` (at most 300 characters). A ' +
+    'Changes the fields sent: `name`, `email`, `country`, `phone`, `internalNotes` (at most 300 characters). A ' +
     'different email clears `emailVerifiedAt` and voids every link already sent to the customer (they went to the old address); for an account it also sends a new verification email. A country change ' +
     'derives the currency again (storefront currency of the country, else USD); a new country with no current tax rate is `422` on ' +
     '`country`. `409 ANONYMIZED` for an anonymized customer, `409 EMAIL_TAKEN`, `422` on `email` for a ' +
@@ -239,7 +234,6 @@ export const updateCustomer = defineRoute({
     name: NameField.optional(),
     email: EmailField.optional(),
     country: CountryField.optional(),
-    locale: LocaleField.optional(),
     phone: PhoneField.optional(),
     internalNotes: NotesField.optional(),
   }),

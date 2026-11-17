@@ -14,17 +14,22 @@ The map's own numbers stay pinned (`EXPECTED` in `scripts/lib/map.mjs`); additio
 ## A file
 
 ```js
-// scripts/map-additions/20.mjs
+// scripts/map-additions/<feature id>.mjs (the row of feature 20, as a new row is written since decision 039)
 import { R } from '../lib/map-additions.mjs';
 
 export const rows = [
-  R('admin', 'clients', 'POST', '/admin/clients/:id/password-link', 'إرسال رابط تعيين كلمة المرور للتاجر', 'clients:security', 20,
+  R('admin', 'clients', 'POST', '/admin/clients/:id/password-link', undefined, 'clients:security', 20,
     ['clients', 'auth_tokens', 'audit_logs'],
     { en: 'Send the merchant a link to set a password.', module: 'identity', spec: 'B-TBD merchant-password-link', successStatus: 204 }),
 ];
 ```
 
 `R(s, g, m, p, f, a, st, t, extra)` is the map's helper. A plain object with the same keys is equal to an `R()` call.
+
+**English only (decision 039).** A new row is English: it passes `undefined` as `f` (the map's Arabic sentence) and writes its
+auth text as the access name (`public`, `staff-session`, ...; next section). The rows of features 20 to 29 keep their Arabic
+sentence and words, and the generated documents keep them byte for byte; the map's own rows are the owner's specification and
+stay as they are.
 
 | Field           | Meaning                                  | Rule (a violation is an error naming the file, the row number and the row key)                                                                                                                                                                                                                                      |
 | --------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -33,7 +38,7 @@ export const rows = [
 | `m`             | method                                   | `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, or `CRUD` with `ops`                                                                                                                                                                                                                                                       |
 | `ops`           | CRUD letters                             | only with `CRUD`: one or more of `L S C U D`, none twice (L = `GET path`, S = `GET path/:id`, C = `POST path`, U = `PATCH path/:id`, D = `DELETE path/:id`)                                                                                                                                                          |
 | `p`             | path                                     | starts with `/`; segments are a fixed name or `:name`; no repeated parameter; starts with the prefix of the surface (`/admin`, `/client`, `/store/v1`, `/v1`, `/webhooks`; `system` = none of them and not `/api/index.php`); a `CRUD` path ends in a fixed segment and has no `:id`                              |
-| `f`             | the sentence in Arabic (the map's language) | non-empty, one line                                                                                                                                                                                                                                                                                              |
+| `f`             | the sentence in Arabic (the map's language) | optional (decision 039): leave it out (`undefined` or `null`) in a new row; when given, non-empty and one line. A row without it carries `en` in its place (`descriptionAr` of the manifest), and `docs/contract/endpoints/<module>.md` prints the bracket after the English sentence only when the two differ |
 | `a`             | auth text in the map's vocabulary        | see the next section; unknown text is an error                                                                                                                                                                                                                                                                      |
 | `st`            | stage                                    | whole number >= 0. **Use your feature number** (20, 21, ...): it becomes a row of COVERAGE "By map stage". 99 belongs to the tooling test (`test/unit/fixtures/map-additions/sample.mjs`)                                                                                                                            |
 | `t`             | tables touched                           | names of map tables or of any module's `additionalTables` in `scripts/module-map.mjs`; none twice; may be empty                                                                                                                                                                                                     |
@@ -48,7 +53,9 @@ Any other key is an error (it catches a typo such as `sucessStatus`).
 
 `a` must be one of these (copied from `ACCESS` in `scripts/lib/map.mjs`); a combination the map never used needs a new line there,
 named in that feature's plan. `Turnstile` in the text sets the Turnstile flag of the route (decision 034), `Idempotency-Key` sets
-the idempotency flag.
+the idempotency flag. **A new row writes the English column** (decision 039): the access name itself, on the surfaces where the
+map has the word; the map's words (the middle column of the second table) stay valid for the map's rows and the rows of features
+20 to 29.
 
 | Surface  | Text                                                                                                | Access                                                                                              |
 | -------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
@@ -62,6 +69,17 @@ the idempotency flag.
 | `v1`     | `area:action` (an API key scope)                                                                    | `api-key` with that scope                                                                           |
 | `hooks`  | `توقيع البوابة` / `secret بالرابط`                                                                  | `gateway-signature` / `url-secret`                                                                  |
 | `system` | `عام` / `شبكة داخلية أو token`                                                                      | `public` / `internal-or-token`                                                                      |
+
+The English words (decision 039), each giving the access of the same name:
+
+| Surface  | Text                                                                                                                                              |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `admin`  | `public`, `staff-session` (and `area:action` as above)                                                                                            |
+| `client` | `public`, `public + Turnstile`, `merchant-session`                                                                                                |
+| `store`  | `public`, `public + Turnstile`, `checkout-token`, `checkout-token + Idempotency-Key`, `tracking-token`, `link-token`, `customer-session`, `ticket-token` |
+| `v1`     | `area:action` (an API key scope, as above)                                                                                                        |
+| `hooks`  | `gateway-signature`, `url-secret`                                                                                                                 |
+| `system` | `public`, `internal-or-token`                                                                                                                     |
 
 ## Row flags (feature 24A)
 

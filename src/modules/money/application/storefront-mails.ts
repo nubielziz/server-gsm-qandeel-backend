@@ -20,9 +20,9 @@ const NAMELESS = 'there';
  * Why: brief 16 and brief 12a ("storefront customer mails (14a, 16)"): the registry has the events `order.received`, `order.completed`,
  * `order.failed` and `payment.failed` (the console's Customer emails tab) and 16 adds `refund.declined`. Every method calls
  * `NotificationService.enqueue` on the caller's transaction, so the message exists if and only if the change it reports was committed (a
- * rolled-back capture, payment update, transition or decline leaves no message). The recipient's address and language are the customer's
- * (`customers.email`, `customers.locale`; the template of that language, else the English one); a customer who is gone, or an event with no
- * template (or a switched-off one), makes no message and no error. `device` is empty: the TAC catalogue is the catalog module's and has no
+ * rolled-back capture, payment update, transition or decline leaves no message). The recipient's address is the customer's
+ * (`customers.email`) and the text is the event's one template (decision 039); a customer who is gone, or an event with no template (or a
+ * switched-off one), makes no message and no error. `device` is empty: the TAC catalogue is the catalog module's and has no
  * reader here yet.
  *
  * Side effects: each method inserts one `notifications` row and one `notification.send` outbox row (or none, see above) on the caller's transaction.

@@ -11,7 +11,6 @@ import { CUSTOMER_TOKEN_PURPOSES, CustomerAuthTokens, type StaffPrincipal, tempo
 import { AuditService } from '../../platform';
 import { Blocklist } from '../../risk';
 import type { Customer } from '../db/schema';
-import type { CustomerLocale } from '../domain/customer-input';
 import { profileChanges } from '../domain/profile-edit';
 import { findCredentials, upsertCredentials } from '../infra/customer-credentials.repository';
 import { CustomerSignInFailures } from '../infra/customer-sign-in-failures';
@@ -41,7 +40,6 @@ export interface CreateCustomerInput {
   readonly name: string;
   readonly email: string;
   readonly country: string;
-  readonly locale: CustomerLocale;
   readonly phone?: string | undefined;
   readonly mode: 'reset_link' | 'temporary_password';
 }
@@ -51,7 +49,6 @@ export interface UpdateCustomerInput {
   readonly name?: string | undefined;
   readonly email?: string | undefined;
   readonly country?: string | undefined;
-  readonly locale?: CustomerLocale | undefined;
   readonly phone?: string | undefined;
   readonly internalNotes?: string | undefined;
 }
@@ -154,7 +151,6 @@ export class CustomerAdminService {
           name: input.name,
           phone: input.phone ?? '',
           country: input.country,
-          locale: input.locale,
           currency,
           hasAccount: true,
           createdBy: staff.staffId,
@@ -324,10 +320,6 @@ function changesOf(
     columns.emailVerifiedAt = null;
     note('email', customer.email, newEmail);
     if (customer.hasAccount && customer.emailVerifiedAt !== null) note('email_verified', true, false);
-  }
-  if (input.locale !== undefined && input.locale !== customer.locale) {
-    columns.locale = input.locale;
-    note('locale', customer.locale, input.locale);
   }
   if (input.internalNotes !== undefined && input.internalNotes !== customer.internalNotes) {
     columns.internalNotes = input.internalNotes;

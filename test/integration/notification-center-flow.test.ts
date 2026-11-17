@@ -63,7 +63,7 @@ afterAll(async () => {
 describe('the notification center, end to end', () => {
   it('takes a scheduled announcement from the composer to the readers and back to the detail page', async () => {
     const merchantId = await insertMerchant(db, { name: 'Zain Mobile Hub', email: 'ops@zainmobilehub.example' });
-    const customerId = await insertCustomer(db, { name: 'Huda', email: 'huda@mail.example', locale: 'ar' });
+    const customerId = await insertCustomer(db, { name: 'Huda', email: 'huda@mail.example' });
 
     // 1. Write it.
     const draft = await createDraft(owner, {
@@ -83,15 +83,13 @@ describe('the notification center, end to end', () => {
       reachable: 2,
       byType: { staff: 0, client: 1, customer: 1 },
       byChannel: { inApp: 2, email: 2, telegram: 0 },
-      byLocale: { en: 1, ar: 1 },
     });
     const rendered = await owner.post(`/admin/notification-campaigns/${draft.id}/preview`, {
-      locale: 'ar',
       channel: 'email',
       audience: 'customer',
     });
-    expect(rendered.body).toMatchObject({ format: 'html', subject: 'صيانة لـ Daniel' });
-    expect(rendered.body.body).toStartWith('<div dir="rtl" lang="ar"');
+    expect(rendered.body).toMatchObject({ format: 'html', subject: 'Maintenance for Daniel' });
+    expect(rendered.body.body).toStartWith('<div dir="ltr" lang="en"');
 
     // 3. Test it on yourself: an inbox item and one email, from the transactional queue.
     expect((await owner.post(`/admin/notification-campaigns/${draft.id}/test`, {})).body).toEqual({
@@ -124,8 +122,8 @@ describe('the notification center, end to end', () => {
     expect(rows).toHaveLength(2);
     for (const row of rows) expect(await sendBroadcast(t, row.id, 'email')).toEqual({ outcome: 'sent' });
     const toHuda = mailbox(t).sent.find((mail) => mail.to === 'huda@mail.example')!;
-    expect(toHuda.subject).toBe('صيانة لـ Huda');
-    expect(toHuda.html).toStartWith('<div dir="rtl" lang="ar"');
+    expect(toHuda.subject).toBe('Maintenance for Huda');
+    expect(toHuda.html).toStartWith('<div dir="ltr" lang="en"');
     expect(mailbox(t).sent.find((mail) => mail.to === 'ops@zainmobilehub.example')!.subject).toBe(
       'Maintenance for Zain Mobile Hub',
     );
@@ -136,7 +134,6 @@ describe('the notification center, end to end', () => {
     expect(merchantItems).toHaveLength(1);
     expect(merchantItems[0]).toMatchObject({
       title: 'Maintenance for Zain Mobile Hub',
-      locale: 'en',
       link: '/merchant/wallet',
       campaignId: draft.id,
       readAt: null,
@@ -150,7 +147,7 @@ describe('the notification center, end to end', () => {
       return JSON.parse(res.body);
     };
     const customerItems = await asCustomer('/store/v1/me/notifications');
-    expect(customerItems[0]).toMatchObject({ title: 'صيانة لـ Huda', locale: 'ar', link: '/account/orders' });
+    expect(customerItems[0]).toMatchObject({ title: 'Maintenance for Huda', link: '/account/orders' });
     const readAll = await t.app.inject({
       method: 'POST',
       url: '/store/v1/me/notifications/read-all',

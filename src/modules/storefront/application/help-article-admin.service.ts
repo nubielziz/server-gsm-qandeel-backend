@@ -20,7 +20,6 @@ export interface HelpArticleView {
   readonly category: string;
   readonly question: string;
   readonly answerMd: string;
-  readonly locale: string;
   readonly isPublished: boolean;
   readonly helpfulYes: number;
   readonly helpfulNo: number;
@@ -34,7 +33,6 @@ export interface CreateHelpArticleInput {
   readonly category: string;
   readonly question: string;
   readonly answerMd: string;
-  readonly locale: string;
   readonly isPublished?: boolean | undefined;
 }
 
@@ -55,7 +53,6 @@ export function toHelpArticleView(article: HelpArticle): HelpArticleView {
     category: article.category,
     question: article.question,
     answerMd: article.answerMd,
-    locale: article.locale,
     isPublished: article.isPublished,
     helpfulYes: article.helpfulYes,
     helpfulNo: article.helpfulNo,
@@ -68,7 +65,6 @@ export function toHelpArticleView(article: HelpArticle): HelpArticleView {
 const snapshot = (article: HelpArticle) => ({
   category: article.category,
   question: article.question,
-  locale: article.locale,
   isPublished: article.isPublished,
 });
 
@@ -125,7 +121,6 @@ export class HelpArticleAdminService {
         category: input.category,
         question: input.question,
         answerMd: input.answerMd,
-        locale: input.locale,
         isPublished: input.isPublished ?? false,
       });
       await this.audit.record(tx, {
@@ -140,7 +135,7 @@ export class HelpArticleAdminService {
   }
 
   /**
-   * Changes an article: its text, topic or language, and/or the publish switch.
+   * Changes an article: its text or topic, and/or the publish switch.
    *
    * @param id the article id
    * @param changes the keys to change
@@ -155,7 +150,6 @@ export class HelpArticleAdminService {
         ...(changes.category === undefined ? {} : { category: changes.category }),
         ...(changes.question === undefined ? {} : { question: changes.question }),
         ...(changes.answerMd === undefined ? {} : { answerMd: changes.answerMd }),
-        ...(changes.locale === undefined ? {} : { locale: changes.locale }),
         ...(changes.isPublished === undefined ? {} : { isPublished: changes.isPublished }),
       });
       const { isPublished, ...edits } = changes;

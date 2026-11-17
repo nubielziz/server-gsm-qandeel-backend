@@ -13,7 +13,6 @@ export interface AudiencePreview {
   readonly reachable: number;
   readonly byType: { staff: number; client: number; customer: number };
   readonly byChannel: { inApp: number; email: number; telegram: number };
-  readonly byLocale: { en: number; ar: number };
   readonly excluded: { noConsent: number; optedOut: number; noTelegram: number; noAccount: number };
 }
 
@@ -81,8 +80,6 @@ export class AudiencePreviewService {
         inApp: sum.inApp + one.inApp,
         email: sum.email + one.email,
         telegram: sum.telegram + one.telegram,
-        en: sum.en + one.en,
-        ar: sum.ar + one.ar,
         noConsent: sum.noConsent + one.noConsent,
       };
     });
@@ -96,7 +93,6 @@ export class AudiencePreviewService {
         email: chosen('email', sum.email),
         telegram: chosen('telegram', sum.telegram),
       },
-      byLocale: { en: sum.en, ar: sum.ar },
       excluded: {
         noConsent: sum.noConsent,
         optedOut: chosen('email', sum.total - sum.email),

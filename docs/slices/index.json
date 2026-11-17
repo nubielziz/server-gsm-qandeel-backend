@@ -273,10 +273,10 @@
       "module": "storefront",
       "name": "Storefront & content",
       "domain": "H",
-      "rows": 36,
-      "endpoints": 47,
+      "rows": 37,
+      "endpoints": 48,
       "bySurface": {
-        "store": 11,
+        "store": 12,
         "admin": 36
       },
       "frontendCalled": 36,
@@ -286,7 +286,8 @@
         16,
         19,
         22,
-        29
+        29,
+        30
       ],
       "tables": 4,
       "scenarios": []

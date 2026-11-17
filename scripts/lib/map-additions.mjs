@@ -8,7 +8,8 @@ import { pathToFileURL } from 'node:url';
 
 /**
  * The map's row helper: surface, group, method, path, Arabic text, auth text, stage, tables, extras.
- * Addition rows add `en`, `module`, `spec` and optionally `successStatus` (and `ops` for CRUD) as extras.
+ * Addition rows add `en`, `module`, `spec` and optionally `successStatus` (and `ops` for CRUD) as extras. Since English only
+ * (decision 039) a new row passes `undefined` as the Arabic text: the loader then uses `en` in its place.
  */
 export const R = (s, g, m, p, f, a, st, t, extra = {}) => ({ s, g, m, p, f, a, st, t, ...extra });
 
@@ -86,7 +87,8 @@ function fieldProblems(row, ctx) {
 
   bad.push(...pathProblems(row, surfaceKnown, crud));
 
-  if (!isLine(row.f)) bad.push('f (the Arabic sentence) must be a non-empty single line');
+  // English only (decision 039): the Arabic sentence is optional; a row without it reads its `en` in its place.
+  if (row.f != null && !isLine(row.f)) bad.push('f (the Arabic sentence), when given, must be a non-empty single line');
   if (typeof row.a !== 'string' || row.a === '') bad.push('a (auth text) must be a non-empty string');
   if (!Number.isInteger(row.st) || row.st < 0) bad.push('st (stage) must be a whole number >= 0');
   if (!Array.isArray(row.t) || row.t.some((x) => typeof x !== 'string')) bad.push('t (tables) must be an array of table names');
@@ -155,7 +157,8 @@ function statusProblems(row, crud) {
  * Why: a malformed, duplicate or overriding row must stop every tool at once, naming the file and the row.
  * @param {{ file: string, rows: unknown[] }[]} files what readAdditionFiles returned (or the same shape built in memory)
  * @param {{ mapRoutes: object[], groups: object, tableNames: Set<string>, moduleIds: Set<string>, expandRow: (row: object) => { key: string }[], rowKey: (row: object) => string }} ctx the map, passed in (this file never imports it)
- * @returns {object[]} rows `{ s, g, m, p, f, a, st, t, ops?, addition: { file, en, module, spec, successStatus? } }`
+ * @returns {object[]} rows `{ s, g, m, p, f, a, st, t, ops?, addition: { file, en, module, spec, successStatus? } }`; `f` is the
+ *   row's Arabic sentence, or its `en` when it has none (decision 039)
  * @throws {Error} `map additions problems:` followed by one line per problem (all of them), each `<file> row <n> (<row key>): <problem>`
  */
 export function validateAdditions(files, ctx) {
@@ -208,7 +211,8 @@ export function validateAdditions(files, ctx) {
         g,
         m,
         p,
-        f,
+        f: f ?? en, // every reader of `descriptionAr` keeps a sentence
+
         a,
         st,
         t: [...t],

@@ -94,7 +94,7 @@ export interface DepositInput {
 /**
  * Event `deposit`: a merchant tops up the wallet; the fee is income.
  *
- * Why: the map's "شحن 100$": the merchant pays 103, the wallet gets 100 and the fee 3 is `fee_income`. A manual gateway
+ * Why: the map's "top up 100$" money event: the merchant pays 103, the wallet gets 100 and the fee 3 is `fee_income`. A manual gateway
  * (bank, Wise) debits `bank` instead of `gateway_clearing` (user rule 4, decision 024).
  *
  * @param input merchant, amount, fee and source account
@@ -115,7 +115,7 @@ export function deposit(input: DepositInput): MoneyEventPosting {
 /**
  * Event `order`: the order price moves from the wallet to the hold.
  *
- * Why: the map's "طلب 5$": "the balance is held and not spent yet".
+ * Why: the map's "order 5$" money event: "the balance is held and not spent yet".
  *
  * @param input merchant and price
  * @returns Dr client_wallet / Cr client_hold; reference type `order`
@@ -132,7 +132,7 @@ export function order(input: { clientId: number; amount: Money }): MoneyEventPos
 /**
  * Event `complete`: the supplier finished the order; the hold becomes revenue and the cost is booked.
  *
- * Why: the map's "اكتمال الطلب": revenue 5, cost 3, so the profit is 2. A zero cost (no supplier cost) drops the cost lines.
+ * Why: the map's "order completed" money event: revenue 5, cost 3, so the profit is 2. A zero cost (no supplier cost) drops the cost lines.
  *
  * @param input merchant, price, cost and the supplier the cost is booked against
  * @returns Dr client_hold price / Dr cogs cost / Cr revenue price / Cr supplier_prepaid cost; reference type `order`
@@ -158,7 +158,7 @@ export function complete(input: {
 /**
  * Event `reject`: the supplier rejected the order; the hold returns to the wallet in full.
  *
- * Why: the map's "رفض الطلب": "the amount returns to the wallet in full".
+ * Why: the map's "order rejected" money event: "the amount returns to the wallet in full".
  *
  * @param input merchant and held amount
  * @returns Dr client_hold / Cr client_wallet; reference type `order`
@@ -175,7 +175,7 @@ export function reject(input: { clientId: number; amount: Money }): MoneyEventPo
 /**
  * Event `topup`: money moves from the bank to a supplier's prepaid balance.
  *
- * Why: the map's "شحن رصيد المورد 50$": "a transfer from your bank to buy credit".
+ * Why: the map's "supplier balance top-up 50$" money event: "a transfer from your bank to buy credit".
  *
  * @param input supplier and amount
  * @returns Dr supplier_prepaid / Cr bank; reference type `supplier`
@@ -192,7 +192,7 @@ export function topup(input: { supplierId: number; amount: Money }): MoneyEventP
 /**
  * Event `commission`: a referral commission is paid into the referrer's wallet.
  *
- * Why: the map's "عمولة إحالة 0.20$": "paid to the referring merchant's wallet".
+ * Why: the map's "referral commission 0.20$" money event: "paid to the referring merchant's wallet".
  *
  * @param input the agent merchant and the commission
  * @returns Dr commission_expense / Cr client_wallet; reference type `accrual`
@@ -209,7 +209,7 @@ export function commission(input: { clientId: number; amount: Money }): MoneyEve
 /**
  * Event `adjust`: staff add to or deduct from a wallet by hand.
  *
- * Why: the map's "تعديل يدوي 10$" shows the credit; a debit is its exact mirror (B30). The posting keeps `ref_type client`
+ * Why: the map's "manual adjustment 10$" money event shows the credit; a debit is its exact mirror (B30). The posting keeps `ref_type client`
  * (the merchant is the reference, B34); the wire sends it as `system` (resolution money-1).
  *
  * @param input merchant, amount and direction
@@ -234,7 +234,7 @@ export function adjust(input: { clientId: number; amount: Money; direction: 'cre
 /**
  * Event `b2c_pay`: a storefront customer paid; the net is customer funds and the VAT is owed.
  *
- * Why: the map's "دفع طلب 14.99$": net 12.49 and VAT 2.50 (20%), received through the gateway.
+ * Why: the map's "order payment 14.99$" money event: net 12.49 and VAT 2.50 (20%), received through the gateway.
  *
  * @param input the net amount and the VAT (their sum is what the gateway collected)
  * @returns Dr gateway_clearing net + vat / Cr customer_funds net / Cr vat_payable vat; reference type `order`
@@ -252,7 +252,7 @@ export function b2cPay(input: { net: Money; vat: Money }): MoneyEventPosting {
 /**
  * Event `b2c_fee`: the payment gateway's fee on a payment.
  *
- * Why: the map's "رسوم البوابة 0.73$": "an expense on every payment".
+ * Why: the map's "gateway fee 0.73$" money event: "an expense on every payment".
  *
  * @param input the fee
  * @returns Dr gateway_fees / Cr gateway_clearing; reference type `order`
@@ -269,7 +269,7 @@ export function b2cFee(input: { fee: Money }): MoneyEventPosting {
 /**
  * Event `b2c_deliver`: a storefront order was delivered; customer funds become revenue and the cost is booked.
  *
- * Why: the map's "تسليم الطلب": revenue 12.49 and cost 7.20.
+ * Why: the map's "order delivered" money event: revenue 12.49 and cost 7.20.
  *
  * @param input the net amount, the cost and the supplier the cost is booked against
  * @returns Dr customer_funds net / Dr cogs cost / Cr revenue net / Cr supplier_prepaid cost; reference type `order`
@@ -290,7 +290,7 @@ export function b2cDeliver(input: { net: Money; cost?: Money; supplierId?: numbe
 /**
  * Event `b2c_refund`: a storefront order is refunded; before delivery the whole payment goes back, after delivery the revenue does.
  *
- * Why: the map's "استرداد قبل التسليم": the whole 14.99 goes back to the card. RESOLUTIONS money-11 and the endpoint doc of
+ * Why: the map's "refund before delivery" money event: the whole 14.99 goes back to the card. RESOLUTIONS money-11 and the endpoint doc of
  * `POST /admin/refunds/:id/approve`: a delivered order is reversed from `revenue` (the supplier cost is never recovered), an
  * undelivered one from `customer_funds`; the VAT share leaves `vat_payable` either way.
  *
@@ -310,7 +310,7 @@ export function b2cRefund(input: { net: Money; vat: Money; from?: 'customer_fund
 /**
  * Event `b2c_chargeback`: a card dispute was lost; the payment and the dispute fee are taken from what the gateway owes us.
  *
- * Why: the map's "نزاع خسرناه": 14.99 and the 15 dispute fee, 29.99 in all.
+ * Why: the map's "dispute we lost" money event: 14.99 and the 15 dispute fee, 29.99 in all.
  *
  * @param input the disputed amount and the dispute fee
  * @returns Dr chargeback_loss amount + fee / Cr gateway_clearing amount + fee; reference type `order`
@@ -328,7 +328,7 @@ export function b2cChargeback(input: { amount: Money; fee: Money }): MoneyEventP
 /**
  * Event `payout`: the gateway pays what it owes into the bank.
  *
- * Why: the map's "تحويل البوابة للبنك 14.26$": "the payment after the fee". It has no record behind it, so it posts
+ * Why: the map's "gateway payout to the bank 14.26$" money event: "the payment after the fee". It has no record behind it, so it posts
  * `ref_type system` with `ref_id 0` (resolution money-6).
  *
  * @param input the amount

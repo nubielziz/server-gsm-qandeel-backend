@@ -470,10 +470,10 @@ Code: `notifications/` (contracts `notification-templates.contracts.ts` and `not
 
 | Route | Access | What it does |
 |---|---|---|
-| `GET /admin/notification-templates` | `notifications:read` | templates, `event` A to Z; filters `audience`, `channel`, `isActive`, `event`, `locale`; `q` over event and subject; each row has `sentLast30Days` (identity-platform-11: `sent` rows with the same event, channel and recipient type, `audience` merchant is `client`, across all languages) |
+| `GET /admin/notification-templates` | `notifications:read` | templates, `event` A to Z; filters `audience`, `channel`, `isActive`, `event`; `q` over event and subject; each row has `sentLast30Days` (identity-platform-11: `sent` rows with the same event, channel and recipient type, `audience` merchant is `client`) |
 | `GET /admin/notification-templates/:id` | `notifications:read` | one template |
-| `POST /admin/notification-templates` | `notifications:create` | `{ event, channel, audience, locale = 'en', subject, body, isActive = true }`: `422` on `event` for an unregistered or duplicate event, on `audience` / `channel` when the event is not sent to it, on `locale`, `subject` (an email needs one), `body` (not blank) and on a `{{placeholder}}` the event does not offer; audited `created notification template` |
-| `PATCH /admin/notification-templates/:id` | `notifications:update` | `subject`, `body`, `isActive`; `event`, `channel`, `audience`, `locale` are fixed (`422 immutable` on a different value); the texts are checked only when sent, so an old template can still be switched off; audited with before and after: `edited notification template`, or `turned on notification` / `turned off notification` (the demo's phrases, ANSWERS audit Q3) when the request carries only the switch |
+| `POST /admin/notification-templates` | `notifications:create` | `{ event, channel, audience, subject, body, isActive = true }`: `422` on `event` for an unregistered event or a second template of the same event, channel and audience (templates have no language), on `audience` / `channel` when the event is not sent to it, on `subject` (an email needs one), `body` (not blank) and on a `{{placeholder}}` the event does not offer; audited `created notification template` |
+| `PATCH /admin/notification-templates/:id` | `notifications:update` | `subject`, `body`, `isActive`; `event`, `channel`, `audience` are fixed (`422 immutable` on a different value); the texts are checked only when sent, so an old template can still be switched off; audited with before and after: `edited notification template`, or `turned on notification` / `turned off notification` (the demo's phrases, ANSWERS audit Q3) when the request carries only the switch |
 | `DELETE /admin/notification-templates/:id` | `notifications:delete` | `204`; audited `deleted notification template` |
 | `POST /admin/notification-templates/:id/preview` | `notifications:read` | `{ subject?, body? }` (unsaved text) → `{ subject, body, format ('text' \| 'html'), from, note }`; sample data of the event, an unknown placeholder stays visible; sends nothing, no audit row |
 | `GET /admin/notifications` | `notifications:read` | the log, newest first; filters `status` (`queued`, `sent`, `failed`; `status_ne`), `channel`, `event`, `recipientType`; `q` a case-insensitive contains search over the event, and over the recipient's address only when `q` is the whole address; `recipient` is masked by the server (`r***@example.com`, `@1***`), `error` only for a failed message, no `payload` |
@@ -498,7 +498,7 @@ outbox event `notification.send` commit with the caller's change. Producers that
 `EventNotifier` (job `notification.plan`) decides who is told by the merchant's preferences and needs an active template. The send job (`NotificationDelivery.deliver`)
 re-reads the row, the recipient and the template, renders (an HTML body gets escaped values and a text part), sends and marks the row `sent` with a guarded update.
 A transient failure records the attempt and rethrows (the queue retries: 5 attempts, 30 s backoff); the last attempt, or a refusal that cannot change, marks the row
-`failed` with the reason. The template is the recipient's language's own while it is switched on, else the English one while it is switched on (`findTemplateFor`); a message with no usable template is logged and sends nothing (`no_template` when none exists, `template_off` when one exists and is off); a suspended merchant gets only transactional messages.
+`failed` with the reason. The template is the one of the event, channel and audience (`findTemplateFor`); a message with no usable template is logged and sends nothing (`no_template` when none exists, `template_off` when one exists and is off); a suspended merchant gets only transactional messages.
 
 **Price change digest** (user rule 9): `service.price_changed` events do not send at once; they join the merchant's digest row of the period (06:00 UTC to 06:00 UTC, one row
 per merchant, channel and period, key `digest:service.price_changed:<channel>:<client>:<day>`), sent by a delayed job `notification-<id>` at the end of the period. The send job
@@ -523,10 +523,9 @@ honoured beyond the queue's own 30 s first backoff (it is shorter in practice).
 
 Staff write a message once and send it to an audience; people read it in their inbox, by email or by Telegram. Plan:
 `docs/briefs/23-notification-center.md`: campaigns, audiences, previews, the test send, the fan-out, the bulk queue, the campaign branch of
-the delivery, cancel and scheduling; the inbox (12 routes on three surfaces) and its event items; Arabic templates and the right-to-left
-email part; the customer status fix, the reconciler, retention, the cheaper log count and the marketing unsubscribe.
+the delivery, cancel and scheduling; the inbox (12 routes on three surfaces) and its event items; the customer status fix, the reconciler, retention, the cheaper log count and the marketing unsubscribe.
 
-**Tables.** `notification_campaigns` (the message in `en` and optional `ar`, the audience spec, channels `in_app`/`email`/`telegram`,
+**Tables.** `notification_campaigns` (the message as one title and one body, the audience spec, channels `in_app`/`email`/`telegram`,
 purpose `service`/`marketing`, the state machine, the fan-out cursor and counters), `notification_inbox` (one in-app item per person:
 a campaign item, rendered from the campaign at read time, or an event item with its variables; read state) and
 `notifications.campaign_id` (a campaign's email and Telegram rows, event `broadcast.announcement`). The in-app channel is its own table,
@@ -549,7 +548,7 @@ fan-out finished (every in-app item exists, every message is queued); the detail
 providers and customers the customer provider in `NotificationAudiences` at boot. Each answers `count`, `page` (keyset by id) and
 `member` (the send-time check) from one SQL predicate: active staff (roles), merchants by status (default active; a listed one may be
 pending), group and country, with the email and Telegram flags of their `broadcast.announcement` switches (the SQL twin of
-`choiceFor`), and active customers (account, country, language; consent for marketing).
+`choiceFor`), and active customers (account, country; consent for marketing).
 
 **Fan-out and sending.** `send` (or the minute sweep) writes one `notification.campaign_fanout` outbox event; the worker's
 `CampaignFanOut` walks the audience in chunk transactions (row lock on the campaign, `ON CONFLICT DO NOTHING` inserts, the cursor moved in
@@ -557,28 +556,26 @@ the same transaction), then hands each chunk's rows to the queue `notification-b
 that queue holds more than 20 000 jobs and hands over to a continuation after 20 s. `BroadcastSendProcessor` takes one point of the
 per-channel budget (`broadcast-email`, `broadcast-telegram`, sized by the settings `notifications.broadcast_email_per_second` and
 `notifications.broadcast_telegram_per_second`) and calls `NotificationDelivery.deliver`, whose campaign branch re-reads the campaign
-(cancelled: the row fails with the reason), the person's eligibility and switches, renders the campaign in the person's language (`ar`
-falls back to `en`; email has an escaped HTML part, right to left for Arabic) and sends it. Jobs, ids and retries: `docs/queues.md`.
+(cancelled: the row fails with the reason), the person's eligibility and switches, renders the campaign (`{{name}}` is the person's name; email has an escaped HTML part) and sends it. Jobs, ids and retries: `docs/queues.md`.
 
 **Scheduling.** `notification_campaign_sweep` (maintenance, every minute) queues the due campaigns, re-kicks a fan-out whose row has
 not moved for 5 minutes and fails one still running a day after it was queued. It records its runs through the `JOB_RUN_RECORDER` port
 (`jobs/job-run-recorder.ts`) that health provides, since platform cannot import health.
 
-**Registries other modules use.** `NotificationAudiences` (providers), `InboxTextRegistry` (the in-app text of an event, in English
-and Arabic), `NotificationInbox.add` (an event item in the caller's transaction). The events `broadcast.announcement` (merchant:
+**Registries other modules use.** `NotificationAudiences` (providers), `InboxTextRegistry` (the in-app text of an event: one title and one body), `NotificationInbox.add` (an event item in the caller's transaction). The events `broadcast.announcement` (merchant:
 not transactional, email and Telegram on by default, so merchants see "Announcements" in their preferences; customer: not
 transactional; staff) and `broadcast.test` are registered by `BroadcastEvents`, have `templated: false` (a template for them is refused)
 and are not in `BUILT_IN_EVENTS`.
 
 **Inbox.** Four routes per surface, one `InboxService`: `GET /admin/inbox`, `GET /client/notifications`, `GET /store/v1/me/notifications`
-(list: `category`, `unread=true|false`, `locale=en|ar`, `_start`/`_end` up to 100, `x-total-count`, newest first), the same path plus
+(list: `category`, `unread=true|false`, `_start`/`_end` up to 100, `x-total-count`, newest first), the same path plus
 `/unread-count` (capped at 100: an index probe on the partial unread index, never cached), `POST .../:id/read` (204, idempotent) and
 `POST .../read-all` (body `{ upToId? }`, so an item that arrives during the click stays unread). The person is the actor the session
 guard put in the request context (`inboxOwner`), never a parameter: every read and write carries `recipient_type` and `recipient_id`, so
 another person's id is `404`, never `403`. A pending merchant may read; a suspended one is refused (`ACCOUNT_SUSPENDED`); the two
 staff POSTs are `audit: false` (a staff member's own read state). Items of a cancelled campaign are hidden from the list and the count.
-Text is made at read time (`inbox-views.ts`): a campaign item from the campaign's content (`{{name}}`, `ar` falling back to `en`), an
-event item from the `InboxTextRegistry`, in `locale` (default: a customer's saved language, English for the others).
+Text is made at read time (`inbox-views.ts`): a campaign item from the campaign's content (`{{name}}`), an
+event item from the `InboxTextRegistry`.
 
 **Event items.** `NotificationService.enqueue` (with a dedupe key) and `EventNotifier.notifyMerchant` also write the event's inbox item
 (`NotificationInbox.addForEvent`, key `inapp:<audience>:<event>:<occurrence>`), in the same transaction and before the template and
@@ -593,11 +590,11 @@ that report on the customer's own purchase or ticket are transactional (`order.r
 `payment.failed`, `refund.declined`, `support.reply`, `support.ticket_received`), so a suspended or blocked customer still gets them;
 `support.csat_survey` and `checkout.abandoned` stay non-transactional.
 
-**Arabic.** `arabic-templates.ts` holds the 31 Arabic default templates (every English merchant and customer row of
-`DEFAULT_TEMPLATES` and of the support module; staff alerts stay English) and `arabicTemplatesSql()`; migration `0021` inserts them
-(`ON CONFLICT DO NOTHING`) and a spec keeps code and SQL equal. For a reader whose language starts with `ar` the delivery adds the
-right-to-left HTML part of an event mail (a text template gets `emailHtml(text, 'ar')`, an HTML template is wrapped in the `div`); an English
-mail is unchanged.
+**English only (decision 039).** Every template, inbox text and campaign has one language, English: there is no language column,
+parameter or field, no right-to-left mail part and no Arabic default template (the Arabic rows that old migrations inserted are deleted by
+`0035`). An event mail is plain text, or the markup of an HTML template; `emailHtml(text)` (campaign and inline mails) wraps escaped text
+in a `dir="ltr" lang="en"` `div`. Text that people typed (a name, a message) is carried as typed, in any script: plain-text mails and
+Telegram show it unchanged (`test/integration/user-text-stays.test.ts`).
 
 **Hardening.** `notification_reconcile` (every 5 minutes) re-adds the job of a queued row whose job was lost (a campaign row after 15 minutes,
 an event row after 30 whose relayed job is gone, a digest whose period ended) and fails a row older than 48 hours; rows made by `sendNow`
@@ -641,8 +638,7 @@ viewer's visible rows with `id > after`, ascending, at most 50; a 51st row is `'
 - **No leak.** Every query carries the viewer's `recipient_type` and `recipient_id` (`visibleTo`), so a customer, a merchant and a
   staff member with the same numeric id never see each other's items, and a doorbell naming someone else's id renders nothing for
   the viewer. A doorbell is not trusted: its fields are checked, and the row is re-read.
-- **Text** is made as the lists make it (`inboxView`): the page's `?locale=`, else the saved language of the account (read once per
-  stream), else English; a campaign's `{{name}}` is the account's name. The data is parsed by `inbox-realtime.events.ts` before it is
+- **Text** is made as the lists make it (`inboxView`); a campaign's `{{name}}` is the account's name. The data is parsed by `inbox-realtime.events.ts` before it is
   written; a mismatch is logged and the frame skipped.
 - **Known limit.** Two transactions can commit inbox rows out of id order; a reconnect that falls exactly between them may not
   replay the lower id. The count is never wrong (`snapshot`) and clients refetch their open list after a reconnect.

@@ -1,6 +1,6 @@
 // Integration tests of the inbox routes on the three surfaces (feature 23, plan section 10.4): the staff console, the merchant portal and
 // the storefront account list, count and mark the signed-in person's own items; isolation by (type, id), the unread cap, paging, filters,
-// languages, cancelled campaigns and the guards of each surface (session, CSRF, a pending and a suspended merchant).
+// campaign and event texts, cancelled campaigns and the guards of each surface (session, CSRF, a pending and a suspended merchant).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '../../src/infra/db';
@@ -160,12 +160,13 @@ describe('GET /admin/inbox, /client/notifications, /store/v1/me/notifications', 
       category: 'wallet',
       title: 'Low wallet balance',
       link: '/merchant/wallet',
-      locale: 'en',
       readAt: null,
       campaignId: null,
       event: 'wallet.low_balance',
     });
     expect(merchantList.body[0].body).toBe('Your available balance is 3.00 GBP, below your alert of 10.00 GBP.');
+    // Items carry no language (decision 039).
+    expect(merchantList.body[0]).not.toHaveProperty('locale');
 
     const customerList = await customer.call('GET', '/store/v1/me/notifications');
     expect(customerList.body.map((item: { id: number }) => item.id)).toEqual([customerItem]);
@@ -213,54 +214,35 @@ describe('GET /admin/inbox, /client/notifications, /store/v1/me/notifications', 
     expect((await staff.get('/admin/inbox?unread=maybe')).status).toBe(422);
   });
 
-  it('renders a campaign item in the reader’s language: the saved one for a customer, the asked one first, English as the fallback', async () => {
+  it('renders a campaign item and an event item in English with the reader’s name, and refuses a language parameter', async () => {
     const owner = await adminWith(t, ['*']);
     const draft = await createDraft(owner);
-    const english = await createDraft(owner, {
-      name: 'English only',
-      content: { en: { title: 'Hello {{name}}', body: 'Only in English.' } },
-      link: { customer: '/account/orders' },
-    });
-    const arabic = await customerClient({ locale: 'ar', name: 'Dana' });
-    const guestOfEnglish = await customerClient({ locale: 'en', name: 'Dan' });
-    await addItem('customer', arabic.id, {
-      event: null,
-      campaignId: draft.id,
-      category: 'announcement',
-      variables: {},
-    });
-    await addItem('customer', arabic.id, {
-      event: null,
-      campaignId: english.id,
-      category: 'announcement',
-      variables: {},
-    });
-    await addItem('customer', guestOfEnglish.id, {
-      event: null,
-      campaignId: draft.id,
-      category: 'announcement',
-      variables: {},
-    });
+    const dana = await customerClient({ name: 'Dana' });
+    const dan = await customerClient({ name: 'Dan' });
+    for (const reader of [dana, dan]) {
+      await addItem('customer', reader.id, {
+        event: null,
+        campaignId: draft.id,
+        category: 'announcement',
+        variables: {},
+      });
+    }
 
-    const saved = await arabic.call('GET', '/store/v1/me/notifications?_sort=id&_order=asc');
-    expect(saved.body[0]).toMatchObject({
-      title: 'صيانة لـ Dana',
-      locale: 'ar',
+    const mine = await dana.call('GET', '/store/v1/me/notifications');
+    expect(mine.body[0]).toMatchObject({
+      title: 'Maintenance for Dana',
       link: '/account/orders',
       campaignId: draft.id,
     });
-    // Arabic reader, English-only campaign: English text, and `locale` says so.
-    expect(saved.body[1]).toMatchObject({ title: 'Hello Dana', body: 'Only in English.', locale: 'en' });
-
-    const asked = await arabic.call('GET', '/store/v1/me/notifications?locale=en&_sort=id&_order=asc');
-    expect(asked.body[0]).toMatchObject({ title: 'Maintenance for Dana', locale: 'en' });
-    const other = await guestOfEnglish.call('GET', '/store/v1/me/notifications?locale=ar');
-    expect(other.body[0]).toMatchObject({ title: 'صيانة لـ Dan', locale: 'ar' });
-    expect((await guestOfEnglish.call('GET', '/store/v1/me/notifications?locale=fr')).status).toBe(422);
-    // The Arabic event text, too.
-    await addItem('customer', arabic.id);
-    const events = await arabic.call('GET', '/store/v1/me/notifications?category=order');
-    expect(events.body[0]).toMatchObject({ title: 'تم تنفيذ طلبك 4021', locale: 'ar' });
+    expect(mine.body[0]).not.toHaveProperty('locale');
+    const other = await dan.call('GET', '/store/v1/me/notifications');
+    expect(other.body[0]).toMatchObject({ title: 'Maintenance for Dan', body: 'The portal is read-only on Friday.' });
+    // The language parameter is gone (decision 039): the strict list refuses the unknown key.
+    expect((await dana.call('GET', '/store/v1/me/notifications?locale=en')).status).toBe(422);
+    // The event text is English too.
+    await addItem('customer', dana.id);
+    const events = await dana.call('GET', '/store/v1/me/notifications?category=order');
+    expect(events.body[0]).toMatchObject({ title: 'Order 4021 completed' });
   });
 
   it('hides the items of a cancelled campaign from the list and the count, and shows them again never', async () => {

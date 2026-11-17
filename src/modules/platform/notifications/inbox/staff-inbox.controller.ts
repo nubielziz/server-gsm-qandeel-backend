@@ -21,7 +21,7 @@ export class StaffInboxController {
   /**
    * Lists the person's notifications.
    *
-   * @param query range, category, `unread` and `locale`
+   * @param query range, category and `unread`
    * @returns the page
    * @route GET /admin/inbox
    */

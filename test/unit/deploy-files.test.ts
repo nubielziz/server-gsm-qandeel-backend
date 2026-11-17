@@ -235,6 +235,18 @@ describe('Dockerfile and .dockerignore', () => {
     expect(dockerfile).toContain("'search-keys'");
   });
 
+  it('carries the English-only export the release-30 runbook runs in the migrate container, in the allow-list, the copy and the import check', () => {
+    expect(read('.dockerignore').split('\n')).toContain('!scripts/english-only-export.ts');
+    expect(dockerfile).toMatch(/^COPY [^\n]*scripts\/english-only-export\.ts [^\n]*\.\/scripts\/$/m);
+    expect(dockerfile).toContain("'english-only-export'");
+    // it reads the journal next to it (drizzle/ is copied whole) and nothing of scripts/lib or src
+    expect(dockerfile).toMatch(/^COPY drizzle \.\/drizzle$/m);
+    const source = read('scripts/english-only-export.ts');
+    const imports = [...source.matchAll(/^(?:import|export)\b[^;]*?\bfrom '([^']+)'/gm)].map((match) => match[1]);
+    expect(source).not.toMatch(/\bimport\(/);
+    expect(imports.sort()).toEqual(['node:crypto', 'node:fs', 'node:path', 'pg']);
+  });
+
   it('copies no environment file into the image and bakes in no secret', () => {
     expect(dockerfile).not.toMatch(/COPY[^\n]*\.env/);
     expect(dockerfile).not.toMatch(/^(ENV|ARG)[^\n]*(SECRET|PASSWORD|TOKEN|PEPPER|KEY)/m);

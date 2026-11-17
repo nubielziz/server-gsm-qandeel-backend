@@ -318,14 +318,6 @@ describe('POST /store/v1/checkout-sessions', () => {
     expect((await open(valid(world))).statusCode).toBe(201);
   });
 
-  it('sells a service that is listed only in another language', async () => {
-    const { db } = await testDb();
-    const world = await storefrontWorld(db);
-    await db.update(s.serviceListings).set({ isListed: false }).where(eq(s.serviceListings.id, world.icloud.listingId));
-    await insertListing(db, world.icloud.serviceId, { locale: 'ar', slug: 'icloud-ar', publicTitle: 'فحص آي كلاود' });
-    expect((await open(valid(world))).statusCode).toBe(201);
-  });
-
   it('refuses a file service that is not ready to order online', async () => {
     const { db } = await testDb();
     const world = await storefrontWorld(db);
@@ -689,13 +681,13 @@ describe('POST /store/v1/checkout-sessions/:token/consents', () => {
         {
           purpose: 'terms',
           granted: true,
-          document: { type: 'terms', version: '3.2', locale: 'en' },
+          document: { type: 'terms', version: '3.2' },
           recordedAt: '2026-11-07T12:01:00.000Z',
         },
         {
           purpose: 'privacy',
           granted: true,
-          document: { type: 'privacy', version: '2.1', locale: 'en' },
+          document: { type: 'privacy', version: '2.1' },
           recordedAt: '2026-11-07T12:01:00.000Z',
         },
         { purpose: 'withdrawal_waiver', granted: true, document: null, recordedAt: '2026-11-07T12:01:00.000Z' },
@@ -759,17 +751,38 @@ describe('POST /store/v1/checkout-sessions/:token/consents', () => {
     expect(await db.select().from(s.consentRecords)).toHaveLength(2);
   });
 
-  it('records marketing and the refund policy without making them required, and falls back to English texts', async () => {
+  it('references the English version in force, ignores a language an older website sends, and never a retired version in another language', async () => {
+    const { db, token } = await opened();
+    const [terms] = await db.select().from(s.legalDocuments).where(eq(s.legalDocuments.type, 'terms'));
+    // The same text `3.2` in another language, taken out of force by migration 0035 and kept as the proof of an earlier consent.
+    const [retired] = await db
+      .insert(s.legalDocuments)
+      .values({
+        type: 'terms',
+        version: '3.2',
+        locale: 'tr',
+        bodyMd: '# Retired text',
+        effectiveFrom: new Date('2026-06-01T09:00:00.000Z'),
+      })
+      .returning();
+    const res = await consent(token, { locale: 'tr', consents: [{ purpose: 'terms', granted: true }] });
+    expect(res.statusCode).toBe(201);
+    expect(body(res).records[0].document).toEqual({ type: 'terms', version: '3.2' });
+    const [row] = await db.select().from(s.consentRecords);
+    expect(row?.legalDocumentId).toBe(terms!.id);
+    expect(row?.legalDocumentId).not.toBe(retired!.id);
+  });
+
+  it('records marketing and the refund policy without making them required', async () => {
     const { db, token } = await opened();
     const res = await consent(token, {
-      locale: 'ar',
       consents: [
         { purpose: 'marketing', granted: true },
         { purpose: 'refund_policy', granted: true },
       ],
     });
     expect(res.statusCode).toBe(201);
-    expect(body(res).records[1].document).toEqual({ type: 'refund', version: '1.4', locale: 'en' });
+    expect(body(res).records[1].document).toEqual({ type: 'refund', version: '1.4' });
     expect(body(res).consent).toEqual({
       required: ['terms', 'privacy', 'withdrawal_waiver'],
       granted: ['refund_policy', 'marketing'],

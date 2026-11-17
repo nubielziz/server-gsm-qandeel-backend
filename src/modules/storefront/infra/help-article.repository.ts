@@ -12,7 +12,6 @@ const COLUMNS: ListColumns = {
   answerMd: helpArticles.answerMd,
   category: helpArticles.category,
   isPublished: helpArticles.isPublished,
-  locale: helpArticles.locale,
   createdAt: helpArticles.createdAt,
 };
 
@@ -20,26 +19,19 @@ const COLUMNS: ListColumns = {
 export type HelpArticleSort = 'sort' | 'question' | 'category' | 'isPublished' | 'createdAt' | 'id';
 
 /**
- * Lists articles for `GET /admin/help-articles`, or, with `onlyPublishedIn`, the published ones of a language for the public
- * list.
+ * Lists articles for `GET /admin/help-articles`, or, with `onlyPublished`, the published ones for the public list.
  *
  * @param db the database or a transaction
  * @param query the parsed list request
- * @param onlyPublishedIn a language: restricts the list to published articles of that language (the public route)
+ * @param onlyPublished restricts the list to published articles (the public route)
  * @returns the page of rows and the exact total
  */
 export async function listArticles(
   db: DbExecutor,
   query: ParsedListQuery<string, unknown>,
-  onlyPublishedIn?: string,
+  onlyPublished = false,
 ): Promise<{ rows: HelpArticle[]; total: number }> {
-  const where = listWhere(
-    query,
-    COLUMNS,
-    onlyPublishedIn === undefined
-      ? undefined
-      : and(eq(helpArticles.isPublished, true), eq(helpArticles.locale, onlyPublishedIn)),
-  );
+  const where = listWhere(query, COLUMNS, onlyPublished ? eq(helpArticles.isPublished, true) : undefined);
   const [rows, [count]] = await Promise.all([
     db
       .select()

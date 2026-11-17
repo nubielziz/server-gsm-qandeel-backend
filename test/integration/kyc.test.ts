@@ -233,7 +233,7 @@ describe('POST /admin/kyc-submissions/:id/decide', () => {
     });
   });
 
-  it('mails the merchant on approval, and on rejection with the staff note, in the merchant language (feature 20)', async () => {
+  it('mails the merchant on approval, and on rejection with the staff note (feature 20)', async () => {
     const approved = await pending();
     const admin = await adminWith(t, ['kyc:decide']);
     await admin.post(`/admin/kyc-submissions/${approved.submission.id}/decide`, { decision: 'approve' });
@@ -246,7 +246,7 @@ describe('POST /admin/kyc-submissions/:id/decide', () => {
     mailbox(t).reset();
     await resetDb();
     await seedIdentityTemplates(db);
-    const rejected = await merchant({ locale: 'ar', email: 'ops@gulf-ar.example' });
+    const rejected = await merchant({ email: 'ops@gulf-two.example' });
     await rejected.portal.call('POST', '/client/kyc', { fileIds: [await insertProofFile(db, rejected.id)] });
     const [submission] = await db.select().from(s.kycSubmissions);
     const rejectedAs = await adminWith(t, ['kyc:decide']);
@@ -257,8 +257,8 @@ describe('POST /admin/kyc-submissions/:id/decide', () => {
     expect(res.status).toBe(200);
     await sendAllQueued(t);
     const [mail] = mailbox(t).sent;
-    expect(mail).toMatchObject({ to: 'ops@gulf-ar.example', subject: 'توثيق هويتك يحتاج إلى مراجعة' });
-    expect(mail!.text).toContain('The photo is not readable.');
+    expect(mail).toMatchObject({ to: 'ops@gulf-two.example', subject: 'Your identity verification needs attention' });
+    expect(mail!.text).toContain('Reason: The photo is not readable.');
     const [audit] = await db.select().from(s.auditLogs);
     expect(audit).toMatchObject({
       action: 'rejected verification of',

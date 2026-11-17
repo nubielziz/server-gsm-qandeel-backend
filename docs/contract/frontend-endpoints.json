@@ -1,6 +1,6 @@
 {
  "generatedBy": "scripts/extract-frontend-contract.mjs",
- "frontend": "../frontend-admin",
+ "frontend": "../frontend-admin-30",
  "count": 321,
  "endpoints": [
   {
@@ -745,7 +745,7 @@
    "key": "DELETE /admin/service-listings/:id/image",
    "fn": "removeListingImage",
    "file": "src/features/storefront/api/listings.ts",
-   "line": 79,
+   "line": 78,
    "params": [
     {
      "name": "id",
@@ -3038,13 +3038,6 @@
          "nullable": true,
          "optional": true
         },
-        "locale": {
-         "enum": [
-          "en",
-          "ar"
-         ],
-         "optional": true
-        },
         "address": {
          "type": "string",
          "optional": true
@@ -3309,13 +3302,6 @@
        }
       },
       "nullable": true,
-      "optional": true
-     },
-     "locale": {
-      "enum": [
-       "en",
-       "ar"
-      ],
       "optional": true
      },
      "address": {
@@ -4642,9 +4628,6 @@
          "type": "string",
          "alias": "IsoDateTime"
         },
-        "locale": {
-         "type": "string"
-        },
         "title": {
          "type": "string"
         },
@@ -4751,9 +4734,6 @@
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
-     },
-     "locale": {
-      "type": "string"
      },
      "title": {
       "type": "string"
@@ -5335,9 +5315,6 @@
         "country": {
          "type": "string"
         },
-        "locale": {
-         "type": "string"
-        },
         "currency": {
          "type": "number",
          "alias": "Id"
@@ -5488,9 +5465,6 @@
       "alias": "IsoDateTime"
      },
      "country": {
-      "type": "string"
-     },
-     "locale": {
       "type": "string"
      },
      "currency": {
@@ -7555,9 +7529,6 @@
          "type": "string",
          "alias": "IsoDateTime"
         },
-        "locale": {
-         "type": "string"
-        },
         "sort": {
          "type": "number"
         },
@@ -7639,9 +7610,6 @@
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
-     },
-     "locale": {
-      "type": "string"
      },
      "sort": {
       "type": "number"
@@ -8084,13 +8052,6 @@
         "type": "boolean",
         "optional": true
        },
-       "locale": {
-        "enum": [
-         "en",
-         "ar"
-        ],
-        "optional": true
-       },
        "category": {
         "enum": [
          "order",
@@ -8161,12 +8122,6 @@
         "link": {
          "type": "string",
          "nullable": true
-        },
-        "locale": {
-         "enum": [
-          "en",
-          "ar"
-         ]
         },
         "readAt": {
          "type": "string",
@@ -10261,9 +10216,6 @@
          "type": "string",
          "alias": "IsoDateTime"
         },
-        "locale": {
-         "type": "string"
-        },
         "type": {
          "type": "string"
         },
@@ -10271,6 +10223,9 @@
          "type": "string"
         },
         "version": {
+         "type": "string"
+        },
+        "locale": {
          "type": "string"
         },
         "effectiveFrom": {
@@ -10344,9 +10299,6 @@
       "type": "string",
       "alias": "IsoDateTime"
      },
-     "locale": {
-      "type": "string"
-     },
      "type": {
       "type": "string"
      },
@@ -10354,6 +10306,9 @@
       "type": "string"
      },
      "version": {
+      "type": "string"
+     },
+     "locale": {
       "type": "string"
      },
      "effectiveFrom": {
@@ -10778,15 +10733,6 @@
            "type": "string"
           },
           "optional": true
-         },
-         "locales": {
-          "array": {
-           "enum": [
-            "en",
-            "ar"
-           ]
-          },
-          "optional": true
          }
         },
         "optional": true
@@ -10831,27 +10777,11 @@
      },
      "content": {
       "object": {
-       "en": {
-        "object": {
-         "title": {
-          "type": "string"
-         },
-         "body": {
-          "type": "string"
-         }
-        }
+       "title": {
+        "type": "string"
        },
-       "ar": {
-        "object": {
-         "title": {
-          "type": "string"
-         },
-         "body": {
-          "type": "string"
-         }
-        },
-        "nullable": true,
-        "optional": true
+       "body": {
+        "type": "string"
        }
       }
      },
@@ -10956,7 +10886,7 @@
    "key": "GET /admin/notification-campaigns/:id/recipients",
    "fn": "listCampaignRecipients",
    "file": "src/features/notifications/api/campaigns.ts",
-   "line": 147,
+   "line": 146,
    "params": [
     {
      "name": "id",
@@ -11256,9 +11186,6 @@
         "event": {
          "type": "string"
         },
-        "locale": {
-         "type": "string"
-        },
         "subject": {
          "type": "string"
         },
@@ -11348,9 +11275,6 @@
       "type": "boolean"
      },
      "event": {
-      "type": "string"
-     },
-     "locale": {
       "type": "string"
      },
      "subject": {
@@ -14383,9 +14307,6 @@
          "type": "string",
          "alias": "IsoDateTime"
         },
-        "locale": {
-         "type": "string"
-        },
         "body": {
          "type": "string"
         },
@@ -14471,9 +14392,6 @@
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
-     },
-     "locale": {
-      "type": "string"
      },
      "body": {
       "type": "string"
@@ -16573,9 +16491,6 @@
           "file"
          ]
         },
-        "nameAr": {
-         "type": "string"
-        },
         "serviceCount": {
          "type": "number",
          "optional": true
@@ -16655,9 +16570,6 @@
        "file"
       ]
      },
-     "nameAr": {
-      "type": "string"
-     },
      "serviceCount": {
       "type": "number",
       "optional": true
@@ -16669,7 +16581,7 @@
    "key": "GET /admin/service-listings",
    "fn": "listListings",
    "file": "src/features/storefront/api/listings.ts",
-   "line": 26,
+   "line": 25,
    "params": [
     {
      "name": "query",
@@ -16772,9 +16684,6 @@
          "alias": "Id"
         },
         "country": {
-         "type": "string"
-        },
-        "locale": {
          "type": "string"
         },
         "sort": {
@@ -16890,7 +16799,7 @@
    "key": "GET /admin/service-listings/:id",
    "fn": "getListing",
    "file": "src/features/storefront/api/listings.ts",
-   "line": 34,
+   "line": 33,
    "params": [
     {
      "name": "id",
@@ -16930,9 +16839,6 @@
       "alias": "Id"
      },
      "country": {
-      "type": "string"
-     },
-     "locale": {
       "type": "string"
      },
      "sort": {
@@ -25087,13 +24993,6 @@
         "type": "string",
         "optional": true
        },
-       "locale": {
-        "enum": [
-         "en",
-         "ar"
-        ],
-        "optional": true
-       },
        "address": {
         "type": "string",
         "optional": true
@@ -25265,13 +25164,6 @@
        }
       },
       "nullable": true,
-      "optional": true
-     },
-     "locale": {
-      "enum": [
-       "en",
-       "ar"
-      ],
       "optional": true
      },
      "address": {
@@ -25699,10 +25591,6 @@
      "typeText": "Partial<Omit<CreatePageBody, \"kind\">>",
      "shape": {
       "object": {
-       "locale": {
-        "type": "string",
-        "optional": true
-       },
        "title": {
         "type": "string",
         "optional": true
@@ -25762,9 +25650,6 @@
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
-     },
-     "locale": {
-      "type": "string"
      },
      "title": {
       "type": "string"
@@ -25981,10 +25866,6 @@
         "type": "string",
         "optional": true
        },
-       "locale": {
-        "type": "string",
-        "optional": true
-       },
        "phone": {
         "type": "string",
         "optional": true
@@ -26050,9 +25931,6 @@
       "alias": "IsoDateTime"
      },
      "country": {
-      "type": "string"
-     },
-     "locale": {
       "type": "string"
      },
      "currency": {
@@ -26279,10 +26157,6 @@
         "type": "string",
         "optional": true
        },
-       "locale": {
-        "type": "string",
-        "optional": true
-       },
        "isPublished": {
         "type": "boolean",
         "optional": true
@@ -26326,9 +26200,6 @@
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
-     },
-     "locale": {
-      "type": "string"
      },
      "sort": {
       "type": "number"
@@ -26653,15 +26524,6 @@
              "type": "string"
             },
             "optional": true
-           },
-           "locales": {
-            "array": {
-             "enum": [
-              "en",
-              "ar"
-             ]
-            },
-            "optional": true
            }
           },
           "optional": true
@@ -26707,27 +26569,11 @@
        },
        "content": {
         "object": {
-         "en": {
-          "object": {
-           "title": {
-            "type": "string"
-           },
-           "body": {
-            "type": "string"
-           }
-          }
+         "title": {
+          "type": "string"
          },
-         "ar": {
-          "object": {
-           "title": {
-            "type": "string"
-           },
-           "body": {
-            "type": "string"
-           }
-          },
-          "nullable": true,
-          "optional": true
+         "body": {
+          "type": "string"
          }
         },
         "optional": true
@@ -26930,15 +26776,6 @@
            "type": "string"
           },
           "optional": true
-         },
-         "locales": {
-          "array": {
-           "enum": [
-            "en",
-            "ar"
-           ]
-          },
-          "optional": true
          }
         },
         "optional": true
@@ -26983,27 +26820,11 @@
      },
      "content": {
       "object": {
-       "en": {
-        "object": {
-         "title": {
-          "type": "string"
-         },
-         "body": {
-          "type": "string"
-         }
-        }
+       "title": {
+        "type": "string"
        },
-       "ar": {
-        "object": {
-         "title": {
-          "type": "string"
-         },
-         "body": {
-          "type": "string"
-         }
-        },
-        "nullable": true,
-        "optional": true
+       "body": {
+        "type": "string"
        }
       }
      },
@@ -27144,10 +26965,6 @@
         ],
         "optional": true
        },
-       "locale": {
-        "type": "string",
-        "optional": true
-       },
        "subject": {
         "type": "string",
         "optional": true
@@ -27204,9 +27021,6 @@
       "type": "boolean"
      },
      "event": {
-      "type": "string"
-     },
-     "locale": {
       "type": "string"
      },
      "subject": {
@@ -27709,10 +27523,6 @@
         ],
         "optional": true
        },
-       "locale": {
-        "type": "string",
-        "optional": true
-       },
        "body": {
         "type": "string",
         "optional": true
@@ -27755,9 +27565,6 @@
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
-     },
-     "locale": {
-      "type": "string"
      },
      "body": {
       "type": "string"
@@ -28173,10 +27980,6 @@
         "type": "string",
         "optional": true
        },
-       "nameAr": {
-        "type": "string",
-        "optional": true
-       },
        "type": {
         "enum": [
          "imei",
@@ -28255,9 +28058,6 @@
        "file"
       ]
      },
-     "nameAr": {
-      "type": "string"
-     },
      "serviceCount": {
       "type": "number",
       "optional": true
@@ -28269,7 +28069,7 @@
    "key": "PATCH /admin/service-listings/:id",
    "fn": "updateListing",
    "file": "src/features/storefront/api/listings.ts",
-   "line": 54,
+   "line": 53,
    "params": [
     {
      "name": "id",
@@ -28379,9 +28179,6 @@
       "alias": "Id"
      },
      "country": {
-      "type": "string"
-     },
-     "locale": {
       "type": "string"
      },
      "sort": {
@@ -30937,13 +30734,6 @@
       "nullable": true,
       "optional": true
      },
-     "locale": {
-      "enum": [
-       "en",
-       "ar"
-      ],
-      "optional": true
-     },
      "address": {
       "type": "string",
       "optional": true
@@ -31774,9 +31564,6 @@
        "title": {
         "type": "string"
        },
-       "locale": {
-        "type": "string"
-       },
        "slug": {
         "type": "string",
         "optional": true
@@ -31831,9 +31618,6 @@
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
-     },
-     "locale": {
-      "type": "string"
      },
      "title": {
       "type": "string"
@@ -31947,9 +31731,6 @@
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
-     },
-     "locale": {
-      "type": "string"
      },
      "title": {
       "type": "string"
@@ -32069,9 +31850,6 @@
         "createdAt": {
          "type": "string",
          "alias": "IsoDateTime"
-        },
-        "locale": {
-         "type": "string"
         },
         "title": {
          "type": "string"
@@ -32330,9 +32108,6 @@
        "country": {
         "type": "string"
        },
-       "locale": {
-        "type": "string"
-       },
        "phone": {
         "type": "string",
         "optional": true
@@ -32404,9 +32179,6 @@
       "alias": "IsoDateTime"
      },
      "country": {
-      "type": "string"
-     },
-     "locale": {
       "type": "string"
      },
      "currency": {
@@ -33539,9 +33311,6 @@
        "answerMd": {
         "type": "string"
        },
-       "locale": {
-        "type": "string"
-       },
        "isPublished": {
         "type": "boolean",
         "optional": true
@@ -33585,9 +33354,6 @@
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
-     },
-     "locale": {
-      "type": "string"
      },
      "sort": {
       "type": "number"
@@ -34599,9 +34365,6 @@
        "type": {
         "type": "string"
        },
-       "locale": {
-        "type": "string"
-       },
        "version": {
         "type": "string"
        },
@@ -34646,9 +34409,6 @@
       "type": "string",
       "alias": "IsoDateTime"
      },
-     "locale": {
-      "type": "string"
-     },
      "type": {
       "type": "string"
      },
@@ -34656,6 +34416,9 @@
       "type": "string"
      },
      "version": {
+      "type": "string"
+     },
+     "locale": {
       "type": "string"
      },
      "effectiveFrom": {
@@ -34723,9 +34486,6 @@
       "type": "string",
       "alias": "IsoDateTime"
      },
-     "locale": {
-      "type": "string"
-     },
      "type": {
       "type": "string"
      },
@@ -34733,6 +34493,9 @@
       "type": "string"
      },
      "version": {
+      "type": "string"
+     },
+     "locale": {
       "type": "string"
      },
      "effectiveFrom": {
@@ -34835,15 +34598,6 @@
              "type": "string"
             },
             "optional": true
-           },
-           "locales": {
-            "array": {
-             "enum": [
-              "en",
-              "ar"
-             ]
-            },
-            "optional": true
            }
           },
           "optional": true
@@ -34888,27 +34642,11 @@
        },
        "content": {
         "object": {
-         "en": {
-          "object": {
-           "title": {
-            "type": "string"
-           },
-           "body": {
-            "type": "string"
-           }
-          }
+         "title": {
+          "type": "string"
          },
-         "ar": {
-          "object": {
-           "title": {
-            "type": "string"
-           },
-           "body": {
-            "type": "string"
-           }
-          },
-          "nullable": true,
-          "optional": true
+         "body": {
+          "type": "string"
          }
         }
        },
@@ -35110,15 +34848,6 @@
            "type": "string"
           },
           "optional": true
-         },
-         "locales": {
-          "array": {
-           "enum": [
-            "en",
-            "ar"
-           ]
-          },
-          "optional": true
          }
         },
         "optional": true
@@ -35163,27 +34892,11 @@
      },
      "content": {
       "object": {
-       "en": {
-        "object": {
-         "title": {
-          "type": "string"
-         },
-         "body": {
-          "type": "string"
-         }
-        }
+       "title": {
+        "type": "string"
        },
-       "ar": {
-        "object": {
-         "title": {
-          "type": "string"
-         },
-         "body": {
-          "type": "string"
-         }
-        },
-        "nullable": true,
-        "optional": true
+       "body": {
+        "type": "string"
        }
       }
      },
@@ -35288,7 +35001,7 @@
    "key": "POST /admin/notification-campaigns/:id/cancel",
    "fn": "cancelCampaign",
    "file": "src/features/notifications/api/campaigns.ts",
-   "line": 138,
+   "line": 137,
    "params": [
     {
      "name": "id",
@@ -35476,15 +35189,6 @@
            "type": "string"
           },
           "optional": true
-         },
-         "locales": {
-          "array": {
-           "enum": [
-            "en",
-            "ar"
-           ]
-          },
-          "optional": true
          }
         },
         "optional": true
@@ -35529,27 +35233,11 @@
      },
      "content": {
       "object": {
-       "en": {
-        "object": {
-         "title": {
-          "type": "string"
-         },
-         "body": {
-          "type": "string"
-         }
-        }
+       "title": {
+        "type": "string"
        },
-       "ar": {
-        "object": {
-         "title": {
-          "type": "string"
-         },
-         "body": {
-          "type": "string"
-         }
-        },
-        "nullable": true,
-        "optional": true
+       "body": {
+        "type": "string"
        }
       }
      },
@@ -35654,7 +35342,7 @@
    "key": "POST /admin/notification-campaigns/:id/preview",
    "fn": "previewCampaign",
    "file": "src/features/notifications/api/campaigns.ts",
-   "line": 93,
+   "line": 92,
    "params": [
     {
      "name": "id",
@@ -35671,12 +35359,6 @@
      "typeText": "PreviewCampaignBody",
      "shape": {
       "object": {
-       "locale": {
-        "enum": [
-         "en",
-         "ar"
-        ]
-       },
        "channel": {
         "enum": [
          "email",
@@ -35744,7 +35426,7 @@
    "key": "POST /admin/notification-campaigns/:id/schedule",
    "fn": "scheduleCampaign",
    "file": "src/features/notifications/api/campaigns.ts",
-   "line": 125,
+   "line": 124,
    "params": [
     {
      "name": "id",
@@ -35945,15 +35627,6 @@
            "type": "string"
           },
           "optional": true
-         },
-         "locales": {
-          "array": {
-           "enum": [
-            "en",
-            "ar"
-           ]
-          },
-          "optional": true
          }
         },
         "optional": true
@@ -35998,27 +35671,11 @@
      },
      "content": {
       "object": {
-       "en": {
-        "object": {
-         "title": {
-          "type": "string"
-         },
-         "body": {
-          "type": "string"
-         }
-        }
+       "title": {
+        "type": "string"
        },
-       "ar": {
-        "object": {
-         "title": {
-          "type": "string"
-         },
-         "body": {
-          "type": "string"
-         }
-        },
-        "nullable": true,
-        "optional": true
+       "body": {
+        "type": "string"
        }
       }
      },
@@ -36123,7 +35780,7 @@
    "key": "POST /admin/notification-campaigns/:id/send",
    "fn": "sendCampaign",
    "file": "src/features/notifications/api/campaigns.ts",
-   "line": 116,
+   "line": 115,
    "params": [
     {
      "name": "id",
@@ -36323,15 +35980,6 @@
            "type": "string"
           },
           "optional": true
-         },
-         "locales": {
-          "array": {
-           "enum": [
-            "en",
-            "ar"
-           ]
-          },
-          "optional": true
          }
         },
         "optional": true
@@ -36376,27 +36024,11 @@
      },
      "content": {
       "object": {
-       "en": {
-        "object": {
-         "title": {
-          "type": "string"
-         },
-         "body": {
-          "type": "string"
-         }
-        }
+       "title": {
+        "type": "string"
        },
-       "ar": {
-        "object": {
-         "title": {
-          "type": "string"
-         },
-         "body": {
-          "type": "string"
-         }
-        },
-        "nullable": true,
-        "optional": true
+       "body": {
+        "type": "string"
        }
       }
      },
@@ -36501,7 +36133,7 @@
    "key": "POST /admin/notification-campaigns/:id/test",
    "fn": "sendCampaignTest",
    "file": "src/features/notifications/api/campaigns.ts",
-   "line": 102,
+   "line": 101,
    "params": [
     {
      "name": "id",
@@ -36525,13 +36157,6 @@
           "in_app"
          ]
         },
-        "optional": true
-       },
-       "locale": {
-        "enum": [
-         "en",
-         "ar"
-        ],
         "optional": true
        }
       }
@@ -36634,15 +36259,6 @@
            "countries": {
             "array": {
              "type": "string"
-            },
-            "optional": true
-           },
-           "locales": {
-            "array": {
-             "enum": [
-              "en",
-              "ar"
-             ]
             },
             "optional": true
            }
@@ -36761,16 +36377,6 @@
        }
       }
      },
-     "byLocale": {
-      "object": {
-       "en": {
-        "type": "number"
-       },
-       "ar": {
-        "type": "number"
-       }
-      }
-     },
      "excluded": {
       "object": {
        "noConsent": {
@@ -36817,9 +36423,6 @@
          "customer",
          "merchant"
         ]
-       },
-       "locale": {
-        "type": "string"
        },
        "subject": {
         "type": "string"
@@ -36874,9 +36477,6 @@
       "type": "boolean"
      },
      "event": {
-      "type": "string"
-     },
-     "locale": {
       "type": "string"
      },
      "subject": {
@@ -39121,9 +38721,6 @@
          "other"
         ]
        },
-       "locale": {
-        "type": "string"
-       },
        "body": {
         "type": "string"
        },
@@ -39164,9 +38761,6 @@
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
-     },
-     "locale": {
-      "type": "string"
      },
      "body": {
       "type": "string"
@@ -39735,10 +39329,6 @@
        "name": {
         "type": "string"
        },
-       "nameAr": {
-        "type": "string",
-        "optional": true
-       },
        "type": {
         "enum": [
          "imei",
@@ -39813,9 +39403,6 @@
        "file"
       ]
      },
-     "nameAr": {
-      "type": "string"
-     },
      "serviceCount": {
       "type": "number",
       "optional": true
@@ -39827,7 +39414,7 @@
    "key": "POST /admin/service-listings",
    "fn": "createListing",
    "file": "src/features/storefront/api/listings.ts",
-   "line": 43,
+   "line": 42,
    "params": [
     {
      "name": "body",
@@ -39883,9 +39470,6 @@
         "type": "number",
         "alias": "Id"
        },
-       "locale": {
-        "type": "string"
-       },
        "publicTitle": {
         "type": "string"
        },
@@ -39925,9 +39509,6 @@
       "alias": "Id"
      },
      "country": {
-      "type": "string"
-     },
-     "locale": {
       "type": "string"
      },
      "sort": {
@@ -40043,7 +39624,7 @@
    "key": "POST /admin/service-listings/:id/image",
    "fn": "uploadListingImage",
    "file": "src/features/storefront/api/listings.ts",
-   "line": 69,
+   "line": 68,
    "params": [
     {
      "name": "id",
@@ -40091,9 +39672,6 @@
       "alias": "Id"
      },
      "country": {
-      "type": "string"
-     },
-     "locale": {
       "type": "string"
      },
      "sort": {

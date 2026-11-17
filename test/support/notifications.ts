@@ -1,11 +1,10 @@
 // Helpers for the notification tests (feature 12a): the default templates (resetDb empties the table, the migration's rows are gone), the
 // in-memory mail and Telegram drivers of a test app, and the token inside an emailed link.
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
-import { DbService, type Database, schema as s } from '../../src/infra/db';
+import { DbService, type Database, type DbExecutor, schema as s } from '../../src/infra/db';
 import {
   type DeliveryOutcome,
-  DEFAULT_TEMPLATES,
   InMemoryMailDriver,
   InMemoryTelegramDriver,
   MAIL_DRIVER,
@@ -14,6 +13,7 @@ import {
   type OutboxPayload,
   OutboxService,
   TELEGRAM_DRIVER,
+  defaultTemplatesSql,
 } from '../../src/modules/platform';
 import type { PlanResult } from '../../src/modules/platform/notifications/event-notifier';
 import {
@@ -25,15 +25,25 @@ import { openSession } from './auth';
 import { PORTAL_ORIGIN } from './merchant-portal';
 
 /**
- * Inserts the default templates the migration ships.
+ * Runs the SQL that installs some default templates (one of the modules' `…TemplatesSql()` writers).
  *
- * @param db the test database
+ * Why: the writers are the one source of that SQL (decision 039: no language, conflict target event, channel and audience); running them
+ * here checks their conflict target against the real unique key in every test that needs templates.
+ *
+ * @param db the test database or a transaction
+ * @param insert the `INSERT ... ON CONFLICT DO NOTHING` statement a writer printed
  */
-export async function seedDefaultTemplates(db: Database): Promise<void> {
-  await db
-    .insert(s.notificationTemplates)
-    .values(DEFAULT_TEMPLATES.map((template) => ({ ...template, isActive: true })))
-    .onConflictDoNothing();
+export async function installTemplates(db: DbExecutor, insert: string): Promise<void> {
+  await db.execute(sql.raw(insert));
+}
+
+/**
+ * Inserts the default templates the migrations ship (`resetDb` empties the table).
+ *
+ * @param db the test database or a transaction
+ */
+export async function seedDefaultTemplates(db: DbExecutor): Promise<void> {
+  await installTemplates(db, defaultTemplatesSql());
 }
 
 /**

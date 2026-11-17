@@ -83,7 +83,7 @@ export async function clearStreamLimits(t: TestApp): Promise<void> {
 /**
  * Opens a stream.
  *
- * @param url the full URL (`http://127.0.0.1:1234/store/v1/me/stream?locale=en`)
+ * @param url the full URL (`http://127.0.0.1:1234/store/v1/me/stream`)
  * @param headers the request headers (the session cookie, `last-event-id`, the `Sec-Fetch-*` headers)
  * @param timeoutMs how long to wait for the response head
  * @returns the stream once its head arrived (for a refusal, once its body arrived)

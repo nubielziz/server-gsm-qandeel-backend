@@ -129,7 +129,7 @@ describe('GET /admin/customers/:id/export with a store balance', () => {
     });
     expect(res.statusCode).toBe(200);
     const file = res.json();
-    expect(file.format).toBe(1);
+    expect(file.format).toBe(2);
     expect(file.wallet).toMatchObject({ currency: 'USD', balance: '36.0000' });
     expect(file.wallet.entries).toEqual([
       expect.objectContaining({ kind: 'deposit', amount: '40.0000', balanceAfter: '40.0000' }),

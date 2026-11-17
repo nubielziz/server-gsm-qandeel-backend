@@ -1,5 +1,6 @@
 // StorefrontCatalogService: the use cases of the public storefront catalog (feature 14a): the configuration, the list of service
-// pages and one service page. Everything here is read only and public; it never exposes a cost, a supplier or a floor.
+// pages, one service page, the category menu and where an old address in another language leads (feature 30). Everything here is
+// read only and public; it never exposes a cost, a supplier or a floor.
 import { Inject, Injectable } from '@nestjs/common';
 import type { z } from 'zod';
 import { CLOCK, type Clock } from '../../../common/clock';
@@ -10,6 +11,7 @@ import { DbService } from '../../../infra/db';
 import { type SellableFilter, type ServiceType, StorefrontServices } from '../../catalog';
 import { BASE_CURRENCY, StorefrontMoney } from '../../money';
 import { PublicImages } from '../../platform';
+import type { getLegacySlug } from '../contracts/legacy-slugs.contracts';
 import type {
   getStoreConfig,
   listStoreCategories,
@@ -17,21 +19,22 @@ import type {
   showStoreService,
   StorefrontPriceSchema,
 } from '../contracts/storefront-public.contracts';
-import type { ServiceListing } from '../db/schema';
+import type { LegacySlugKind, ServiceListing } from '../db/schema';
 import { categorySlug } from '../domain/category-slug';
+import { helpIdOfSlug } from '../domain/help-slug';
 import { type PricedListing, applyPriceSort } from '../domain/price-sort';
 import { SearchMatches } from '../search/application/search-matches';
 import { SearchResolver } from '../search/application/search-resolver';
 import { SearchTermsCounter } from '../search/application/search-terms-counter';
 import { NO_FILTERS, type ResultFilters } from '../search/domain/filters';
+import { findLegacySlug } from '../infra/legacy-slug.repository';
 import {
   type ListingSort,
-  DEFAULT_LOCALE,
   allListings,
   findListedBySlug,
+  findListedOfService,
   findServiceFaqs,
-  findSiblingSlugs,
-  listedServiceIdsIn,
+  listedServiceIds,
   pageListings,
 } from '../infra/listing.repository';
 import { CurrentLegalDocuments } from './legal-documents';
@@ -44,6 +47,7 @@ type ConfigBody = ResultOf<typeof getStoreConfig>;
 type PageBody = ResultOf<typeof showStoreService>;
 type CardBody = ResultOf<typeof listStoreServices>['rows'][number];
 type CategoriesBody = ResultOf<typeof listStoreCategories>;
+type LegacyBody = ResultOf<typeof getLegacySlug>;
 
 /** The buyer's country, region and currency the list query carries beside its filters, and the price bounds. */
 interface ListExtra {
@@ -68,7 +72,7 @@ export interface ListVisitor {
 export interface ServiceListPage {
   rows: CardBody[];
   total: number;
-  /** `typesense` or `fallback` when `q` was set on an English list; `undefined` otherwise. */
+  /** `typesense` or `fallback` when `q` was set; `undefined` otherwise. */
   engine?: 'typesense' | 'fallback';
   /** More than 1000 matched and a price sort or bound worked over the best 1000. */
   truncated?: boolean;
@@ -128,11 +132,9 @@ function cardOf(
   imageUrl: string | null,
 ): CardBody {
   const { service } = priced;
-  const arabic = listing.locale === 'ar' && service.categoryNameAr !== '';
   return {
     id: listing.serviceId,
     slug: listing.slug,
-    locale: listing.locale as 'en' | 'ar',
     title: listing.publicTitle,
     summary: listing.summary,
     brand: listing.brand,
@@ -144,7 +146,7 @@ function cardOf(
     category: {
       id: service.categoryId,
       slug: categorySlug({ id: service.categoryId, name: service.categoryName }),
-      name: arabic ? service.categoryNameAr : service.categoryName,
+      name: service.categoryName,
     },
     availability: inStock ? 'in_stock' : 'on_request',
     deliveryMinutes: service.slaMinutes,
@@ -163,9 +165,11 @@ function imageOf(listing: ServiceListing, urls: ReadonlyMap<number, string>): st
 /**
  * Serves the public catalog.
  *
- * Why: the map's `GET /store/v1/config`, `GET /store/v1/services` and `GET /store/v1/services/:slug` (stage 14). A listing is
+ * Why: the map's `GET /store/v1/config`, `GET /store/v1/services` and `GET /store/v1/services/:slug` (stage 14), the menu of
+ * `GET /store/v1/categories` (feature 22) and `GET /store/v1/legacy-slugs/:kind/:slug` (feature 30, decision 039). A listing is
  * public only when it is switched on and its service is sellable and priced for the retail group (catalog-3, b2c-7); the price
- * is `StorefrontQuotes`' (so the checkout charges what was shown); no cost, supplier, floor or `locked` flag ever leaves.
+ * is `StorefrontQuotes`' (so the checkout charges what was shown); no cost, supplier, floor or `locked` flag ever leaves. English
+ * only (decision 039): a service has one listing, and the list, the page and the menu take no language.
  *
  * Side effects: none (reads only; nothing is cached, the routes send `Cache-Control` for the browser).
  */
@@ -179,7 +183,7 @@ export class StorefrontCatalogService {
     private readonly policies: StorefrontPolicies,
     private readonly legal: CurrentLegalDocuments,
     private readonly images: PublicImages,
-    // Feature 29: with `q` on an English list the order and the match set come from the search engine.
+    // Feature 29: with `q` the order and the match set come from the search engine.
     private readonly matches: SearchMatches,
     private readonly resolver: SearchResolver,
     private readonly terms: SearchTermsCounter,
@@ -221,7 +225,6 @@ export class StorefrontCatalogService {
       legalDocuments: documents.map((doc) => ({
         type: doc.type,
         version: doc.version,
-        locale: doc.locale,
         effectiveFrom: doc.effectiveFrom?.toISOString() ?? null,
       })),
     };
@@ -233,10 +236,10 @@ export class StorefrontCatalogService {
    * Why: a request without a price bound or price sort is one SQL page (`pageListings`). One with `minPrice`, `maxPrice` or
    * `_sort=price` cannot be, because the price is worked out in code (`StorefrontQuotes`, so the filtered price is the shown and
    * the charged one): it reads every match (at most 10 000), prices them, keeps those inside the bounds, sorts by price and slices
-   * the page itself, so `x-total-count` stays exact. With `q` on an English list (feature 29, B223) the match set and the order come
-   * from the search engine (typos, synonyms, model codes, pins), every hit re-checked against Postgres and priced here; a price sort or
-   * bounds then work over the best 1000 matches. When the engine is off, down or not ready, and for `locale=ar`, the database search
-   * above answers as before.
+   * the page itself, so `x-total-count` stays exact. With `q` (feature 29, B223) the match set and the order come from the search
+   * engine (typos, synonyms, model codes, pins), every hit re-checked against Postgres and priced here; a price sort or bounds then
+   * work over the best 1000 matches. When the engine is off, down or not ready, the database search above answers as before
+   * (decision 038's fallback).
    *
    * @param query the parsed list request (filters, search, sort, range, buyer country, currency and price bounds)
    * @param visitor who asks, for the search statistics (absent for internal callers: nothing is counted)
@@ -266,8 +269,8 @@ export class StorefrontCatalogService {
       ...query,
       sort: query.sort.filter((key): key is { field: ListingSort; order: 'asc' | 'desc' } => key.field !== 'relevance'),
     };
-    const englishSearch = query.search !== undefined && englishOnly(query.filters);
-    if (englishSearch && options.engine !== 'skip') {
+    const searched = query.search !== undefined;
+    if (searched && options.engine !== 'skip') {
       const answered = await this.listFromEngine(query, context, min, max);
       if (answered !== null) {
         await this.countSearch(query, visitor, answered.total);
@@ -275,7 +278,7 @@ export class StorefrontCatalogService {
       }
     }
     const page = await this.listFromDatabase(sqlQuery, context, retailGroupId, min, max);
-    if (!englishSearch) return page;
+    if (!searched) return page;
     await this.countSearch(query, visitor, page.total);
     return { ...page, engine: 'fallback' };
   }
@@ -370,9 +373,7 @@ export class StorefrontCatalogService {
   ): Promise<void> {
     if (visitor === undefined || query.search === undefined) return;
     const filtered =
-      query.filters.some((filter) => filter.field !== 'locale') ||
-      query.extra.minPrice !== undefined ||
-      query.extra.maxPrice !== undefined;
+      query.filters.length > 0 || query.extra.minPrice !== undefined || query.extra.maxPrice !== undefined;
     await this.terms.recordSearch({
       text: query.search.text,
       total,
@@ -386,26 +387,23 @@ export class StorefrontCatalogService {
    * Lists the categories of the storefront menu with their counts.
    *
    * Why: the menu, the tiles and the sidebar need the categories and how many services each holds (feature 22). The count is the
-   * services with a switched-on page in the language that the catalog says may be sold and has priced: the same set
-   * `GET /store/v1/services` lists, so a category's count equals the list total filtered by it.
+   * services with a switched-on page that the catalog says may be sold and has priced: the same set `GET /store/v1/services` lists,
+   * so a category's count equals the list total filtered by it.
    *
-   * @param locale the language
    * @returns the categories in category order, at most 500
    */
-  async categories(locale: string): Promise<CategoriesBody> {
+  async categories(): Promise<CategoriesBody> {
     const db = this.db.db;
-    const language = locale === 'ar' ? 'ar' : 'en';
     const retailGroupId = await this.quotes.retailGroupId(db);
-    if (retailGroupId === undefined) return { locale: language, categories: [] };
+    if (retailGroupId === undefined) return { categories: [] };
     const ids = await this.services.priced(db, retailGroupId);
-    const listed = await listedServiceIdsIn(db, ids, language);
+    const listed = await listedServiceIds(db, ids);
     const rows = await this.services.categoriesOf(db, [...listed]);
     return {
-      locale: language,
       categories: rows.slice(0, MAX_CATEGORIES).map((row) => ({
         id: row.id,
         slug: categorySlug(row),
-        name: language === 'ar' && row.nameAr !== '' ? row.nameAr : row.name,
+        name: row.name,
         type: row.type,
         serviceCount: row.serviceCount,
       })),
@@ -448,27 +446,24 @@ export class StorefrontCatalogService {
    * Reads one service page.
    *
    * @param slug the page slug
-   * @param locale the language (default `en`)
    * @param buyer the buyer's country, region and currency
-   * @returns the page with its fields, quantities, FAQs, price and the other languages' pages of the same service
+   * @returns the page with its fields, quantities, FAQs and price
    * @throws {AppError} `NOT_FOUND` when there is no such switched-on page or its service cannot be sold; `VALIDATION_FAILED`
    *   on `currency` when it is not offered
    */
-  async page(slug: string, locale: string | undefined, buyer: QuoteInput): Promise<PageBody> {
+  async page(slug: string, buyer: QuoteInput): Promise<PageBody> {
     const db = this.db.db;
     const notFound = () => new AppError('NOT_FOUND', { detail: 'This service page does not exist.' });
     const retailGroupId = await this.quotes.retailGroupId(db);
     if (retailGroupId === undefined) throw notFound();
-    const language = locale ?? DEFAULT_LOCALE;
-    const listing = await findListedBySlug(db, language, slug);
+    const listing = await findListedBySlug(db, slug);
     if (!listing) throw notFound();
     const context = await this.quotes.context(db, retailGroupId, buyer);
     const priced = await this.quotes.price(db, context, listing.serviceId);
     if (!priced) throw notFound();
-    const [fields, faqs, alternates, inStock, images] = await Promise.all([
+    const [fields, faqs, inStock, images] = await Promise.all([
       this.services.fields(db, listing.serviceId),
-      findServiceFaqs(db, listing.serviceId, language),
-      findSiblingSlugs(db, listing.serviceId, language),
+      findServiceFaqs(db, listing.serviceId),
       this.services.inStockIds(db, [listing.serviceId]),
       this.images.urlsOf(db, [listing.imageFileId]),
     ]);
@@ -497,15 +492,45 @@ export class StorefrontCatalogService {
         required: field.required,
       })),
       faqs: faqs.map((faq) => ({ question: faq.question, answerMd: faq.answerMd })),
-      alternates: alternates.map((alternate) => ({ locale: alternate.locale as 'en' | 'ar', slug: alternate.slug })),
     };
   }
-}
 
-/** Whether a list request asks for English pages (the language the search engine holds): no `locale` filter, or `locale=en`. */
-function englishOnly(filters: readonly ParsedFilter[]): boolean {
-  const locale = filters.find((filter) => filter.field === 'locale');
-  return locale === undefined || locale.values.every((value) => value === 'en');
+  /**
+   * Tells where an old address in another language leads now.
+   *
+   * Why: decision 039 (plan 30 section 4.5): every address of the website under the retired second-language prefix answers 308 to the same path under `/en`; when
+   * that path names a service, page or help article that existed only in another language, the English page finds nothing and
+   * asks here. A service leads to its page when that page answers now (switched on, sellable and priced: the rule of
+   * {@link StorefrontCatalogService.page}), else to the list; an old page has no English twin and leads to the home page; an old
+   * help article to the help centre. Paths carry no language prefix, like notification links.
+   *
+   * @param kind `service`, `page` or `help`
+   * @param slug the old slug; for `help` only the id that starts it counts (as `GET /store/v1/help/:slug` reads it)
+   * @returns the path to send the reader on to, and the slug of the service page when there is one
+   * @throws {AppError} `NOT_FOUND` (404) when the address was never retired, or a help slug does not start with an id
+   */
+  async legacyAddress(kind: LegacySlugKind, slug: string): Promise<LegacyBody> {
+    const db = this.db.db;
+    const notFound = () => new AppError('NOT_FOUND', { detail: 'No old address is known by this name.' });
+    const key = kind === 'help' ? helpIdOfSlug(slug) : slug;
+    if (key === undefined) throw notFound();
+    const row = await findLegacySlug(db, kind, String(key));
+    if (!row) throw notFound();
+    if (kind === 'page') return { path: '/', slug: null };
+    if (kind === 'help') return { path: '/help', slug: null };
+    const listing = row.serviceId === null ? undefined : await this.listingOnSale(row.serviceId);
+    return listing ? { path: `/services/${listing.slug}`, slug: listing.slug } : { path: '/services', slug: null };
+  }
+
+  /** The service's switched-on listing when its page answers now (sellable and priced for the retail group); `undefined` otherwise. */
+  private async listingOnSale(serviceId: number): Promise<ServiceListing | undefined> {
+    const db = this.db.db;
+    const retailGroupId = await this.quotes.retailGroupId(db);
+    if (retailGroupId === undefined) return undefined;
+    const listing = await findListedOfService(db, serviceId);
+    if (!listing) return undefined;
+    return (await this.quotes.onSale(db, [serviceId], retailGroupId)).has(serviceId) ? listing : undefined;
+  }
 }
 
 /** The list request's filters as the search engine takes them. */

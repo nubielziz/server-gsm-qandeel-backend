@@ -1,5 +1,6 @@
 // The in-app texts the platform ships (feature 23, plan section 9.2): the storefront order and payment mails, a merchant's low balance and
-// paid invoice, and a campaign's test. Links are site paths without the language prefix (checked against the storefront's routes).
+// paid invoice, and a campaign's test. English only (decision 039). Links are site paths without the language prefix (checked against
+// the storefront's routes).
 import type { InboxTextDefinition } from './inbox-texts';
 
 /**
@@ -14,35 +15,23 @@ export const BUILT_IN_INBOX_TEXTS: readonly InboxTextDefinition[] = [
     event: 'order.received',
     category: 'order',
     link: '/account/orders',
-    texts: {
-      en: { title: 'Order {{orderId}} received', body: 'We received your order for {{service}} and started on it.' },
-      ar: { title: 'تم استلام طلبك {{orderId}}', body: 'استلمنا طلبك لخدمة {{service}} وبدأنا العمل عليه.' },
-    },
+    text: { title: 'Order {{orderId}} received', body: 'We received your order for {{service}} and started on it.' },
   },
   {
     audience: 'customer',
     event: 'order.completed',
     category: 'order',
     link: '/account/orders',
-    texts: {
-      en: { title: 'Order {{orderId}} completed', body: 'Your order for {{service}} is complete.' },
-      ar: { title: 'تم تنفيذ طلبك {{orderId}}', body: 'تم تنفيذ طلبك لخدمة {{service}} بنجاح.' },
-    },
+    text: { title: 'Order {{orderId}} completed', body: 'Your order for {{service}} is complete.' },
   },
   {
     audience: 'customer',
     event: 'order.failed',
     category: 'order',
     link: '/account/orders',
-    texts: {
-      en: {
-        title: 'Order {{orderId}} could not be completed',
-        body: 'We could not complete your order for {{service}}. {{amount}} was refunded.',
-      },
-      ar: {
-        title: 'تعذّر تنفيذ طلبك {{orderId}}',
-        body: 'لم نتمكن من تنفيذ طلبك لخدمة {{service}}. تمت إعادة المبلغ {{amount}}.',
-      },
+    text: {
+      title: 'Order {{orderId}} could not be completed',
+      body: 'We could not complete your order for {{service}}. {{amount}} was refunded.',
     },
   },
   {
@@ -50,35 +39,23 @@ export const BUILT_IN_INBOX_TEXTS: readonly InboxTextDefinition[] = [
     event: 'payment.failed',
     category: 'payment',
     link: '/account/orders',
-    texts: {
-      en: { title: 'Payment declined', body: 'Your payment of {{amount}} was declined. Please try again.' },
-      ar: { title: 'تم رفض الدفع', body: 'تم رفض دفعتك بقيمة {{amount}}. يُرجى المحاولة مرة أخرى.' },
-    },
+    text: { title: 'Payment declined', body: 'Your payment of {{amount}} was declined. Please try again.' },
   },
   {
     audience: 'customer',
     event: 'refund.declined',
     category: 'payment',
     link: '/account/orders',
-    texts: {
-      en: { title: 'Refund declined for order {{orderId}}', body: '{{reason}}' },
-      ar: { title: 'تم رفض الاسترداد للطلب {{orderId}}', body: '{{reason}}' },
-    },
+    text: { title: 'Refund declined for order {{orderId}}', body: '{{reason}}' },
   },
   {
     audience: 'merchant',
     event: 'wallet.low_balance',
     category: 'wallet',
     link: '/merchant/wallet',
-    texts: {
-      en: {
-        title: 'Low wallet balance',
-        body: 'Your available balance is {{available}} {{currency}}, below your alert of {{threshold}} {{currency}}.',
-      },
-      ar: {
-        title: 'رصيد المحفظة منخفض',
-        body: 'رصيدك المتاح {{available}} {{currency}}، وهو أقل من حد التنبيه {{threshold}} {{currency}}.',
-      },
+    text: {
+      title: 'Low wallet balance',
+      body: 'Your available balance is {{available}} {{currency}}, below your alert of {{threshold}} {{currency}}.',
     },
   },
   {
@@ -86,21 +63,15 @@ export const BUILT_IN_INBOX_TEXTS: readonly InboxTextDefinition[] = [
     event: 'invoice.paid',
     category: 'billing',
     link: '/merchant/invoices',
-    texts: {
-      en: {
-        title: 'Invoice {{invoiceNumber}} paid',
-        body: '{{amount}} {{currency}} was credited to your wallet.',
-      },
-      ar: { title: 'تم دفع الفاتورة {{invoiceNumber}}', body: 'تمت إضافة {{amount}} {{currency}} إلى محفظتك.' },
+    text: {
+      title: 'Invoice {{invoiceNumber}} paid',
+      body: '{{amount}} {{currency}} was credited to your wallet.',
     },
   },
   {
     audience: 'staff',
     event: 'broadcast.test',
     category: 'announcement',
-    texts: {
-      en: { title: '[Test] {{title}}', body: '{{body}}' },
-      ar: { title: '[تجربة] {{title}}', body: '{{body}}' },
-    },
+    text: { title: '[Test] {{title}}', body: '{{body}}' },
   },
 ];

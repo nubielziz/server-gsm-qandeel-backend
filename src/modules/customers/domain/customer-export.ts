@@ -5,7 +5,7 @@ import type { Customer } from '../db/schema';
 import type { ExportRows } from '../infra/privacy-reads.repository';
 
 /** The format version of the file, so a reader can tell when the shape changes. */
-export const EXPORT_FORMAT = 1;
+export const EXPORT_FORMAT = 2;
 
 const iso = (date: Date | null): string | null => (date === null ? null : date.toISOString());
 
@@ -18,7 +18,8 @@ const iso = (date: Date | null): string | null => (date === null ? null : date.t
  * sessions and tokens are not personal data the customer can use and are never included. What staff keep to protect the shop is left out too:
  * the internal notes, the risk level, the reason of a suspension and the blocklist entries made from the customer's data. The file has
  * what the customer gave and did, not what the shop thinks of them. An IMEI is decrypted for the file, and an erased one is `null`.
- * Feature 21 adds the store balance and its statement (`wallet`, staff reasons hidden); the format stays 1 (an added key).
+ * Feature 21 adds the store balance and its statement (`wallet`, staff reasons hidden; an added key, the format stayed 1). Format 2 (decision 039,
+ * English only): `profile.locale` is gone, because a customer has no saved language any more.
  *
  * @param customer the customer row
  * @param rows the rows read about the customer
@@ -44,7 +45,6 @@ export function buildCustomerExport(
       name: customer.name,
       phone: customer.phone,
       country: customer.country,
-      locale: customer.locale,
       currency: customer.currency,
       hasAccount: customer.hasAccount,
       marketingOptIn: customer.marketingOptIn,

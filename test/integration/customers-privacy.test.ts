@@ -638,7 +638,6 @@ describe('POST /admin/customers/:id/anonymize', () => {
       name: 'New Person',
       email,
       country: 'GB',
-      locale: 'en',
       password: { mode: 'reset_link' },
     });
     expect([201, 422]).toContain(res.status);

@@ -45,7 +45,7 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
 |---|---|
 | `support_tickets` | Support tickets from storefront customers and merchants, linked to an order, with an SLA deadline. |
 | `ticket_messages` | Ticket messages from the customer, a staff member or the system, plus internal notes. |
-| `reply_templates` | Ready-made reply templates for staff, by category and language. |
+| `reply_templates` | Ready-made reply templates for staff, by category. |
 
 ## Routes
 

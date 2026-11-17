@@ -61,7 +61,6 @@ export const storeTicketStream = defineRoute({
   access: 'ticket-token',
   params: TOKEN_PARAMS,
   query: z.object({
-    locale: z.enum(['en', 'ar']).optional().describe('The page language (the events carry no text of their own).'),
     cursor: z
       .string()
       .max(64)

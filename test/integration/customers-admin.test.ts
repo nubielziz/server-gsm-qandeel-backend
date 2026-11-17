@@ -133,7 +133,6 @@ describe('GET /admin/customers', () => {
       name: 'Daniel Whitmore',
       phone: '',
       country: 'GB',
-      locale: 'en',
       currency: 2,
       currencyCode: 'GBP',
       hasAccount: true,
@@ -428,7 +427,6 @@ describe('POST /admin/customers', () => {
     name: '  Daniel   Whitmore ',
     email: ' Daniel.Whitmore@Example.com ',
     country: 'gb',
-    locale: 'en',
     phone: ' +447700900123 ',
     password: { mode: 'reset_link' },
     ...overrides,
@@ -447,7 +445,6 @@ describe('POST /admin/customers', () => {
       name: 'Daniel Whitmore',
       phone: '+447700900123',
       country: 'GB',
-      locale: 'en',
       currency: 2,
       currencyCode: 'GBP',
       hasAccount: true,
@@ -649,7 +646,6 @@ describe('POST /admin/customers', () => {
       name: 'D',
       email: 'not-an-email',
       country: 'Britain',
-      locale: 'fr',
       phone: 'x'.repeat(41),
       password: { mode: 'sms' },
     });
@@ -658,9 +654,25 @@ describe('POST /admin/customers', () => {
       problem(res)
         .errors?.map((e) => e.field)
         .sort(),
-    ).toEqual(['country', 'email', 'locale', 'name', 'password.mode', 'phone'].sort());
+    ).toEqual(['country', 'email', 'name', 'password.mode', 'phone'].sort());
     const missing = await send(staff, 'POST', '/admin/customers', {});
     expect(missing.statusCode).toBe(422);
+  });
+
+  it('has no language (decision 039): the row shows none and a language key an old console sends is ignored', async () => {
+    const { db } = await testDb();
+    await insertStoreCurrencies(db);
+    const staff = await staffWith('customers:create', 'customers:update', 'customers:read');
+    const res = await send(staff, 'POST', '/admin/customers', body({ locale: 'tr' }));
+    expect(res.statusCode).toBe(201);
+    const created = res.json<Record<string, unknown> & { id: number }>();
+    expect(created).not.toHaveProperty('locale');
+    const patched = await send(staff, 'PATCH', `/admin/customers/${created.id}`, { locale: 'fr', phone: '+44 1' });
+    expect(patched.statusCode).toBe(200);
+    expect(patched.json()).not.toHaveProperty('locale');
+    expect(await customerRow(created.id)).not.toHaveProperty('locale');
+    const [audit] = await auditOfCustomer(db, created.id);
+    expect(JSON.stringify(audit)).not.toContain('locale');
   });
 
   it('lets only one of two parallel requests with the same email create the customer', async () => {
@@ -699,7 +711,6 @@ describe('PATCH /admin/customers/:id', () => {
     const res = await send(staff, 'PATCH', `/admin/customers/${customer.id}`, {
       name: '  New   Name ',
       country: 'se',
-      locale: 'ar',
       phone: '',
       internalNotes: 'Prefers email.',
     });
@@ -709,7 +720,6 @@ describe('PATCH /admin/customers/:id', () => {
       country: 'SE',
       currency: 4,
       currencyCode: 'SEK',
-      locale: 'ar',
       phone: '',
       internalNotes: 'Prefers email.',
     });
@@ -717,8 +727,8 @@ describe('PATCH /admin/customers/:id', () => {
     expect(audit).toMatchObject({
       action: 'edited details of',
       entityLabel: 'Old Name',
-      before: { name: 'Old Name', country: 'GB', locale: 'en', phone: '1', notes: '' },
-      after: { name: 'New Name', country: 'SE', locale: 'ar', phone: '', notes: 'Prefers email.' },
+      before: { name: 'Old Name', country: 'GB', phone: '1', notes: '' },
+      after: { name: 'New Name', country: 'SE', phone: '', notes: 'Prefers email.' },
     });
   });
 
@@ -873,7 +883,6 @@ describe('PATCH /admin/customers/:id', () => {
       name: 'Invited Person',
       email: 'invited-old@example.com',
       country: 'gb',
-      locale: 'en',
       password: { mode: 'reset_link' },
     });
     const invitedId = invited.json<{ id: number }>().id;
@@ -950,7 +959,6 @@ describe('PATCH /admin/customers/:id', () => {
       name: 'x',
       email: 'nope',
       country: 'GBR',
-      locale: 'de',
       internalNotes: 'n'.repeat(301),
     });
     expect(bad.statusCode).toBe(422);
@@ -958,7 +966,7 @@ describe('PATCH /admin/customers/:id', () => {
       problem(bad)
         .errors?.map((e) => e.field)
         .sort(),
-    ).toEqual(['country', 'email', 'internalNotes', 'locale', 'name']);
+    ).toEqual(['country', 'email', 'internalNotes', 'name']);
 
     // Nothing changes, but a staff write is still audited.
     const empty = await send(staff, 'PATCH', `/admin/customers/${customer.id}`, {});
@@ -984,7 +992,6 @@ describe('the customer a staff member created', () => {
       name: 'Lukas Brandt',
       email: 'lukas@example.com',
       country: 'DE',
-      locale: 'en',
       password: { mode: 'reset_link' },
     });
     const id = created.json<{ id: number }>().id;

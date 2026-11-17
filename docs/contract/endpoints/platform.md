@@ -223,7 +223,7 @@ Frontend features covering this module: `audit`, `settings`, `orders`, `dashboar
 - **Map**: Email and Telegram templates for each event. (قوالب الإيميل و Telegram لكل حدث) · staff-permission `notifications:*` · stage 12 · tables notification_templates
 - **Frontend**: `listTemplates` (src/features/settings/api/templates.ts:27) · params `query?: ListQuery` · returns `ListResult<NotificationTemplate>` · success 200 · assumed contract
 - **Query**: _start=0&_end=200&_sort=event&_order=asc plus audience=customer|merchant|staff (absent when the console asks for all audiences) and channel=email|telegram (hooks/useTemplates.ts:18-31, EmailsTab.tsx:24-28). An isActive filter is documented but not sent.
-- **Response**: JSON array + x-total-count. Row = notification_templates columns; event is the key text (order.completed); channel email|telegram; audience customer|merchant|staff. Optional sentLast30Days = count of notifications with the same event, the same channel, recipient_type = the audience mapping (audience customer→customer, staff→staff, merchant→client; notifications.recipient_type is closed to staff|client|customer), status 'sent' and sent_at >= now() − 30 days; the count spans all locales, so every locale row of the same (event, channel, audience) shows the same number (null or absent hides the column, M170). GET /admin/notifications sends recipientType as stored.
+- **Response**: JSON array + x-total-count. Row = notification_templates columns; event is the key text (order.completed); channel email|telegram; audience customer|merchant|staff. Optional sentLast30Days = count of notifications with the same event, the same channel, recipient_type = the audience mapping (audience customer→customer, staff→staff, merchant→client; notifications.recipient_type is closed to staff|client|customer), status 'sent' and sent_at >= now() − 30 days; there is one template per (event, channel, audience), and templates have no language (decision 039, B226) (null or absent hides the column, M170). GET /admin/notifications sends recipientType as stored.
 - **Errors**: 403 FORBIDDEN (caller lacks notifications:read)
 - **B71**: sentLast30Days needs a count over notifications (not in the row's table). Proposal: allow the read aggregate. → Proposal accepted.
 - **Mock**: src/features/settings/mocks/templateRoutes.ts (Duplicate check, preview sample values; rows from seedMessages.ts templateRows (demo S.settings.notifs mapped to event keys plus two merchant templates).)
@@ -241,16 +241,16 @@ Frontend features covering this module: `audit`, `settings`, `orders`, `dashboar
 
 - **Map**: Email and Telegram templates for each event. (قوالب الإيميل و Telegram لكل حدث) · staff-permission `notifications:*` · stage 12 · tables notification_templates
 - **Frontend**: `createTemplate` (src/features/settings/api/templates.ts:47) · params `body: CreateTemplateBody` · returns `NotificationTemplate` · success 201 · assumed contract
-- **Request**: Body {event, channel, audience, locale, subject, body, isActive}. event = dot-separated lowercase key such as order.completed; locale 'en' or 'en-GB' style; an email needs a subject; Telegram templates send subject ''; body non-blank (mock templateRoutes.ts:34-63). Placeholders use double braces {{customerName}}. (event, channel, audience, locale) is unique: a duplicate is a 422 on event (templateRoutes.ts:116-125). Audit.
+- **Request**: Body {event, channel, audience, subject, body, isActive}. event = dot-separated lowercase key such as order.completed; templates have no language (decision 039, B226: a `locale` sent along is an unknown key and is dropped); an email needs a subject; Telegram templates send subject ''; body non-blank (mock templateRoutes.ts:34-63). Placeholders use double braces {{customerName}}. (event, channel, audience) is unique: a duplicate is a 422 on event (templateRoutes.ts:116-125). Audit.
 - **Response**: The created template.
-- **Errors**: 422 VALIDATION_FAILED (bad event key or duplicate ('A template for this event, channel and language already exists.'), bad channel/audience/locale, missing subject for email, empty body); 403 FORBIDDEN (caller lacks notifications:create)
+- **Errors**: 422 VALIDATION_FAILED (bad event key or duplicate ('A template for this event, channel and audience already exists.'), bad channel/audience, missing subject for email, empty body); 403 FORBIDDEN (caller lacks notifications:create)
 - **Mock**: src/features/settings/mocks/templateRoutes.ts (Duplicate check, preview sample values; rows from seedMessages.ts templateRows (demo S.settings.notifs mapped to event keys plus two merchant templates).)
 
 ## PATCH /admin/notification-templates/:id
 
 - **Map**: Email and Telegram templates for each event. (قوالب الإيميل و Telegram لكل حدث) · staff-permission `notifications:*` · stage 12 · tables notification_templates
 - **Frontend**: `updateTemplate` (src/features/settings/api/templates.ts:56) · params `id: number`, `body: Partial<CreateTemplateBody>` · returns `NotificationTemplate` · success 200 · assumed contract
-- **Request**: Only the changed subject, body, isActive (TemplateDialog.tsx:62-65); the Send switch sends {isActive}. event, channel, audience and locale are fixed after create (the dialog locks them, TemplateDialog.tsx:47): refuse a change with 422. Turning off the customer emails order.received, order.completed, order.failed is allowed (the console confirms first, lib/templates.ts:52-61). Audit.
+- **Request**: Only the changed subject, body, isActive (TemplateDialog.tsx:62-65); the Send switch sends {isActive}. event, channel and audience are fixed after create (the dialog locks them, TemplateDialog.tsx:47): refuse a change with 422. Turning off the customer emails order.received, order.completed, order.failed is allowed (the console confirms first, lib/templates.ts:52-61). Audit.
 - **Response**: The updated template.
 - **Errors**: 404 NOT_FOUND (no template with that id); 422 VALIDATION_FAILED (empty body, email without subject, change of a fixed field); 403 FORBIDDEN (caller lacks notifications:update)
 - **Mock**: src/features/settings/mocks/templateRoutes.ts (Duplicate check, preview sample values; rows from seedMessages.ts templateRows (demo S.settings.notifs mapped to event keys plus two merchant templates).)
@@ -351,32 +351,32 @@ Frontend features covering this module: `audit`, `settings`, `orders`, `dashboar
 ## POST /admin/notification-campaigns/:id/preview
 
 - **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Render a campaign for one language and channel. (معاينة الحملة بلغة وقناة) · staff-permission `broadcasts:read` · stage 23 · tables notification_campaigns · success 200
-- **Frontend**: `previewCampaign` (src/features/notifications/api/campaigns.ts:93) · params `id: number`, `body: PreviewCampaignBody` · returns `CampaignPreview`
+- **Frontend**: `previewCampaign` (src/features/notifications/api/campaigns.ts:92) · params `id: number`, `body: PreviewCampaignBody` · returns `CampaignPreview`
 
 ## POST /admin/notification-campaigns/:id/test
 
 - **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Send a test to yourself. (إرسال تجربة للموظف نفسه) · staff-permission `broadcasts:send` · stage 23 · tables notification_campaigns, notification_inbox, notifications, outbox_events, audit_logs · success 202
-- **Frontend**: `sendCampaignTest` (src/features/notifications/api/campaigns.ts:102) · params `id: number`, `body: TestCampaignBody` · returns `TestCampaignResult`
+- **Frontend**: `sendCampaignTest` (src/features/notifications/api/campaigns.ts:101) · params `id: number`, `body: TestCampaignBody` · returns `TestCampaignResult`
 
 ## POST /admin/notification-campaigns/:id/send
 
 - **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Send a campaign now. (إرسال حملة الآن) · staff-permission `broadcasts:send` · stage 23 · tables notification_campaigns, outbox_events, audit_logs · success 202
-- **Frontend**: `sendCampaign` (src/features/notifications/api/campaigns.ts:116) · params `id: number`, `body: SendCampaignBody` · returns `CampaignDetail`
+- **Frontend**: `sendCampaign` (src/features/notifications/api/campaigns.ts:115) · params `id: number`, `body: SendCampaignBody` · returns `CampaignDetail`
 
 ## POST /admin/notification-campaigns/:id/schedule
 
 - **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Schedule or reschedule a campaign. (جدولة حملة أو تغيير موعدها) · staff-permission `broadcasts:send` · stage 23 · tables notification_campaigns, audit_logs · success 200
-- **Frontend**: `scheduleCampaign` (src/features/notifications/api/campaigns.ts:125) · params `id: number`, `body: ScheduleCampaignBody` · returns `CampaignDetail`
+- **Frontend**: `scheduleCampaign` (src/features/notifications/api/campaigns.ts:124) · params `id: number`, `body: ScheduleCampaignBody` · returns `CampaignDetail`
 
 ## POST /admin/notification-campaigns/:id/cancel
 
 - **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Cancel a scheduled or running campaign. (إلغاء حملة مجدولة أو جارية) · staff-permission `broadcasts:send` · stage 23 · tables notification_campaigns, audit_logs · success 200
-- **Frontend**: `cancelCampaign` (src/features/notifications/api/campaigns.ts:138) · params `id: number` · returns `CampaignDetail`
+- **Frontend**: `cancelCampaign` (src/features/notifications/api/campaigns.ts:137) · params `id: number` · returns `CampaignDetail`
 
 ## GET /admin/notification-campaigns/:id/recipients
 
 - **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): The recipients of a campaign on one channel. (مستلمو الحملة على قناة) · staff-permission `broadcasts:read` · stage 23 · tables notification_inbox, notifications · success 200
-- **Frontend**: `listCampaignRecipients` (src/features/notifications/api/campaigns.ts:147) · params `id: number`, `__1: RecipientsQuery` · returns `ListResult<CampaignRecipient>`
+- **Frontend**: `listCampaignRecipients` (src/features/notifications/api/campaigns.ts:146) · params `id: number`, `__1: RecipientsQuery` · returns `ListResult<CampaignRecipient>`
 
 ## GET /admin/inbox
 

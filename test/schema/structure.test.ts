@@ -87,7 +87,6 @@ const ADDITIONS: Record<string, string[]> = {
     'must_change_password',
     'last_login_at',
     'last_login_ip',
-    'locale',
     'address',
     'tax_id',
     'internal_notes',
@@ -150,9 +149,21 @@ const ADDITIONS: Record<string, string[]> = {
   supplier_api_logs: ['outcome'],
   imei_checks: ['country'],
   blocklist_entries: ['customer_id'],
-  // Feature 22 (storefront catalog): first publication, 30-day sales for the popularity sort, the service picture; the Arabic category name.
+  // Feature 22 (storefront catalog): first publication, 30-day sales for the popularity sort, the service picture.
   service_listings: ['listed_at', 'sales_30d', 'image_file_id'],
-  service_categories: ['name_ar'],
+};
+
+/**
+ * Map columns the backend dropped by decision 039 (English only, B224): the language of a row. Each entry is added by the slice of
+ * feature 30 that drops the column; `legal_documents.locale` stays (the archive tag of a retired version).
+ */
+const REMOVED: Record<string, string[]> = {
+  service_listings: ['locale'],
+  content_pages: ['locale'],
+  help_articles: ['locale'],
+  notification_templates: ['locale'],
+  reply_templates: ['locale'],
+  customers: ['locale'],
 };
 
 interface Slice {
@@ -198,9 +209,25 @@ describe('columns', () => {
         const fromMap = owned.columns.map((column) => column.split(' ')[0]!);
         const timestamps = IMMUTABLE.has(owned.name) ? ['created_at'] : ['created_at', 'updated_at'];
         const expected = new Set(['id', ...fromMap, ...timestamps, ...(ADDITIONS[owned.name] ?? [])]);
+        for (const removed of REMOVED[owned.name] ?? []) expected.delete(removed);
         expect([...new Set(actual)].sort(), owned.name).toEqual([...expected].sort());
       }
     }
+  });
+
+  it('drop only map columns (REMOVED names a column the map gives that table), and keep legal_documents.locale', () => {
+    const mapColumns = new Map(
+      Object.keys(moduleSchemas).flatMap((module) =>
+        slice(module).ownedTables.map(
+          (owned) => [owned.name, owned.columns.map((column) => column.split(' ')[0]!)] as const,
+        ),
+      ),
+    );
+    for (const [table, columns] of Object.entries(REMOVED)) {
+      for (const column of columns) expect(mapColumns.get(table) ?? [], `${table}.${column}`).toContain(column);
+    }
+    const legal = all.find((candidate) => nameOf(candidate) === 'legal_documents')!;
+    expect(getTableConfig(legal).columns.map((column) => casing.getColumnCasing(column))).toContain('locale');
   });
 
   it('give every table an identity primary key, created_at, and updated_at unless it is immutable', () => {

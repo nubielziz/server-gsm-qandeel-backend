@@ -53,7 +53,7 @@ export class ReplyTemplatesController {
   /**
    * Creates a template.
    *
-   * @param body the five fields
+   * @param body the four fields
    * @param staff the signed-in staff member (the author)
    * @returns the new template
    * @route POST /admin/reply-templates

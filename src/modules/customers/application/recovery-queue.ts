@@ -75,9 +75,9 @@ export class RecoveryQueue {
     const rows = new Map((await readRecoveryRows(tx, unique, true)).map((row) => [row.session.id, row]));
     const sent: number[] = [];
     const skipped: RecoveryOutcome['skipped'] = [];
-    // A missing or switched-off template is the same answer for every customer of a language: ask once per language, so a shop with
-    // no template logs one line per run, not one per checkout.
-    const refusedTemplate = new Map<string, SkipReason>();
+    // A missing or switched-off template is the same answer for every checkout (one template per event, channel and audience): once it
+    // refused, the rest of the run is skipped with the same reason, so a shop with no template logs one line per run, not one per checkout.
+    let refusedTemplate: SkipReason | undefined;
     for (const id of unique) {
       const row = rows.get(id);
       const verdict = recoveryVerdict(
@@ -90,10 +90,8 @@ export class RecoveryQueue {
         skipped.push({ id, reason: verdict ?? 'no_marketing_consent' });
         continue;
       }
-      const language = row.customerLocale ?? '';
-      const refused = refusedTemplate.get(language);
-      if (refused !== undefined) {
-        skipped.push({ id, reason: refused });
+      if (refusedTemplate !== undefined) {
+        skipped.push({ id, reason: refusedTemplate });
         continue;
       }
       const probe = await this.notifications.check(tx, {
@@ -103,7 +101,7 @@ export class RecoveryQueue {
       });
       if ('skipped' in probe) {
         const reason = SKIP_OF_NOTIFICATION[probe.skipped];
-        if (reason === 'no_template' || reason === 'template_off') refusedTemplate.set(language, reason);
+        if (reason === 'no_template' || reason === 'template_off') refusedTemplate = reason;
         skipped.push({ id, reason });
         continue;
       }

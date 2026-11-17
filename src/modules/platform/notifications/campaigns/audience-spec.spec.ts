@@ -16,21 +16,21 @@ describe('zAudienceSpec', () => {
       { staff: {}, merchants: {}, customers: { hasAccount: true } },
       { staff: { roleIds: [1, 2] } },
       { merchants: { statuses: ['active', 'pending'], groupIds: [3], countries: ['JO', 'GB'] } },
-      { customers: { hasAccount: false, countries: ['JO'], locales: ['ar'] } },
+      { customers: { hasAccount: false, countries: ['JO'] } },
       { include: [{ type: 'client', id: 4 }], exclude: [{ type: 'customer', id: 9 }] },
     ]) {
       expect(zAudienceSpec.safeParse(spec).success, JSON.stringify(spec)).toBe(true);
     }
   });
 
-  it('refuses unknown keys, empty lists, too many ids and bad codes', () => {
+  it('refuses unknown keys (the removed language filter included), empty lists, too many ids and bad codes', () => {
     for (const spec of [
       { everyone: true },
       { staff: { roles: [1] } },
       { merchants: { statuses: [] } },
       { merchants: { statuses: ['suspended'] } },
       { merchants: { countries: ['jo'] } },
-      { customers: { locales: ['fr'] } },
+      { customers: { locales: ['en'] } },
       { staff: { roleIds: Array.from({ length: MAX_SEGMENT_IDS + 1 }, (_, i) => i + 1) } },
       { include: Array.from({ length: MAX_PEOPLE + 1 }, (_, i) => ({ type: 'staff', id: i + 1 })) },
       { include: [{ type: 'admin', id: 1 }] },
@@ -42,6 +42,8 @@ describe('zAudienceSpec', () => {
   it('reads a stored spec back, or nothing when it no longer parses', () => {
     expect(parseStoredAudience({ staff: {} })).toEqual({ staff: {} });
     expect(parseStoredAudience({ staff: 'all' })).toBeUndefined();
+    // The language filter is gone (decision 039): a stored `locales` key no longer parses and stops the fan-out.
+    expect(parseStoredAudience({ customers: { locales: ['en'] } })).toBeUndefined();
     expect(parseStoredAudience(null)).toBeUndefined();
   });
 });

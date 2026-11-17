@@ -39,8 +39,8 @@ interface World {
   readonly merchantNoEmail: number;
   readonly merchantChat: number;
   readonly merchantChatOff: number;
-  readonly customerEn: number;
-  readonly customerAr: number;
+  readonly customerJo: number;
+  readonly customerSa: number;
   readonly guest: number;
   readonly customerConsent: number;
   readonly customerWithdrawn: number;
@@ -83,8 +83,8 @@ beforeEach(async () => {
       telegramChatId: '1002',
       notificationPrefs: announcement({ telegram: false }),
     }),
-    customerEn: await insertCustomer(db, { country: 'JO' }),
-    customerAr: await insertCustomer(db, { locale: 'ar', country: 'SA' }),
+    customerJo: await insertCustomer(db, { country: 'JO' }),
+    customerSa: await insertCustomer(db, { country: 'SA' }),
     guest: await insertCustomer(db, { hasAccount: false }),
     customerConsent: await insertCustomer(db),
     customerWithdrawn: await insertCustomer(db),
@@ -95,7 +95,7 @@ beforeEach(async () => {
   await setMarketingConsent(db, w.customerWithdrawn, true);
   await setMarketingConsent(db, w.customerWithdrawn, false);
   // A switch on with no record proves nothing: the latest record must grant it.
-  await db.update(s.customers).set({ marketingOptIn: true }).where(eq(s.customers.id, w.customerEn));
+  await db.update(s.customers).set({ marketingOptIn: true }).where(eq(s.customers.id, w.customerJo));
 });
 afterAll(async () => {
   await resetDb();
@@ -113,20 +113,19 @@ async function preview(audience: unknown, channels: CampaignChannel[] = ['in_app
 describe('POST /admin/notification-campaigns/audience-preview', () => {
   it('counts "everyone": active staff, active merchants and active customers with an account', async () => {
     const res = await preview({ staff: {}, merchants: {}, customers: { hasAccount: true } });
-    // Staff: owner, A, B. Merchants: Jo, Vip, NoEmail, Chat, ChatOff. Customers with an account: En, Ar, Consent, Withdrawn.
+    // Staff: owner, A, B. Merchants: Jo, Vip, NoEmail, Chat, ChatOff. Customers with an account: Jo, Sa, Consent, Withdrawn.
     expect(res).toEqual({
       total: 12,
       reachable: 12,
       byType: { staff: 3, client: 5, customer: 4 },
       byChannel: { inApp: 12, email: 11, telegram: 0 },
-      byLocale: { en: 11, ar: 1 },
       excluded: { noConsent: 0, optedOut: 1, noTelegram: 0, noAccount: 0 },
     });
   });
 
   it('answers counts only: no name, address or id', async () => {
     const res = await owner.post('/admin/notification-campaigns/audience-preview', {
-      audience: { include: [{ type: 'customer', id: w.customerEn }] },
+      audience: { include: [{ type: 'customer', id: w.customerJo }] },
       channels: ['email'],
       purpose: 'service',
     });
@@ -159,11 +158,19 @@ describe('POST /admin/notification-campaigns/audience-preview', () => {
     expect(telegramOnly).toMatchObject({ total: 5, reachable: 1 });
   });
 
-  it('filters customers by account, country and language', async () => {
+  it('filters customers by account and country, and has no language filter any more', async () => {
     expect((await preview({ customers: {} })).total).toBe(5);
     expect((await preview({ customers: { hasAccount: false } })).total).toBe(1);
-    expect((await preview({ customers: { countries: ['SA'] } })).byLocale).toEqual({ en: 0, ar: 1 });
-    expect((await preview({ customers: { locales: ['ar'] } })).total).toBe(1);
+    expect((await preview({ customers: { countries: ['SA'] } })).total).toBe(1);
+    expect((await preview({ customers: { countries: ['SA', 'JO'] } })).total).toBe(2);
+    // Decision 039: `locales` is an unknown key of the strict segment, and the answer carries no `byLocale`.
+    expect(await preview({ customers: {} })).not.toHaveProperty('byLocale');
+    const refused = await owner.post('/admin/notification-campaigns/audience-preview', {
+      audience: { customers: { locales: ['en'] } },
+      channels: ['email'],
+      purpose: 'service',
+    });
+    expect(refused.status).toBe(422);
   });
 
   it('counts a guest in the total but not as reachable by the in-app channel alone', async () => {
@@ -182,7 +189,7 @@ describe('POST /admin/notification-campaigns/audience-preview', () => {
     const res = await preview({
       staff: {},
       include: [
-        { type: 'customer', id: w.customerAr },
+        { type: 'customer', id: w.customerSa },
         { type: 'customer', id: w.customerSuspended },
         { type: 'customer', id: w.customerAnonymized },
         { type: 'client', id: w.merchantPending },
@@ -225,7 +232,10 @@ describe('the providers', () => {
       audience: { merchants: { statuses: ['active', 'pending'] }, customers: { hasAccount: true } },
       purpose: 'marketing',
     },
-    { audience: { customers: { locales: ['ar', 'en'] }, exclude: [{ type: 'customer', id: 1 }] }, purpose: 'service' },
+    {
+      audience: { customers: { countries: ['JO', 'SA'] }, exclude: [{ type: 'customer', id: 1 }] },
+      purpose: 'service',
+    },
     { audience: { staff: { roleIds: [1] }, include: [{ type: 'client', id: 1 }] }, purpose: 'service' },
   ];
 
@@ -295,6 +305,8 @@ describe('the providers', () => {
     expect(await audiences.get('customer').member(db, 'marketing', w.customerWithdrawn)).toBeUndefined();
     expect(await audiences.get('customer').member(db, 'marketing', w.customerConsent)).toMatchObject({ email: true });
     expect(await audiences.get('customer').member(db, 'service', 99_999_999)).toBeUndefined();
-    expect(await audiences.get('customer').member(db, 'service', w.customerAr)).toMatchObject({ locale: 'ar' });
+    const member = await audiences.get('customer').member(db, 'service', w.customerSa);
+    expect(member).toMatchObject({ inApp: true, email: true, telegram: false });
+    expect(member).not.toHaveProperty('locale');
   });
 });

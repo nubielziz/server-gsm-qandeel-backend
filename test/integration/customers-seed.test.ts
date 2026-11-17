@@ -67,7 +67,6 @@ describe.skipIf(!frontendPresent)('the customers seed', () => {
       email: 'daniel.whitmore@mail.example',
       country: 'GB',
       currency: 'GBP',
-      locale: 'en',
       hasAccount: true,
       status: 'active',
       riskLevel: 'low',

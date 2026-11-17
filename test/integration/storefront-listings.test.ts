@@ -1,6 +1,7 @@
 // Integration tests of the storefront listing routes (feature 15): list with the joined figures, filters and counts, show,
 // create (slug, locks, duplicates, races), the isListed switch and the retail price (floor, locks, disabled service), audit,
-// the price version and permissions. Rules: B53, b2c-7, catalog-3, catalog-12.
+// the price version and permissions. Rules: B53, b2c-7, catalog-3, catalog-12; one listing per service and a slug unique for the
+// site (English only, decision 039, B224).
 import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
 import { schema as s } from '../../src/infra/db';
@@ -74,7 +75,6 @@ describe('GET /admin/service-listings', () => {
       {
         id,
         serviceId: world.att,
-        locale: 'en',
         slug: 'atandt-usa-premier-unlock',
         publicTitle: 'AT&T USA Premier Unlock',
         summary: '',
@@ -238,6 +238,26 @@ describe('GET /admin/service-listings', () => {
     expect((await admin.get('/admin/service-listings?_sort=retailPrice')).status).toBe(422);
   });
 
+  it('lists one row per service without a language, combines the search, and refuses the language filter (422)', async () => {
+    const { db } = await testDb();
+    const world = await listingWorld(db);
+    const att = await insertListingRow(db, world.att, { publicTitle: 'AT&T USA Unlock' });
+    const check = await insertListingRow(db, world.check, { publicTitle: 'iCloud Check' });
+    const all = await admin.get('/admin/service-listings?_sort=id&_order=asc');
+    expect(all.body.map((row: { id: number }) => row.id)).toEqual([att, check]);
+    expect(all.total).toBe(2);
+    expect(all.body.filter((row: object) => 'locale' in row)).toEqual([]);
+    const searched = await admin.get('/admin/service-listings?q=icloud');
+    expect(searched.body.map((row: { id: number }) => row.id)).toEqual([check]);
+    expect(searched.total).toBe(1);
+    // English only (decision 039): the console's pin picker no longer sends `locale`; the strict list refuses it.
+    for (const query of ['locale=en', 'locale_ne=tr']) {
+      const res = await admin.get(`/admin/service-listings?${query}`);
+      expect(res.status, query).toBe(422);
+      expect(res.body.code, query).toBe('VALIDATION_FAILED');
+    }
+  });
+
   it('leaves out the listings of an archived service (catalog-3)', async () => {
     const { db } = await testDb();
     const world = await listingWorld(db);
@@ -306,13 +326,12 @@ describe('POST /admin/service-listings', () => {
     const world = await listingWorld(db);
     const res = await admin.post('/admin/service-listings', {
       serviceId: world.att,
-      locale: 'en',
       publicTitle: '  AT&T USA Premier Unlock ',
     });
     expect(res.status).toBe(201);
+    expect(res.body).not.toHaveProperty('locale');
     expect(res.body).toMatchObject({
       serviceId: world.att,
-      locale: 'en',
       slug: 'atandt-usa-premier-unlock',
       publicTitle: 'AT&T USA Premier Unlock',
       isListed: false,
@@ -330,60 +349,49 @@ describe('POST /admin/service-listings', () => {
     });
   });
 
-  it('keeps a typed slug, allows the same service in another language and refuses a slug that is not lower-case words', async () => {
+  it('keeps a typed slug and refuses a slug that is not lower-case words, or a title that gives none', async () => {
     const { db } = await testDb();
     const world = await listingWorld(db);
     const first = await admin.post('/admin/service-listings', {
       serviceId: world.att,
-      locale: 'en',
       publicTitle: 'Premier',
       slug: 'premier-unlock',
     });
     expect(first.body.slug).toBe('premier-unlock');
-    expect(
-      (
-        await admin.post('/admin/service-listings', {
-          serviceId: world.att,
-          locale: 'ar',
-          publicTitle: 'بريميير',
-          slug: 'premier-unlock',
-        })
-      ).status,
-    ).toBe(201);
     const bad = await admin.post('/admin/service-listings', {
       serviceId: world.check,
-      locale: 'en',
       publicTitle: 'x',
       slug: 'Not A Slug',
     });
     expect(bad.status).toBe(422);
     expect(bad.body.errors).toEqual([expect.objectContaining({ field: 'slug' })]);
+    // A title without a Latin letter or digit makes no slug (a title in another script too: domain/slug.spec.ts).
     const noLatin = await admin.post('/admin/service-listings', {
       serviceId: world.check,
-      locale: 'ar',
-      publicTitle: 'عنوان',
+      publicTitle: '*** ***',
     });
     expect(noLatin.status).toBe(422);
     expect(noLatin.body.errors[0].field).toBe('slug');
   });
 
-  it('answers 409 LISTING_EXISTS for the same service and language, and for a slug used in the language', async () => {
+  it('answers 409 LISTING_EXISTS for a second listing of the service, and for a slug another listing uses', async () => {
     const { db } = await testDb();
     const world = await listingWorld(db);
     await insertListingRow(db, world.att, { slug: 'taken' });
+    // One listing per service: a second one is refused whatever its slug or title (decision 039).
     const sameService = await admin.post('/admin/service-listings', {
       serviceId: world.att,
-      locale: 'en',
       publicTitle: 'Again',
+      slug: 'again',
     });
     expect(sameService.status).toBe(409);
     expect(sameService.body).toMatchObject({
       code: 'LISTING_EXISTS',
+      detail: 'This service already has a listing.',
       errors: [expect.objectContaining({ field: 'serviceId' })],
     });
     const sameSlug = await admin.post('/admin/service-listings', {
       serviceId: world.check,
-      locale: 'en',
       publicTitle: 'Taken',
       slug: 'taken',
     });
@@ -394,16 +402,29 @@ describe('POST /admin/service-listings', () => {
     });
   });
 
-  it('maps a race on the same listing to 409, never 500', async () => {
+  it('maps a race on the same service to 409, never 500, whatever slug each request makes', async () => {
     const { db } = await testDb();
     const world = await listingWorld(db);
     const results = await Promise.all(
       Array.from({ length: 4 }, () =>
-        admin.post('/admin/service-listings', { serviceId: world.att, locale: 'en', publicTitle: 'Racing' }),
+        admin.post('/admin/service-listings', { serviceId: world.att, publicTitle: 'Racing' }),
       ),
     );
     expect(results.map((r) => r.status).sort()).toEqual([201, 409, 409, 409]);
     expect(results.filter((r) => r.status === 409).every((r) => r.body.code === 'LISTING_EXISTS')).toBe(true);
+    // Different slugs race on the service alone: the unique key on the service decides.
+    const titles = ['Race one', 'Race two', 'Race three'];
+    const spread = await Promise.all(
+      titles.map((publicTitle) => admin.post('/admin/service-listings', { serviceId: world.check, publicTitle })),
+    );
+    expect(spread.map((r) => r.status).sort()).toEqual([201, 409, 409]);
+    expect(spread.filter((r) => r.status === 409).every((r) => r.body.errors[0].field === 'serviceId')).toBe(true);
+    const [{ count }] = (
+      await db.execute<{ count: number }>(
+        sql`select count(*)::int as count from service_listings where service_id = ${world.check}`,
+      )
+    ).rows as [{ count: number }];
+    expect(count).toBe(1);
   });
 
   it('answers 422 on serviceId for an unknown or archived service, and 409 LISTING_LOCKED for B2B-only and disabled services', async () => {
@@ -411,7 +432,6 @@ describe('POST /admin/service-listings', () => {
     const world = await listingWorld(db);
     const unknown = await admin.post('/admin/service-listings', {
       serviceId: 999999,
-      locale: 'en',
       publicTitle: 'Nothing',
     });
     expect(unknown.status).toBe(422);
@@ -421,16 +441,14 @@ describe('POST /admin/service-listings', () => {
       .update(s.services)
       .set({ status: 'disabled', archivedAt: new Date() })
       .where(eq(s.services.id, world.check));
-    expect(
-      (await admin.post('/admin/service-listings', { serviceId: world.check, locale: 'en', publicTitle: 'Gone' }))
-        .status,
-    ).toBe(422);
+    expect((await admin.post('/admin/service-listings', { serviceId: world.check, publicTitle: 'Gone' })).status).toBe(
+      422,
+    );
 
     const b2b = await insertCategory(db, { name: 'High risk', allowedGroupIds: [world.groups.standard] });
     const removal = await insertService(db, b2b, { name: 'MDM removal', code: 'IMEI-MDM-PRM' });
     const locked = await admin.post('/admin/service-listings', {
       serviceId: removal,
-      locale: 'en',
       publicTitle: 'MDM',
     });
     expect(locked.status).toBe(409);
@@ -439,33 +457,38 @@ describe('POST /admin/service-listings', () => {
       'B2B only: the category High risk is not offered to storefront customers. This service cannot be listed publicly.',
     );
     const off = await insertService(db, world.categoryId, { name: 'Dead', code: 'IMEI-DEAD', status: 'disabled' });
-    const dead = await admin.post('/admin/service-listings', { serviceId: off, locale: 'en', publicTitle: 'Dead' });
+    const dead = await admin.post('/admin/service-listings', { serviceId: off, publicTitle: 'Dead' });
     expect(dead.body).toMatchObject({
       code: 'LISTING_LOCKED',
       detail: 'Service disabled. This service cannot be listed publicly.',
     });
   });
 
-  it('refuses a blank title and an unknown language on the field', async () => {
+  it('refuses a blank title on the field, and ignores a language an old client still sends', async () => {
     const { db } = await testDb();
     const world = await listingWorld(db);
     const res = await admin.post('/admin/service-listings', { serviceId: world.att, locale: 'fr', publicTitle: '   ' });
     expect(res.status).toBe(422);
-    expect(res.body.errors.map((e: { field: string }) => e.field).sort()).toEqual(['locale', 'publicTitle']);
+    expect(res.body.errors.map((e: { field: string }) => e.field)).toEqual(['publicTitle']);
+    // A body key the contract no longer declares is dropped, so the old console's create still works.
+    const old = await admin.post('/admin/service-listings', {
+      serviceId: world.att,
+      locale: 'en',
+      publicTitle: 'Premier',
+    });
+    expect(old.status).toBe(201);
+    expect(old.body).not.toHaveProperty('locale');
   });
 
   it('needs storefront:create', async () => {
     const { db } = await testDb();
     const world = await listingWorld(db);
     const reader = await adminWith(t, ['storefront:read']);
-    expect(
-      (await reader.post('/admin/service-listings', { serviceId: world.att, locale: 'en', publicTitle: 'x' })).status,
-    ).toBe(403);
+    expect((await reader.post('/admin/service-listings', { serviceId: world.att, publicTitle: 'x' })).status).toBe(403);
     expect(
       (
         await admin.withoutCsrf('POST', '/admin/service-listings', {
           serviceId: world.att,
-          locale: 'en',
           publicTitle: 'x',
         })
       ).status,
@@ -590,15 +613,6 @@ describe('PATCH /admin/service-listings/:id (the retail price)', () => {
     expect((await auditRows())[1]?.before).toEqual({ retailPrice: '25.9900' });
   });
 
-  it('applies to the listing of every language of the service', async () => {
-    const { db } = await testDb();
-    const world = await listingWorld(db);
-    const en = await insertListingRow(db, world.att, { locale: 'en', slug: 'en' });
-    const ar = await insertListingRow(db, world.att, { locale: 'ar', slug: 'ar' });
-    await admin.patch(`/admin/service-listings/${en}`, { retailPrice: '25.9900' });
-    expect((await admin.get(`/admin/service-listings/${ar}`)).body.retailPrice).toBe('25.9900');
-  });
-
   it('accepts a price exactly at the floor and refuses one under it, naming the floor on retailPrice', async () => {
     const { db } = await testDb();
     const world = await listingWorld(db);
@@ -703,7 +717,7 @@ describe('listing content (feature 22)', () => {
       .where(eq(s.serviceListings.serviceId, serviceId))
       .orderBy(s.serviceListings.id);
 
-  it('writes every content field of this language and answers the detail with the Markdown bodies', async () => {
+  it('writes every content field and answers the detail with the Markdown bodies', async () => {
     const { db } = await testDb();
     const world = await listingWorld(db);
     const id = await insertListingRow(db, world.att, { slug: 'att', publicTitle: 'AT&T' });
@@ -737,32 +751,30 @@ describe('listing content (feature 22)', () => {
     expect(row).not.toHaveProperty('requirementsMd');
   });
 
-  it('writes brand, carrier, country, featured and position to every language row of the service', async () => {
+  it('writes brand, carrier, country, featured and position once, on the one row of the service', async () => {
     const { db } = await testDb();
     const world = await listingWorld(db);
-    const en = await insertListingRow(db, world.att, { slug: 'att', publicTitle: 'AT&T' });
-    const ar = await insertListingRow(db, world.att, { slug: 'att-ar', publicTitle: 'اي تي اند تي', locale: 'ar' });
-    const res = await admin.patch(`/admin/service-listings/${en}`, {
+    const id = await insertListingRow(db, world.att, { slug: 'att', publicTitle: 'AT&T' });
+    const other = await insertListingRow(db, world.check, { slug: 'check', publicTitle: 'Check', brand: 'Kept' });
+    const res = await admin.patch(`/admin/service-listings/${id}`, {
       brand: 'Apple',
       carrier: 'AT&T',
       country: 'us',
       isFeatured: true,
       sort: 7,
-      summary: 'English only',
+      summary: 'The summary',
     });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ brand: 'Apple', carrier: 'AT&T', country: 'US', isFeatured: true, sort: 7 });
     const rows = await listingRows(world.att);
-    expect(rows.map((r) => [r.brand, r.carrier, r.country, r.isFeatured, r.sort])).toEqual([
-      ['Apple', 'AT&T', 'US', true, 7],
-      ['Apple', 'AT&T', 'US', true, 7],
+    expect(rows.map((r) => [r.id, r.brand, r.carrier, r.country, r.isFeatured, r.sort, r.summary])).toEqual([
+      [id, 'Apple', 'AT&T', 'US', true, 7, 'The summary'],
     ]);
-    // A per-language field stays in its language.
-    expect(rows.map((r) => r.summary)).toEqual(['English only', '']);
-    expect((await admin.get(`/admin/service-listings/${ar}`)).body).toMatchObject({ brand: 'Apple', country: 'US' });
-    // Clearing a fact clears it everywhere.
-    await admin.patch(`/admin/service-listings/${en}`, { country: '' });
-    expect((await listingRows(world.att)).map((r) => r.country)).toEqual(['', '']);
+    // Another service's listing is not touched.
+    expect((await admin.get(`/admin/service-listings/${other}`)).body).toMatchObject({ brand: 'Kept', country: '' });
+    // Clearing a fact clears it.
+    await admin.patch(`/admin/service-listings/${id}`, { country: '' });
+    expect((await listingRows(world.att)).map((r) => r.country)).toEqual(['']);
   });
 
   it('refuses a field over its limit with 422 on that field and changes nothing', async () => {
@@ -796,7 +808,7 @@ describe('listing content (feature 22)', () => {
     expect(await auditRows()).toEqual([]);
   });
 
-  it('refuses a slug another listing of the language uses with 409 on slug, but allows it in the other language', async () => {
+  it('refuses a slug another listing uses with 409 on slug (a slug is unique for the site)', async () => {
     const { db } = await testDb();
     const world = await listingWorld(db);
     await insertListingRow(db, world.att, { slug: 'taken' });
@@ -806,9 +818,6 @@ describe('listing content (feature 22)', () => {
     expect(clash.body.code).toBe('LISTING_EXISTS');
     expect(clash.body.errors[0]).toMatchObject({ field: 'slug' });
     expect((await admin.get(`/admin/service-listings/${other}`)).body).toMatchObject({ slug: 'mine', summary: '' });
-    // The same slug in Arabic is a different address.
-    const ar = await insertListingRow(db, world.check, { slug: 'x-ar', locale: 'ar' });
-    expect((await admin.patch(`/admin/service-listings/${ar}`, { slug: 'taken' })).status).toBe(200);
     // Sending its own slug is not a clash.
     expect((await admin.patch(`/admin/service-listings/${other}`, { slug: 'mine' })).status).toBe(200);
   });
@@ -833,11 +842,10 @@ describe('listing content (feature 22)', () => {
     expect(res.body.slug).toBe('atandt-premier');
   });
 
-  it('records one audit row with the fields that changed, the Markdown lengths only, and the languages a fact reached', async () => {
+  it('records one audit row with the fields that changed and the Markdown lengths only', async () => {
     const { db } = await testDb();
     const world = await listingWorld(db);
     const id = await insertListingRow(db, world.att, { slug: 'att', summary: 'Before', brand: 'Old' });
-    await insertListingRow(db, world.att, { slug: 'att-ar', locale: 'ar' });
     await admin.patch(`/admin/service-listings/${id}`, {
       summary: 'After',
       brand: 'New',
@@ -851,7 +859,6 @@ describe('listing content (feature 22)', () => {
       summary: 'After',
       brand: 'New',
       descriptionMd: { length: 'a secret body that must not be logged'.length },
-      appliedToLocales: ['en', 'ar'],
     });
     expect(JSON.stringify(audit)).not.toContain('secret body');
   });
@@ -881,30 +888,25 @@ describe('listing content (feature 22)', () => {
     clock.set('2026-11-07T12:00:00.000Z');
   });
 
-  it('creates a listing with content, inheriting the facts of the service from its oldest listing', async () => {
+  it('creates a listing with its content and the facts of the service, written once on its one row', async () => {
     const { db } = await testDb();
     const world = await listingWorld(db);
-    await insertListingRow(db, world.att, {
+    const res = await admin.post('/admin/service-listings', {
+      serviceId: world.att,
+      publicTitle: 'AT&T USA Premier Unlock',
       slug: 'att',
+      summary: 'Unlock an AT&T iPhone.',
+      descriptionMd: '# Unlock',
       brand: 'Apple',
       carrier: 'AT&T',
-      country: 'US',
+      country: 'us',
       isFeatured: true,
       sort: 3,
     });
-    const res = await admin.post('/admin/service-listings', {
-      serviceId: world.att,
-      locale: 'ar',
-      publicTitle: 'فك شبكة اي تي اند تي',
-      slug: 'att-ar',
-      summary: 'ملخص',
-      descriptionMd: 'وصف',
-    });
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({
-      locale: 'ar',
-      summary: 'ملخص',
-      descriptionMd: 'وصف',
+      summary: 'Unlock an AT&T iPhone.',
+      descriptionMd: '# Unlock',
       brand: 'Apple',
       carrier: 'AT&T',
       country: 'US',
@@ -913,25 +915,22 @@ describe('listing content (feature 22)', () => {
       isListed: false,
       listedAt: null,
     });
-  });
-
-  it('writes the facts sent at creation to the other language too', async () => {
-    const { db } = await testDb();
-    const world = await listingWorld(db);
-    await insertListingRow(db, world.att, { slug: 'att', brand: 'Old' });
-    const res = await admin.post('/admin/service-listings', {
-      serviceId: world.att,
-      locale: 'ar',
-      publicTitle: 'Arabic',
-      slug: 'att-ar',
-      brand: 'New',
-      isFeatured: true,
-    });
-    expect(res.status).toBe(201);
-    expect((await listingRows(world.att)).map((r) => [r.brand, r.isFeatured])).toEqual([
-      ['New', true],
-      ['New', true],
+    expect((await listingRows(world.att)).map((r) => [r.id, r.brand, r.isFeatured, r.sort])).toEqual([
+      [res.body.id, 'Apple', true, 3],
     ]);
+    const [audit] = await auditRows();
+    expect(audit!.after).toEqual({
+      slug: 'att',
+      publicTitle: 'AT&T USA Premier Unlock',
+      isListed: false,
+      summary: 'Unlock an AT&T iPhone.',
+      descriptionMd: { length: '# Unlock'.length },
+      brand: 'Apple',
+      carrier: 'AT&T',
+      country: 'US',
+      isFeatured: true,
+      sort: 3,
+    });
   });
 
   it('sorts the admin list by listedAt (never-listed last) and position, and filters by isFeatured', async () => {
@@ -948,7 +947,8 @@ describe('listing content (feature 22)', () => {
       sort: 1,
       isFeatured: true,
     });
-    const c = await insertListingRow(db, world.att, { publicTitle: 'C', locale: 'ar', sort: 3 });
+    const third = await insertService(db, world.categoryId, { name: 'Third', code: 'IMEI-THIRD' });
+    const c = await insertListingRow(db, third, { publicTitle: 'C', sort: 3 });
     const ids = async (query: string) =>
       (await admin.get(`/admin/service-listings?${query}`)).body.map((r: { id: number }) => r.id);
     expect(await ids('_sort=listedAt&_order=desc')).toEqual([b, a, c]);
@@ -964,9 +964,9 @@ describe('listing content (feature 22)', () => {
     const id = await insertListingRow(db, world.att);
     const reader = await adminWith(t, ['storefront:read']);
     expect((await reader.patch(`/admin/service-listings/${id}`, { summary: 'x' })).status).toBe(403);
-    expect(
-      (await reader.post('/admin/service-listings', { serviceId: world.check, locale: 'en', publicTitle: 'T' })).status,
-    ).toBe(403);
+    expect((await reader.post('/admin/service-listings', { serviceId: world.check, publicTitle: 'T' })).status).toBe(
+      403,
+    );
     expect((await listingRows(world.att))[0]!.summary).toBe('');
   });
 

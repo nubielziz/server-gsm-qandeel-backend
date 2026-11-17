@@ -2,7 +2,7 @@
   "status": 200,
   "headers": {
     "content-type": "application/json",
-    "x-total-count": "7"
+    "x-total-count": "6"
   },
   "body": [
     {
@@ -19,18 +19,6 @@
     },
     {
       "id": 2,
-      "type": "terms",
-      "version": "3.2",
-      "locale": "ar",
-      "bodyMd": "# Terms of service v3.2\n\nText for Terms of service v3.2 goes here.",
-      "effectiveFrom": "2026-09-21T12:00:00.000Z",
-      "isCurrent": true,
-      "requiresReacceptance": false,
-      "createdAt": "2026-09-21T12:00:00.000Z",
-      "acceptedCount": 14
-    },
-    {
-      "id": 3,
       "type": "privacy",
       "version": "2.1",
       "locale": "en",
@@ -42,7 +30,7 @@
       "acceptedCount": 125
     },
     {
-      "id": 4,
+      "id": 3,
       "type": "refund",
       "version": "1.4",
       "locale": "en",
@@ -54,7 +42,7 @@
       "acceptedCount": 125
     },
     {
-      "id": 5,
+      "id": 4,
       "type": "cookies",
       "version": "1.0",
       "locale": "en",
@@ -66,7 +54,7 @@
       "acceptedCount": 0
     },
     {
-      "id": 6,
+      "id": 5,
       "type": "terms",
       "version": "3.1",
       "locale": "en",
@@ -78,7 +66,7 @@
       "acceptedCount": 38
     },
     {
-      "id": 7,
+      "id": 6,
       "type": "refund",
       "version": "1.5",
       "locale": "en",

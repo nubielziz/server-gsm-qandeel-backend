@@ -3,19 +3,14 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { DbService, type DbExecutor, type TransactionContext } from '../../../infra/db';
-import type {
-  NotificationAudience,
-  NotificationChannel,
-  NotificationRecipientType,
-  NotificationStatus,
-} from '../db/schema';
+import type { NotificationChannel, NotificationRecipientType, NotificationStatus } from '../db/schema';
 import { OutboxService } from '../outbox/outbox.service';
 import { type AttemptContext, NotificationDelivery } from './notification-delivery';
 import { NotificationInbox } from './inbox/notification-inbox';
 import { type NotificationEventDefinition, NotificationEventRegistry } from './notification-events';
 import { type Recipient, recipientOf } from './notification-foreign-reads';
 import { OPERATIONS_RECIPIENT_ID } from './notification-payload';
-import { activeTemplateLocales, findTemplateFor } from './notification-template.repository';
+import { type TemplateKey, findTemplateFor } from './notification-template.repository';
 import {
   type NotificationPayload,
   findNotificationByKey,
@@ -153,18 +148,18 @@ export class NotificationService {
    * Writes a notification whose text travels with it (an event with `templated: false`), and the event that sends it.
    *
    * Why: feature 23: a campaign's test mail carries the campaign's own title and body, which no template holds; the row's payload
-   * keeps them (`variables`) with the language they are in (`locale`), and the delivery renders them without a template lookup.
+   * keeps them (`variables`), and the delivery renders them without a template lookup.
    *
    * Side effects: inserts a `notifications` row (once per dedupe key) and its `outbox_events` row.
    *
    * @param work the caller's transaction
-   * @param input the event, recipient, channel, the text as variables and its language
+   * @param input the event, recipient, channel and the text as variables
    * @returns the row, or why nothing was made (`recipient_gone`, `recipient_suspended`)
    * @throws {RangeError} when the event is not registered for the recipient's audience, has a template, or lacks the channel
    */
   async enqueueInline(
     work: { readonly tx: DbExecutor },
-    input: Omit<NotificationInput, 'chatId'> & { readonly locale: string },
+    input: Omit<NotificationInput, 'chatId'>,
   ): Promise<EnqueueResult> {
     const recipient = await recipientOf(work.tx, input.recipient.type, input.recipient.id);
     if (!recipient) return { status: 'skipped', reason: 'recipient_gone' };
@@ -181,7 +176,7 @@ export class NotificationService {
       recipientId: input.recipient.id,
       channel: input.channel,
       event: input.event,
-      payload: { variables: { ...(input.variables ?? {}) }, locale: input.locale },
+      payload: { variables: { ...(input.variables ?? {}) } },
       status: 'queued',
       dedupeKey: input.dedupeKey ?? null,
       createdAt: now,
@@ -221,12 +216,7 @@ export class NotificationService {
     if (!definition.channels.includes(input.channel)) {
       throw new RangeError(`The event "${input.event}" cannot be sent by ${input.channel}.`);
     }
-    const template = await findTemplateFor(work.tx, {
-      event: input.event,
-      channel: input.channel,
-      audience: 'staff',
-      locale: 'en',
-    });
+    const template = await findTemplateFor(work.tx, { event: input.event, channel: input.channel, audience: 'staff' });
     if (!template) {
       this.logger.warn(`No ${input.channel} template for "${input.event}" (staff): nothing is sent.`);
       return { status: 'skipped', reason: 'no_template' };
@@ -328,23 +318,18 @@ export class NotificationService {
   }
 
   /**
-   * Tells which languages a message can be written in right now.
+   * Tells whether a message can be written right now: its template exists and is switched on.
    *
-   * Why: feature 19: a job that picks the people to mail (the recovery reminder) must leave out those who cannot be mailed now, or it
-   * would pick the same ones on every run and starve the others. The rule is the one `check` applies per recipient: a language's own
-   * switched-on template, else the English one.
+   * Why: feature 19: a job that picks the people to mail (the recovery reminder) must pick nobody while the message cannot be written,
+   * or it would pick the same ones on every run. The rule is the one `check` applies to every recipient of the audience: one template
+   * per event, channel and audience (decision 039), so the answer is the same for all of them.
    *
    * @param db the database or a transaction
    * @param key the event, channel and audience
-   * @returns `anyLanguage` when the English template is on (every language falls back to it), else the languages that have their own
-   *   switched-on template (none: nobody can be mailed)
+   * @returns true when the template exists and is on
    */
-  async writableLanguages(
-    db: DbExecutor,
-    key: { event: string; channel: NotificationChannel; audience: NotificationAudience },
-  ): Promise<{ readonly anyLanguage: boolean; readonly locales: readonly string[] }> {
-    const locales = await activeTemplateLocales(db, key);
-    return { anyLanguage: locales.includes('en'), locales };
+  async templateIsOn(db: DbExecutor, key: TemplateKey): Promise<boolean> {
+    return (await findTemplateFor(db, key))?.isActive === true;
   }
 
   /**
@@ -396,7 +381,6 @@ export class NotificationService {
       event: input.event,
       channel: input.channel,
       audience: recipient.audience,
-      locale: recipient.locale,
     });
     if (!template) {
       this.logger.warn(`No ${input.channel} template for "${input.event}" (${recipient.audience}): nothing is sent.`);

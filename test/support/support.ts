@@ -6,15 +6,15 @@ import { DbService, schema as s, type Database } from '../../src/infra/db';
 import { RedisService } from '../../src/infra/redis';
 import { SUPPORT_SETTINGS, SettingsReader } from '../../src/modules/platform';
 import {
-  SUPPORT_DEFAULT_TEMPLATES,
   TICKET_MAIL_EVENT,
   TicketMailProcessor,
   type TicketMailJobResult,
+  supportTemplatesSql,
 } from '../../src/modules/support';
 import { type AdminApi, adminWith } from './admin-api';
 import type { TestApp } from './app';
 import { insertMerchant } from './auth';
-import { seedDefaultTemplates } from './notifications';
+import { installTemplates, seedDefaultTemplates } from './notifications';
 
 /**
  * Inserts the default templates of the platform and of the support events (`resetDb` empties the table, so the migrations' rows are gone).
@@ -23,10 +23,7 @@ import { seedDefaultTemplates } from './notifications';
  */
 export async function seedSupportTemplates(db: Database): Promise<void> {
   await seedDefaultTemplates(db);
-  await db
-    .insert(s.notificationTemplates)
-    .values(SUPPORT_DEFAULT_TEMPLATES.map((template) => ({ ...template, isActive: true })))
-    .onConflictDoNothing();
+  await installTemplates(db, supportTemplatesSql());
 }
 
 let customers = 0;

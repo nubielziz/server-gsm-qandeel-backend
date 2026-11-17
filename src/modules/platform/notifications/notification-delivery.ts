@@ -32,20 +32,6 @@ import { type Recipient, recipientOf } from './notification-foreign-reads';
 import { TelegramClient } from './telegram-client';
 import { emailHtml, renderMessage } from './template-rules';
 
-/**
- * The HTML part of an event email for an Arabic reader (feature 23, plan 9.3): a text template gets an escaped HTML part, an HTML
- * template's markup is wrapped in a right-to-left `div`. An English mail is left exactly as the template made it.
- *
- * @param message the rendered template
- * @param locale the recipient's language
- * @returns the `html` member to spread into the mail (empty for a reader of any other language)
- */
-function rtlHtml(message: { text: string; html?: string }, locale: string): { html?: string } {
-  if (!locale.startsWith('ar')) return message.html === undefined ? {} : { html: message.html };
-  if (message.html === undefined) return { html: emailHtml(message.text, locale) };
-  return { html: `<div dir="rtl" lang="ar" style="text-align:right">${message.html}</div>` };
-}
-
 /** Where a job stands in its retries: BullMQ's `attemptsMade + 1` and the queue's `attempts`. */
 export interface AttemptContext {
   /** The number of this attempt, from 1. */
@@ -196,7 +182,6 @@ export class NotificationDelivery {
       event: row.event,
       channel: row.channel,
       audience: recipient.audience,
-      locale: recipient.locale,
     });
     if (!template) throw new DeliveryError('There is no template for this message.', { permanent: true });
     if (!template.isActive) throw new DeliveryError('The template is switched off.', { permanent: true });
@@ -219,7 +204,8 @@ export class NotificationDelivery {
         to: recipient.email,
         subject: message.subject,
         text: message.text,
-        ...rtlHtml(message, recipient.locale),
+        // An event mail is the template as rendered: plain text with no HTML part, or the markup of an HTML template.
+        ...(message.html === undefined ? {} : { html: message.html }),
         messageId: this.messageId(row.id),
       });
       return;
@@ -254,7 +240,6 @@ export class NotificationDelivery {
     const message = renderCampaign(
       { content: contentOf(campaign), link: linkOf(campaign), purpose: campaign.purpose },
       {
-        locale: recipient.locale,
         name: recipient.name,
         audience: recipient.audience,
         channel: row.channel,
@@ -296,7 +281,6 @@ export class NotificationDelivery {
   /** Sends a row whose text is in its payload (an event with `templated: false`, the test of a campaign). */
   private async sendInline(row: Notification, recipient: Recipient, payload: NotificationPayload): Promise<void> {
     const variables = variablesOf(payload);
-    const locale = asString(payload['locale']) ? payload['locale'] : recipient.locale;
     const title = variables['title'] ?? '';
     const body = variables['body'] ?? '';
     if (row.channel === 'telegram') {
@@ -310,7 +294,7 @@ export class NotificationDelivery {
       to: recipient.email,
       subject: `[Test] ${title}`,
       text: body,
-      html: emailHtml(body, locale),
+      html: emailHtml(body),
       messageId: this.messageId(row.id),
     });
   }

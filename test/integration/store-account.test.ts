@@ -1,5 +1,5 @@
 // Integration tests of the storefront customer's account (feature 14b, routes GET and PATCH /store/v1/me and GET
-// /store/v1/me/orders): the details, the language, currency and marketing consent (with its proof), and the customer's own
+// /store/v1/me/orders): the details, currency and marketing consent (with its proof), and the customer's own
 // orders and no one else's.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { asc, eq } from 'drizzle-orm';
@@ -72,7 +72,6 @@ describe('GET /store/v1/me', () => {
       name: 'Daniel Whitmore',
       phone: '+447700900123',
       country: 'GB',
-      locale: 'en',
       currency: 'GBP',
       marketingOptIn: true,
       hasPassword: true,
@@ -94,13 +93,13 @@ describe('GET /store/v1/me', () => {
 });
 
 describe('PATCH /store/v1/me', () => {
-  it('changes language and currency, and writes a consent record for each change of the marketing choice', async () => {
+  it('changes the currency, and writes a consent record for each change of the marketing choice', async () => {
     await insertCurrencies();
     const { customer, client, ip } = await signedIn();
-    const res = await client.updateMe({ locale: 'ar', currency: 'gbp', marketingOptIn: true });
+    const res = await client.updateMe({ currency: 'gbp', marketingOptIn: true });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ locale: 'ar', currency: 'GBP', marketingOptIn: true });
-    expect(await customerRow(customer.id)).toMatchObject({ locale: 'ar', currency: 'GBP', marketingOptIn: true });
+    expect(res.json()).toMatchObject({ currency: 'GBP', marketingOptIn: true });
+    expect(await customerRow(customer.id)).toMatchObject({ currency: 'GBP', marketingOptIn: true });
 
     // The same choice again writes nothing; withdrawing writes a new record.
     await client.updateMe({ marketingOptIn: true });
@@ -116,7 +115,7 @@ describe('PATCH /store/v1/me', () => {
     expect(records.map((record) => record.ip)).toEqual([ip, ip]);
   });
 
-  it('refuses a currency the store does not show, and a language it does not speak, with 422 on the field', async () => {
+  it('refuses a currency the store does not show with 422 on the field', async () => {
     await insertCurrencies();
     const { client } = await signedIn();
     const sek = await client.updateMe({ currency: 'SEK' });
@@ -124,9 +123,17 @@ describe('PATCH /store/v1/me', () => {
     expect(sek.json<{ errors: Array<{ field: string }> }>().errors.map((e) => e.field)).toEqual(['currency']);
     const nowhere = await client.updateMe({ currency: 'XXX' });
     expect(nowhere.statusCode).toBe(422);
-    const klingon = await client.updateMe({ locale: 'tlh' });
-    expect(klingon.statusCode).toBe(422);
-    expect(klingon.json<{ errors: Array<{ field: string }> }>().errors.map((e) => e.field)).toEqual(['locale']);
+  });
+
+  it('has no language (decision 039): the account never shows one, and a language key an old client sends is ignored', async () => {
+    await insertCurrencies();
+    const { customer, client } = await signedIn();
+    expect(Object.keys((await client.me()).json())).not.toContain('locale');
+    const res = await client.updateMe({ locale: 'tr', currency: 'gbp' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).not.toHaveProperty('locale');
+    expect(res.json()).toMatchObject({ currency: 'GBP' });
+    expect(await customerRow(customer.id)).not.toHaveProperty('locale');
   });
 
   it('changes nothing for an empty body, never lets the customer change the email, and needs the CSRF token', async () => {
@@ -135,7 +142,7 @@ describe('PATCH /store/v1/me', () => {
     const sneaky = await client.updateMe({ email: 'hacker@example.com' });
     expect(sneaky.statusCode).toBe(200);
     expect(await customerRow(customer.id)).toMatchObject({ name: 'Original Name', email: customer.email });
-    const noToken = await client.updateMe({ locale: 'ar' }, { csrf: false });
+    const noToken = await client.updateMe({ marketingOptIn: true }, { csrf: false });
     expect(noToken.statusCode).toBe(403);
   });
 });

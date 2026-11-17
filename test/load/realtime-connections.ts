@@ -267,7 +267,7 @@ async function parent(): Promise<void> {
   try {
     worker.send({
       type: 'open',
-      url: `http://127.0.0.1:${port}/store/v1/me/stream?locale=en`,
+      url: `http://127.0.0.1:${port}/store/v1/me/stream`,
       cookies,
     } satisfies ToChild);
     const opened = await waitFor('opened', 180_000);

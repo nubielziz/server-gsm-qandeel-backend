@@ -145,7 +145,7 @@ export function campaignDetailView(
   return {
     ...campaignView(row, names),
     audience: row.audience,
-    content: { en: content.en, ...(content.ar ? { ar: content.ar } : {}) },
+    content: { title: content.title, body: content.body },
     link: linkOf(row),
     skipped: { ...statsOf(row.stats).skipped },
     delivery,

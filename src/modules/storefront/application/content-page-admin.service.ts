@@ -1,5 +1,5 @@
 // ContentPageAdminService: the use cases of the content page routes (map domain H, stage 15): list, show, create a draft, change,
-// and publish or hide. Rules: a slug is unique per language and never one of the legal document words; a new page is a draft;
+// and publish or hide. Rules: a slug is unique for the site and never one of the legal document words; a new page is a draft;
 // the status changes only through the publish route.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
@@ -24,7 +24,6 @@ export interface ContentPageView {
   readonly id: number;
   readonly kind: ContentPageKind;
   readonly slug: string;
-  readonly locale: string;
   readonly title: string;
   readonly bodyMd: string;
   readonly seoTitle: string;
@@ -43,7 +42,6 @@ export interface ContentPageView {
 export interface CreateContentPageInput {
   readonly kind: ContentPageKind;
   readonly title: string;
-  readonly locale: string;
   readonly slug?: string | undefined;
   readonly bodyMd: string;
   readonly seoTitle?: string | undefined;
@@ -54,7 +52,6 @@ export interface CreateContentPageInput {
 export interface UpdateContentPageInput {
   readonly title?: string | undefined;
   readonly slug?: string | undefined;
-  readonly locale?: string | undefined;
   readonly bodyMd?: string | undefined;
   readonly seoTitle?: string | undefined;
   readonly seoDescription?: string | undefined;
@@ -85,7 +82,6 @@ export function toContentPageView(page: ContentPage): ContentPageView {
     id: page.id,
     kind: page.kind,
     slug: page.slug,
-    locale: page.locale,
     title: page.title,
     bodyMd: page.bodyMd,
     seoTitle: page.seoTitle,
@@ -103,7 +99,6 @@ export function toContentPageView(page: ContentPage): ContentPageView {
 const snapshot = (page: ContentPage) => ({
   kind: page.kind,
   slug: page.slug,
-  locale: page.locale,
   title: page.title,
   seoTitle: page.seoTitle,
   seoDescription: page.seoDescription,
@@ -114,7 +109,7 @@ const snapshot = (page: ContentPage) => ({
  * Manages landing pages, static pages and the blog.
  *
  * Why: the console's Landing pages and Content tabs write the pages the public storefront serves (`GET /store/v1/pages/:slug`).
- * A slug is unique per language (checked before the write and again from the unique index, so a race answers 409, never 500)
+ * A slug is unique for the site (checked before the write and again from the unique index, so a race answers 409, never 500)
  * and may not be one of the four legal document words, which the same public route serves.
  *
  * Side effects: writes `content_pages` and `audit_logs` (entity `content_page`).
@@ -166,13 +161,12 @@ export class ContentPageAdminService {
     if (!chosen.ok) throw invalid('slug', chosen.message);
     return this.db.runInTransaction(async ({ tx }) => {
       if (isReservedSlug(chosen.slug)) throw slugTaken(chosen.slug, true);
-      if (await pageSlugTaken(tx, input.locale, chosen.slug)) throw slugTaken(chosen.slug, false);
+      if (await pageSlugTaken(tx, chosen.slug)) throw slugTaken(chosen.slug, false);
       let page;
       try {
         page = await insertPage(tx, {
           kind: input.kind,
           slug: chosen.slug,
-          locale: input.locale,
           title: input.title,
           bodyMd: input.bodyMd,
           seoTitle: input.seoTitle ?? '',
@@ -201,8 +195,7 @@ export class ContentPageAdminService {
    * @param id the page id
    * @param changes the keys to change
    * @returns the updated page (`updatedAt` moves forward)
-   * @throws {AppError} `NOT_FOUND` (404); `VALIDATION_FAILED` (422 on `slug`); `SLUG_TAKEN` (409 on `slug`, judged against
-   *   the new language when both change)
+   * @throws {AppError} `NOT_FOUND` (404); `VALIDATION_FAILED` (422 on `slug`); `SLUG_TAKEN` (409 on `slug`)
    */
   async update(id: number, changes: UpdateContentPageInput): Promise<ContentPageView> {
     if (changes.slug !== undefined && !isSlug(changes.slug)) throw invalid('slug', SLUG_FORM_MESSAGE);
@@ -210,8 +203,7 @@ export class ContentPageAdminService {
       const before = await findPage(tx, id, true);
       if (!before) throw notFound();
       const slug = changes.slug ?? before.slug;
-      const locale = changes.locale ?? before.locale;
-      if ((slug !== before.slug || locale !== before.locale) && (await this.slugConflict(tx, locale, slug, id))) {
+      if (slug !== before.slug && (await this.slugConflict(tx, slug, id))) {
         throw slugTaken(slug, isReservedSlug(slug));
       }
       let page;
@@ -219,7 +211,6 @@ export class ContentPageAdminService {
         page = await updatePage(tx, id, {
           ...(changes.title === undefined ? {} : { title: changes.title }),
           ...(changes.slug === undefined ? {} : { slug: changes.slug }),
-          ...(changes.locale === undefined ? {} : { locale: changes.locale }),
           ...(changes.bodyMd === undefined ? {} : { bodyMd: changes.bodyMd }),
           ...(changes.seoTitle === undefined ? {} : { seoTitle: changes.seoTitle }),
           ...(changes.seoDescription === undefined ? {} : { seoDescription: changes.seoDescription }),
@@ -272,8 +263,8 @@ export class ContentPageAdminService {
     });
   }
 
-  /** True when another page, or a legal document word, already holds the slug in the language. */
-  private async slugConflict(tx: Parameters<typeof pageSlugTaken>[0], locale: string, slug: string, id: number) {
-    return isReservedSlug(slug) || (await pageSlugTaken(tx, locale, slug, id));
+  /** True when another page, or a legal document word, already holds the slug. */
+  private async slugConflict(tx: Parameters<typeof pageSlugTaken>[0], slug: string, id: number) {
+    return isReservedSlug(slug) || (await pageSlugTaken(tx, slug, id));
   }
 }

@@ -15,7 +15,6 @@ const zInboxItem = z.object({
     .string()
     .nullable()
     .describe('A site path without the language prefix (for example `/account/orders`), or `null`.'),
-  locale: z.enum(['en', 'ar']).describe('The language `title` and `body` are in.'),
   readAt: zIsoDateTime.nullable(),
   createdAt: zIsoDateTime,
   campaignId: zId.nullable().describe('Set for an item that came from a broadcast.'),
@@ -40,7 +39,6 @@ const ITEM_EXAMPLE = {
   title: 'Scheduled maintenance on Friday',
   body: 'Hello Daniel,\nThe portal will be read-only on Friday from 02:00 to 03:00 UTC.',
   link: null,
-  locale: 'en',
   readAt: null,
   createdAt: '2026-11-10T09:06:00.000Z',
   campaignId: 1,
@@ -55,16 +53,12 @@ const listQueryOf = () =>
     maxPage: 100,
     extra: {
       unread: z.enum(['true', 'false']).optional().describe('`true` for unread items only, `false` for read ones.'),
-      locale: z
-        .enum(['en', 'ar'])
-        .optional()
-        .describe('The reader’s page language; default: a customer’s saved language, English for the others.'),
     },
   });
 
 const LIST_DESCRIPTION =
   'The signed-in person’s own notifications, newest first (`_start`, `_end` up to 100 per page, `x-total-count`). `category` filters, ' +
-  '`unread=true` shows only the unread ones, `locale` picks the language of the text. Items of a cancelled broadcast are hidden. ' +
+  '`unread=true` shows only the unread ones. Items of a cancelled broadcast are hidden. ' +
   'Personal data: never cached, and clients must not cache it.';
 const UNREAD_DESCRIPTION =
   'How many notifications the signed-in person has not read, capped at 100 (show "99+"). Personal data: never cached.';

@@ -4,7 +4,6 @@ import { z } from 'zod';
 import { defineRoute } from '../../../common/contract';
 
 const zStreamQuery = z.object({
-  locale: z.enum(['en', 'ar']).optional().describe('The page language: the text of every item comes in it.'),
   cursor: z
     .string()
     .max(64)

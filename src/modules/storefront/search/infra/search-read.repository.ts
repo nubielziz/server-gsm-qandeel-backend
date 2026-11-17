@@ -1,14 +1,14 @@
-// Reads of the storefront's own tables that the public search routes need (feature 29, plan sections 5.2-5.3): the English listing rows of
-// some services (the cards), the spellings of the brand and carrier names (the facet labels) and the services of a page's hits.
+// Reads of the storefront's own tables that the public search routes need (feature 29, plan sections 5.2-5.3): the listing rows of some
+// services (the cards), the spellings of the brand and carrier names (the facet labels) and the services of a page's hits.
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../../infra/db';
 import { type ServiceListing, serviceListings } from '../../db/schema';
 
 /**
- * Reads the switched-on English listing rows of some services.
+ * Reads the switched-on listing rows of some services.
  *
- * Why: cards are built only from English listing rows (plan section 4.1); a service whose English listing is off has no card even if the
- * engine still holds its document (the re-check drops it first, this read is the second guard).
+ * Why: cards are built from the service's one listing (plan section 4.1; English only since decision 039); a service whose listing is
+ * off has no card even if the engine still holds its document (the re-check drops it first, this read is the second guard).
  *
  * @param db the database or a transaction
  * @param serviceIds the services
@@ -22,17 +22,11 @@ export async function englishListingRows(
   const rows = await db
     .select()
     .from(serviceListings)
-    .where(
-      and(
-        eq(serviceListings.locale, 'en'),
-        eq(serviceListings.isListed, true),
-        inArray(serviceListings.serviceId, [...new Set(serviceIds)]),
-      ),
-    );
+    .where(and(eq(serviceListings.isListed, true), inArray(serviceListings.serviceId, [...new Set(serviceIds)])));
   return new Map(rows.map((row) => [row.serviceId, row]));
 }
 
-/** One spelling of a brand or carrier name with how many English listed listings use it. */
+/** One spelling of a brand or carrier name with how many listed listings use it. */
 export interface SpellingRow {
   readonly field: 'brand' | 'carrier';
   readonly spelling: string;
@@ -40,7 +34,7 @@ export interface SpellingRow {
 }
 
 /**
- * Counts the spellings of the brand and carrier names of the English listed listings.
+ * Counts the spellings of the brand and carrier names of the listed listings.
  *
  * Why: plan section 5.3: brand and carrier are free text whose case varies; the facets count `lower(value)`, and the wire shows the most
  * frequent spelling of each.
@@ -52,16 +46,12 @@ export async function brandAndCarrierSpellings(db: DbExecutor): Promise<Spelling
   const brands = await db
     .select({ spelling: serviceListings.brand, uses: sql<number>`count(*)::int` })
     .from(serviceListings)
-    .where(
-      and(eq(serviceListings.locale, 'en'), eq(serviceListings.isListed, true), sql`${serviceListings.brand} <> ''`),
-    )
+    .where(and(eq(serviceListings.isListed, true), sql`${serviceListings.brand} <> ''`))
     .groupBy(serviceListings.brand);
   const carriers = await db
     .select({ spelling: serviceListings.carrier, uses: sql<number>`count(*)::int` })
     .from(serviceListings)
-    .where(
-      and(eq(serviceListings.locale, 'en'), eq(serviceListings.isListed, true), sql`${serviceListings.carrier} <> ''`),
-    )
+    .where(and(eq(serviceListings.isListed, true), sql`${serviceListings.carrier} <> ''`))
     .groupBy(serviceListings.carrier);
   return [
     ...brands.map((row) => ({ field: 'brand' as const, ...row })),

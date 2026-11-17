@@ -1,7 +1,4 @@
 // Rules of the reply templates (support module, RESOLUTIONS b2c-9, RULES support 7): the shortcut. Pure.
-/** The language codes a template may be written in (ANSWERS support Q5). */
-export const TEMPLATE_LOCALES = ['en', 'ar'] as const;
-
 /** A shortcut is a slash and one to 39 characters with no space, like `/refund`. */
 const SHORTCUT = /^\/\S{1,39}$/;
 

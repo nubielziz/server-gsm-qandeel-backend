@@ -47,19 +47,6 @@ function codesFor(serviceId: number, prefix: string, count: number, firstId: num
   }));
 }
 
-/** The Arabic names of the demo categories, shown on the storefront (feature 22); a category not listed here has none. */
-const CATEGORY_NAMES_AR: Readonly<Record<string, string>> = {
-  Apple: 'آبل',
-  Samsung: 'سامسونج',
-  Xiaomi: 'شاومي',
-  'Carrier unlock': 'فك شبكات المشغّلين',
-  Generic: 'عام',
-  Credits: 'أرصدة',
-  Files: 'ملفات',
-  Licenses: 'تراخيص',
-  Remote: 'خدمات عن بُعد',
-};
-
 /**
  * Seeds the categories, services, custom fields, option lists and group prices of the demo, and the inventory codes when
  * `config` is given.
@@ -88,7 +75,6 @@ export async function seedCatalog(db: DbExecutor, demo: DemoSeed, config?: AppCo
     categories.push({
       id,
       name: service.category,
-      nameAr: CATEGORY_NAMES_AR[service.category] ?? '',
       type: service.type.toLowerCase() as 'imei' | 'server' | 'remote' | 'file',
       allowedGroupIds: [],
       sort: id,

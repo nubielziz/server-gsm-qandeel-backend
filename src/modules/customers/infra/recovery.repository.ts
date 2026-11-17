@@ -25,8 +25,6 @@ export interface RecoveryRow {
   readonly customerStatus: CustomerStatus | null;
   /** The customer's name (empty for a guest who never gave one), `null` when the session has no customer. */
   readonly customerName: string | null;
-  /** The customer's language, `null` when the session has no customer. */
-  readonly customerLocale: string | null;
 }
 
 /**
@@ -80,7 +78,6 @@ const select = (db: DbExecutor) =>
       consent: consentSql,
       customerStatus: customers.status,
       customerName: customers.name,
-      customerLocale: customers.locale,
     })
     .from(checkoutSessions)
     .leftJoin(customers, eq(customers.id, checkoutSessions.customerId));
@@ -184,28 +181,21 @@ export async function releaseRecovery(db: DbExecutor, id: number, now: Date): Pr
 /**
  * Selects the sessions the automatic reminder should email now.
  *
- * Why: the reminder takes a fixed number of the oldest due sessions each tick, so a session that can never be mailed (its customer's
- * language has no usable template) would be picked again and again and fill the batch, starving the others. `languages` leaves those
- * out of the selection: only customers whose language can be written in are taken.
+ * Why: the reminder takes a fixed number of the oldest due sessions each tick, under the rule of the manual send (`canRecoverSql`).
+ * Whether the mail can be written at all is the same for every session (one template per event, channel and audience, decision 039):
+ * the caller asks that once and selects nothing while it cannot.
  *
  * @param db the database or a transaction
  * @param clock the clock's time and the delay setting
  * @param limit the most to take
- * @param languages the customer languages that can be mailed now; `undefined` means every language
  * @returns the ids, oldest first (the ones closest to the end of the 30 days go first)
  */
-export async function dueRecoveryIds(
-  db: DbExecutor,
-  clock: RecoveryClock,
-  limit: number,
-  languages?: readonly string[],
-): Promise<number[]> {
-  if (languages?.length === 0) return [];
+export async function dueRecoveryIds(db: DbExecutor, clock: RecoveryClock, limit: number): Promise<number[]> {
   const rows = await db
     .select({ id: checkoutSessions.id })
     .from(checkoutSessions)
     .leftJoin(customers, eq(customers.id, checkoutSessions.customerId))
-    .where(and(canRecoverSql(clock), languages === undefined ? undefined : inArray(customers.locale, [...languages])))
+    .where(canRecoverSql(clock))
     .orderBy(asc(checkoutSessions.createdAt), asc(checkoutSessions.id))
     .limit(limit);
   return rows.map((row) => row.id);

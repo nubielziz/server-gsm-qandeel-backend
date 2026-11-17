@@ -379,7 +379,6 @@ describe('GET /client/auth/me', () => {
       referralCode: merchant.row.referralCode,
       group: { id: defaultGroupId, name: 'Standard', discountPercent: '5.0000' },
       createdAt: merchant.row.createdAt.toISOString(),
-      locale: 'en',
       address: '',
       taxId: '',
       mustChangePassword: false,
@@ -442,34 +441,43 @@ describe('PATCH /client/profile', () => {
     expect((await p.profile({})).statusCode).toBe(200);
   });
 
-  it('saves the language, address and tax id, shows them on me, and refuses values the contract does not allow (feature 20)', async () => {
+  it('saves the address and tax id, shows them on me, and refuses values the contract does not allow (feature 20)', async () => {
     const merchant = await makeMerchant(t);
     const p = portal();
     await p.login(merchant.email);
-    const res = await p.profile({ locale: 'ar', address: '  12 Abdali Blvd, Amman ', taxId: ' JO-998877 ' });
+    const res = await p.profile({ address: '  12 Abdali Blvd, Amman ', taxId: ' JO-998877 ' });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({
-      locale: 'ar',
       address: '12 Abdali Blvd, Amman',
       taxId: 'JO-998877',
       mustChangePassword: false,
     });
     expect(await clientRow(merchant.id)).toMatchObject({
-      locale: 'ar',
       address: '12 Abdali Blvd, Amman',
       taxId: 'JO-998877',
     });
-    expect((await p.me()).json()).toMatchObject({ locale: 'ar', address: '12 Abdali Blvd, Amman', taxId: 'JO-998877' });
+    expect((await p.me()).json()).toMatchObject({ address: '12 Abdali Blvd, Amman', taxId: 'JO-998877' });
 
-    const bad = await p.profile({ locale: 'fr', address: 'x'.repeat(301), taxId: 'x'.repeat(41) });
+    const bad = await p.profile({ address: 'x'.repeat(301), taxId: 'x'.repeat(41) });
     expect(bad.statusCode).toBe(422);
     expect(
       problem(bad)
         .errors?.map((e) => e.field)
         .sort(),
-    ).toEqual(['address', 'locale', 'taxId']);
+    ).toEqual(['address', 'taxId']);
     // Staff-only text never appears on a merchant route.
     expect(JSON.stringify((await p.me()).json())).not.toContain('internalNotes');
+  });
+
+  it('has no language (decision 039): me shows none, and a language key an old portal sends is ignored', async () => {
+    const merchant = await makeMerchant(t);
+    const p = portal();
+    await p.login(merchant.email);
+    expect((await p.me()).json()).not.toHaveProperty('locale');
+    const res = await p.profile({ locale: 'tr', company: 'Hassan Mobile' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).not.toHaveProperty('locale');
+    expect(await clientRow(merchant.id)).not.toHaveProperty('locale');
   });
 
   it('a name change drops the cached session and API key views of the merchant', async () => {

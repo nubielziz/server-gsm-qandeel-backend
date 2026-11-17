@@ -361,17 +361,17 @@ Frontend mismatches with backend impact:
 ## storefront
 
 Storefront page with five tabs:
-- Services on sale: listings per service and language, the On the site switch, a retail-price dialog checked against the server's floor, and counts.
+- Services on sale: one listing per service, the On the site switch, a retail-price dialog checked against the server's floor, and counts.
 - Landing pages: kind filter, publish and unpublish, and the draft generator.
 - Content and legal: static and blog pages loaded whole; legal versions are written as drafts, then published.
 - Help centre: article CRUD, with the publish switch done through PATCH.
 - TAC catalogue: CRUD without delete.
 Figures are one-row count calls. Every price, floor, margin and lock comes from the server. PATCH /admin/storefront/settings belongs to the settings feature.
 
-1. The Retail price is service_group_prices.price for the single b2c_retail group: net USD before VAT, one per service, for all locales. Storefront checkouts price from it, add the country's VAT, and lock the result on the session (scenario b2c-paid step 3; service_group_prices description; M182; components/PriceDialog.tsx:52-57).
+1. The Retail price is service_group_prices.price for the single b2c_retail group: net USD before VAT, one per service. Storefront checkouts price from it, add the country's VAT, and lock the result on the session (scenario b2c-paid step 3; service_group_prices description; M182; components/PriceDialog.tsx:52-57).
 2. Selling below the floor is blocked: refuse retailPrice <= 0 and retailPrice < floorPrice, with 422 on retailPrice. floorPrice = basePrice x 1.10 (demo retailFloor, 12-state-b2c.js:355), and never below the service's own floor, cost + minProfit (map service-listings description; listingRoutes.ts:106-126).
 3. A locked listing cannot be switched on, priced or created: 409 LISTING_LOCKED. Locked means the service is never public: its category is hidden from the b2c_retail group, or the service is disabled. Switching on a listing whose service is disabled answers 409 SERVICE_DISABLED (demo setListed 12-state-b2c.js:356-364; listingRoutes.ts:64-71, 110-141).
-4. Slugs are made from the title when empty, with the demo's slugOf. They are unique per locale for pages and listings (409 SLUG_TAKEN or LISTING_EXISTS, with errors[].field). Each service has one listing per locale (mocks/http.ts:69-76; pageRoutes.ts:30-39; listingRoutes.ts:72-83).
+4. Slugs are made from the title when empty, with the demo's slugOf. They are unique for the site, for pages and listings (409 SLUG_TAKEN or LISTING_EXISTS, with errors[].field). Each service has one listing (mocks/http.ts:69-76; pageRoutes.ts:30-39; listingRoutes.ts:72-83).
 5. Content pages:
 - Created as drafts.
 - Status changes only through POST /:id/publish: published true sets published with published_at; false sets draft.
@@ -380,8 +380,8 @@ Figures are one-row count calls. Every price, floor, margin and lock comes from 
 (Map content-pages rows; pageRoutes.ts:41-59, 63-117.)
 6. Legal versions are immutable (there is no edit route).
 - POST creates a draft: is_current false, effective_from null.
-- Publish, in one transaction, retires the current version of the same type and locale (is_current false, effective_from kept) and makes this one current from now. Later consents reference it.
-- An already current version answers 409 ALREADY_CURRENT; a duplicate version per type and locale answers 409 VERSION_EXISTS.
+- Publish, in one transaction, retires the version in force of the same type (is_current false, effective_from kept) and makes this one current from now. Later consents reference it.
+- An already current version answers 409 ALREADY_CURRENT; a duplicate version of a type answers 409 VERSION_EXISTS.
 (Map legal rows; legalRoutes.ts:24-45, 72-78; lib/legal.ts:66-74.)
 7. TAC: exactly 8 digits and unique (409 TAC_TAKEN on tac). brand and model are required; marketingName and releaseYear are optional. Console entries get source manual. No delete (map CRUD[LSCU]; tacRoutes.ts:35-84).
 8. Help articles have no publish route: the switch is PATCH {isPublished} under storefront:update. New articles are unpublished by default and go last in sort order (helpRoutes.ts:39-50; M187).
@@ -390,7 +390,7 @@ Figures are one-row count calls. Every price, floor, margin and lock comes from 
 - legal:* rows: legal:read, legal:create; legal publish: legal:publish.
 - TAC: catalog:read, catalog:create, catalog:update.
 Publishes write audit_logs (map tables).
-10. Languages are en and ar only (mocks/http.ts:79); other locales answer 422 on locale.
+10. English only (decision 039, B224): no language field on a listing, page, help article, category, template, campaign or account, and `locale` is an unknown key. A legal document row keeps a read-only `locale` as an archive tag (B225).
 
 Frontend mismatches with backend impact:
 
@@ -461,7 +461,7 @@ The late=true filter and the sort on late run in SQL (mocks/dto.ts:8-35; M143, M
 4. Internal notes (is_internal) never reach the customer: they are left out of store ticket reads and emails, and included in GET /admin/support-tickets/:id (map note row; GET /store/v1/tickets/:token without internal notes).
 5. Resolve writes resolved_at and an internal system message 'Marked resolved by <staff>. A satisfaction survey is emailed to the customer.', sends the CSAT survey (notification) and writes an audit entry. Reopen clears resolved_at (mocks/ticketHandlers.ts:146-166; demo ticketSet 12-state-b2c.js:200-208; scenario b2c-ticket steps 7-8).
 6. Reply channels: email always (the requester's email); telegram only when the requester has a linked Telegram chat. A channel outside replyChannels answers 422 on channel. Without a channel, the reply uses the ticket's channel when allowed, else email (M148; Composer.tsx:48-51, 91; mocks/ticketHandlers.ts:72-76).
-7. Templates: title, body, category (the ticket category words) and locale (en|ar) are required. shortcut is optional: '' or starting with '/', and unique when non-empty (409 SHORTCUT_TAKEN). The body is stored raw with {{name}}, {{order}} and {{eta}}. The console fills the variables, and the server stores the reply text as sent (mocks/templateHandlers.ts:15-42; M142, M151).
+7. Templates: title, body and category (the ticket category words) are required. shortcut is optional: '' or starting with '/', and unique when non-empty (409 SHORTCUT_TAKEN). The body is stored raw with {{name}}, {{order}} and {{eta}}. The console fills the variables, and the server stores the reply text as sent (mocks/templateHandlers.ts:15-42; M142, M151).
 8. The assignee must be an active staff member (422 on assigneeId); null unassigns (mocks/ticketHandlers.ts:127-131; TicketControls.tsx:44).
 9. Permissions (M7):
 - read: support:read.
@@ -499,7 +499,7 @@ The Settings page (7 tabs, settings/lib/tabs.ts:16-24) reads and edits payment g
 7. Currencies: rateToBase = units per 1 USD (M167), > 0; markupPercent 0-10; decimals 0-4; code ^[A-Z]{3}$ unique; USD is the base (rate 1, no markup, no refresh); a manual rate change stamps rateUpdatedAt; isStale = non-base and rateUpdatedAt null or older than 24 h, the same rule as the dashboard fx_stale item (settings/lib/currencies.ts:8-27; dashboard/mocks/attentionStorefront.ts:83-94). Storefront prices use the session's locked fx (scenario b2c-paid step 3).
 8. refresh-fx refreshes all active non-base currencies in one provider call, stamps rateUpdatedAt, reports refreshed/failed/source and writes audit_logs (map tables currencies, audit_logs; M164).
 9. Tax rates: country immutable after create; ratePercent 0-100; validFrom required, validTo null or >= validFrom; no delete (map ops LSCU, M163); the server picks the rate in force for the customer's country at checkout (scenario b2c-paid step 3), so overlapping windows for one country and region must be refused.
-10. Templates: unique per (event, channel, audience, locale) -> 422 on event; email needs a subject; event/channel/audience/locale fixed after create; an inactive template is not sent; preview never sends and leaves unknown {{placeholders}} visible (mock templateRoutes.ts:14-63, 116-125).
+10. Templates: unique per (event, channel, audience), with no language (decision 039, B226) -> 422 on event; email needs a subject; event/channel/audience fixed after create; an inactive template is not sent; preview never sends and leaves unknown {{placeholders}} visible (mock templateRoutes.ts:14-63, 116-125).
 11. Notification log and webhook log are read-only; recipients are masked server-side; a webhook retry is refused for delivered (409 DELIVERY_SUCCEEDED) and otherwise queues a new signed attempt immediately (mock logRoutes.ts:22-42; map EVENT rows outbound-hmac).
 12. Every write in this feature (settings, policies, gateways, currencies, refresh, tax, templates, retry) writes audit_logs with before/after (map PATCH /admin/settings and refresh-fx tables; demo logAudit in 12-state-b2c.js:405-425).
 

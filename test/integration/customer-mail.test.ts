@@ -150,12 +150,7 @@ const FLOWS: readonly Flow[] = [
     subject: 'Your sign-in link',
     path: '/sign-in',
     async start() {
-      // An Arabic-speaking customer gets the English template: it is the fallback language.
-      const customer = await makeCustomer(t, {
-        name: 'Daniel Whitmore',
-        email: 'daniel.whitmore@example.com',
-        locale: 'ar',
-      });
+      const customer = await makeCustomer(t, { name: 'Daniel Whitmore', email: 'daniel.whitmore@example.com' });
       expect((await store().magicLink(customer.email)).statusCode).toBe(204);
       return { customerId: customer.id, email: customer.email, name: 'Daniel Whitmore' };
     },

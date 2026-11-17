@@ -114,7 +114,6 @@ describe('GET /store/v1/services', () => {
     expect(rows[0]).toEqual({
       id: world.icloud.serviceId,
       slug: world.icloud.slug,
-      locale: 'en',
       title: 'iCloud Clean / Lost Check',
       summary: 'Find out if the phone is clean before you buy.',
       brand: 'Apple',
@@ -248,14 +247,18 @@ describe('GET /store/v1/services', () => {
     expect(body(paged).map((row: { slug: string }) => row.slug)).toEqual([world.att.slug]);
   });
 
-  it('reads a language of its own and defaults to English', async () => {
+  it('takes no language: `locale` is an unknown parameter of the list (422), and a card carries none', async () => {
     const { db } = await testDb();
-    const world = await storefrontWorld(db);
-    await insertListing(db, world.icloud.serviceId, { locale: 'ar', slug: 'icloud-ar', publicTitle: 'فحص آي كلاود' });
-    expect(body(await get('/store/v1/services?locale=ar')).map((row: { slug: string }) => row.slug)).toEqual([
-      'icloud-ar',
-    ]);
-    expect((await get('/store/v1/services')).headers['x-total-count']).toBe('2');
+    await storefrontWorld(db);
+    // English only (decision 039): the website stops sending `locale` before this strict list refuses it.
+    for (const query of ['locale=en', 'locale=tr']) {
+      const res = await get(`/store/v1/services?${query}`);
+      expect(res.statusCode, query).toBe(422);
+      expect(body(res).code, query).toBe('VALIDATION_FAILED');
+    }
+    const res = await get('/store/v1/services');
+    expect(res.headers['x-total-count']).toBe('2');
+    expect(body(res).filter((row: object) => 'locale' in row)).toEqual([]);
   });
 
   it('answers 422 for a currency that is not offered or malformed and for a filter it does not know', async () => {
@@ -326,14 +329,6 @@ describe('GET /store/v1/services/:slug', () => {
         serviceId: world.att.serviceId,
         isPublished: true,
       },
-      {
-        category: 'Orders',
-        question: 'Arabic',
-        answerMd: 'x',
-        serviceId: world.icloud.serviceId,
-        isPublished: true,
-        locale: 'ar',
-      },
     ]);
     const res = await get(`/store/v1/services/${world.icloud.slug}?buyerCountry=GB&currency=GBP`);
     expect(res.statusCode).toBe(200);
@@ -347,11 +342,15 @@ describe('GET /store/v1/services/:slug', () => {
     expect(JSON.stringify(page)).not.toContain('secret_supplier_key');
   });
 
-  it('answers 404 for an unknown slug, a page that is off, another language and a service that cannot be sold', async () => {
+  it('answers 404 for an unknown slug, a page that is off and a service that cannot be sold', async () => {
     const { db } = await testDb();
     const world = await storefrontWorld(db);
     expect((await get('/store/v1/services/nope')).statusCode).toBe(404);
-    expect((await get(`/store/v1/services/${world.icloud.slug}?locale=ar`)).statusCode).toBe(404);
+    // The page takes no language: a `locale` an old client still sends is ignored (plain query, decision 039).
+    const old = await get(`/store/v1/services/${world.icloud.slug}?locale=tr`);
+    expect(old.statusCode).toBe(200);
+    expect(body(old)).not.toHaveProperty('locale');
+    expect(body(old)).not.toHaveProperty('alternates');
     await db.update(s.serviceListings).set({ isListed: false }).where(eq(s.serviceListings.id, world.icloud.listingId));
     expect((await get(`/store/v1/services/${world.icloud.slug}`)).statusCode).toBe(404);
     await db.update(s.services).set({ status: 'disabled' }).where(eq(s.services.id, world.att.serviceId));
@@ -404,10 +403,6 @@ describe('the catalog filters, sorts and categories of feature 22', () => {
     const { db } = await testDb();
     const world = await storefrontWorld(db);
     await db
-      .update(s.serviceCategories)
-      .set({ nameAr: 'آبل' })
-      .where(eq(s.serviceCategories.id, world.icloud.categoryId));
-    await db
       .update(s.serviceListings)
       .set({ etaText: 'About 2 minutes', listedAt: new Date('2026-10-01T09:00:00.000Z') })
       .where(eq(s.serviceListings.id, world.icloud.listingId));
@@ -421,10 +416,6 @@ describe('the catalog filters, sorts and categories of feature 22', () => {
       listedAt: '2026-10-01T09:00:00.000Z',
     });
     expect(rows[1]).toMatchObject({ deliveryMinutes: 1440, etaText: '', listedAt: null });
-    // The Arabic page shows the Arabic category name; the slug stays the English one.
-    await insertListing(db, world.icloud.serviceId, { locale: 'ar', slug: 'icloud-ar', publicTitle: 'فحص' });
-    const [ar] = body(await get('/store/v1/services?locale=ar'));
-    expect(ar.category).toEqual({ id: world.icloud.categoryId, slug: `${world.icloud.categoryId}-apple`, name: 'آبل' });
   });
 
   it('says in_stock only when the available codes cover the smallest order, and never gives a count', async () => {
@@ -562,39 +553,13 @@ describe('the catalog filters, sorts and categories of feature 22', () => {
     // No number leaks through the popularity sort.
     expect(JSON.stringify(body(await get('/store/v1/services?_sort=popular')))).not.toContain('sales');
   });
-
-  it('names the other languages of the same service on its page', async () => {
-    const { db } = await testDb();
-    const world = await storefrontWorld(db);
-    expect(body(await get(`/store/v1/services/${world.icloud.slug}`)).alternates).toEqual([]);
-    const ar = await insertListing(db, world.icloud.serviceId, { locale: 'ar', slug: 'icloud-ar', publicTitle: 'فحص' });
-    await insertListing(db, world.att.serviceId, {
-      locale: 'ar',
-      slug: 'att-ar-off',
-      publicTitle: 'AT&T',
-      isListed: false,
-    });
-    expect(body(await get(`/store/v1/services/${world.icloud.slug}`)).alternates).toEqual([
-      { locale: 'ar', slug: 'icloud-ar' },
-    ]);
-    expect(body(await get('/store/v1/services/icloud-ar?locale=ar')).alternates).toEqual([
-      { locale: 'en', slug: world.icloud.slug },
-    ]);
-    // A page that is switched off is not an alternate.
-    expect(body(await get(`/store/v1/services/${world.att.slug}`)).alternates).toEqual([]);
-    await db.update(s.serviceListings).set({ isListed: false }).where(eq(s.serviceListings.id, ar));
-    expect(body(await get(`/store/v1/services/${world.icloud.slug}`)).alternates).toEqual([]);
-  });
 });
 
 describe('GET /store/v1/categories', () => {
-  it('lists the categories with a sellable listed service in the language, their counts and names, in category order', async () => {
+  it('lists the categories with a sellable listed service, their counts and names, in category order', async () => {
     const { db } = await testDb();
     const world = await storefrontWorld(db);
-    await db
-      .update(s.serviceCategories)
-      .set({ nameAr: 'آبل', sort: 2 })
-      .where(eq(s.serviceCategories.id, world.icloud.categoryId));
+    await db.update(s.serviceCategories).set({ sort: 2 }).where(eq(s.serviceCategories.id, world.icloud.categoryId));
     const carrierId = (await db.select().from(s.services).where(eq(s.services.id, world.att.serviceId)))[0]!.categoryId;
     await db.update(s.serviceCategories).set({ sort: 1 }).where(eq(s.serviceCategories.id, carrierId));
 
@@ -602,7 +567,6 @@ describe('GET /store/v1/categories', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['cache-control']).toBe('public, max-age=30');
     expect(body(res)).toEqual({
-      locale: 'en',
       categories: [
         { id: carrierId, slug: `${carrierId}-carrier-unlock`, name: 'Carrier unlock', type: 'imei', serviceCount: 1 },
         {
@@ -614,21 +578,8 @@ describe('GET /store/v1/categories', () => {
         },
       ],
     });
-    // Arabic: only the services with an Arabic page count; the name falls back to the English one.
-    await insertListing(db, world.icloud.serviceId, { locale: 'ar', slug: 'icloud-ar', publicTitle: 'فحص' });
-    expect(body(await get('/store/v1/categories?locale=ar'))).toEqual({
-      locale: 'ar',
-      categories: [
-        {
-          id: world.icloud.categoryId,
-          slug: `${world.icloud.categoryId}-apple`,
-          name: 'آبل',
-          type: 'imei',
-          serviceCount: 1,
-        },
-      ],
-    });
-    expect((await get('/store/v1/categories?locale=fr')).statusCode).toBe(422);
+    // The menu takes no language: a `locale` an old client still sends is ignored (plain query, decision 039).
+    expect(body(await get('/store/v1/categories?locale=tr'))).toEqual(body(res));
   });
 
   it('never counts what the shop cannot sell: B2B-only or inactive categories, unlisted, unpriced or disabled services', async () => {
@@ -687,6 +638,6 @@ describe('GET /store/v1/categories', () => {
   });
 
   it('is empty without a retail group', async () => {
-    expect(body(await get('/store/v1/categories'))).toEqual({ locale: 'en', categories: [] });
+    expect(body(await get('/store/v1/categories'))).toEqual({ categories: [] });
   });
 });

@@ -27,7 +27,6 @@ export interface MerchantMe {
   readonly referralCode: string;
   readonly group: { readonly id: number; readonly name: string; readonly discountPercent: string };
   readonly createdAt: Date;
-  readonly locale: Client['locale'];
   readonly address: string;
   readonly taxId: string;
   readonly mustChangePassword: boolean;
@@ -65,7 +64,7 @@ export class MerchantAccountService {
   }
 
   /**
-   * Changes the name, company, phone, country, language, address and tax id of the signed-in merchant.
+   * Changes the name, company, phone, country, address and tax id of the signed-in merchant.
    *
    * Side effects: updates `clients`; a changed name drops the merchant's cached session and API key views (both hold the name).
    *
@@ -104,7 +103,6 @@ export class MerchantAccountService {
       referralCode: client.referralCode,
       group: { id: group.id, name: group.name, discountPercent: group.discountPercent },
       createdAt: client.createdAt,
-      locale: client.locale,
       address: client.address,
       taxId: client.taxId,
       mustChangePassword: client.mustChangePassword,

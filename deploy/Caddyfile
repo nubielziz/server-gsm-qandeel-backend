@@ -32,7 +32,7 @@
 {$SHOP_HOST} {
 	import common
 	# A ticket token is the whole credential of the ticket page and its API routes (feature 28): Caddy logs the full URI and the Referer,
-	# so both have the token part replaced (`/store/v1/tickets/<token>/…`, `/<lang>/support/tickets/<token>`). A typed search can be an
+	# so both have the token part replaced (`/store/v1/tickets/<token>/…`, `/en/support/tickets/<token>`). A typed search can be an
 	# IMEI, a phone number or an email address (feature 29): the `q` parameter is replaced in both fields too, whether it is the URI of
 	# `/store/v1/search*` or the Referer of a results page. One `multi_regexp` per field holds every rule (one `regexp` line each); the
 	# API itself logs the route template only.

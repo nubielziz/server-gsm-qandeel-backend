@@ -122,12 +122,12 @@ describe('POST /admin/clients/:id/api-keys', () => {
     ]);
   });
 
-  it('audits the creation under the merchant without the key, and mails the merchant one security notice in its language', async () => {
+  it('audits the creation under the merchant without the key, and mails each merchant one security notice', async () => {
     const api = await staff();
     const english = await insertMerchant(db, { name: 'Zain Mobile Hub' });
-    const arabic = await insertMerchant(db, { name: 'متجر زين', locale: 'ar' });
+    const other = await insertMerchant(db, { name: 'Cedar Phones' });
     const first = await api.post(`/admin/clients/${english}/api-keys`, BODY);
-    await api.post(`/admin/clients/${arabic}/api-keys`, BODY);
+    await api.post(`/admin/clients/${other}/api-keys`, BODY);
 
     const audits = await db.select().from(s.auditLogs).orderBy(s.auditLogs.id);
     expect(audits[0]).toMatchObject({
@@ -150,15 +150,19 @@ describe('POST /admin/clients/:id/api-keys', () => {
     const sent = await notificationRows(db);
     expect(sent.map((row) => [row.event, row.recipientId])).toEqual([
       ['merchant.security_notice', english],
-      ['merchant.security_notice', arabic],
+      ['merchant.security_notice', other],
     ]);
     expect(JSON.stringify(sent)).not.toContain(first.body.secret);
     await sendAllQueued(t);
-    const byTo = new Map(mailbox(t).sent.map((mail) => [mail.subject, mail]));
-    expect(byTo.get('A security change on your merchant account')!.text).toContain(
-      'a new API key was created for your account',
-    );
-    expect(byTo.get('تغيير أمني في حساب التاجر الخاص بك')!.text).toContain('تم إنشاء مفتاح API جديد لحسابك');
+    // Every merchant gets the one English template with the same fixed sentence (decision 039).
+    const mails = mailbox(t).sent;
+    expect(mails).toHaveLength(2);
+    for (const mail of mails) {
+      expect(mail.subject).toBe('A security change on your merchant account');
+      expect(mail.text).toContain('a new API key was created for your account');
+      expect(mail.text).not.toContain(first.body.secret);
+    }
+    expect(mails.find((mail) => mail.text.startsWith('Hi Cedar Phones,'))).toBeDefined();
   });
 
   it('refuses a pending or a suspended merchant with 409 NOT_ACTIVE and an unknown one with 404, writing nothing', async () => {

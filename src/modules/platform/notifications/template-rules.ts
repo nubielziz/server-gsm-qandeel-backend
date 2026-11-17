@@ -12,7 +12,6 @@ export const TELEGRAM_MAX_TEXT = 4096;
 
 /** `{{name}}` with optional spaces inside the braces; a name starts with a letter. */
 const PLACEHOLDER = /\{\{\s*([A-Za-z][A-Za-z0-9_]*)\s*\}\}/g;
-const LOCALE = /^[a-z]{2}(-[A-Z]{2})?$/;
 const HTML_TAG = /<\/?(html|body|p|div|table|a|br|span|h[1-6]|ul|ol|li|strong|em|img)\b/i;
 
 /**
@@ -199,18 +198,6 @@ export function checkTemplateFields(fields: TemplateFields, variables: readonly 
   return problems;
 }
 
-/**
- * Checks a template language code.
- *
- * @param locale the code as sent
- * @returns the problem, or `undefined` when it looks like `en` or `en-GB`
- */
-export function checkLocale(locale: string): FieldError | undefined {
-  return LOCALE.test(locale)
-    ? undefined
-    : { field: 'locale', code: 'invalid', message: 'Use a language code such as en or en-GB.' };
-}
-
 /** A rendered message, ready for a channel. */
 export interface RenderedMessage {
   readonly subject: string;
@@ -247,18 +234,15 @@ export function renderMessage(template: TemplateFields, variables: Readonly<Reco
 }
 
 /**
- * Wraps plain text into the HTML part of an email, right to left for Arabic.
+ * Wraps plain text into the HTML part of an email.
  *
- * Why: feature 23, plan 9.3: an Arabic message must read right to left in every mail client; the text is escaped first, so stored
- * text can never become markup, and line breaks become `<br>`.
+ * Why: feature 23, plan 9.3 and decision 039 (English only): the text is escaped first, so stored text can never become markup,
+ * and line breaks become `<br>`. Text that people typed (a name, a message) is carried as typed inside the left-to-right wrapper.
  *
  * @param text the plain text
- * @param locale the reader's language (`ar`, `ar-JO`, `en`, ...)
- * @returns the HTML part: a `div` with `dir` and `lang`
+ * @returns the HTML part: a `div` with `dir="ltr" lang="en"`
  */
-export function emailHtml(text: string, locale: string): string {
+export function emailHtml(text: string): string {
   const body = escapeHtml(text).replace(/\r?\n/g, '<br>\n');
-  return locale.startsWith('ar')
-    ? `<div dir="rtl" lang="ar" style="text-align:right">${body}</div>`
-    : `<div dir="ltr" lang="en">${body}</div>`;
+  return `<div dir="ltr" lang="en">${body}</div>`;
 }

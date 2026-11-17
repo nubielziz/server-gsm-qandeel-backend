@@ -2,7 +2,7 @@
 // HelpArticle (docs/contract/endpoints/storefront.md, ANSWERS storefront Q2 and Q6, MISMATCHES B58).
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime } from '../../../common/contract';
-import { ANSWER_MAX, LocaleField, STOREFRONT_LOCALES, requiredMarkdown, titleField } from './shared';
+import { ANSWER_MAX, requiredMarkdown, titleField } from './shared';
 
 /** An article as the console reads it. */
 const ArticleRow = z.object({
@@ -10,7 +10,6 @@ const ArticleRow = z.object({
   category: z.string().describe('A free-text topic chosen by staff.'),
   question: z.string(),
   answerMd: z.string().describe('The full Markdown answer.'),
-  locale: z.string(),
   isPublished: z.boolean(),
   helpfulYes: z.number().int().min(0).describe('Reader votes: helpful.'),
   helpfulNo: z.number().int().min(0).describe('Reader votes: not helpful.'),
@@ -24,7 +23,6 @@ const ARTICLE_EXAMPLE = {
   category: 'IMEI',
   question: 'How do I find my IMEI?',
   answerMd: 'Dial *#06# on the phone.',
-  locale: 'en',
   isPublished: true,
   helpfulYes: 301,
   helpfulNo: 12,
@@ -41,7 +39,7 @@ export const listHelpArticles = defineRoute({
   key: 'GET /admin/help-articles',
   summary: 'List help articles',
   description:
-    'Filters: `isPublished`, `category` and `locale`. `q` is a contains over the question and the topic. Default order: `sort`. ' +
+    'Filters: `isPublished` and `category`. `q` is a contains over the question and the topic. Default order: `sort`. ' +
     'The stats above the table ask with `_start=0&_end=1`. Rows carry the full answer.',
   tags: ['help-articles'],
   surface: 'admin',
@@ -53,7 +51,6 @@ export const listHelpArticles = defineRoute({
     filters: {
       isPublished: { type: 'boolean' },
       category: { type: 'string' },
-      locale: { type: 'enum', values: STOREFRONT_LOCALES },
     },
     search: ['question', 'category'],
   }),
@@ -91,13 +88,12 @@ export const createHelpArticle = defineRoute({
     category: Category,
     question: titleField('Enter the question.'),
     answerMd: requiredMarkdown(ANSWER_MAX, 'Enter the answer.'),
-    locale: LocaleField,
     isPublished: z.boolean().optional(),
   }),
   success: { status: 201, schema: ArticleRow },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'VALIDATION_FAILED'],
   examples: {
-    request: { category: 'IMEI', question: 'How do I find my IMEI?', answerMd: 'Dial *#06#.', locale: 'en' },
+    request: { category: 'IMEI', question: 'How do I find my IMEI?', answerMd: 'Dial *#06#.' },
     response: { ...ARTICLE_EXAMPLE, isPublished: false, helpfulYes: 0, helpfulNo: 0 },
   },
 });
@@ -120,7 +116,6 @@ export const updateHelpArticle = defineRoute({
       category: Category.optional(),
       question: titleField('Enter the question.').optional(),
       answerMd: requiredMarkdown(ANSWER_MAX, 'Enter the answer.').optional(),
-      locale: LocaleField.optional(),
       isPublished: z.boolean().optional(),
     })
     .refine((body) => Object.values(body).some((value) => value !== undefined), 'Send at least one field to change.'),

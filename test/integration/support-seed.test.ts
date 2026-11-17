@@ -135,7 +135,6 @@ describe.skipIf(!frontendPresent)('the support seed', () => {
     expect(templates.body.find((row: { id: number }) => row.id === 1)).toMatchObject({
       title: 'Order is in progress',
       category: 'delay',
-      locale: 'en',
       shortcut: '',
       createdBy: 1,
     });

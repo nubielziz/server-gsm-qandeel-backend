@@ -2303,7 +2303,7 @@
       "where": [
         "src/features/storefront/mocks/pageRoutes.ts:38"
       ],
-      "meaning": "Content page slug already used in the locale (with errors[{field:\"slug\"}]).",
+      "meaning": "Content page slug already used by another page (a slug is unique for the site; with errors[{field:\"slug\"}]).",
       "ui": "Message under the slug field."
     },
     {

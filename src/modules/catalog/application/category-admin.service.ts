@@ -28,7 +28,6 @@ import {
 export interface CategoryView {
   readonly id: number;
   readonly name: string;
-  readonly nameAr: string;
   readonly type: ServiceType;
   readonly allowedGroupIds: number[];
   readonly sort: number;
@@ -39,7 +38,6 @@ export interface CategoryView {
 /** The fields of `POST /admin/service-categories`. */
 export interface CreateCategoryInput {
   readonly name: string;
-  readonly nameAr?: string | undefined;
   readonly type: ServiceType;
   readonly allowedGroupIds?: number[] | undefined;
   readonly sort?: number | undefined;
@@ -58,7 +56,6 @@ const nameTaken = (type: ServiceType) =>
 
 const snapshot = (category: ServiceCategory) => ({
   name: category.name,
-  nameAr: category.nameAr,
   type: category.type,
   allowedGroupIds: category.allowedGroupIds,
   sort: category.sort,
@@ -68,7 +65,6 @@ const snapshot = (category: ServiceCategory) => ({
 const toView = ({ category, serviceCount }: CategoryRow): CategoryView => ({
   id: category.id,
   name: category.name,
-  nameAr: category.nameAr,
   type: category.type,
   allowedGroupIds: category.allowedGroupIds,
   sort: category.sort,
@@ -138,7 +134,6 @@ export class CategoryAdminService {
       try {
         category = await insertCategoryRow(tx, {
           name: input.name,
-          nameAr: input.nameAr ?? '',
           type: input.type,
           allowedGroupIds,
           sort: input.sort ?? (await nextCategorySort(tx)),
@@ -203,7 +198,6 @@ export class CategoryAdminService {
       try {
         category = await updateCategoryRow(tx, id, {
           ...(changes.name === undefined ? {} : { name: changes.name }),
-          ...(changes.nameAr === undefined ? {} : { nameAr: changes.nameAr }),
           ...(changes.type === undefined ? {} : { type: changes.type }),
           ...(allowedGroupIds === undefined ? {} : { allowedGroupIds }),
           ...(changes.sort === undefined ? {} : { sort: changes.sort }),

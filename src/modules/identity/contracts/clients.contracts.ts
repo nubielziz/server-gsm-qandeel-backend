@@ -2,7 +2,6 @@
 // approve, suspend, reactivate and move to another group. Shapes match the console's Client (docs/contract/endpoints/identity.md).
 import { z } from 'zod';
 import { defineRoute, listQuery, zDecimal, zId, zIdParam, zIsoDateTime, zMoney } from '../../../common/contract';
-import { CLIENT_LOCALES } from '../db/schema';
 import { MerchantCountry } from './merchant-auth.contracts';
 import { EmailField, NameField, PersonRef } from './shared';
 
@@ -38,7 +37,7 @@ const Suspension = z.object({ at: zIsoDateTime.nullable(), reason: z.string().nu
 /**
  * A merchant as the console reads it. Never carries a password hash, TOTP data, Telegram chat id or preferences.
  *
- * The keys of feature 20 (`locale` to `suspension`) are optional in the schema, because the console's recorded fixtures are
+ * The keys of feature 20 (`address` to `suspension`) are optional in the schema, because the console's recorded fixtures are
  * validated against it, and always sent by the server.
  */
 const ClientRow = z.object({
@@ -57,7 +56,6 @@ const ClientRow = z.object({
   kycStatus: z.enum(['none', 'pending', 'approved', 'rejected']),
   group: z.object({ id: zId, name: z.string(), discountPercent: zDecimal }).nullable(),
   referredBy: PersonRef.nullable(),
-  locale: z.enum(CLIENT_LOCALES).optional(),
   address: z.string().optional(),
   taxId: z.string().optional(),
   internalNotes: z.string().optional(),
@@ -84,7 +82,6 @@ const CLIENT_EXAMPLE = {
   kycStatus: 'approved',
   group: { id: 3, name: 'VIP', discountPercent: '8.0000' },
   referredBy: null,
-  locale: 'en',
   address: 'Abdali Boulevard, Amman',
   taxId: 'JO-1234567',
   internalNotes: 'Pays by bank transfer on Sundays.',
@@ -213,7 +210,7 @@ export const updateClient = defineRoute({
     "ends the merchant's sessions, cancels every open link and refuses new orders; open orders keep processing and the wallet is " +
     'untouched; the staff reason stays internal. Approval, suspension and reactivation email the merchant. `groupId` moves the ' +
     'merchant (never to the storefront retail group, and not to a group without credit while the credit limit is above zero: ' +
-    '`422` on `groupId`); it prices new orders only. Details (`name`, `company`, `phone`, `country`, `email`, `locale`, `address`, ' +
+    '`422` on `groupId`); it prices new orders only. Details (`name`, `company`, `phone`, `country`, `email`, `address`, ' +
     '`taxId`, `internalNotes`; several at once, a value equal to the stored one is not a change): changing the `email` cancels ' +
     'every open link, clears `emailVerifiedAt` and emails a new verification link (or the invitation while the merchant has no ' +
     'password) to the new address; the merchant stays signed in (`409 EMAIL_TAKEN` for an address in use, `429` after five ' +
@@ -233,7 +230,6 @@ export const updateClient = defineRoute({
       phone: z.string().trim().max(40, 'Use at most 40 characters.').optional(),
       country: MerchantCountry.optional(),
       email: EmailField.optional(),
-      locale: z.enum(CLIENT_LOCALES).optional(),
       address: z.string().trim().max(300, 'Use at most 300 characters.').optional(),
       taxId: z.string().trim().max(40, 'Use at most 40 characters.').optional(),
       internalNotes: z.string().trim().max(2000, 'Use at most 2000 characters.').optional(),

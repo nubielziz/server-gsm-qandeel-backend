@@ -48,16 +48,6 @@ export const CLIENT_STATUSES = ['active', 'suspended', 'pending'] as const;
 export type ClientStatus = (typeof CLIENT_STATUSES)[number];
 
 /**
- * The languages of a merchant's emails and portal.
- *
- * Why: feature 20 (merchant management): `clients.locale` picks the mail template language (en or ar).
- */
-export const CLIENT_LOCALES = ['en', 'ar'] as const;
-
-/** One value of {@link CLIENT_LOCALES}. */
-export type ClientLocale = (typeof CLIENT_LOCALES)[number];
-
-/**
  * A merchant's identity-verification state: `none` until a request is sent.
  *
  * Why: the console's `kycStatus` wire enum (GET /admin/clients).
@@ -270,8 +260,6 @@ export const clients = pgTable(
     lastLoginAt: timestampTz(),
     /** the address of that sign-in (feature 20) */
     lastLoginIp: text(),
-    /** language of the merchant's emails: `en` or `ar` (feature 20) */
-    locale: text().$type<ClientLocale>().notNull().default('en'),
     /** postal address, free text, at most 300 characters (the contract enforces it; feature 20) */
     address: text().notNull().default(''),
     /** tax or VAT registration number, at most 40 characters (feature 20) */
@@ -291,7 +279,6 @@ export const clients = pgTable(
       .where(sql`${t.telegramChatId} is not null`),
     check('clients_status_check', inList(t.status, CLIENT_STATUSES)),
     check('clients_kyc_status_check', inList(t.kycStatus, KYC_STATUSES)),
-    check('clients_locale_check', inList(t.locale, CLIENT_LOCALES)),
     index('clients_group_id_idx').on(t.groupId),
     index('clients_status_idx').on(t.status),
     index('clients_name_idx').on(t.name),

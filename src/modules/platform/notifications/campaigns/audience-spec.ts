@@ -7,20 +7,10 @@ import type { NotificationRecipientType } from '../../db/schema';
 
 /** Most ids in `roleIds` or `groupIds`. */
 export const MAX_SEGMENT_IDS = 100;
-/** Most codes in `countries` or `locales`. */
+/** Most codes in `countries`. */
 export const MAX_SEGMENT_CODES = 50;
 /** Most people in `include` or `exclude`. */
 export const MAX_PEOPLE = 500;
-
-/**
- * The languages a campaign is written in and a customer may read.
- *
- * Why: L5: English is required, Arabic optional.
- */
-export const CAMPAIGN_LOCALES = ['en', 'ar'] as const;
-
-/** One value of {@link CAMPAIGN_LOCALES}. */
-export type CampaignLocale = (typeof CAMPAIGN_LOCALES)[number];
 
 const zCountry = z
   .string()
@@ -42,14 +32,13 @@ export const zMerchantSegment = z.strictObject({
   countries: codes(zCountry, 'Only merchants of these countries.').optional(),
 });
 
-/** The customer segment: active customers, accounts or guests, by country and language. */
+/** The customer segment: active customers, accounts or guests, by country. */
 export const zCustomerSegment = z.strictObject({
   hasAccount: z
     .boolean()
     .optional()
     .describe('true = customers with an account only, false = guests only, absent = both.'),
   countries: codes(zCountry, 'Only customers of these countries.').optional(),
-  locales: codes(z.enum(CAMPAIGN_LOCALES), 'Only customers who read these languages.').optional(),
 });
 
 const zPerson = z.strictObject({

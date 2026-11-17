@@ -1,31 +1,14 @@
-// Unit tests of the campaign renderer (feature 23, plan section 6): language pick and fallback, `{{name}}`, the link per audience,
-// the RTL HTML part, the Telegram cut, the marketing footer and one-click headers, and the escaping of stored text.
+// Unit tests of the campaign renderer (feature 23, plan section 6): `{{name}}`, the link per audience, the HTML part, the Telegram cut,
+// the marketing footer and one-click headers, and the escaping of stored text. English only (decision 039).
 import { describe, expect, it } from 'bun:test';
 import { TELEGRAM_MAX_TEXT } from '../template-rules';
-import { type RenderableCampaign, linkFor, pickText, renderCampaign } from './campaign-render';
+import { type RenderableCampaign, linkFor, renderCampaign } from './campaign-render';
 
 const campaign = (over: Partial<RenderableCampaign> = {}): RenderableCampaign => ({
-  content: {
-    en: { title: 'Hello {{name}}', body: 'Maintenance on Friday.' },
-    ar: { title: 'مرحباً {{name}}', body: 'صيانة يوم الجمعة.' },
-  },
+  content: { title: 'Hello {{name}}', body: 'Maintenance on Friday.' },
   link: { customer: '/account/orders', merchant: '/merchant/wallet', staff: '/system' },
   purpose: 'service',
   ...over,
-});
-
-describe('pickText', () => {
-  it('picks Arabic for any ar locale and English otherwise', () => {
-    expect(pickText(campaign().content, 'ar').locale).toBe('ar');
-    expect(pickText(campaign().content, 'ar-JO').locale).toBe('ar');
-    expect(pickText(campaign().content, 'en').locale).toBe('en');
-    expect(pickText(campaign().content, 'fr').locale).toBe('en');
-  });
-
-  it('falls back to English when the campaign has no Arabic', () => {
-    const content = { en: { title: 't', body: 'b' }, ar: null };
-    expect(pickText(content, 'ar')).toEqual({ text: { title: 't', body: 'b' }, locale: 'en' });
-  });
 });
 
 describe('linkFor', () => {
@@ -45,24 +28,15 @@ describe('renderCampaign', () => {
   const base = { name: 'Daniel', audience: 'customer' as const, baseUrl: 'https://shop.example' };
 
   it('renders an English email with the name, the link and an LTR HTML part', () => {
-    const message = renderCampaign(campaign(), { ...base, locale: 'en', channel: 'email' });
+    const message = renderCampaign(campaign(), { ...base, channel: 'email' });
     expect(message.subject).toBe('Hello Daniel');
     expect(message.text).toBe('Maintenance on Friday.\n\nhttps://shop.example/account/orders');
     expect(message.html).toStartWith('<div dir="ltr" lang="en">');
     expect(message.headers).toBeUndefined();
-    expect(message.locale).toBe('en');
-  });
-
-  it('renders an Arabic email right to left', () => {
-    const message = renderCampaign(campaign(), { ...base, locale: 'ar', channel: 'email' });
-    expect(message.subject).toBe('مرحباً Daniel');
-    expect(message.html).toStartWith('<div dir="rtl" lang="ar" style="text-align:right">');
-    expect(message.locale).toBe('ar');
   });
 
   it('gives a staff email no link (the console has no base address)', () => {
     const message = renderCampaign(campaign(), {
-      locale: 'en',
       name: 'Rami',
       audience: 'staff',
       channel: 'email',
@@ -72,17 +46,16 @@ describe('renderCampaign', () => {
   });
 
   it('gives an in-app message the title and body only', () => {
-    const message = renderCampaign(campaign(), { ...base, locale: 'en', channel: 'in_app' });
-    expect(message).toEqual({ subject: 'Hello Daniel', text: 'Maintenance on Friday.', locale: 'en' });
+    const message = renderCampaign(campaign(), { ...base, channel: 'in_app' });
+    expect(message).toEqual({ subject: 'Hello Daniel', text: 'Maintenance on Friday.' });
   });
 
   it('joins title and body for Telegram and cuts at the Bot API limit', () => {
-    const short = renderCampaign(campaign(), { ...base, audience: 'merchant', locale: 'en', channel: 'telegram' });
+    const short = renderCampaign(campaign(), { ...base, audience: 'merchant', channel: 'telegram' });
     expect(short.text).toBe('Hello Daniel\n\nMaintenance on Friday.\nhttps://shop.example/merchant/wallet');
     expect(short.html).toBeUndefined();
-    const long = renderCampaign(campaign({ content: { en: { title: 'T', body: 'x'.repeat(5000) } } }), {
+    const long = renderCampaign(campaign({ content: { title: 'T', body: 'x'.repeat(5000) } }), {
       ...base,
-      locale: 'en',
       channel: 'telegram',
     });
     expect(long.text).toHaveLength(TELEGRAM_MAX_TEXT);
@@ -93,31 +66,18 @@ describe('renderCampaign', () => {
       pageUrl: 'https://shop.example/unsubscribe?token=abc',
       oneClickUrl: 'https://shop.example/store/v1/marketing/unsubscribe/abc',
     };
-    const en = renderCampaign(campaign({ purpose: 'marketing' }), {
-      ...base,
-      locale: 'en',
-      channel: 'email',
-      unsubscribe,
-    });
-    expect(en.text).toEndWith('Unsubscribe: https://shop.example/unsubscribe?token=abc');
-    expect(en.headers).toEqual({
+    const message = renderCampaign(campaign({ purpose: 'marketing' }), { ...base, channel: 'email', unsubscribe });
+    expect(message.text).toEndWith('Unsubscribe: https://shop.example/unsubscribe?token=abc');
+    expect(message.headers).toEqual({
       'List-Unsubscribe': '<https://shop.example/store/v1/marketing/unsubscribe/abc>',
       'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
     });
-    const ar = renderCampaign(campaign({ purpose: 'marketing' }), {
-      ...base,
-      locale: 'ar',
-      channel: 'email',
-      unsubscribe,
-    });
-    expect(ar.text).toEndWith('لإلغاء الاشتراك: https://shop.example/unsubscribe?token=abc');
   });
 
   it('adds the preferences footer, and no header, to a marketing email for a merchant', () => {
     const message = renderCampaign(campaign({ purpose: 'marketing' }), {
       ...base,
       audience: 'merchant',
-      locale: 'en',
       channel: 'email',
       preferencesUrl: 'https://shop.example/merchant/settings/notifications',
     });
@@ -128,7 +88,6 @@ describe('renderCampaign', () => {
   it('adds no footer to a service email', () => {
     const message = renderCampaign(campaign(), {
       ...base,
-      locale: 'en',
       channel: 'email',
       unsubscribe: { pageUrl: 'p', oneClickUrl: 'o' },
     });
@@ -137,10 +96,9 @@ describe('renderCampaign', () => {
   });
 
   it('escapes stored text in the HTML part, so it can never become markup', () => {
-    const message = renderCampaign(campaign({ content: { en: { title: 't', body: '<script>x</script>' } } }), {
+    const message = renderCampaign(campaign({ content: { title: 't', body: '<script>x</script>' } }), {
       ...base,
       name: '<b>',
-      locale: 'en',
       channel: 'email',
     });
     expect(message.html).not.toContain('<script>');
@@ -148,10 +106,9 @@ describe('renderCampaign', () => {
   });
 
   it('turns line breaks into <br> in the HTML part', () => {
-    const message = renderCampaign(campaign({ content: { en: { title: 't', body: 'a\nb' } } }), {
+    const message = renderCampaign(campaign({ content: { title: 't', body: 'a\nb' } }), {
       ...base,
       baseUrl: undefined,
-      locale: 'en',
       channel: 'email',
     });
     expect(message.html).toBe('<div dir="ltr" lang="en">a<br>\nb</div>');

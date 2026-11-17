@@ -152,7 +152,7 @@ calls it from sync, import and link changes), the figure rules (`defaultMinProfi
 sellable ids that also have a fixed price for the group, optionally narrowed by service type, category and stock (feature 22:
 `SellableFilter`, the SQL test `IN_STOCK_SQL`); `inStockIds(db, ids)`: which services have enough available inventory codes for their
 smallest order (`smallestOrder` / `coversSmallestOrder`, `domain/storefront-availability.ts`); `categoriesOf(db, ids)`: the categories of
-some services with counts; a category has an optional Arabic name `name_ar` for the storefront (feature 22); `names(db, ids)`: name, type and delivery time whatever the service's state;
+some services with counts (a category has one name, English only since decision 039); `names(db, ids)`: name, type and delivery time whatever the service's state;
 `fields(db, serviceId)`) and `TacDirectory.find(db, tac)` (brand, model, marketing name and year of a TAC). Other modules import only `src/modules/catalog/index.ts` (lint rule
 `gsm/module-boundaries`). The export order matters (decision 032): the leaves identity injects come first, `CatalogAdminModule`
 (whose controllers use identity's decorators) last.

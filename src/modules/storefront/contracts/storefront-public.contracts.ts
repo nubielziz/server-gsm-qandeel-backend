@@ -1,6 +1,7 @@
-// Route contracts of the public storefront catalog (map domain H, stage 14): the shop's configuration, the list of service pages
-// and one service page. The console has no screen for them (the storefront is another frontend): the shapes follow ALIGNMENT § 7
-// and are written up in the module README. Money is the wire's four-decimal text; amounts are in the buyer's currency.
+// Route contracts of the public storefront catalog (map domain H, stage 14): the shop's configuration, the list of service pages,
+// one service page and the category menu. The console has no screen for them (the storefront is another frontend): the shapes follow
+// ALIGNMENT § 7 and are written up in the module README. Money is the wire's four-decimal text; amounts are in the buyer's currency.
+// English only (decision 039, B224): the list, the service page and the menu take and answer no language; no `alternates`.
 import { z } from 'zod';
 import { defineRoute, listQuery, zDecimal, zId, zIsoDateTime, zMoney } from '../../../common/contract';
 import { SERVICE_TYPES } from '../../catalog';
@@ -21,12 +22,6 @@ export const zCurrencyCode = z
   .regex(/^[A-Za-z]{3}$/, 'Use a three-letter currency code, like GBP.')
   .transform((value) => value.toUpperCase())
   .describe('ISO 4217 currency code.');
-
-/** The languages of the storefront. */
-export const STOREFRONT_LOCALES = ['en', 'ar'] as const;
-
-/** A service page language. */
-export const zLocale = z.enum(STOREFRONT_LOCALES);
 
 /** Whether a service is delivered at once from stock or processed after the order. */
 export const AVAILABILITIES = ['in_stock', 'on_request'] as const;
@@ -52,7 +47,6 @@ export const StorefrontPriceSchema = z.object({
 export const ServiceCardSchema = z.object({
   id: zId.describe('The service id: what `POST /store/v1/checkout-sessions` takes as `serviceId`.'),
   slug: z.string(),
-  locale: zLocale,
   title: z.string(),
   summary: z.string(),
   brand: z.string(),
@@ -65,9 +59,7 @@ export const ServiceCardSchema = z.object({
     .object({
       id: zId,
       slug: z.string().describe('`<id>-<words>`: only the number before the first hyphen counts.'),
-      name: z
-        .string()
-        .describe('The category name in the requested language (the English name when there is no Arabic one).'),
+      name: z.string().describe('The category name.'),
     })
     .describe('The catalog category of the service (what `GET /store/v1/categories` lists).'),
   availability: z
@@ -80,10 +72,8 @@ export const ServiceCardSchema = z.object({
     .number()
     .int()
     .min(1)
-    .describe('The expected delivery time in minutes (the service SLA); the site formats it per language.'),
-  etaText: z
-    .string()
-    .describe("A delivery note in this page's language that replaces `deliveryMinutes` on screen; `''` when none."),
+    .describe('The expected delivery time in minutes (the service SLA); the site formats it.'),
+  etaText: z.string().describe("A delivery note that replaces `deliveryMinutes` on screen; `''` when none."),
   listedAt: zIsoDateTime
     .nullable()
     .describe('When the page first went on the site; never resets. `null` for pages from before it was recorded.'),
@@ -117,11 +107,6 @@ const ServicePageSchema = ServiceCardSchema.extend({
   }),
   fields: z.array(FieldSchema).describe('What the order form asks for besides the IMEI.'),
   faqs: z.array(z.object({ question: z.string(), answerMd: z.string() })),
-  alternates: z
-    .array(z.object({ locale: zLocale, slug: z.string() }))
-    .describe(
-      'The switched-on pages of the same service in the other languages (for the language switch); empty when none.',
-    ),
 });
 
 const PRICE_EXAMPLE = {
@@ -137,7 +122,6 @@ const PRICE_EXAMPLE = {
 const CARD_EXAMPLE = {
   id: 1,
   slug: 'icloud-clean-lost-check',
-  locale: 'en',
   title: 'iCloud Clean / Lost Check',
   summary: 'Find out if the phone is clean before you buy.',
   brand: 'Apple',
@@ -211,7 +195,6 @@ export const getStoreConfig = defineRoute({
         z.object({
           type: z.enum(LEGAL_DOCUMENT_TYPES),
           version: z.string(),
-          locale: z.string(),
           effectiveFrom: zIsoDateTime.nullable(),
         }),
       ),
@@ -228,7 +211,7 @@ export const getStoreConfig = defineRoute({
       taxRates: [{ country: 'GB', region: '', ratePercent: '20.0000', taxType: 'vat', label: 'UK VAT' }],
       paymentMethods: [{ code: 'card', name: 'Card gateway', supports3ds: true }],
       policies: { guestCheckout: true, withdrawalWaiver: true, imeiPrecheck: true },
-      legalDocuments: [{ type: 'terms', version: '3.2', locale: 'en', effectiveFrom: '2025-11-22T12:00:00.000Z' }],
+      legalDocuments: [{ type: 'terms', version: '3.2', effectiveFrom: '2025-11-22T12:00:00.000Z' }],
     },
   },
 });
@@ -236,8 +219,8 @@ export const getStoreConfig = defineRoute({
 /** The list dialect of the public service list. */
 const SERVICE_LIST_QUERY = listQuery({
   sorts: ['relevance', 'featured', 'sort', 'title', 'popular', 'listedAt', 'price'],
-  // `relevance` leads the default order but means something only with `q` on an English list the search engine answers; without it
-  // (no `q`, `locale=ar`, the engine down) it is skipped and the order is the staff's, exactly as before feature 29.
+  // `relevance` leads the default order but means something only with `q` when the search engine answers; without it (no `q`, the
+  // engine down) it is skipped and the order is the staff's, exactly as before feature 29.
   defaultSort: [
     { field: 'relevance', order: 'desc' },
     { field: 'featured', order: 'desc' },
@@ -249,7 +232,6 @@ const SERVICE_LIST_QUERY = listQuery({
     network: { type: 'string', ops: ['eq'] },
     country: { type: 'string', ops: ['eq'] },
     featured: { type: 'boolean', ops: ['eq'] },
-    locale: { type: 'enum', values: STOREFRONT_LOCALES, ops: ['eq'] },
     type: { type: 'enum', values: SERVICE_TYPES, ops: ['eq'] },
     categoryId: { type: 'id', ops: ['eq'] },
     availability: { type: 'enum', values: AVAILABILITIES, ops: ['eq'] },
@@ -273,14 +255,14 @@ export const listStoreServices = defineRoute({
     "The service pages that are switched on, at the retail price: `net` before tax, `tax` of the buyer's country and `gross`, in the " +
     "buyer's currency (`buyerCountry`, `currency`). Only services the shop may sell and has priced appear (an archived, disabled or " +
     'B2B-only service never does, and the price is never under the retail floor). Filter by `brand`, `network` and `country` ' +
-    '(case-insensitive), `featured`, `locale` (default `en`), `type` (`imei`, `server`, `remote`, `file`; repeat the key for several), ' +
+    '(case-insensitive), `featured`, `type` (`imei`, `server`, `remote`, `file`; repeat the key for several), ' +
     '`categoryId` (repeatable) and `availability` (`in_stock` keeps the services the stock covers); `minPrice` and `maxPrice` bound ' +
     '`price.gross` in the requested `currency` (inclusive; `minPrice` above `maxPrice` is `422` on `maxPrice`); `q` searches title, ' +
     'summary, brand and network; sort by `featured` (default: featured first), `sort`, `title`, `popular` (best sellers: the ' +
     'orders of the last 30 days, refreshed every 30 minutes, no number is shown), `listedAt` (first publication), `price` ' +
-    '(`gross`, in the requested currency) and `relevance` (how well the service matches `q`; the default order while `q` is set on an ' +
-    'English list, ignored otherwise). With `q` on an English list the order and the match set come from the search engine, which ' +
-    'forgives typos and knows synonyms; `x-search-engine: typesense|fallback` says which answered, and with a price sort or price ' +
+    '(`gross`, in the requested currency) and `relevance` (how well the service matches `q`; the default order while `q` is set, ' +
+    'ignored otherwise). With `q` the order and the match set come from the search engine, which forgives typos and knows ' +
+    'synonyms; `x-search-engine: typesense|fallback` says which answered, and with a price sort or price ' +
     'bounds the set is the best 1000 matches (`x-search-truncated: true` when more matched). Pages of up to 100 rows with ' +
     '`x-total-count`. Public; cacheable for 30 seconds.',
   tags: ['storefront'],
@@ -297,15 +279,14 @@ export const showStoreService = defineRoute({
   key: 'GET /store/v1/services/:slug',
   summary: 'Show a service page',
   description:
-    'One service page by slug and language: description, delivery time, what the order form asks for, the quantities, the published ' +
-    'FAQs of the service, its retail price (see the list) and `alternates`, the switched-on pages of the same service in the other ' +
-    'languages. `404` when the page does not exist, is switched off, or the service ' +
-    'cannot be sold. Public; cacheable for 30 seconds.',
+    'One service page by slug: description, delivery time, what the order form asks for, the quantities, the published FAQs of the ' +
+    'service and its retail price (see the list). `404` when the page does not exist, is switched off, or the service cannot be ' +
+    'sold. Public; cacheable for 30 seconds.',
   tags: ['storefront'],
   surface: 'store',
   access: 'public',
   params: z.object({ slug: z.string().trim().min(1).max(200) }),
-  query: z.object({ locale: zLocale.optional(), ...BUYER_QUERY }),
+  query: z.object(BUYER_QUERY),
   success: { status: 200, schema: ServicePageSchema },
   errors: ['NOT_FOUND', 'VALIDATION_FAILED'],
   examples: {
@@ -319,7 +300,6 @@ export const showStoreService = defineRoute({
       quantity: { min: 1, max: 1, options: [] },
       fields: [],
       faqs: [{ question: 'How fast is it?', answerMd: 'Most checks finish in two minutes.' }],
-      alternates: [{ locale: 'ar', slug: 'icloud-check-ar' }],
     },
   },
 });
@@ -328,13 +308,9 @@ export const showStoreService = defineRoute({
 const StoreCategorySchema = z.object({
   id: zId,
   slug: z.string().describe('`<id>-<words>`: only the number before the first hyphen counts.'),
-  name: z.string().describe('The name in the requested language (the English name when there is no Arabic one).'),
+  name: z.string(),
   type: z.enum(SERVICE_TYPES),
-  serviceCount: z
-    .number()
-    .int()
-    .min(1)
-    .describe('Services with a switched-on page in the language that can be bought now.'),
+  serviceCount: z.number().int().min(1).describe('Services with a switched-on page that can be bought now.'),
 });
 
 /** `GET /store/v1/categories`. */
@@ -342,22 +318,19 @@ export const listStoreCategories = defineRoute({
   key: 'GET /store/v1/categories',
   summary: 'List the storefront categories',
   description:
-    'The catalog categories that hold at least one service the shop sells in the language (`?locale=`, default `en`): a switched-on ' +
-    'page, a service that may be sold and a retail price. `serviceCount` equals `x-total-count` of `GET /store/v1/services` ' +
-    'filtered by `categoryId` and `locale`. In category order (the staff `sort`), at most 500. The name is the Arabic name staff ' +
-    'set, else the English one. Public; cacheable for 30 seconds.',
+    'The catalog categories that hold at least one service the shop sells: a switched-on page, a service that may be sold and a ' +
+    'retail price. `serviceCount` equals `x-total-count` of `GET /store/v1/services` filtered by `categoryId`. In category order ' +
+    '(the staff `sort`), at most 500. Public; cacheable for 30 seconds.',
   tags: ['storefront'],
   surface: 'store',
   access: 'public',
-  query: z.object({ locale: zLocale.default('en') }),
   success: {
     status: 200,
-    schema: z.object({ locale: zLocale, categories: z.array(StoreCategorySchema) }),
+    schema: z.object({ categories: z.array(StoreCategorySchema) }),
   },
-  errors: ['VALIDATION_FAILED'],
+  errors: [],
   examples: {
     response: {
-      locale: 'en',
       categories: [{ id: 1, slug: '1-apple', name: 'Apple', type: 'imei', serviceCount: 12 }],
     },
   },

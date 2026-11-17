@@ -72,7 +72,7 @@ describe('scenario manual: manual fulfilment by staff', () => {
     });
     expect(row.pricingSnapshot).toMatchObject({ source: 'base', price: '5.0000' });
     expect((await eventsOf(db, orderId)).map((event) => event.type)).toEqual(['created', 'hold', 'review']);
-    // The hold: wallet to hold, 5.00 ("طلب 5$": the balance is held and not spent yet).
+    // The hold: wallet to hold, 5.00 (the map's order of 5$: the balance is held and not spent yet).
     expect(await walletOf(db, merchant.id)).toEqual({ wallet: '95.0000', hold: '5.0000' });
     expect(await ledgerOf(db, orderId)).toEqual([{ kind: 'order_hold', key: `order:${orderId}:hold` }]);
     // The order was placed in the same transaction as its hold; the outbox row is the dispatch job of an automatic order: a manual

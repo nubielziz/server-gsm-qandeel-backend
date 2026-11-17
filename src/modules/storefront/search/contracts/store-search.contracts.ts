@@ -1,6 +1,6 @@
 // Route contracts of the public storefront search (feature 29, decision 038, plan sections 5.1-5.3): the search-as-you-type route and the
-// results page. English only: the engine holds English listings; `/ar` pages keep `GET /store/v1/services`. Prices are the cards' prices
-// (never from the engine); amounts are in the buyer's currency.
+// results page. The engine holds the shop's listings, which are English (decision 039). Prices are the cards' prices (never from the
+// engine); amounts are in the buyer's currency.
 import { z } from 'zod';
 import { defineRoute, zId, zMoney } from '../../../../common/contract';
 import { SERVICE_TYPES } from '../../../catalog';

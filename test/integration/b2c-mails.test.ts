@@ -243,39 +243,33 @@ describe('order.completed', () => {
     ]);
   });
 
-  it('uses the customer’s language when a template of it exists, and the English one when it does not', async () => {
+  it('writes every customer’s mail with the event’s one template, as staff last edited it', async () => {
     const paid = await paidOrder(t, clock, world, { email: 'jan@mail.example' });
-    await db.insert(s.notificationTemplates).values({
-      event: 'order.completed',
-      channel: 'email',
-      audience: 'customer',
-      locale: 'de',
-      subject: 'Ihre Bestellung {{orderId}} ist fertig',
-      body: 'Hallo {{customerName}}, "{{service}}" ist fertig.',
-      isActive: true,
-    });
-    const customerId = await customerOf(paid);
-    await db.update(s.customers).set({ locale: 'de' }).where(eq(s.customers.id, customerId));
+    await db
+      .update(s.notificationTemplates)
+      .set({ subject: 'Order {{orderId}} is unlocked', body: 'Hi {{customerName}}, "{{service}}" is done.' })
+      .where(eq(s.notificationTemplates.event, 'order.completed'));
     expect((await staff.post(`/admin/orders/${paid.orderId}/reply`, { code: 'Unlocked' })).status).toBe(204);
     await sendAllQueued(t);
     expect(mailbox(t).sent.at(-1)).toMatchObject({
       to: 'jan@mail.example',
-      subject: `Ihre Bestellung SF-${paid.orderId} ist fertig`,
+      subject: `Order SF-${paid.orderId} is unlocked`,
     });
 
-    // A customer who reads French has no French template: the English one is used.
+    // Another customer gets the same template, with their own name (templates have no language, decision 039).
     const other = await paidOrder(t, clock, world, { email: 'luc@mail.example' });
     await db
       .update(s.customers)
-      .set({ locale: 'fr', name: 'Luc Martin' })
+      .set({ name: 'Luc Martin' })
       .where(eq(s.customers.id, await customerOf(other)));
     expect((await staff.post(`/admin/orders/${other.orderId}/reply`, { code: 'Unlocked' })).status).toBe(204);
     await sendAllQueued(t);
     expect(mailbox(t).sent.at(-1)).toMatchObject({
       to: 'luc@mail.example',
-      subject: 'Your unlock is ready',
+      subject: `Order SF-${other.orderId} is unlocked`,
+      text: 'Hi Luc Martin, "iCloud Clean / Lost Check" is done.',
     });
-    expect(mailbox(t).sent.at(-1)!.text).toContain('Hi Luc Martin,');
+    expect(mailbox(t).sent.at(-1)!.html).toBeUndefined();
   });
 
   it('sends nothing when the template is switched off or the order is rolled back', async () => {

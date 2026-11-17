@@ -69,7 +69,7 @@ export async function insertTaxWindow(
   return row!.id;
 }
 
-/** Inserts a service listing in English (switched on) and returns its id. */
+/** Inserts the listing of a service (switched on) and returns its id. */
 export async function insertListing(
   db: Database,
   serviceId: number,
@@ -79,7 +79,6 @@ export async function insertListing(
     .insert(s.serviceListings)
     .values({
       serviceId,
-      locale: 'en',
       slug: `listing-${crypto.randomUUID().slice(0, 8)}`,
       publicTitle: 'A service',
       isListed: true,
@@ -98,7 +97,6 @@ export async function insertLegal(
     .insert(s.legalDocuments)
     .values({
       version: '1.0',
-      locale: 'en',
       bodyMd: 'The text.',
       isCurrent: true,
       effectiveFrom: new Date('2025-01-01T00:00:00.000Z'),
@@ -215,7 +213,7 @@ export async function listingWorld(db: Database) {
   return { groups, categoryId, att, check };
 }
 
-/** Inserts a listing (listed in English, not featured by default) and returns its id. */
+/** Inserts the listing of a service (not listed, not featured by default) and returns its id. */
 export async function insertListingRow(
   db: Database,
   serviceId: number,
@@ -225,7 +223,6 @@ export async function insertListingRow(
     .insert(s.serviceListings)
     .values({
       serviceId,
-      locale: 'en',
       slug: `listing-${crypto.randomUUID().slice(0, 8)}`,
       publicTitle: 'A listing',
       ...values,
@@ -246,7 +243,6 @@ export async function insertPageRow(db: Database, values: Partial<typeof s.conte
     .values({
       kind: 'static',
       slug: `page-${crypto.randomUUID().slice(0, 8)}`,
-      locale: 'en',
       title: 'A page',
       bodyMd: '# A page',
       status: 'published',
@@ -257,7 +253,7 @@ export async function insertPageRow(db: Database, values: Partial<typeof s.conte
   return row!;
 }
 
-/** Inserts a help article (published, English) and returns it. */
+/** Inserts a help article (published) and returns it. */
 export async function insertArticleRow(db: Database, values: Partial<typeof s.helpArticles.$inferInsert> = {}) {
   const [row] = await db
     .insert(s.helpArticles)
@@ -265,7 +261,6 @@ export async function insertArticleRow(db: Database, values: Partial<typeof s.he
       category: 'Orders',
       question: 'How long does a carrier unlock take?',
       answerMd: 'Usually one to three days.',
-      locale: 'en',
       isPublished: true,
       ...values,
     })
@@ -273,11 +268,15 @@ export async function insertArticleRow(db: Database, values: Partial<typeof s.he
   return row!;
 }
 
-/** Inserts a legal version (a draft terms version in English by default) and returns it. */
+/**
+ * Inserts a legal version (a draft terms version by default) and returns it.
+ *
+ * The archive tag `locale` is the column default `en`; a test of a retired version in another language passes `locale: 'tr'`.
+ */
 export async function insertLegalRow(db: Database, values: Partial<typeof s.legalDocuments.$inferInsert> = {}) {
   const [row] = await db
     .insert(s.legalDocuments)
-    .values({ type: 'terms', version: '1.0', locale: 'en', bodyMd: '# Terms', ...values })
+    .values({ type: 'terms', version: '1.0', bodyMd: '# Terms', ...values })
     .returning();
   return row!;
 }

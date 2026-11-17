@@ -18,7 +18,7 @@ money, Fable; site changes for the storefront session in `/home/saifi/gsm-projec
 | 1.3 smart sign-in; 1.4/1.7 Turnstile on merchant register, login, forgot (behind `TURNSTILE_MERCHANT_AUTH`) | **done** | `dc747c0` |
 | 2W customer wallet (2W.1-2W.5; 2W.6 is the site's; 2W.7 is the owner's legal and accounting check: the switch `wallet.customer.enabled` stays off until then) | **done** | `796eeab` (console `faed3fb`) |
 | Storefront catalog needs (`storefront/docs/BACKEND-NEEDS.md` 1-8, page list, slug alternates, help vote) | **done** | `430cf59` (console `de1b819`) |
-| Notification center (broadcasts, in-app inbox on three surfaces, scheduling, Arabic) | **done** | `620eea7` (console `1011fd7`) |
+| Notification center (broadcasts, in-app inbox on three surfaces, scheduling) | **done** | `620eea7` (console `1011fd7`) |
 | Site API gaps: Idempotency-Key on portal orders, customer profile edit | **done** | `8a501b0` |
 | Phase 4 payments: Stripe defects, three-decimal currencies, two webhook secrets, the console secret fields | **done** (the provider choice stays the owner's) | `d4c7ce5` (console `dbb33fb`) |
 | Phase 5: Dockerfile, production compose, Caddy, env template, backups and restore drill, Sentry | **done** (accounts, DNS, backup storage, key custody: owner checklists in `docs/OPERATIONS.md`) | `e28683b` |
@@ -39,7 +39,8 @@ The sections below are the original plan (2026-11-09), kept as written.
    area. Needs one new backend route (phase 1, item 1.3).
 4. **The whole merchant portal lives inside the site** (all 51 `/client/*` routes): prices, orders from the wallet, top-ups,
    invoices and statement, API keys, webhooks, 2FA, settings.
-5. **Arabic and English**, with a language switch; Arabic is right-to-left.
+5. **English only** (decision 039, 2026-11-16). It was planned as Arabic and English with a language switch; the owner removed Arabic
+   as a language of the system. Arabic text that people type is still data and keeps working (PDF shaping, CSV, plain-text mails).
 6. **Customers get a wallet too, like merchants** (decided 2026-11-09): a regular customer tops up a balance ("Add Funds") and
    pays orders from it, as the owner's checkout design shows. Not built: see **phase 2W**. The two account types stay apart, so
    a merchant's wallet and a customer's wallet are separate even for one person.
@@ -67,7 +68,7 @@ Every item: permission `clients:update` (0.6 maybe a new one), one audit row, te
 | # | Item | Notes |
 |---|---|---|
 | 1.1 | **New app** `storefront/` next to `frontend-admin/` | Lead's choice to confirm at the start: Next.js (server-rendered pages for search engines: services, help, pages) or Vite + React like the console (simpler, no SEO). Same HTTP rules as the console (one `fetch` client, problem+json errors) |
-| 1.2 | **Arabic + English, right-to-left** | `dir="rtl"` for Arabic, a switch, language saved in a cookie and, for a signed-in customer, through `PATCH /store/v1/me` |
+| 1.2 | **One language: English** (decision 039; first planned as Arabic + English, right-to-left) | No switch and no saved language: `/en/…` pages, every `/ar/…` address answers 308 to the same path under `/en` |
 | 1.3 | **One smart sign-in** (backend) | New route, for example `POST /auth/sign-in`: checks the email against merchants then customers, verifies the password with the same lockout and rate limits, opens the right session and answers `{ kind: 'merchant' | 'customer', next }` (merchant 2FA step as today). It must not reveal whether an email exists. An email present in both tables: the merchant wins, and the customer area is reachable with a separate customer sign-in link. Customers without a password keep the magic link (`/store/v1/auth/magic-link`) |
 | 1.4 | **Sign up** | "Create an account" (customer: magic link) and "Apply as a merchant" (`POST /client/auth/register`: pending until staff approve, email verification) |
 | 1.5 | **Email links on one domain** | Both kinds use `/set-password?token=`. No code change: set `PORTAL_BASE_URL=https://<site>/merchant` and `STORE_BASE_URL=https://<site>`, so merchant links go to `/merchant/set-password`, `/merchant/verify-email` |
@@ -99,7 +100,7 @@ decisions go to B-entries as usual.
 ## Phase 2: the customer area
 
 Checkout (`/store/v1/checkout-sessions*`: open, consents, pay), order tracking and tax receipt (`/store/v1/orders/:token*`), my
-account (`/store/v1/me*`: orders, password, language and currency, data export and deletion), support tickets
+account (`/store/v1/me*`: orders, password, currency, data export and deletion), support tickets
 (`/store/v1/tickets*`, rating). **Card payment depends on phase 4; paying from the balance and "Add Funds" depend on phase 2W.**
 
 ## Phase 3: the merchant area (all `/client/*` routes)

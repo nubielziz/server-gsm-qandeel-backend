@@ -1,10 +1,10 @@
-// Route contracts of the storefront customer's account (map domain I, stage 14, routes /store/v1/me): the details, the language,
+// Route contracts of the storefront customer's account (map domain I, stage 14, routes /store/v1/me): the details,
 // currency and marketing choices, and the customer's own orders. The storefront is another frontend: the shapes are the specs
 // of docs/contract/MISMATCHES.md (feature 14b) and ALIGNMENT § 7.
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIsoDateTime, zMoney } from '../../../common/contract';
 import { ORDER_STATUSES } from '../../orders';
-import { CountryField, LocaleField, NameField, PhoneField } from './shared';
+import { CountryField, NameField, PhoneField } from './shared';
 
 /** The customer's own account. */
 export const StoreMeSchema = z.object({
@@ -14,7 +14,6 @@ export const StoreMeSchema = z.object({
   name: z.string(),
   phone: z.string(),
   country: z.string(),
-  locale: z.string(),
   currency: z
     .string()
     .nullable()
@@ -32,7 +31,6 @@ export const STORE_ME_EXAMPLE = {
   name: 'Daniel Whitmore',
   phone: '',
   country: 'GB',
-  locale: 'en',
   currency: 'GBP',
   marketingOptIn: true,
   hasPassword: true,
@@ -62,7 +60,7 @@ export const getMe = defineRoute({
   key: 'GET /store/v1/me',
   summary: 'My account',
   description:
-    'The signed-in customer’s details, language, currency and marketing choice. Full sessions only. Never cached; repeats the ' +
+    'The signed-in customer’s details, currency and marketing choice. Full sessions only. Never cached; repeats the ' +
     'CSRF token in `X-CSRF-Token` (the first call after every reload).',
   tags: ['account'],
   surface: 'store',
@@ -75,7 +73,7 @@ export const getMe = defineRoute({
 /** `PATCH /store/v1/me`. */
 export const updateMe = defineRoute({
   key: 'PATCH /store/v1/me',
-  summary: 'Change name, phone, country, language, currency and marketing consent',
+  summary: 'Change name, phone, country, currency and marketing consent',
   description:
     'Changes the fields sent; `{}` changes nothing. `name` (2 to 120 characters), `phone` (up to 40; an empty string clears it) and ' +
     "`country` (ISO-2) are the customer's own details, with the staff edit's rules: a **changed** country must be one the shop sells " +
@@ -90,7 +88,6 @@ export const updateMe = defineRoute({
     name: NameField.optional(),
     phone: PhoneField.optional(),
     country: CountryField.optional(),
-    locale: LocaleField.optional(),
     currency: z
       .string()
       .trim()
@@ -106,7 +103,6 @@ export const updateMe = defineRoute({
       name: 'Daniel Whitmore',
       phone: '+44 7700 900123',
       country: 'GB',
-      locale: 'ar',
       currency: 'GBP',
       marketingOptIn: false,
     },
