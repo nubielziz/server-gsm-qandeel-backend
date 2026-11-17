@@ -1,6 +1,6 @@
 {
  "generatedBy": "scripts/extract-frontend-contract.mjs",
- "frontend": "../frontend-admin-30",
+ "frontend": "../frontend-admin",
  "count": 321,
  "endpoints": [
   {

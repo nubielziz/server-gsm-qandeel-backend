@@ -37,6 +37,9 @@ decisions: `docs/decisions/`; contract: `docs/contract/`.
   supplier timeout → `needs_attention`, hold kept, no automatic re-send.
 - Search: Typesense holds derived, public, price-free documents; writers of indexed facts write an outbox event; never
   read search results as truth (decision 038).
+- English only (decision 039): no language field, parameter, column, translation or right-to-left layout code. Arabic
+  text that people or suppliers type is data and must keep working (PDF shaping, plain-text mails, CSV).
+  `bun run english:check` guards both.
 - Never `import type` a class that Nest injects (Bun needs the value import for decorator metadata).
 
 ## Redis, cache, workers
