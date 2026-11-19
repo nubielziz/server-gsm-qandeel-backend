@@ -112,7 +112,7 @@ it starts with a guard, one `DO` block:
 - Template rows inserted by migrations `0023`, `0025` and `0027` earlier in the same run (a fresh database: all pending
   migrations run in one transaction and `now()` is its start) are not content and are not counted.
 - A database whose name ends in `_test` skips the guard (the tests truncate every table) unless it is forced on with
-  `ALTER DATABASE <name> SET gsm.english_only_guard = 'on'`, as `test/integration/english-only-migration.test.ts` does on its
+  `ALTER DATABASE <name> SET gsm.english_only_guard = 'on'`, as `test/integration/platform/english-only-migration.test.ts` does on its
   scratch databases. Those tests fill a database at `0034` with raw SQL and migrate it to the newest file; after the migration
   they assert by id only, so they stay valid while `0036`-`0039` drop the columns.
 
@@ -122,8 +122,8 @@ except the demo seed.
 ## Tests
 
 `test/integration/db-*.test.ts` run against `gsm_test`, which the first database test of a run migrates
-(`test/support/db.ts`; nothing runs from the global preload, so `bun test ./src` works without Docker).
-`test/schema/structure.test.ts` checks the schema without a database. See `test/README.md`.
+(`test/support/db.ts`; nothing runs from the global preload, so `bun test ./test/unit` works without Docker).
+`test/tooling/schema-structure.test.ts` checks the schema without a database. See `test/README.md`.
 
 ## Vocabularies settled by the audit resolutions (migration `0003`)
 

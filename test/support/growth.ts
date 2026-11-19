@@ -1,13 +1,13 @@
 // Helpers for the growth tests (feature 19): the recovery email template, abandoned checkouts with their customer and consent straight into
 // the test database, the job a `checkout.recovery` event becomes, and the data of the funnel.
 import { and, eq } from 'drizzle-orm';
-import { type Database, schema as s } from '../../src/infra/db';
-import { EncryptionService } from '../../src/infra/crypto';
-import { CHECKOUT_IMEI_AAD } from '../../src/modules/customers';
-import type { RecoveryMailResult } from '../../src/modules/customers/application/recovery-mail';
-import { CHECKOUT_RECOVERY_EVENT } from '../../src/modules/customers/application/recovery-outbox';
-import { CheckoutRecoveryProcessor } from '../../src/modules/customers/jobs/checkout-recovery.processors';
-import type { OutboxJobData } from '../../src/modules/platform';
+import { type Database, schema as s } from '@src/infra/db';
+import { EncryptionService } from '@src/infra/crypto';
+import { CHECKOUT_IMEI_AAD } from '@src/modules/customers';
+import type { RecoveryMailResult } from '@src/modules/customers/application/recovery-mail';
+import { CHECKOUT_RECOVERY_EVENT } from '@src/modules/customers/application/recovery-outbox';
+import { CheckoutRecoveryProcessor } from '@src/modules/customers/jobs/checkout-recovery.processors';
+import type { OutboxJobData } from '@src/modules/platform';
 import type { TestApp } from './app';
 
 /** The words of the recovery template the tests install: the three placeholders of the event. */

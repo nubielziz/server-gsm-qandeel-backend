@@ -75,18 +75,18 @@ with the manifest and, when the console calls it, with the console's types. Phas
 
 | Scenario | Test |
 |---|---|
-| admin-team | `test/scenarios/admin-team.e2e.test.ts` |
-| b2c-account | `test/scenarios/b2c-account.e2e.test.ts` |
-| b2c-chargeback | `test/scenarios/b2c-chargeback.e2e.test.ts` |
-| b2c-paid | `test/scenarios/b2c-paid.e2e.test.ts` |
-| b2c-refund | `test/scenarios/b2c-refund.e2e.test.ts` |
-| b2c-ticket | `test/scenarios/b2c-ticket.e2e.test.ts` |
-| ip-rules | `test/scenarios/ip-rules.e2e.test.ts` |
-| manual | `test/scenarios/manual.e2e.test.ts` |
-| reject | `test/scenarios/reject.e2e.test.ts` |
-| success | `test/scenarios/success.e2e.test.ts` |
-| system-alert | `test/scenarios/system-alert.e2e.test.ts` |
-| system-integrity | `test/scenarios/system-integrity.e2e.test.ts` |
-| timeout | `test/scenarios/timeout.e2e.test.ts` |
+| admin-team | `test/e2e/admin-team.e2e.test.ts` |
+| b2c-account | `test/e2e/b2c-account.e2e.test.ts` |
+| b2c-chargeback | `test/e2e/b2c-chargeback.e2e.test.ts` |
+| b2c-paid | `test/e2e/b2c-paid.e2e.test.ts` |
+| b2c-refund | `test/e2e/b2c-refund.e2e.test.ts` |
+| b2c-ticket | `test/e2e/b2c-ticket.e2e.test.ts` |
+| ip-rules | `test/e2e/ip-rules.e2e.test.ts` |
+| manual | `test/e2e/manual.e2e.test.ts` |
+| reject | `test/e2e/reject.e2e.test.ts` |
+| success | `test/e2e/success.e2e.test.ts` |
+| system-alert | `test/e2e/system-alert.e2e.test.ts` |
+| system-integrity | `test/e2e/system-integrity.e2e.test.ts` |
+| timeout | `test/e2e/timeout.e2e.test.ts` |
 
 13 of 13 scenarios have their e2e test.

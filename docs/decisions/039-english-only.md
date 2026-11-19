@@ -30,7 +30,7 @@ English readers.
   `content_pages.locale`, `help_articles.locale`, `notification_templates.locale`, `reply_templates.locale` and
   `service_listings.locale` are dropped; the unique keys lose the language (one listing per service, one slug, one template per
   event, channel and audience, one version in force per document type). Dropping six map columns is a recorded deviation from the
-  map (B224): `test/schema/structure.test.ts` has a `REMOVED` list next to `ADDITIONS`.
+  map (B224): `test/tooling/schema-structure.test.ts` has a `REMOVED` list next to `ADDITIONS`.
 - **The wire.** The language left all 70 operations that carried it; only the four staff routes of legal documents keep a
   read-only `locale` in the row (the archive tag). Unknown query keys stay a `422`: the three repositories changed in one lock step.
 - **URLs.** The website keeps `/en/…`. Every `/ar/…` URL answers a permanent redirect (308) to the same path under `/en`, with

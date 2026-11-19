@@ -3,9 +3,9 @@
 import { Controller, Get, Res } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { type AccessKind, type ResultOf, Route, defineRoute } from '../../src/common/contract';
-import { AppError } from '../../src/common/errors';
-import { DbService } from '../../src/infra/db';
+import { type AccessKind, type ResultOf, Route, defineRoute } from '@src/common/contract';
+import { AppError } from '@src/common/errors';
+import { DbService } from '@src/infra/db';
 import {
   CurrentPrincipal,
   CurrentStaff,
@@ -13,8 +13,8 @@ import {
   SessionCookies,
   SessionService,
   type StaffPrincipal,
-} from '../../src/modules/identity';
-import { AuditService } from '../../src/modules/platform';
+} from '@src/modules/identity';
+import { AuditService } from '@src/modules/platform';
 
 const Seen = z.object({
   ok: z.boolean(),

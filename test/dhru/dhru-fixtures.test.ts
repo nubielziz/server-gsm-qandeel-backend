@@ -5,9 +5,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
-import { DbService, schema as s } from '../../src/infra/db';
-import { OrderTransitions } from '../../src/modules/orders';
-import { MaintenanceService } from '../../src/modules/platform';
+import { DbService, schema as s } from '@src/infra/db';
+import { OrderTransitions } from '@src/modules/orders';
+import { MaintenanceService } from '@src/modules/platform';
 import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches } from '../support/auth';
 import { insertCategory, insertService } from '../support/catalog';

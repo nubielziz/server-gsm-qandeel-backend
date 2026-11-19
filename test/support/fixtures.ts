@@ -1,6 +1,6 @@
 // Minimal valid rows for database tests: just enough parents to satisfy the foreign keys and NOT NULL columns.
 // Each helper inserts with the Drizzle schema, so a schema change that breaks a fixture shows up at type-check.
-import { type Database, schema as s } from '../../src/infra/db';
+import { type Database, schema as s } from '@src/infra/db';
 
 /** Inserts USD (the base currency) when it is not there yet. */
 export async function insertUsd(db: Database): Promise<void> {

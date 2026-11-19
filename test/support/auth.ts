@@ -1,13 +1,13 @@
 // Test helpers for the security tests: accounts (roles, staff, merchants), signed-in sessions with their cookie and CSRF
 // header, and a cache cleaner. Sessions are created with the real SessionService, so the guards see exactly what sign-in makes.
 import { randomUUID } from 'node:crypto';
-import { parseEnv } from '../../src/config';
-import { CacheKeys, CacheService } from '../../src/infra/cache';
-import { RedisService } from '../../src/infra/redis';
-import { TokenService } from '../../src/infra/crypto';
-import { type Database, schema as s } from '../../src/infra/db';
-import { CsrfService, SessionCookies, SessionService } from '../../src/modules/identity';
-import type { SessionStage, SubjectType } from '../../src/modules/identity/db/schema';
+import { parseEnv } from '@src/config';
+import { CacheKeys, CacheService } from '@src/infra/cache';
+import { RedisService } from '@src/infra/redis';
+import { TokenService } from '@src/infra/crypto';
+import { type Database, schema as s } from '@src/infra/db';
+import { CsrfService, SessionCookies, SessionService } from '@src/modules/identity';
+import type { SessionStage, SubjectType } from '@src/modules/identity/db/schema';
 import { PRODUCTION_ENV, type TestApp } from './app';
 import { TEST_DATABASE_URL, testDb } from './db';
 import { testInstanceEnv } from './env';

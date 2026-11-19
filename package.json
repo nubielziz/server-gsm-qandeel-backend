@@ -21,7 +21,7 @@
     "format:check": "bun --bun prettier --check .",
     "english:check": "bun scripts/check-english-only.mjs",
     "test": "bash scripts/with-slot.sh bash scripts/test-batches.sh",
-    "test:unit": "bash scripts/with-slot.sh bash scripts/test-batches.sh ./src",
+    "test:unit": "bash scripts/with-slot.sh bash scripts/test-batches.sh ./test/unit",
     "test:integration": "bash scripts/with-slot.sh bash scripts/test-batches.sh ./test/integration",
     "test:load:realtime": "NODE_ENV=test bun test/load/realtime-connections.ts",
     "test:load:search": "NODE_ENV=test bun test/load/search.ts",

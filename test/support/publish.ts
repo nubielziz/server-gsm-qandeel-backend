@@ -2,28 +2,28 @@
 // now (the preview's cost and price as the database holds them), one row published in its own transaction, as the runner does, what
 // that transaction wrote, and a run seeded straight into its two tables with the moves the routes make (queue, cancel, switch).
 import { asc, eq, sql } from 'drizzle-orm';
-import { CLOCK, type Clock } from '../../src/common/clock';
-import { Money } from '../../src/common/money';
-import { type Database, type DbExecutor, DbService, type Transaction, schema as s } from '../../src/infra/db';
-import { RetailPrices, RetailPricing } from '../../src/modules/catalog';
-import { AuditService } from '../../src/modules/platform';
+import { CLOCK, type Clock } from '@src/common/clock';
+import { Money } from '@src/common/money';
+import { type Database, type DbExecutor, DbService, type Transaction, schema as s } from '@src/infra/db';
+import { RetailPrices, RetailPricing } from '@src/modules/catalog';
+import { AuditService } from '@src/modules/platform';
 import {
   ListingPublisher,
   type PublishInput,
   type PublishOutcome,
-} from '../../src/modules/storefront/application/listing-publisher';
+} from '@src/modules/storefront/application/listing-publisher';
 import type {
   ListingPublishItem,
   NewListingPublishItem,
   NewListingPublishRun,
-} from '../../src/modules/storefront/db/schema';
-import { PublishOutbox } from '../../src/modules/storefront/publish/application/publish-outbox';
-import { NAMING_RULES_VERSION } from '../../src/modules/storefront/publish/domain/naming';
+} from '@src/modules/storefront/db/schema';
+import { PublishOutbox } from '@src/modules/storefront/publish/application/publish-outbox';
+import { NAMING_RULES_VERSION } from '@src/modules/storefront/publish/domain/naming';
 import {
   type PriceRow,
   SWITCH_STALLED_ERROR,
   normalisePriceMode,
-} from '../../src/modules/storefront/publish/domain/publish-item';
+} from '@src/modules/storefront/publish/domain/publish-item';
 import {
   cancelRunRow,
   closeStalledSwitch,
@@ -32,8 +32,8 @@ import {
   moveRunToQueued,
   queueRunSwitch,
   reopenFailedItems,
-} from '../../src/modules/storefront/publish/infra/publish.repository';
-import { SearchSignals } from '../../src/modules/storefront/search/application/search-signals';
+} from '@src/modules/storefront/publish/infra/publish.repository';
+import { SearchSignals } from '@src/modules/storefront/search/application/search-signals';
 import type { TestApp } from './app';
 
 /** The fields of a {@link PublishInput} a test may set; `price` takes any part of the row's price choice and figures. */

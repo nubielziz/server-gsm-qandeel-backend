@@ -11,16 +11,9 @@ import {
 } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import {
-  type AccessKind,
-  type ParamsOf,
-  type ResultOf,
-  Route,
-  defineRoute,
-  zJsonObject,
-} from '../../src/common/contract';
-import { AppError } from '../../src/common/errors';
-import { AccessHandlers, PLACEHOLDER_ACCESS_KINDS } from '../../src/modules/identity';
+import { type AccessKind, type ParamsOf, type ResultOf, Route, defineRoute, zJsonObject } from '@src/common/contract';
+import { AppError } from '@src/common/errors';
+import { AccessHandlers, PLACEHOLDER_ACCESS_KINDS } from '@src/modules/identity';
 
 const ok = z.object({ ok: z.boolean() });
 

@@ -1,8 +1,8 @@
 // Helpers for the storefront tests (features 14a and 15): the anti-bot header, currencies, tax windows, a priced and listed service,
 // the legal documents a checkout needs and a world for the listing admin tests, plus direct inserts of listings, content pages,
 // help articles, legal versions, a storefront customer and a storefront order, straight into the test database.
-import { type Database, schema as s } from '../../src/infra/db';
-import { TURNSTILE_DUMMY_TOKEN, TURNSTILE_HEADER } from '../../src/infra/turnstile';
+import { type Database, schema as s } from '@src/infra/db';
+import { TURNSTILE_DUMMY_TOKEN, TURNSTILE_HEADER } from '@src/infra/turnstile';
 import { insertCategory, insertService } from './catalog';
 import { insertUsd } from './fixtures';
 import { insertOrderRow } from './orders';

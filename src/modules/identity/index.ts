@@ -6,7 +6,7 @@
 // Order matters: the request-principal layer (param decorators, principal helpers, the permission grammar) comes first.
 // Modules whose controllers use `CurrentStaff` and whose services identity calls (money, catalog) form an import cycle with
 // this file; ES modules evaluate these re-exports in source order, so these leaves are initialised before the services that
-// lead into that cycle (decision 032; test/unit/module-load.test.ts loads every module index on its own).
+// lead into that cycle (decision 032; test/tooling/module-load.test.ts loads every module index on its own).
 export { CurrentMerchant, CurrentPrincipal, CurrentStaff, accessStateOf, principalOf } from './security/access-state';
 export type { AccessState } from './security/access-state';
 export { ALL_PERMISSIONS, grants, grantsEverything, isValidPermission } from './security/permission-grammar';

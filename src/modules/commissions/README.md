@@ -105,7 +105,7 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
 
 ## Scenarios
 
-None of the 13 map scenarios (`docs/slices/` → `scenarios`) touches this module's tables. The commission rules are walked by `test/integration/commission-engine.test.ts` (the completion paths and the reversals).
+None of the 13 map scenarios (`docs/slices/` → `scenarios`) touches this module's tables. The commission rules are walked by `test/integration/commissions/commission-engine.test.ts` (the completion paths and the reversals).
 
 ## Permissions
 
@@ -136,4 +136,4 @@ The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, 
 
 ## Tests
 
-Unit: `domain/*.spec.ts` (amount rounding, period, plan rate rules, who accrues, the approval split). Integration: `commission-plans`, `commission-assignments`, `commission-accruals`, `client-commissions`, `commission-engine` (a staff reply, a supplier's result, a stock delivery, reopen and refund before and after approval, races, rollback with the order's transaction), `ledger-credit-limit-override` (money's `allowBelowCreditLimit`) and `commissions-seed`, all under `test/integration/`.
+Unit: `test/unit/modules/commissions/domain/*.spec.ts` (amount rounding, period, plan rate rules, who accrues, the approval split). Integration: `commission-plans`, `commission-assignments`, `commission-accruals`, `client-commissions`, `commission-engine` (a staff reply, a supplier's result, a stock delivery, reopen and refund before and after approval, races, rollback with the order's transaction), `ledger-credit-limit-override` (money's `allowBelowCreditLimit`, in `test/integration/money/`) and `commissions-seed`, the others under `test/integration/commissions/`.

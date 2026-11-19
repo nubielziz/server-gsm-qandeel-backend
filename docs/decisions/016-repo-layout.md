@@ -1,6 +1,6 @@
 # 016: Repository layout and the two processes
 
-Status: accepted, 2026-10-31.
+Status: accepted, 2026-10-31. The layout of `test/` is decision 043 (2026-11-19).
 
 **Decision.** One package (no monorepo): one codebase, two entry points.
 ```

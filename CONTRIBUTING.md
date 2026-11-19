@@ -75,7 +75,7 @@ document. The contract layer is explained in `src/common/contract/README.md`; th
    outbox event"), `afterCommit` cache invalidation. Reach other modules only through their `index.ts` (lint rule `gsm/module-boundaries`).
 5. **Write the repository** in `infra/`: Drizzle queries on this module's own tables only; list contracts translate the
    parsed list query (filters, sort, range, search) to SQL with an exact `COUNT`.
-6. **Test it.** Unit tests for domain functions (`*.spec.ts` next to the code); integration tests in `test/integration/`
+6. **Test it.** Unit tests for domain functions (`test/unit/<path of the code>.spec.ts`, decision 043); integration tests in `test/integration/<module>/`
    with `createTestApp` (`test/support/app.ts`): success, each documented refusal (status, code, field), permission
    refusal, list filters and `x-total-count`, idempotency replays, and concurrency where money or stock moves. Delete the
    route's key from `test/contract/pending.ts`: the contract tests then compare it with the frontend types, the harvested
@@ -190,7 +190,7 @@ balances, ledger rows, holds, payment or order status used for decisions, risk d
 3. **Invalidate after commit:** inside a use case call `afterCommit(() => cache.del(key))`; bulk invalidation bumps a
    version key. Never delete before the transaction commits.
 4. Register the key family twice: a row in `CACHE_KEY_FAMILIES` (builder name, pattern, owner, TTL, invalidation) and the
-   same row in `docs/cache-keys.md`. `src/infra/cache/cache-keys.spec.ts` fails when a builder, its family or its row is
+   same row in `docs/cache-keys.md`. `test/unit/infra/cache/cache-keys.spec.ts` fails when a builder, its family or its row is
    missing. Add it to the module README ("Cache keys"). The behaviour of `getOrLoad` (lock, stale-while-revalidate,
    negative caching) is in `src/infra/cache/README.md`.
 
@@ -250,7 +250,7 @@ float (decision 011).
    order by `postTransaction`, so never lock ledger rows yourself.
 5. **Concurrency and replay tests:** two parallel postings on one wallet never overspend; a duplicate call posts once.
    A correction is a reversing transaction, never an update.
-6. Add the scenario step assertions when the event completes a map scenario (`test/scenarios/<id>.e2e.ts`).
+6. Add the scenario step assertions when the event completes a map scenario (`test/e2e/<id>.e2e.test.ts`).
 
 ## The API documentation pages
 

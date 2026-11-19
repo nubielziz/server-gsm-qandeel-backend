@@ -30,7 +30,7 @@ every later feature.
     backoff and cron `next`, MinIO's expiry check and `Last-Modified`, the AWS SDK's own request signing. The code sets the TTL,
     window, delay or option; tests assert what was set (PTTL, job options, `X-Amz-Expires`) and never wait for the system.
   - Scripts under `scripts/` (the demo seed takes a `now` option; the one-off tools are not part of the running service).
-- **Lint rule `no-restricted-syntax`** (`scripts/eslint/structural-rules.mjs`, tested in `test/lint/lint-rules.test.mjs`):
+- **Lint rule `no-restricted-syntax`** (`scripts/eslint/structural-rules.mjs`, tested in `test/tooling/lint-rules.test.mjs`):
   `Date.now()` (also as a reference) and `new Date()` without arguments are errors under `src/` except in
   `src/common/clock.ts`. `new Date(x)` (a conversion), `Date.parse` and `performance.now()` are not flagged. Unit specs under
   `src/` are covered too: they use `TestClock`.

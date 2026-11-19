@@ -1,8 +1,8 @@
 // A test client for the live event streams (decision 037): opens a stream on a listening test app over a plain TCP socket (HTTP/1.1,
 // chunked), parses the server-sent events into frames and lets a test wait for them, stop reading (a slow client) or hang up.
 import net from 'node:net';
-import { CacheKeys } from '../../src/infra/cache';
-import { RedisService } from '../../src/infra/redis';
+import { CacheKeys } from '@src/infra/cache';
+import { RedisService } from '@src/infra/redis';
 import type { TestApp } from './app';
 
 /** One server-sent event as the browser's `EventSource` would dispatch it. */

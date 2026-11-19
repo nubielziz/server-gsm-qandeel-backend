@@ -76,6 +76,9 @@ decisions: `docs/decisions/`; contract: `docs/contract/`.
 - Unit: domain logic (pricing, transitions, risk thresholds, each money event). Integration: real Postgres + Redis
   (`docker compose up -d`), incl. concurrency (no overspend, duplicate webhook posts once, idempotency replay).
   One e2e test per scenario. Contract tests in `test/contract/`. Dhru fixture test per action. Seed = frontend mocks.
+- Layout (decision 043): no test under `src/`; `test/unit/` mirrors `src/` (`src/a/b.ts` → `test/unit/a/b.spec.ts`),
+  `test/integration/<module>/` (`infra/` for infra, common, config), `test/e2e/`, `test/tooling/`. Tests import code as
+  `@src/...`; `src/` keeps relative imports.
 
 ## Checks and git
 - Done = `bun run check` green. One branch `feat/backend-<id>` per feature in its own worktree (`../backend-<id>`),

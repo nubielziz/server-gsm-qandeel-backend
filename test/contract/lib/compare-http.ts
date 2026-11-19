@@ -1,6 +1,6 @@
 // Route-level comparison (docs/contract/TESTS.md § 2): a frontend function's return type and parameters against a
 // route's success answer and request declaration, on top of the shape comparison in compare.ts.
-import type { JsonSchema } from '../../../src/common/contract';
+import type { JsonSchema } from '@src/common/contract';
 import { type Difference, compareShape } from './compare';
 import type { FrontendShape } from './normalize';
 

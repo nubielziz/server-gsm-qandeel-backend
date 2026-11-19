@@ -21,7 +21,7 @@ every app boot). Whether it fails depends on which file is imported first.
 - A module that identity calls keeps its own leaves (classes its services are injected with) ahead of anything that imports
   identity: money's `money.module.ts` imports `MerchantAccounts` and `LedgerPoster` before `MoneyAdminModule` (its
   controllers).
-- `test/unit/module-load.test.ts` imports every module index, `app.module.ts` and `worker.module.ts`, each in a fresh Bun
+- `test/tooling/module-load.test.ts` imports every module index, `app.module.ts` and `worker.module.ts`, each in a fresh Bun
   process, so a new cycle that reads a binding too early fails in CI whatever the entry order.
 
 **Rejected.**

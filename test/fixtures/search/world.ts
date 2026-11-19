@@ -1,16 +1,16 @@
 // Builds the golden world in the Typesense node: the fixture catalog plus distractors indexed into a services and a terms collection
 // behind aliases, with the owner's synonyms and the fixture's pins, under a name prefix the caller owns (feature 29, slice B2). Shared
-// by `test/search/golden.test.ts` and `test/load/search.ts`; it writes only collections, aliases and sets that start with the prefix.
-import type { TypesenseClient } from '../../../src/infra/search';
-import { buildServiceDocument } from '../../../src/modules/storefront/search/domain/documents';
-import { countryName } from '../../../src/modules/storefront/search/domain/countries';
+// by `test/integration/storefront/search-golden.test.ts` and `test/load/search.ts`; it writes only collections, aliases and sets that start with the prefix.
+import type { TypesenseClient } from '@src/infra/search';
+import { buildServiceDocument } from '@src/modules/storefront/search/domain/documents';
+import { countryName } from '@src/modules/storefront/search/domain/countries';
 import {
   SearchNames,
   type ServiceDocument,
   servicesSchema,
-} from '../../../src/modules/storefront/search/domain/services-schema';
-import { curationItems, synonymItems } from '../../../src/modules/storefront/search/domain/set-conversion';
-import { type TermDocument, buildTerms, termsSchema } from '../../../src/modules/storefront/search/domain/terms';
+} from '@src/modules/storefront/search/domain/services-schema';
+import { curationItems, synonymItems } from '@src/modules/storefront/search/domain/set-conversion';
+import { type TermDocument, buildTerms, termsSchema } from '@src/modules/storefront/search/domain/terms';
 import { FIXTURE, FIXTURE_PINS, FIXTURE_SYNONYMS } from './catalog';
 import { generateDistractors } from './generator';
 

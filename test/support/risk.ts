@@ -1,11 +1,11 @@
 // Helpers for the risk and privacy tests (feature 18): a held storefront order with its checkout session, payment, ledger posting and
 // assessment, direct inserts of blocklist entries, IMEI checks and data requests, and the audit rows of an order.
 import { and, asc, desc, eq } from 'drizzle-orm';
-import { Money } from '../../src/common/money';
-import { EncryptionService, TokenService } from '../../src/infra/crypto';
-import { type Database, schema as s } from '../../src/infra/db';
-import { b2cPay, postTransaction } from '../../src/modules/money';
-import { IMEI_CHECK_AAD, blockHashInput, imeiHashInput } from '../../src/modules/risk';
+import { Money } from '@src/common/money';
+import { EncryptionService, TokenService } from '@src/infra/crypto';
+import { type Database, schema as s } from '@src/infra/db';
+import { b2cPay, postTransaction } from '@src/modules/money';
+import { IMEI_CHECK_AAD, blockHashInput, imeiHashInput } from '@src/modules/risk';
 import type { TestApp } from './app';
 import { insertOrderRow, type OrdersWorld } from './orders';
 

@@ -2,8 +2,8 @@
 // routes, and direct inserts of orders in a given state for the read and action tests.
 import { and, eq, sql } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
-import { type Database, schema as s } from '../../src/infra/db';
-import type { Order, OrderEvent } from '../../src/modules/orders';
+import { type Database, schema as s } from '@src/infra/db';
+import type { Order, OrderEvent } from '@src/modules/orders';
 import type { TestApp } from './app';
 import { openSession } from './auth';
 import { insertCategory, insertService, insertSupplierLink } from './catalog';

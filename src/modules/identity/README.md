@@ -239,7 +239,7 @@ pure rules in `domain/`), wired by `StaffAuthModule`. Contract: `docs/contract/A
 
 ## Staff access, merchants and sessions (feature 2a)
 
-Scenarios `admin-team` and `ip-rules` (tests: `test/scenarios/admin-team.e2e.test.ts` and `ip-rules.e2e.test.ts`). 27 routes, each a
+Scenarios `admin-team` and `ip-rules` (tests: `test/e2e/admin-team.e2e.test.ts` and `ip-rules.e2e.test.ts`). 27 routes, each a
 contract under `contracts/`, a thin controller under `controllers/`, a use case under `application/` (one transaction, an audit row
 for every write), queries under `infra/`, pure rules under `domain/`. Wired by `AccessAdminModule` (staff, roles, sessions, IP rules)
 and `MerchantAdminModule` (merchants), both imported by `IdentityModule`. The detail of each route is `docs/contract/endpoints/identity.md`;
@@ -600,7 +600,7 @@ Only this module reads and writes these 8 tables (`scripts/module-map.mjs`); oth
 
 ## Scenarios
 
-Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touches this module's tables; each is an end-to-end test (`test/scenarios/`).
+Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touches this module's tables; each is an end-to-end test (`test/e2e/`).
 
 - `success`: Order completed by the supplier (tables: `api_keys`)
 - `reject`: Supplier rejects the order (tables: `api_keys`)
@@ -610,7 +610,7 @@ Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touc
 - `admin-team`: Adding and suspending a staff member (tables: `auth_tokens`, `ip_rules`, `roles`, `sessions`, `staff_users`)
 - `ip-rules`: IP block list and allowlist (tables: `ip_rules`, `sessions`)
 
-End-to-end tests: `test/scenarios/admin-team.e2e.test.ts` (steps 1 to 9) and `test/scenarios/ip-rules.e2e.test.ts` (steps 1 to 9; step 7, the risk engine's automatic block, is a row written the way feature 18 will write it). Route tests: `test/integration/{staff-admin,roles-admin,sessions-admin,ip-rules-admin,clients-admin}.test.ts`.
+End-to-end tests: `test/e2e/admin-team.e2e.test.ts` (steps 1 to 9) and `test/e2e/ip-rules.e2e.test.ts` (steps 1 to 9; step 7, the risk engine's automatic block, is a row written the way feature 18 will write it). Route tests: `test/integration/{staff-admin,roles-admin,sessions-admin,ip-rules-admin,clients-admin}.test.ts`.
 
 ## Permissions
 

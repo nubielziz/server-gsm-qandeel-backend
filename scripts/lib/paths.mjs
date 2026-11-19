@@ -1,5 +1,5 @@
 // Where the route tooling reads and writes: repository root, the docs folder and the folders of map additions (decision 035).
-// GSM_DOCS_DIR and GSM_MAP_ADDITIONS_EXTRA_DIR exist only for the tooling test (test/unit/map-additions.test.ts); nothing else sets them.
+// GSM_DOCS_DIR and GSM_MAP_ADDITIONS_EXTRA_DIR exist only for the tooling test (test/tooling/map-additions.test.ts); nothing else sets them.
 
 import { join, resolve } from 'node:path';
 

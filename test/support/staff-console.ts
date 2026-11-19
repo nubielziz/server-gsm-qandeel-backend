@@ -3,10 +3,10 @@
 import { randomUUID } from 'node:crypto';
 import type { LightMyRequestResponse } from 'fastify';
 import { generate } from 'otplib';
-import { PasswordHasher } from '../../src/infra/crypto';
-import { type StaffUser } from '../../src/modules/identity/db/schema';
-import { TotpService } from '../../src/modules/identity/application/totp.service';
-import { schema as s } from '../../src/infra/db';
+import { PasswordHasher } from '@src/infra/crypto';
+import { type StaffUser } from '@src/modules/identity/db/schema';
+import { TotpService } from '@src/modules/identity/application/totp.service';
+import { schema as s } from '@src/infra/db';
 import { type TestApp } from './app';
 import { insertRole } from './auth';
 import { testDb } from './db';

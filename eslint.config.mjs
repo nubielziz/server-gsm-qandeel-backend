@@ -13,7 +13,7 @@ import { structuralRules } from './scripts/eslint/structural-rules.mjs';
 /** TypeScript files that tsconfig.json covers: linted with type information. */
 const TYPED_FILES = ['src/**/*.ts', 'test/**/*.ts', 'scripts/**/*.ts', '*.ts'];
 /** Tests walk untyped JSON (HTTP bodies, OpenAPI documents), so the `no-unsafe-*` family is off for them. */
-const TEST_FILES = ['test/**/*.ts', 'src/**/*.spec.ts'];
+const TEST_FILES = ['test/**/*.ts'];
 
 /**
  * Declarations the JSDoc rules treat as public API: everything `export`ed plus the public methods of exported classes.
@@ -103,7 +103,6 @@ export default defineConfig(
   {
     name: 'gsm/jsdoc',
     files: ['src/**/*.ts'],
-    ignores: ['src/**/*.spec.ts'],
     plugins: { jsdoc },
     settings: { jsdoc: { mode: 'typescript' } },
     rules: {
@@ -145,7 +144,7 @@ export default defineConfig(
     },
   },
 
-  // --- Layout rules: module boundaries, process.env only in src/config, no console in src -------------------------
+  // --- Layout rules: module boundaries, process.env only in src/config, no console in src or test/unit -----------
   ...structuralRules,
 
   // --- Plain ESM scripts and this config (no type information) ---------------------------------------------------

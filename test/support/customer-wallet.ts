@@ -1,9 +1,9 @@
 // Test helpers of the customer wallet (feature 21): switch it on, credit a customer's balance through the ledger, read the wallet row.
 import { and, eq } from 'drizzle-orm';
-import { Money } from '../../src/common/money';
-import { type Database, schema as s } from '../../src/infra/db';
-import { customerAdjust, customerTopup, customerWalletTemplatesSql, postTransaction } from '../../src/modules/money';
-import { SettingsReader } from '../../src/modules/platform';
+import { Money } from '@src/common/money';
+import { type Database, schema as s } from '@src/infra/db';
+import { customerAdjust, customerTopup, customerWalletTemplatesSql, postTransaction } from '@src/modules/money';
+import { SettingsReader } from '@src/modules/platform';
 import type { LightMyRequestResponse } from 'fastify';
 import type { TestApp } from './app';
 import { installTemplates } from './notifications';

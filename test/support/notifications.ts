@@ -2,7 +2,7 @@
 // in-memory mail and Telegram drivers of a test app, and the token inside an emailed link.
 import { eq, sql } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
-import { DbService, type Database, type DbExecutor, schema as s } from '../../src/infra/db';
+import { DbService, type Database, type DbExecutor, schema as s } from '@src/infra/db';
 import {
   type DeliveryOutcome,
   InMemoryMailDriver,
@@ -14,12 +14,12 @@ import {
   OutboxService,
   TELEGRAM_DRIVER,
   defaultTemplatesSql,
-} from '../../src/modules/platform';
-import type { PlanResult } from '../../src/modules/platform/notifications/event-notifier';
+} from '@src/modules/platform';
+import type { PlanResult } from '@src/modules/platform/notifications/event-notifier';
 import {
   NotificationPlanProcessor,
   NotificationSendProcessor,
-} from '../../src/modules/platform/notifications/notification.processors';
+} from '@src/modules/platform/notifications/notification.processors';
 import type { TestApp } from './app';
 import { openSession } from './auth';
 import { PORTAL_ORIGIN } from './merchant-portal';

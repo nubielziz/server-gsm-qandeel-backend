@@ -1,5 +1,5 @@
 // The ranking parameters of the storefront search (feature 29, plan sections 5.2-5.4): what each Typesense search of a suggest or a results
-// page asks for. Pure; every number lives here and nowhere else, so the golden set (`test/search/golden.test.ts`) tunes them in one
+// page asks for. Pure; every number lives here and nowhere else, so the golden set (`test/integration/storefront/search-golden.test.ts`) tunes them in one
 // place. The final values are recorded in the storefront README.
 import type { MultiSearchRequest, SearchParams } from '../../../../infra/search';
 import { hasDigit } from './normalise';

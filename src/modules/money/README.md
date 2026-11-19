@@ -27,7 +27,7 @@ Refunds, disputes and the VAT and payments reports arrive with 16.
   `LedgerPoster.post`. Beyond the 13 (decision 024, "rules beyond the 13 map events"; feature 5): `reopen` (B2B: revenue back to
   the merchant hold, kind `adjustment`), `reopenB2c` (revenue back to customer funds) and `refund` (B2B: revenue to the wallet, kind
   `refund`), all keeping the cost booked, with their own id type (`REVERSAL_EVENT_IDS`) so the map-parity test of the 13 stays
-  exact; unit tests in `domain/order-reversals.spec.ts`. `OrderSettlements.liveOf(db, orderId)` finds the settlement of an order
+  exact; unit tests in `test/unit/modules/money/domain/order-reversals.spec.ts`. `OrderSettlements.liveOf(db, orderId)` finds the settlement of an order
   that no `reverse:<id>` transaction has reversed, so the orders module posts a reversal under that key.
 - **Wallets.** `MerchantAccounts.open` opens `client_wallet` and `client_hold` with the merchant (resolution ip-1; user rule
   2 checked there and by the credit-limit route); `WalletService` serves the wallet view, the statement (JSON or CSV), manual
@@ -366,7 +366,7 @@ Beyond the map (feature 32, `scripts/map-additions/32.mjs`, built): `GET /admin/
 
 ## Scenarios
 
-Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touches this module's tables; each is an end-to-end test (`test/scenarios/`).
+Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touches this module's tables; each is an end-to-end test (`test/e2e/`).
 
 - `success`: Order completed by the supplier (tables: `ledger_entries`)
 - `reject`: Supplier rejects the order (tables: `ledger_entries`)

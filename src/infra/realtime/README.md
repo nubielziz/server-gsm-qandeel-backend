@@ -113,10 +113,10 @@ API registry: gauges `realtime_connections{surface}` and `realtime_subscriber_up
 
 ## Tests
 
-Unit specs sit beside the files (`stream-cursor`, `stream-writer`, `connection-registry`, `realtime-sources`, `realtime-publisher`;
-`transaction.spec.ts` for `onCommit`). Integration (`bun run test:integration`, real Postgres and Redis, a listening test app, fake
-timers): `test/integration/realtime-stream.test.ts` (headers, `ready` first, refusals, caps, kill switch, heartbeat, max age,
-session end, shutdown, slow client) and `test/integration/realtime-inbox.test.ts` (delivery under 1 s, no leak, mark read, campaign
+Unit specs in `test/unit/infra/realtime/` (`stream-cursor`, `stream-writer`, `connection-registry`, `realtime-sources`,
+`realtime-publisher`; `test/unit/infra/db/transaction.spec.ts` for `onCommit`). Integration (`bun run test:integration`, real Postgres and Redis, a listening test app, fake
+timers): `test/integration/infra/realtime-stream.test.ts` (headers, `ready` first, refusals, caps, kill switch, heartbeat, max age,
+session end, shutdown, slow client) and `test/integration/platform/realtime-inbox.test.ts` (delivery under 1 s, no leak, mark read, campaign
 fan-out, cancel, replay, `resync`, a Redis outage of the subscriber). The test client is `test/support/stream.ts`.
 
 ## Load test

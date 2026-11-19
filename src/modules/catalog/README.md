@@ -348,7 +348,7 @@ Feature 31 adds seven admin routes beyond the map (`scripts/map-additions/31.mjs
 
 ## Scenarios
 
-Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touches this module's tables; each is an end-to-end test (`test/scenarios/`).
+Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touches this module's tables; each is an end-to-end test (`test/e2e/`).
 
 - `success`: Order completed by the supplier (tables: `service_fields`, `services`)
 - `reject`: Supplier rejects the order (tables: `service_fields`, `services`)

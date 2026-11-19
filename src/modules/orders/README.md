@@ -290,7 +290,7 @@ Only this module reads and writes these 2 tables (`scripts/module-map.mjs`); oth
 
 ## Scenarios
 
-Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touches this module's tables; each is an end-to-end test (`test/scenarios/`).
+Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touches this module's tables; each is an end-to-end test (`test/e2e/`).
 
 - `success`: Order completed by the supplier (tables: `order_events`, `orders`)
 - `reject`: Supplier rejects the order (tables: `order_events`, `orders`)
@@ -352,7 +352,7 @@ Unit: the machine, main input, placement rules, bulk reply, CSV, timeline lines,
 hash. Integration (`test/integration/`): `client-orders-placement`, `client-orders`, `orders-read`, `orders-actions`, `orders-b2c-actions`,
 `orders-bulk-reply`, `orders-export`, `orders-client-stats`, `orders-seed`, `files`, and (7a) `dhru-surface`, `rest-v1`,
 `rest-v1-idempotency`, `files-upload`, and (P4a) `idempotency-purge`, `file-order-cleanup`, `dhru-file-body`. The Dhru fixtures (one request/response record per action, checked on keys and types):
-`test/dhru/`. Scenarios `success`, `reject`, `timeout` and `manual` (`test/scenarios/`) include the merchant's Dhru calls
+`test/dhru/`. Scenarios `success`, `reject`, `timeout` and `manual` (`test/e2e/`) include the merchant's Dhru calls
 (`placeimeiorder`, `getimeiorder`).
 
 ## Audit resolutions

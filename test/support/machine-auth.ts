@@ -3,10 +3,10 @@
 // of the request.
 import { Body, Controller } from '@nestjs/common';
 import { z } from 'zod';
-import { type ResultOf, Route, defineRoute, zJsonObject } from '../../src/common/contract';
-import { AppError } from '../../src/common/errors';
-import { TokenService, signWebhook, verifyWebhookSignature } from '../../src/infra/crypto';
-import { type Database, schema as s } from '../../src/infra/db';
+import { type ResultOf, Route, defineRoute, zJsonObject } from '@src/common/contract';
+import { AppError } from '@src/common/errors';
+import { TokenService, signWebhook, verifyWebhookSignature } from '@src/infra/crypto';
+import { type Database, schema as s } from '@src/infra/db';
 import {
   CurrentPrincipal,
   type CapabilityAccessKind,
@@ -15,7 +15,7 @@ import {
   type VerifiedDelivery,
   type WebhookDelivery,
   type WebhookVerifier,
-} from '../../src/modules/identity';
+} from '@src/modules/identity';
 import type { TestApp } from './app';
 
 const Seen = z.object({

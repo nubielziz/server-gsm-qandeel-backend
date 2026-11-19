@@ -29,7 +29,7 @@ Authentication, CSRF and permissions are Nest guards and run after these.
   before both (`registerMultipartBodies`, `src/common/multipart.ts`, feature 7a) on the three routes that take one (`/api/index.php`,
   `/v1/files`, `/client/files`; `415` elsewhere), so the `action` of a multipart Dhru call is visible to maintenance too.
 - A stage without a handler is skipped; `onApplicationBootstrap` logs a warning naming it (a test app without Redis has none).
-  The real application has all three, which `test/integration/pipeline-hooks.test.ts` checks.
+  The real application has all three, which `test/integration/infra/pipeline-hooks.test.ts` checks.
 
 ## Deciding by path: `requestPath`
 
@@ -39,14 +39,14 @@ decoded path of an unknown route. All three stages use it.
 
 ## Adding a stage
 
-1. Add its name to `PIPELINE_STAGES` at the position it must run (and update `request-pipeline.spec.ts`, which pins the list).
+1. Add its name to `PIPELINE_STAGES` at the position it must run (and update `test/unit/common/pipeline/request-pipeline.spec.ts`, which pins the list).
 2. Write the handler next to the code that owns the rule, as an `@Injectable()` that registers itself in `onModuleInit`; put it
    in a small module that the API's root module (or its domain module) imports.
 3. Decide its **failure policy** and write it in the class comment: security rules fail closed (IP rules answer
    `503 DATABASE_UNAVAILABLE` when they cannot be read), courtesy rules fail open (maintenance lets the request through).
 4. Make `test/support/app.ts` (`createTestApp`, `withoutInfrastructure` / `withoutDatabase`) replace the new module when it needs
    Redis or Postgres, so the tests that leave them out still build.
-5. Add integration tests to `test/integration/pipeline-hooks.test.ts`: the order against the other stages, the refusal's
+5. Add integration tests to `test/integration/infra/pipeline-hooks.test.ts`: the order against the other stages, the refusal's
    headers, and "before authentication" (the sample guard `TestAuthGuard` answers 401 to every `/t/` route).
 
 ## Shared helpers

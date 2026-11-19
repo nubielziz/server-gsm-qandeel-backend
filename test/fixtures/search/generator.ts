@@ -1,12 +1,12 @@
 // The generator of distractor services (feature 29, slice B2, plan section 8): realistic English names, seeded, with sales up to 10
 // times the fixture's, so a golden case or a load run has thousands of services that share words with the queries but are not the
-// service the case expects. Shared by `test/search/golden.test.ts` and `test/load/search.ts`.
+// service the case expects. Shared by `test/integration/storefront/search-golden.test.ts` and `test/load/search.ts`.
 //
 // Reserved combinations: a distractor never holds all the words of one entry of {@link RESERVED}: those words belong together only in
 // the fixture's hand-written services (a generated "Samsung FRP Bypass 2" at 10 times the sales is not a worse match for the query
 // `samsung frp`, it is a second right answer, and a golden set cannot tell two right answers apart). Everything else is allowed.
-import type { DocumentSource } from '../../../src/modules/storefront/search/domain/documents';
-import { normaliseText } from '../../../src/modules/storefront/search/domain/normalise';
+import type { DocumentSource } from '@src/modules/storefront/search/domain/documents';
+import { normaliseText } from '@src/modules/storefront/search/domain/normalise';
 import { FIXTURE_CATEGORIES, FIXTURE_MAX_SALES } from './catalog';
 
 /** The word sets only the fixture's own services hold together. */

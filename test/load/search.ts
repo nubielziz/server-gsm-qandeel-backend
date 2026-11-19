@@ -7,13 +7,13 @@
 // Usage: NODE_ENV=test bun test/load/search.ts [--count 10000] [--seconds 60] [--rate 100] [--ips 20] [--edits 20] [--full 0]
 //        --full N: also rebuild and reconcile N synthetic services (for example 100000) and print the duration and the peak memory.
 import { eq } from 'drizzle-orm';
-import { DbService, type Database, schema as s } from '../../src/infra/db';
-import { SearchNames } from '../../src/modules/storefront';
+import { DbService, type Database, schema as s } from '@src/infra/db';
+import { SearchNames } from '@src/modules/storefront';
 import {
   SearchRebuildProcessor,
   SearchReconcileProcessor,
   SearchTermsBuildProcessor,
-} from '../../src/modules/storefront/search/jobs/search-maintenance.processors';
+} from '@src/modules/storefront/search/jobs/search-maintenance.processors';
 import { generateDistractors } from '../fixtures/search/generator';
 import { adminWith } from '../support/admin-api';
 import { insertCategory } from '../support/catalog';

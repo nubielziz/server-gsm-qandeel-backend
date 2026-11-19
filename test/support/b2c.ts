@@ -2,11 +2,11 @@
 // evidence, a B2C gateway row, and the whole storefront flow through the real API (open a checkout, consent, pay, signed confirmation).
 import { eq } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
-import { DbService, type Database, schema as s } from '../../src/infra/db';
-import { signWebhook } from '../../src/infra/crypto';
-import { Money } from '../../src/common/money';
-import { RECEIPT_RENDER_EVENT, ReceiptRenderProcessor, type ReceiptRenderResult } from '../../src/modules/money';
-import { toMinor } from '../../src/modules/money/infra/gateway-drivers/stripe-amounts';
+import { DbService, type Database, schema as s } from '@src/infra/db';
+import { signWebhook } from '@src/infra/crypto';
+import { Money } from '@src/common/money';
+import { RECEIPT_RENDER_EVENT, ReceiptRenderProcessor, type ReceiptRenderResult } from '@src/modules/money';
+import { toMinor } from '@src/modules/money/infra/gateway-drivers/stripe-amounts';
 import type { TestApp } from './app';
 import { type TestClock } from './clock';
 import { WEBHOOK_KEY, insertGateway, postWebhook, signedHeaders } from './billing';

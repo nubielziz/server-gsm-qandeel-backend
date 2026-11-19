@@ -194,9 +194,9 @@ is not on this machine. It also checks that Postgres, both Redis servers and the
 | `bun run english:check` | English only (decision 039): fail when Arabic script, the `ar` locale or right-to-left layout code is back in the code, outside the allowlist of `scripts/english-only.config.json` (Arabic text that people and suppliers type is data and stays: PDF shaping, CSV, plain-text mails) |
 | `bun run docs:openapi` | Regenerate `docs/contract/openapi.json` (every route) and `openapi.public.json` (REST v1, Dhru reference, webhook events) from the route contracts, without any infrastructure |
 | `bun run docs:openapi:check` | Fail when those two files differ from what the contracts generate (CI) |
-| `bun run test` | Unit tests (`src/**/*.spec.ts`), integration tests (`test/integration`) and the lint-rule tests (`test/lint`) with `bun test` |
-| `bun run test:unit` / `test:integration` | Only one of the two |
-| `GSM_TEST_DOCKER=1 bun test test/integration/queue-redis-restart.test.ts` | Restarts the queue Redis container (`docker restart`) while a worker runs; skipped unless `GSM_TEST_DOCKER=1` |
+| `bun run test` | Every test under `test/` with `bun test`, in batches: unit (`test/unit`, the same paths as `src/`), integration (`test/integration/<module>`), end to end (`test/e2e`), contract, Dhru and tooling (`test/tooling`); see `test/README.md` |
+| `bun run test:unit` / `test:integration` | Only `test/unit` (no Docker) or only `test/integration` |
+| `GSM_TEST_DOCKER=1 bun test test/integration/infra/queue-redis-restart.test.ts` | Restarts the queue Redis container (`docker restart`) while a worker runs; skipped unless `GSM_TEST_DOCKER=1` |
 | `bun run routes:build` | Rebuild `docs/route-manifest.{json,md}` and `docs/slices/*.json` from the map |
 | `bun run routes:check` | Fail when those files are stale (CI) |
 | `bun run contract:extract` | Re-extract the frontend's endpoint types into `docs/contract/frontend-endpoints.json` |

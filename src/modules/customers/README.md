@@ -287,7 +287,7 @@ customer's hash (an account with a password, not anonymized), else a dummy hash 
 towards the lock; `403 ACCOUNT_SUSPENDED` only after a correct password and leaves the counters; a success opens the session through
 that side's `startSession` (`CustomerSignInService.startSession` is the part of `login` after the proven password), ends only the
 stale session of the same kind (the other kind's session stays) and clears both counters and the lock. No audit row, outbox, cache key
-or job. Tests: `test/integration/smart-sign-in.test.ts`.
+or job. Tests: `test/integration/customers/smart-sign-in.test.ts`.
 
 ### Paying from the store balance (feature 21)
 
@@ -304,7 +304,7 @@ the data export adds `wallet`.
 
 ## Scenarios
 
-Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touches this module's tables; each is an end-to-end test (`test/scenarios/`).
+Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touches this module's tables; each is an end-to-end test (`test/e2e/`).
 
 - `b2c-paid`: Paid storefront order (tables: `checkout_sessions`, `consent_records`, `customers`)
 - `b2c-chargeback`: Chargeback dispute that we lose (tables: `consent_records`, `customers`)

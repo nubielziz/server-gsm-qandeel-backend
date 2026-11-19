@@ -1,5 +1,6 @@
 // Brand data of the shop detection (feature 31, plan section 3.5; A3 section 4): device makers and apps or stores, each with the
-// words that name it in a supplier's service name. Pure data; tested in lexicon.spec.ts.
+// words that name it in a supplier's service name. Pure data; tested in
+// test/unit/modules/storefront/publish/domain/naming/lexicon/lexicon.spec.ts.
 
 /** A brand and the pattern of the words that name it. */
 export type BrandPattern = readonly [brand: string, pattern: RegExp];

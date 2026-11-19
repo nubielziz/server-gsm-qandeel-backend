@@ -1,7 +1,7 @@
 // Common tree the contract comparator works on (docs/contract/TESTS.md § 2): a frontend shape (the JSON of
 // docs/contract/frontend-endpoints.json) and a backend JSON Schema (zod -> JSON Schema 2020-12, `x-gsm-alias`
 // markers) are both turned into the same small type tree, so one function can compare them in either direction.
-import type { JsonSchema } from '../../../src/common/contract';
+import type { JsonSchema } from '@src/common/contract';
 
 /**
  * The wire types of ALIGNMENT § 1 that carry a name in the frontend (`Id`, `Money`, ...) and an `x-gsm-alias` marker in

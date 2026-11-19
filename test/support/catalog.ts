@@ -1,5 +1,5 @@
 // Helpers for the catalog tests (feature 4a): categories, services and supplier links inserted straight into the test database.
-import { type Database, schema as s } from '../../src/infra/db';
+import { type Database, schema as s } from '@src/infra/db';
 
 /** Inserts a service category and returns its id. */
 export async function insertCategory(

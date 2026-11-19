@@ -43,7 +43,7 @@ price with `StorefrontQuotes.pricedSellable`) → cards (`StorefrontCatalogServi
 
 ## Ranking: the final values (tuned on the golden set)
 
-All numbers live in `domain/ranking.ts`; `test/search/golden.test.ts` (58 tests over the 60 cases of plan section 8: the fixture
+All numbers live in `domain/ranking.ts`; `test/integration/storefront/search-golden.test.ts` (58 tests over the 60 cases of plan section 8: the fixture
 catalog of 60 services plus 5 000 generated distractors) is what they were tuned against.
 
 | Parameter | Value | Why |
@@ -73,14 +73,14 @@ real shop but not what case 51 describes. The load script builds terms from ever
 - Merchant, REST v1, Dhru and console searches: unchanged (merchant prices are personal and recorded).
 - Other languages: none since decision 039 (feature 30). A service has one listing, and the searchable rule asks the same
   `listedServiceIds` as the checkout, so what the search shows and what can be bought agree. A visitor may still type Arabic: it is
-  normalised like any text and answers 200 with no hits (`test/search/golden.test.ts`).
+  normalised like any text and answers 200 with no hits (`test/integration/storefront/search-golden.test.ts`).
 
 ## Postgres queries per suggest
 
 A warm suggest (engine part and cards cached) runs 12 Postgres queries: the retail group, the currency, the searchable rule (3: sellable,
 retail price row, switched-on listing), `RetailPrices.quotes` (6: it re-reads the service, the groups, the group prices and the pricing
 rules), and the stock flag. The plan's target of 4 is not reachable with catalog's public reads; reaching it needs a catalog method that
-answers "sellable, priced and in stock" for a page of ids in one query (a later B-entry). `test/integration/search-api.test.ts` asserts the
+answers "sellable, priced and in stock" for a page of ids in one query (a later B-entry). `test/integration/storefront/search-api.test.ts` asserts the
 measured 12 so a regression shows.
 
 ## Trying it locally
@@ -121,6 +121,6 @@ Postgres queries per warm suggest (12, plan target 4: `RetailPrices.quotes` alon
 
 ## Tests
 
-`domain/*.spec.ts` (pure rules), `application/search-engine.spec.ts` (the fallback), `test/integration/search-api.test.ts` (routes, fallback
-on every kind of failure, statistics, limiter, console tools), `test/search/golden.test.ts` (the relevance golden set),
-`test/integration/search-sync.test.ts` (B1: the index).
+`test/unit/modules/storefront/search/domain/*.spec.ts` (pure rules), `test/unit/modules/storefront/search/application/search-engine.spec.ts` (the fallback), `test/integration/storefront/search-api.test.ts` (routes, fallback
+on every kind of failure, statistics, limiter, console tools), `test/integration/storefront/search-golden.test.ts` (the relevance golden set),
+`test/integration/storefront/search-sync.test.ts` (B1: the index).

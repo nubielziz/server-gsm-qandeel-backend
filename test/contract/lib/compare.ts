@@ -1,6 +1,6 @@
 // The contract comparator (docs/contract/TESTS.md § 2, decision 009): compares what the frontend reads or sends with
 // the backend's JSON Schema and reports every difference with a path and a rule name. Pure functions, no I/O.
-import type { JsonSchema } from '../../../src/common/contract';
+import type { JsonSchema } from '@src/common/contract';
 import {
   type Alias,
   type FrontendShape,

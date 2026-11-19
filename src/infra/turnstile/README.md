@@ -66,5 +66,5 @@ produce the dummy token, which the dummy verifier accepts.
 ## Tests
 
 Tests send the dummy token through `TURNSTILE_HEADERS` / `withTurnstile()` of `test/support/storefront.ts`. Unit tests of the
-verifiers and the guard: `turnstile.spec.ts`; wiring and the real routes: `test/integration/turnstile.test.ts`,
+verifiers and the guard: `test/unit/infra/turnstile/turnstile.spec.ts`; wiring and the real routes: `test/integration/infra/turnstile.test.ts`,
 `imei-check.test.ts`, `checkout-sessions.test.ts`, `merchant-auth-turnstile.test.ts` (the switch on), `smart-sign-in.test.ts`.

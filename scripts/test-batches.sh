@@ -9,8 +9,9 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 batch=${GSM_TEST_BATCH:-12}
 roots=("$@")
-[ ${#roots[@]} -eq 0 ] && roots=(./src ./test)
-mapfile -t files < <(find "${roots[@]}" -type f \( -name '*.test.ts' -o -name '*.spec.ts' \) -not -path '*/node_modules/*' | sort)
+# Every test lives under test/ (decision 043); test/tooling/test-layout.test.ts fails when one is put under src/.
+[ ${#roots[@]} -eq 0 ] && roots=(./test)
+mapfile -t files < <(find "${roots[@]}" -type f \( -name '*.test.ts' -o -name '*.test.mjs' -o -name '*.spec.ts' \) -not -path '*/node_modules/*' | sort)
 pass=0 skip=0 fail=0 status=0 failed_batches=()
 tmp=$(mktemp)
 trap 'rm -f "$tmp"' EXIT

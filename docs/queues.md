@@ -3,7 +3,7 @@
 Every piece of asynchronous work runs on one of twelve BullMQ queues on the **queue Redis** (decision 006: `noeviction`, AOF)
 and is processed by the **worker process** only (decision 020). The code is in `src/infra/queues/`
 (`README.md` there explains the API); this document lists every queue, job, payload, idempotency key, retry policy and
-schedule, and is extended by the feature that adds a job. A test (`src/infra/queues/queue-definitions.spec.ts`) fails
+schedule, and is extended by the feature that adds a job. A test (`test/unit/infra/queues/queue-definitions.spec.ts`) fails
 when a queue is missing here or when the numbers in a section differ from `QUEUES` in `queue-definitions.ts`.
 
 ## Rules for every queue

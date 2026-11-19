@@ -16,7 +16,7 @@ needs no file; these files are embedded (as a subset) only in a document that co
   `ibm-plex-sans-arabic.zip` (SHA-256 `f03915581aea37d82792c188b08064023a73494d679b8e19f85f5971db714013`), files
   `ibm-plex-sans-arabic/fonts/complete/ttf/IBMPlexSansArabic-{Regular,Bold}.ttf` and `ibm-plex-sans-arabic/LICENSE.txt`.
   The `@ibm/plex*` npm packages are not used (they run a postinstall script).
-- **Checked by:** `pdf-fonts.spec.ts` (the hashes above, as recorded in `ARABIC_FONT_FILES` of `pdf-fonts.ts`).
+- **Checked by:** `test/unit/modules/platform/pdf/pdf-fonts.spec.ts` (the hashes above, as recorded in `ARABIC_FONT_FILES` of `pdf-fonts.ts`).
 
 To update a font: download the new release asset, replace the file, and update the hash here and in `pdf-fonts.ts`; the
 renderer and text-run tests then show whether shaping still holds.

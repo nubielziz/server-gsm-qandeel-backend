@@ -1,9 +1,9 @@
 // Helpers for the tests of the account surfaces of the support chat (feature 28, slice B2): a signed-in customer's calls, the counters of the
 // `ticket-open` limiter, and stored files inserted straight into the table.
 import { type LightMyRequestResponse } from 'fastify';
-import { CacheKeys } from '../../src/infra/cache';
-import { type Database, schema as s } from '../../src/infra/db';
-import { RedisService } from '../../src/infra/redis';
+import { CacheKeys } from '@src/infra/cache';
+import { type Database, schema as s } from '@src/infra/db';
+import { RedisService } from '@src/infra/redis';
 import type { TestApp } from './app';
 import { openSession } from './auth';
 import { STORE_ORIGIN } from './store';

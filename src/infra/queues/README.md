@@ -86,14 +86,14 @@ process(job) {
 ```
 
 4. Document the queue section in `docs/queues.md` and add an integration test that runs the processor twice and one that
-   fails it once (`test/integration/queues.test.ts` shows how to start workers with test processors).
+   fails it once (`test/integration/infra/queues.test.ts` shows how to start workers with test processors).
 
 The worker refuses to start when processors are misconfigured (two catch-all processors on a queue, a catch-all next to
 named ones, two processors for one job name), so such a mistake is found by the first test that boots the worker.
 
 ## Tests
 
-`test/integration/queues.test.ts` (producers, defaults, de-duplication, fail-fast and recovery, schedulers, workers, retries,
-drain deadline, outage with a forwarder), `test/integration/worker-process.test.ts` (the real worker and a SIGTERM during a
-job), `test/integration/queue-redis-restart.test.ts` (`GSM_TEST_DOCKER=1`: restarts the real container). Tests use a private
+`test/integration/infra/queues.test.ts` (producers, defaults, de-duplication, fail-fast and recovery, schedulers, workers, retries,
+drain deadline, outage with a forwarder), `test/integration/infra/worker-process.test.ts` (the real worker and a SIGTERM during a
+job), `test/integration/infra/queue-redis-restart.test.ts` (`GSM_TEST_DOCKER=1`: restarts the real container). Tests use a private
 `BULL_PREFIX` per file and delete their keys; never `FLUSHDB`.

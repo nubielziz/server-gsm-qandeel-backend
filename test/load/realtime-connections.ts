@@ -6,12 +6,12 @@
 // Usage: NODE_ENV=test bun test/load/realtime-connections.ts [--count 2000] [--idle 60]
 //        (the child mode, --child, is started by the parent itself)
 import { readdirSync } from 'node:fs';
-import { CampaignFanOut } from '../../src/modules/platform';
-import { MetricsService } from '../../src/infra/metrics';
-import { PublicIpLimitModule } from '../../src/infra/rate-limit';
-import { RedisService } from '../../src/infra/redis';
-import { SessionCookies, SessionService } from '../../src/modules/identity';
-import { schema as s } from '../../src/infra/db';
+import { CampaignFanOut } from '@src/modules/platform';
+import { MetricsService } from '@src/infra/metrics';
+import { PublicIpLimitModule } from '@src/infra/rate-limit';
+import { RedisService } from '@src/infra/redis';
+import { SessionCookies, SessionService } from '@src/modules/identity';
+import { schema as s } from '@src/infra/db';
 import { adminWith } from '../support/admin-api';
 import { type TestApp, createTestApp } from '../support/app';
 import { createDraft, sendNow } from '../support/campaigns';

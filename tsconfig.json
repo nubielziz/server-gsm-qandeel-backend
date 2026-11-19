@@ -20,7 +20,10 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "noEmit": true,
+    // Tests import production code as `@src/...` (decision 043). Code under src/ keeps relative imports: the module boundary
+    // rule reads relative specifiers only, and a lint rule refuses `@src` there.
+    "paths": { "@src/*": ["./src/*"] }
   },
   "include": ["src", "test", "scripts", "*.ts"],
   "exclude": ["node_modules", "reference", "dist", "coverage"]

@@ -1,19 +1,19 @@
 // Test helper for feature 20: the default templates of the identity events (merchant lifecycle and staff link mails).
 import { eq } from 'drizzle-orm';
-import { CacheKeys } from '../../src/infra/cache';
-import { schema as s, type Database } from '../../src/infra/db';
-import { RedisService } from '../../src/infra/redis';
-import { MERCHANT_MAIL_EVENTS, STAFF_MAIL_EVENTS, identityTemplatesSql } from '../../src/modules/identity';
+import { CacheKeys } from '@src/infra/cache';
+import { schema as s, type Database } from '@src/infra/db';
+import { RedisService } from '@src/infra/redis';
+import { MERCHANT_MAIL_EVENTS, STAFF_MAIL_EVENTS, identityTemplatesSql } from '@src/modules/identity';
 import {
   EmailVerificationMailProcessor,
   MerchantInvitedMailProcessor,
   PasswordResetMailProcessor,
-} from '../../src/modules/identity/jobs/merchant-mail.processors';
+} from '@src/modules/identity/jobs/merchant-mail.processors';
 import {
   StaffInvitedMailProcessor,
   StaffPasswordResetMailProcessor,
-} from '../../src/modules/identity/jobs/staff-mail.processors';
-import type { OutboxJobData } from '../../src/modules/platform';
+} from '@src/modules/identity/jobs/staff-mail.processors';
+import type { OutboxJobData } from '@src/modules/platform';
 import type { TestApp } from './app';
 import { testDb } from './db';
 import { installTemplates, seedDefaultTemplates } from './notifications';

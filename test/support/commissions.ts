@@ -1,10 +1,10 @@
 // Helpers for the commissions and reports tests (feature 11): the orders world plus two agents (referrers of the two merchants), three
 // plans, direct inserts of assignments and accruals, and reads of what the engine wrote.
 import { and, asc, eq } from 'drizzle-orm';
-import { Money } from '../../src/common/money';
-import { type Database, schema as s } from '../../src/infra/db';
-import type { CommissionAccrual } from '../../src/modules/commissions/db/schema';
-import { order as orderEvent, postTransaction } from '../../src/modules/money';
+import { Money } from '@src/common/money';
+import { type Database, schema as s } from '@src/infra/db';
+import type { CommissionAccrual } from '@src/modules/commissions/db/schema';
+import { order as orderEvent, postTransaction } from '@src/modules/money';
 import type { TestApp } from './app';
 import { insertWalletMerchant } from './money';
 import { IMEIS, type OrdersWorld, json, ordersWorld, portalFor } from './orders';

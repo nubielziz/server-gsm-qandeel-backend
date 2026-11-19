@@ -1,11 +1,11 @@
-// Child-process script for test/integration/openapi-generator.test.ts: runs createOfflineApp (scripts/lib) on a module
+// Child-process script for test/tooling/openapi-generator.test.ts: runs createOfflineApp (scripts/lib) on a module
 // whose only provider builds an ioredis client inside its factory, and prints the recorded attempts as JSON.
 // It runs as a child because the connection guard patches net.Socket.prototype.connect for the rest of the process.
 import 'reflect-metadata';
 import { Module } from '@nestjs/common';
 import { Redis } from 'ioredis';
 import { createOfflineApp } from '../../scripts/lib/create-offline-app';
-import { parseEnv } from '../../src/config';
+import { parseEnv } from '@src/config';
 
 // `--lazy` builds the client with `lazyConnect` (it connects only when told to); without it ioredis connects by itself.
 const lazyConnect = process.argv.includes('--lazy');

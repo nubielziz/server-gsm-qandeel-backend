@@ -8,7 +8,7 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Pool } from 'pg';
-import { MIGRATIONS_FOLDER } from '../../src/infra/db/migrate';
+import { MIGRATIONS_FOLDER } from '@src/infra/db/migrate';
 import { TEST_DATABASE_URL } from './db';
 
 const ROOT = join(import.meta.dir, '../..');

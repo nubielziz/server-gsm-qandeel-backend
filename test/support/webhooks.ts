@@ -2,10 +2,10 @@
 // the test policy that lets the sender reach it, and rows for the foreign tables an event reads (orders, invoices).
 import { Global, Module } from '@nestjs/common';
 import type { LightMyRequestResponse } from 'fastify';
-import { type Database, schema as s } from '../../src/infra/db';
-import { EncryptionService } from '../../src/infra/crypto';
-import { WEBHOOK_TARGET_POLICY, type WebhookTargetPolicy } from '../../src/modules/platform';
-import { WEBHOOK_SECRET_AAD } from '../../src/modules/platform/webhooks/webhook-deliveries';
+import { type Database, schema as s } from '@src/infra/db';
+import { EncryptionService } from '@src/infra/crypto';
+import { WEBHOOK_TARGET_POLICY, type WebhookTargetPolicy } from '@src/modules/platform';
+import { WEBHOOK_SECRET_AAD } from '@src/modules/platform/webhooks/webhook-deliveries';
 import type { TestApp } from './app';
 import { openSession } from './auth';
 import { insertCategory, insertService } from './catalog';

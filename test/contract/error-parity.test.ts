@@ -1,7 +1,7 @@
 // Error parity (decision 009, docs/contract/TESTS.md § 3): the error catalog equals docs/contract/error-codes.md, and
 // every code the frontend references exists in it with the status the frontend expects. Backend-only codes are reported.
 import { describe, expect, it } from 'bun:test';
-import { ERROR_CATALOG } from '../../src/common/errors';
+import { ERROR_CATALOG } from '@src/common/errors';
 import { loadErrorCodesDocument, loadFrontendErrorRefs } from './lib/inputs';
 
 const documented = loadErrorCodesDocument();

@@ -3,22 +3,22 @@
 // outbox events as the worker would". Every suite drops its prefix in afterAll; nothing outside it is ever touched.
 import { randomBytes } from 'node:crypto';
 import { asc, gt, inArray } from 'drizzle-orm';
-import { DEV_DEFAULTS, parseEnv, searchPrefixOf } from '../../src/config';
-import { schema as s } from '../../src/infra/db';
-import { httpRequest } from '../../src/infra/http/http-request';
-import { TypesenseClient } from '../../src/infra/search';
-import { CATALOG_CATEGORY_CHANGED_EVENT, CATALOG_SERVICES_CHANGED_EVENT } from '../../src/modules/catalog';
-import type { OutboxJobData } from '../../src/modules/platform';
+import { DEV_DEFAULTS, parseEnv, searchPrefixOf } from '@src/config';
+import { schema as s } from '@src/infra/db';
+import { httpRequest } from '@src/infra/http/http-request';
+import { TypesenseClient } from '@src/infra/search';
+import { CATALOG_CATEGORY_CHANGED_EVENT, CATALOG_SERVICES_CHANGED_EVENT } from '@src/modules/catalog';
+import type { OutboxJobData } from '@src/modules/platform';
 import {
   LISTING_CHANGED_EVENT,
   SERVICES_SCHEMA_VERSION,
   SETTINGS_CHANGED_EVENT,
   SearchWorkerModule,
-} from '../../src/modules/storefront';
+} from '@src/modules/storefront';
 import {
   SearchSettingsProcessor,
   SearchSyncProcessor,
-} from '../../src/modules/storefront/search/jobs/search-index.processor';
+} from '@src/modules/storefront/search/jobs/search-index.processor';
 import { type TestApp, type TestAppOptions, createTestApp } from './app';
 import { TEST_DATABASE_URL, testDb } from './db';
 import { testInstanceEnv } from './env';

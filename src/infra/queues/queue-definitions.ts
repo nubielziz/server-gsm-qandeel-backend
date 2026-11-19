@@ -1,5 +1,5 @@
 // The BullMQ queue registry (decision 020): the twelve queues, each with its concurrency, retry policy and stall rule.
-// Add a queue here and in docs/queues.md; src/infra/queues/queue-definitions.spec.ts fails when the two disagree.
+// Add a queue here and in docs/queues.md; test/unit/infra/queues/queue-definitions.spec.ts fails when the two disagree.
 import type { JobsOptions } from 'bullmq';
 
 /**

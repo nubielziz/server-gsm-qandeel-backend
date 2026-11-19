@@ -1,7 +1,7 @@
 // The fixture catalog of the search golden set (feature 29, slice B2, plan section 8): about 60 English services named after the
 // golden table, each with the facts a search document is built from, the owner's five synonyms and the two pin rules the table's
 // cases 34 and 56 use. The slug of a service is the name the golden table expects; its numeric id is its position here (1-based).
-import type { DocumentSource } from '../../../src/modules/storefront/search/domain/documents';
+import type { DocumentSource } from '@src/modules/storefront/search/domain/documents';
 
 /** One fixture service: the slug the golden table names it by and the facts its document is built from. */
 export interface FixtureService {

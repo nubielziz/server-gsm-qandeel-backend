@@ -22,4 +22,4 @@ How the surface fits together:
 - **Documentation**: the platform module writes every registered action into the Dhru operation of the OpenAPI documents
   (`describeDhruActions`).
 - **Tests**: unit specs next to the files; one fixture per action in `test/dhru/` (keys and types checked byte for byte);
-  `test/integration/dhru-surface.test.ts` for the surface on the real application.
+  `test/integration/orders/dhru-surface.test.ts` for the surface on the real application.

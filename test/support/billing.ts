@@ -2,15 +2,12 @@
 // reach it, gateways with encrypted credentials, signed webhook deliveries, and rows for files, invoices and pending payments.
 import { Global, Module } from '@nestjs/common';
 import type { LightMyRequestResponse } from 'fastify';
-import { Money } from '../../src/common/money';
-import { signWebhook } from '../../src/infra/crypto';
-import { EncryptionService } from '../../src/infra/crypto';
-import { type Database, schema as s } from '../../src/infra/db';
-import { GATEWAY_HTTP_POLICY, type GatewayHttpPolicy } from '../../src/modules/money';
-import {
-  GATEWAY_CONFIG_AAD,
-  GATEWAY_WEBHOOK_SECRET_AAD,
-} from '../../src/modules/money/application/gateway-credentials';
+import { Money } from '@src/common/money';
+import { signWebhook } from '@src/infra/crypto';
+import { EncryptionService } from '@src/infra/crypto';
+import { type Database, schema as s } from '@src/infra/db';
+import { GATEWAY_HTTP_POLICY, type GatewayHttpPolicy } from '@src/modules/money';
+import { GATEWAY_CONFIG_AAD, GATEWAY_WEBHOOK_SECRET_AAD } from '@src/modules/money/application/gateway-credentials';
 import type { TestApp } from './app';
 import type { TestClock } from './clock';
 

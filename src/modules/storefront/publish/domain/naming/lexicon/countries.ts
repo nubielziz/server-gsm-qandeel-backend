@@ -1,6 +1,7 @@
 // Country data of the shop detection (feature 31, plan section 3.5; A3 sections 5.2-5.4): the words the suppliers use for a country
 // beyond the English names of `countryNames`, the codes that name no country today, and the traps. Pure data; tested in
-// lexicon.spec.ts and carrier-country.spec.ts.
+// test/unit/modules/storefront/publish/domain/naming/lexicon/lexicon.spec.ts and
+// test/unit/modules/storefront/publish/domain/naming/carrier-country.spec.ts.
 
 /**
  * Words for a country that `countryNames` (the search's English names and aliases) does not give, with their ISO-2 code.

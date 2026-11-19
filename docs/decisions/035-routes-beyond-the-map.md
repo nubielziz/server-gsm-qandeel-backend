@@ -44,8 +44,8 @@ edit the same numbers and conflict with the others.
   single-module vocabularies (order event types, alert metrics, countries, session setting keys, queue names) and the
   append-only lists the lead merges (error catalog and `BACKEND_CODES`, `AUDIT_ENTITY_TYPES`, `ADDITIONS` of the schema test,
   cache key families, `docs/queues.md`, `MULTIPART_ROUTES`).
-- **Tests of the tooling.** `test/unit/map-additions.test.ts` runs the generators over sample rows
-  (`test/unit/fixtures/map-additions/sample.mjs`, stage 99) in a temporary docs folder and a fake console. The two environment
+- **Tests of the tooling.** `test/tooling/map-additions.test.ts` runs the generators over sample rows
+  (`test/tooling/fixtures/map-additions/sample.mjs`, stage 99) in a temporary docs folder and a fake console. The two environment
   variables it uses (`GSM_MAP_ADDITIONS_EXTRA_DIR`, `GSM_DOCS_DIR`, read in `scripts/lib/paths.mjs`) exist only for it.
 
 **Rejected.** Editing the map: read-only, and two repositories regenerate from it. A bare allow-list of keys in the parity

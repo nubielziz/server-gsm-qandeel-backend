@@ -1,0 +1,251 @@
+// Process-level tests: the real entry points run as child processes (decision 013 boot failure, decision 001 clean
+// shutdown, decision 015 worker metrics). Bun reads tsconfig.json from the working directory, so they run from the repo
+// root, and --no-env-file keeps a local .env file out of the child's environment.
+// Child-process tests keep real time (decision 031): the processes under test have their own clocks, and the `Bun.sleep`
+// races below are only the deadline that turns a hung child into a failure.
+import { afterAll, describe, expect, it } from 'bun:test';
+import net from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { PRODUCTION_ENV } from '../../support/app';
+import { TEST_DATABASE_URL } from '../../support/db';
+import { MetricsModule } from '@src/infra/metrics';
+import { RedisModule, RedisService } from '@src/infra/redis';
+import { createInfra } from '../../support/infra';
+import { deleteBullKeys, testBullPrefix } from '../../support/queues';
+import { testInstanceEnv } from '../../support/env';
+
+const ROOT = join(import.meta.dir, '../../..');
+type Child = ReturnType<typeof Bun.spawn>;
+const children: Child[] = [];
+/** The worker children keep their BullMQ keys (the relay's tick scheduler) under this prefix, deleted at the end. */
+const workerPrefix = testBullPrefix();
+// A failed assertion must not leave a server running.
+afterAll(async () => {
+  for (const child of children) child.kill();
+  await Promise.all(children.map((child) => child.exited));
+  const cleaner = await createInfra({ modules: [MetricsModule, RedisModule] });
+  await deleteBullKeys(cleaner.get(RedisService).queue, workerPrefix);
+  await cleaner.close();
+}, 20_000);
+
+/** What a worker child needs on the test instances: its own database and BullMQ prefix, and a free metrics port. */
+const workerEnv = (port: number): Record<string, string> => ({
+  NODE_ENV: 'test',
+  HOST: '127.0.0.1',
+  WORKER_METRICS_PORT: String(port),
+  DATABASE_URL_TEST: TEST_DATABASE_URL,
+  BULL_PREFIX: workerPrefix,
+});
+
+function start(script: 'src/main.ts' | 'src/worker.ts', env: Record<string, string>): Child {
+  const child = Bun.spawn([process.execPath, '--no-env-file', script], {
+    cwd: ROOT,
+    env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? tmpdir(), ...testInstanceEnv(), ...env },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  children.push(child);
+  return child;
+}
+
+/** True when nothing answers at the URL any more (the connection is refused). */
+async function refuses(url: string): Promise<boolean> {
+  return fetch(url).then(
+    () => false,
+    () => true,
+  );
+}
+
+async function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address() as net.AddressInfo;
+      server.close(() => resolve(port));
+    });
+  });
+}
+
+/**
+ * Waits for a child process to come up (decision 031: real waits, because the processes keep their own time).
+ * The deadline is on the monotonic clock, so a stepped system clock cannot change it.
+ */
+async function eventually<T>(probe: () => Promise<T | undefined>, timeoutMs = 15_000): Promise<T> {
+  const deadline = performance.now() + timeoutMs;
+  for (;;) {
+    try {
+      const value = await probe();
+      if (value !== undefined) return value;
+    } catch {
+      // not up yet
+    }
+    if (performance.now() > deadline) throw new Error('timed out waiting for the process');
+    await Bun.sleep(100);
+  }
+}
+
+async function stop(child: Child, signal: 'SIGTERM' | 'SIGINT' = 'SIGTERM') {
+  const started = performance.now();
+  child.kill(signal);
+  const code = await Promise.race([child.exited, Bun.sleep(8000).then(() => 'timeout' as const)]);
+  return { code, ms: performance.now() - started };
+}
+
+const text = (stream: ReadableStream<Uint8Array> | number | undefined | null) =>
+  stream && typeof stream !== 'number' ? new Response(stream).text() : Promise.resolve('');
+
+describe('configuration failure', () => {
+  it('stops the API in production with the full list of missing settings and exit code 1', async () => {
+    const child = start('src/main.ts', { NODE_ENV: 'production' });
+    const code = await Promise.race([child.exited, Bun.sleep(15_000).then(() => 'timeout' as const)]);
+    expect(code).toBe(1);
+    const stderr = await text(child.stderr);
+    expect(stderr).toContain('Invalid environment configuration');
+    for (const name of [
+      'DATABASE_URL',
+      'REDIS_QUEUE_URL',
+      'REDIS_CACHE_URL',
+      'CSRF_SECRET',
+      'TOKEN_PEPPER',
+      'ENCRYPTION_KEYS',
+      'ERRORS_BASE_URL',
+      'PORTAL_BASE_URL',
+      'CONSOLE_BASE_URL',
+      'STORE_BASE_URL',
+      'TURNSTILE_SECRET_KEY',
+    ]) {
+      expect(stderr).toContain(`${name}: is required in production`);
+    }
+    expect(await text(child.stdout)).not.toContain('API listening');
+  });
+
+  it('stops the worker the same way', async () => {
+    const child = start('src/worker.ts', { NODE_ENV: 'production' });
+    expect(await child.exited).toBe(1);
+    expect(await text(child.stderr)).toContain('DATABASE_URL: is required in production');
+  });
+
+  it('names a malformed setting in development', async () => {
+    const child = start('src/main.ts', { NODE_ENV: 'development', PORT: 'abc', TRUST_PROXY: 'everyone' });
+    expect(await child.exited).toBe(1);
+    const stderr = await text(child.stderr);
+    expect(stderr).toContain('PORT:');
+    expect(stderr).toContain('TRUST_PROXY:');
+  });
+
+  it('does not print secrets when it refuses to start', async () => {
+    const child = start('src/main.ts', {
+      ...PRODUCTION_ENV,
+      CSRF_SECRET: 'too-short-but-secret',
+      ENCRYPTION_KEYS: 'k1:bm90LWEta2V5',
+    });
+    expect(await child.exited).toBe(1);
+    const stderr = await text(child.stderr);
+    expect(stderr).toContain('CSRF_SECRET');
+    expect(stderr).not.toContain('too-short-but-secret');
+    expect(stderr).not.toContain('bm90LWEta2V5');
+  });
+});
+
+describe('API process', () => {
+  it('boots, answers /health and an unknown route with problem+json, and stops cleanly on SIGTERM', async () => {
+    const port = await freePort();
+    const child = start('src/main.ts', {
+      NODE_ENV: 'test',
+      HOST: '127.0.0.1',
+      PORT: String(port),
+      DATABASE_URL_TEST: TEST_DATABASE_URL,
+    });
+    const health = await eventually(async () => {
+      const res = await fetch(`http://127.0.0.1:${port}/health`);
+      return res.ok ? res : undefined;
+    });
+    expect(health.status).toBe(200);
+    // NODE_ENV=test points every dependency at its test instance (docker compose up -d): Postgres gsm_test, Redis
+    // database 1 on both roles and the gsm-files-test bucket.
+    expect(await health.json()).toEqual({
+      status: 'ok',
+      checks: { postgres: 'ok', redis: 'ok', redis_queue: 'ok', storage: 'ok' },
+    });
+    expect(health.headers.get('x-request-id')).toBeTruthy();
+
+    const unknown = await fetch(`http://127.0.0.1:${port}/nope`, { headers: { 'x-request-id': 'boot-check' } });
+    expect(unknown.status).toBe(404);
+    expect(unknown.headers.get('content-type')).toContain('application/problem+json');
+    expect(unknown.headers.get('x-request-id')).toBe('boot-check');
+    expect(await unknown.json()).toMatchObject({ code: 'NOT_FOUND', requestId: 'boot-check' });
+
+    const { code, ms } = await stop(child);
+    // Nest re-raises the signal after cleanup (decision 001): 143 = SIGTERM, 0 also counts as clean.
+    expect([0, 143]).toContain(code as number);
+    expect(ms).toBeLessThan(5000);
+    expect(await refuses(`http://127.0.0.1:${port}/health`)).toBe(true);
+  });
+
+  it('refuses to start when the port is taken, with a non-zero exit code', async () => {
+    const port = await freePort();
+    const blocker = net.createServer().listen(port, '127.0.0.1');
+    await new Promise((resolve) => blocker.once('listening', resolve));
+    try {
+      const child = start('src/main.ts', { NODE_ENV: 'test', HOST: '127.0.0.1', PORT: String(port) });
+      const code = await Promise.race([child.exited, Bun.sleep(15_000).then(() => 'timeout' as const)]);
+      expect(code).not.toBe(0);
+      expect(code).not.toBe('timeout');
+    } finally {
+      blocker.close();
+    }
+  });
+});
+
+describe('worker process', () => {
+  it('boots, serves its own /metrics and stops cleanly on SIGTERM', async () => {
+    const port = await freePort();
+    const child = start('src/worker.ts', workerEnv(port));
+    const metrics = await eventually(async () => {
+      const res = await fetch(`http://127.0.0.1:${port}/metrics`);
+      return res.ok ? res : undefined;
+    });
+    expect(metrics.headers.get('content-type')).toBe('text/plain; version=0.0.4; charset=utf-8');
+    const body = await metrics.text();
+    expect(body).toContain('process_cpu_seconds_total');
+
+    const other = await fetch(`http://127.0.0.1:${port}/health`);
+    expect(other.status).toBe(404);
+    expect(other.headers.get('content-type')).toContain('application/problem+json');
+    expect(await other.json()).toMatchObject({ code: 'NOT_FOUND', status: 404 });
+
+    const { code, ms } = await stop(child);
+    expect([0, 143]).toContain(code as number);
+    expect(ms).toBeLessThan(5000);
+    expect(await refuses(`http://127.0.0.1:${port}/metrics`)).toBe(true);
+  });
+
+  it('applies the same access rule as the API: the token when one is set', async () => {
+    const port = await freePort();
+    const child = start('src/worker.ts', { ...workerEnv(port), METRICS_TOKEN: 'worker-metrics-token-123' });
+    const url = `http://127.0.0.1:${port}/metrics`;
+    const refused = await eventually(async () => fetch(url));
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({ code: 'FORBIDDEN' });
+    const allowed = await fetch(url, { headers: { authorization: 'Bearer worker-metrics-token-123' } });
+    expect(allowed.status).toBe(200);
+    expect((await fetch(url, { headers: { authorization: 'Bearer nope' } })).status).toBe(403);
+    expect((await stop(child, 'SIGINT')).code).not.toBe('timeout');
+  });
+
+  it('fails to start when its metrics port is taken', async () => {
+    const port = await freePort();
+    const blocker = net.createServer().listen(port, '127.0.0.1');
+    await new Promise((resolve) => blocker.once('listening', resolve));
+    try {
+      const child = start('src/worker.ts', workerEnv(port));
+      const code = await Promise.race([child.exited, Bun.sleep(15_000).then(() => 'timeout' as const)]);
+      expect(code).not.toBe(0);
+      expect(code).not.toBe('timeout');
+    } finally {
+      blocker.close();
+    }
+  });
+});

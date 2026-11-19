@@ -1,5 +1,6 @@
 // Carrier data of the shop detection (feature 31, plan section 3.5; A3 section 5.1): the networks an IMEI unlock names, their
-// country, and the countries of the carriers that work in several. Pure data; tested in lexicon.spec.ts.
+// country, and the countries of the carriers that work in several. Pure data; tested in
+// test/unit/modules/storefront/publish/domain/naming/lexicon/lexicon.spec.ts.
 
 /** One carrier: its display name, the words that name it, its country (or `null`), and whether it works in several countries. */
 export interface CarrierEntry {

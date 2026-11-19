@@ -180,4 +180,4 @@ never with numbers.
 ## Testing a route
 
 `test/support/app.ts` builds the real application (`AppModule` plus the bootstrap of `main.ts`) on Fastify `inject`;
-`test/support/routes.ts` shows one contract per behaviour. Unit-test pure logic next to the code (`*.spec.ts`).
+`test/support/routes.ts` shows one contract per behaviour. Unit-test pure logic in `test/unit/`, at the path of the code it tests (`*.spec.ts`, decision 043).

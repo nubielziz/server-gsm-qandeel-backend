@@ -1,8 +1,8 @@
 // Helpers for the pricing tests (feature 4b): the demo's merchant groups, a service with the demo's AT&T numbers, and direct
 // inserts of group prices, client prices and pricing rules.
-import { CacheKeys } from '../../src/infra/cache';
-import { type Database, schema as s } from '../../src/infra/db';
-import { CatalogPriceVersion } from '../../src/modules/catalog';
+import { CacheKeys } from '@src/infra/cache';
+import { type Database, schema as s } from '@src/infra/db';
+import { CatalogPriceVersion } from '@src/modules/catalog';
 import type { TestApp } from './app';
 import { insertMerchant } from './auth';
 import { insertCategory, insertService } from './catalog';

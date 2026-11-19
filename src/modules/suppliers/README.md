@@ -88,7 +88,7 @@ These are calls this backend makes, not routes it serves. Each has a contract ma
 
 ## Scenarios
 
-Walked end to end by `test/scenarios/{success,reject,timeout}.e2e.test.ts` against a fake Dhru supplier served in the test (`test/support/suppliers.ts`); 7a adds the merchant's Dhru steps to the same files. Other scenarios touching this module: `b2c-paid`, `b2c-ticket`, `system-alert` (later features).
+Walked end to end by `test/e2e/{success,reject,timeout}.e2e.test.ts` against a fake Dhru supplier served in the test (`test/support/suppliers.ts`); 7a adds the merchant's Dhru steps to the same files. Other scenarios touching this module: `b2c-paid`, `b2c-ticket`, `system-alert` (later features).
 
 ## Permissions
 

@@ -4,37 +4,37 @@ import 'reflect-metadata';
 import { Module, type ModuleMetadata, type Type } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { AppModule } from '../../src/app.module';
-import { CLOCK, type Clock, SystemClock, TIMERS, type Timers } from '../../src/common/clock';
-import { configureApp, createAppAdapter } from '../../src/app.bootstrap';
-import { APP_CONFIG, type AppConfig, parseEnv } from '../../src/config';
+import { AppModule } from '@src/app.module';
+import { CLOCK, type Clock, SystemClock, TIMERS, type Timers } from '@src/common/clock';
+import { configureApp, createAppAdapter } from '@src/app.bootstrap';
+import { APP_CONFIG, type AppConfig, parseEnv } from '@src/config';
 import { TEST_DATABASE_URL } from './db';
-import { CacheModule } from '../../src/infra/cache';
-import { DbModule } from '../../src/infra/db';
-import { LOG_DESTINATION } from '../../src/infra/logging';
-import { SecurityModule, StreamRoutesModule } from '../../src/modules/identity';
-import { QueuesModule } from '../../src/infra/queues';
-import { PublicIpLimitModule, RateLimitModule } from '../../src/infra/rate-limit';
-import { RealtimeHubModule, RealtimeModule } from '../../src/infra/realtime';
-import { RedisModule } from '../../src/infra/redis';
-import { StorageModule } from '../../src/infra/storage';
-import { CatalogAdminModule, CatalogPricesModule } from '../../src/modules/catalog';
-import { CommissionsAdminModule } from '../../src/modules/commissions';
-import { CustomersAccountsModule } from '../../src/modules/customers';
-import { AccessAdminModule } from '../../src/modules/identity/access-admin.module';
-import { ApiKeysModule } from '../../src/modules/identity/api-keys.module';
-import { KycModule } from '../../src/modules/identity/kyc.module';
-import { MerchantNotificationsModule } from '../../src/modules/identity/merchant-notifications.module';
-import { MerchantWebhookRoutesModule } from '../../src/modules/identity/merchant-webhook-routes.module';
-import { MerchantAdminModule } from '../../src/modules/identity/merchant-admin.module';
-import { MerchantAuthModule } from '../../src/modules/identity/merchant-auth.module';
-import { StaffAuthModule } from '../../src/modules/identity/staff-auth.module';
-import { IpRulesModule } from '../../src/modules/identity/security/ip-rules/ip-rules.module';
-import { HealthAdminModule } from '../../src/modules/health';
-import { MoneyAdminModule } from '../../src/modules/money/money-admin.module';
-import { OrderTrackingModule, OrdersAdminModule } from '../../src/modules/orders';
-import { CheckoutModule, GrowthModule } from '../../src/modules/customers';
-import { ImeiCheckModule, RiskAdminModule } from '../../src/modules/risk';
+import { CacheModule } from '@src/infra/cache';
+import { DbModule } from '@src/infra/db';
+import { LOG_DESTINATION } from '@src/infra/logging';
+import { SecurityModule, StreamRoutesModule } from '@src/modules/identity';
+import { QueuesModule } from '@src/infra/queues';
+import { PublicIpLimitModule, RateLimitModule } from '@src/infra/rate-limit';
+import { RealtimeHubModule, RealtimeModule } from '@src/infra/realtime';
+import { RedisModule } from '@src/infra/redis';
+import { StorageModule } from '@src/infra/storage';
+import { CatalogAdminModule, CatalogPricesModule } from '@src/modules/catalog';
+import { CommissionsAdminModule } from '@src/modules/commissions';
+import { CustomersAccountsModule } from '@src/modules/customers';
+import { AccessAdminModule } from '@src/modules/identity/access-admin.module';
+import { ApiKeysModule } from '@src/modules/identity/api-keys.module';
+import { KycModule } from '@src/modules/identity/kyc.module';
+import { MerchantNotificationsModule } from '@src/modules/identity/merchant-notifications.module';
+import { MerchantWebhookRoutesModule } from '@src/modules/identity/merchant-webhook-routes.module';
+import { MerchantAdminModule } from '@src/modules/identity/merchant-admin.module';
+import { MerchantAuthModule } from '@src/modules/identity/merchant-auth.module';
+import { StaffAuthModule } from '@src/modules/identity/staff-auth.module';
+import { IpRulesModule } from '@src/modules/identity/security/ip-rules/ip-rules.module';
+import { HealthAdminModule } from '@src/modules/health';
+import { MoneyAdminModule } from '@src/modules/money/money-admin.module';
+import { OrderTrackingModule, OrdersAdminModule } from '@src/modules/orders';
+import { CheckoutModule, GrowthModule } from '@src/modules/customers';
+import { ImeiCheckModule, RiskAdminModule } from '@src/modules/risk';
 import {
   PublishEngineModule,
   PublishHttpModule,
@@ -42,15 +42,10 @@ import {
   StorefrontAdminModule,
   StorefrontContentModule,
   StorefrontPublicModule,
-} from '../../src/modules/storefront';
-import { SuppliersAdminModule } from '../../src/modules/suppliers';
-import {
-  SupportAdminModule,
-  SupportErasureModule,
-  SupportMailModule,
-  SupportStoreModule,
-} from '../../src/modules/support';
-import { SupportClientModule } from '../../src/modules/support/support-client.module';
+} from '@src/modules/storefront';
+import { SuppliersAdminModule } from '@src/modules/suppliers';
+import { SupportAdminModule, SupportErasureModule, SupportMailModule, SupportStoreModule } from '@src/modules/support';
+import { SupportClientModule } from '@src/modules/support/support-client.module';
 import {
   MaintenanceModule,
   MerchantWebhooksModule,
@@ -58,8 +53,8 @@ import {
   NotificationDeliveryModule,
   SettingsModule,
   WebhookDeliveryModule,
-} from '../../src/modules/platform';
-import { PlatformAdminModule } from '../../src/modules/platform/platform-admin.module';
+} from '@src/modules/platform';
+import { PlatformAdminModule } from '@src/modules/platform/platform-admin.module';
 import { logSink } from './log-sink';
 import { testInstanceEnv } from './env';
 

@@ -1,8 +1,8 @@
 // Test database support (decision 014): the pool on gsm_test, migrated lazily by the first test that needs it, and
-// resetDb(). Nothing here runs from the global preload, so `bun test ./src` (unit tests) works without Docker.
-import { createDrizzle, createPool, type Database } from '../../src/infra/db';
-import { migrateDatabase } from '../../src/infra/db/migrate';
-import { parseEnv } from '../../src/config';
+// resetDb(). Nothing here runs from the global preload, so `bun test ./test/unit` (unit tests) works without Docker.
+import { createDrizzle, createPool, type Database } from '@src/infra/db';
+import { migrateDatabase } from '@src/infra/db/migrate';
+import { parseEnv } from '@src/config';
 import type { Pool } from 'pg';
 
 /** Connection string of the test database (`DATABASE_URL_TEST`, default `gsm_test` of compose.yaml). */

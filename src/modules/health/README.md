@@ -118,7 +118,7 @@ Only this module reads and writes these 5 tables and `alert_streaks` (`scripts/m
 
 ## Scenarios
 
-Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touches this module's tables; each is an end-to-end test (`test/scenarios/`).
+Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touches this module's tables; each is an end-to-end test (`test/e2e/`).
 
 - `system-alert`: Alert and incident: a supplier slows down (tables: `alert_events`, `alert_rules`, `incidents`, `service_checks`)
 - `system-integrity`: Ledger mismatch and maintenance mode (tables: `alert_events`, `alert_rules`, `job_runs`)
@@ -202,7 +202,7 @@ Queues, jobs and schedules: `docs/queues.md`.
   configured for <channel>." and nothing is sent; the alert still opens. A firing alert that is not acknowledged repeats its message every 30 minutes
   (`REMINDER_INTERVAL_MS`, a lead default: RULES health 6 names none), counted from when it fired; a worker that was down sends one reminder (the round is
   in the dedupe key `alert-<id>:reminder-<n>:<channel>`), a mute or an acknowledgement stops them. The default English templates are migration
-  `0013_alert_templates.sql` (kept equal to `DEFAULT_TEMPLATES` by `default-templates.spec.ts`); staff edit them in the console.
+  `0013_alert_templates.sql` (kept equal to `DEFAULT_TEMPLATES` by `test/unit/modules/platform/notifications/default-templates.spec.ts`); staff edit them in the console.
 - **Incidents** (`IncidentsService`): the server writes the timeline; one incident per alert (pre-check and the unique index); a resolved incident is
   read-only (`INCIDENT_CLOSED`); the closing update is the `resolved` line (B104).
 - **Integrity** (`LedgerIntegrityCheck`, job `ledger_integrity`): four checks in the map's order. The account comparison is money's
@@ -232,7 +232,7 @@ down for one sample four days ago; the newest sample of each is `ok`), and the r
 `db_size_sample` rows that show 4.3 MB of growth a day). It writes only into empty tables, because the worker's own rows are the real
 data. `scripts/seed/health-alerts.ts` (12b) adds, each only into an empty table: the ten alert rules of the mock (ids 1 to 10; one muted, one off), ten
 resolved alerts of the last month with their rule snapshot (nothing open: the console opens on Operational), four resolved incidents with their
-timelines, and 14 clean nightly `ledger_integrity` runs. Test: `test/integration/health-seed.test.ts`.
+timelines, and 14 clean nightly `ledger_integrity` runs. Test: `test/integration/health/health-seed.test.ts`.
 
 ## Audit resolutions
 

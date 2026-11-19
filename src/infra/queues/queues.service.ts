@@ -31,7 +31,7 @@ const CLOSE_WAIT_MS = 2_000;
  * queue) and `skipWaitingForReady` + `skipVersionCheck`: without them a `Queue` waits for the connection's first
  * `ready` and `add` hangs while Redis is down at startup; with only `skipWaitingForReady` the `Queue` stays broken for
  * ever after the first failure. With both, `add` rejects at once while Redis is away and works again by itself when it
- * is back (`test/integration/queues.test.ts` proves both).
+ * is back (`test/integration/infra/queues.test.ts` proves both).
  *
  * Side effects: `onModuleInit` creates the queues (the constructor never touches Redis, so the OpenAPI generator can
  * build the app offline); `add` writes BullMQ keys under `BULL_PREFIX` on the queue Redis; `onApplicationShutdown` closes

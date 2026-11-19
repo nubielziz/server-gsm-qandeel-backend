@@ -32,7 +32,7 @@ function scenarios() {
     const slice = JSON.parse(readFileSync(join(slices, name), 'utf8'));
     for (const scenario of slice.scenarios ?? []) ids.add(scenario.id);
   }
-  const dir = join(ROOT, 'test', 'scenarios');
+  const dir = join(ROOT, 'test', 'e2e');
   const files = existsSync(dir) ? readdirSync(dir) : [];
   return [...ids].sort().map((id) => ({ id, file: files.find((file) => file.startsWith(`${id}.e2e.`)) ?? null }));
 }
@@ -112,7 +112,7 @@ const text = [
   '',
   '| Scenario | Test |',
   '|---|---|',
-  ...scenarioRows.map((row) => `| ${row.id} | ${row.file ? `\`test/scenarios/${row.file}\`` : 'not yet'} |`),
+  ...scenarioRows.map((row) => `| ${row.id} | ${row.file ? `\`test/e2e/${row.file}\`` : 'not yet'} |`),
   '',
   `${scenarioRows.filter((row) => row.file).length} of ${scenarioRows.length} scenarios have their e2e test.`,
   '',

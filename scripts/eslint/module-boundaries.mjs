@@ -1,5 +1,5 @@
 // ESLint rule `gsm/module-boundaries` (decision 016): the module layout of src/ is enforced at lint time.
-// Written as plain ESM so ESLint loads it under Bun and Node alike; tested in test/lint/lint-rules.test.mjs.
+// Written as plain ESM so ESLint loads it under Bun and Node alike; tested in test/tooling/lint-rules.test.mjs.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 

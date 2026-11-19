@@ -261,7 +261,7 @@ The English storefront search (`search/README.md` has the flow, the fallback and
 `SearchWorkerModule`. `GET /store/v1/services` keeps its contract; `relevance` is a new sort (the first of the default order, skipped
 without `q` and on fallback) and `x-search-engine` / `x-search-truncated` are new response headers.
 
-**Ranking values after tuning on the golden set** (`test/search/golden.test.ts`; all in `search/domain/ranking.ts`): `query_by`
+**Ranking values after tuning on the golden set** (`test/integration/storefront/search-golden.test.ts`; all in `search/domain/ranking.ts`): `query_by`
 `title,title_words,codes,joins,models,brand,carrier,networks,country_names,category,summary` with weights `10,9,10,8,6,6,5,4,5,4,2`;
 `num_typos` `0,2,0,0,0,1,1,1,1,1,1` (nearby `0,2,0,0,0,2,2,2,2,2,2`); `prefix` true except `summary`; `max_candidates` 16;
 `drop_tokens_threshold` 0 for the suggest services and the completions, 6 for the nearby search, 1 for the results page;

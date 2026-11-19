@@ -5,12 +5,12 @@ import { randomUUID } from 'node:crypto';
 import { spyOn } from 'bun:test';
 import type { LightMyRequestResponse } from 'fastify';
 import { eq } from 'drizzle-orm';
-import { CacheKeys } from '../../src/infra/cache';
-import { PasswordHasher } from '../../src/infra/crypto';
-import { schema as s } from '../../src/infra/db';
-import { RedisService } from '../../src/infra/redis';
-import { CustomerAuthTokens } from '../../src/modules/identity';
-import type { Customer } from '../../src/modules/customers/db/schema';
+import { CacheKeys } from '@src/infra/cache';
+import { PasswordHasher } from '@src/infra/crypto';
+import { schema as s } from '@src/infra/db';
+import { RedisService } from '@src/infra/redis';
+import { CustomerAuthTokens } from '@src/modules/identity';
+import type { Customer } from '@src/modules/customers/db/schema';
 import type { TestApp } from './app';
 import { testDb } from './db';
 

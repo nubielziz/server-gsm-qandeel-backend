@@ -56,7 +56,7 @@ export type ContentPageStatus = (typeof CONTENT_PAGE_STATUSES)[number];
  * The public service page in the storefront: title, slug, SEO fields and the facts the shop filters by; one per service.
  *
  * Why: The public service page of the storefront: title, slug and SEO (routes /admin/service-listings). English only (decision
- * 039, B224): the map's `locale` column is dropped (`REMOVED` in test/schema/structure.test.ts), a service has one listing and a
+ * 039, B224): the map's `locale` column is dropped (`REMOVED` in test/tooling/schema-structure.test.ts), a service has one listing and a
  * slug is unique for the site.
  */
 export const serviceListings = pgTable(
@@ -109,7 +109,7 @@ export type NewServiceListing = typeof serviceListings.$inferInsert;
  * Landing pages, static pages and the blog.
  *
  * Why: Landing pages, static pages and the blog (routes /admin/content-pages). English only (decision 039, B224): the map's
- * `locale` column is dropped (`REMOVED` in test/schema/structure.test.ts) and a slug is unique for the site.
+ * `locale` column is dropped (`REMOVED` in test/tooling/schema-structure.test.ts) and a slug is unique for the site.
  */
 export const contentPages = pgTable(
   'content_pages',
@@ -149,7 +149,7 @@ export type NewContentPage = typeof contentPages.$inferInsert;
  * The help centre and FAQ; an article can be linked to a service.
  *
  * Why: The help centre and FAQ; an article can be linked to a service (routes /admin/help-articles). English only (decision 039,
- * B224): the map's `locale` column is dropped (`REMOVED` in test/schema/structure.test.ts).
+ * B224): the map's `locale` column is dropped (`REMOVED` in test/tooling/schema-structure.test.ts).
  */
 export const helpArticles = pgTable(
   'help_articles',

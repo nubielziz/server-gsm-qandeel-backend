@@ -5,9 +5,9 @@ import 'reflect-metadata';
 import { Injectable, Module, type OnApplicationShutdown, type OnModuleDestroy } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { Job } from 'bullmq';
-import { loadConfigOrExit } from '../../src/config';
-import { type JobProcessor, QueueProcessor } from '../../src/infra/queues';
-import { WorkerModule } from '../../src/worker.module';
+import { loadConfigOrExit } from '@src/config';
+import { type JobProcessor, QueueProcessor } from '@src/infra/queues';
+import { WorkerModule } from '@src/worker.module';
 
 const mark = (text: string): void => {
   process.stdout.write(`[MARK] ${text}\n`);

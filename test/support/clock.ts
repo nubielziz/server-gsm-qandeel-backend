@@ -1,6 +1,6 @@
 // Controlled time for tests (decision 031): a TestClock the app and the infra harness inject in place of the system clock,
 // and ManualTimers for code that schedules a timer (reconnect waits) and must not be waited for.
-import type { Clock } from '../../src/common/clock';
+import type { Clock } from '@src/common/clock';
 
 /** One millisecond multiples that read well in tests. */
 export const SECOND = 1_000;

@@ -2,14 +2,14 @@
 // route, the fan-out with a small chunk, the bulk sender run as the worker would, and readers of the rows a campaign makes.
 import { randomUUID } from 'node:crypto';
 import { and, asc, eq } from 'drizzle-orm';
-import { type Database, schema as s } from '../../src/infra/db';
+import { type Database, schema as s } from '@src/infra/db';
 import {
   BroadcastSendProcessor,
   CampaignFanOut,
   type CampaignFanOutOptions,
   type CampaignFanOutResult,
   type DeliveryOutcome,
-} from '../../src/modules/platform';
+} from '@src/modules/platform';
 import type { AdminApi } from './admin-api';
 import type { TestApp } from './app';
 

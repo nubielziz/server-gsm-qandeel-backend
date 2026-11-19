@@ -151,7 +151,7 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 
 ## Scenarios
 
-Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touches this module's tables; each is an end-to-end test (`test/scenarios/`).
+Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touches this module's tables; each is an end-to-end test (`test/e2e/`).
 
 - `b2c-paid`: Paid storefront order (tables: `imei_checks`, `risk_assessments`)
 - `b2c-chargeback`: Chargeback dispute that we lose (tables: `blocklist_entries`, `imei_checks`, `risk_assessments`)

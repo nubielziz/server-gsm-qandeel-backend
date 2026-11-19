@@ -18,9 +18,9 @@ import {
   zIsoDateTime,
   zJsonObject,
   zMoney,
-} from '../../src/common/contract';
-import { AppError } from '../../src/common/errors';
-import { getRequestId } from '../../src/common/request-id';
+} from '@src/common/contract';
+import { AppError } from '@src/common/errors';
+import { getRequestId } from '@src/common/request-id';
 
 export const ItemDto = z.object({ id: zId, name: z.string(), price: zMoney, createdAt: zIsoDateTime });
 const item = (id: number) => ({ id, name: `Item ${id}`, price: '12.4900', createdAt: '2026-03-01T09:30:00.000Z' });

@@ -1,7 +1,7 @@
 // Helpers for the admin customer tests (feature 14b): the currencies the customers join, a service and orders for the order figures,
 // a payment with its refund, dispute and ticket for the detail's counts, and the audit rows of a customer.
 import { and, asc, eq } from 'drizzle-orm';
-import { type Database, schema as s } from '../../src/infra/db';
+import { type Database, schema as s } from '@src/infra/db';
 import { insertCategory, insertService } from './catalog';
 import { insertOrderRow } from './orders';
 

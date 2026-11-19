@@ -3,7 +3,7 @@
 // routes.ts they make a small API. Keys live under /t/ so they never clash with real routes.
 import { Controller } from '@nestjs/common';
 import { z } from 'zod';
-import { type ResultOf, Route, defineRoute, zId, zIsoDateTime, zMoney } from '../../src/common/contract';
+import { type ResultOf, Route, defineRoute, zId, zIsoDateTime, zMoney } from '@src/common/contract';
 
 const OrderRow = z.object({ id: zId, total: zMoney, createdAt: zIsoDateTime });
 const order = { id: 1, total: '12.4900', createdAt: '2026-03-01T09:30:00.000Z' };

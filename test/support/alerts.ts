@@ -1,8 +1,8 @@
 // Helpers for the alert, incident and integrity tests (feature 12b): rules, suppliers with calls, and alerts inserted the way the evaluator
 // leaves them, so the read routes can be tested without running the evaluator.
-import { type Database, schema as s } from '../../src/infra/db';
-import type { AlertNotice } from '../../src/modules/health';
-import type { AlertEvent, AlertRule, NewAlertEvent, NewAlertRule } from '../../src/modules/health/db/schema';
+import { type Database, schema as s } from '@src/infra/db';
+import type { AlertNotice } from '@src/modules/health';
+import type { AlertEvent, AlertRule, NewAlertEvent, NewAlertRule } from '@src/modules/health/db/schema';
 
 let counter = 0;
 

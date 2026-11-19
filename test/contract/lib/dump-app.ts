@@ -11,9 +11,9 @@ import {
   parseRouteKey,
   supplierCallRegistry,
   toJsonSchema,
-} from '../../../src/common/contract';
-import { dhruActionRegistry } from '../../../src/common/dhru';
-import { DOCUMENTATION_ROUTES } from '../../../src/modules/platform';
+} from '@src/common/contract';
+import { dhruActionRegistry } from '@src/common/dhru';
+import { DOCUMENTATION_ROUTES } from '@src/modules/platform';
 import { createTestApp } from '../../support/app';
 import type { AppSnapshot, RouteSnapshot } from './snapshot';
 

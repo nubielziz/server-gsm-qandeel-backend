@@ -2,7 +2,7 @@
 // write for the staff routes, compared with the real frontend functions from docs/contract/frontend-endpoints.json.
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
-import { toJsonSchema, zId, zIdParam, zIsoDateTime } from '../../../src/common/contract';
+import { toJsonSchema, zId, zIdParam, zIsoDateTime } from '@src/common/contract';
 import { RULES } from './compare';
 import { type Finding, compareRoute, describeFinding } from './compare-route';
 import { type AllowlistEntry, reconcile, validateEntries } from './allowlist-check';

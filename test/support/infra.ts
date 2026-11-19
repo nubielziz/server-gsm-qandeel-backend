@@ -3,16 +3,16 @@
 import { type DynamicModule, Global, type LoggerService, Module, type ModuleMetadata, type Type } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import net from 'node:net';
-import { CLOCK, type Clock, SystemClock, TIMERS, type Timers } from '../../src/common/clock';
-import { ClockModule } from '../../src/common/clock.module';
-import { APP_CONFIG, type AppConfig, parseEnv } from '../../src/config';
-import { CacheModule } from '../../src/infra/cache';
-import { CryptoModule } from '../../src/infra/crypto';
-import { OutboundHttpModule } from '../../src/infra/http';
-import { MetricsModule } from '../../src/infra/metrics';
-import { RateLimitModule } from '../../src/infra/rate-limit';
-import { RedisModule } from '../../src/infra/redis';
-import { StorageModule } from '../../src/infra/storage';
+import { CLOCK, type Clock, SystemClock, TIMERS, type Timers } from '@src/common/clock';
+import { ClockModule } from '@src/common/clock.module';
+import { APP_CONFIG, type AppConfig, parseEnv } from '@src/config';
+import { CacheModule } from '@src/infra/cache';
+import { CryptoModule } from '@src/infra/crypto';
+import { OutboundHttpModule } from '@src/infra/http';
+import { MetricsModule } from '@src/infra/metrics';
+import { RateLimitModule } from '@src/infra/rate-limit';
+import { RedisModule } from '@src/infra/redis';
+import { StorageModule } from '@src/infra/storage';
 import { testInstanceEnv } from './env';
 
 @Global()

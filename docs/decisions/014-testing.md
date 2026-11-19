@@ -1,6 +1,7 @@
 # 014: Testing
 
-Status: accepted, 2026-10-31.
+Status: accepted, 2026-10-31. Where the tests live is decision 043 (2026-11-19): unit tests in `test/unit/` at the
+path of their code, integration tests per module, scenarios in `test/e2e/`.
 
 **Context.** The runtime is Bun; the spike proved `bun test` with `@nestjs/testing` and Fastify `inject`.
 
@@ -15,7 +16,7 @@ Status: accepted, 2026-10-31.
   the migrations table (`TRUNCATE … RESTART IDENTITY CASCADE`) in `beforeEach`; Redis test DBs are flushed. Includes
   concurrency tests with real parallel connections (no overspend, duplicate webhook posts once, idempotency replay)
   and Redis failure tests (down at startup, restart during processing, shutdown with active jobs).
-- Scenarios: `test/scenarios/<id>.e2e.ts`, one per map scenario (13), step by step through HTTP (`inject`) and the
+- Scenarios: `test/e2e/<id>.e2e.ts`, one per map scenario (13), step by step through HTTP (`inject`) and the
   worker's processors run in-process, asserting the tables and statuses each step names.
 - Contract: `test/contract/**` (decision 009). Dhru: `test/dhru/**`, one fixture test per action.
 - Test files run sequentially (one shared database); `bun test --coverage` reports coverage.

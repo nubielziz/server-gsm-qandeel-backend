@@ -2,9 +2,9 @@
 // decisions 026 and 042, reading `parameters` as the classic XML string or as base64 of JSON, and records every call), the test policy that lets the supplier client reach it over plain http, and rows for a supplier
 // that points at it, with its services and links.
 import { Global, Module } from '@nestjs/common';
-import { type Database, schema as s } from '../../src/infra/db';
-import { EncryptionService } from '../../src/infra/crypto';
-import { SUPPLIER_TARGET_POLICY, type SupplierTargetPolicy } from '../../src/modules/suppliers';
+import { type Database, schema as s } from '@src/infra/db';
+import { EncryptionService } from '@src/infra/crypto';
+import { SUPPLIER_TARGET_POLICY, type SupplierTargetPolicy } from '@src/modules/suppliers';
 
 /** The form a call's `parameters` arrived in: the classic XML string, base64 of JSON, or none sent (decision 042). */
 export type FakeParamForm = 'dhru_xml' | 'json' | 'none';

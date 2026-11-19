@@ -1,7 +1,7 @@
 // Turns a frontend shape into the JSON Schema it claims (the reverse of the comparator's reading). Used to prove that the
 // comparator understands every shape in docs/contract/frontend-endpoints.json and to check that harvested fixtures
 // obey the frontend's own types.
-import type { JsonSchema } from '../../../src/common/contract';
+import type { JsonSchema } from '@src/common/contract';
 import type { FrontendShape } from './normalize';
 
 const MONEY_PATTERN = '^-?\\d+\\.\\d{4}$';

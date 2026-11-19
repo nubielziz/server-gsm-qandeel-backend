@@ -1,5 +1,6 @@
 // Tool data of the shop detection (feature 31, plan section 3.5; A3 section 4): the server tools a service name can name, the
-// noise words of supplier groups, the groups whose name is not a brand, and the alias merges. Pure data; tested in lexicon.spec.ts.
+// noise words of supplier groups, the groups whose name is not a brand, and the alias merges. Pure data; tested in
+// test/unit/modules/storefront/publish/domain/naming/lexicon/lexicon.spec.ts.
 
 /**
  * The tool names a server service's name is searched for when its group gives no brand, in this order (the first one the name

@@ -1,16 +1,16 @@
 // Helpers for the support tests (feature 17): the default templates of the support events, customers, merchants, tickets and messages
 // inserted straight into the test database, and a staff console with the support permissions.
 import { eq } from 'drizzle-orm';
-import { CacheKeys } from '../../src/infra/cache';
-import { DbService, schema as s, type Database } from '../../src/infra/db';
-import { RedisService } from '../../src/infra/redis';
-import { SUPPORT_SETTINGS, SettingsReader } from '../../src/modules/platform';
+import { CacheKeys } from '@src/infra/cache';
+import { DbService, schema as s, type Database } from '@src/infra/db';
+import { RedisService } from '@src/infra/redis';
+import { SUPPORT_SETTINGS, SettingsReader } from '@src/modules/platform';
 import {
   TICKET_MAIL_EVENT,
   TicketMailProcessor,
   type TicketMailJobResult,
   supportTemplatesSql,
-} from '../../src/modules/support';
+} from '@src/modules/support';
 import { type AdminApi, adminWith } from './admin-api';
 import type { TestApp } from './app';
 import { insertMerchant } from './auth';

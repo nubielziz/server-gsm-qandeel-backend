@@ -3,7 +3,7 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import type { JsonSchema } from '../../../src/common/contract';
+import type { JsonSchema } from '@src/common/contract';
 
 /**
  * One route contract as plain JSON (the registry's `RouteContract` with its zod schemas turned into JSON Schema).

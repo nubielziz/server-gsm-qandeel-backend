@@ -1,9 +1,9 @@
 // Helpers for the money tests (feature 3): merchants with opened wallets, postings through the real ledger writer, and reads
 // of the ledger tables to assert on. Everything goes through public code (MerchantAccounts, postTransaction), never raw ledger inserts.
 import { and, eq, sql } from 'drizzle-orm';
-import { Money } from '../../src/common/money';
-import { type Database, schema as s } from '../../src/infra/db';
-import { MerchantAccounts, deposit, postTransaction } from '../../src/modules/money';
+import { Money } from '@src/common/money';
+import { type Database, schema as s } from '@src/infra/db';
+import { MerchantAccounts, deposit, postTransaction } from '@src/modules/money';
 import { insertMerchant } from './auth';
 import { insertUsd } from './fixtures';
 

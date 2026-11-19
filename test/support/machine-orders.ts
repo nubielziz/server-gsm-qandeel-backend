@@ -3,8 +3,8 @@
 // limits of the pipeline never meet each other's counters.
 import { eq } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
-import { CacheKeys, CacheService } from '../../src/infra/cache';
-import { type Database, schema as s } from '../../src/infra/db';
+import { CacheKeys, CacheService } from '@src/infra/cache';
+import { type Database, schema as s } from '@src/infra/db';
 import type { TestApp } from './app';
 import { insertApiKey } from './machine-auth';
 import { freshClientIp } from './pipeline-routes';

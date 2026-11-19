@@ -214,7 +214,7 @@ mail and Telegram message link to `<STORE_BASE_URL>/merchant/support/<ticket id>
 
 ## Scenarios
 
-Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touches this module's tables; each is an end-to-end test (`test/scenarios/`).
+Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touches this module's tables; each is an end-to-end test (`test/e2e/`).
 
 - `b2c-refund`: Refund before delivery (tables: `reply_templates`, `support_tickets`, `ticket_messages`)
 - `b2c-ticket`: Support ticket about a delay (tables: `reply_templates`, `support_tickets`, `ticket_messages`)

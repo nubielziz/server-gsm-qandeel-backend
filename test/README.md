@@ -1,19 +1,26 @@
 # Tests
 
-`bun test ./src ./test` (decision 014). The global preload (`test/setup.ts`) only sets `NODE_ENV=test` and loads
-`reflect-metadata`; it never touches a database.
+Every test lives under `test/` (decisions 014 and 043); `src/` holds production code only, because the image copies it
+whole. `bun run test` runs every file under `test/` in batches (`scripts/test-batches.sh`, one `bun test` process per batch);
+`bun run test:unit` runs `test/unit` alone and needs no Docker. The global preload (`test/setup.ts`) only sets `NODE_ENV=test`
+and loads `reflect-metadata`; it never touches a database.
 
-| Folder              | What                                                                                       | Needs Docker (`docker compose up -d`) |
-| ------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------- |
-| `src/**/*.spec.ts`  | unit tests of pure logic (no I/O)                                                          | no                                    |
-| `test/unit/`        | unit tests that need the real clock, which `src/` specs may not read (the Clock, `TestClock`, `ManualTimers`) | no                                    |
-| `test/schema/`      | structure of the Drizzle schema (ownership, columns, indexes, enum CHECKs)                 | no                                    |
-| `test/integration/` | real Postgres (`gsm_test`), Redis (database 1), MinIO (`gsm-files-test`), the Nest app on Fastify `inject`, child processes | yes (Postgres, Redis, MinIO)          |
-| `test/contract/`    | the backend against the map and the console: route, shape and error parity (decision 009)  | yes (a child process boots the app)   |
-| `test/scenarios/`   | end-to-end walks of the map's scenarios, `<id>.e2e.test.ts` (see below)                   | yes (Postgres, Redis)                 |
-| `test/support/`     | shared helpers: `app.ts` (test app), `db.ts` (test database), `infra.ts` (Redis, cache, storage, HTTP modules on the test instances), `rejection.ts` (typed `expectRejection`), `fixtures.ts` (minimal rows), `auth.ts` (roles, staff, merchants and signed-in sessions), `admin-api.ts` (`AdminApi`: a signed-in staff member with get/post/patch/put/delete, `withoutCsrf`, `anonymous`), `staff-console.ts` (a browser-like sign-in client and TOTP codes), `clock.ts` (`TestClock`, `ManualTimers`), `security-routes.ts` (one sample route per access kind) |                                       |
+Tests import production code through the alias `@src/...` (`paths` in `tsconfig.json`, which Bun reads at run time), and each
+other with relative paths. Code under `src/` never uses the alias: the module boundary rule reads relative imports only.
 
-## Scenario tests (`test/scenarios/`)
+| Folder | What | Needs Docker (`docker compose up -d`) |
+| --- | --- | --- |
+| `test/unit/` | unit tests of pure logic (no I/O), at the path of the code they test: `src/modules/money/domain/ledger-lines.ts` is tested by `test/unit/modules/money/domain/ledger-lines.spec.ts`. The lint rules of `src/` apply (no wall clock, no `process.env`, no console); `test/unit/config/` and `test/unit/common/clock.test.ts` keep the exceptions of the code they test | no |
+| `test/integration/<module>/` | one folder per module of `src/modules`, and `infra/` for `src/infra`, `src/common`, `src/config` and the two processes: real Postgres (`gsm_test`), Redis (database 1), MinIO (`gsm-files-test`), the Nest app on Fastify `inject`, child processes. A file goes to the module that owns the routes or the code it tests | yes (Postgres, Redis, MinIO) |
+| `test/e2e/` | end-to-end walks of the map's scenarios, `<id>.e2e.test.ts` (see below) | yes (Postgres, Redis) |
+| `test/contract/` | the backend against the map and the console: route, shape and error parity (decision 009) | yes (a child process boots the app) |
+| `test/dhru/` | one fixture test per Dhru action (decision 026) | yes |
+| `test/tooling/` | the repository's own tools: the scripts (seed, `db-reset`, `first-run`, `ci.sh`, the OpenAPI generator, the English-only guard and export, map additions, backups, search keys), the deploy files, the lint rules, the structure of the Drizzle schema, module loading, and this layout (`test-layout.test.ts`) | only the tests of `seed`, `db-reset`, `db-check`, `first-run` and the English-only export (Postgres) |
+| `test/load/` | load scripts run by hand (`bun run test:load:realtime`, `test:load:search`), not part of `bun run test` | yes |
+| `test/support/` | shared helpers: `app.ts` (test app), `db.ts` (test database), `infra.ts` (Redis, cache, storage, HTTP modules on the test instances), `rejection.ts` (typed `expectRejection`), `fixtures.ts` (minimal rows), `auth.ts` (roles, staff, merchants and signed-in sessions), `admin-api.ts` (`AdminApi`: a signed-in staff member with get/post/patch/put/delete, `withoutCsrf`, `anonymous`), `staff-console.ts` (a browser-like sign-in client and TOTP codes), `clock.ts` (`TestClock`, `ManualTimers`), `security-routes.ts` (one sample route per access kind) | |
+| `test/fixtures/` | data files shared by tests (the supplier names of the shop naming, the search catalog) | |
+
+## Scenario tests (`test/e2e/`)
 
 One file per map scenario, named `<scenario id>.e2e.test.ts` (`admin-team.e2e.test.ts`, `ip-rules.e2e.test.ts`). Bun only runs files
 that end in `.test.ts` (or `.spec.ts`), so the suffix `.e2e.test.ts` is what makes `bun test ./test` pick them up: a file named
@@ -41,7 +48,7 @@ No test depends on the wall clock, on sleeping, or on a margin that a loaded or 
   waited for: assert the TTL or option the code set, or move the stored expiry into the past. The real waits that remain, each
   with a one-line reason in the test: the cross-process cache lock (`cache.test.ts`), the NOTIFY wake-up and the one-second BullMQ
   tick (`outbox.test.ts`), the request deadline and the worker drain deadline, which are real timers (`http.test.ts`, `queues.test.ts`),
-  `withTimeout`/`sleep` themselves (`timeout.spec.ts`), and the child-process and Docker restart tests.
+  `withTimeout`/`sleep` themselves (`test/unit/common/timeout.spec.ts`), and the child-process and Docker restart tests.
 
 ## Database tests
 
@@ -79,7 +86,7 @@ modules on the test instances: Redis database 1 on both roles and the bucket `gs
 
 ## Queue, worker and outbox tests
 
-`test/integration/queues.test.ts`, `outbox.test.ts`, `job-runs.test.ts`, `pg-listener.test.ts`, `worker-process.test.ts` and
+`test/integration/infra/queues.test.ts`, `outbox.test.ts`, `job-runs.test.ts`, `pg-listener.test.ts`, `worker-process.test.ts` and
 `queue-redis-restart.test.ts` run the real BullMQ, outbox and worker code on the test instances.
 
 - **A private BullMQ prefix per file** (`testBullPrefix()` in `test/support/queues.ts`, passed as `BULL_PREFIX`), and the
@@ -100,8 +107,8 @@ modules on the test instances: Redis database 1 on both roles and the bucket `gs
 
 ## Request pipeline tests (IP rules, maintenance, per-IP limit)
 
-`test/integration/pipeline-hooks.test.ts` (order against each other and against authentication, CORS and security headers on
-every refusal, maintenance scopes and the Dhru envelope, the per-IP limits) and `test/integration/ip-rules.test.ts` (scopes, the
+`test/integration/infra/pipeline-hooks.test.ts` (order against each other and against authentication, CORS and security headers on
+every refusal, maintenance scopes and the Dhru envelope, the per-IP limits) and `test/integration/identity/ip-rules.test.ts` (scopes, the
 admin allowlist, expiry, address forms, the cache, Redis or Postgres being down, the hit counters, the demo seed, the flush job on a
 real worker) run the real application on Fastify `inject`.
 
@@ -119,8 +126,8 @@ real worker) run the real application on Fastify `inject`.
 
 ## Machine guard tests (capability tokens, URL secrets, API keys, Dhru, gateway signatures)
 
-`test/integration/machine-auth.test.ts` runs the guards of `src/modules/identity/security/machine/` through real HTTP; their unit tests
-sit next to the code (`*.spec.ts`, fakes for the directory, the limiter and the replay filter) and `src/common/raw-body.spec.ts`.
+`test/integration/identity/machine-auth.test.ts` runs the guards of `src/modules/identity/security/machine/` through real HTTP; their unit tests
+are in `test/unit/modules/identity/security/machine/` (`*.spec.ts`, fakes for the directory, the limiter and the replay filter) and `test/unit/common/raw-body.spec.ts`.
 
 - `test/support/machine-auth.ts` has one sample route per machine access kind (keys under `/t/mach`), `MachineTestController` (it also
   serves the Dhru sample route `dhruLike` of `routes.ts`: do not add `TestController` to the same app), `staticResolver` for the

@@ -2,8 +2,8 @@
 // and a first-run database left out (ids, dates, balances, versions). Run as a script, it seeds the demo into the test database
 // and prints these rows as JSON: the first-run test compares them with the first run's, from a separate process (see that test).
 import { eq, isNull } from 'drizzle-orm';
-import { schema as s } from '../../src/infra/db';
-import type { Database } from '../../src/infra/db';
+import { schema as s } from '@src/infra/db';
+import type { Database } from '@src/infra/db';
 import { testDb } from './db';
 
 /**

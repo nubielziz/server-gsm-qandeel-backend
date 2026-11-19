@@ -111,7 +111,7 @@ Only this module reads and writes these 10 tables (`scripts/module-map.mjs`; the
 
 ## Scenarios
 
-Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touches this module's tables; each is an end-to-end test (`test/scenarios/`).
+Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touches this module's tables; each is an end-to-end test (`test/e2e/`).
 
 - `success`: Order completed by the supplier (tables: `notifications`, `outbox_events`, `webhook_deliveries`)
 - `reject`: Supplier rejects the order (tables: `outbox_events`, `webhook_deliveries`)
@@ -181,7 +181,7 @@ already started must still be confirmed), `/health`, `/metrics`, `/docs`, `/open
 ## Audit log and settings routes (feature 2a)
 
 Four admin routes (`contracts/`, `controllers/`, `application/`, `infra/`), wired by `PlatformAdminModule`. Scenarios `admin-team` and
-`ip-rules` read and write them (`test/scenarios/`); route tests: `test/integration/audit-logs.test.ts` and `settings-admin.test.ts`.
+`ip-rules` read and write them (`test/e2e/`); route tests: `test/integration/platform/audit-logs.test.ts` and `settings-admin.test.ts`.
 
 | Route | Permission | What it does |
 |---|---|---|
@@ -316,7 +316,7 @@ service titles, notes) prints as Arabic: a document that holds a character Helve
 subset of that font, only in the weights it uses (`GSMArabic-Regular`, `GSMArabic-Bold`), through `@pdf-lib/fontkit`, which shapes each run (contextual forms, lam-alef). `pdf/text-runs.ts` cleans each string
 (bidi controls and invisible format characters removed, so input cannot reorder an amount; whitespace collapsed; a character neither font draws, such as emoji or CJK, prints as `?`) and splits each wrapped
 line into visual runs with `bidi-js` (UAX #9 levels, rule L2 order, brackets mirrored at odd levels, digits kept in reading order). A document without Arabic embeds nothing new and is byte-identical to before
-(a golden hash in `pdf-renderer.spec.ts`). Limits: combining marks sit at the font's default position (pdf-lib ignores GPOS), copying Arabic text out of a PDF may be imperfect, the page is not mirrored, other
+(a golden hash in `test/unit/modules/platform/pdf/pdf-renderer.spec.ts`). Limits: combining marks sit at the font's default position (pdf-lib ignores GPOS), copying Arabic text out of a PDF may be imperfect, the page is not mirrored, other
 scripts print `?`; a PDF with Arabic is a few kilobytes larger and takes about 20 ms more to render (the first one in a process also reads the fonts). The document properties carry the caller's time
 (`createdAt`, from the injected clock: decision 031), never the wall clock. Billing renders merchant invoices and storefront receipts with it; the client statement (feature 11) and the dispute evidence
 reuse it.
@@ -390,7 +390,7 @@ step opts out with `audit: false` and says why in the contract description.
 `REFERENCE_DOCS=staff` asks the provider under the `REFERENCE_DOCS_GUARD` token (`docs/reference-access.guard.ts`). The identity module
 provides it (`StaffSystemReadGuard`: a staff session with `system:read`; `401` without a session, `403 FORBIDDEN` without the
 permission). Without any provider `staff` behaves like `off` (404). The reference routes have no contract, so the guard dispatcher
-lets them through to this guard (`DOCUMENTATION_ROUTES`). `test/integration/docs.test.ts` shows both.
+lets them through to this guard (`DOCUMENTATION_ROUTES`). `test/integration/platform/docs.test.ts` shows both.
 
 ## Audit resolutions
 
@@ -594,7 +594,7 @@ that report on the customer's own purchase or ticket are transactional (`order.r
 parameter or field, no right-to-left mail part and no Arabic default template (the Arabic rows that old migrations inserted are deleted by
 `0035`). An event mail is plain text, or the markup of an HTML template; `emailHtml(text)` (campaign and inline mails) wraps escaped text
 in a `dir="ltr" lang="en"` `div`. Text that people typed (a name, a message) is carried as typed, in any script: plain-text mails and
-Telegram show it unchanged (`test/integration/user-text-stays.test.ts`).
+Telegram show it unchanged (`test/integration/platform/user-text-stays.test.ts`).
 
 **Hardening.** `notification_reconcile` (every 5 minutes) re-adds the job of a queued row whose job was lost (a campaign row after 15 minutes,
 an event row after 30 whose relayed job is gone, a digest whose period ended) and fails a row older than 48 hours; rows made by `sendNow`
@@ -642,5 +642,5 @@ viewer's visible rows with `id > after`, ascending, at most 50; a 51st row is `'
   written; a mismatch is logged and the frame skipped.
 - **Known limit.** Two transactions can commit inbox rows out of id order; a reconnect that falls exactly between them may not
   replay the lower id. The count is never wrong (`snapshot`) and clients refetch their open list after a reconnect.
-- **Tests:** `test/integration/realtime-inbox.test.ts` (delivery under 1 s, rollback, no leak, mark read, campaign fan-out through
+- **Tests:** `test/integration/platform/realtime-inbox.test.ts` (delivery under 1 s, rollback, no leak, mark read, campaign fan-out through
   Redis, cancel, replay and `resync`, subscriber outage) beside the hub's `realtime-stream.test.ts`.

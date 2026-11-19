@@ -1,5 +1,5 @@
 // The smallest quantity a buyer can order of a service (feature 22, slice B): the amount of stock that makes the shop say "in stock".
-// Pure; the SQL twin is IN_STOCK_SQL (infra/storefront-services.repository.ts), kept equal by test/integration/storefront-availability.test.ts.
+// Pure; the SQL twin is IN_STOCK_SQL (infra/storefront-services.repository.ts), kept equal by test/integration/catalog/storefront-availability.test.ts.
 
 /**
  * Works out the smallest order a service accepts.
