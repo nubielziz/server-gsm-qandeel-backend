@@ -25,7 +25,7 @@
       "rows": 117,
       "endpoints": 117
     },
-    "frontendRoutes": 324,
+    "frontendRoutes": 340,
     "bySurface": {
       "dhru": {
         "rows": 8,
@@ -4913,7 +4913,7 @@
       "description": "Service price for each merchant group.",
       "frontend": {
         "file": "src/features/services/api/serviceParts.ts",
-        "line": 44,
+        "line": 46,
         "fn": "replaceServiceGroupPrices"
       }
     },
@@ -15047,7 +15047,7 @@
       "description": "Quick add: add the supplier's services by group, or all of them, in the background.",
       "frontend": {
         "file": "src/features/suppliers/api/quickAdd.ts",
-        "line": 23,
+        "line": 26,
         "fn": "startQuickAdd"
       },
       "addition": {
@@ -15085,7 +15085,7 @@
       "description": "The state and progress of a quick add.",
       "frontend": {
         "file": "src/features/suppliers/api/quickAdd.ts",
-        "line": 33,
+        "line": 36,
         "fn": "getQuickAddRun"
       },
       "addition": {
@@ -16595,7 +16595,11 @@
       },
       "module": "catalog",
       "description": "The retail price rules that price the shop from the cost, with the services that follow each.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/retailPricing.ts",
+        "line": 31,
+        "fn": "listRetailPriceRules"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B229"
@@ -16630,7 +16634,11 @@
       },
       "module": "catalog",
       "description": "Create a retail price rule (general, per service type or per category).",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/retailPricing.ts",
+        "line": 44,
+        "fn": "createRetailPriceRule"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B229"
@@ -16665,7 +16673,11 @@
       },
       "module": "catalog",
       "description": "Change the figures of a retail price rule, or switch it off and on.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/retailPricing.ts",
+        "line": 55,
+        "fn": "updateRetailPriceRule"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B229"
@@ -16700,7 +16712,11 @@
       },
       "module": "catalog",
       "description": "Delete a retail price rule (the rule keeps its row for the history).",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/retailPricing.ts",
+        "line": 68,
+        "fn": "deleteRetailPriceRule"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B229"
@@ -16736,7 +16752,11 @@
       },
       "module": "catalog",
       "description": "What a change of the retail price rules would do to the prices that follow them; nothing is stored.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/retailPricing.ts",
+        "line": 78,
+        "fn": "previewRetailPriceRule"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B229"
@@ -16771,7 +16791,11 @@
       },
       "module": "catalog",
       "description": "The retail prices the follow pass moved, the moves that wait for staff, and the prices that stopped following a rule.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/retailPricing.ts",
+        "line": 91,
+        "fn": "listRetailPriceChanges"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B230"
@@ -16808,7 +16832,11 @@
       },
       "module": "catalog",
       "description": "Answer waiting price proposals: approve the figure shown, or keep the current price as a typed one.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/retailPricing.ts",
+        "line": 105,
+        "fn": "resolveRetailPriceChanges"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B230"
@@ -16844,7 +16872,11 @@
       },
       "module": "storefront",
       "description": "Prepare a draft of services to put on the shop in bulk (a preview that changes nothing), or check an earlier one again.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/publish.ts",
+        "line": 36,
+        "fn": "createPublishRun"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B228"
@@ -16880,7 +16912,11 @@
       },
       "module": "storefront",
       "description": "List the bulk publish runs, newest first.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/publish.ts",
+        "line": 45,
+        "fn": "listPublishRuns"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B228"
@@ -16916,7 +16952,11 @@
       },
       "module": "storefront",
       "description": "Show one bulk publish run with its counts and its progress.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/publish.ts",
+        "line": 53,
+        "fn": "getPublishRun"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B228"
@@ -16952,7 +16992,11 @@
       },
       "module": "storefront",
       "description": "List the rows of a bulk publish run: what was detected, what will be published, the price and the result.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/publish.ts",
+        "line": 63,
+        "fn": "listPublishItems"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B228"
@@ -16986,7 +17030,11 @@
       },
       "module": "storefront",
       "description": "Edit one row of a publish draft (title, address, facts, price, tick, or back to what was detected); a price key also needs storefront:update.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/publish.ts",
+        "line": 77,
+        "fn": "updatePublishItem"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B228"
@@ -17020,7 +17068,11 @@
       },
       "module": "storefront",
       "description": "Change the tick or the brand, carrier or country of many rows of a publish draft, picked by id or by a filter.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/publish.ts",
+        "line": 91,
+        "fn": "bulkUpdatePublishItems"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B228"
@@ -17057,7 +17109,11 @@
       },
       "module": "storefront",
       "description": "Publish the ticked rows of a draft, or continue a run that stopped.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/publish.ts",
+        "line": 105,
+        "fn": "applyPublishRun"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B228"
@@ -17092,7 +17148,11 @@
       },
       "module": "storefront",
       "description": "Discard a preview, or stop a run that is publishing (which also needs storefront:publish).",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/publish.ts",
+        "line": 114,
+        "fn": "cancelPublishRun"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B228"
@@ -17128,7 +17188,11 @@
       },
       "module": "storefront",
       "description": "Take everything a finished run published off the shop, or put it back.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/publish.ts",
+        "line": 128,
+        "fn": "setPublishRunListed"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B228"

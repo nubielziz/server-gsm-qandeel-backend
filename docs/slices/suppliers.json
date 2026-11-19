@@ -808,7 +808,7 @@
       "description": "Quick add: add the supplier's services by group, or all of them, in the background.",
       "frontend": {
         "file": "src/features/suppliers/api/quickAdd.ts",
-        "line": 23,
+        "line": 26,
         "fn": "startQuickAdd"
       },
       "addition": {
@@ -846,7 +846,7 @@
       "description": "The state and progress of a quick add.",
       "frontend": {
         "file": "src/features/suppliers/api/quickAdd.ts",
-        "line": 33,
+        "line": 36,
         "fn": "getQuickAddRun"
       },
       "addition": {

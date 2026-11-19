@@ -31,6 +31,12 @@
         "cost": "0.0800"
       },
       "retailPrice": "3.9900",
+      "retailPriceSource": "rule",
+      "retailPriceRule": {
+        "id": 2,
+        "label": "IMEI +30%"
+      },
+      "retailPriceWaiting": false,
       "floorPrice": "0.1400",
       "marginPct": "97.9950",
       "orders30d": 13,
@@ -64,6 +70,12 @@
         "cost": "0.0500"
       },
       "retailPrice": "3.9900",
+      "retailPriceSource": "rule",
+      "retailPriceRule": {
+        "id": 2,
+        "label": "IMEI +30%"
+      },
+      "retailPriceWaiting": false,
       "floorPrice": "0.1100",
       "marginPct": "98.7469",
       "orders30d": 6,
@@ -97,6 +109,12 @@
         "cost": "0.0700"
       },
       "retailPrice": "3.9900",
+      "retailPriceSource": "rule",
+      "retailPriceRule": {
+        "id": 2,
+        "label": "IMEI +30%"
+      },
+      "retailPriceWaiting": false,
       "floorPrice": "0.1300",
       "marginPct": "98.2456",
       "orders30d": 6,
@@ -130,6 +148,12 @@
         "cost": "0.0400"
       },
       "retailPrice": "3.9900",
+      "retailPriceSource": "rule",
+      "retailPriceRule": {
+        "id": 2,
+        "label": "IMEI +30%"
+      },
+      "retailPriceWaiting": false,
       "floorPrice": "0.1000",
       "marginPct": "98.9975",
       "orders30d": 6,
@@ -163,6 +187,9 @@
         "cost": "13.5000"
       },
       "retailPrice": "25.9900",
+      "retailPriceSource": "manual",
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
       "floorPrice": "19.0100",
       "marginPct": "48.0569",
       "orders30d": 17,
@@ -196,6 +223,12 @@
         "cost": "9.8000"
       },
       "retailPrice": "19.9900",
+      "retailPriceSource": "rule",
+      "retailPriceRule": {
+        "id": 3,
+        "label": "Carrier unlock +20% +$0.50, up to 5 cents"
+      },
+      "retailPriceWaiting": true,
       "floorPrice": "14.0100",
       "marginPct": "50.9755",
       "orders30d": 12,
@@ -229,6 +262,12 @@
         "cost": "5.6000"
       },
       "retailPrice": "11.9900",
+      "retailPriceSource": "rule",
+      "retailPriceRule": {
+        "id": 3,
+        "label": "Carrier unlock +20% +$0.50, up to 5 cents"
+      },
+      "retailPriceWaiting": false,
       "floorPrice": "8.3200",
       "marginPct": "53.2944",
       "orders30d": 10,
@@ -262,6 +301,12 @@
         "cost": "7.2000"
       },
       "retailPrice": "14.9900",
+      "retailPriceSource": "rule",
+      "retailPriceRule": {
+        "id": 3,
+        "label": "Carrier unlock +20% +$0.50, up to 5 cents"
+      },
+      "retailPriceWaiting": true,
       "floorPrice": "10.3000",
       "marginPct": "51.9680",
       "orders30d": 7,
@@ -295,6 +340,9 @@
         "cost": "6.4000"
       },
       "retailPrice": "12.9900",
+      "retailPriceSource": "manual",
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
       "floorPrice": "9.2200",
       "marginPct": "50.7313",
       "orders30d": 9,
@@ -328,6 +376,12 @@
         "cost": "11.2000"
       },
       "retailPrice": "21.9900",
+      "retailPriceSource": "rule",
+      "retailPriceRule": {
+        "id": 3,
+        "label": "Carrier unlock +20% +$0.50, up to 5 cents"
+      },
+      "retailPriceWaiting": true,
       "floorPrice": "15.6400",
       "marginPct": "49.0678",
       "orders30d": 3,
@@ -361,6 +415,9 @@
         "cost": "24.0000"
       },
       "retailPrice": "45.9900",
+      "retailPriceSource": "manual",
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
       "floorPrice": "33.0000",
       "marginPct": "47.8147",
       "orders30d": 0,
@@ -394,6 +451,9 @@
         "cost": "32.0000"
       },
       "retailPrice": "58.9900",
+      "retailPriceSource": "manual",
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
       "floorPrice": "42.9400",
       "marginPct": "45.7535",
       "orders30d": 0,
@@ -427,6 +487,9 @@
         "cost": "7.5000"
       },
       "retailPrice": "14.9900",
+      "retailPriceSource": "manual",
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
       "floorPrice": "10.9800",
       "marginPct": "49.9666",
       "orders30d": 9,
@@ -460,6 +523,9 @@
         "cost": "4.2000"
       },
       "retailPrice": "8.9900",
+      "retailPriceSource": "manual",
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
       "floorPrice": "6.4700",
       "marginPct": "53.2814",
       "orders30d": 0,

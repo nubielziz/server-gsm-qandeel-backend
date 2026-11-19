@@ -184,10 +184,10 @@ Frontend features covering this module: `suppliers` (rules in `RULES.md`).
 ## POST /admin/suppliers/:id/quick-add
 
 - **Map addition** (B214, `scripts/map-additions/26.mjs`): Quick add: add the supplier's services by group, or all of them, in the background. (إضافة سريعة: إضافة خدمات المورد حسب المجموعة أو كلها في الخلفية) · staff-permission `catalog:create` · stage 26 · tables supplier_import_runs, outbox_events, audit_logs · success 202
-- **Frontend**: `startQuickAdd` (src/features/suppliers/api/quickAdd.ts:25) · params `id: number`, `body: QuickAddBody` · returns `QuickAddRun`
+- **Frontend**: `startQuickAdd` (src/features/suppliers/api/quickAdd.ts:28) · params `id: number`, `body: QuickAddBody` · returns `QuickAddRun`
 
 ## GET /admin/suppliers/:id/quick-add/:runId
 
 - **Map addition** (B214, `scripts/map-additions/26.mjs`): The state and progress of a quick add. (حالة الإضافة السريعة وتقدّمها) · staff-permission `suppliers:read` · stage 26 · tables supplier_import_runs · success 200
-- **Frontend**: `getQuickAddRun` (src/features/suppliers/api/quickAdd.ts:35) · params `id: number`, `runId: number` · returns `QuickAddRun`
+- **Frontend**: `getQuickAddRun` (src/features/suppliers/api/quickAdd.ts:38) · params `id: number`, `runId: number` · returns `QuickAddRun`
 

@@ -55,15 +55,15 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 | `GET /admin/search/index` | admin | staff-permission `storefront:read` | 29 | `getSearchIndex` |
 | `POST /admin/search/index/rebuild` | admin | staff-permission `storefront:publish` | 29 | `rebuildSearchIndex` |
 | `GET /store/v1/legacy-slugs/:kind/:slug` | store | public | 30 |  |
-| `POST /admin/publish-runs` | admin | staff-permission `storefront:create` | 31 |  |
-| `GET /admin/publish-runs` | admin | staff-permission `storefront:read` | 31 |  |
-| `GET /admin/publish-runs/:id` | admin | staff-permission `storefront:read` | 31 |  |
-| `GET /admin/publish-runs/:id/items` | admin | staff-permission `storefront:read` | 31 |  |
-| `PATCH /admin/publish-runs/:id/items/:itemId` | admin | staff-permission `storefront:create` | 31 |  |
-| `POST /admin/publish-runs/:id/items/bulk` | admin | staff-permission `storefront:create` | 31 |  |
-| `POST /admin/publish-runs/:id/apply` | admin | staff-permission `storefront:publish` | 31 |  |
-| `POST /admin/publish-runs/:id/cancel` | admin | staff-permission `storefront:create` | 31 |  |
-| `POST /admin/publish-runs/:id/listed` | admin | staff-permission `storefront:publish` | 31 |  |
+| `POST /admin/publish-runs` | admin | staff-permission `storefront:create` | 31 | `createPublishRun` |
+| `GET /admin/publish-runs` | admin | staff-permission `storefront:read` | 31 | `listPublishRuns` |
+| `GET /admin/publish-runs/:id` | admin | staff-permission `storefront:read` | 31 | `getPublishRun` |
+| `GET /admin/publish-runs/:id/items` | admin | staff-permission `storefront:read` | 31 | `listPublishItems` |
+| `PATCH /admin/publish-runs/:id/items/:itemId` | admin | staff-permission `storefront:create` | 31 | `updatePublishItem` |
+| `POST /admin/publish-runs/:id/items/bulk` | admin | staff-permission `storefront:create` | 31 | `bulkUpdatePublishItems` |
+| `POST /admin/publish-runs/:id/apply` | admin | staff-permission `storefront:publish` | 31 | `applyPublishRun` |
+| `POST /admin/publish-runs/:id/cancel` | admin | staff-permission `storefront:create` | 31 | `cancelPublishRun` |
+| `POST /admin/publish-runs/:id/listed` | admin | staff-permission `storefront:publish` | 31 | `setPublishRunListed` |
 
 ## GET /store/v1/config
 
@@ -422,45 +422,45 @@ Later consents reference this version. requires_reacceptance makes signed-in cus
 ## POST /admin/publish-runs
 
 - **Map addition** (B228, `scripts/map-additions/31.mjs`): Prepare a draft of services to put on the shop in bulk (a preview that changes nothing), or check an earlier one again. · staff-permission `storefront:create` · stage 31 · tables listing_publish_runs, outbox_events, audit_logs · success 202
-- **Frontend**: none.
+- **Frontend**: `createPublishRun` (src/features/storefront/api/publish.ts:38) · params `body: CreatePublishRunBody` · returns `PublishRun`
 
 ## GET /admin/publish-runs
 
 - **Map addition** (B228, `scripts/map-additions/31.mjs`): List the bulk publish runs, newest first. · staff-permission `storefront:read` · stage 31 · tables listing_publish_runs, listing_publish_items, staff_users · success 200
-- **Frontend**: none.
+- **Frontend**: `listPublishRuns` (src/features/storefront/api/publish.ts:47) · params `query?: ListQuery` · returns `ListResult<PublishRun>`
 
 ## GET /admin/publish-runs/:id
 
 - **Map addition** (B228, `scripts/map-additions/31.mjs`): Show one bulk publish run with its counts and its progress. · staff-permission `storefront:read` · stage 31 · tables listing_publish_runs, listing_publish_items, staff_users · success 200
-- **Frontend**: none.
+- **Frontend**: `getPublishRun` (src/features/storefront/api/publish.ts:55) · params `id: number` · returns `PublishRun`
 
 ## GET /admin/publish-runs/:id/items
 
 - **Map addition** (B228, `scripts/map-additions/31.mjs`): List the rows of a bulk publish run: what was detected, what will be published, the price and the result. · staff-permission `storefront:read` · stage 31 · tables listing_publish_items, services, service_listings · success 200
-- **Frontend**: none.
+- **Frontend**: `listPublishItems` (src/features/storefront/api/publish.ts:65) · params `id: number`, `query?: ListQuery` · returns `ListResult<PublishItem>`
 
 ## PATCH /admin/publish-runs/:id/items/:itemId
 
 - **Map addition** (B228, `scripts/map-additions/31.mjs`): Edit one row of a publish draft (title, address, facts, price, tick, or back to what was detected); a price key also needs storefront:update. · staff-permission `storefront:create` · stage 31 · tables listing_publish_items · success 200
-- **Frontend**: none.
+- **Frontend**: `updatePublishItem` (src/features/storefront/api/publish.ts:79) · params `id: number`, `itemId: number`, `body: UpdatePublishItemBody` · returns `PublishItem`
 
 ## POST /admin/publish-runs/:id/items/bulk
 
 - **Map addition** (B228, `scripts/map-additions/31.mjs`): Change the tick or the brand, carrier or country of many rows of a publish draft, picked by id or by a filter. · staff-permission `storefront:create` · stage 31 · tables listing_publish_items · success 200
-- **Frontend**: none.
+- **Frontend**: `bulkUpdatePublishItems` (src/features/storefront/api/publish.ts:93) · params `id: number`, `body: BulkPublishItemsBody` · returns `BulkPublishItemsResult`
 
 ## POST /admin/publish-runs/:id/apply
 
 - **Map addition** (B228, `scripts/map-additions/31.mjs`): Publish the ticked rows of a draft, or continue a run that stopped. · staff-permission `storefront:publish` · stage 31 · tables listing_publish_runs, listing_publish_items, outbox_events, audit_logs · success 202
-- **Frontend**: none.
+- **Frontend**: `applyPublishRun` (src/features/storefront/api/publish.ts:107) · params `id: number`, `body: ApplyPublishRunBody` · returns `PublishRun`
 
 ## POST /admin/publish-runs/:id/cancel
 
 - **Map addition** (B228, `scripts/map-additions/31.mjs`): Discard a preview, or stop a run that is publishing (which also needs storefront:publish). · staff-permission `storefront:create` · stage 31 · tables listing_publish_runs, audit_logs · success 200
-- **Frontend**: none.
+- **Frontend**: `cancelPublishRun` (src/features/storefront/api/publish.ts:116) · params `id: number`, `body?: CancelPublishRunBody` · returns `PublishRun`
 
 ## POST /admin/publish-runs/:id/listed
 
 - **Map addition** (B228, `scripts/map-additions/31.mjs`): Take everything a finished run published off the shop, or put it back. · staff-permission `storefront:publish` · stage 31 · tables listing_publish_runs, outbox_events, audit_logs · success 202
-- **Frontend**: none.
+- **Frontend**: `setPublishRunListed` (src/features/storefront/api/publish.ts:130) · params `id: number`, `body: SetPublishRunListedBody` · returns `PublishRun`
 

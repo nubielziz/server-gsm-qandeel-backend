@@ -50,13 +50,13 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 | `GET /admin/tac-catalog/:id` | admin | staff-permission `catalog:*` | 14 | `getTacEntry` |
 | `POST /admin/tac-catalog` | admin | staff-permission `catalog:*` | 14 | `createTacEntry` |
 | `PATCH /admin/tac-catalog/:id` | admin | staff-permission `catalog:*` | 14 | `updateTacEntry` |
-| `GET /admin/retail-price-rules` | admin | staff-permission `pricing:read` | 31 |  |
-| `POST /admin/retail-price-rules` | admin | staff-permission `pricing:create` | 31 |  |
-| `PATCH /admin/retail-price-rules/:id` | admin | staff-permission `pricing:update` | 31 |  |
-| `DELETE /admin/retail-price-rules/:id` | admin | staff-permission `pricing:delete` | 31 |  |
-| `POST /admin/retail-price-rules/preview` | admin | staff-permission `pricing:read` | 31 |  |
-| `GET /admin/retail-price-changes` | admin | staff-permission `pricing:read` | 31 |  |
-| `POST /admin/retail-price-changes/resolve` | admin | staff-permission `pricing:update` | 31 |  |
+| `GET /admin/retail-price-rules` | admin | staff-permission `pricing:read` | 31 | `listRetailPriceRules` |
+| `POST /admin/retail-price-rules` | admin | staff-permission `pricing:create` | 31 | `createRetailPriceRule` |
+| `PATCH /admin/retail-price-rules/:id` | admin | staff-permission `pricing:update` | 31 | `updateRetailPriceRule` |
+| `DELETE /admin/retail-price-rules/:id` | admin | staff-permission `pricing:delete` | 31 | `deleteRetailPriceRule` |
+| `POST /admin/retail-price-rules/preview` | admin | staff-permission `pricing:read` | 31 | `previewRetailPriceRule` |
+| `GET /admin/retail-price-changes` | admin | staff-permission `pricing:read` | 31 | `listRetailPriceChanges` |
+| `POST /admin/retail-price-changes/resolve` | admin | staff-permission `pricing:update` | 31 | `resolveRetailPriceChanges` |
 
 ## DHRU imeiservicelist
 
@@ -240,7 +240,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 ## PUT /admin/services/:id/group-prices
 
 - **Map**: Service price for each merchant group. (سعر الخدمة لكل فئة) · staff-permission `pricing:update` · stage 4 · tables service_group_prices
-- **Frontend**: `replaceServiceGroupPrices` (src/features/services/api/serviceParts.ts:46) · params `id: number`, `body: ReplaceGroupPricesBody` · returns `ServiceGroupPrice[]` · success 200 · assumed contract
+- **Frontend**: `replaceServiceGroupPrices` (src/features/services/api/serviceParts.ts:48) · params `id: number`, `body: ReplaceGroupPricesBody` · returns `ServiceGroupPrice[]` · success 200 · assumed contract
 - **Request**: Body `{ prices: [{ groupId, price }] }`: the whole set; a group left out loses its fixed price (pays base price less its discount). The dialog lists every group including the b2c_retail group and keeps groups it does not show, so the Retail price survives (M101, M102). Floors (accepted): each b2b row must be >= the service floor for that group (effective cost + minProfit with the row's group, RULES services 3), else 422 errors[{field:'prices.N.price', message:'Below the floor of $X (cost $Y plus $Z minimum profit).'}]; the b2c_retail row must be >= the storefront retail floor max(round(base_price x 1.10, 2), floor), the same function PATCH /admin/service-listings uses, else 422 prices.N.price 'Below the storefront floor of $X.'; rows kept unchanged are checked too (the whole set is validated). Bulk price apply keeps its accepted exception.
 - **Response**: The saved list.
 - **Errors**: 422 VALIDATION_FAILED (prices.N.groupId unknown, prices.N.price <= 0 (servicePartRoutes.ts:79-104), a repeated groupId (errors[{field:'prices.N.groupId', message:'Listed twice'}], later occurrence; a unique violation on service_group_prices_uq maps to the same 422), or a price under the floor (see Request)); 403 FORBIDDEN (no pricing:update); 404 NOT_FOUND (unknown or archived service)
@@ -421,35 +421,35 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 ## GET /admin/retail-price-rules
 
 - **Map addition** (B229, `scripts/map-additions/31.mjs`): The retail price rules that price the shop from the cost, with the services that follow each. · staff-permission `pricing:read` · stage 31 · tables retail_price_rules, retail_price_follows · success 200
-- **Frontend**: none.
+- **Frontend**: `listRetailPriceRules` (src/features/storefront/api/retailPricing.ts:33) · params `query?: ListQuery` · returns `ListResult<RetailPriceRule>`
 
 ## POST /admin/retail-price-rules
 
 - **Map addition** (B229, `scripts/map-additions/31.mjs`): Create a retail price rule (general, per service type or per category). · staff-permission `pricing:create` · stage 31 · tables retail_price_rules, audit_logs · success 201
-- **Frontend**: none.
+- **Frontend**: `createRetailPriceRule` (src/features/storefront/api/retailPricing.ts:46) · params `body: CreateRetailPriceRuleBody` · returns `RetailPriceRule`
 
 ## PATCH /admin/retail-price-rules/:id
 
 - **Map addition** (B229, `scripts/map-additions/31.mjs`): Change the figures of a retail price rule, or switch it off and on. · staff-permission `pricing:update` · stage 31 · tables retail_price_rules, audit_logs · success 200
-- **Frontend**: none.
+- **Frontend**: `updateRetailPriceRule` (src/features/storefront/api/retailPricing.ts:57) · params `id: number`, `body: UpdateRetailPriceRuleBody` · returns `RetailPriceRule`
 
 ## DELETE /admin/retail-price-rules/:id
 
 - **Map addition** (B229, `scripts/map-additions/31.mjs`): Delete a retail price rule (the rule keeps its row for the history). · staff-permission `pricing:delete` · stage 31 · tables retail_price_rules, audit_logs · success 204
-- **Frontend**: none.
+- **Frontend**: `deleteRetailPriceRule` (src/features/storefront/api/retailPricing.ts:70) · params `id: number` · returns `void`
 
 ## POST /admin/retail-price-rules/preview
 
 - **Map addition** (B229, `scripts/map-additions/31.mjs`): What a change of the retail price rules would do to the prices that follow them; nothing is stored. · staff-permission `pricing:read` · stage 31 · tables retail_price_rules, retail_price_follows, services · success 200
-- **Frontend**: none.
+- **Frontend**: `previewRetailPriceRule` (src/features/storefront/api/retailPricing.ts:80) · params `body: PreviewRetailPriceRuleBody` · returns `RetailRulePreview`
 
 ## GET /admin/retail-price-changes
 
 - **Map addition** (B230, `scripts/map-additions/31.mjs`): The retail prices the follow pass moved, the moves that wait for staff, and the prices that stopped following a rule. · staff-permission `pricing:read` · stage 31 · tables retail_price_changes, services · success 200
-- **Frontend**: none.
+- **Frontend**: `listRetailPriceChanges` (src/features/storefront/api/retailPricing.ts:93) · params `query?: ListQuery` · returns `ListResult<RetailPriceChange>`
 
 ## POST /admin/retail-price-changes/resolve
 
 - **Map addition** (B230, `scripts/map-additions/31.mjs`): Answer waiting price proposals: approve the figure shown, or keep the current price as a typed one. · staff-permission `pricing:update` · stage 31 · tables retail_price_changes, retail_price_follows, service_group_prices, audit_logs · success 200
-- **Frontend**: none.
+- **Frontend**: `resolveRetailPriceChanges` (src/features/storefront/api/retailPricing.ts:107) · params `body: ResolveRetailPriceChangesBody` · returns `ResolveRetailPriceChangesResult`
 

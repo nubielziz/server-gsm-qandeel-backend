@@ -1,0 +1,170 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "7"
+  },
+  "body": [
+    {
+      "id": 1,
+      "service": {
+        "id": 13,
+        "name": "Samsung KG Lock Fix",
+        "code": "IMEI-SAM-KG"
+      },
+      "kind": "detached",
+      "reason": "changed_elsewhere",
+      "oldPrice": "12.9900",
+      "newPrice": "14.9900",
+      "oldCost": "7.5000",
+      "newCost": "7.5000",
+      "rule": {
+        "id": 2,
+        "label": "IMEI +30%"
+      },
+      "waiting": false,
+      "resolution": null,
+      "resolvedAt": null,
+      "resolvedBy": null,
+      "createdAt": "2026-10-25T12:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "service": {
+        "id": 8,
+        "name": "Vodafone UK iPhone Unlock",
+        "code": "IMEI-VOD-UK"
+      },
+      "kind": "followed",
+      "reason": "floor_changed",
+      "oldPrice": "14.4900",
+      "newPrice": "14.9900",
+      "oldCost": "7.2000",
+      "newCost": "7.2000",
+      "rule": {
+        "id": 3,
+        "label": "Carrier unlock +20% +$0.50, up to 5 cents"
+      },
+      "waiting": false,
+      "resolution": null,
+      "resolvedAt": null,
+      "resolvedBy": null,
+      "createdAt": "2026-10-26T12:00:00.000Z"
+    },
+    {
+      "id": 3,
+      "service": {
+        "id": 7,
+        "name": "Verizon USA Clean Unlock",
+        "code": "IMEI-VZW-USA"
+      },
+      "kind": "followed",
+      "reason": "rule_changed",
+      "oldPrice": "10.9900",
+      "newPrice": "11.9900",
+      "oldCost": "5.6000",
+      "newCost": "5.6000",
+      "rule": {
+        "id": 3,
+        "label": "Carrier unlock +20% +$0.50, up to 5 cents"
+      },
+      "waiting": false,
+      "resolution": null,
+      "resolvedAt": null,
+      "resolvedBy": null,
+      "createdAt": "2026-10-27T12:00:00.000Z"
+    },
+    {
+      "id": 4,
+      "service": {
+        "id": 6,
+        "name": "T-Mobile USA Unlock",
+        "code": "IMEI-TMO-USA"
+      },
+      "kind": "followed",
+      "reason": "cost_changed",
+      "oldPrice": "18.9900",
+      "newPrice": "19.9900",
+      "oldCost": "9.2000",
+      "newCost": "9.8000",
+      "rule": {
+        "id": 3,
+        "label": "Carrier unlock +20% +$0.50, up to 5 cents"
+      },
+      "waiting": false,
+      "resolution": null,
+      "resolvedAt": null,
+      "resolvedBy": null,
+      "createdAt": "2026-10-29T12:00:00.000Z"
+    },
+    {
+      "id": 5,
+      "service": {
+        "id": 10,
+        "name": "Orange France Unlock",
+        "code": "IMEI-ORG-FR"
+      },
+      "kind": "proposed",
+      "reason": "cost_jump",
+      "oldPrice": "21.9900",
+      "newPrice": "27.9900",
+      "oldCost": "11.2000",
+      "newCost": "17.5000",
+      "rule": {
+        "id": 3,
+        "label": "Carrier unlock +20% +$0.50, up to 5 cents"
+      },
+      "waiting": true,
+      "resolution": null,
+      "resolvedAt": null,
+      "resolvedBy": null,
+      "createdAt": "2026-10-31T09:00:00.000Z"
+    },
+    {
+      "id": 6,
+      "service": {
+        "id": 8,
+        "name": "Vodafone UK iPhone Unlock",
+        "code": "IMEI-VOD-UK"
+      },
+      "kind": "proposed",
+      "reason": "no_cost",
+      "oldPrice": "14.9900",
+      "newPrice": null,
+      "oldCost": "7.2000",
+      "newCost": "0.0000",
+      "rule": {
+        "id": 3,
+        "label": "Carrier unlock +20% +$0.50, up to 5 cents"
+      },
+      "waiting": true,
+      "resolution": null,
+      "resolvedAt": null,
+      "resolvedBy": null,
+      "createdAt": "2026-10-31T10:00:00.000Z"
+    },
+    {
+      "id": 7,
+      "service": {
+        "id": 6,
+        "name": "T-Mobile USA Unlock",
+        "code": "IMEI-TMO-USA"
+      },
+      "kind": "proposed",
+      "reason": "cost_jump",
+      "oldPrice": "19.9900",
+      "newPrice": "24.9900",
+      "oldCost": "9.8000",
+      "newCost": "15.1000",
+      "rule": {
+        "id": 3,
+        "label": "Carrier unlock +20% +$0.50, up to 5 cents"
+      },
+      "waiting": true,
+      "resolution": null,
+      "resolvedAt": null,
+      "resolvedBy": null,
+      "createdAt": "2026-10-31T11:00:00.000Z"
+    }
+  ]
+}

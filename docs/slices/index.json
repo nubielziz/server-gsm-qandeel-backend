@@ -123,7 +123,7 @@
         "client": 3,
         "admin": 44
       },
-      "frontendCalled": 37,
+      "frontendCalled": 44,
       "stages": [
         4,
         5,
@@ -281,7 +281,7 @@
         "store": 12,
         "admin": 45
       },
-      "frontendCalled": 36,
+      "frontendCalled": 45,
       "stages": [
         14,
         15,

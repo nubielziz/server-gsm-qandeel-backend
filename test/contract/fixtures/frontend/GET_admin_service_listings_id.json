@@ -29,6 +29,12 @@
       "cost": "0.0800"
     },
     "retailPrice": "3.9900",
+    "retailPriceSource": "rule",
+    "retailPriceRule": {
+      "id": 2,
+      "label": "IMEI +30%"
+    },
+    "retailPriceWaiting": false,
     "floorPrice": "0.1400",
     "marginPct": "97.9950",
     "orders30d": 13,

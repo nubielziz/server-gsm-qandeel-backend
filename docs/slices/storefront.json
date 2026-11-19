@@ -10,7 +10,7 @@
       "store": 12,
       "admin": 45
     },
-    "frontendCalled": 36
+    "frontendCalled": 45
   },
   "stages": [
     14,
@@ -1930,7 +1930,11 @@
       },
       "module": "storefront",
       "description": "Prepare a draft of services to put on the shop in bulk (a preview that changes nothing), or check an earlier one again.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/publish.ts",
+        "line": 36,
+        "fn": "createPublishRun"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B228"
@@ -1966,7 +1970,11 @@
       },
       "module": "storefront",
       "description": "List the bulk publish runs, newest first.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/publish.ts",
+        "line": 45,
+        "fn": "listPublishRuns"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B228"
@@ -2002,7 +2010,11 @@
       },
       "module": "storefront",
       "description": "Show one bulk publish run with its counts and its progress.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/publish.ts",
+        "line": 53,
+        "fn": "getPublishRun"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B228"
@@ -2038,7 +2050,11 @@
       },
       "module": "storefront",
       "description": "List the rows of a bulk publish run: what was detected, what will be published, the price and the result.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/publish.ts",
+        "line": 63,
+        "fn": "listPublishItems"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B228"
@@ -2072,7 +2088,11 @@
       },
       "module": "storefront",
       "description": "Edit one row of a publish draft (title, address, facts, price, tick, or back to what was detected); a price key also needs storefront:update.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/publish.ts",
+        "line": 77,
+        "fn": "updatePublishItem"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B228"
@@ -2106,7 +2126,11 @@
       },
       "module": "storefront",
       "description": "Change the tick or the brand, carrier or country of many rows of a publish draft, picked by id or by a filter.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/publish.ts",
+        "line": 91,
+        "fn": "bulkUpdatePublishItems"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B228"
@@ -2143,7 +2167,11 @@
       },
       "module": "storefront",
       "description": "Publish the ticked rows of a draft, or continue a run that stopped.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/publish.ts",
+        "line": 105,
+        "fn": "applyPublishRun"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B228"
@@ -2178,7 +2206,11 @@
       },
       "module": "storefront",
       "description": "Discard a preview, or stop a run that is publishing (which also needs storefront:publish).",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/publish.ts",
+        "line": 114,
+        "fn": "cancelPublishRun"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B228"
@@ -2214,7 +2246,11 @@
       },
       "module": "storefront",
       "description": "Take everything a finished run published off the shop, or put it back.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/publish.ts",
+        "line": 128,
+        "fn": "setPublishRunListed"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B228"

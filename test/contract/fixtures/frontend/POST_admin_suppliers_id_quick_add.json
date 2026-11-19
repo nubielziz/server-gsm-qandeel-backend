@@ -9,6 +9,7 @@
     "scope": "all",
     "groups": [],
     "serviceStatus": "active",
+    "publish": "none",
     "status": "queued",
     "total": 2,
     "processed": 0,

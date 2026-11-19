@@ -1,0 +1,73 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "4"
+  },
+  "body": [
+    {
+      "fixed": "0.0000",
+      "roundFrom": "5.0000",
+      "updatedAt": "2026-10-29T12:00:00.000Z",
+      "id": 1,
+      "scope": "global",
+      "serviceType": null,
+      "categoryId": null,
+      "percent": "25.0000",
+      "rounding": "ends_99",
+      "autoFollowPercent": 25,
+      "isActive": true,
+      "following": 3,
+      "categoryName": null,
+      "label": "Every service +25%, ends in .99"
+    },
+    {
+      "fixed": "0.0000",
+      "roundFrom": "5.0000",
+      "updatedAt": "2026-10-29T12:00:00.000Z",
+      "id": 2,
+      "scope": "type",
+      "serviceType": "imei",
+      "categoryId": null,
+      "percent": "30.0000",
+      "rounding": "cent",
+      "autoFollowPercent": 25,
+      "isActive": true,
+      "following": 4,
+      "categoryName": null,
+      "label": "IMEI +30%"
+    },
+    {
+      "fixed": "0.0000",
+      "roundFrom": "5.0000",
+      "updatedAt": "2026-10-29T12:00:00.000Z",
+      "id": 4,
+      "scope": "type",
+      "serviceType": "server",
+      "categoryId": null,
+      "percent": "15.0000",
+      "rounding": "cent",
+      "autoFollowPercent": 25,
+      "isActive": false,
+      "following": 0,
+      "categoryName": null,
+      "label": "Server +15%"
+    },
+    {
+      "fixed": "0.5000",
+      "roundFrom": "5.0000",
+      "updatedAt": "2026-10-29T12:00:00.000Z",
+      "id": 3,
+      "scope": "category",
+      "serviceType": null,
+      "categoryId": 4,
+      "percent": "20.0000",
+      "rounding": "step_0.05",
+      "autoFollowPercent": 15,
+      "isActive": true,
+      "following": 4,
+      "categoryName": "Carrier unlock",
+      "label": "Carrier unlock +20% +$0.50, up to 5 cents"
+    }
+  ]
+}

@@ -1,0 +1,277 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "7"
+  },
+  "body": [
+    {
+      "source": "console",
+      "quickAddRunId": null,
+      "scope": {
+        "kind": "all"
+      },
+      "listed": true,
+      "auto": false,
+      "counts": {
+        "ready": 9,
+        "review": 3,
+        "blocked": 0,
+        "included": 10,
+        "noRule": 0,
+        "published": 9,
+        "skipped": 2,
+        "refused": 1,
+        "pending": 0
+      },
+      "switch": {
+        "status": null,
+        "listed": null,
+        "switched": 0,
+        "skipped": 0,
+        "error": null
+      },
+      "replacedBy": null,
+      "error": null,
+      "requestedBy": 1,
+      "requestedByName": "Rami K.",
+      "createdAt": "2026-10-25T12:00:00.000Z",
+      "preparedAt": "2026-10-25T12:01:00.000Z",
+      "startedAt": "2026-10-25T12:00:00.000Z",
+      "finishedAt": "2026-10-25T12:01:30.000Z",
+      "id": 1,
+      "status": "succeeded",
+      "total": 12
+    },
+    {
+      "source": "console",
+      "quickAddRunId": null,
+      "scope": {
+        "kind": "category",
+        "categoryId": 4
+      },
+      "listed": false,
+      "auto": false,
+      "counts": {
+        "ready": 6,
+        "review": 0,
+        "blocked": 0,
+        "included": 6,
+        "noRule": 0,
+        "published": 6,
+        "skipped": 0,
+        "refused": 0,
+        "pending": 0
+      },
+      "switch": {
+        "status": null,
+        "listed": null,
+        "switched": 0,
+        "skipped": 0,
+        "error": null
+      },
+      "replacedBy": null,
+      "error": null,
+      "requestedBy": 1,
+      "requestedByName": "Rami K.",
+      "createdAt": "2026-10-27T12:00:00.000Z",
+      "preparedAt": "2026-10-27T12:01:00.000Z",
+      "startedAt": "2026-10-25T12:00:00.000Z",
+      "finishedAt": "2026-10-25T12:01:30.000Z",
+      "id": 2,
+      "status": "succeeded",
+      "total": 6
+    },
+    {
+      "source": "console",
+      "quickAddRunId": null,
+      "scope": {
+        "kind": "all"
+      },
+      "listed": true,
+      "auto": false,
+      "counts": {
+        "ready": 10,
+        "review": 0,
+        "blocked": 0,
+        "included": 10,
+        "noRule": 0,
+        "published": 4,
+        "skipped": 0,
+        "refused": 1,
+        "pending": 5
+      },
+      "switch": {
+        "status": null,
+        "listed": null,
+        "switched": 0,
+        "skipped": 0,
+        "error": null
+      },
+      "replacedBy": null,
+      "error": "The run stopped before it finished. Start it again: it continues with what is left.",
+      "requestedBy": 1,
+      "requestedByName": "Rami K.",
+      "createdAt": "2026-10-28T12:00:00.000Z",
+      "preparedAt": "2026-10-28T12:01:00.000Z",
+      "startedAt": "2026-10-25T12:00:00.000Z",
+      "finishedAt": null,
+      "id": 3,
+      "status": "failed",
+      "total": 10
+    },
+    {
+      "source": "console",
+      "quickAddRunId": null,
+      "scope": {
+        "kind": "all"
+      },
+      "listed": true,
+      "auto": false,
+      "counts": {
+        "ready": 0,
+        "review": 0,
+        "blocked": 0,
+        "included": 0,
+        "noRule": 0,
+        "published": 0,
+        "skipped": 0,
+        "refused": 0,
+        "pending": 60
+      },
+      "switch": {
+        "status": null,
+        "listed": null,
+        "switched": 0,
+        "skipped": 0,
+        "error": null
+      },
+      "replacedBy": 5,
+      "error": null,
+      "requestedBy": 1,
+      "requestedByName": "Rami K.",
+      "createdAt": "2026-10-29T12:00:00.000Z",
+      "preparedAt": "2026-10-29T12:01:00.000Z",
+      "startedAt": null,
+      "finishedAt": null,
+      "id": 4,
+      "status": "cancelled",
+      "total": 60
+    },
+    {
+      "source": "console",
+      "quickAddRunId": null,
+      "scope": {
+        "kind": "all"
+      },
+      "listed": true,
+      "auto": false,
+      "counts": {
+        "ready": 30,
+        "review": 11,
+        "blocked": 19,
+        "included": 30,
+        "noRule": 3,
+        "published": 0,
+        "skipped": 0,
+        "refused": 0,
+        "pending": 60
+      },
+      "switch": {
+        "status": null,
+        "listed": null,
+        "switched": 0,
+        "skipped": 0,
+        "error": null
+      },
+      "replacedBy": null,
+      "error": null,
+      "requestedBy": 1,
+      "requestedByName": "Rami K.",
+      "createdAt": "2026-10-31T12:00:00.000Z",
+      "preparedAt": "2026-10-31T12:01:00.000Z",
+      "startedAt": null,
+      "finishedAt": null,
+      "id": 5,
+      "status": "draft",
+      "total": 60
+    },
+    {
+      "source": "console",
+      "quickAddRunId": null,
+      "scope": {
+        "kind": "all"
+      },
+      "listed": true,
+      "auto": false,
+      "counts": {
+        "ready": 0,
+        "review": 0,
+        "blocked": 0,
+        "included": 0,
+        "noRule": 0,
+        "published": 0,
+        "skipped": 0,
+        "refused": 0,
+        "pending": 8
+      },
+      "switch": {
+        "status": null,
+        "listed": null,
+        "switched": 0,
+        "skipped": 0,
+        "error": null
+      },
+      "replacedBy": null,
+      "error": "The preview was not finished. Start a new one.",
+      "requestedBy": 1,
+      "requestedByName": "Rami K.",
+      "createdAt": "2026-10-30T12:00:00.000Z",
+      "preparedAt": null,
+      "startedAt": null,
+      "finishedAt": null,
+      "id": 6,
+      "status": "failed",
+      "total": 8
+    },
+    {
+      "source": "quick_add",
+      "quickAddRunId": 2,
+      "scope": {
+        "kind": "quickAddRun",
+        "runId": 2
+      },
+      "listed": true,
+      "auto": true,
+      "counts": {
+        "ready": 5,
+        "review": 2,
+        "blocked": 0,
+        "included": 5,
+        "noRule": 0,
+        "published": 5,
+        "skipped": 2,
+        "refused": 0,
+        "pending": 0
+      },
+      "switch": {
+        "status": null,
+        "listed": null,
+        "switched": 0,
+        "skipped": 0,
+        "error": null
+      },
+      "replacedBy": null,
+      "error": null,
+      "requestedBy": null,
+      "requestedByName": null,
+      "createdAt": "2026-10-30T12:00:00.000Z",
+      "preparedAt": "2026-10-30T12:01:00.000Z",
+      "startedAt": "2026-10-25T12:00:00.000Z",
+      "finishedAt": "2026-10-25T12:01:30.000Z",
+      "id": 7,
+      "status": "succeeded",
+      "total": 7
+    }
+  ]
+}

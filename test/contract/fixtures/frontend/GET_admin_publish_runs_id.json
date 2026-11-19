@@ -1,0 +1,44 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "source": "console",
+    "quickAddRunId": null,
+    "scope": {
+      "kind": "all"
+    },
+    "listed": true,
+    "auto": false,
+    "counts": {
+      "ready": 9,
+      "review": 3,
+      "blocked": 0,
+      "included": 10,
+      "noRule": 0,
+      "published": 9,
+      "skipped": 2,
+      "refused": 1,
+      "pending": 0
+    },
+    "switch": {
+      "status": null,
+      "listed": null,
+      "switched": 0,
+      "skipped": 0,
+      "error": null
+    },
+    "replacedBy": null,
+    "error": null,
+    "requestedBy": 1,
+    "requestedByName": "Rami K.",
+    "createdAt": "2026-10-25T12:00:00.000Z",
+    "preparedAt": "2026-10-25T12:01:00.000Z",
+    "startedAt": "2026-10-25T12:00:00.000Z",
+    "finishedAt": "2026-10-25T12:01:30.000Z",
+    "id": 1,
+    "status": "succeeded",
+    "total": 12
+  }
+}

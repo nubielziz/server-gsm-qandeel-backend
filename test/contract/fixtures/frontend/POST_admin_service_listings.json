@@ -29,6 +29,9 @@
       "cost": "8.5000"
     },
     "retailPrice": null,
+    "retailPriceSource": null,
+    "retailPriceRule": null,
+    "retailPriceWaiting": false,
     "floorPrice": "10.2900",
     "marginPct": null,
     "orders30d": 0,

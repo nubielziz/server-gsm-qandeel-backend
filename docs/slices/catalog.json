@@ -12,7 +12,7 @@
       "client": 3,
       "admin": 44
     },
-    "frontendCalled": 37
+    "frontendCalled": 44
   },
   "stages": [
     4,
@@ -1056,7 +1056,7 @@
       "description": "Service price for each merchant group.",
       "frontend": {
         "file": "src/features/services/api/serviceParts.ts",
-        "line": 44,
+        "line": 46,
         "fn": "replaceServiceGroupPrices"
       }
     },
@@ -1718,7 +1718,11 @@
       },
       "module": "catalog",
       "description": "The retail price rules that price the shop from the cost, with the services that follow each.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/retailPricing.ts",
+        "line": 31,
+        "fn": "listRetailPriceRules"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B229"
@@ -1753,7 +1757,11 @@
       },
       "module": "catalog",
       "description": "Create a retail price rule (general, per service type or per category).",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/retailPricing.ts",
+        "line": 44,
+        "fn": "createRetailPriceRule"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B229"
@@ -1788,7 +1796,11 @@
       },
       "module": "catalog",
       "description": "Change the figures of a retail price rule, or switch it off and on.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/retailPricing.ts",
+        "line": 55,
+        "fn": "updateRetailPriceRule"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B229"
@@ -1823,7 +1835,11 @@
       },
       "module": "catalog",
       "description": "Delete a retail price rule (the rule keeps its row for the history).",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/retailPricing.ts",
+        "line": 68,
+        "fn": "deleteRetailPriceRule"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B229"
@@ -1859,7 +1875,11 @@
       },
       "module": "catalog",
       "description": "What a change of the retail price rules would do to the prices that follow them; nothing is stored.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/retailPricing.ts",
+        "line": 78,
+        "fn": "previewRetailPriceRule"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B229"
@@ -1894,7 +1914,11 @@
       },
       "module": "catalog",
       "description": "The retail prices the follow pass moved, the moves that wait for staff, and the prices that stopped following a rule.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/retailPricing.ts",
+        "line": 91,
+        "fn": "listRetailPriceChanges"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B230"
@@ -1931,7 +1955,11 @@
       },
       "module": "catalog",
       "description": "Answer waiting price proposals: approve the figure shown, or keep the current price as a typed one.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/storefront/api/retailPricing.ts",
+        "line": 105,
+        "fn": "resolveRetailPriceChanges"
+      },
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B230"

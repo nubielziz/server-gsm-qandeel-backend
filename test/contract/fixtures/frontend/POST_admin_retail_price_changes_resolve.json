@@ -1,0 +1,16 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "applied": 0,
+    "kept": 0,
+    "skipped": [
+      {
+        "id": 1,
+        "reason": "not_waiting"
+      }
+    ]
+  }
+}

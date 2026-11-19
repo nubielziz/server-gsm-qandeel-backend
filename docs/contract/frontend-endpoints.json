@@ -1,7 +1,7 @@
 {
  "generatedBy": "scripts/extract-frontend-contract.mjs",
  "frontend": "../frontend-admin",
- "count": 324,
+ "count": 340,
  "endpoints": [
   {
    "key": "DELETE /admin/alert-rules/:id",
@@ -541,6 +541,47 @@
    "fn": "deleteReplyTemplate",
    "file": "src/features/support/api/templates.ts",
    "line": 65,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "void",
+   "returns": {
+    "type": "undefined"
+   }
+  },
+  {
+   "key": "DELETE /admin/retail-price-rules/:id",
+   "fn": "deleteRetailPriceRule",
+   "file": "src/features/storefront/api/retailPricing.ts",
+   "line": 70,
    "params": [
     {
      "name": "id",
@@ -13855,6 +13896,889 @@
    }
   },
   {
+   "key": "GET /admin/publish-runs",
+   "fn": "listPublishRuns",
+   "file": "src/features/storefront/api/publish.ts",
+   "line": 47,
+   "params": [
+    {
+     "name": "query",
+     "optional": true,
+     "typeText": "ListQuery",
+     "shape": {
+      "object": {
+       "start": {
+        "type": "number",
+        "optional": true
+       },
+       "end": {
+        "type": "number",
+        "optional": true
+       },
+       "sort": {
+        "array": {
+         "type": "string"
+        },
+        "optional": true
+       },
+       "order": {
+        "array": {
+         "enum": [
+          "asc",
+          "desc"
+         ]
+        },
+        "optional": true
+       },
+       "q": {
+        "type": "string",
+        "optional": true
+       },
+       "filters": {
+        "object": {},
+        "record": {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "type": "number"
+          },
+          {
+           "array": {
+            "anyOf": [
+             {
+              "type": "string"
+             },
+             {
+              "type": "number"
+             },
+             {
+              "type": "boolean"
+             }
+            ]
+           }
+          },
+          {
+           "type": "boolean"
+          }
+         ],
+         "undefinable": true
+        },
+        "optional": true
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "ListResult<PublishRun>",
+   "returns": {
+    "object": {
+     "data": {
+      "array": {
+       "object": {
+        "id": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "status": {
+         "enum": [
+          "queued",
+          "failed",
+          "running",
+          "succeeded",
+          "draft",
+          "cancelled",
+          "preparing"
+         ]
+        },
+        "source": {
+         "enum": [
+          "console",
+          "quick_add"
+         ]
+        },
+        "quickAddRunId": {
+         "type": "number",
+         "nullable": true,
+         "alias": "Id"
+        },
+        "scope": {
+         "anyOf": [
+          {
+           "object": {
+            "kind": {
+             "const": "services"
+            },
+            "serviceIds": {
+             "array": {
+              "type": "number",
+              "alias": "Id"
+             }
+            }
+           }
+          },
+          {
+           "object": {
+            "kind": {
+             "const": "category"
+            },
+            "categoryId": {
+             "type": "number",
+             "alias": "Id"
+            }
+           }
+          },
+          {
+           "object": {
+            "kind": {
+             "const": "supplier"
+            },
+            "supplierId": {
+             "type": "number",
+             "alias": "Id"
+            }
+           }
+          },
+          {
+           "object": {
+            "kind": {
+             "const": "quickAddRun"
+            },
+            "runId": {
+             "type": "number",
+             "alias": "Id"
+            }
+           }
+          },
+          {
+           "object": {
+            "kind": {
+             "const": "run"
+            },
+            "runId": {
+             "type": "number",
+             "alias": "Id"
+            }
+           }
+          },
+          {
+           "object": {
+            "kind": {
+             "const": "all"
+            }
+           }
+          }
+         ]
+        },
+        "listed": {
+         "type": "boolean"
+        },
+        "auto": {
+         "type": "boolean"
+        },
+        "total": {
+         "type": "number"
+        },
+        "counts": {
+         "object": {
+          "ready": {
+           "type": "number"
+          },
+          "review": {
+           "type": "number"
+          },
+          "blocked": {
+           "type": "number"
+          },
+          "included": {
+           "type": "number"
+          },
+          "noRule": {
+           "type": "number"
+          },
+          "published": {
+           "type": "number"
+          },
+          "skipped": {
+           "type": "number"
+          },
+          "refused": {
+           "type": "number"
+          },
+          "pending": {
+           "type": "number"
+          }
+         }
+        },
+        "switch": {
+         "object": {
+          "status": {
+           "enum": [
+            "queued",
+            "failed",
+            "running",
+            "done"
+           ],
+           "nullable": true
+          },
+          "listed": {
+           "type": "boolean",
+           "nullable": true
+          },
+          "switched": {
+           "type": "number"
+          },
+          "skipped": {
+           "type": "number"
+          },
+          "error": {
+           "type": "string",
+           "nullable": true
+          }
+         }
+        },
+        "replacedBy": {
+         "type": "number",
+         "nullable": true,
+         "alias": "Id"
+        },
+        "error": {
+         "type": "string",
+         "nullable": true
+        },
+        "requestedBy": {
+         "type": "number",
+         "nullable": true,
+         "alias": "Id"
+        },
+        "requestedByName": {
+         "type": "string",
+         "nullable": true
+        },
+        "createdAt": {
+         "type": "string",
+         "alias": "IsoDateTime"
+        },
+        "preparedAt": {
+         "type": "string",
+         "nullable": true,
+         "alias": "IsoDateTime"
+        },
+        "startedAt": {
+         "type": "string",
+         "nullable": true,
+         "alias": "IsoDateTime"
+        },
+        "finishedAt": {
+         "type": "string",
+         "nullable": true,
+         "alias": "IsoDateTime"
+        }
+       }
+      }
+     },
+     "total": {
+      "type": "number"
+     }
+    }
+   }
+  },
+  {
+   "key": "GET /admin/publish-runs/:id",
+   "fn": "getPublishRun",
+   "file": "src/features/storefront/api/publish.ts",
+   "line": 55,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "PublishRun",
+   "returns": {
+    "object": {
+     "id": {
+      "type": "number",
+      "alias": "Id"
+     },
+     "status": {
+      "enum": [
+       "queued",
+       "failed",
+       "running",
+       "succeeded",
+       "draft",
+       "cancelled",
+       "preparing"
+      ]
+     },
+     "source": {
+      "enum": [
+       "console",
+       "quick_add"
+      ]
+     },
+     "quickAddRunId": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "scope": {
+      "anyOf": [
+       {
+        "object": {
+         "kind": {
+          "const": "services"
+         },
+         "serviceIds": {
+          "array": {
+           "type": "number",
+           "alias": "Id"
+          }
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "category"
+         },
+         "categoryId": {
+          "type": "number",
+          "alias": "Id"
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "supplier"
+         },
+         "supplierId": {
+          "type": "number",
+          "alias": "Id"
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "quickAddRun"
+         },
+         "runId": {
+          "type": "number",
+          "alias": "Id"
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "run"
+         },
+         "runId": {
+          "type": "number",
+          "alias": "Id"
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "all"
+         }
+        }
+       }
+      ]
+     },
+     "listed": {
+      "type": "boolean"
+     },
+     "auto": {
+      "type": "boolean"
+     },
+     "total": {
+      "type": "number"
+     },
+     "counts": {
+      "object": {
+       "ready": {
+        "type": "number"
+       },
+       "review": {
+        "type": "number"
+       },
+       "blocked": {
+        "type": "number"
+       },
+       "included": {
+        "type": "number"
+       },
+       "noRule": {
+        "type": "number"
+       },
+       "published": {
+        "type": "number"
+       },
+       "skipped": {
+        "type": "number"
+       },
+       "refused": {
+        "type": "number"
+       },
+       "pending": {
+        "type": "number"
+       }
+      }
+     },
+     "switch": {
+      "object": {
+       "status": {
+        "enum": [
+         "queued",
+         "failed",
+         "running",
+         "done"
+        ],
+        "nullable": true
+       },
+       "listed": {
+        "type": "boolean",
+        "nullable": true
+       },
+       "switched": {
+        "type": "number"
+       },
+       "skipped": {
+        "type": "number"
+       },
+       "error": {
+        "type": "string",
+        "nullable": true
+       }
+      }
+     },
+     "replacedBy": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "error": {
+      "type": "string",
+      "nullable": true
+     },
+     "requestedBy": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "requestedByName": {
+      "type": "string",
+      "nullable": true
+     },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     },
+     "preparedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "startedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "finishedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     }
+    }
+   }
+  },
+  {
+   "key": "GET /admin/publish-runs/:id/items",
+   "fn": "listPublishItems",
+   "file": "src/features/storefront/api/publish.ts",
+   "line": 65,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "query",
+     "optional": true,
+     "typeText": "ListQuery",
+     "shape": {
+      "object": {
+       "start": {
+        "type": "number",
+        "optional": true
+       },
+       "end": {
+        "type": "number",
+        "optional": true
+       },
+       "sort": {
+        "array": {
+         "type": "string"
+        },
+        "optional": true
+       },
+       "order": {
+        "array": {
+         "enum": [
+          "asc",
+          "desc"
+         ]
+        },
+        "optional": true
+       },
+       "q": {
+        "type": "string",
+        "optional": true
+       },
+       "filters": {
+        "object": {},
+        "record": {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "type": "number"
+          },
+          {
+           "array": {
+            "anyOf": [
+             {
+              "type": "string"
+             },
+             {
+              "type": "number"
+             },
+             {
+              "type": "boolean"
+             }
+            ]
+           }
+          },
+          {
+           "type": "boolean"
+          }
+         ],
+         "undefinable": true
+        },
+        "optional": true
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "ListResult<PublishItem>",
+   "returns": {
+    "object": {
+     "data": {
+      "array": {
+       "object": {
+        "id": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "serviceId": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "service": {
+         "object": {
+          "id": {
+           "type": "number",
+           "alias": "Id"
+          },
+          "name": {
+           "type": "string"
+          },
+          "code": {
+           "type": "string"
+          },
+          "type": {
+           "enum": [
+            "imei",
+            "server",
+            "remote",
+            "file"
+           ]
+          },
+          "categoryName": {
+           "type": "string"
+          }
+         }
+        },
+        "title": {
+         "type": "string"
+        },
+        "slug": {
+         "type": "string"
+        },
+        "brand": {
+         "type": "string"
+        },
+        "carrier": {
+         "type": "string"
+        },
+        "country": {
+         "type": "string"
+        },
+        "detected": {
+         "object": {
+          "title": {
+           "type": "string"
+          },
+          "slug": {
+           "type": "string"
+          },
+          "brand": {
+           "type": "string"
+          },
+          "brandKind": {
+           "enum": [
+            "device",
+            "tool",
+            "app"
+           ],
+           "nullable": true
+          },
+          "carrier": {
+           "type": "string"
+          },
+          "country": {
+           "type": "string"
+          }
+         }
+        },
+        "edited": {
+         "type": "boolean"
+        },
+        "cost": {
+         "type": "string",
+         "alias": "Money"
+        },
+        "floorPrice": {
+         "type": "string",
+         "alias": "Money"
+        },
+        "rule": {
+         "object": {
+          "id": {
+           "type": "number",
+           "alias": "Id"
+          },
+          "label": {
+           "type": "string"
+          }
+         },
+         "nullable": true
+        },
+        "rulePrice": {
+         "type": "string",
+         "nullable": true,
+         "alias": "Money"
+        },
+        "priceMode": {
+         "enum": [
+          "manual",
+          "rule",
+          "keep"
+         ]
+        },
+        "existingPrice": {
+         "type": "string",
+         "nullable": true,
+         "alias": "Money"
+        },
+        "replacesPrice": {
+         "type": "string",
+         "nullable": true,
+         "alias": "Money"
+        },
+        "retailPrice": {
+         "type": "string",
+         "nullable": true,
+         "alias": "Money"
+        },
+        "marginPct": {
+         "type": "string",
+         "nullable": true,
+         "alias": "Decimal"
+        },
+        "state": {
+         "enum": [
+          "review",
+          "blocked",
+          "ready"
+         ]
+        },
+        "blockedReason": {
+         "enum": [
+          "already_listed",
+          "service_disabled",
+          "category_inactive",
+          "b2b_only",
+          "not_orderable",
+          "supplier_unavailable",
+          "title_missing",
+          "title_too_long",
+          "price_missing",
+          "below_floor",
+          "slug_taken"
+         ],
+         "nullable": true
+        },
+        "flags": {
+         "array": {
+          "enum": [
+           "title_long",
+           "duplicate_name",
+           "title_taken",
+           "quantity_text",
+           "multi_country",
+           "title_81_100",
+           "title_lacks_brand",
+           "brackets_repaired",
+           "marketing_kept",
+           "slug_suffixed",
+           "price_at_floor",
+           "no_brand",
+           "country_from_group",
+           "carrier_no_country",
+           "price_kept",
+           "no_rule",
+           "no_cost"
+          ]
+         }
+        },
+        "included": {
+         "type": "boolean"
+        },
+        "evaluatedAt": {
+         "type": "string",
+         "nullable": true,
+         "alias": "IsoDateTime"
+        },
+        "result": {
+         "enum": [
+          "refused",
+          "published",
+          "skipped"
+         ],
+         "nullable": true
+        },
+        "resultReason": {
+         "type": "string",
+         "nullable": true
+        },
+        "resultDetail": {
+         "type": "string",
+         "nullable": true
+        },
+        "listingId": {
+         "type": "number",
+         "nullable": true,
+         "alias": "Id"
+        },
+        "publishedPrice": {
+         "type": "string",
+         "nullable": true,
+         "alias": "Money"
+        },
+        "listingListed": {
+         "type": "boolean",
+         "nullable": true
+        }
+       }
+      }
+     },
+     "total": {
+      "type": "number"
+     }
+    }
+   }
+  },
+  {
    "key": "GET /admin/queues",
    "fn": "queuesBoardUrl",
    "file": "src/features/dashboard/api/dashboard.ts",
@@ -15292,6 +16216,382 @@
         }
        }
       }
+     }
+    }
+   }
+  },
+  {
+   "key": "GET /admin/retail-price-changes",
+   "fn": "listRetailPriceChanges",
+   "file": "src/features/storefront/api/retailPricing.ts",
+   "line": 93,
+   "params": [
+    {
+     "name": "query",
+     "optional": true,
+     "typeText": "ListQuery",
+     "shape": {
+      "object": {
+       "start": {
+        "type": "number",
+        "optional": true
+       },
+       "end": {
+        "type": "number",
+        "optional": true
+       },
+       "sort": {
+        "array": {
+         "type": "string"
+        },
+        "optional": true
+       },
+       "order": {
+        "array": {
+         "enum": [
+          "asc",
+          "desc"
+         ]
+        },
+        "optional": true
+       },
+       "q": {
+        "type": "string",
+        "optional": true
+       },
+       "filters": {
+        "object": {},
+        "record": {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "type": "number"
+          },
+          {
+           "array": {
+            "anyOf": [
+             {
+              "type": "string"
+             },
+             {
+              "type": "number"
+             },
+             {
+              "type": "boolean"
+             }
+            ]
+           }
+          },
+          {
+           "type": "boolean"
+          }
+         ],
+         "undefinable": true
+        },
+        "optional": true
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "ListResult<RetailPriceChange>",
+   "returns": {
+    "object": {
+     "data": {
+      "array": {
+       "object": {
+        "id": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "service": {
+         "object": {
+          "id": {
+           "type": "number",
+           "alias": "Id"
+          },
+          "name": {
+           "type": "string"
+          },
+          "code": {
+           "type": "string"
+          }
+         }
+        },
+        "kind": {
+         "enum": [
+          "followed",
+          "proposed",
+          "detached"
+         ]
+        },
+        "reason": {
+         "enum": [
+          "no_cost",
+          "cost_changed",
+          "rule_changed",
+          "floor_changed",
+          "cost_jump",
+          "changed_elsewhere"
+         ]
+        },
+        "oldPrice": {
+         "type": "string",
+         "alias": "Money"
+        },
+        "newPrice": {
+         "type": "string",
+         "nullable": true,
+         "alias": "Money"
+        },
+        "oldCost": {
+         "type": "string",
+         "alias": "Money"
+        },
+        "newCost": {
+         "type": "string",
+         "alias": "Money"
+        },
+        "rule": {
+         "object": {
+          "id": {
+           "type": "number",
+           "alias": "Id"
+          },
+          "label": {
+           "type": "string"
+          }
+         },
+         "nullable": true
+        },
+        "waiting": {
+         "type": "boolean"
+        },
+        "resolution": {
+         "enum": [
+          "applied",
+          "kept",
+          "superseded"
+         ],
+         "nullable": true
+        },
+        "resolvedAt": {
+         "type": "string",
+         "nullable": true,
+         "alias": "IsoDateTime"
+        },
+        "resolvedBy": {
+         "type": "number",
+         "nullable": true,
+         "alias": "Id"
+        },
+        "createdAt": {
+         "type": "string",
+         "alias": "IsoDateTime"
+        }
+       }
+      }
+     },
+     "total": {
+      "type": "number"
+     }
+    }
+   }
+  },
+  {
+   "key": "GET /admin/retail-price-rules",
+   "fn": "listRetailPriceRules",
+   "file": "src/features/storefront/api/retailPricing.ts",
+   "line": 33,
+   "params": [
+    {
+     "name": "query",
+     "optional": true,
+     "typeText": "ListQuery",
+     "shape": {
+      "object": {
+       "start": {
+        "type": "number",
+        "optional": true
+       },
+       "end": {
+        "type": "number",
+        "optional": true
+       },
+       "sort": {
+        "array": {
+         "type": "string"
+        },
+        "optional": true
+       },
+       "order": {
+        "array": {
+         "enum": [
+          "asc",
+          "desc"
+         ]
+        },
+        "optional": true
+       },
+       "q": {
+        "type": "string",
+        "optional": true
+       },
+       "filters": {
+        "object": {},
+        "record": {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "type": "number"
+          },
+          {
+           "array": {
+            "anyOf": [
+             {
+              "type": "string"
+             },
+             {
+              "type": "number"
+             },
+             {
+              "type": "boolean"
+             }
+            ]
+           }
+          },
+          {
+           "type": "boolean"
+          }
+         ],
+         "undefinable": true
+        },
+        "optional": true
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "ListResult<RetailPriceRule>",
+   "returns": {
+    "object": {
+     "data": {
+      "array": {
+       "object": {
+        "id": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "scope": {
+         "enum": [
+          "type",
+          "global",
+          "category"
+         ]
+        },
+        "serviceType": {
+         "enum": [
+          "imei",
+          "server",
+          "remote",
+          "file"
+         ],
+         "nullable": true
+        },
+        "categoryId": {
+         "type": "number",
+         "nullable": true,
+         "alias": "Id"
+        },
+        "categoryName": {
+         "type": "string",
+         "nullable": true
+        },
+        "percent": {
+         "type": "string",
+         "alias": "Decimal"
+        },
+        "fixed": {
+         "type": "string",
+         "alias": "Money"
+        },
+        "rounding": {
+         "enum": [
+          "ends_99",
+          "cent",
+          "step_0.05",
+          "step_0.10"
+         ]
+        },
+        "roundFrom": {
+         "type": "string",
+         "alias": "Money"
+        },
+        "autoFollowPercent": {
+         "type": "number"
+        },
+        "isActive": {
+         "type": "boolean"
+        },
+        "label": {
+         "type": "string"
+        },
+        "following": {
+         "type": "number"
+        },
+        "updatedAt": {
+         "type": "string",
+         "alias": "IsoDateTime"
+        }
+       }
+      }
+     },
+     "total": {
+      "type": "number"
      }
     }
    }
@@ -16884,6 +18184,28 @@
          "nullable": true,
          "alias": "Money"
         },
+        "retailPriceSource": {
+         "enum": [
+          "manual",
+          "rule"
+         ],
+         "nullable": true
+        },
+        "retailPriceRule": {
+         "object": {
+          "id": {
+           "type": "number",
+           "alias": "Id"
+          },
+          "label": {
+           "type": "string"
+          }
+         },
+         "nullable": true
+        },
+        "retailPriceWaiting": {
+         "type": "boolean"
+        },
         "floorPrice": {
          "type": "string",
          "alias": "Money"
@@ -17038,6 +18360,28 @@
       "type": "string",
       "nullable": true,
       "alias": "Money"
+     },
+     "retailPriceSource": {
+      "enum": [
+       "manual",
+       "rule"
+      ],
+      "nullable": true
+     },
+     "retailPriceRule": {
+      "object": {
+       "id": {
+        "type": "number",
+        "alias": "Id"
+       },
+       "label": {
+        "type": "string"
+       }
+      },
+      "nullable": true
+     },
+     "retailPriceWaiting": {
+      "type": "boolean"
      },
      "floorPrice": {
       "type": "string",
@@ -18730,7 +20074,7 @@
    "key": "GET /admin/suppliers/:id/quick-add/:runId",
    "fn": "getQuickAddRun",
    "file": "src/features/suppliers/api/quickAdd.ts",
-   "line": 35,
+   "line": 38,
    "params": [
     {
      "name": "id",
@@ -18804,6 +20148,13 @@
       "enum": [
        "active",
        "disabled"
+      ]
+     },
+     "publish": {
+      "enum": [
+       "none",
+       "listed",
+       "unlisted"
       ]
      },
      "status": {
@@ -18991,6 +20342,13 @@
         "enum": [
          "active",
          "disabled"
+        ]
+       },
+       "publish": {
+        "enum": [
+         "none",
+         "listed",
+         "unlisted"
         ]
        },
        "status": {
@@ -27615,6 +28973,320 @@
    }
   },
   {
+   "key": "PATCH /admin/publish-runs/:id/items/:itemId",
+   "fn": "updatePublishItem",
+   "file": "src/features/storefront/api/publish.ts",
+   "line": 79,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "itemId",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "UpdatePublishItemBody",
+     "shape": {
+      "object": {
+       "title": {
+        "type": "string",
+        "optional": true
+       },
+       "slug": {
+        "type": "string",
+        "optional": true
+       },
+       "brand": {
+        "type": "string",
+        "optional": true
+       },
+       "carrier": {
+        "type": "string",
+        "optional": true
+       },
+       "country": {
+        "type": "string",
+        "optional": true
+       },
+       "retailPrice": {
+        "type": "string",
+        "alias": "Money",
+        "optional": true
+       },
+       "pricing": {
+        "enum": [
+         "rule",
+         "keep"
+        ],
+        "optional": true
+       },
+       "included": {
+        "type": "boolean",
+        "optional": true
+       },
+       "reset": {
+        "const": true,
+        "optional": true
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "PublishItem",
+   "returns": {
+    "object": {
+     "id": {
+      "type": "number",
+      "alias": "Id"
+     },
+     "serviceId": {
+      "type": "number",
+      "alias": "Id"
+     },
+     "service": {
+      "object": {
+       "id": {
+        "type": "number",
+        "alias": "Id"
+       },
+       "name": {
+        "type": "string"
+       },
+       "code": {
+        "type": "string"
+       },
+       "type": {
+        "enum": [
+         "imei",
+         "server",
+         "remote",
+         "file"
+        ]
+       },
+       "categoryName": {
+        "type": "string"
+       }
+      }
+     },
+     "title": {
+      "type": "string"
+     },
+     "slug": {
+      "type": "string"
+     },
+     "brand": {
+      "type": "string"
+     },
+     "carrier": {
+      "type": "string"
+     },
+     "country": {
+      "type": "string"
+     },
+     "detected": {
+      "object": {
+       "title": {
+        "type": "string"
+       },
+       "slug": {
+        "type": "string"
+       },
+       "brand": {
+        "type": "string"
+       },
+       "brandKind": {
+        "enum": [
+         "device",
+         "tool",
+         "app"
+        ],
+        "nullable": true
+       },
+       "carrier": {
+        "type": "string"
+       },
+       "country": {
+        "type": "string"
+       }
+      }
+     },
+     "edited": {
+      "type": "boolean"
+     },
+     "cost": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "floorPrice": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "rule": {
+      "object": {
+       "id": {
+        "type": "number",
+        "alias": "Id"
+       },
+       "label": {
+        "type": "string"
+       }
+      },
+      "nullable": true
+     },
+     "rulePrice": {
+      "type": "string",
+      "nullable": true,
+      "alias": "Money"
+     },
+     "priceMode": {
+      "enum": [
+       "manual",
+       "rule",
+       "keep"
+      ]
+     },
+     "existingPrice": {
+      "type": "string",
+      "nullable": true,
+      "alias": "Money"
+     },
+     "replacesPrice": {
+      "type": "string",
+      "nullable": true,
+      "alias": "Money"
+     },
+     "retailPrice": {
+      "type": "string",
+      "nullable": true,
+      "alias": "Money"
+     },
+     "marginPct": {
+      "type": "string",
+      "nullable": true,
+      "alias": "Decimal"
+     },
+     "state": {
+      "enum": [
+       "review",
+       "blocked",
+       "ready"
+      ]
+     },
+     "blockedReason": {
+      "enum": [
+       "already_listed",
+       "service_disabled",
+       "category_inactive",
+       "b2b_only",
+       "not_orderable",
+       "supplier_unavailable",
+       "title_missing",
+       "title_too_long",
+       "price_missing",
+       "below_floor",
+       "slug_taken"
+      ],
+      "nullable": true
+     },
+     "flags": {
+      "array": {
+       "enum": [
+        "title_long",
+        "duplicate_name",
+        "title_taken",
+        "quantity_text",
+        "multi_country",
+        "title_81_100",
+        "title_lacks_brand",
+        "brackets_repaired",
+        "marketing_kept",
+        "slug_suffixed",
+        "price_at_floor",
+        "no_brand",
+        "country_from_group",
+        "carrier_no_country",
+        "price_kept",
+        "no_rule",
+        "no_cost"
+       ]
+      }
+     },
+     "included": {
+      "type": "boolean"
+     },
+     "evaluatedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "result": {
+      "enum": [
+       "refused",
+       "published",
+       "skipped"
+      ],
+      "nullable": true
+     },
+     "resultReason": {
+      "type": "string",
+      "nullable": true
+     },
+     "resultDetail": {
+      "type": "string",
+      "nullable": true
+     },
+     "listingId": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "publishedPrice": {
+      "type": "string",
+      "nullable": true,
+      "alias": "Money"
+     },
+     "listingListed": {
+      "type": "boolean",
+      "nullable": true
+     }
+    }
+   }
+  },
+  {
    "key": "PATCH /admin/reply-templates/:id",
    "fn": "updateReplyTemplate",
    "file": "src/features/support/api/templates.ts",
@@ -27720,6 +29392,154 @@
       "type": "number",
       "nullable": true,
       "alias": "Id"
+     },
+     "updatedAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     }
+    }
+   }
+  },
+  {
+   "key": "PATCH /admin/retail-price-rules/:id",
+   "fn": "updateRetailPriceRule",
+   "file": "src/features/storefront/api/retailPricing.ts",
+   "line": 57,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "UpdateRetailPriceRuleBody",
+     "shape": {
+      "object": {
+       "percent": {
+        "type": "string",
+        "alias": "Decimal",
+        "optional": true
+       },
+       "fixed": {
+        "type": "string",
+        "alias": "Money",
+        "optional": true
+       },
+       "rounding": {
+        "enum": [
+         "ends_99",
+         "cent",
+         "step_0.05",
+         "step_0.10"
+        ],
+        "optional": true
+       },
+       "roundFrom": {
+        "type": "string",
+        "alias": "Money",
+        "optional": true
+       },
+       "autoFollowPercent": {
+        "type": "number",
+        "optional": true
+       },
+       "isActive": {
+        "type": "boolean",
+        "optional": true
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "RetailPriceRule",
+   "returns": {
+    "object": {
+     "id": {
+      "type": "number",
+      "alias": "Id"
+     },
+     "scope": {
+      "enum": [
+       "type",
+       "global",
+       "category"
+      ]
+     },
+     "serviceType": {
+      "enum": [
+       "imei",
+       "server",
+       "remote",
+       "file"
+      ],
+      "nullable": true
+     },
+     "categoryId": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "categoryName": {
+      "type": "string",
+      "nullable": true
+     },
+     "percent": {
+      "type": "string",
+      "alias": "Decimal"
+     },
+     "fixed": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "rounding": {
+      "enum": [
+       "ends_99",
+       "cent",
+       "step_0.05",
+       "step_0.10"
+      ]
+     },
+     "roundFrom": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "autoFollowPercent": {
+      "type": "number"
+     },
+     "isActive": {
+      "type": "boolean"
+     },
+     "label": {
+      "type": "string"
+     },
+     "following": {
+      "type": "number"
      },
      "updatedAt": {
       "type": "string",
@@ -28268,6 +30088,10 @@
         "alias": "Money",
         "optional": true
        },
+       "retailPricing": {
+        "const": "rule",
+        "optional": true
+       },
        "publicTitle": {
         "type": "string",
         "optional": true
@@ -28386,6 +30210,28 @@
       "type": "string",
       "nullable": true,
       "alias": "Money"
+     },
+     "retailPriceSource": {
+      "enum": [
+       "manual",
+       "rule"
+      ],
+      "nullable": true
+     },
+     "retailPriceRule": {
+      "object": {
+       "id": {
+        "type": "number",
+        "alias": "Id"
+       },
+       "label": {
+        "type": "string"
+       }
+      },
+      "nullable": true
+     },
+     "retailPriceWaiting": {
+      "type": "boolean"
      },
      "floorPrice": {
       "type": "string",
@@ -38379,6 +40225,1219 @@
    }
   },
   {
+   "key": "POST /admin/publish-runs",
+   "fn": "createPublishRun",
+   "file": "src/features/storefront/api/publish.ts",
+   "line": 38,
+   "params": [
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "CreatePublishRunBody",
+     "shape": {
+      "object": {
+       "scope": {
+        "anyOf": [
+         {
+          "object": {
+           "kind": {
+            "const": "services"
+           },
+           "serviceIds": {
+            "array": {
+             "type": "number",
+             "alias": "Id"
+            }
+           }
+          }
+         },
+         {
+          "object": {
+           "kind": {
+            "const": "category"
+           },
+           "categoryId": {
+            "type": "number",
+            "alias": "Id"
+           }
+          }
+         },
+         {
+          "object": {
+           "kind": {
+            "const": "supplier"
+           },
+           "supplierId": {
+            "type": "number",
+            "alias": "Id"
+           }
+          }
+         },
+         {
+          "object": {
+           "kind": {
+            "const": "quickAddRun"
+           },
+           "runId": {
+            "type": "number",
+            "alias": "Id"
+           }
+          }
+         },
+         {
+          "object": {
+           "kind": {
+            "const": "run"
+           },
+           "runId": {
+            "type": "number",
+            "alias": "Id"
+           }
+          }
+         },
+         {
+          "object": {
+           "kind": {
+            "const": "all"
+           }
+          }
+         }
+        ]
+       },
+       "listed": {
+        "type": "boolean",
+        "optional": true
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "PublishRun",
+   "returns": {
+    "object": {
+     "id": {
+      "type": "number",
+      "alias": "Id"
+     },
+     "status": {
+      "enum": [
+       "queued",
+       "failed",
+       "running",
+       "succeeded",
+       "draft",
+       "cancelled",
+       "preparing"
+      ]
+     },
+     "source": {
+      "enum": [
+       "console",
+       "quick_add"
+      ]
+     },
+     "quickAddRunId": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "scope": {
+      "anyOf": [
+       {
+        "object": {
+         "kind": {
+          "const": "services"
+         },
+         "serviceIds": {
+          "array": {
+           "type": "number",
+           "alias": "Id"
+          }
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "category"
+         },
+         "categoryId": {
+          "type": "number",
+          "alias": "Id"
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "supplier"
+         },
+         "supplierId": {
+          "type": "number",
+          "alias": "Id"
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "quickAddRun"
+         },
+         "runId": {
+          "type": "number",
+          "alias": "Id"
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "run"
+         },
+         "runId": {
+          "type": "number",
+          "alias": "Id"
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "all"
+         }
+        }
+       }
+      ]
+     },
+     "listed": {
+      "type": "boolean"
+     },
+     "auto": {
+      "type": "boolean"
+     },
+     "total": {
+      "type": "number"
+     },
+     "counts": {
+      "object": {
+       "ready": {
+        "type": "number"
+       },
+       "review": {
+        "type": "number"
+       },
+       "blocked": {
+        "type": "number"
+       },
+       "included": {
+        "type": "number"
+       },
+       "noRule": {
+        "type": "number"
+       },
+       "published": {
+        "type": "number"
+       },
+       "skipped": {
+        "type": "number"
+       },
+       "refused": {
+        "type": "number"
+       },
+       "pending": {
+        "type": "number"
+       }
+      }
+     },
+     "switch": {
+      "object": {
+       "status": {
+        "enum": [
+         "queued",
+         "failed",
+         "running",
+         "done"
+        ],
+        "nullable": true
+       },
+       "listed": {
+        "type": "boolean",
+        "nullable": true
+       },
+       "switched": {
+        "type": "number"
+       },
+       "skipped": {
+        "type": "number"
+       },
+       "error": {
+        "type": "string",
+        "nullable": true
+       }
+      }
+     },
+     "replacedBy": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "error": {
+      "type": "string",
+      "nullable": true
+     },
+     "requestedBy": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "requestedByName": {
+      "type": "string",
+      "nullable": true
+     },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     },
+     "preparedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "startedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "finishedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     }
+    }
+   }
+  },
+  {
+   "key": "POST /admin/publish-runs/:id/apply",
+   "fn": "applyPublishRun",
+   "file": "src/features/storefront/api/publish.ts",
+   "line": 107,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "ApplyPublishRunBody",
+     "shape": {
+      "object": {
+       "listed": {
+        "type": "boolean",
+        "optional": true
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "PublishRun",
+   "returns": {
+    "object": {
+     "id": {
+      "type": "number",
+      "alias": "Id"
+     },
+     "status": {
+      "enum": [
+       "queued",
+       "failed",
+       "running",
+       "succeeded",
+       "draft",
+       "cancelled",
+       "preparing"
+      ]
+     },
+     "source": {
+      "enum": [
+       "console",
+       "quick_add"
+      ]
+     },
+     "quickAddRunId": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "scope": {
+      "anyOf": [
+       {
+        "object": {
+         "kind": {
+          "const": "services"
+         },
+         "serviceIds": {
+          "array": {
+           "type": "number",
+           "alias": "Id"
+          }
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "category"
+         },
+         "categoryId": {
+          "type": "number",
+          "alias": "Id"
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "supplier"
+         },
+         "supplierId": {
+          "type": "number",
+          "alias": "Id"
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "quickAddRun"
+         },
+         "runId": {
+          "type": "number",
+          "alias": "Id"
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "run"
+         },
+         "runId": {
+          "type": "number",
+          "alias": "Id"
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "all"
+         }
+        }
+       }
+      ]
+     },
+     "listed": {
+      "type": "boolean"
+     },
+     "auto": {
+      "type": "boolean"
+     },
+     "total": {
+      "type": "number"
+     },
+     "counts": {
+      "object": {
+       "ready": {
+        "type": "number"
+       },
+       "review": {
+        "type": "number"
+       },
+       "blocked": {
+        "type": "number"
+       },
+       "included": {
+        "type": "number"
+       },
+       "noRule": {
+        "type": "number"
+       },
+       "published": {
+        "type": "number"
+       },
+       "skipped": {
+        "type": "number"
+       },
+       "refused": {
+        "type": "number"
+       },
+       "pending": {
+        "type": "number"
+       }
+      }
+     },
+     "switch": {
+      "object": {
+       "status": {
+        "enum": [
+         "queued",
+         "failed",
+         "running",
+         "done"
+        ],
+        "nullable": true
+       },
+       "listed": {
+        "type": "boolean",
+        "nullable": true
+       },
+       "switched": {
+        "type": "number"
+       },
+       "skipped": {
+        "type": "number"
+       },
+       "error": {
+        "type": "string",
+        "nullable": true
+       }
+      }
+     },
+     "replacedBy": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "error": {
+      "type": "string",
+      "nullable": true
+     },
+     "requestedBy": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "requestedByName": {
+      "type": "string",
+      "nullable": true
+     },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     },
+     "preparedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "startedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "finishedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     }
+    }
+   }
+  },
+  {
+   "key": "POST /admin/publish-runs/:id/cancel",
+   "fn": "cancelPublishRun",
+   "file": "src/features/storefront/api/publish.ts",
+   "line": 116,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "body",
+     "optional": true,
+     "typeText": "CancelPublishRunBody",
+     "shape": {
+      "object": {},
+      "record": {
+       "type": "never"
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "PublishRun",
+   "returns": {
+    "object": {
+     "id": {
+      "type": "number",
+      "alias": "Id"
+     },
+     "status": {
+      "enum": [
+       "queued",
+       "failed",
+       "running",
+       "succeeded",
+       "draft",
+       "cancelled",
+       "preparing"
+      ]
+     },
+     "source": {
+      "enum": [
+       "console",
+       "quick_add"
+      ]
+     },
+     "quickAddRunId": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "scope": {
+      "anyOf": [
+       {
+        "object": {
+         "kind": {
+          "const": "services"
+         },
+         "serviceIds": {
+          "array": {
+           "type": "number",
+           "alias": "Id"
+          }
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "category"
+         },
+         "categoryId": {
+          "type": "number",
+          "alias": "Id"
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "supplier"
+         },
+         "supplierId": {
+          "type": "number",
+          "alias": "Id"
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "quickAddRun"
+         },
+         "runId": {
+          "type": "number",
+          "alias": "Id"
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "run"
+         },
+         "runId": {
+          "type": "number",
+          "alias": "Id"
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "all"
+         }
+        }
+       }
+      ]
+     },
+     "listed": {
+      "type": "boolean"
+     },
+     "auto": {
+      "type": "boolean"
+     },
+     "total": {
+      "type": "number"
+     },
+     "counts": {
+      "object": {
+       "ready": {
+        "type": "number"
+       },
+       "review": {
+        "type": "number"
+       },
+       "blocked": {
+        "type": "number"
+       },
+       "included": {
+        "type": "number"
+       },
+       "noRule": {
+        "type": "number"
+       },
+       "published": {
+        "type": "number"
+       },
+       "skipped": {
+        "type": "number"
+       },
+       "refused": {
+        "type": "number"
+       },
+       "pending": {
+        "type": "number"
+       }
+      }
+     },
+     "switch": {
+      "object": {
+       "status": {
+        "enum": [
+         "queued",
+         "failed",
+         "running",
+         "done"
+        ],
+        "nullable": true
+       },
+       "listed": {
+        "type": "boolean",
+        "nullable": true
+       },
+       "switched": {
+        "type": "number"
+       },
+       "skipped": {
+        "type": "number"
+       },
+       "error": {
+        "type": "string",
+        "nullable": true
+       }
+      }
+     },
+     "replacedBy": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "error": {
+      "type": "string",
+      "nullable": true
+     },
+     "requestedBy": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "requestedByName": {
+      "type": "string",
+      "nullable": true
+     },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     },
+     "preparedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "startedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "finishedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     }
+    }
+   }
+  },
+  {
+   "key": "POST /admin/publish-runs/:id/items/bulk",
+   "fn": "bulkUpdatePublishItems",
+   "file": "src/features/storefront/api/publish.ts",
+   "line": 93,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "BulkPublishItemsBody",
+     "shape": {
+      "object": {
+       "select": {
+        "anyOf": [
+         {
+          "object": {
+           "itemIds": {
+            "array": {
+             "type": "number",
+             "alias": "Id"
+            }
+           }
+          }
+         },
+         {
+          "object": {
+           "filter": {
+            "object": {
+             "state": {
+              "enum": [
+               "review",
+               "blocked",
+               "ready"
+              ],
+              "optional": true
+             },
+             "flag": {
+              "enum": [
+               "title_long",
+               "duplicate_name",
+               "title_taken",
+               "quantity_text",
+               "multi_country",
+               "title_81_100",
+               "title_lacks_brand",
+               "brackets_repaired",
+               "marketing_kept",
+               "slug_suffixed",
+               "price_at_floor",
+               "no_brand",
+               "country_from_group",
+               "carrier_no_country",
+               "price_kept",
+               "no_rule",
+               "no_cost"
+              ],
+              "optional": true
+             },
+             "brandKind": {
+              "enum": [
+               "device",
+               "tool",
+               "app"
+              ],
+              "optional": true
+             },
+             "included": {
+              "type": "boolean",
+              "optional": true
+             },
+             "q": {
+              "type": "string",
+              "optional": true
+             }
+            }
+           }
+          }
+         }
+        ]
+       },
+       "set": {
+        "object": {
+         "included": {
+          "type": "boolean",
+          "optional": true
+         },
+         "brand": {
+          "type": "string",
+          "optional": true
+         },
+         "carrier": {
+          "type": "string",
+          "optional": true
+         },
+         "country": {
+          "type": "string",
+          "optional": true
+         }
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "BulkPublishItemsResult",
+   "returns": {
+    "object": {
+     "changed": {
+      "type": "number"
+     },
+     "refused": {
+      "type": "number"
+     }
+    }
+   }
+  },
+  {
+   "key": "POST /admin/publish-runs/:id/listed",
+   "fn": "setPublishRunListed",
+   "file": "src/features/storefront/api/publish.ts",
+   "line": 130,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "SetPublishRunListedBody",
+     "shape": {
+      "object": {
+       "listed": {
+        "type": "boolean"
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "PublishRun",
+   "returns": {
+    "object": {
+     "id": {
+      "type": "number",
+      "alias": "Id"
+     },
+     "status": {
+      "enum": [
+       "queued",
+       "failed",
+       "running",
+       "succeeded",
+       "draft",
+       "cancelled",
+       "preparing"
+      ]
+     },
+     "source": {
+      "enum": [
+       "console",
+       "quick_add"
+      ]
+     },
+     "quickAddRunId": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "scope": {
+      "anyOf": [
+       {
+        "object": {
+         "kind": {
+          "const": "services"
+         },
+         "serviceIds": {
+          "array": {
+           "type": "number",
+           "alias": "Id"
+          }
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "category"
+         },
+         "categoryId": {
+          "type": "number",
+          "alias": "Id"
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "supplier"
+         },
+         "supplierId": {
+          "type": "number",
+          "alias": "Id"
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "quickAddRun"
+         },
+         "runId": {
+          "type": "number",
+          "alias": "Id"
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "run"
+         },
+         "runId": {
+          "type": "number",
+          "alias": "Id"
+         }
+        }
+       },
+       {
+        "object": {
+         "kind": {
+          "const": "all"
+         }
+        }
+       }
+      ]
+     },
+     "listed": {
+      "type": "boolean"
+     },
+     "auto": {
+      "type": "boolean"
+     },
+     "total": {
+      "type": "number"
+     },
+     "counts": {
+      "object": {
+       "ready": {
+        "type": "number"
+       },
+       "review": {
+        "type": "number"
+       },
+       "blocked": {
+        "type": "number"
+       },
+       "included": {
+        "type": "number"
+       },
+       "noRule": {
+        "type": "number"
+       },
+       "published": {
+        "type": "number"
+       },
+       "skipped": {
+        "type": "number"
+       },
+       "refused": {
+        "type": "number"
+       },
+       "pending": {
+        "type": "number"
+       }
+      }
+     },
+     "switch": {
+      "object": {
+       "status": {
+        "enum": [
+         "queued",
+         "failed",
+         "running",
+         "done"
+        ],
+        "nullable": true
+       },
+       "listed": {
+        "type": "boolean",
+        "nullable": true
+       },
+       "switched": {
+        "type": "number"
+       },
+       "skipped": {
+        "type": "number"
+       },
+       "error": {
+        "type": "string",
+        "nullable": true
+       }
+      }
+     },
+     "replacedBy": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "error": {
+      "type": "string",
+      "nullable": true
+     },
+     "requestedBy": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "requestedByName": {
+      "type": "string",
+      "nullable": true
+     },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     },
+     "preparedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "startedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "finishedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     }
+    }
+   }
+  },
+  {
    "key": "POST /admin/refunds/:id/approve",
    "fn": "approveRefund",
    "file": "src/features/refunds/api/refunds.ts",
@@ -39080,6 +42139,489 @@
      "updatedAt": {
       "type": "string",
       "alias": "IsoDateTime"
+     }
+    }
+   }
+  },
+  {
+   "key": "POST /admin/retail-price-changes/resolve",
+   "fn": "resolveRetailPriceChanges",
+   "file": "src/features/storefront/api/retailPricing.ts",
+   "line": 107,
+   "params": [
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "ResolveRetailPriceChangesBody",
+     "shape": {
+      "anyOf": [
+       {
+        "object": {
+         "action": {
+          "const": "apply"
+         },
+         "ids": {
+          "array": {
+           "type": "number",
+           "alias": "Id"
+          }
+         },
+         "seen": {
+          "array": {
+           "object": {
+            "id": {
+             "type": "number",
+             "alias": "Id"
+            },
+            "newPrice": {
+             "type": "string",
+             "nullable": true,
+             "alias": "Money"
+            }
+           }
+          }
+         }
+        }
+       },
+       {
+        "object": {
+         "action": {
+          "const": "keep"
+         },
+         "ids": {
+          "array": {
+           "type": "number",
+           "alias": "Id"
+          }
+         }
+        }
+       }
+      ]
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "ResolveRetailPriceChangesResult",
+   "returns": {
+    "object": {
+     "applied": {
+      "type": "number"
+     },
+     "kept": {
+      "type": "number"
+     },
+     "skipped": {
+      "array": {
+       "object": {
+        "id": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "reason": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "key": "POST /admin/retail-price-rules",
+   "fn": "createRetailPriceRule",
+   "file": "src/features/storefront/api/retailPricing.ts",
+   "line": 46,
+   "params": [
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "CreateRetailPriceRuleBody",
+     "shape": {
+      "object": {
+       "scope": {
+        "enum": [
+         "type",
+         "global",
+         "category"
+        ]
+       },
+       "serviceType": {
+        "enum": [
+         "imei",
+         "server",
+         "remote",
+         "file"
+        ],
+        "optional": true
+       },
+       "categoryId": {
+        "type": "number",
+        "alias": "Id",
+        "optional": true
+       },
+       "percent": {
+        "type": "string",
+        "alias": "Decimal"
+       },
+       "fixed": {
+        "type": "string",
+        "alias": "Money",
+        "optional": true
+       },
+       "rounding": {
+        "enum": [
+         "ends_99",
+         "cent",
+         "step_0.05",
+         "step_0.10"
+        ]
+       },
+       "roundFrom": {
+        "type": "string",
+        "alias": "Money",
+        "optional": true
+       },
+       "autoFollowPercent": {
+        "type": "number",
+        "optional": true
+       },
+       "isActive": {
+        "type": "boolean",
+        "optional": true
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "RetailPriceRule",
+   "returns": {
+    "object": {
+     "id": {
+      "type": "number",
+      "alias": "Id"
+     },
+     "scope": {
+      "enum": [
+       "type",
+       "global",
+       "category"
+      ]
+     },
+     "serviceType": {
+      "enum": [
+       "imei",
+       "server",
+       "remote",
+       "file"
+      ],
+      "nullable": true
+     },
+     "categoryId": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "categoryName": {
+      "type": "string",
+      "nullable": true
+     },
+     "percent": {
+      "type": "string",
+      "alias": "Decimal"
+     },
+     "fixed": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "rounding": {
+      "enum": [
+       "ends_99",
+       "cent",
+       "step_0.05",
+       "step_0.10"
+      ]
+     },
+     "roundFrom": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "autoFollowPercent": {
+      "type": "number"
+     },
+     "isActive": {
+      "type": "boolean"
+     },
+     "label": {
+      "type": "string"
+     },
+     "following": {
+      "type": "number"
+     },
+     "updatedAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     }
+    }
+   }
+  },
+  {
+   "key": "POST /admin/retail-price-rules/preview",
+   "fn": "previewRetailPriceRule",
+   "file": "src/features/storefront/api/retailPricing.ts",
+   "line": 80,
+   "params": [
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "PreviewRetailPriceRuleBody",
+     "shape": {
+      "object": {
+       "change": {
+        "anyOf": [
+         {
+          "object": {
+           "kind": {
+            "const": "create"
+           },
+           "rule": {
+            "object": {
+             "scope": {
+              "enum": [
+               "type",
+               "global",
+               "category"
+              ]
+             },
+             "serviceType": {
+              "enum": [
+               "imei",
+               "server",
+               "remote",
+               "file"
+              ],
+              "optional": true
+             },
+             "categoryId": {
+              "type": "number",
+              "alias": "Id",
+              "optional": true
+             },
+             "percent": {
+              "type": "string",
+              "alias": "Decimal"
+             },
+             "fixed": {
+              "type": "string",
+              "alias": "Money",
+              "optional": true
+             },
+             "rounding": {
+              "enum": [
+               "ends_99",
+               "cent",
+               "step_0.05",
+               "step_0.10"
+              ]
+             },
+             "roundFrom": {
+              "type": "string",
+              "alias": "Money",
+              "optional": true
+             },
+             "autoFollowPercent": {
+              "type": "number",
+              "optional": true
+             },
+             "isActive": {
+              "type": "boolean",
+              "optional": true
+             }
+            }
+           }
+          }
+         },
+         {
+          "object": {
+           "kind": {
+            "const": "update"
+           },
+           "id": {
+            "type": "number",
+            "alias": "Id"
+           },
+           "rule": {
+            "object": {
+             "percent": {
+              "type": "string",
+              "alias": "Decimal",
+              "optional": true
+             },
+             "fixed": {
+              "type": "string",
+              "alias": "Money",
+              "optional": true
+             },
+             "rounding": {
+              "enum": [
+               "ends_99",
+               "cent",
+               "step_0.05",
+               "step_0.10"
+              ],
+              "optional": true
+             },
+             "roundFrom": {
+              "type": "string",
+              "alias": "Money",
+              "optional": true
+             },
+             "autoFollowPercent": {
+              "type": "number",
+              "optional": true
+             },
+             "isActive": {
+              "type": "boolean",
+              "optional": true
+             }
+            }
+           }
+          }
+         },
+         {
+          "object": {
+           "kind": {
+            "const": "delete"
+           },
+           "id": {
+            "type": "number",
+            "alias": "Id"
+           }
+          }
+         }
+        ]
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "RetailRulePreview",
+   "returns": {
+    "object": {
+     "following": {
+      "type": "number"
+     },
+     "changes": {
+      "type": "number"
+     },
+     "raised": {
+      "type": "number"
+     },
+     "lowered": {
+      "type": "number"
+     },
+     "atFloor": {
+      "type": "number"
+     },
+     "noRule": {
+      "type": "number"
+     },
+     "lines": {
+      "array": {
+       "object": {
+        "serviceId": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "name": {
+         "type": "string"
+        },
+        "code": {
+         "type": "string"
+        },
+        "cost": {
+         "type": "string",
+         "alias": "Money"
+        },
+        "floorPrice": {
+         "type": "string",
+         "alias": "Money"
+        },
+        "currentPrice": {
+         "type": "string",
+         "alias": "Money"
+        },
+        "newPrice": {
+         "type": "string",
+         "nullable": true,
+         "alias": "Money"
+        },
+        "atFloor": {
+         "type": "boolean"
+        }
+       }
+      }
+     },
+     "truncated": {
+      "type": "boolean"
      }
     }
    }
@@ -39877,6 +43419,28 @@
       "nullable": true,
       "alias": "Money"
      },
+     "retailPriceSource": {
+      "enum": [
+       "manual",
+       "rule"
+      ],
+      "nullable": true
+     },
+     "retailPriceRule": {
+      "object": {
+       "id": {
+        "type": "number",
+        "alias": "Id"
+       },
+       "label": {
+        "type": "string"
+       }
+      },
+      "nullable": true
+     },
+     "retailPriceWaiting": {
+      "type": "boolean"
+     },
      "floorPrice": {
       "type": "string",
       "alias": "Money"
@@ -40039,6 +43603,28 @@
       "type": "string",
       "nullable": true,
       "alias": "Money"
+     },
+     "retailPriceSource": {
+      "enum": [
+       "manual",
+       "rule"
+      ],
+      "nullable": true
+     },
+     "retailPriceRule": {
+      "object": {
+       "id": {
+        "type": "number",
+        "alias": "Id"
+       },
+       "label": {
+        "type": "string"
+       }
+      },
+      "nullable": true
+     },
+     "retailPriceWaiting": {
+      "type": "boolean"
      },
      "floorPrice": {
       "type": "string",
@@ -41347,7 +44933,7 @@
    "key": "POST /admin/suppliers/:id/quick-add",
    "fn": "startQuickAdd",
    "file": "src/features/suppliers/api/quickAdd.ts",
-   "line": 25,
+   "line": 28,
    "params": [
     {
      "name": "id",
@@ -41375,6 +44961,14 @@
            "disabled"
           ],
           "optional": true
+         },
+         "publish": {
+          "object": {
+           "listed": {
+            "type": "boolean"
+           }
+          },
+          "optional": true
          }
         }
        },
@@ -41400,6 +44994,14 @@
            "active",
            "disabled"
           ],
+          "optional": true
+         },
+         "publish": {
+          "object": {
+           "listed": {
+            "type": "boolean"
+           }
+          },
           "optional": true
          }
         }
@@ -41461,6 +45063,13 @@
       "enum": [
        "active",
        "disabled"
+      ]
+     },
+     "publish": {
+      "enum": [
+       "none",
+       "listed",
+       "unlisted"
       ]
      },
      "status": {
@@ -43107,7 +46716,7 @@
    "key": "PUT /admin/services/:id/group-prices",
    "fn": "replaceServiceGroupPrices",
    "file": "src/features/services/api/serviceParts.ts",
-   "line": 46,
+   "line": 48,
    "params": [
     {
      "name": "id",
@@ -43137,6 +46746,11 @@
           }
          }
         }
+       },
+       "retailPriceSeen": {
+        "type": "string",
+        "nullable": true,
+        "alias": "Money"
        }
       }
      }
