@@ -134,6 +134,7 @@ export {
   CUSTOMER_MAIL_EVENT_KEYS,
   MERCHANT_MAIL_EVENT_KEYS,
   NotificationEventRegistry,
+  RETAIL_PRICES_FOLLOWED_EVENT,
   TELEGRAM_LINKED_EVENT,
   TELEGRAM_UNLINKED_EVENT,
 } from './notifications/notification-events';

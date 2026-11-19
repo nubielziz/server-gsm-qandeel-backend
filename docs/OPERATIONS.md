@@ -256,6 +256,11 @@ Keep a copy of the new list offline before you restart.
   request id and the queue and job name. It does not receive request bodies, headers, cookies, users, breadcrumbs, the host name, or
   e-mail addresses and long digit runs inside messages. To turn it off, remove the line and restart: with no DSN the SDK is never started.
 
+**Retail prices that follow a rule** (feature 31, decision 040). The worker moves them when the cost, the floor or a rule changes, at most once a
+minute and at least once an hour, and lists every move and every proposal under Storefront, Retail pricing. Once an hour at most it sends the counts to
+the ops recipients: `ALERTS_EMAIL_TO` for the email and `ALERTS_TELEGRAM_CHAT_ID` for Telegram. Without them the message is recorded as failed in the
+notification log with the reason, and the list in the console is the only notice.
+
 **Search engine** (feature 29, decision 038). The English search of the shop header and the results page runs on one Typesense node
 (`typesense` in `deploy/compose.prod.yaml`, pinned by digest, on the network `gsm` only: no published port, no Caddy route, never
 reachable from a browser). Postgres is the truth; the index holds only public, English, price-free documents and can be rebuilt at any

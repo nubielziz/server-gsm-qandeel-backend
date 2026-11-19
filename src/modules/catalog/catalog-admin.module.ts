@@ -1,6 +1,6 @@
 // The admin and portal routes of the catalog module (stage 4 and 5): merchant groups, service categories, services with their
-// custom fields, option lists and group prices, client prices, pricing rules, the bulk price change, the price resolver, the code
-// inventory and the merchant catalog. Separate from CatalogModule so a test app built without a database can leave it out while
+// custom fields, option lists and group prices, client prices, pricing rules, the retail price rules (feature 31), the bulk price
+// change, the price resolver, the code inventory, the merchant catalog and the retail price changes (feature 31). Separate from CatalogModule so a test app built without a database can leave it out while
 // ClientGroupDirectory and the resolver stay available.
 import { Module } from '@nestjs/common';
 import { BulkPriceAdminService } from './application/bulk-price-admin.service';
@@ -13,6 +13,9 @@ import { InventoryAdminService } from './application/inventory-admin.service';
 import { MerchantApiCatalog } from './application/merchant-api-catalog';
 import { PricingResolveService } from './application/pricing-resolve.service';
 import { PricingRuleAdminService } from './application/pricing-rule-admin.service';
+import { RetailFollowSteps } from './application/retail-follow-steps';
+import { RetailPriceChangesService } from './application/retail-price-changes.service';
+import { RetailPriceRuleAdminService } from './application/retail-price-rule-admin.service';
 import { ServiceAdminService } from './application/service-admin.service';
 import { ServicePartsService } from './application/service-parts.service';
 import { TacCatalogAdminService } from './application/tac-catalog-admin.service';
@@ -23,13 +26,16 @@ import { ClientPricesController } from './controllers/client-prices.controller';
 import { InventoryController } from './controllers/inventory.controller';
 import { PricingController } from './controllers/pricing.controller';
 import { PricingRulesController } from './controllers/pricing-rules.controller';
+import { RetailPriceChangesController } from './controllers/retail-price-changes.controller';
+import { RetailPriceRulesController } from './controllers/retail-price-rules.controller';
 import { ServicesController } from './controllers/services.controller';
 import { V1ServicesController } from './controllers/v1-services.controller';
 import { TacCatalogController } from './controllers/tac-catalog.controller';
 
 /**
  * Provides `/admin/client-groups`, `/admin/service-categories`, `/admin/services` (with `fields`, `options`, `group-prices` and
- * `bulk-price`), `/admin/client-prices`, `/admin/pricing-rules`, `/admin/pricing/resolve`, `/admin/inventory-codes`,
+ * `bulk-price`), `/admin/client-prices`, `/admin/pricing-rules`, `/admin/retail-price-rules` (with `preview`),
+ * `/admin/retail-price-changes` (with `resolve`), `/admin/pricing/resolve`, `/admin/inventory-codes`,
  * `/admin/services/:id/inventory/import`, the portal's `/client/services` and `/client/prices/export`, and the merchant's catalog over
  * REST v1 and Dhru (`/v1/services`, `/v1/services/:id`, `imeiservicelist`).
  *
@@ -45,6 +51,8 @@ import { TacCatalogController } from './controllers/tac-catalog.controller';
     PricingController,
     ClientPricesController,
     PricingRulesController,
+    RetailPriceRulesController,
+    RetailPriceChangesController,
     InventoryController,
     ClientCatalogController,
     V1ServicesController,
@@ -58,6 +66,9 @@ import { TacCatalogController } from './controllers/tac-catalog.controller';
     GroupPriceAdminService,
     ClientPriceAdminService,
     PricingRuleAdminService,
+    RetailPriceRuleAdminService,
+    RetailFollowSteps,
+    RetailPriceChangesService,
     BulkPriceAdminService,
     PricingResolveService,
     ClientCatalogService,

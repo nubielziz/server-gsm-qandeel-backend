@@ -36,6 +36,8 @@ import { OrderTrackingModule, OrdersAdminModule } from '../../src/modules/orders
 import { CheckoutModule, GrowthModule } from '../../src/modules/customers';
 import { ImeiCheckModule, RiskAdminModule } from '../../src/modules/risk';
 import {
+  PublishEngineModule,
+  PublishHttpModule,
   SearchHttpModule,
   StorefrontAdminModule,
   StorefrontContentModule,
@@ -138,6 +140,9 @@ const NEEDS_DATABASE_AND_CACHE = [
   StorefrontAdminModule,
   // Feature 29: the search routes read Postgres, the cache and the engine's client on every request.
   SearchHttpModule,
+  // Feature 31: the bulk publish's engine needs the database and the catalog's price version; its routes read Postgres.
+  PublishEngineModule,
+  PublishHttpModule,
   ImeiCheckModule,
   RiskAdminModule,
   CheckoutModule,

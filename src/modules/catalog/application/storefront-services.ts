@@ -4,6 +4,7 @@ import { Injectable } from '@nestjs/common';
 import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
 import type { ServiceFieldType, ServiceType } from '../db/schema';
+import { listingTitlesOf } from '../infra/foreign-reads.repository';
 import {
   type SellableFilter,
   countServicesByCategory,
@@ -52,6 +53,7 @@ export type { SellableFilter };
 /** A service as a buyer's own record names it: no price, no visibility rule. */
 export interface ServiceName {
   readonly id: number;
+  /** The title the service is published under, or its catalog name when it has no listing. */
   readonly name: string;
   readonly type: ServiceType;
   readonly deliveryTime: string;
@@ -216,7 +218,10 @@ export class StorefrontServices {
   }
 
   /**
-   * Reads the names of services whatever their state.
+   * Reads the names of services whatever their state, as the people who buy them know them.
+   *
+   * Why: a checkout and the records made from it must name what the shop showed: the listing's public title (a bulk publish cleans it
+   * from the supplier's name, feature 31), and only without a listing the catalog's name.
    *
    * @param db the database or a transaction
    * @param ids the service ids
@@ -224,8 +229,12 @@ export class StorefrontServices {
    */
   async names(db: DbExecutor, ids: readonly number[]): Promise<Map<number, ServiceName>> {
     const rows = await findServiceNames(db, ids);
+    const titles = await listingTitlesOf(db, ids);
     return new Map(
-      rows.map((row) => [row.id, { id: row.id, name: row.name, type: row.type, deliveryTime: row.deliveryTime }]),
+      rows.map((row) => [
+        row.id,
+        { id: row.id, name: titles.get(row.id) ?? row.name, type: row.type, deliveryTime: row.deliveryTime },
+      ]),
     );
   }
 

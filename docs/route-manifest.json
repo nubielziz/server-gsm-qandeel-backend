@@ -10,20 +10,20 @@
     "rowFlags": "the same files may add Turnstile to a public client or store map row (rowFlags, feature 24A); the endpoint then has turnstile true and rowFlag { file, spec }"
   },
   "counts": {
-    "rows": 375,
+    "rows": 391,
     "tables": 66,
     "scenarios": 13,
     "surfaces": 9,
     "moneyEvents": 13,
     "accounts": 14,
-    "endpoints": 483,
+    "endpoints": 499,
     "map": {
       "rows": 274,
       "endpoints": 382
     },
     "additions": {
-      "rows": 101,
-      "endpoints": 101
+      "rows": 117,
+      "endpoints": 117
     },
     "frontendRoutes": 324,
     "bySurface": {
@@ -40,8 +40,8 @@
         "endpoints": 66
       },
       "admin": {
-        "rows": 216,
-        "endpoints": 324
+        "rows": 232,
+        "endpoints": 340
       },
       "hooks": {
         "rows": 3,
@@ -70,8 +70,8 @@
         "endpoints": 74
       },
       "catalog": {
-        "rows": 21,
-        "endpoints": 43
+        "rows": 28,
+        "endpoints": 50
       },
       "orders": {
         "rows": 39,
@@ -98,8 +98,8 @@
         "endpoints": 33
       },
       "storefront": {
-        "rows": 37,
-        "endpoints": 48
+        "rows": 46,
+        "endpoints": 57
       },
       "risk": {
         "rows": 11,
@@ -16566,6 +16566,574 @@
         "spec": "B224"
       },
       "successStatus": 200
+    },
+    {
+      "key": "GET /admin/retail-price-rules",
+      "method": "GET",
+      "path": "/admin/retail-price-rules",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "The retail price rules that price the shop from the cost, with the services that follow each.",
+      "access": "staff-permission",
+      "permission": "pricing:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:read",
+      "stage": 31,
+      "tables": [
+        "retail_price_rules",
+        "retail_price_follows"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/retail-price-rules",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/retail-price-rules"
+      },
+      "module": "catalog",
+      "description": "The retail price rules that price the shop from the cost, with the services that follow each.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B229"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/retail-price-rules",
+      "method": "POST",
+      "path": "/admin/retail-price-rules",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "Create a retail price rule (general, per service type or per category).",
+      "access": "staff-permission",
+      "permission": "pricing:create",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:create",
+      "stage": 31,
+      "tables": [
+        "retail_price_rules",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/retail-price-rules",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/retail-price-rules"
+      },
+      "module": "catalog",
+      "description": "Create a retail price rule (general, per service type or per category).",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B229"
+      },
+      "successStatus": 201
+    },
+    {
+      "key": "PATCH /admin/retail-price-rules/:id",
+      "method": "PATCH",
+      "path": "/admin/retail-price-rules/:id",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "Change the figures of a retail price rule, or switch it off and on.",
+      "access": "staff-permission",
+      "permission": "pricing:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:update",
+      "stage": 31,
+      "tables": [
+        "retail_price_rules",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin PATCH /admin/retail-price-rules/:id",
+        "method": "PATCH",
+        "ops": null,
+        "path": "/admin/retail-price-rules/:id"
+      },
+      "module": "catalog",
+      "description": "Change the figures of a retail price rule, or switch it off and on.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B229"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "DELETE /admin/retail-price-rules/:id",
+      "method": "DELETE",
+      "path": "/admin/retail-price-rules/:id",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "Delete a retail price rule (the rule keeps its row for the history).",
+      "access": "staff-permission",
+      "permission": "pricing:delete",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:delete",
+      "stage": 31,
+      "tables": [
+        "retail_price_rules",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin DELETE /admin/retail-price-rules/:id",
+        "method": "DELETE",
+        "ops": null,
+        "path": "/admin/retail-price-rules/:id"
+      },
+      "module": "catalog",
+      "description": "Delete a retail price rule (the rule keeps its row for the history).",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B229"
+      },
+      "successStatus": 204
+    },
+    {
+      "key": "POST /admin/retail-price-rules/preview",
+      "method": "POST",
+      "path": "/admin/retail-price-rules/preview",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "What a change of the retail price rules would do to the prices that follow them; nothing is stored.",
+      "access": "staff-permission",
+      "permission": "pricing:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:read",
+      "stage": 31,
+      "tables": [
+        "retail_price_rules",
+        "retail_price_follows",
+        "services"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/retail-price-rules/preview",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/retail-price-rules/preview"
+      },
+      "module": "catalog",
+      "description": "What a change of the retail price rules would do to the prices that follow them; nothing is stored.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B229"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "GET /admin/retail-price-changes",
+      "method": "GET",
+      "path": "/admin/retail-price-changes",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "The retail prices the follow pass moved, the moves that wait for staff, and the prices that stopped following a rule.",
+      "access": "staff-permission",
+      "permission": "pricing:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:read",
+      "stage": 31,
+      "tables": [
+        "retail_price_changes",
+        "services"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/retail-price-changes",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/retail-price-changes"
+      },
+      "module": "catalog",
+      "description": "The retail prices the follow pass moved, the moves that wait for staff, and the prices that stopped following a rule.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B230"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/retail-price-changes/resolve",
+      "method": "POST",
+      "path": "/admin/retail-price-changes/resolve",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "Answer waiting price proposals: approve the figure shown, or keep the current price as a typed one.",
+      "access": "staff-permission",
+      "permission": "pricing:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:update",
+      "stage": 31,
+      "tables": [
+        "retail_price_changes",
+        "retail_price_follows",
+        "service_group_prices",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/retail-price-changes/resolve",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/retail-price-changes/resolve"
+      },
+      "module": "catalog",
+      "description": "Answer waiting price proposals: approve the figure shown, or keep the current price as a typed one.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B230"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/publish-runs",
+      "method": "POST",
+      "path": "/admin/publish-runs",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "Prepare a draft of services to put on the shop in bulk (a preview that changes nothing), or check an earlier one again.",
+      "access": "staff-permission",
+      "permission": "storefront:create",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:create",
+      "stage": 31,
+      "tables": [
+        "listing_publish_runs",
+        "outbox_events",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/publish-runs",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/publish-runs"
+      },
+      "module": "storefront",
+      "description": "Prepare a draft of services to put on the shop in bulk (a preview that changes nothing), or check an earlier one again.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B228"
+      },
+      "successStatus": 202
+    },
+    {
+      "key": "GET /admin/publish-runs",
+      "method": "GET",
+      "path": "/admin/publish-runs",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "List the bulk publish runs, newest first.",
+      "access": "staff-permission",
+      "permission": "storefront:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:read",
+      "stage": 31,
+      "tables": [
+        "listing_publish_runs",
+        "listing_publish_items",
+        "staff_users"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/publish-runs",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/publish-runs"
+      },
+      "module": "storefront",
+      "description": "List the bulk publish runs, newest first.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B228"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "GET /admin/publish-runs/:id",
+      "method": "GET",
+      "path": "/admin/publish-runs/:id",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "Show one bulk publish run with its counts and its progress.",
+      "access": "staff-permission",
+      "permission": "storefront:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:read",
+      "stage": 31,
+      "tables": [
+        "listing_publish_runs",
+        "listing_publish_items",
+        "staff_users"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/publish-runs/:id",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/publish-runs/:id"
+      },
+      "module": "storefront",
+      "description": "Show one bulk publish run with its counts and its progress.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B228"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "GET /admin/publish-runs/:id/items",
+      "method": "GET",
+      "path": "/admin/publish-runs/:id/items",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "List the rows of a bulk publish run: what was detected, what will be published, the price and the result.",
+      "access": "staff-permission",
+      "permission": "storefront:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:read",
+      "stage": 31,
+      "tables": [
+        "listing_publish_items",
+        "services",
+        "service_listings"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/publish-runs/:id/items",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/publish-runs/:id/items"
+      },
+      "module": "storefront",
+      "description": "List the rows of a bulk publish run: what was detected, what will be published, the price and the result.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B228"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "PATCH /admin/publish-runs/:id/items/:itemId",
+      "method": "PATCH",
+      "path": "/admin/publish-runs/:id/items/:itemId",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "Edit one row of a publish draft (title, address, facts, price, tick, or back to what was detected); a price key also needs storefront:update.",
+      "access": "staff-permission",
+      "permission": "storefront:create",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:create",
+      "stage": 31,
+      "tables": [
+        "listing_publish_items"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin PATCH /admin/publish-runs/:id/items/:itemId",
+        "method": "PATCH",
+        "ops": null,
+        "path": "/admin/publish-runs/:id/items/:itemId"
+      },
+      "module": "storefront",
+      "description": "Edit one row of a publish draft (title, address, facts, price, tick, or back to what was detected); a price key also needs storefront:update.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B228"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/publish-runs/:id/items/bulk",
+      "method": "POST",
+      "path": "/admin/publish-runs/:id/items/bulk",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "Change the tick or the brand, carrier or country of many rows of a publish draft, picked by id or by a filter.",
+      "access": "staff-permission",
+      "permission": "storefront:create",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:create",
+      "stage": 31,
+      "tables": [
+        "listing_publish_items"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/publish-runs/:id/items/bulk",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/publish-runs/:id/items/bulk"
+      },
+      "module": "storefront",
+      "description": "Change the tick or the brand, carrier or country of many rows of a publish draft, picked by id or by a filter.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B228"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/publish-runs/:id/apply",
+      "method": "POST",
+      "path": "/admin/publish-runs/:id/apply",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "Publish the ticked rows of a draft, or continue a run that stopped.",
+      "access": "staff-permission",
+      "permission": "storefront:publish",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:publish",
+      "stage": 31,
+      "tables": [
+        "listing_publish_runs",
+        "listing_publish_items",
+        "outbox_events",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/publish-runs/:id/apply",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/publish-runs/:id/apply"
+      },
+      "module": "storefront",
+      "description": "Publish the ticked rows of a draft, or continue a run that stopped.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B228"
+      },
+      "successStatus": 202
+    },
+    {
+      "key": "POST /admin/publish-runs/:id/cancel",
+      "method": "POST",
+      "path": "/admin/publish-runs/:id/cancel",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "Discard a preview, or stop a run that is publishing (which also needs storefront:publish).",
+      "access": "staff-permission",
+      "permission": "storefront:create",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:create",
+      "stage": 31,
+      "tables": [
+        "listing_publish_runs",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/publish-runs/:id/cancel",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/publish-runs/:id/cancel"
+      },
+      "module": "storefront",
+      "description": "Discard a preview, or stop a run that is publishing (which also needs storefront:publish).",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B228"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/publish-runs/:id/listed",
+      "method": "POST",
+      "path": "/admin/publish-runs/:id/listed",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "storefront",
+      "descriptionAr": "Take everything a finished run published off the shop, or put it back.",
+      "access": "staff-permission",
+      "permission": "storefront:publish",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "storefront:publish",
+      "stage": 31,
+      "tables": [
+        "listing_publish_runs",
+        "outbox_events",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/publish-runs/:id/listed",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/publish-runs/:id/listed"
+      },
+      "module": "storefront",
+      "description": "Take everything a finished run published off the shop, or put it back.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B228"
+      },
+      "successStatus": 202
     },
     {
       "key": "GET /admin/payment-gateway-presets",

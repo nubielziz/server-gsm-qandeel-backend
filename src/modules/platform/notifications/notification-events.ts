@@ -72,7 +72,10 @@ const CUSTOMER_SAMPLE = {
   expiresAt: '2026-11-01 11:00 UTC',
 } as const;
 
-/** Sample data of the staff events: an alert of a made-up rule, the way the messages word it (feature 12b). */
+/**
+ * Sample data of the staff events: an alert of a made-up rule, the way the messages word it (feature 12b), and the counts of the
+ * hourly message about the shop's retail prices (feature 31).
+ */
 const STAFF_SAMPLE = {
   ruleName: 'Supplier timeouts',
   severity: 'critical',
@@ -81,6 +84,10 @@ const STAFF_SAMPLE = {
   threshold: '20%',
   subject: 'Supplier Bosphorus Unlock',
   detail: 'The limit is above 20% over 3 min.',
+  changed: '12',
+  waiting: '2',
+  detached: '1',
+  link: 'https://console.example.com/storefront?tab=pricing',
 } as const;
 
 /** Picks the samples of the listed variables; a variable with no sample is a programming error that the unit test catches. */
@@ -164,10 +171,14 @@ export const TELEGRAM_LINKED_EVENT = 'telegram.linked';
 /** The event of the bot's answer when a merchant sends `/stop`. */
 export const TELEGRAM_UNLINKED_EVENT = 'telegram.unlinked';
 
+/** The staff event of the hourly message about following retail prices (feature 31, plan section 6.4). */
+export const RETAIL_PRICES_FOLLOWED_EVENT = 'retail.prices_followed';
+
 /**
  * The events built into the platform: the merchant events 12a wires now, the four transactional customer account mails of
  * feature 14b (sign-in link, password reset, invitation, email verification), the customer events the console's templates list
- * (their producers are the storefront money flows of feature 16, support and recovery), and the two staff events of the alerts (feature 12b).
+ * (their producers are the storefront money flows of feature 16, support and recovery), the two staff events of the alerts (feature 12b)
+ * and the staff event of the shop's following retail prices (feature 31).
  *
  * Why: "a registry entry for each, with its default template seeded" (brief 12a); the customer events exist so the console's
  * Customer emails tab can be edited before the storefront sends them.
@@ -280,6 +291,14 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
       'An alert closed: its value stayed in range, or its rule was switched off or deleted. Sent once to the ops email and Telegram chat.',
     channels: ['email', 'telegram'],
     variables: ['ruleName', 'severity', 'metric', 'value', 'threshold', 'subject', 'detail'],
+  }),
+  staffEvent({
+    key: RETAIL_PRICES_FOLLOWED_EVENT,
+    label: 'Shop prices followed the cost',
+    description:
+      'Retail prices that follow a pricing rule moved, wait for approval or stopped following: at most one message an hour with the counts, to the ops email and Telegram chat.',
+    channels: ['email', 'telegram'],
+    variables: ['changed', 'waiting', 'detached', 'link'],
   }),
   customerEvent({
     key: 'order.received',

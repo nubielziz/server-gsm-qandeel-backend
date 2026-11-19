@@ -128,8 +128,11 @@ describe('RetailPrices', () => {
     const world = await listingWorld(db);
     expect(await retail.retailGroupId(db)).toBe(world.groups.retail);
     await db.transaction(async (tx) => {
-      expect(await retail.set(tx, world.att, Money.of('25.9900'))).toBeNull();
-      expect((await retail.set(tx, world.att, Money.of('26.5000')))?.toWire()).toBe('25.9900');
+      // Decision 040: the writer takes the origin and the quote read under the service lock.
+      const quote = (await retail.quotes(tx, [world.att])).get(world.att)!;
+      const typed = { origin: { kind: 'manual' }, quote } as const;
+      expect(await retail.set(tx, world.att, Money.of('25.9900'), typed)).toBeNull();
+      expect((await retail.set(tx, world.att, Money.of('26.5000'), typed))?.toWire()).toBe('25.9900');
       expect((await retail.lockLiveService(tx, world.att, 'share'))?.name).toBe('AT&T USA Premier Unlock');
       expect(await retail.lockLiveService(tx, 999999)).toBeUndefined();
     });

@@ -1,5 +1,5 @@
 // Read-only lookups into tables other modules own, kept in this one file: the supplier chain of a service, whether anything
-// refers to a service, and the merchants the price routes name. The catalog screens show who supplies a service, deleting a
+// refers to a service, the title a service is published under, and the merchants the price routes name. The catalog screens show who supplies a service, deleting a
 // service archives it when orders, supplier links, listings or other records refer to it (RESOLUTIONS catalog-3), and a client
 // price or a merchant's catalog needs the merchant's name and group.
 //
@@ -93,6 +93,26 @@ export async function isServiceReferenced(db: DbExecutor, serviceId: number): Pr
       or exists (select 1 from ${s.imeiChecks} where service_id = ${serviceId})
     ) as referenced`);
   return result.rows[0]?.referenced === true;
+}
+
+/**
+ * Reads the title each of some services is published under.
+ *
+ * Why: a buyer knows a service by the title the shop showed, and a bulk publish cleans it away from the supplier's name (feature 31), so
+ * the checkout and the records made from it name the listing's title. A service has at most one listing.
+ *
+ * @param db the database or a transaction
+ * @param serviceIds the services
+ * @returns the public title by service id; a service without a listing is absent
+ */
+export async function listingTitlesOf(db: DbExecutor, serviceIds: readonly number[]): Promise<Map<number, string>> {
+  const ids = [...new Set(serviceIds)];
+  if (ids.length === 0) return new Map();
+  const rows = await db
+    .select({ serviceId: s.serviceListings.serviceId, title: s.serviceListings.publicTitle })
+    .from(s.serviceListings)
+    .where(inArray(s.serviceListings.serviceId, ids));
+  return new Map(rows.map((row) => [row.serviceId, row.title]));
 }
 
 /** A merchant as the price routes need it. */

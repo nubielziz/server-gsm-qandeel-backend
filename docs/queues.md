@@ -304,8 +304,27 @@ Runs bulk imports (service lists, inventory codes) started by staff.
   them, in chunks of 100. Event-driven: the outbox event `supplier.quick_add`, written by `POST /admin/suppliers/:id/quick-add` in the
   same transaction that inserts the run (job id `outbox-<event id>`). The processor is `QuickAddProcessor` (`src/modules/suppliers/jobs/`),
   which calls `QuickAddRunner.run(runId)`. Other bulk imports (service lists from files, inventory codes) are built by their features.
+  `publish_prepare`, `publish_apply` and `publish_set_listed` (storefront module, feature 31, decision 040): the bulk publish.
+  `publish_prepare` prepares the draft of a new run: it takes the services of the run's scope, names and evaluates every one and closes
+  the run as a `draft` (or, for an automatic run with a row ticked, as `queued`, with the apply event); it writes only the run and its
+  rows, so a preview changes nothing a visitor or a merchant can see. `publish_apply` publishes the
+  rows of a queued run, one service per transaction, in chunks of 50; `publish_set_listed` takes everything a run published off the shop,
+  or puts it back. Event-driven: the outbox events `storefront.publish_prepare`, `storefront.publish_apply` and `storefront.publish_set_listed`,
+  written in the transaction that creates or moves the run (job id `outbox-<event id>`). The processors are `PublishPrepareProcessor`,
+  `PublishApplyProcessor` and `PublishSetListedProcessor` (`src/modules/storefront/publish/jobs/`), which call
+  `PublishPreparer.run(runId)`, `PublishRunner.run(runId)` and `PublishSwitch.run(runId, listed, requestedBy)`.
+  `publish_from_quick_add` (storefront module, feature 31, plan 31 section 6.3): the Quick add hand-over. A Quick add run that asked to
+  publish and created at least one service writes the outbox event `supplier.quick_add_done` in the transaction that closes it (succeeded or
+  failed, and the start that closes a stalled run); the job inserts the one automatic publish run of it (`source = quick_add`, scope
+  `quickAddRun`, `auto`) and calls `PublishPreparer.run`, whose close queues `storefront.publish_apply` when a row is ticked. The processor
+  is `PublishFromQuickAddProcessor`, which calls `PublishFromQuickAdd.run`.
 - **Payload:** ids only: `runId` (the `supplier_import_runs` row, also the outbox aggregate id) and `supplierId`. The scope, the groups
-  and the state the services start in are read from the run row.
+  and the state the services start in are read from the run row. `publish_prepare`: `runId` (the `listing_publish_runs` row, also the
+  outbox aggregate id). `publish_apply`: `runId` (the `listing_publish_runs` row, also the
+  outbox aggregate id). `publish_set_listed`: `runId`, `listed` (the target) and `requestedBy` (the staff member who pressed the button,
+  or null). `publish_from_quick_add`: `runId` (the `supplier_import_runs` row, also the outbox aggregate id), `supplierId`, `requestedBy`
+  (the staff member who started the Quick add, or null) and `listed` (whether the publish switches the listings on). Everything else is read
+  from the run and its rows.
 - **Idempotency:** the run claims itself with `UPDATE ... SET status = 'running' WHERE id = $1 AND status = 'queued'`; no row, no work
   (a second delivery, two runners, or a run closed by a newer start). Every chunk is one transaction: it locks the supplier row first
   (as the picker's import and the sync), re-reads the supplier services and their links, creates only what is still not imported,
@@ -313,12 +332,37 @@ Runs bulk imports (service lists, inventory codes) started by staff.
   heartbeat). When that update matches no row the run was closed by a newer start: the chunk rolls back and the runner stops. A chunk
   that throws is retried item by item; an item that throws again is counted `failed` (at most 20 are listed, and 20 failed items end the
   run `failed`). A rerun after a failure takes what is left, because the candidates are the services that are not imported yet.
+  The draft is claimed the same way before it is prepared: `UPDATE ... SET prepare_claimed_at = <now>, heartbeat_at = <now> WHERE id = $1 AND
+  status = 'preparing' AND prepare_claimed_at IS NULL`; no row, no work (a second delivery, or a run that was cancelled). Its rows are
+  inserted `ON CONFLICT DO NOTHING` in batches of 500 and written by one `UPDATE ... FROM (VALUES ...)` per 200 rows; every batch and page
+  moves the heartbeat with a guard on `preparing` (no row: the run was cancelled, the worker stops), and the close is guarded on
+  `preparing` too. A worker that dies leaves the claim set, so a repeat does nothing and the run reads `failed`: staff start a new
+  preview. An unexpected error closes the run `failed` with the error and rethrows. When that run was a "Check again", staff send the
+  same scope again ("Prepare again"): the route copies the old draft once more and, if the dead run is still stored `preparing`, closes
+  it `failed` in the same transaction, so a worker that wakes up stops at its next guarded statement.
+  A publish run keeps its id across a resume, so its claim counts: `UPDATE ... SET status = 'running', attempt = attempt + 1 WHERE id = $1
+  AND status = 'queued' RETURNING attempt`, and every later write of that worker requires `status = 'running' AND attempt = <its number>`.
+  A worker that was only slow, and wakes up after staff pressed Continue, finds another number and stops without writing. Each row is one
+  transaction in the lock order of the feature: the `services` row `FOR UPDATE`, the run row `FOR SHARE` (with the check above), the item
+  row `FOR UPDATE` with `result IS NULL`, the listing; its result is written there, `WHERE result IS NULL`. A cancel or a resume takes the
+  run row `FOR UPDATE`, so it waits for the row in flight. A row that throws is tried once more after a deadlock or a serialization failure
+  (`40P01`, `40001`), else it ends `refused: failed` with the constraint's name; 20 of them in one attempt close the run `failed`. The
+  close takes the run row and writes the counters from the rows. The run switch claims with `switch_status = 'queued' AND switch_listed =
+  <its target>`, raises the same `attempt`, and re-reads each listing under the service lock: a listing already at the target is left
+  alone, so a repeat changes nothing. The hand-over inserts `ON CONFLICT (source_run_id) WHERE source_run_id IS NOT NULL DO NOTHING` (the
+  partial unique index `listing_publish_runs_source_run_uq`; the conflict target repeats its predicate), so a second delivery finds the run
+  and does nothing, and the preparer's own claim lets one worker prepare it. A run and its switch share one heartbeat, so the resume of a run closes a switch that stalled
+  (`failed`): its late job then finds nothing to claim and cannot stop the resumed apply.
 - **Recorded in:** `supplier_import_runs`, not in `job_runs`: the run has a supplier, a scope and a progress that `job_runs` has no
   column for, its overlap guard is per job name, and it is closed only at the end. One live run (`queued` or `running`) per supplier
   is a partial unique index. Every chunk moves `heartbeat_at`; a live run without a heartbeat for 5 minutes reads as `failed`
-  (`GET /admin/suppliers/:id/quick-add/:runId` and `service-groups` show it so, without writing), and the next start closes it.
+  (`GET /admin/suppliers/:id/quick-add/:runId` and `service-groups` show it so, without writing), and the next start closes it. A
+  publish run is recorded the same way, in `listing_publish_runs` and `listing_publish_items` (each row's result); `heartbeat_at` moves
+  after every batch and page of the prepare, every chunk of the apply and of the switch, and five minutes without one read as `failed` too
+  (a run that stalled while `preparing` says to start a new preview).
 - **Retry policy:** 1 attempt, no retry. Stalled jobs are not re-run (`maxStalledCount` 0). Staff start it again: it continues with what
-  is left (an import records its progress and is started again by staff, so it is never retried automatically).
+  is left (an import records its progress and is started again by staff, so it is never retried automatically). A publish run goes on
+  from the rows that have no result, and a run switch is pressed again.
 - **Schedule:** none (started by staff).
 
 ## files
@@ -348,7 +392,7 @@ Draws the PDF tax receipt of a paid storefront order and stores it (`GET /store/
 Scheduled housekeeping: group promotion, data retention, integrity checks, FX refresh.
 
 - **Concurrency:** 2 per worker process.
-- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly, and `refund.process`, event-driven (money module, below), `checkout_recovery_sweep`, every 5 minutes (customers module, below), `notification_campaign_sweep`, every minute, `notification_reconcile`, every 5 minutes, and `notification_retention`, daily at 04:20 UTC (platform module, feature 23, below), `service_price_scan`, event-driven (catalog module, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below), `support_reply_mail_sweep`, every minute, and `ticket_attachment_retention`, nightly at 03:30 UTC (support module, feature 28, below), and the storefront search jobs `search_reconcile` (every `SEARCH_RECONCILE_MINUTES`, default 15, and once at worker boot), `search_rebuild` (nightly at 03:40 UTC, and on demand), `search_terms_build` (hourly at :20), `search_terms_flush` (every 15 minutes) and `search_terms_purge` (daily 04:10 UTC) (storefront module, feature 29, below). The others are built by their features, each
+- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly, and `refund.process`, event-driven (money module, below), `checkout_recovery_sweep`, every 5 minutes (customers module, below), `notification_campaign_sweep`, every minute, `notification_reconcile`, every 5 minutes, and `notification_retention`, daily at 04:20 UTC (platform module, feature 23, below), `service_price_scan`, event-driven (catalog module, below), `retail_price_follow`, after a price change and every hour, and `category_names_clean`, once, asked for by a migration (catalog module, feature 31, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below), `support_reply_mail_sweep`, every minute, and `ticket_attachment_retention`, nightly at 03:30 UTC (support module, feature 28, below), and the storefront search jobs `search_reconcile` (every `SEARCH_RECONCILE_MINUTES`, default 15, and once at worker boot), `search_rebuild` (nightly at 03:40 UTC, and on demand), `search_terms_build` (hourly at :20), `search_terms_flush` (every 15 minutes) and `search_terms_purge` (daily 04:10 UTC) (storefront module, feature 29, below). The others are built by their features, each
   registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
   `ledger_integrity` (12b, nightly 02:30 UTC, below), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). `idempotency_purge` (daily 04:10 UTC,
 orders module, below) is built. `storefront_popularity` (every 30 minutes, storefront module, below) is built. `data_retention`
@@ -595,6 +639,38 @@ Finds the merchants who would now pay another price than their last order's for 
   a parallel run writes nothing new.
 - **Not recorded in `job_runs`** (event-driven, like the merchant mail jobs). 3 attempts with the queue's backoff.
 
+### `category_names_clean` (catalog module, feature 31)
+
+Gives the categories that exist the clean names new ones get: the public menu shows them, and an import used to name a category after the supplier's group text as it came (`AT&amp;T`, emoji, direction marks).
+
+- **Trigger:** once. Migration `0046_clean_category_names` writes the outbox event `catalog.category_names_clean`, and the relay turns it into this job (id `outbox-<event id>`). The route is registered by `CategoryNameCleanupModule`, in the worker only.
+- **Payload:** none. The processor is `CategoryNameCleanupProcessor` (`src/modules/catalog/jobs/`, worker only).
+- **What it does:** walks every category by id, 200 a page, and gives each name that `cleanGroupName` would change its clean form: one transaction per category, under the category row lock (`FOR UPDATE`, as a staff edit), with the `catalog.category_changed` event, a move of the catalog price version after the commit and an `edited category` audit row by `system` with both names. A name another category of the same type already has (ignoring case) is left as it is and logged: merging the two is a decision for staff, and the importer keeps sending the raw group to the raw category.
+- **Idempotency:** a clean name is skipped, so a retry or a second delivery changes nothing.
+- **Not recorded in `job_runs`:** it is not a schedule. 3 attempts with the queue's backoff.
+
+### `retail_price_follow` (catalog module, feature 31)
+
+Moves the retail prices that follow a pricing rule to what the rule gives now (decision 040, `docs/briefs/31-bulk-publish.md` sections 3.4 and 6.4).
+
+- **Triggers:** (1) every move of the catalog price version, in the API or the worker: `RetailFollowScheduler` (provided by the global `CatalogPricesModule`) adds a delayed job (60 s) with
+  the id `retail-follow-<minute>`, so a burst of changes is one pass and there is at most one a minute; a failed request is only logged. (2) The scheduler `retail_price_follow_hourly`, every hour at
+  minute 10: it catches what no bump announces (a B2B rule window that opens or closes moves a floor with no write). (3) A manual run from the Jobs tab, which carries `{ runId }`. The processor is
+  `RetailPriceFollowProcessor` (`src/modules/catalog/jobs/`, worker only).
+- **Payload:** none (a manual run carries `{ runId }`).
+- **What it does:** a keyset walk over `retail_price_follows` by service id, 200 a page. One unlocked read per page finds the services whose follow row, price or proposal would change; each of those is
+  its own transaction (the service row `FOR UPDATE`, then the follow row and the waiting proposal, with the quote and the rules read again under them): it moves the price through `RetailPrices.set`
+  (`followed`), opens or rewrites a proposal (`proposed`: a cost move over the rule's limit, a cost of 0, a service that came under another rule by itself), or stops following a price changed another way
+  (`detached`). A service that loses to another transaction (`40P01`, `40001`) or fails is counted and left to the next pass; the pass goes on.
+- **It ends by itself:** one `CatalogPriceVersion.bump()` at the end when a price was written. That asks for one more pass, which finds nothing, writes nothing and does not bump.
+- **The message:** at the end of a pass, when rows have no `notified_at` and none was reported in the last 60 minutes, one transaction marks them and writes `retail.prices_followed` (the counts `changed`,
+  `waiting`, `detached` and the link to the Retail pricing tab) to the ops recipients of `ALERTS_EMAIL_TO` and `ALERTS_TELEGRAM_CHAT_ID`, one notification per channel, dedupe key
+  `retail-follow:<first id>:<channel>`. A channel with no recipient is a failed notification with the reason; the console's Price changes list is the notice either way.
+- **Idempotency:** it compares stored state with computed state and writes differences, so a repeat finds nothing; two passes side by side serialize on each service row (one change row per service) and on
+  an advisory lock for the message (one message). An unchanged waiting proposal is not rewritten and keeps its `notified_at`.
+- **Recorded in `job_runs`** (job `retail_price_follow`) for the scheduled and the manual run: `processed` = the following services walked, `result` = what it did. The delayed job is event-driven and is
+  not recorded. 3 attempts with the queue's backoff.
+
 ### `ip_rule_hits_flush` (identity module)
 
 The API counts the requests an IP rule decided in the cache Redis hash `gsm:{env}:identity:ip-rule-hits:pending`
@@ -699,7 +775,12 @@ none); the job id is `outbox-<event id>`.
 | `storefront.listing_changed` | `search-index` | `search_sync` | `serviceIds` (1-50) (aggregate: `services`, the first id) | storefront (`SearchOutboxRoutes`), written by `SearchSignals` on `POST /admin/service-listings` and every `PATCH /admin/service-listings/:id` (feature 29) |
 | `search.settings_changed` | `search-index` | `search_settings` | `kind` (`synonyms`, `pins`, `hidden_terms`) (aggregate: the row's table) | storefront (`SearchOutboxRoutes`), written by the console's search routes (feature 29, slice B2) |
 | `search.rebuild_requested` | `maintenance` | `search_rebuild` | `staffId`, optional `runId` (aggregate: `search_index`, 1) | storefront (`SearchOutboxRoutes`), written by `POST /admin/search/index/rebuild` (feature 29, slice B2) |
+| `catalog.category_names_clean` | `maintenance` | `category_names_clean` | none (aggregate: `service_categories`, 1) | catalog (`CategoryNameCleanupModule`, worker only), written once by migration `0046_clean_category_names` |
 | `supplier.quick_add` | `imports` | `supplier_quick_add` | `runId`, `supplierId` (aggregate: `supplier_import_runs`) | suppliers (`QuickAddOutbox`, loaded by the API and the worker), written by `POST /admin/suppliers/:id/quick-add` in the transaction that inserts the run (feature 26). The processor is `QuickAddProcessor` (`src/modules/suppliers/jobs/`) |
+| `storefront.publish_prepare` | `imports` | `publish_prepare` | `runId` (aggregate: `listing_publish_runs`) | storefront (`PublishOutboxRoutes`, loaded by the API and the worker through `PublishEngineModule`), written by `PublishOutbox` in the transaction that inserts a run in `preparing` (`POST /admin/publish-runs`, feature 31). The processor is `PublishPrepareProcessor` (`src/modules/storefront/publish/jobs/`) |
+| `storefront.publish_apply` | `imports` | `publish_apply` | `runId` (aggregate: `listing_publish_runs`) | storefront (`PublishOutboxRoutes`, loaded by the API and the worker through `PublishEngineModule`), written by `PublishOutbox` in the transaction that moves a run to `queued` (feature 31). The processor is `PublishApplyProcessor` (`src/modules/storefront/publish/jobs/`) |
+| `storefront.publish_set_listed` | `imports` | `publish_set_listed` | `runId`, `listed`, `requestedBy` (aggregate: `listing_publish_runs`) | storefront (`PublishOutboxRoutes`), written by `PublishOutbox` in the transaction that queues a run switch (feature 31). The processor is `PublishSetListedProcessor` (`src/modules/storefront/publish/jobs/`) |
+| `supplier.quick_add_done` | `imports` | `publish_from_quick_add` | `runId`, `supplierId`, `requestedBy`, `listed` (aggregate: `supplier_import_runs`) | suppliers (`QuickAddOutbox.done`, written in the transaction that closes a Quick add run that asked to publish and created services; feature 31); the route is registered by the storefront's `PublishOutboxRoutes` (the suppliers module never imports the storefront). The processor is `PublishFromQuickAddProcessor` (`src/modules/storefront/publish/jobs/`) |
 
 `invoice.paid` (feature 8) routes to `merchant-webhooks` (`InvoiceOutbox`) and to `notifications` (`notification.plan`, registered by the platform's `NotificationRoutes` since the 12a merge): every credited top-up tells the merchant once. `deposit.approved` has a registry entry and default templates but no producer: a credited top-up already writes `invoice.paid`, and emitting both would send two messages per top-up (B-entry of 12a). A test app plans a job directly through `test/support/notifications.ts` (`eventJob`).
 
@@ -726,6 +807,7 @@ Registered with `JobSchedulerRegistry.register` in `onModuleInit`; the worker up
 | `ledger-integrity` | `maintenance` | `ledger_integrity` | daily 02:30 UTC | health (`src/modules/health/jobs/`) |
 | `data-retention` | `maintenance` | `data_retention` | daily 03:00 UTC | risk (`src/modules/risk/jobs/`) |
 | `fx-refresh` | `maintenance` | `fx_refresh` | every hour at minute 0 | money (`src/modules/money/jobs/`) |
+| `retail_price_follow_hourly` | `maintenance` | `retail_price_follow` | every hour at minute 10 | catalog (`src/modules/catalog/jobs/`) |
 | `idempotency-purge` | `maintenance` | `idempotency_purge` | daily 04:10 UTC | orders (`src/modules/orders/jobs/`) |
 | `storefront-popularity` | `maintenance` | `storefront_popularity` | every 30 minutes | storefront (`src/modules/storefront/jobs/`) |
 | `support-reply-mail-sweep` | `maintenance` | `support_reply_mail_sweep` | every minute | support (`src/modules/support/support-jobs.module.ts`) |

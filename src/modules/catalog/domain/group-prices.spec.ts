@@ -2,7 +2,7 @@
 // floor of the retail row, reported together with their dotted paths.
 import { describe, expect, it } from 'bun:test';
 import { Money } from '../../../common/money';
-import { type GroupFloor, groupPriceProblems } from './group-prices';
+import { type GroupFloor, groupPriceProblems, keepStoredRetailRow, retailRowUntouched } from './group-prices';
 
 const m = (text: string) => Money.of(text);
 const floor = (cost: string, minProfit: string): GroupFloor => ({
@@ -88,6 +88,76 @@ describe('groupPriceProblems', () => {
       'prices.1.price',
       'prices.2.price',
       'prices.3.groupId',
+    ]);
+  });
+});
+
+describe('groupPriceProblems with a kept group', () => {
+  it('does not hold the row of the group whose stored price stays to its floor', () => {
+    const rows = [
+      { groupId: 9, price: m('1.00') },
+      { groupId: 1, price: m('1.00') },
+    ];
+    expect(groupPriceProblems(rows, GROUPS, FLOORS, BASE, 9)).toEqual([
+      { field: 'prices.1.price', message: expect.stringContaining('Below the floor') },
+    ]);
+  });
+
+  it('still refuses that group listed twice', () => {
+    const rows = [
+      { groupId: 9, price: m('30.00') },
+      { groupId: 9, price: m('30.00') },
+    ];
+    expect(groupPriceProblems(rows, GROUPS, FLOORS, BASE, 9)).toEqual([
+      { field: 'prices.1.groupId', message: 'Listed twice' },
+    ]);
+  });
+});
+
+describe('retailRowUntouched', () => {
+  const rows = (price?: string) => [
+    { groupId: 1, price: m('20.00') },
+    ...(price === undefined ? [] : [{ groupId: 9, price: m(price) }]),
+  ];
+
+  it('is true when the retail row is the figure the form loaded, however it is written', () => {
+    expect(retailRowUntouched(rows('13.99'), 9, m('13.9900'))).toBe(true);
+  });
+
+  it('is true when the form loaded no retail price and sends no retail row', () => {
+    expect(retailRowUntouched(rows(), 9, null)).toBe(true);
+  });
+
+  it('is false when staff typed another figure, removed the row, or added one', () => {
+    expect(retailRowUntouched(rows('14.99'), 9, m('13.99'))).toBe(false);
+    expect(retailRowUntouched(rows(), 9, m('13.99'))).toBe(false);
+    expect(retailRowUntouched(rows('13.99'), 9, null)).toBe(false);
+  });
+});
+
+describe('keepStoredRetailRow', () => {
+  const sent = [
+    { groupId: 1, price: '20.0000' },
+    { groupId: 9, price: '13.9900' },
+    { groupId: 2, price: '21.0000' },
+  ];
+
+  it('puts the stored retail row in place of the one sent', () => {
+    expect(keepStoredRetailRow(sent, 9, { groupId: 9, price: '14.9900' })).toEqual([
+      { groupId: 1, price: '20.0000' },
+      { groupId: 2, price: '21.0000' },
+      { groupId: 9, price: '14.9900' },
+    ]);
+  });
+
+  it('adds it when the form sent none, and leaves none when nothing is stored', () => {
+    expect(keepStoredRetailRow([sent[0]!], 9, { groupId: 9, price: '14.9900' })).toEqual([
+      { groupId: 1, price: '20.0000' },
+      { groupId: 9, price: '14.9900' },
+    ]);
+    expect(keepStoredRetailRow(sent, 9, undefined)).toEqual([
+      { groupId: 1, price: '20.0000' },
+      { groupId: 2, price: '21.0000' },
     ]);
   });
 });

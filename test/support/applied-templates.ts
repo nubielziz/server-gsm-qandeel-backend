@@ -1,6 +1,7 @@
 // Reads the default templates that applied migrations insert or update (feature 30, decision 039). An applied file is never edited
-// (decision 027): it keeps the shape it shipped with (a `locale` column, rows in other languages), so the specs of the default templates
-// check that every row of the code is found in the file that shipped it, instead of comparing the code's SQL with the file's text.
+// (decision 027): it keeps the shape it shipped with (a `locale` column and rows in other languages before decision 039, none after it), so
+// the specs of the default templates check that every row of the code is found in the file that shipped it, instead of comparing the code's
+// SQL with the file's text.
 import { readFileSync } from 'node:fs';
 
 /** One template row as an applied migration inserts it. */
@@ -8,10 +9,15 @@ export interface AppliedTemplate {
   readonly event: string;
   readonly channel: string;
   readonly audience: string;
-  readonly locale: string;
+  /** The language of a row written before decision 039; `null` for a migration whose insert has no such column. */
+  readonly locale: string | null;
   readonly subject: string;
   readonly body: string;
 }
+
+/** The two column lists an applied insert of templates can name. */
+const WITH_LOCALE = '("event", "channel", "audience", "locale", "subject", "body", "is_active")';
+const WITHOUT_LOCALE = '("event", "channel", "audience", "subject", "body", "is_active")';
 
 /** One guarded body change of an applied migration: `SET "body" = to WHERE <key> AND "body" = from`. */
 export interface AppliedBodyUpdate {
@@ -46,34 +52,42 @@ function templateStatements(file: string, verb: 'INSERT INTO' | 'UPDATE'): strin
     .filter((statement) => statement.includes(`${verb} "notification_templates"`));
 }
 
+/** The pattern of one inserted template row of `columns` text columns: `('…', …, true)`. */
+const templateRow = (columns: number): RegExp =>
+  new RegExp(
+    String.raw`\(${Array(columns)
+      .fill(LITERAL)
+      .join(String.raw`,\s*`)},\s*true\)`,
+    'g',
+  );
+
 /**
  * Lists the template rows the `INSERT INTO "notification_templates"` statements of an applied migration hold.
  *
- * Why: every applied insert names the columns `event, channel, audience, locale, subject, body, is_active` in that order and writes one
- * `('…', '…', '…', '…', '…', '…', true)` row per template (migrations 0011 to 0027).
+ * Why: an applied insert names the columns `event, channel, audience, locale, subject, body, is_active` in that order (migrations 0011
+ * to 0027) or, after decision 039, the same columns without `locale` (migration 0044, written by `templatesInsertSql`), with one
+ * `('…', …, true)` row per template.
  *
  * @param file the file name in `drizzle/`
  * @returns the rows in file order (an empty list when the file inserts no template)
  * @throws {Error} when an insert names other columns, or holds a row the pattern cannot read (the parser would misread or skip it)
  */
 export function insertedTemplates(file: string): AppliedTemplate[] {
-  const row = new RegExp(
-    String.raw`\(${Array(6)
-      .fill(LITERAL)
-      .join(String.raw`,\s*`)},\s*true\)`,
-    'g',
-  );
   return templateStatements(file, 'INSERT INTO').flatMap((statement) => {
-    if (!statement.includes('("event", "channel", "audience", "locale", "subject", "body", "is_active")'))
+    const hasLocale = statement.includes(WITH_LOCALE);
+    if (!hasLocale && !statement.includes(WITHOUT_LOCALE))
       throw new Error(`${file}: an insert of notification_templates with other columns.`);
-    const matches = [...statement.matchAll(row)];
+    const columns = hasLocale ? 6 : 5;
+    const matches = [...statement.matchAll(templateRow(columns))];
     // Every row starts a line with two spaces and a bracket: a row the pattern cannot read must fail here, not go missing.
     const lines = statement.match(/^ {2}\('/gm)?.length ?? 0;
     if (matches.length !== lines)
       throw new Error(`${file}: ${lines} template rows, ${matches.length} of them readable.`);
     return matches.map((match) => {
-      const [event, channel, audience, locale, subject, body] = match.slice(1, 7).map((value) => unquote(value));
-      return { event: event!, channel: channel!, audience: audience!, locale: locale!, subject: subject!, body: body! };
+      const values = match.slice(1, columns + 1).map((value) => unquote(value));
+      const [event, channel, audience] = values;
+      const [locale, subject, body] = hasLocale ? values.slice(3) : [null, ...values.slice(3)];
+      return { event: event!, channel: channel!, audience: audience!, locale, subject: subject!, body: body! };
     });
   });
 }

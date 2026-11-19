@@ -4,8 +4,8 @@
 // DEVIATION to resolve when those features land: decision 016 wants these reads through the owning module's public service.
 // Catalog exports the merchant catalog and the price resolver but not the service row, its fields or its supplier links;
 // identity exports no merchant lookup; suppliers (6), customers (14b) and platform files export nothing yet. So this file reads
-// `services`, `service_categories`, `service_fields`, `service_supplier_links`, `clients`, `customers`, `suppliers`,
-// `staff_users` and `files` with plain selects, like catalog's and money's foreign-read files. Replace the bodies with calls to
+// `services`, `service_categories`, `service_fields`, `service_supplier_links`, `service_listings`, `clients`, `customers`,
+// `suppliers`, `staff_users` and `files` with plain selects, like catalog's and money's foreign-read files. Replace the bodies with calls to
 // their services; nothing outside this file knows (the read model imports the table handles from here).
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
@@ -14,6 +14,7 @@ import { type DbExecutor, schema as s } from '../../../infra/db';
 export const foreignTables = {
   services: s.services,
   categories: s.serviceCategories,
+  listings: s.serviceListings,
   clients: s.clients,
   customers: s.customers,
   suppliers: s.suppliers,

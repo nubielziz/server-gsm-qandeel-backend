@@ -1,7 +1,12 @@
 // The pure rules of the supplier quick add (feature 26, B214): the constants, the groups of a scope, when a live run counts as stalled,
 // how a run record reads on the wire, the chunks of the work list and the reason a failed item reports.
 import { pgErrorInfo } from '../../../infra/db/pg-errors';
-import type { SupplierImportRunStatus, SupplierImportScope, SupplierImportServiceStatus } from '../db/schema';
+import type {
+  QuickAddPublishMode,
+  SupplierImportRunStatus,
+  SupplierImportScope,
+  SupplierImportServiceStatus,
+} from '../db/schema';
 
 /** How many supplier services one chunk (one transaction) creates. */
 export const QUICK_ADD_CHUNK = 100;
@@ -24,6 +29,12 @@ export const TOO_MANY_FAILURES_ERROR = `Too many services could not be added (${
 /** The longest error text a run keeps. */
 export const MAX_RUN_ERROR_LENGTH = 500;
 
+/** What a Quick add that asks to publish says when its services start switched off: they cannot go on the shop. */
+export const PUBLISH_NEEDS_ACTIVE_MESSAGE = 'Services added switched off cannot go on the shop.';
+
+/** What a Quick add that asks to publish says when no retail price rule is active: the shop would have no price for them. */
+export const PUBLISH_NO_RULE_MESSAGE = 'Set a retail pricing rule first.';
+
 /** A supplier group: the pair `(type, remoteGroup)` exactly as `supplier_services` stores it. */
 export interface QuickAddGroup {
   readonly type: string;
@@ -44,6 +55,7 @@ export interface QuickAddRunRecord {
   readonly scope: SupplierImportScope;
   readonly groups: readonly QuickAddGroup[];
   readonly serviceStatus: SupplierImportServiceStatus;
+  readonly publishMode: QuickAddPublishMode;
   readonly status: SupplierImportRunStatus;
   readonly total: number;
   readonly createdCount: number;
@@ -67,6 +79,7 @@ export interface QuickAddRunView {
   readonly scope: SupplierImportScope;
   readonly groups: QuickAddGroup[];
   readonly serviceStatus: SupplierImportServiceStatus;
+  readonly publish: QuickAddPublishMode;
   readonly status: SupplierImportRunStatus;
   readonly total: number;
   readonly processed: number;
@@ -80,6 +93,32 @@ export interface QuickAddRunView {
   readonly createdAt: string;
   readonly startedAt: string | null;
   readonly finishedAt: string | null;
+}
+
+/**
+ * The stored mode of a request's `publish` choice.
+ *
+ * Why: plan 31 section 5.5: the body says `publish: { listed }` or nothing; the run keeps `listed`, `unlisted` or `none`.
+ *
+ * @param publish the body's choice, or `undefined` when the request did not ask to publish
+ * @returns `none` without a choice, else `listed` or `unlisted`
+ */
+export function publishModeOf(publish: { readonly listed: boolean } | undefined): QuickAddPublishMode {
+  if (publish === undefined) return 'none';
+  return publish.listed ? 'listed' : 'unlisted';
+}
+
+/**
+ * Tells whether a run that just ended hands its services to the bulk publish.
+ *
+ * Why: plan 31 section 6.3: a run that asked to publish and created at least one service writes `supplier.quick_add_done` in the
+ * transaction that closes it, succeeded or failed, so the services of the chunks that did commit are not left out.
+ *
+ * @param run the closed run
+ * @returns true when it asked to publish and created something
+ */
+export function handsOver(run: Pick<QuickAddRunRecord, 'publishMode' | 'createdCount'>): boolean {
+  return run.publishMode !== 'none' && run.createdCount > 0;
 }
 
 /**
@@ -136,6 +175,7 @@ export function runView(run: QuickAddRunRecord, nowMs: number): QuickAddRunView 
     scope: run.scope,
     groups: run.groups.map((group) => ({ type: group.type, remoteGroup: group.remoteGroup })),
     serviceStatus: run.serviceStatus,
+    publish: run.publishMode,
     status: stalled ? 'failed' : run.status,
     total: run.total,
     processed: run.createdCount + run.skippedCount + run.failedCount,

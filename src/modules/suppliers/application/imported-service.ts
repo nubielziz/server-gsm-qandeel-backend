@@ -26,6 +26,8 @@ export interface ImportedServiceArgs {
   readonly defaultSla: number;
   /** The state the service starts in. */
   readonly status: SupplierImportServiceStatus;
+  /** The quick add run that creates the service (written on its first link); omitted for the picker's import. */
+  readonly importRunId?: number | null | undefined;
 }
 
 /** What {@link createImportedService} made. */
@@ -56,11 +58,11 @@ export const suggestedPrice = (cost: Money): Money => cost.add(defaultMinProfit(
  * import (always `active`) and the quick add (`active` or `disabled`) both come here.
  *
  * Side effects: inserts `service_categories` (when the group has none yet), `services`, `service_fields` and `service_supplier_links`
- * on the caller's transaction. The caller recomputes the effective cost, moves the catalog price version and writes the audit row.
+ * (with `import_run_id` when a quick add run makes it) on the caller's transaction. The caller recomputes the effective cost, moves the catalog price version and writes the audit row.
  *
  * @param tx the transaction (the supplier row is locked)
  * @param importer the catalog's importer
- * @param args the supplier service, its cost, the default SLA and the starting state
+ * @param args the supplier service, its cost, the default SLA, the starting state and the quick add run that makes it
  * @returns the new service's id and what the creation did besides it
  * @throws {Error} when the supplier service's type is not importable (the caller checks first), or the database refuses a row
  */
@@ -69,7 +71,7 @@ export async function createImportedService(
   importer: ServiceImporter,
   args: ImportedServiceArgs,
 ): Promise<ImportedServiceResult> {
-  const { row, cost, defaultSla, status } = args;
+  const { row, cost, defaultSla, status, importRunId = null } = args;
   // An IMEI service whose main box is not an IMEI becomes a server service with that box first (decision 042).
   const { type, fields } = importShape(row);
   if (type === undefined)
@@ -89,7 +91,7 @@ export async function createImportedService(
     fields,
     status,
   });
-  await insertFirstLink(tx, made.serviceId, row.id);
+  await insertFirstLink(tx, made.serviceId, row.id, importRunId);
   return {
     serviceId: made.serviceId,
     categoryCreated: made.categoryCreated,

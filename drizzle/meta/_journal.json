@@ -288,6 +288,48 @@
       "when": 1794922717343,
       "tag": "0040_payment_method_presets",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1795002878215,
+      "tag": "0041_retail_price_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1795002879215,
+      "tag": "0042_listing_publish_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1795020458070,
+      "tag": "0043_retail_price_changes",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1795020626784,
+      "tag": "0044_retail_follow_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1795031151856,
+      "tag": "0045_quick_add_publish",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1795038192380,
+      "tag": "0046_clean_category_names",
+      "breakpoints": true
     }
   ]
 }

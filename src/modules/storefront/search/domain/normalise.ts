@@ -1,5 +1,10 @@
 // Text normalisation and model codes of the storefront search (feature 29, plan section 4.3): pure, shared by the index (documents,
 // terms) and the queries (slice B2), so a word is cut the same way when it is indexed and when it is typed.
+import { CONTROL_CHARACTERS as CONTROL, EMOJI, decodeEntities } from '../../../../common/text';
+
+// `decodeEntities` moved to `src/common/text.ts` with the two character patterns (feature 31: the catalog's category names need them and
+// cannot import the storefront); this file keeps exporting it, so nothing that imports it changes.
+export { decodeEntities };
 
 /** The longest query kept after normalising (plan section 4.3). */
 export const MAX_QUERY_LENGTH = 100;
@@ -10,44 +15,8 @@ export const MAX_WORD_WINDOWS = 60;
 /** The longest model code or word window kept. */
 export const MAX_CODE_LENGTH = 24;
 
-const NAMED_ENTITIES: Readonly<Record<string, string>> = {
-  amp: '&',
-  quot: '"',
-  apos: "'",
-  lt: '<',
-  gt: '>',
-  nbsp: ' ',
-};
-
-const ENTITY = /&(#x[0-9a-f]{1,6}|#[0-9]{1,7}|[a-z]{2,6});/gi;
-// U+0000-U+001F and U+007F (plan section 4.3); the zero-width joiner and the emoji variation selector go with the emoji.
-// eslint-disable-next-line no-control-regex -- matching control characters is the point of this pattern
-const CONTROL = /[\u0000-\u001f\u007f]/g;
-const EMOJI = /\p{Extended_Pictographic}|\u200d|\ufe0e|\ufe0f/gu;
 const SPACES = /\s+/g;
 const HAS_DIGIT = /\p{N}/u;
-
-/**
- * Decodes the HTML entities supplier names carry (`AT&amp;T`, `&#39;`, `&quot;`, numeric forms), once.
- *
- * Why: fact 8 of the plan: imported names hold entities; the shop shows `AT&T`, so the index must hold `AT&T` too.
- *
- * @param text the raw text
- * @returns the text with every known entity replaced; unknown ones stay as written
- */
-export function decodeEntities(text: string): string {
-  return text.replace(ENTITY, (whole, body: string) => {
-    if (body.startsWith('#x') || body.startsWith('#X')) {
-      const code = Number.parseInt(body.slice(2), 16);
-      return Number.isFinite(code) && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
-    }
-    if (body.startsWith('#')) {
-      const code = Number.parseInt(body.slice(1), 10);
-      return Number.isFinite(code) && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
-    }
-    return NAMED_ENTITIES[body.toLowerCase()] ?? whole;
-  });
-}
 
 /**
  * Cleans a text for display in the index: entities decoded, control characters and emoji removed, spaces collapsed; case and `&` kept.

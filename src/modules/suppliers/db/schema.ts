@@ -181,6 +181,11 @@ export const serviceSupplierLinks = pgTable(
     /** our field key to the supplier's field name */
     fieldMap: jsonObject(),
     isActive: boolean().notNull().default(true),
+    /**
+     * The quick add run that created the service with this link (feature 31, plan 31 section 4.3); `null` for a link made any other way.
+     * Written by `insertFirstLink`: the exact record of what a run made. A deleted run leaves the link without it.
+     */
+    importRunId: bigId().references((): AnyPgColumn => supplierImportRuns.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -193,6 +198,7 @@ export const serviceSupplierLinks = pgTable(
     }).onDelete('restrict'),
     index('service_supplier_links_routing_idx').on(t.serviceId, t.priority),
     index('service_supplier_links_supplier_service_idx').on(t.supplierServiceId),
+    index('service_supplier_links_import_run_idx').on(t.importRunId),
   ],
 );
 
@@ -264,6 +270,17 @@ export const SUPPLIER_IMPORT_SERVICE_STATUSES = ['active', 'disabled'] as const;
 export type SupplierImportServiceStatus = (typeof SUPPLIER_IMPORT_SERVICE_STATUSES)[number];
 
 /**
+ * Whether a quick add also puts what it creates on the shop: not at all, switched on, or switched off.
+ *
+ * Why: feature 31 (plan 31 sections 4.3 and 5.5): the body's `publish: { listed }` becomes `listed` or `unlisted`; the run's close hands
+ * the services it created to the bulk publish with that choice.
+ */
+export const QUICK_ADD_PUBLISH_MODES = ['none', 'listed', 'unlisted'] as const;
+
+/** One value of {@link QUICK_ADD_PUBLISH_MODES}. */
+export type QuickAddPublishMode = (typeof QUICK_ADD_PUBLISH_MODES)[number];
+
+/**
  * How far a quick add is: waiting for the worker, working, done, or stopped.
  *
  * Why: feature 26: `queued` and `running` are the live states (one live run per supplier); the other two end the run.
@@ -291,6 +308,8 @@ export const supplierImportRuns = pgTable(
     /** `[{ type, remoteGroup }]` as stored on `supplier_services`; `[]` for the scope `all` */
     groups: jsonList(),
     serviceStatus: text().$type<SupplierImportServiceStatus>().notNull(),
+    /** whether the services it creates also go on the shop when it ends (feature 31); `none` for a run that did not ask */
+    publishMode: text().$type<QuickAddPublishMode>().notNull().default('none'),
     status: text().$type<SupplierImportRunStatus>().notNull().default('queued'),
     /** how many services the run set out to add (counted again by the worker when it starts) */
     total: integer().notNull().default(0),
@@ -315,6 +334,7 @@ export const supplierImportRuns = pgTable(
     check('supplier_import_runs_scope_check', inList(t.scope, SUPPLIER_IMPORT_SCOPES)),
     check('supplier_import_runs_service_status_check', inList(t.serviceStatus, SUPPLIER_IMPORT_SERVICE_STATUSES)),
     check('supplier_import_runs_status_check', inList(t.status, SUPPLIER_IMPORT_RUN_STATUSES)),
+    check('supplier_import_runs_publish_mode_check', inList(t.publishMode, QUICK_ADD_PUBLISH_MODES)),
     check(
       'supplier_import_runs_counts_check',
       sql`${t.total} >= 0 and ${t.createdCount} >= 0 and ${t.skippedCount} >= 0 and ${t.failedCount} >= 0 and ${t.categoriesCreated} >= 0 and ${t.createdWithQuantity} >= 0`,

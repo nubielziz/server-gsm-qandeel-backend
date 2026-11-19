@@ -90,7 +90,7 @@ routes; it needs the database) and `StorefrontContentModule` (the admin and publ
 app built without one leaves it out, like `CatalogAdminModule`). Other modules import only `src/modules/storefront/index.ts` (lint
 rule `gsm/module-boundaries`); the customers module prices and locks a checkout session with these.
 
-Cross-module calls: catalog's `RetailPrices` (the retail price, the storefront floor, the service lock; the console's listings and
+Cross-module calls: catalog's `RetailPrices` and `RetailPricing` (feature 31: the rule of a service and its price) (the retail price, the storefront floor, the service lock; the console's listings and
 the public prices both use it), `StorefrontServices`, `CatalogPriceVersion`, money's `StorefrontMoney`, platform's `AuditService`
 and `SettingsService`, identity's `CurrentStaff`. The reads of `services`, `service_categories`, `client_groups`, `orders` and
 `consent_records` are plain selects in one file with a note (`infra/foreign-reads.repository.ts`); the retail price is only
@@ -117,10 +117,10 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 
 | Route | Permission | What it does |
 |---|---|---|
-| `GET /admin/service-listings` | `storefront:read` | Listings with the service join, retail price, storefront floor, margin, 30-day storefront sales, the lock and the content fields (no Markdown bodies); filters `isListed`, `locked`, `isFeatured`; sorts include `listedAt`, `sort`. |
+| `GET /admin/service-listings` | `storefront:read` | Listings with the service join, retail price (and, feature 31, `retailPriceSource`, `retailPriceRule`, `retailPriceWaiting`), storefront floor, margin, 30-day storefront sales, the lock and the content fields (no Markdown bodies); filters `isListed`, `locked`, `isFeatured`; sorts include `listedAt`, `sort`. |
 | `GET /admin/service-listings/:id` | `storefront:read` | One listing with `descriptionMd` and `requirementsMd`. |
 | `POST /admin/service-listings` | `storefront:create` | A service on the storefront, not on the site yet, with optional content (`LISTING_EXISTS`: the service already has a listing, or the slug is taken; `LISTING_LOCKED`). |
-| `PATCH /admin/service-listings/:id` | `storefront:update` | The "On the site" switch, the retail price (floor 422, `SERVICE_DISABLED`, `LISTING_LOCKED`) and the content: title, slug (`LISTING_EXISTS` on `slug`), summary, description, requirements, delivery note, SEO, brand, carrier, country, featured, position. |
+| `PATCH /admin/service-listings/:id` | `storefront:update` | The "On the site" switch, the retail price (floor 422, `SERVICE_DISABLED`, `LISTING_LOCKED`; feature 31: `retailPricing: 'rule'` prices by the retail price rule and follows it, 422 on `retailPricing` `conflict`, `no_rule`, `no_cost`; a typed price stops following) and the content: title, slug (`LISTING_EXISTS` on `slug`), summary, description, requirements, delivery note, SEO, brand, carrier, country, featured, position. |
 | `POST /admin/service-listings/:id/image` | `storefront:update` | (22) Multipart part `file`: a JPEG, PNG or WebP of at most 2 MiB, 200 to 4096 px, checked and cleaned by `PublicImages`; becomes the picture of the service. `422` on `file` with the refusal code, `413` over 2 MiB. Audited `uploaded image for`. |
 | `DELETE /admin/service-listings/:id/image` | `storefront:update` | (22) Removes the picture of the service (`204`, also when there was none); the file stays. Audited `removed image of`. |
 | `GET /admin/content-pages` | `storefront:read` | Landing and content pages; filters `kind` (repeatable), `status`; `q` over title and slug. |
@@ -156,6 +156,13 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
   b2c_retail group)` from `RetailPrices.quotes`, the same function the group-price page uses for its retail row; `service.cost` is
   the effective cost, so cost, `marginPct` and `floorPrice` agree. `retailPrice` is the retail group row of `service_group_prices`
   (it belongs to the service and its one listing). A price of zero or less, or under the floor, is 422 on `retailPrice`.
+- **Typed or following** (feature 31, decision 040, B229): every write goes through catalog's `RetailPrices.set` with its origin: a
+  typed `retailPrice` is `manual` (the service stops following a rule); `retailPricing: 'rule'` reads `RetailPricing.targets` under
+  the service lock and writes the rule price of now with the origin `rule` (the price then follows the rule: catalog's follow pass).
+  The refusals (`conflict` with `retailPrice`, `no_rule`, `no_cost`, `LISTING_LOCKED`) come before the first write; the
+  audit row `changed retail price of` adds `pricing: 'rule'`, the rule id and the cost. Each row says `retailPriceSource` (`rule`,
+  `manual`, or `null` without a price), `retailPriceRule` (`{ id, label }` of the rule a following price came from, also after the
+  rule was deleted) and `retailPriceWaiting` (a proposal for the price waits for staff), read with `RetailPrices.sources` for the page.
 - **Locked** (B53): the service's category lists groups and the retail group is not among them ("B2B only ..."), or the service is
   not active ("Service disabled"). Create is 409 `LISTING_LOCKED`; switching a disabled service on is `SERVICE_DISABLED` (checked
   first), a B2B-only one `LISTING_LOCKED`; pricing a locked service is `LISTING_LOCKED`; switching off is always allowed. The SQL
@@ -290,6 +297,21 @@ unchanged) instead of deleting it, and migration 0037 keeps `legal_documents.loc
   not `en`; `acceptedCount` is its consents) and `GET /admin/legal-documents/:id` (its text). `/store/v1/config`, `/store/v1/pages/<type>`
   and the checkout consents read the version in force, which is English. Evidence packs and the data export print type and version only.
 
+## Feature 31: bulk publish (`publish/`, decision 040, `docs/briefs/31-bulk-publish.md`)
+
+Staff put services on the shop in bulk: a **draft** kept on the server (a run in `listing_publish_runs` and its rows in
+`listing_publish_items`) is prepared by a background job, corrected row by row, and applied by a second job that publishes one service per
+transaction. The module is `publish/` (see its `README.md`); its routes are the nine of `/admin/publish-runs` (spec B228,
+`scripts/map-additions/31.mjs`): create (`POST`, also "Check again"), list, show, the rows (`GET .../items`), edit a row (`PATCH
+.../items/:itemId`), change many rows (`POST .../items/bulk`), apply (with the resume), cancel and the run switch (`POST .../listed`).
+Permissions: `storefront:read` to read, `storefront:create` to prepare, edit and cancel a preview, `storefront:publish` to apply, to switch
+and to stop a run that is publishing; a price key of a row edit also needs `storefront:update`. Events written: `storefront.publish_prepare`,
+`storefront.publish_apply`, `storefront.publish_set_listed` (ids and one flag only), consumed by the `imports` queue
+(`publish/jobs/publish-outbox-routes.ts`; `docs/queues.md`); consumed from the suppliers module: `supplier.quick_add_done` (a Quick add run
+that asked to publish; job `publish_from_quick_add` makes and prepares the automatic run of it). A preview (create, edit, bulk, "Check again") writes only the two publish
+tables, plus the audit row of the draft "Check again" cancels; apply, cancel and the run switch are audited (`publish_run`). A published
+service writes what a hand-made listing writes (the listing, its retail price, `storefront.listing_changed`), in one transaction.
+
 ## Scenarios
 
 None of the 13 map scenarios (`docs/slices/` → `scenarios`) touches this module's tables.
@@ -305,7 +327,7 @@ As built (CRUD rows expand per ALIGNMENT § 4; the generator needs `storefront:c
 ## Events
 
 Outbox events produced (feature 29; payloads are ids only): `storefront.listing_changed { serviceIds }` (`ListingAdminService` create and
-update, at most 50 ids an event), `search.settings_changed { kind }` (the console's synonym, pin and hidden-term writes) and
+update and every service a publish run publishes or switches, at most 50 ids an event), `search.settings_changed { kind }` (the console's synonym, pin and hidden-term writes) and
 `search.rebuild_requested { staffId, runId }` (`POST /admin/search/index/rebuild`). Consumed: the three above, by the worker's
 `search-index` and `maintenance` queues (`search/jobs/search-outbox-routes.ts`); catalog's `catalog.services_changed` and
 `catalog.category_changed` also reach the `search-index` queue.

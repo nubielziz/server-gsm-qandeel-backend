@@ -98,6 +98,10 @@ describe('GET /admin/service-listings', () => {
           cost: '13.5000',
         },
         retailPrice: '25.9900',
+        // Feature 31 (decision 040): a price with no follow row is a typed one.
+        retailPriceSource: 'manual',
+        retailPriceRule: null,
+        retailPriceWaiting: false,
         // max(round(17.28 x 1.10, 2), 13.50 + 0.81) = max(19.01, 14.31)
         floorPrice: '19.0100',
         // (25.99 - 13.50) / 25.99 x 100

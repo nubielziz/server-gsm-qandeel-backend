@@ -45,6 +45,70 @@ The rulings B228-B231 are in `docs/contract/lead-decisions.json` (`extra` indexe
 - `nameAll` takes an optional `fixedTitle` per row (an edited row copied by "Check again", 6.1 step 4). The facts are still
   detected from the name: **slice B4a puts an edited row's own brand, carrier and country back** after naming.
 
+**Resume (lead, 2026-11-18, after `main` @ `35ce78e` was merged into both branches).** The owner postponed the feature on
+2026-11-17 and resumed it on 2026-11-18. Main moved meanwhile: feature 32 (migration 0040, decision 041, B232, M266), feature 33
+(decision 042, B233, M267: a supplier sync can turn a service into `server` and make its fields required) and the IMEI-HUB
+brand. **The migrations of this feature are one number higher than this brief says:** `0041_retail_price_rules` (brief: 0040),
+`0042_listing_publish_runs` (0041), then 0043 (0042), 0044 (0043, the templates) and 0045 (0044, Quick add). Decision 040,
+B228-B231 and M265 stay. `test/fixtures/publish/supplier-names.json` no longer holds the owner's real costs (the repository
+is public): its costs are made-up figures of every size, so "the 1157 real costs" of 8.1 and risk 1 now means the fixture's
+1157 costs; zero stays zero, and the names are the real ones.
+
+**Plan corrections after the merge (lead, 2026-11-18, from a check of this plan against the merged code; they override the
+sections below).**
+1. **Naming a service that feature 33 moved to `server`** (3.5, 6.1; slice B4a). Decision 042 makes an IMEI supplier service
+   whose main box is not an IMEI a catalog `server` service: 352 of the owner's 880 `server` services today. The rows are
+   named as **`imei` when the service's type is `imei` or it has a main-box field** (`isMainInputKey(resolvedSupplierKey(field))`
+   of `src/common/dhru`), so they keep their carrier and device brand. `publishFactsOf` carries the flag; the naming code of B2
+   does not change. A test: such a `server` service keeps its carrier and brand.
+2. **A draft evaluation** (B4a, B4b): `evaluateItem` throws `RangeError` on a `cost_moved` decision, so every evaluation of a
+   draft calls it with the row's cost equal to the cost of now. Only the publisher can reach `cost_moved`.
+3. **The follow pass when the service moved and the rules did not** (3.4, 6.4; B5). A sync adoption changes a service's type
+   and category without any staff action, so the rule that prices it can change unattended. When the rule of now differs from
+   the follow row's rule, and that follow rule is still live, active and unchanged since `applied_at`, the pass **opens a
+   proposal with the reason `rule_changed`** and leaves the price alone. A rule staff edited, switched off or deleted applies
+   at once, as 3.4 says.
+4. **The hourly message** (6.4; B5): the dedupe key is per channel, `retail-follow:<first unnotified id>:<channel>`, because
+   `notifications_dedupe_key_uq` covers the key alone. A test: email and Telegram each get a row.
+5. **The templates migration** (4, row B5; it is 0044 now): `test/support/applied-templates.ts` is part of the slice (its reader
+   must accept an insert without `locale`, and the migration joins its `MIGRATIONS`); the staff assertions of the default
+   templates' spec narrow to `alert.*`; `STAFF_SAMPLE` gains the new placeholders; the SQL comes from `templatesInsertSql`.
+6. **The job `retail_price_follow`** (6; B5): the Jobs tab lists every scheduler and its manual run queues `{ runId }`. The
+   processor reads `data.runId` and records manual and scheduled runs in `job_runs` (`job.repeatJobKey` marks the hourly one),
+   as `FxRefreshProcessor` does; the delayed job runs unrecorded.
+7. **`categoryFor`** (3.5; B6): it now also serves the adoption of decision 042. The raw-then-cleaned lookup and the cleaned name
+   apply only on the import's path from `create`; the adoption keeps its exact-name lookup.
+8. **`replaceChain`** (4.3; B6) deletes and reinserts a service's links: `KeptLink` keeps `importRunId`, with a test, or saving a
+   chain would drop the service from its Quick add run.
+9. **Quick add's wire** (5.5, 7.4; B6, C4): section 5.5 stands (the tick needs `storefront:publish`; the run says `publish`; the
+   publish run is found with `GET /admin/publish-runs?quickAddRunId=`). Ruling B231 is corrected to say the same.
+10. **6.5, the sync row:** the sync now also takes `FOR UPDATE` on each service it adopts or repairs, in id order, and `FOR SHARE`
+    on the target category. There is no cycle: a publish holds one service row and takes no category lock. An apply can therefore
+    meet a new type, category or rule; `publishLocked` re-reads them under the service lock, and `resultDetail` says when the price
+    differs from the preview.
+11. **What an IMEI rule covers** (3.3; C4): a type rule for `imei` covers only services that take a real IMEI; services that ask
+    for an ECID or a serial are `server`. The rule dialog says so in a hint.
+12. **Not changed, on purpose:** a required `select` field with no options cannot be ordered, but the owner's data has none
+    (counted on 2026-11-18), so there is no new blocking reason.
+13. **`GET /admin/publish-runs?quickAddRunId=`** (5.2, 7.4; B6): the filter also finds a run staff started with the scope
+    `{ kind: 'quickAddRun', runId }` ("Prepare the shop preview"), not only the automatic one (`source_run_id`), so Quick add's
+    step 3 shows that run when the dialog is opened again.
+14. **`replaced_by_run_id`** (4.2, 5.2): it is set with the cancel, and **"Prepare again" after a dead "Check again" repoints it**: when
+    the replacement has no `prepared_at` and failed, was cancelled or stalled while preparing, the old draft is copied again and
+    linked to the new run. Any other replacement still answers `409`. A scope of ticked services that are all already listed answers
+    `422 nothing_to_publish`. A resume closes a stalled switch as `failed`.
+15. **Approving a price change** (5.4; console `RetailChangesSection`): `POST /admin/retail-price-changes/resolve` with `action: 'apply'`
+    **requires `seen: [{ id, newPrice: Money | null }]`**, one entry per id: the figure staff saw. A difference under the service lock
+    answers `skipped: 'changed'` and writes no price, because the follow pass may rewrite a proposal between the list and the click.
+    `keep` takes no `seen`. A sync adoption sets the follow row's `applied_at` to now, so correction 3 holds for a rule edited earlier.
+16. **After the final reviews (lead, 2026-11-19).** Buyers see the published title at checkout, in tracking, in account orders and
+    on receipts (`coalesce(public_title, services.name)`). `PUT /admin/services/:id/group-prices` takes an optional
+    `retailPriceSeen` (the retail price the form loaded): a retail row equal to it is not written, so a stale form never undoes a
+    following price. A reset of a row that would drop a price staff chose needs `storefront:update`. A group with no usable text
+    (category `Imported`) gives no brand. A succeeded run keeps a scope-cut note in `error`. **The owner decided on 2026-11-19 to
+    clean the existing category names once** (migration 0046 queues the job `category_names_clean`; 19 of the owner's 302 names
+    change, a name another category has is skipped, a name written only in Arabic script keeps its name, each rename is audited).
+
 ## 1. What exists (verified in the code on 2026-11-16; the design rests on these)
 
 | # | Fact | Evidence |

@@ -1,16 +1,16 @@
 // ListingAdminService: the use cases of the storefront listing routes (map domain H, stage 15): list, show, create, the "On the site"
 // switch, the retail price and content edits of PATCH, and the service picture (feature 22). Rules: B53 (locked services), b2c-7 and
-// catalog-12 (the retail floor), catalog-3 (an archived service is gone).
+// catalog-12 (the retail floor), catalog-3 (an archived service is gone), decision 040 (a typed or a following retail price).
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError, type FieldError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService, type DbExecutor, isUniqueViolation } from '../../../infra/db';
-import { CatalogPriceVersion, RetailPrices, marginPercent } from '../../catalog';
+import { CatalogPriceVersion, type RetailWrite, RetailPrices, RetailPricing, marginPercent } from '../../catalog';
 import type { UploadedFile } from '../../../common/multipart';
 import { AuditService, PUBLIC_MEDIA_PATH, PublicImages } from '../../platform';
-import { lockOf, lockedDetail, retailPriceProblem } from '../domain/listing-rules';
+import { lockOf, lockedDetail } from '../domain/listing-rules';
 import { chooseSlug } from '../domain/slug';
 import { SearchSignals } from '../search/application/search-signals';
 import {
@@ -24,14 +24,12 @@ import {
 import {
   type ListingChanges,
   findListing,
-  insertListing,
-  listingConflict,
   lockListing,
-  setListed,
   setListingImage,
   slugTaken,
   updateListingFields,
 } from '../infra/listing.repository';
+import { checkTypedPrice, createListingRow, switchListing, switchRefusal } from './listing-writes';
 
 const DAY_MS = 86_400_000;
 /** The window of `orders30d` and `revenue30d`. */
@@ -64,6 +62,11 @@ export interface ListingView {
     readonly cost: string;
   };
   readonly retailPrice: string | null;
+  /** `rule` (follows a retail price rule), `manual` (typed), `null` (no price): decision 040. */
+  readonly retailPriceSource: 'rule' | 'manual' | null;
+  readonly retailPriceRule: { readonly id: number; readonly label: string } | null;
+  /** A proposal for the following price waits for staff (`retail_price_changes`, decision 040). */
+  readonly retailPriceWaiting: boolean;
   readonly floorPrice: string;
   readonly marginPct: string | null;
   readonly orders30d: number;
@@ -104,6 +107,8 @@ export interface CreateListingInput extends ListingContentInput {
 export interface UpdateListingInput extends ListingContentInput {
   readonly isListed?: boolean | undefined;
   readonly retailPrice?: string | undefined;
+  /** `rule`: price by the retail price rule now and follow it (decision 040). */
+  readonly retailPricing?: 'rule' | undefined;
   readonly publicTitle?: string | undefined;
   readonly slug?: string | undefined;
 }
@@ -158,7 +163,8 @@ function invalid(field: string, message: string, code = 'invalid'): AppError {
  * interleave.
  *
  * Side effects: writes `service_listings` (the content, the facts and the picture of the service's one listing, `listed_at` on the first
- * switch-on), the retail row of `service_group_prices` (through `RetailPrices`) and `audit_logs` (entity `listing`); a picture upload
+ * switch-on), the retail row of `service_group_prices` and the follow row of `retail_price_follows` (through `RetailPrices.set`,
+ * decision 040: a typed price stops following, `retailPricing: 'rule'` starts it) and `audit_logs` (entity `listing`); a picture upload
  * stores an object under `media/` and a `files` row (through `PublicImages`); moves the catalog price version after the commit when the
  * retail price changed. No cache key is touched: nothing is cached for the store catalog.
  *
@@ -170,6 +176,7 @@ export class ListingAdminService {
     private readonly db: DbService,
     private readonly audit: AuditService,
     private readonly retail: RetailPrices,
+    private readonly pricing: RetailPricing,
     private readonly priceVersion: CatalogPriceVersion,
     private readonly images: PublicImages,
     private readonly signals: SearchSignals,
@@ -232,22 +239,16 @@ export class ListingAdminService {
       });
       if (lock.locked) throw new AppError('LISTING_LOCKED', { detail: lockedDetail(lock.reason!) });
 
-      const taken = await listingConflict(tx, input.serviceId, chosen.slug);
-      if (taken) throw this.exists(taken, chosen.slug);
-      let listing;
-      try {
-        listing = await insertListing(tx, {
-          ...sentContent,
-          serviceId: input.serviceId,
-          slug: chosen.slug,
-          publicTitle: input.publicTitle,
-        });
-      } catch (error) {
-        // Two creates that race past the check above meet here (the shared service lock lets both insert).
-        if (isUniqueViolation(error, 'service_listings_service_uq')) throw this.exists('serviceId', chosen.slug);
-        if (isUniqueViolation(error, 'service_listings_slug_uq')) throw this.exists('slug', chosen.slug);
-        throw error;
-      }
+      // The pre-check, then the unique keys: two creates that race past the check meet there (the shared service lock lets both
+      // insert), and both answer the same 409.
+      const created = await createListingRow(tx, {
+        ...sentContent,
+        serviceId: input.serviceId,
+        slug: chosen.slug,
+        publicTitle: input.publicTitle,
+      });
+      if (!created.ok) throw this.exists(created.conflict, chosen.slug);
+      const listing = created.listing;
       // The shop's search follows the listing of the service (feature 29).
       await this.signals.listingsChanged(tx, [input.serviceId]);
       await this.audit.record(tx, {
@@ -278,9 +279,10 @@ export class ListingAdminService {
    * @param id the listing id
    * @param changes the fields to change
    * @returns the updated listing, with its figures worked out again
-   * @throws {AppError} `NOT_FOUND` (404); `VALIDATION_FAILED` (422 on `retailPrice`: zero or less, or under the floor; on `slug`:
-   *   not a valid form); `LISTING_EXISTS` (409 on `slug`: used by another listing); `SERVICE_DISABLED` (409:
-   *   switching a disabled service on); `LISTING_LOCKED` (409: switching on or pricing a service that can never be public)
+   * @throws {AppError} `NOT_FOUND` (404); `VALIDATION_FAILED` (422 on `retailPrice`: zero or less, or under the floor; on
+   *   `retailPricing`: `conflict` with `retailPrice`, `no_rule`, `no_cost`; on `slug`: not a valid form); `LISTING_EXISTS` (409 on
+   *   `slug`: used by another listing); `SERVICE_DISABLED` (409: switching a disabled service on); `LISTING_LOCKED` (409:
+   *   switching on or pricing a service that can never be public)
    */
   async update(id: number, changes: UpdateListingInput): Promise<ListingDetailView> {
     return this.db.runInTransaction(async (work) => {
@@ -301,21 +303,42 @@ export class ListingAdminService {
         retailGroupId: row.retailGroupId ?? undefined,
       });
 
-      if (changes.isListed === true) {
+      const switchFacts = { serviceStatus: service.status, lock };
+      if (changes.isListed !== undefined) {
         // A disabled service is a fixable state, so it gets its own answer before the generic lock.
-        if (service.status !== 'active') {
+        const refusal = switchRefusal(switchFacts, changes.isListed);
+        if (refusal === 'service_disabled') {
           throw new AppError('SERVICE_DISABLED', { detail: `${service.name} is disabled. Enable the service first.` });
         }
-        if (lock.locked) throw new AppError('LISTING_LOCKED', { detail: lockedDetail(lock.reason!) });
+        if (refusal === 'locked') throw new AppError('LISTING_LOCKED', { detail: lockedDetail(lock.reason!) });
+      }
+      if (changes.retailPricing !== undefined && changes.retailPrice !== undefined) {
+        throw invalid('retailPricing', 'Send a price or ask for the rule, not both.', 'conflict');
       }
       let price: Money | undefined;
+      let write: RetailWrite | undefined;
       if (changes.retailPrice !== undefined) {
         price = Money.of(changes.retailPrice);
         if (!price.isPositive()) throw invalid('retailPrice', 'Enter a price greater than zero.');
         if (lock.locked) throw new AppError('LISTING_LOCKED', { detail: lockedDetail(lock.reason!) });
-        const quote = (await this.retail.quotes(tx, [service.id])).get(service.id)!;
-        const problem = retailPriceProblem(price, quote.floor);
-        if (problem !== null) throw invalid('retailPrice', problem, 'below_floor');
+        const checked = await checkTypedPrice(this.retail, tx, service.id, price);
+        if (!checked.ok) throw invalid('retailPrice', checked.message, 'below_floor');
+        write = checked.write;
+      }
+      let ruleId: number | undefined;
+      if (changes.retailPricing === 'rule') {
+        if (lock.locked) throw new AppError('LISTING_LOCKED', { detail: lockedDetail(lock.reason!) });
+        // Read under the service lock: the cost, the floor and the rule of now (decision 040).
+        const target = (await this.pricing.targets(tx, [service.id])).get(service.id)!;
+        if (target.rule === null || target.rulePrice === null) {
+          throw invalid('retailPricing', 'No pricing rule covers this service.', 'no_rule');
+        }
+        if (target.rulePrice.kind === 'no_cost') {
+          throw invalid('retailPricing', 'This service has no cost, so a rule cannot price it.', 'no_cost');
+        }
+        price = target.rulePrice.price;
+        ruleId = target.rule.id;
+        write = { origin: { kind: 'rule', ruleId, cost: target.quote.cost }, quote: target.quote };
       }
       const contentChanges = definedOf(changes, CONTENT_KEYS) as ListingChanges;
       if (changes.slug !== undefined) {
@@ -330,8 +353,8 @@ export class ListingAdminService {
       }
       const edited = Object.keys(definedOf(changes, CONTENT_KEYS)).length > 0;
 
-      if (price !== undefined) {
-        const before = await this.retail.set(tx, service.id, price);
+      if (price !== undefined && write !== undefined) {
+        const before = await this.retail.set(tx, service.id, price, write);
         this.priceVersion.bumpAfterCommit(work);
         await this.audit.record(tx, {
           action: 'changed retail price of',
@@ -339,11 +362,14 @@ export class ListingAdminService {
           entityId: id,
           entityLabel: service.name,
           before: { retailPrice: before?.toWire() ?? null },
-          after: { retailPrice: price.toWire() },
+          after:
+            ruleId === undefined
+              ? { retailPrice: price.toWire() }
+              : { retailPrice: price.toWire(), pricing: 'rule', ruleId, cost: write.quote.cost.toWire() },
         });
       }
       if (changes.isListed !== undefined) {
-        const updated = await setListed(tx, id, changes.isListed, this.clock.now());
+        const updated = await switchListing(tx, id, changes.isListed, this.clock.now(), switchFacts);
         await this.audit.record(tx, {
           action: updated.isListed ? 'listed on storefront' : 'unlisted from storefront',
           entityType: 'listing',
@@ -485,6 +511,7 @@ export class ListingAdminService {
     const serviceIds = rows.map((row) => row.service.id);
     const since = new Date(this.clock.nowMs() - SALES_WINDOW_DAYS * DAY_MS);
     const quotes = await this.retail.quotes(db, serviceIds);
+    const sources = await this.retail.sources(db, serviceIds);
     const sales = await salesOf(db, serviceIds, since);
     const images = await this.images.urlsOf(
       db,
@@ -501,6 +528,7 @@ export class ListingAdminService {
         retailGroupId: row.retailGroupId ?? undefined,
       });
       const figures = sales.get(row.service.id);
+      const source = sources.get(row.service.id);
       return [
         {
           id: row.listing.id,
@@ -528,6 +556,10 @@ export class ListingAdminService {
             cost: quote.cost.toWire(),
           },
           retailPrice: quote.retailPrice?.toWire() ?? null,
+          // The price and its source are two reads: a price written in between cannot change the answer's shape, only its age.
+          retailPriceSource: quote.retailPrice === null ? null : (source?.source ?? 'manual'),
+          retailPriceRule: quote.retailPrice === null ? null : (source?.rule ?? null),
+          retailPriceWaiting: source?.waiting ?? false,
           floorPrice: quote.floor.toWire(),
           marginPct: quote.retailPrice?.isPositive() ? marginPercent(quote.retailPrice, quote.cost) : null,
           orders30d: figures?.orders ?? 0,

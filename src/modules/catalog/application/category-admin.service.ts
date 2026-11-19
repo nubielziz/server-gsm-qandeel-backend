@@ -23,6 +23,7 @@ import {
   nextCategorySort,
   updateCategoryRow,
 } from '../infra/category.repository';
+import { categoryRetailRuleId } from '../infra/retail-price-rule.repository';
 
 /** A category as the console reads it. */
 export interface CategoryView {
@@ -82,7 +83,8 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
  * live services have moved; archived services follow the change by `ON UPDATE CASCADE`. A name is unique within its type,
  * checked before the write and again from the unique index, so a race answers 422 and never 500.
  *
- * Side effects: writes `service_categories` (and, on delete, the category's `pricing_rules`) and `audit_logs` (entity `category`).
+ * Side effects: writes `service_categories` (and, on delete, the category's `pricing_rules` and, by the cascade, its
+ * `retail_price_rules`) and `audit_logs` (entity `category`).
  *
  * @see docs/contract/endpoints/catalog.md (the `/admin/service-categories` sections)
  */
@@ -224,7 +226,8 @@ export class CategoryAdminService {
    * Deletes a category that no service belongs to.
    *
    * Why: RESOLUTIONS catalog-6: archived services keep their row for order history and block the delete too, with their own
-   * advice (turn the category off). The category's pricing rules go in the same transaction.
+   * advice (turn the category off). The category's pricing rules go in the same transaction, and its retail price rule by the
+   * cascade (the audit row names it, `removedRetailRuleId`, feature 31).
    *
    * @param id the category id
    * @throws {AppError} `NOT_FOUND` (404); `CATEGORY_IN_USE` (409: live services, or only archived ones, still belong to it)
@@ -240,6 +243,8 @@ export class CategoryAdminService {
       if (live > 0) throw inUseByLive(category.name, live);
       if (archived > 0) throw inUseByArchived(category.name, archived);
       const removedRuleIds = await deleteCategoryRules(tx, id);
+      // The category's retail price rule goes with it by the cascade (deleted rules too); no service can be priced by it now.
+      const removedRetailRuleId = await categoryRetailRuleId(tx, id);
       try {
         await deleteCategoryRow(tx, id);
       } catch (error) {
@@ -252,7 +257,11 @@ export class CategoryAdminService {
         entityType: 'category',
         entityId: id,
         entityLabel: category.name,
-        before: { ...snapshot(category), removedPricingRuleIds: removedRuleIds },
+        before: {
+          ...snapshot(category),
+          removedPricingRuleIds: removedRuleIds,
+          ...(removedRetailRuleId === null ? {} : { removedRetailRuleId }),
+        },
       });
     });
   }

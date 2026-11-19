@@ -1,6 +1,6 @@
 // Root module of the worker process (decision 016): config, the clock (decision 031), logging, metrics, the infrastructure (database, Redis, cache,
 // rate limits, crypto, storage, outbound HTTP, the real-time doorbell publisher of decision 037), the queue workers and schedulers, the outbox relay, job runs, the IP rule
-// hit flush, the ended-session purge, the nightly merchant group promotion, the merchant mail jobs (verification, reset and invitation links), the automatic credit of top-ups (`payment_auto_credit`, with the `invoice.paid` outbox route), the order outbox routes (`order.status_changed` to the merchant webhook deliveries, `order.dispatch_requested` to the supplier dispatch job), the merchant webhook deliveries, the notifications (event routes, planning and sending processors, feature 12a), the customer mail jobs (sign-in, reset, invitation and verification links, feature 14b), the hourly exchange-rate refresh (`fx_refresh`), the storefront refunds sent to their gateways (`refund.process`), the storefront receipts drawn and stored (`receipt.render`), the price change scan, the supplier jobs (dispatch, poll, sync), the health jobs (component checks, purge, reaper, size sample), the commission engine (it accrues commissions when a supplier's result completes an order), the support ticket mails (receipt, reply, survey), the support chat's jobs (the reply-mail sweep every minute and the nightly attachment retention, feature 28), the nightly IMEI retention (`data_retention`, feature 18), the daily Idempotency-Key purge (`idempotency_purge`, P4a), the abandoned checkout recovery (the recovery mail and the 5-minute sweep), the risk services (they register the top-up question the automatic credit asks, RESOLUTIONS money-3), the storefront search jobs (the `search-index` queue's sync and settings push, the reconcile, rebuild, terms build, flush and purge, with the search engine client on the worker's indexer key; feature 29) and the metrics listener. Domain modules add their processors and schedules here as their features are built.
+// hit flush, the ended-session purge, the nightly merchant group promotion, the merchant mail jobs (verification, reset and invitation links), the automatic credit of top-ups (`payment_auto_credit`, with the `invoice.paid` outbox route), the order outbox routes (`order.status_changed` to the merchant webhook deliveries, `order.dispatch_requested` to the supplier dispatch job), the merchant webhook deliveries, the notifications (event routes, planning and sending processors, feature 12a), the customer mail jobs (sign-in, reset, invitation and verification links, feature 14b), the hourly exchange-rate refresh (`fx_refresh`), the storefront refunds sent to their gateways (`refund.process`), the storefront receipts drawn and stored (`receipt.render`), the price change scan, the supplier jobs (dispatch, poll, sync), the health jobs (component checks, purge, reaper, size sample), the commission engine (it accrues commissions when a supplier's result completes an order), the support ticket mails (receipt, reply, survey), the support chat's jobs (the reply-mail sweep every minute and the nightly attachment retention, feature 28), the nightly IMEI retention (`data_retention`, feature 18), the daily Idempotency-Key purge (`idempotency_purge`, P4a), the abandoned checkout recovery (the recovery mail and the 5-minute sweep), the risk services (they register the top-up question the automatic credit asks, RESOLUTIONS money-3), the storefront search jobs (the `search-index` queue's sync and settings push, the reconcile, rebuild, terms build, flush and purge, with the search engine client on the worker's indexer key; feature 29), the bulk publish's apply and run switch (`publish_apply`, `publish_set_listed` on `imports`; feature 31), the retail price follow pass (`retail_price_follow`; feature 31) and the metrics listener. Domain modules add their processors and schedules here as their features are built.
 import { Module } from '@nestjs/common';
 import { ClockModule } from './common/clock.module';
 import { ConfigModule } from './config';
@@ -16,7 +16,7 @@ import { RealtimeModule } from './infra/realtime';
 import { RedisModule } from './infra/redis';
 import { SearchModule } from './infra/search';
 import { StorageModule } from './infra/storage';
-import { PriceChangeScanModule } from './modules/catalog';
+import { CategoryNameCleanupModule, PriceChangeScanModule, RetailPriceFollowModule } from './modules/catalog';
 import { CommissionsEngineModule } from './modules/commissions';
 import { CheckoutRecoveryModule, CustomerMailModule, CustomerNotificationsModule } from './modules/customers';
 import { HealthJobsModule, JobRunsModule } from './modules/health';
@@ -38,7 +38,7 @@ import {
   WebhookDeliveryModule,
 } from './modules/platform';
 import { DataRetentionModule, RiskServicesModule } from './modules/risk';
-import { SearchWorkerModule, StorefrontPopularityModule } from './modules/storefront';
+import { PublishWorkerModule, SearchWorkerModule, StorefrontPopularityModule } from './modules/storefront';
 import { SupplierJobsModule } from './modules/suppliers';
 import { SupportEventsModule, SupportJobsModule, SupportMailModule } from './modules/support';
 
@@ -79,11 +79,14 @@ import { SupportEventsModule, SupportJobsModule, SupportMailModule } from './mod
     IdempotencyPurgeModule,
     StorefrontPopularityModule,
     SearchWorkerModule,
+    PublishWorkerModule,
     WebhookDeliveryModule,
     NotificationEventsModule,
     NotificationDeliveryModule,
     MailHealthProbeModule,
     PriceChangeScanModule,
+    RetailPriceFollowModule,
+    CategoryNameCleanupModule,
     PaymentAutoCreditModule,
     FxRefreshJobModule,
     RefundProcessModule,

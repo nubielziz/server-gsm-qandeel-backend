@@ -16,17 +16,19 @@ import {
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import {
+  bigId,
   bigintList,
   createdAt,
   fk,
   inList,
   jsonObject,
+  money,
   pk,
   textList,
   timestampTz,
   updatedAt,
 } from '../../../infra/db/columns';
-import { services } from '../../catalog/db/schema';
+import { retailPriceRules, services } from '../../catalog/db/schema';
 import { staffUsers } from '../../identity/db/schema';
 import { files } from '../../platform/db/schema';
 
@@ -426,6 +428,271 @@ export const searchIndexState = pgTable(
 
 /** A row read from `search_index_state`. */
 export type SearchIndexState = typeof searchIndexState.$inferSelect;
+
+// --- Bulk publish (feature 31, decision 040, plan 31 section 4.2) ---------------------------------------------------------------------
+// Owned by storefront (`additionalTables` in scripts/module-map.mjs). A run is a draft kept on the server (its rows), then a background
+// apply that publishes one service per transaction. The lists no CHECK holds (`PUBLISH_FLAGS`, `PUBLISH_RESULT_REASONS`) live in
+// publish/domain/publish-item.ts.
+
+/**
+ * The states of a publish run.
+ *
+ * Why: plan 31 sections 5.2 and 6: `preparing` (the worker builds the draft), `draft` (staff review it), `queued` and `running`
+ * (apply), then `succeeded`, `failed` or `cancelled`.
+ */
+export const PUBLISH_RUN_STATUSES = [
+  'preparing',
+  'draft',
+  'queued',
+  'running',
+  'succeeded',
+  'failed',
+  'cancelled',
+] as const;
+
+/** One value of {@link PUBLISH_RUN_STATUSES}. */
+export type PublishRunStatus = (typeof PUBLISH_RUN_STATUSES)[number];
+
+/**
+ * Who made a publish run: staff in the console, or the Quick add hand-over.
+ *
+ * Why: plan 31 sections 5.2 and 6.3.
+ */
+export const PUBLISH_RUN_SOURCES = ['console', 'quick_add'] as const;
+
+/** One value of {@link PUBLISH_RUN_SOURCES}. */
+export type PublishRunSource = (typeof PUBLISH_RUN_SOURCES)[number];
+
+/**
+ * The states of a run switch (take everything a run published off the shop, or put it back).
+ *
+ * Why: plan 31 section 6.7.
+ */
+export const PUBLISH_SWITCH_STATUSES = ['queued', 'running', 'done', 'failed'] as const;
+
+/** One value of {@link PUBLISH_SWITCH_STATUSES}. */
+export type PublishSwitchStatus = (typeof PUBLISH_SWITCH_STATUSES)[number];
+
+/**
+ * Where the slug of a publish row comes from: the rules (`auto`) or staff (`staff`).
+ *
+ * Why: plan 31 section 3.2: at apply a taken `auto` slug gets the next free suffix, a taken `staff` slug refuses the row.
+ */
+export const PUBLISH_SLUG_SOURCES = ['auto', 'staff'] as const;
+
+/** One value of {@link PUBLISH_SLUG_SOURCES}. */
+export type PublishSlugSource = (typeof PUBLISH_SLUG_SOURCES)[number];
+
+/**
+ * How a publish row is priced: by the rule, by the price staff typed in the row, or by keeping the service's retail price.
+ *
+ * Why: plan 31 sections 5.2 and 6.2 (`normalisePriceMode`, `decidePrice`).
+ */
+export const PUBLISH_PRICE_MODES = ['rule', 'manual', 'keep'] as const;
+
+/** One value of {@link PUBLISH_PRICE_MODES}. */
+export type PublishPriceMode = (typeof PUBLISH_PRICE_MODES)[number];
+
+/**
+ * The state of a publish row: publishable, publishable after a look, or not publishable now.
+ *
+ * Why: plan 31 section 3.2.
+ */
+export const PUBLISH_ITEM_STATES = ['ready', 'review', 'blocked'] as const;
+
+/** One value of {@link PUBLISH_ITEM_STATES}. */
+export type PublishItemState = (typeof PUBLISH_ITEM_STATES)[number];
+
+/**
+ * Why a publish row cannot be published now, in the order they are judged (the first that applies is the row's).
+ *
+ * Why: plan 31 section 3.2, the table of blocking reasons.
+ */
+export const PUBLISH_BLOCK_REASONS = [
+  'already_listed',
+  'service_disabled',
+  'category_inactive',
+  'b2b_only',
+  'not_orderable',
+  'supplier_unavailable',
+  'title_missing',
+  'title_too_long',
+  'price_missing',
+  'below_floor',
+  'slug_taken',
+] as const;
+
+/** One value of {@link PUBLISH_BLOCK_REASONS}. */
+export type PublishBlockReason = (typeof PUBLISH_BLOCK_REASONS)[number];
+
+/**
+ * What happened to a publish row at apply.
+ *
+ * Why: plan 31 section 3.2 (the result table); the reasons are `PUBLISH_RESULT_REASONS` of the domain file.
+ */
+export const PUBLISH_ITEM_RESULTS = ['published', 'skipped', 'refused'] as const;
+
+/** One value of {@link PUBLISH_ITEM_RESULTS}. */
+export type PublishItemResult = (typeof PUBLISH_ITEM_RESULTS)[number];
+
+/**
+ * A run of the bulk publish: a draft of rows, then its apply, and the switch that takes what it published off the shop or back.
+ *
+ * Why: decision 040 and plan 31 section 4.2: the preview is a draft kept on the server; apply is a background job (queue `imports`)
+ * that keeps the run's id across a resume, so the claim counts (`attempt`): a worker whose number is no longer the row's writes
+ * nothing. `source_run_id` and `replaced_by_run_id` are plain ids (the storefront schema does not import the suppliers', and the
+ * replacing run is written once with the cancel).
+ */
+export const listingPublishRuns = pgTable(
+  'listing_publish_runs',
+  {
+    id: pk(),
+    status: text().$type<PublishRunStatus>().notNull().default('preparing'),
+    source: text().$type<PublishRunSource>().notNull(),
+    /** the Quick add run that asked for this one (no foreign key: a suppliers table) */
+    sourceRunId: bigId(),
+    /** the scope as sent (`{ kind, ... }`, plan 31 section 5.2) */
+    scope: jsonObject(),
+    /** the run "Check again" made from this draft (set with the cancel; "Prepare again" moves it when that run died unprepared) */
+    replacedByRunId: bigId(),
+    /** whether apply switches the listings on; the run switch stores its target here too */
+    listed: boolean().notNull().default(true),
+    /** applied by the system as soon as it is prepared (the Quick add hand-over) */
+    auto: boolean().notNull().default(false),
+    /** `NAMING_RULES_VERSION` of the naming that made the titles */
+    rulesVersion: integer().notNull(),
+    total: integer().notNull().default(0),
+    /** the three counters, written at the close and by a cancel (a live read counts the rows) */
+    publishedCount: integer().notNull().default(0),
+    skippedCount: integer().notNull().default(0),
+    refusedCount: integer().notNull().default(0),
+    /** at most 500 characters */
+    error: text(),
+    requestedBy: fk((): AnyPgColumn => staffUsers.id),
+    /** the claim counter: every claim of an apply or a switch adds one; every write of a worker requires the number it got */
+    attempt: integer().notNull().default(0),
+    /** set by the worker that prepares the draft (the claim of the prepare) */
+    prepareClaimedAt: timestampTz(),
+    preparedAt: timestampTz(),
+    startedAt: timestampTz(),
+    finishedAt: timestampTz(),
+    /** the clock's time at insert, at each claim and by every step; five minutes without one reads as stalled */
+    heartbeatAt: timestampTz().notNull(),
+    /** the run switch; null: never asked */
+    switchStatus: text().$type<PublishSwitchStatus>(),
+    /** the switch's target */
+    switchListed: boolean(),
+    switchedCount: integer().notNull().default(0),
+    switchSkippedCount: integer().notNull().default(0),
+    /** at most 500 characters */
+    switchError: text(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('listing_publish_runs_status_check', inList(t.status, PUBLISH_RUN_STATUSES)),
+    check('listing_publish_runs_source_check', inList(t.source, PUBLISH_RUN_SOURCES)),
+    check('listing_publish_runs_switch_status_check', inList(t.switchStatus, PUBLISH_SWITCH_STATUSES)),
+    check('listing_publish_runs_switch_check', sql`(${t.switchStatus} is null) = (${t.switchListed} is null)`),
+    check(
+      'listing_publish_runs_counts_check',
+      sql`${t.total} >= 0 and ${t.publishedCount} >= 0 and ${t.skippedCount} >= 0 and ${t.refusedCount} >= 0 and ${t.attempt} >= 0 and ${t.switchedCount} >= 0 and ${t.switchSkippedCount} >= 0`,
+    ),
+    // One publish run per Quick add run (the hand-over's conflict target).
+    uniqueIndex('listing_publish_runs_source_run_uq')
+      .on(t.sourceRunId)
+      .where(sql`${t.sourceRunId} is not null`),
+    index('listing_publish_runs_status_idx').on(t.status, t.id),
+    index('listing_publish_runs_requested_by_idx').on(t.requestedBy),
+  ],
+);
+
+/** A row read from `listing_publish_runs`. */
+export type ListingPublishRun = typeof listingPublishRuns.$inferSelect;
+
+/** A row to insert into `listing_publish_runs`. */
+export type NewListingPublishRun = typeof listingPublishRuns.$inferInsert;
+
+/**
+ * One service of a publish run: what the rules detected, what staff changed, how it is priced and what happened at apply.
+ *
+ * Why: plan 31 section 4.2: the row is a flat record (`detected` beside the edited fields), evaluated at prepare, at every edit and
+ * again at apply on the locked service (the stored state is never trusted for a write). `replaces_price` is the typed price staff
+ * chose to replace with the rule price, set only by the row's `PATCH`; `existing_price` is for display and decides nothing.
+ */
+export const listingPublishItems = pgTable(
+  'listing_publish_items',
+  {
+    id: pk(),
+    runId: fk((): AnyPgColumn => listingPublishRuns.id, 'cascade').notNull(),
+    serviceId: fk((): AnyPgColumn => services.id, 'cascade').notNull(),
+    /** `{ title, slug, brand, brandKind, carrier, country }` as the rules found them (for "Reset") */
+    detected: jsonObject(),
+    /** what will be published; staff may edit */
+    title: text().notNull().default(''),
+    slug: text().notNull().default(''),
+    brand: text().notNull().default(''),
+    carrier: text().notNull().default(''),
+    country: text().notNull().default(''),
+    slugSource: text().$type<PublishSlugSource>().notNull().default('auto'),
+    priceMode: text().$type<PublishPriceMode>().notNull().default('rule'),
+    /** the price staff typed in the row (`manual` only) */
+    priceOverride: money(),
+    /** the typed retail price staff chose to replace with the rule price; the publisher replaces it only while it is still this */
+    replacesPrice: money(),
+    /** the retail price the service had at the last evaluation (display only) */
+    existingPrice: money(),
+    /** as evaluated; `cost` is the figure the publish limit compares with */
+    cost: money().notNull().default('0'),
+    floorPrice: money().notNull().default('0'),
+    ruleId: bigId().references((): AnyPgColumn => retailPriceRules.id, { onDelete: 'set null' }),
+    rulePrice: money(),
+    state: text().$type<PublishItemState>().notNull().default('blocked'),
+    blockedReason: text().$type<PublishBlockReason>(),
+    /** the flags of plan 31 section 3.2 (`PUBLISH_FLAGS` of the domain file) */
+    flags: textList(),
+    included: boolean().notNull().default(false),
+    edited: boolean().notNull().default(false),
+    evaluatedAt: timestampTz(),
+    result: text().$type<PublishItemResult>(),
+    /** one of `PUBLISH_RESULT_REASONS` of the domain file */
+    resultReason: text(),
+    /** at most 300 characters */
+    resultDetail: text(),
+    listingId: bigId().references((): AnyPgColumn => serviceListings.id, { onDelete: 'set null' }),
+    publishedPrice: money(),
+    finishedAt: timestampTz(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique('listing_publish_items_run_service_uq').on(t.runId, t.serviceId),
+    check('listing_publish_items_slug_source_check', inList(t.slugSource, PUBLISH_SLUG_SOURCES)),
+    check('listing_publish_items_price_mode_check', inList(t.priceMode, PUBLISH_PRICE_MODES)),
+    check('listing_publish_items_state_check', inList(t.state, PUBLISH_ITEM_STATES)),
+    check('listing_publish_items_blocked_reason_check', inList(t.blockedReason, PUBLISH_BLOCK_REASONS)),
+    check('listing_publish_items_result_check', inList(t.result, PUBLISH_ITEM_RESULTS)),
+    check(
+      'listing_publish_items_override_check',
+      sql`(${t.priceMode} = 'manual') = (${t.priceOverride} is not null) and (${t.priceOverride} is null or ${t.priceOverride} > 0)`,
+    ),
+    check('listing_publish_items_replaces_check', sql`${t.replacesPrice} is null or ${t.priceMode} = 'rule'`),
+    // A blocked row cannot be ticked: an evaluation that blocks a row clears the tick in the same write.
+    check('listing_publish_items_included_check', sql`${t.state} <> 'blocked' or ${t.included} = false`),
+    index('listing_publish_items_run_idx').on(t.runId, t.id),
+    index('listing_publish_items_run_state_idx').on(t.runId, t.state),
+    index('listing_publish_items_run_result_idx').on(t.runId, t.result),
+    index('listing_publish_items_service_idx').on(t.serviceId),
+    index('listing_publish_items_listing_idx').on(t.listingId),
+    index('listing_publish_items_rule_idx').on(t.ruleId),
+  ],
+);
+
+/** A row read from `listing_publish_items`. */
+export type ListingPublishItem = typeof listingPublishItems.$inferSelect;
+
+/** A row to insert into `listing_publish_items`. */
+export type NewListingPublishItem = typeof listingPublishItems.$inferInsert;
 
 // --- Old addresses (feature 30, English only, decision 039, plan section 4.5) --------------------------------------------------------
 // Owned by storefront (`additionalTables` in scripts/module-map.mjs). Migration 0035 fills it once from the addresses in other

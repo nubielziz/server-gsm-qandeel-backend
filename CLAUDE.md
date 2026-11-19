@@ -33,6 +33,9 @@ decisions: `docs/decisions/`; contract: `docs/contract/`.
 - Two processes, one codebase: `api` and `worker`. The API never does slow work inline: DB + outbox, then return.
 - Money: only `postTransaction()`; append-only (corrections reverse); lines sum to zero (code + deferred trigger);
   unique `idempotency_key`; lock `ledger_accounts` `FOR UPDATE` in id order; never floats.
+- Retail prices (decision 040): written only through `RetailPrices.set` (it refuses a price under the floor and records typed or
+  following) and the group price page's replace (the same floor; it turns following off); a rule never overwrites a typed price
+  unless staff asked for that exact price to be replaced; automatic changes are rows of `retail_price_changes`.
 - Orders: explicit state machine, every transition writes `order_events`; B2C never dispatches before payment;
   supplier timeout → `needs_attention`, hold kept, no automatic re-send.
 - Search: Typesense holds derived, public, price-free documents; writers of indexed facts write an outbox event; never

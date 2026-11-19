@@ -21,7 +21,10 @@ export const replaceServiceGroupPrices = defineRoute({
     '(`422` on `prices.N.price`, "Below the floor of $X (cost $Y plus $Z minimum profit)."), the retail row at the storefront ' +
     'floor `max(round(base price x 1.10, 2), floor)` ("Below the storefront floor of $X."). A group listed twice is `422` on ' +
     '`prices.N.groupId` ("Listed twice", the later row); an unknown group is `422` on `prices.N.groupId`; a price not above zero ' +
-    'is `422` on `prices.N.price`. An unknown or archived service is `404`.',
+    'is `422` on `prices.N.price`. An unknown or archived service is `404`. `retailPriceSeen` is the retail price the form loaded ' +
+    '(`null`: it loaded none): when the retail row sent is that same figure (or absent, for `null`), nobody changed it, so the retail ' +
+    'price stored now stays as it is and keeps following its rule, even if it moved since the form opened, and the row sent is neither ' +
+    'written nor held to the floor. Without the key every row counts as sent.',
   tags: ['services'],
   surface: 'admin',
   access: 'staff-permission',
@@ -29,10 +32,19 @@ export const replaceServiceGroupPrices = defineRoute({
   params: z.object({ id: zIdParam }),
   body: z.object({
     prices: z.array(z.object({ groupId: zId, price: PositiveMoney })).max(200, 'Use at most 200 group prices.'),
+    retailPriceSeen: zMoney
+      .nullable()
+      .optional()
+      .describe(
+        'The retail price the form loaded; `null` when the service had none. Send it from a form that saves every group.',
+      ),
   }),
   success: { status: 200, schema: z.array(GroupPriceRow) },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'VALIDATION_FAILED'],
-  examples: { request: { prices: [GROUP_PRICE_EXAMPLE] }, response: [GROUP_PRICE_EXAMPLE] },
+  examples: {
+    request: { prices: [GROUP_PRICE_EXAMPLE], retailPriceSeen: null },
+    response: [GROUP_PRICE_EXAMPLE],
+  },
 });
 
 const BulkBody = z.object({

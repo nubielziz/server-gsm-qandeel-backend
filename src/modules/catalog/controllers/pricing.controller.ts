@@ -44,7 +44,7 @@ export class PricingController {
     @Param() params: ParamsOf<typeof replaceServiceGroupPrices>,
     @Body() body: BodyOf<typeof replaceServiceGroupPrices>,
   ): Promise<ResultOf<typeof replaceServiceGroupPrices>> {
-    return this.groupPrices.replace(params.id, body.prices);
+    return this.groupPrices.replace(params.id, body.prices, { retailPriceSeen: body.retailPriceSeen });
   }
 
   /**

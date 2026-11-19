@@ -1,7 +1,7 @@
 // Route contracts of the storefront listings (map domain H, stage 15): the "Services on sale" tab of the console, and the service picture
 // of feature 22 (upload and removal, routes beyond the map). Shapes match the console's ServiceListing (docs/contract/endpoints/storefront.md,
 // RESOLUTIONS b2c-7 and catalog-12, ANSWERS storefront Q1 and Q10). English only (decision 039, B224): one listing per service, no
-// language field.
+// language field. Feature 31 (decision 040, B229): whether the retail price follows a rule, and `retailPricing: 'rule'`.
 import { z } from 'zod';
 import {
   defineRoute,
@@ -61,6 +61,17 @@ const ListingRow = z.object({
   retailPrice: zMoney
     .nullable()
     .describe('The storefront price of the service, net USD before VAT; `null` when unset.'),
+  retailPriceSource: z
+    .enum(['rule', 'manual'])
+    .nullable()
+    .describe(
+      '`rule` when the retail price follows a retail price rule (it moves with the cost), `manual` when a person typed it, `null` without a price (decision 040).',
+    ),
+  retailPriceRule: z
+    .object({ id: zId, label: z.string() })
+    .nullable()
+    .describe('The rule a following price came from (its name stays after the rule is deleted); `null` otherwise.'),
+  retailPriceWaiting: z.boolean().describe('A proposed change of the following price waits for staff approval.'),
   floorPrice: zMoney.describe(
     'The lowest retail price accepted: `max(round(basePrice x 1.10, 2), effective cost + minimum profit)` for the retail group.',
   ),
@@ -99,6 +110,9 @@ const LISTING_EXAMPLE = {
   imageUrl: '/store/v1/media/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08.webp',
   service: { id: 5, name: 'AT&T USA Premier Unlock', code: 'IMEI-ATT-USA', basePrice: '17.2800', cost: '13.5000' },
   retailPrice: '25.9900',
+  retailPriceSource: 'manual',
+  retailPriceRule: null,
+  retailPriceWaiting: false,
   floorPrice: '19.0100',
   marginPct: '48.0569',
   orders30d: 12,
@@ -205,6 +219,7 @@ export const createListing = defineRoute({
       listedAt: null,
       imageUrl: null,
       retailPrice: null,
+      retailPriceSource: null,
       marginPct: null,
     },
   },
@@ -218,13 +233,17 @@ export const updateListing = defineRoute({
     'Any of the fields below; at least one. `isListed` and `retailPrice` (4-decimal net USD before VAT) work as before: ' +
     '`retailPrice` writes the retail group price of the service, so it applies only to new storefront checkouts; a price of zero ' +
     'or less, or under `floorPrice`, is `422` on `retailPrice` ("Below the storefront floor ' +
-    'of $X."). Switching a disabled service on is `409 SERVICE_DISABLED`; switching on or pricing a service that can never be ' +
+    'of $X."); a typed price stops the price following a rule. `retailPricing: "rule"` writes the price the retail price rule ' +
+    'of the service gives now and makes it follow the rule from then on (decision 040); it is `422` on `retailPricing` with the ' +
+    'code `conflict` when `retailPrice` is sent too, `no_rule` when no active rule covers the service, `no_cost` when the ' +
+    'service has no cost, and `409 LISTING_LOCKED` as for a price. Switching a disabled service on is `409 SERVICE_DISABLED`; switching on or pricing a service that can never be ' +
     'public is `409 LISTING_LOCKED`. Switching off is always allowed. Switching on for the first time sets `listedAt`; it never ' +
     'resets. Content: `publicTitle`, `slug` (a form that is not lower-case words joined by hyphens is `422` on `slug`; one used by ' +
     'another listing is `409 LISTING_EXISTS` on `slug`; changing it changes the public link), `summary`, `descriptionMd`, ' +
     '`requirementsMd`, `etaText`, `seoTitle`, `seoDescription`, `brand`, `carrier`, `country` (empty or two letters), ' +
     '`isFeatured`, `sort`. Every refusal is decided before the first write. Each change is audited (`listed on storefront`, `unlisted from storefront`, ' +
-    '`changed retail price of`, `edited listing of`; the audit row keeps the length of the Markdown bodies, not their text).',
+    '`changed retail price of`, `edited listing of`; the audit row keeps the length of the Markdown bodies, not their text). ' +
+    'Every row also says whether its price follows a rule (`retailPriceSource`, `retailPriceRule`, `retailPriceWaiting`).',
   tags: ['storefront-listings'],
   surface: 'admin',
   access: 'staff-permission',
@@ -234,6 +253,10 @@ export const updateListing = defineRoute({
     .object({
       isListed: z.boolean().optional(),
       retailPrice: zMoney.optional(),
+      retailPricing: z
+        .literal('rule', 'Send "rule" to price by the retail price rule.')
+        .optional()
+        .describe('`rule`: price the service by its retail price rule now, and follow the rule from then on.'),
       publicTitle: titleField('Enter the title customers see.').optional(),
       slug: SlugField.optional(),
       ...CONTENT_FIELDS,

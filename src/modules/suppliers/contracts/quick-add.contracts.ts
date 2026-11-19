@@ -3,7 +3,12 @@
 // `src/features/suppliers/types/quickAdd.ts`.
 import { z } from 'zod';
 import { defineRoute, zId, zIdParam, zIsoDateTime } from '../../../common/contract';
-import { SUPPLIER_IMPORT_RUN_STATUSES, SUPPLIER_IMPORT_SCOPES, SUPPLIER_IMPORT_SERVICE_STATUSES } from '../db/schema';
+import {
+  QUICK_ADD_PUBLISH_MODES,
+  SUPPLIER_IMPORT_RUN_STATUSES,
+  SUPPLIER_IMPORT_SCOPES,
+  SUPPLIER_IMPORT_SERVICE_STATUSES,
+} from '../db/schema';
 import { MAX_ITEM_FAILURES, MAX_QUICK_ADD_GROUPS } from '../domain/quick-add';
 
 const id = z.object({ id: zIdParam });
@@ -42,6 +47,11 @@ const QuickAddRun = z.object({
   scope: z.enum(SUPPLIER_IMPORT_SCOPES),
   groups: z.array(GroupKey).describe('The picked groups; `[]` for the scope `all`.'),
   serviceStatus: z.enum(SUPPLIER_IMPORT_SERVICE_STATUSES),
+  publish: z
+    .enum(QUICK_ADD_PUBLISH_MODES)
+    .describe(
+      'Whether the run also puts what it created on the shop when it ends: `none`, `listed` (switched on) or `unlisted` (prepared, switched off).',
+    ),
   status: z
     .enum(SUPPLIER_IMPORT_RUN_STATUSES)
     .describe('A `queued` or `running` run without a heartbeat for 5 minutes reads as `failed`.'),
@@ -71,6 +81,7 @@ const RUN_EXAMPLE = {
   scope: 'groups' as const,
   groups: [{ type: 'IMEI', remoteGroup: 'Apple iPhone' }],
   serviceStatus: 'active' as const,
+  publish: 'none' as const,
   status: 'running' as const,
   total: 80,
   processed: 30,
@@ -129,10 +140,22 @@ export const listServiceGroups = defineRoute({
   },
 });
 
+const QuickAddPublishChoice = z
+  .strictObject({
+    listed: z
+      .boolean()
+      .describe('Switch what is published on (`true`), or leave it switched off for staff to review (`false`).'),
+  })
+  .describe(
+    'Also put the services this run creates on the shop (feature 31). Needs the `storefront:publish` permission, services that start ' +
+      '`active` and at least one active retail price rule.',
+  );
+
 const QuickAddBody = z.discriminatedUnion('scope', [
   z.strictObject({
     scope: z.literal('all'),
     serviceStatus: z.enum(SUPPLIER_IMPORT_SERVICE_STATUSES).optional(),
+    publish: QuickAddPublishChoice.optional(),
   }),
   z.strictObject({
     scope: z.literal('groups'),
@@ -141,6 +164,7 @@ const QuickAddBody = z.discriminatedUnion('scope', [
       .min(1, 'Pick at least one group.')
       .max(MAX_QUICK_ADD_GROUPS, `Pick at most ${MAX_QUICK_ADD_GROUPS} groups, or add all.`),
     serviceStatus: z.enum(SUPPLIER_IMPORT_SERVICE_STATUSES).optional(),
+    publish: QuickAddPublishChoice.optional(),
   }),
 ]);
 
@@ -158,8 +182,12 @@ export const startQuickAdd = defineRoute({
     "`queued`; the worker adds the services in chunks and the run's `processed` moves. A supplier has one live run: a second start " +
     'answers `409 JOB_ALREADY_RUNNING` (unless the live run stalled: it is closed and a new one starts); a `disabled` supplier ' +
     'answers `409 SUPPLIER_DISABLED` (a paused one is accepted). A scope with no candidate answers `422` on `scope` with code ' +
-    '`nothing_to_add` and creates no run. Writes the audit row `started quick add from`; the worker writes `quick added services ' +
-    'from` when the run ends.',
+    '`nothing_to_add` and creates no run. With `publish: { listed }` the run also puts what it creates on the shop when it ends: the ' +
+    "services are handed to the bulk publish, which prepares a preview and publishes the ready rows at the retail pricing rules' prices " +
+    '(the ones that need a person wait in Storefront, Publish). `publish` answers `403 FORBIDDEN` naming `storefront:publish` when the ' +
+    'staff member lacks it, `422` on `publish` with code `needs_active` when `serviceStatus` is `disabled`, and code `no_rule` when no ' +
+    'retail price rule is active. Writes the audit row `started quick add from`; the worker writes `quick added services from` when the ' +
+    'run ends. The publish run is found with `GET /admin/publish-runs?quickAddRunId=<run id>`.',
   tags: ['suppliers'],
   surface: 'admin',
   access: 'staff-permission',

@@ -4,13 +4,13 @@
   "domain": "B",
   "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
   "counts": {
-    "rows": 21,
-    "endpoints": 43,
+    "rows": 28,
+    "endpoints": 50,
     "bySurface": {
       "dhru": 1,
       "v1": 2,
       "client": 3,
-      "admin": 37
+      "admin": 44
     },
     "frontendCalled": 37
   },
@@ -18,7 +18,8 @@
     4,
     5,
     7,
-    14
+    14,
+    31
   ],
   "ownedTables": [
     {
@@ -1688,6 +1689,254 @@
         "line": 46,
         "fn": "updateTacEntry"
       }
+    },
+    {
+      "key": "GET /admin/retail-price-rules",
+      "method": "GET",
+      "path": "/admin/retail-price-rules",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "The retail price rules that price the shop from the cost, with the services that follow each.",
+      "access": "staff-permission",
+      "permission": "pricing:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:read",
+      "stage": 31,
+      "tables": [
+        "retail_price_rules",
+        "retail_price_follows"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/retail-price-rules",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/retail-price-rules"
+      },
+      "module": "catalog",
+      "description": "The retail price rules that price the shop from the cost, with the services that follow each.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B229"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/retail-price-rules",
+      "method": "POST",
+      "path": "/admin/retail-price-rules",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "Create a retail price rule (general, per service type or per category).",
+      "access": "staff-permission",
+      "permission": "pricing:create",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:create",
+      "stage": 31,
+      "tables": [
+        "retail_price_rules",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/retail-price-rules",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/retail-price-rules"
+      },
+      "module": "catalog",
+      "description": "Create a retail price rule (general, per service type or per category).",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B229"
+      },
+      "successStatus": 201
+    },
+    {
+      "key": "PATCH /admin/retail-price-rules/:id",
+      "method": "PATCH",
+      "path": "/admin/retail-price-rules/:id",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "Change the figures of a retail price rule, or switch it off and on.",
+      "access": "staff-permission",
+      "permission": "pricing:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:update",
+      "stage": 31,
+      "tables": [
+        "retail_price_rules",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin PATCH /admin/retail-price-rules/:id",
+        "method": "PATCH",
+        "ops": null,
+        "path": "/admin/retail-price-rules/:id"
+      },
+      "module": "catalog",
+      "description": "Change the figures of a retail price rule, or switch it off and on.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B229"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "DELETE /admin/retail-price-rules/:id",
+      "method": "DELETE",
+      "path": "/admin/retail-price-rules/:id",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "Delete a retail price rule (the rule keeps its row for the history).",
+      "access": "staff-permission",
+      "permission": "pricing:delete",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:delete",
+      "stage": 31,
+      "tables": [
+        "retail_price_rules",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin DELETE /admin/retail-price-rules/:id",
+        "method": "DELETE",
+        "ops": null,
+        "path": "/admin/retail-price-rules/:id"
+      },
+      "module": "catalog",
+      "description": "Delete a retail price rule (the rule keeps its row for the history).",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B229"
+      },
+      "successStatus": 204
+    },
+    {
+      "key": "POST /admin/retail-price-rules/preview",
+      "method": "POST",
+      "path": "/admin/retail-price-rules/preview",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "What a change of the retail price rules would do to the prices that follow them; nothing is stored.",
+      "access": "staff-permission",
+      "permission": "pricing:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:read",
+      "stage": 31,
+      "tables": [
+        "retail_price_rules",
+        "retail_price_follows",
+        "services"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/retail-price-rules/preview",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/retail-price-rules/preview"
+      },
+      "module": "catalog",
+      "description": "What a change of the retail price rules would do to the prices that follow them; nothing is stored.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B229"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "GET /admin/retail-price-changes",
+      "method": "GET",
+      "path": "/admin/retail-price-changes",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "The retail prices the follow pass moved, the moves that wait for staff, and the prices that stopped following a rule.",
+      "access": "staff-permission",
+      "permission": "pricing:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:read",
+      "stage": 31,
+      "tables": [
+        "retail_price_changes",
+        "services"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/retail-price-changes",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/retail-price-changes"
+      },
+      "module": "catalog",
+      "description": "The retail prices the follow pass moved, the moves that wait for staff, and the prices that stopped following a rule.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B230"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/retail-price-changes/resolve",
+      "method": "POST",
+      "path": "/admin/retail-price-changes/resolve",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "Answer waiting price proposals: approve the figure shown, or keep the current price as a typed one.",
+      "access": "staff-permission",
+      "permission": "pricing:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "pricing:update",
+      "stage": 31,
+      "tables": [
+        "retail_price_changes",
+        "retail_price_follows",
+        "service_group_prices",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/retail-price-changes/resolve",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/retail-price-changes/resolve"
+      },
+      "module": "catalog",
+      "description": "Answer waiting price proposals: approve the figure shown, or keep the current price as a typed one.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/31.mjs",
+        "spec": "B230"
+      },
+      "successStatus": 200
     }
   ],
   "scenarios": [

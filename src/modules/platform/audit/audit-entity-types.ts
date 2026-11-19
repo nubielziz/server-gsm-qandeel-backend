@@ -70,6 +70,10 @@ export const AUDIT_ENTITY_TYPES = [
   'search_pin',
   'search_hidden_term',
   'search_index',
+  // Feature 31 (decision 040, slice B1): the retail price rules.
+  'retail_price_rule',
+  // Feature 31 (plan 31 section 6.6): a bulk publish run, its close and its run switch.
+  'publish_run',
 ] as const;
 
 /** One value of {@link AUDIT_ENTITY_TYPES}. */

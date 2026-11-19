@@ -153,6 +153,8 @@ const ADDITIONS: Record<string, string[]> = {
   service_listings: ['listed_at', 'sales_30d', 'image_file_id'],
   // Feature 32 (migration 0040): the ready-made method a payment method was made from, and the logo staff uploaded for it.
   payment_gateways: ['preset', 'logo_file_id'],
+  // Feature 31 (migration 0045): the quick add run that created the service this link belongs to.
+  service_supplier_links: ['import_run_id'],
 };
 
 /**

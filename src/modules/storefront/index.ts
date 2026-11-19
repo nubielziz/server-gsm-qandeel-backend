@@ -40,3 +40,7 @@ export { TERMS_SCHEMA_VERSION } from './search/domain/terms';
 export { SearchIndexModule } from './search/search-index.module';
 export { SearchHttpModule } from './search/search-http.module';
 export { SEARCH_SCHEDULERS, SearchWorkerModule } from './search/search-worker.module';
+// The bulk publish (feature 31): the engine both processes load, the API's routes of the draft, and the worker's processors.
+export { PublishEngineModule } from './publish/publish-engine.module';
+export { PublishHttpModule } from './publish/publish-http.module';
+export { PublishWorkerModule } from './publish/publish-worker.module';

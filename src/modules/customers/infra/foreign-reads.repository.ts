@@ -1,4 +1,4 @@
-// Read-only lookups into tables other modules own (currencies, orders, sessions, legal documents, risk assessments, refunds,
+// Read-only lookups into tables other modules own (currencies, orders, sessions, listings, legal documents, risk assessments, refunds,
 // disputes, support tickets and the blocklist), kept in this one file: the customer list and detail join them, and the store
 // account reads the customer's own orders.
 //
@@ -238,6 +238,7 @@ export interface StoreOrderRow {
   readonly id: number;
   readonly status: (typeof s.orders.$inferSelect)['status'];
   readonly serviceId: number;
+  /** The title the service is published under, or its catalog name when it has no listing. */
   readonly serviceName: string;
   readonly imei: string | null;
   readonly quantity: number;
@@ -279,7 +280,8 @@ export async function listCustomerOrders(
         id: s.orders.id,
         status: s.orders.status,
         serviceId: s.orders.serviceId,
-        serviceName: s.services.name,
+        // The customer bought what the shop named: its listing's title (a service has at most one), else the catalog name (feature 31).
+        serviceName: sql<string>`coalesce(${s.serviceListings.publicTitle}, ${s.services.name})`,
         imei: s.orders.imei,
         quantity: s.orders.quantity,
         totalPrice: s.orders.totalPrice,
@@ -291,6 +293,7 @@ export async function listCustomerOrders(
       })
       .from(s.orders)
       .innerJoin(s.services, eq(s.services.id, s.orders.serviceId))
+      .leftJoin(s.serviceListings, eq(s.serviceListings.serviceId, s.orders.serviceId))
       .where(where)
       .orderBy(...listOrderBy(query.sort, ORDER_COLUMNS, s.orders.id))
       .limit(query.range.limit)

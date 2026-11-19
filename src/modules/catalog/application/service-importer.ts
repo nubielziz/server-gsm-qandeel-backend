@@ -1,8 +1,9 @@
 // ServiceImporter: the catalog's writes for the supplier import of stage 6 (RESOLUTIONS orders-suppliers-10, catalog-9, B24): create a
 // service (and its category and custom fields) from a supplier service, and set a service's cost. The suppliers module decides what
 // to import and calls this inside its transaction; it never writes catalog tables itself.
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import { CLOCK, type Clock } from '../../../common/clock';
 import { isMainInputKey, resolvedSupplierKey } from '../../../common/dhru';
 import type { DbExecutor } from '../../../infra/db';
 import {
@@ -13,9 +14,11 @@ import {
   serviceFields,
   services,
 } from '../db/schema';
+import { IMPORTED_CATEGORY_NAME, cleanGroupName } from '../domain/category-name';
 import { type QuantityRule, quantityRuleProblems } from '../domain/quantity-rule';
 import { deliveryTimeText } from '../domain/service-figures';
 import { insertCategoryRow, lockCategoryRow, nextCategorySort } from '../infra/category.repository';
+import { restampRetailFollow } from '../infra/retail-price-rule.repository';
 import {
   findServiceByCode,
   insertFirstFieldRow,
@@ -33,7 +36,7 @@ export interface ImportedServiceInput {
   readonly supplierServiceId: number;
   readonly type: ServiceType;
   readonly name: string;
-  /** The supplier's group name: the category's name (`Imported` when empty). */
+  /** The supplier's group text as stored: the category is found by it, else by its cleaned name, else made under the cleaned name (`Imported` when empty). */
   readonly group: string;
   /** The supplier's delivery time text, kept as the service's `delivery_time`. */
   readonly time: string;
@@ -96,13 +99,20 @@ const MAX_DELIVERY_TEXT = 80;
  * It also adopts the supplier's main box on a service made before decision 042 (`adoptMainInput`) and makes the fields its supplier
  * requires required (`requireFields`), both for the supplier sync (feature 33).
  *
+ * The category of a new service is found by the supplier's raw group text, then by the cleaned name (`cleanGroupName`), and created under
+ * the cleaned name when neither exists (plan 31 section 3.5).
+ *
  * Side effects: inserts `service_categories` (when the group has none yet), `services` and `service_fields`; updates
- * `services.cost`; the adoption updates `services` (type and category) and `service_fields` and writes a `catalog.services_changed`
- * outbox event; `requireFields` updates `service_fields.required`. No audit row: the supplier module's use case writes them.
+ * `services.cost`; the adoption updates `services` (type and category), `service_fields` and the time on the service's
+ * `retail_price_follows` row and writes a `catalog.services_changed` outbox event; `requireFields` updates
+ * `service_fields.required`. No audit row: the supplier module's use case writes them.
  */
 @Injectable()
 export class ServiceImporter {
-  constructor(private readonly signals: CatalogSignals) {}
+  constructor(
+    private readonly signals: CatalogSignals,
+    @Inject(CLOCK) private readonly clock: Clock,
+  ) {}
 
   /**
    * Creates a service from a supplier service.
@@ -118,11 +128,7 @@ export class ServiceImporter {
   ): Promise<{ serviceId: number; code: string; categoryCreated: boolean }> {
     const problems = quantityRuleProblems(input.quantity);
     if (problems.length > 0) throw new Error(`The imported quantity rule is invalid: ${problems.join('; ')}`);
-    const category = await this.categoryFor(
-      tx,
-      input.type,
-      input.group.trim() === '' ? 'Imported' : input.group.trim(),
-    );
+    const category = await this.categoryForGroup(tx, input.type, input.group);
     const code = await this.freeCode(tx, `IMP-${input.supplierServiceId}`);
     const service = await insertServiceRow(tx, {
       categoryId: category.id,
@@ -182,8 +188,12 @@ export class ServiceImporter {
    * quantity, SLA, links and listing stay. Like a staff edit of a service's category (`PATCH /admin/services/:id`), it writes the
    * search index's change event; the caller moves the catalog price version after the commit and writes the audit row.
    *
-   * Side effects: locks the service row; may insert `service_categories`; updates `services` (type, category) and `service_fields`
-   * (sorts, one new row); inserts one `catalog.services_changed` outbox event (reason `service`).
+   * The move can put a following retail price under another rule with nobody watching (plan 31 correction 3), so the follow row's
+   * `applied_at` becomes the moment of the move: the follow pass then proposes the new rule's price, even when staff edited that rule
+   * after the price was last set, instead of writing it at once.
+   *
+   * Side effects: locks the service row; may insert `service_categories`; updates `services` (type, category), `service_fields` (sorts,
+   * one new row) and `retail_price_follows.applied_at`; inserts one `catalog.services_changed` outbox event (reason `service`).
    *
    * @param tx the sync's transaction
    * @param input the service and the field to put first
@@ -219,6 +229,8 @@ export class ServiceImporter {
     await lockCategoryRow(tx, category.id, 'share');
     // Type and category in one statement: the composite key `services_category_type_fk` sees them agree.
     await updateServiceRow(tx, service.id, { type: 'server', categoryId: category.id });
+    // Lock order: the service row (above), then the follow row.
+    await restampRetailFollow(tx, service.id, this.clock.now());
     await insertFirstFieldRow(tx, service.id, {
       key: input.field.key,
       label: input.field.label,
@@ -280,7 +292,37 @@ export class ServiceImporter {
     return optional.map((field) => field.key);
   }
 
-  /** The category of this type with this name (ignoring case), created when it does not exist (visible to all and on, unless told). */
+  /**
+   * The category of a new service from its supplier group: found by the raw group text, else by the cleaned name, else created under the
+   * cleaned name (plan 31 section 3.5, "Category names").
+   *
+   * Why: the raw text comes first, which is the lookup this importer always made, so a group whose category an earlier import made under the
+   * raw text (`&amp;` and all) keeps getting its services, and none are split between two categories. Only a category made from now on
+   * carries the cleaned name; the picker's import and the quick add both come through here. The adoption of decision 042 does not: it
+   * looks a category up by its exact name (`categoryFor`).
+   */
+  private async categoryForGroup(
+    tx: DbExecutor,
+    type: ServiceType,
+    group: string,
+  ): Promise<{ id: number; created: boolean }> {
+    const raw = group.trim() === '' ? IMPORTED_CATEGORY_NAME : group.trim();
+    const byRaw = await this.findCategory(tx, type, raw);
+    if (byRaw !== undefined) return { id: byRaw, created: false };
+    return this.categoryFor(tx, type, cleanGroupName(group));
+  }
+
+  /** The id of the category of this type with this name (ignoring case), or `undefined`. */
+  private async findCategory(tx: DbExecutor, type: ServiceType, name: string): Promise<number | undefined> {
+    const [found] = await tx
+      .select({ id: serviceCategories.id })
+      .from(serviceCategories)
+      .where(and(eq(serviceCategories.type, type), sql`lower(${serviceCategories.name}) = lower(${name})`))
+      .limit(1);
+    return found?.id;
+  }
+
+  /** The category of this type with this exact name (ignoring case), created when it does not exist (visible to all and on, unless told). */
   private async categoryFor(
     tx: DbExecutor,
     type: ServiceType,
@@ -290,12 +332,8 @@ export class ServiceImporter {
       isActive: true,
     },
   ): Promise<{ id: number; created: boolean }> {
-    const [found] = await tx
-      .select({ id: serviceCategories.id })
-      .from(serviceCategories)
-      .where(and(eq(serviceCategories.type, type), sql`lower(${serviceCategories.name}) = lower(${name})`))
-      .limit(1);
-    if (found) return { id: found.id, created: false };
+    const found = await this.findCategory(tx, type, name);
+    if (found !== undefined) return { id: found, created: false };
     const created = await insertCategoryRow(tx, {
       name,
       type,

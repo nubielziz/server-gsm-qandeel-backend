@@ -115,20 +115,21 @@
       "module": "catalog",
       "name": "Catalog & pricing",
       "domain": "B",
-      "rows": 21,
-      "endpoints": 43,
+      "rows": 28,
+      "endpoints": 50,
       "bySurface": {
         "dhru": 1,
         "v1": 2,
         "client": 3,
-        "admin": 37
+        "admin": 44
       },
       "frontendCalled": 37,
       "stages": [
         4,
         5,
         7,
-        14
+        14,
+        31
       ],
       "tables": 10,
       "scenarios": [
@@ -274,11 +275,11 @@
       "module": "storefront",
       "name": "Storefront & content",
       "domain": "H",
-      "rows": 37,
-      "endpoints": 48,
+      "rows": 46,
+      "endpoints": 57,
       "bySurface": {
         "store": 12,
-        "admin": 36
+        "admin": 45
       },
       "frontendCalled": 36,
       "stages": [
@@ -288,7 +289,8 @@
         19,
         22,
         29,
-        30
+        30,
+        31
       ],
       "tables": 4,
       "scenarios": []

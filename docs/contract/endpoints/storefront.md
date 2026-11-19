@@ -55,6 +55,15 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 | `GET /admin/search/index` | admin | staff-permission `storefront:read` | 29 | `getSearchIndex` |
 | `POST /admin/search/index/rebuild` | admin | staff-permission `storefront:publish` | 29 | `rebuildSearchIndex` |
 | `GET /store/v1/legacy-slugs/:kind/:slug` | store | public | 30 |  |
+| `POST /admin/publish-runs` | admin | staff-permission `storefront:create` | 31 |  |
+| `GET /admin/publish-runs` | admin | staff-permission `storefront:read` | 31 |  |
+| `GET /admin/publish-runs/:id` | admin | staff-permission `storefront:read` | 31 |  |
+| `GET /admin/publish-runs/:id/items` | admin | staff-permission `storefront:read` | 31 |  |
+| `PATCH /admin/publish-runs/:id/items/:itemId` | admin | staff-permission `storefront:create` | 31 |  |
+| `POST /admin/publish-runs/:id/items/bulk` | admin | staff-permission `storefront:create` | 31 |  |
+| `POST /admin/publish-runs/:id/apply` | admin | staff-permission `storefront:publish` | 31 |  |
+| `POST /admin/publish-runs/:id/cancel` | admin | staff-permission `storefront:create` | 31 |  |
+| `POST /admin/publish-runs/:id/listed` | admin | staff-permission `storefront:publish` | 31 |  |
 
 ## GET /store/v1/config
 
@@ -408,5 +417,50 @@ Later consents reference this version. requires_reacceptance makes signed-in cus
 ## GET /store/v1/legacy-slugs/:kind/:slug
 
 - **Map addition** (B224, `scripts/map-additions/30.mjs`): Where an old address in another language leads now: the page of the same service, the service list, the home page or the help centre. · public · stage 30 · tables legacy_slugs, service_listings · success 200
+- **Frontend**: none.
+
+## POST /admin/publish-runs
+
+- **Map addition** (B228, `scripts/map-additions/31.mjs`): Prepare a draft of services to put on the shop in bulk (a preview that changes nothing), or check an earlier one again. · staff-permission `storefront:create` · stage 31 · tables listing_publish_runs, outbox_events, audit_logs · success 202
+- **Frontend**: none.
+
+## GET /admin/publish-runs
+
+- **Map addition** (B228, `scripts/map-additions/31.mjs`): List the bulk publish runs, newest first. · staff-permission `storefront:read` · stage 31 · tables listing_publish_runs, listing_publish_items, staff_users · success 200
+- **Frontend**: none.
+
+## GET /admin/publish-runs/:id
+
+- **Map addition** (B228, `scripts/map-additions/31.mjs`): Show one bulk publish run with its counts and its progress. · staff-permission `storefront:read` · stage 31 · tables listing_publish_runs, listing_publish_items, staff_users · success 200
+- **Frontend**: none.
+
+## GET /admin/publish-runs/:id/items
+
+- **Map addition** (B228, `scripts/map-additions/31.mjs`): List the rows of a bulk publish run: what was detected, what will be published, the price and the result. · staff-permission `storefront:read` · stage 31 · tables listing_publish_items, services, service_listings · success 200
+- **Frontend**: none.
+
+## PATCH /admin/publish-runs/:id/items/:itemId
+
+- **Map addition** (B228, `scripts/map-additions/31.mjs`): Edit one row of a publish draft (title, address, facts, price, tick, or back to what was detected); a price key also needs storefront:update. · staff-permission `storefront:create` · stage 31 · tables listing_publish_items · success 200
+- **Frontend**: none.
+
+## POST /admin/publish-runs/:id/items/bulk
+
+- **Map addition** (B228, `scripts/map-additions/31.mjs`): Change the tick or the brand, carrier or country of many rows of a publish draft, picked by id or by a filter. · staff-permission `storefront:create` · stage 31 · tables listing_publish_items · success 200
+- **Frontend**: none.
+
+## POST /admin/publish-runs/:id/apply
+
+- **Map addition** (B228, `scripts/map-additions/31.mjs`): Publish the ticked rows of a draft, or continue a run that stopped. · staff-permission `storefront:publish` · stage 31 · tables listing_publish_runs, listing_publish_items, outbox_events, audit_logs · success 202
+- **Frontend**: none.
+
+## POST /admin/publish-runs/:id/cancel
+
+- **Map addition** (B228, `scripts/map-additions/31.mjs`): Discard a preview, or stop a run that is publishing (which also needs storefront:publish). · staff-permission `storefront:create` · stage 31 · tables listing_publish_runs, audit_logs · success 200
+- **Frontend**: none.
+
+## POST /admin/publish-runs/:id/listed
+
+- **Map addition** (B228, `scripts/map-additions/31.mjs`): Take everything a finished run published off the shop, or put it back. · staff-permission `storefront:publish` · stage 31 · tables listing_publish_runs, outbox_events, audit_logs · success 202
 - **Frontend**: none.
 

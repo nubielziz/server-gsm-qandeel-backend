@@ -68,7 +68,8 @@ export const modules = [
       'client_groups', 'service_categories', 'services', 'service_fields', 'service_options', 'service_group_prices',
       'service_client_prices', 'pricing_rules', 'inventory_codes', 'tac_catalog',
     ],
-    additionalTables: ['listed_prices'],
+    // Feature 31 (decision 040): the retail price rules, the record of which retail prices follow them, and what the follow pass did.
+    additionalTables: ['listed_prices', 'retail_price_rules', 'retail_price_follows', 'retail_price_changes'],
     rows: [
       /^admin \S+ \/admin\/(client-groups|service-categories|client-prices|pricing-rules|pricing|inventory-codes|tac-catalog)(\/|$)/,
       'admin CRUD /admin/services',
@@ -143,8 +144,10 @@ export const modules = [
     tables: ['service_listings', 'content_pages', 'help_articles', 'legal_documents'],
     // Feature 29 (search on Typesense, decision 038): synonyms, pins, hidden terms, the daily term counts and the index state.
     // Feature 30 (English only, decision 039): the old addresses in other languages (legacy_slugs).
+    // Feature 31 (bulk publish, decision 040): the publish runs and their rows.
     additionalTables: [
       'search_synonyms', 'search_pins', 'search_hidden_terms', 'search_terms_daily', 'search_index_state', 'legacy_slugs',
+      'listing_publish_runs', 'listing_publish_items',
     ],
     rows: [
       /^admin \S+ \/admin\/(service-listings|content-pages|help-articles|legal-documents|storefront)(\/|$)/,

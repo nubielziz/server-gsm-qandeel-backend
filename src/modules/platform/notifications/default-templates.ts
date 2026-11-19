@@ -1,7 +1,7 @@
-// The default templates of the merchant events, the customer account mails, the alert messages and the storefront order, payment and
-// refund mails (platform module, features 12a, 14b, 12b and 16): English email and Telegram texts. Migrations 0011 (merchant), 0012
-// (customer mails), 0015 (alerts) and 0018 (storefront mails) insert the same rows into a fresh database (a spec finds every row of
-// this file in them); the console edits them afterwards.
+// The default templates of the merchant events, the customer account mails, the alert messages, the storefront order, payment and
+// refund mails and the hourly message about following retail prices (platform module, features 12a, 14b, 12b, 16 and 31): English
+// email and Telegram texts. Migrations 0011 (merchant), 0012 (customer mails), 0015 (alerts), 0018 (storefront mails) and 0044 (retail
+// prices) insert the same rows into a fresh database (a spec finds every row of this file in them); the console edits them afterwards.
 import type { NotificationAudience, NotificationChannel } from '../db/schema';
 
 /** One default template: one per event, channel and audience (decision 039: templates have no language). */
@@ -170,6 +170,20 @@ export const DEFAULT_TEMPLATES: readonly DefaultTemplate[] = [
     audience: 'staff',
     subject: '',
     body: 'RESOLVED: {{ruleName}} on {{subject}}. {{metric}} is {{value}} (limit {{threshold}}). {{detail}}',
+  },
+  {
+    event: 'retail.prices_followed',
+    channel: 'email',
+    audience: 'staff',
+    subject: 'IMEI-HUB shop prices: {{changed}} changed, {{waiting}} waiting',
+    body: 'The shop prices that follow your pricing rules moved since the last message.\n\nPrices changed: {{changed}}\nChanges waiting for your approval: {{waiting}}\nPrices that stopped following a rule: {{detached}}\n\nReview them on the Retail pricing tab:\n{{link}}',
+  },
+  {
+    event: 'retail.prices_followed',
+    channel: 'telegram',
+    audience: 'staff',
+    subject: '',
+    body: 'IMEI-HUB shop prices: {{changed}} changed, {{waiting}} waiting for approval, {{detached}} stopped following a rule. {{link}}',
   },
   {
     event: 'customer.magic_link',

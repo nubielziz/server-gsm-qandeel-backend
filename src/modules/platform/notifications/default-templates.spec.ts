@@ -1,6 +1,7 @@
-// Unit tests of the default templates (features 12a, 14b, 12b and 16): they use only their event's placeholders, cover every merchant event
-// the platform wires, the four customer account mails, both alert events and the five storefront mails of feature 16, migrations 0011,
-// 0012, 0015 and 0018 together insert exactly these rows, and `defaultTemplatesSql()` writes today's shape (no language, decision 039).
+// Unit tests of the default templates (features 12a, 14b, 12b, 16 and 31): they use only their event's placeholders, cover every merchant
+// event the platform wires, the four customer account mails, both alert events, the five storefront mails of feature 16 and the hourly
+// message about retail prices, migrations 0011, 0012, 0015, 0018 and 0044 together insert exactly these rows, and `defaultTemplatesSql()`
+// writes today's shape (no language, decision 039).
 import { describe, expect, it } from 'bun:test';
 import { insertedTemplates } from '../../../../test/support/applied-templates';
 import { DEFAULT_TEMPLATES, defaultTemplatesSql } from './default-templates';
@@ -41,7 +42,7 @@ describe('DEFAULT_TEMPLATES', () => {
   });
 
   it('word each alert message with the rule, the subject, the value against the limit and the detail', () => {
-    for (const template of DEFAULT_TEMPLATES.filter((t) => t.audience === 'staff')) {
+    for (const template of DEFAULT_TEMPLATES.filter((t) => t.event.startsWith('alert.'))) {
       const label = `${template.event} ${template.channel}`;
       for (const name of ['ruleName', 'subject', 'metric', 'value', 'threshold', 'detail'])
         expect(template.body, `${label} {{${name}}}`).toContain(`{{${name}}}`);
@@ -75,6 +76,7 @@ const MIGRATIONS = [
   '0012_customer_mail_templates.sql',
   '0015_alert_templates.sql',
   '0018_refund_declined_template.sql',
+  '0044_retail_follow_templates.sql',
 ] as const;
 
 /** The customer events feature 16 sends through `StorefrontMails`, with the placeholder each one's text must use to say what it is about. */
@@ -130,7 +132,8 @@ describe('the migrations that insert the default templates', () => {
   it('insert only English rows, each a default of the code with the same event, channel, audience, subject and body', () => {
     const defaults: readonly object[] = DEFAULT_TEMPLATES;
     for (const { file, row } of shipped) {
-      expect(row.locale, file).toBe('en');
+      // A migration written after decision 039 has no language column at all.
+      expect(row.locale ?? 'en', file).toBe('en');
       const { event, channel, audience, subject, body } = row;
       expect(defaults, `${file} ${event} ${channel}`).toContainEqual({ event, channel, audience, subject, body });
     }
@@ -159,12 +162,34 @@ describe('defaultTemplatesSql()', () => {
 
 describe('the alert templates (feature 12b)', () => {
   it('are the two alert events by email and Telegram, for the staff audience', () => {
-    const staff = DEFAULT_TEMPLATES.filter((template) => template.audience === 'staff');
-    expect(staff.map((template) => `${template.event}:${template.channel}`)).toEqual([
+    const alerts = DEFAULT_TEMPLATES.filter(
+      (template) => template.audience === 'staff' && template.event.startsWith('alert.'),
+    );
+    expect(alerts.map((template) => `${template.event}:${template.channel}`)).toEqual([
       'alert.fired:email',
       'alert.fired:telegram',
       'alert.resolved:email',
       'alert.resolved:telegram',
     ]);
+  });
+});
+
+describe('the retail price templates (feature 31)', () => {
+  const templates = DEFAULT_TEMPLATES.filter((template) => template.event === 'retail.prices_followed');
+
+  it('are one email and one Telegram text for the staff audience, under the brand', () => {
+    expect(templates.map((template) => `${template.audience}:${template.channel}`)).toEqual([
+      'staff:email',
+      'staff:telegram',
+    ]);
+    expect(templates[0]!.subject).toContain('IMEI-HUB');
+    expect(templates[1]!.body).toContain('IMEI-HUB');
+  });
+
+  it('say the three counts and where to read them', () => {
+    for (const template of templates) {
+      for (const name of ['changed', 'waiting', 'detached', 'link'])
+        expect(template.body, `${template.channel} {{${name}}}`).toContain(`{{${name}}}`);
+    }
   });
 });

@@ -286,13 +286,15 @@ export async function linksOfSupplier(db: DbExecutor, supplierId: number): Promi
 interface KeptLink {
   readonly fieldMap: Record<string, unknown>;
   readonly isActive: boolean;
+  /** The quick add run that made the service: kept, or saving a chain would drop the service from its run (plan 31 correction 8). */
+  readonly importRunId: number | null;
 }
 
 /**
  * Replaces the whole chain of a service.
  *
  * Why: `PUT /admin/services/:id/supplier-links`: the chain in the order given, priorities renumbered 1..n; a link that stays keeps
- * its field map and its switch, a new one starts with `{}` and active.
+ * its field map, its switch and the quick add run that made it (`import_run_id`), a new one starts with `{}`, active and no run.
  *
  * @param db the transaction (the service row is locked)
  * @param serviceId the service
@@ -305,7 +307,10 @@ export async function replaceChain(
 ): Promise<void> {
   const existing = await db.select().from(serviceSupplierLinks).where(eq(serviceSupplierLinks.serviceId, serviceId));
   const kept = new Map<number, KeptLink>(
-    existing.map((row) => [row.supplierServiceId, { fieldMap: row.fieldMap, isActive: row.isActive }]),
+    existing.map((row) => [
+      row.supplierServiceId,
+      { fieldMap: row.fieldMap, isActive: row.isActive, importRunId: row.importRunId },
+    ]),
   );
   await db.delete(serviceSupplierLinks).where(eq(serviceSupplierLinks.serviceId, serviceId));
   if (supplierServiceIds.length === 0) return;
@@ -316,6 +321,7 @@ export async function replaceChain(
       priority: index + 1,
       fieldMap: kept.get(supplierServiceId)?.fieldMap ?? {},
       isActive: kept.get(supplierServiceId)?.isActive ?? true,
+      importRunId: kept.get(supplierServiceId)?.importRunId ?? null,
     })),
   );
 }
@@ -323,16 +329,24 @@ export async function replaceChain(
 /**
  * Adds a link at the end of a service's chain.
  *
- * Why: an import creates a service with its link at priority 1; an existing service is not touched.
+ * Why: an import creates a service with its link at priority 1; an existing service is not touched. A quick add also records its run on
+ * the link (`import_run_id`): the exact record of what the run made, which the bulk publish reads as the scope `quickAddRun` (plan 31
+ * sections 4.3 and 6.1).
  *
  * @param db the import's transaction
  * @param serviceId the new service
  * @param supplierServiceId the supplier service it comes from
+ * @param importRunId the quick add run that creates the service, or `null` for the picker's import
  */
-export async function insertFirstLink(db: DbExecutor, serviceId: number, supplierServiceId: number): Promise<void> {
+export async function insertFirstLink(
+  db: DbExecutor,
+  serviceId: number,
+  supplierServiceId: number,
+  importRunId: number | null = null,
+): Promise<void> {
   await db
     .insert(serviceSupplierLinks)
-    .values({ serviceId, supplierServiceId, priority: 1, fieldMap: {}, isActive: true });
+    .values({ serviceId, supplierServiceId, priority: 1, fieldMap: {}, isActive: true, importRunId });
 }
 
 /**

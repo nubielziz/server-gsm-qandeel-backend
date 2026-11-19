@@ -10,6 +10,7 @@ import { InventoryStock } from './application/inventory-stock';
 import { MerchantCatalog } from './application/merchant-catalog';
 import { PriceResolver } from './application/price-resolver';
 import { RetailPrices } from './application/retail-prices';
+import { RetailPricing } from './application/retail-pricing';
 import { StorefrontServices, TacDirectory } from './application/storefront-services';
 import { ServiceImporter } from './application/service-importer';
 
@@ -31,6 +32,7 @@ import { ServiceImporter } from './application/service-importer';
     ClientGroupDirectory,
     PriceResolver,
     RetailPrices,
+    RetailPricing,
     ListedPrices,
     MerchantCatalog,
     ServiceImporter,
@@ -43,6 +45,7 @@ import { ServiceImporter } from './application/service-importer';
     ClientGroupDirectory,
     PriceResolver,
     RetailPrices,
+    RetailPricing,
     ListedPrices,
     MerchantCatalog,
     ServiceImporter,

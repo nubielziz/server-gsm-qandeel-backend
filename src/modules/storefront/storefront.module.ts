@@ -4,6 +4,7 @@
 // public content routes are StorefrontContentModule.
 import { Global, Module } from '@nestjs/common';
 import { CurrentLegalDocuments } from './application/legal-documents';
+import { PublishHttpModule } from './publish/publish-http.module';
 import { SearchHttpModule } from './search/search-http.module';
 import { StorefrontAdminModule } from './storefront-admin.module';
 import { StorefrontPublicModule } from './storefront-public.module';
@@ -19,7 +20,7 @@ import { StorefrontPublicModule } from './storefront-public.module';
  */
 @Global()
 @Module({
-  imports: [StorefrontPublicModule, StorefrontAdminModule, SearchHttpModule],
+  imports: [StorefrontPublicModule, StorefrontAdminModule, SearchHttpModule, PublishHttpModule],
   providers: [CurrentLegalDocuments],
   exports: [CurrentLegalDocuments],
 })

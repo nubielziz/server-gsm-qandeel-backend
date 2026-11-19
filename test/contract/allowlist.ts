@@ -12,6 +12,28 @@ const CUSTOMER_CURRENCY_NULL =
   'of the currencies table is missing (customers.currency is a foreign key), as lead resolution b2c-1 says.';
 
 /**
+ * The reason of the three B229 entries below (the listing rows say whether the retail price follows a rule).
+ *
+ * Why: feature 31 (decision 040) adds `retailPriceSource`, `retailPriceRule` and `retailPriceWaiting` to every listing row, always
+ * sent; the console's ServiceListing type learns them in slice C1, so until then its mock rows, which the harvested fixtures are
+ * made of, lack them.
+ */
+const LISTING_RETAIL_SOURCE =
+  'Feature 31 (decision 040, B229): every listing row says whether its retail price follows a rule (retailPriceSource, ' +
+  "retailPriceRule, retailPriceWaiting); the console's ServiceListing type does not declare them yet (slice C1), so its mock " +
+  'rows, which the harvested fixture is made of, lack them.';
+
+/**
+ * The reason of the two B231 entries below (a Quick add run says whether it also publishes).
+ *
+ * Why: feature 31 (decision 040) adds `publish` (`none`, `listed` or `unlisted`) to every Quick add run, always sent; the console's
+ * QuickAddRun type learns it in slice C4, so until then its mock runs, which the harvested fixtures are made of, lack it.
+ */
+const QUICK_ADD_PUBLISH =
+  'Feature 31 (decision 040, B231): every Quick add run says whether it also puts what it creates on the shop (publish); the ' +
+  "console's QuickAddRun type does not declare it yet (slice C4), so its mock runs, which the harvested fixture is made of, lack it.";
+
+/**
  * Deviations the contract tests accept, each tied to a decision in docs/contract/MISMATCHES.md.
  *
  * Why: the frontend decides the wire format and the map decides the rules; where the lead chose otherwise the choice
@@ -167,4 +189,28 @@ export const ALLOWLIST: readonly AllowlistEntry[] = [
       "The drafts the generator answers are admin content page rows and carry `canonicalUrl` (ANSWERS storefront Q8); the console's " +
       'ContentPage type does not declare it yet, so its mock rows, which the harvested fixture is made of, lack it.',
   },
+  ...(
+    [
+      ['GET /admin/service-listings', 'data[]'],
+      ['GET /admin/service-listings/:id', ''],
+      ['POST /admin/service-listings', ''],
+    ] as const
+  ).map(([route, path]): AllowlistEntry => ({
+    route,
+    part: 'fixture',
+    path,
+    rule: 'fixture',
+    mismatch: 'B229',
+    reason: LISTING_RETAIL_SOURCE,
+  })),
+  ...(['POST /admin/suppliers/:id/quick-add', 'GET /admin/suppliers/:id/quick-add/:runId'] as const).map(
+    (route): AllowlistEntry => ({
+      route,
+      part: 'fixture',
+      path: '',
+      rule: 'fixture',
+      mismatch: 'B231',
+      reason: QUICK_ADD_PUBLISH,
+    }),
+  ),
 ];

@@ -3,8 +3,8 @@
 //
 // DEVIATION to resolve when the owners export a read: decision 016 wants these through the owning module's public service. Orders
 // and customers export no reader that returns these rows (and orders imports money, so money cannot import orders: decision 032),
-// so this file reads `orders`, `checkout_sessions`, `services`, `consent_records`, `legal_documents` and `support_tickets` with plain
-// selects. Nothing outside this file knows.
+// so this file reads `orders`, `checkout_sessions`, `services`, `service_listings`, `consent_records`, `legal_documents` and
+// `support_tickets` with plain selects. Nothing outside this file knows.
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
 
@@ -17,6 +17,7 @@ export interface OrderFacts {
   readonly totalCost: string;
   readonly customerId: number | null;
   readonly checkoutSessionId: number | null;
+  /** The title the service is published under, or its catalog name when it has no listing. */
   readonly serviceName: string;
   readonly resultCode: string | null;
   readonly publicToken: string | null;
@@ -24,7 +25,10 @@ export interface OrderFacts {
 }
 
 /**
- * Reads orders for the B2C screens.
+ * Reads orders for the B2C screens, the receipts and the customer's mails.
+ *
+ * Why: the customer knows the service by the title the shop showed (feature 31: a bulk publish cleans it from the supplier's name), so
+ * the receipt and the mails name that title; the catalog name stands in for a service without a listing. A service has at most one.
  *
  * @param db the database or a transaction
  * @param ids the order ids
@@ -41,13 +45,14 @@ export async function loadOrderFacts(db: DbExecutor, ids: readonly number[]): Pr
       totalCost: s.orders.totalCost,
       customerId: s.orders.customerId,
       checkoutSessionId: s.orders.checkoutSessionId,
-      serviceName: s.services.name,
+      serviceName: sql<string>`coalesce(${s.serviceListings.publicTitle}, ${s.services.name})`,
       resultCode: s.orders.resultCode,
       publicToken: s.orders.publicToken,
       placedAt: s.orders.placedAt,
     })
     .from(s.orders)
     .innerJoin(s.services, eq(s.services.id, s.orders.serviceId))
+    .leftJoin(s.serviceListings, eq(s.serviceListings.serviceId, s.orders.serviceId))
     .where(inArray(s.orders.id, unique));
   return new Map(rows.map((row) => [row.id, row]));
 }

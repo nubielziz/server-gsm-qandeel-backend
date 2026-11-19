@@ -50,6 +50,13 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 | `GET /admin/tac-catalog/:id` | admin | staff-permission `catalog:*` | 14 | `getTacEntry` |
 | `POST /admin/tac-catalog` | admin | staff-permission `catalog:*` | 14 | `createTacEntry` |
 | `PATCH /admin/tac-catalog/:id` | admin | staff-permission `catalog:*` | 14 | `updateTacEntry` |
+| `GET /admin/retail-price-rules` | admin | staff-permission `pricing:read` | 31 |  |
+| `POST /admin/retail-price-rules` | admin | staff-permission `pricing:create` | 31 |  |
+| `PATCH /admin/retail-price-rules/:id` | admin | staff-permission `pricing:update` | 31 |  |
+| `DELETE /admin/retail-price-rules/:id` | admin | staff-permission `pricing:delete` | 31 |  |
+| `POST /admin/retail-price-rules/preview` | admin | staff-permission `pricing:read` | 31 |  |
+| `GET /admin/retail-price-changes` | admin | staff-permission `pricing:read` | 31 |  |
+| `POST /admin/retail-price-changes/resolve` | admin | staff-permission `pricing:update` | 31 |  |
 
 ## DHRU imeiservicelist
 
@@ -410,4 +417,39 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 - **Response**: 200 with the updated entry.
 - **Errors**: 404 NOT_FOUND (no entry with that id); 422 VALIDATION_FAILED (bad tac or a tac already used by IMEI checks, empty brand or model, bad year); 409 TAC_TAKEN (another entry has the new TAC, with errors[{field: 'tac'}]); 403 FORBIDDEN (caller lacks catalog:update)
 - **Mock**: src/features/storefront/mocks/tacRoutes.ts (Seeded from demo S.tac (B2C_TAC, seed.ts:170); api/tacCatalog.test.ts.)
+
+## GET /admin/retail-price-rules
+
+- **Map addition** (B229, `scripts/map-additions/31.mjs`): The retail price rules that price the shop from the cost, with the services that follow each. · staff-permission `pricing:read` · stage 31 · tables retail_price_rules, retail_price_follows · success 200
+- **Frontend**: none.
+
+## POST /admin/retail-price-rules
+
+- **Map addition** (B229, `scripts/map-additions/31.mjs`): Create a retail price rule (general, per service type or per category). · staff-permission `pricing:create` · stage 31 · tables retail_price_rules, audit_logs · success 201
+- **Frontend**: none.
+
+## PATCH /admin/retail-price-rules/:id
+
+- **Map addition** (B229, `scripts/map-additions/31.mjs`): Change the figures of a retail price rule, or switch it off and on. · staff-permission `pricing:update` · stage 31 · tables retail_price_rules, audit_logs · success 200
+- **Frontend**: none.
+
+## DELETE /admin/retail-price-rules/:id
+
+- **Map addition** (B229, `scripts/map-additions/31.mjs`): Delete a retail price rule (the rule keeps its row for the history). · staff-permission `pricing:delete` · stage 31 · tables retail_price_rules, audit_logs · success 204
+- **Frontend**: none.
+
+## POST /admin/retail-price-rules/preview
+
+- **Map addition** (B229, `scripts/map-additions/31.mjs`): What a change of the retail price rules would do to the prices that follow them; nothing is stored. · staff-permission `pricing:read` · stage 31 · tables retail_price_rules, retail_price_follows, services · success 200
+- **Frontend**: none.
+
+## GET /admin/retail-price-changes
+
+- **Map addition** (B230, `scripts/map-additions/31.mjs`): The retail prices the follow pass moved, the moves that wait for staff, and the prices that stopped following a rule. · staff-permission `pricing:read` · stage 31 · tables retail_price_changes, services · success 200
+- **Frontend**: none.
+
+## POST /admin/retail-price-changes/resolve
+
+- **Map addition** (B230, `scripts/map-additions/31.mjs`): Answer waiting price proposals: approve the figure shown, or keep the current price as a typed one. · staff-permission `pricing:update` · stage 31 · tables retail_price_changes, retail_price_follows, service_group_prices, audit_logs · success 200
+- **Frontend**: none.
 

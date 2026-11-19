@@ -135,6 +135,65 @@ export const PRICING_ROUNDINGS = ['none', 'nearest_0.05', 'nearest_0.10', 'ends_
 export type PricingRounding = (typeof PRICING_ROUNDINGS)[number];
 
 /**
+ * What a retail price rule covers: every service, one service type, or one category.
+ *
+ * Why: decision 040 (feature 31): the most specific active rule prices a service (category, then type, then global).
+ */
+export const RETAIL_RULE_SCOPES = ['global', 'type', 'category'] as const;
+
+/** One value of {@link RETAIL_RULE_SCOPES}. */
+export type RetailRuleScope = (typeof RETAIL_RULE_SCOPES)[number];
+
+/**
+ * How a retail price rule rounds its price, always upwards: to the cent, to the next 0.05 or 0.10, or to the next `n.99`.
+ *
+ * Why: decision 040 and plan 31 section 3.3: the shop charges whole cents rounded up, so a rule never rounds down (the trap of
+ * `applyRounding`'s `ends_99`, which can).
+ */
+export const RETAIL_ROUNDINGS = ['cent', 'step_0.05', 'step_0.10', 'ends_99'] as const;
+
+/** One value of {@link RETAIL_ROUNDINGS}. */
+export type RetailRounding = (typeof RETAIL_ROUNDINGS)[number];
+
+/**
+ * What the follow pass did about a following retail price: moved it, proposed a move for staff, or found it changed elsewhere.
+ *
+ * Why: decision 040 and plan 31 section 3.4: every automatic change and every proposal is a row staff can read.
+ */
+export const RETAIL_CHANGE_KINDS = ['followed', 'proposed', 'detached'] as const;
+
+/** One value of {@link RETAIL_CHANGE_KINDS}. */
+export type RetailChangeKind = (typeof RETAIL_CHANGE_KINDS)[number];
+
+/**
+ * Why a following retail price moved, waits or stopped following.
+ *
+ * Why: plan 31 section 3.4: `cost_changed`, `rule_changed` and `floor_changed` name what moved a price (`rule_changed` also names a
+ * proposal for a service that moved to another rule by itself), `cost_jump` and `no_cost` a proposal, `changed_elsewhere` a detach.
+ */
+export const RETAIL_CHANGE_REASONS = [
+  'cost_changed',
+  'rule_changed',
+  'floor_changed',
+  'cost_jump',
+  'no_cost',
+  'changed_elsewhere',
+] as const;
+
+/** One value of {@link RETAIL_CHANGE_REASONS}. */
+export type RetailChangeReason = (typeof RETAIL_CHANGE_REASONS)[number];
+
+/**
+ * How a proposal was closed: staff applied it, staff kept the price, or the system found it no longer applies.
+ *
+ * Why: plan 31 sections 3.4 and 5.4.
+ */
+export const RETAIL_CHANGE_RESOLUTIONS = ['applied', 'kept', 'superseded'] as const;
+
+/** One value of {@link RETAIL_CHANGE_RESOLUTIONS}. */
+export type RetailChangeResolution = (typeof RETAIL_CHANGE_RESOLUTIONS)[number];
+
+/**
  * Life of a stocked code: reserved at placement, sold on completion, released on rejection; `void` is withdrawn.
  *
  * Why: decision 025 and the console's inventory wire enum (GET /admin/inventory-codes).
@@ -489,6 +548,177 @@ export type PricingRule = typeof pricingRules.$inferSelect;
 
 /** A row to insert into `pricing_rules`. */
 export type NewPricingRule = typeof pricingRules.$inferInsert;
+
+/**
+ * Retail price rules: the shop's price as the effective cost plus a percent and a fixed amount, rounded up, never under the
+ * storefront floor (feature 31, a table beyond the map).
+ *
+ * Why: decision 040: a store of their own, not rows of the B2B `pricing_rules` (those adjust the base price for merchants and
+ * never read the cost). At most one rule per target among the rules that are not deleted. A delete is soft (`deleted_at`): the
+ * history keeps the rule's name, and a delete never waits on, or deadlocks with, a transaction whose foreign key check reads the
+ * rule row (plan 31 section 4.1). Every read of the rules filters `deleted_at IS NULL`, except the label of history rows.
+ */
+export const retailPriceRules = pgTable(
+  'retail_price_rules',
+  {
+    id: pk(),
+    scope: text().$type<RetailRuleScope>().notNull(),
+    /** the target of a `type` rule; null otherwise */
+    serviceType: text().$type<ServiceType>(),
+    /** the target of a `category` rule; null otherwise. A category delete (only of a category with no service) removes it */
+    categoryId: fk((): AnyPgColumn => serviceCategories.id, 'cascade'),
+    /** percent units with four decimals: `30.0000` is +30 % */
+    percent: percent().notNull(),
+    fixed: money().notNull().default('0'),
+    rounding: text().$type<RetailRounding>().notNull(),
+    /** the rounding style applies only to a price of at least this much; under it the price is the cent */
+    roundFrom: money().notNull().default('5'),
+    /** the largest move of the cost, in percent, that a following price follows by itself; 0 makes every move wait */
+    autoFollowPercent: integer().notNull().default(25),
+    isActive: boolean().notNull().default(true),
+    updatedBy: fk((): AnyPgColumn => staffUsers.id),
+    /** the clock's time of the create and of every edit (the follow pass names its reason from it); never `updated_at` */
+    changedAt: timestampTz().notNull(),
+    /** set by the soft delete; a deleted rule is inactive and counts nowhere */
+    deletedAt: timestampTz(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('retail_price_rules_scope_check', inList(t.scope, RETAIL_RULE_SCOPES)),
+    check('retail_price_rules_service_type_check', inList(t.serviceType, SERVICE_TYPES)),
+    check('retail_price_rules_rounding_check', inList(t.rounding, RETAIL_ROUNDINGS)),
+    check(
+      'retail_price_rules_target_check',
+      sql`(${t.scope} = 'global' and ${t.serviceType} is null and ${t.categoryId} is null) or (${t.scope} = 'type' and ${t.serviceType} is not null and ${t.categoryId} is null) or (${t.scope} = 'category' and ${t.serviceType} is null and ${t.categoryId} is not null)`,
+    ),
+    check('retail_price_rules_percent_check', sql`${t.percent} >= 0 and ${t.percent} <= 1000`),
+    check('retail_price_rules_fixed_check', sql`${t.fixed} >= 0 and ${t.fixed} <= 100000`),
+    check('retail_price_rules_round_from_check', sql`${t.roundFrom} >= 0`),
+    check('retail_price_rules_auto_follow_check', sql`${t.autoFollowPercent} >= 0 and ${t.autoFollowPercent} <= 1000`),
+    check('retail_price_rules_deleted_check', sql`${t.deletedAt} is null or ${t.isActive} = false`),
+    // One rule per target among the rules not deleted (active or not); a deleted rule leaves its target free.
+    uniqueIndex('retail_price_rules_global_uq')
+      .on(t.scope)
+      .where(sql`${t.scope} = 'global' and ${t.deletedAt} is null`),
+    uniqueIndex('retail_price_rules_type_uq')
+      .on(t.serviceType)
+      .where(sql`${t.scope} = 'type' and ${t.deletedAt} is null`),
+    uniqueIndex('retail_price_rules_category_uq')
+      .on(t.categoryId)
+      .where(sql`${t.scope} = 'category' and ${t.deletedAt} is null`),
+    // The three unique indexes are partial, so the foreign key needs a full index of its own.
+    index('retail_price_rules_category_idx').on(t.categoryId),
+    index('retail_price_rules_updated_by_idx').on(t.updatedBy),
+  ],
+);
+
+/** A row read from `retail_price_rules`. */
+export type RetailPriceRule = typeof retailPriceRules.$inferSelect;
+
+/** A row to insert into `retail_price_rules`. */
+export type NewRetailPriceRule = typeof retailPriceRules.$inferInsert;
+
+/**
+ * The services whose retail price follows the rules: a row means "a rule wrote this price last" (feature 31, a table beyond
+ * the map).
+ *
+ * Why: decision 040: a price is typed (no row) or following (a row). `RetailPrices.set` keeps the row in step (a typed price
+ * deletes it, a rule price upserts it) and the group price page deletes it when it changes or removes the retail row, so a rule
+ * never overwrites a price a person typed. `applied_price` and `applied_cost` are what the follow pass compares with.
+ */
+export const retailPriceFollows = pgTable(
+  'retail_price_follows',
+  {
+    id: pk(),
+    serviceId: fk((): AnyPgColumn => services.id, 'cascade').notNull(),
+    /** the rule that priced the service last; a hard delete (the cascade of a category delete) sets it to null */
+    ruleId: bigId().references((): AnyPgColumn => retailPriceRules.id, { onDelete: 'set null' }),
+    /** the price a rule wrote last */
+    appliedPrice: money().notNull(),
+    /** the effective cost that price was worked out from */
+    appliedCost: money().notNull(),
+    appliedAt: timestampTz().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique('retail_price_follows_service_uq').on(t.serviceId),
+    index('retail_price_follows_rule_idx').on(t.ruleId),
+    check('retail_price_follows_applied_price_check', sql`${t.appliedPrice} > 0`),
+    check('retail_price_follows_applied_cost_check', sql`${t.appliedCost} >= 0`),
+  ],
+);
+
+/** A row read from `retail_price_follows`. */
+export type RetailPriceFollow = typeof retailPriceFollows.$inferSelect;
+
+/** A row to insert into `retail_price_follows`. */
+export type NewRetailPriceFollow = typeof retailPriceFollows.$inferInsert;
+
+/**
+ * What the follow pass did or proposes for following retail prices: the console's "Price changes" (feature 31, a table beyond the
+ * map).
+ *
+ * Why: decision 040 and plan 31 section 3.4: a following price moves without a staff action, so every move, every proposal and every
+ * price found changed elsewhere is a row staff can read and resolve. One proposal waits per service at most; `notified_at` is what
+ * keeps the hourly message from repeating a row.
+ */
+export const retailPriceChanges = pgTable(
+  'retail_price_changes',
+  {
+    id: pk(),
+    serviceId: fk((): AnyPgColumn => services.id, 'cascade').notNull(),
+    /** the rule that prices the service; a hard delete (the cascade of a category delete) sets it to null */
+    ruleId: bigId().references((): AnyPgColumn => retailPriceRules.id, { onDelete: 'set null' }),
+    kind: text().$type<RetailChangeKind>().notNull(),
+    reason: text().$type<RetailChangeReason>().notNull(),
+    /** the price before the move: for a detached price, the price the rule wrote last */
+    oldPrice: money().notNull(),
+    /** the price written or proposed; null for `no_cost` and for `detached` */
+    newPrice: money(),
+    /** the effective cost the old price was worked out from */
+    oldCost: money().notNull(),
+    /** the effective cost of the pass */
+    newCost: money().notNull(),
+    /** how a proposal was closed; null while it waits, and on every row that is not a proposal */
+    resolution: text().$type<RetailChangeResolution>(),
+    resolvedAt: timestampTz(),
+    /** the staff member who resolved it; null when the system closed it */
+    resolvedBy: fk((): AnyPgColumn => staffUsers.id),
+    /** set by the hourly message; a rewrite of a waiting proposal keeps it */
+    notifiedAt: timestampTz(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('retail_price_changes_kind_check', inList(t.kind, RETAIL_CHANGE_KINDS)),
+    check('retail_price_changes_reason_check', inList(t.reason, RETAIL_CHANGE_REASONS)),
+    check('retail_price_changes_resolution_value_check', inList(t.resolution, RETAIL_CHANGE_RESOLUTIONS)),
+    check(
+      'retail_price_changes_resolution_check',
+      sql`(${t.resolution} is null) = (${t.resolvedAt} is null) and (${t.resolution} is null or ${t.kind} = 'proposed')`,
+    ),
+    // One waiting proposal per service.
+    uniqueIndex('retail_price_changes_open_uq')
+      .on(t.serviceId)
+      .where(sql`${t.kind} = 'proposed' and ${t.resolvedAt} is null`),
+    index('retail_price_changes_kind_idx').on(t.kind, t.resolvedAt),
+    index('retail_price_changes_service_idx').on(t.serviceId),
+    index('retail_price_changes_rule_idx').on(t.ruleId),
+    index('retail_price_changes_resolved_by_idx').on(t.resolvedBy),
+    // What the hourly message has not reported yet.
+    index('retail_price_changes_unnotified_idx')
+      .on(t.id)
+      .where(sql`${t.notifiedAt} is null`),
+  ],
+);
+
+/** A row read from `retail_price_changes`. */
+export type RetailPriceChange = typeof retailPriceChanges.$inferSelect;
+
+/** A row to insert into `retail_price_changes`. */
+export type NewRetailPriceChange = typeof retailPriceChanges.$inferInsert;
 
 /**
  * The last price listed to a merchant for a service (the price-protection memory of user rule 9).

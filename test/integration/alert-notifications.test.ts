@@ -425,8 +425,8 @@ describe('with the ops recipients configured', () => {
       const owner = await adminWith(t, ['*']);
       const res = await owner.get('/admin/notification-templates?audience=staff');
       expect(res.status).toBe(200);
-      const keys = res.body.map((row: { event: string; channel: string }) => `${row.event}:${row.channel}`).sort();
-      expect(keys).toEqual([
+      const keys: string[] = res.body.map((row: { event: string; channel: string }) => `${row.event}:${row.channel}`);
+      expect(keys.filter((key) => key.startsWith('alert.')).sort()).toEqual([
         'alert.fired:email',
         'alert.fired:telegram',
         'alert.resolved:email',

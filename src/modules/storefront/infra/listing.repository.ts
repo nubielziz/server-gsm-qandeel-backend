@@ -1,10 +1,10 @@
 // Drizzle queries on `service_listings` (the storefront module's own table): the public catalog reads (the page of listed service
-// pages, one page by slug, the FAQs of a service; feature 14a) and the admin writes (insert, switch on or off, conflict checks;
-// feature 15). One listing per service since feature 30 (decision 039). The joined reads of the console rows are in
-// foreign-reads.repository.ts.
-import { type SQL, and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
+// pages, one page by slug, the FAQs of a service; feature 14a), the admin writes (insert, switch on or off, conflict checks; feature
+// 15) and the bulk publish's lock and slug reads (feature 31). One listing per service since feature 30 (decision 039). The joined
+// reads of the console rows are in foreign-reads.repository.ts.
+import { type SQL, and, asc, eq, inArray, like, ne, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
-import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../infra/db';
+import { type DbExecutor, type ListColumns, escapeLike, listOrderBy, listWhere } from '../../../infra/db';
 import {
   type HelpArticle,
   type NewServiceListing,
@@ -142,6 +142,48 @@ export async function listedServiceIds(db: DbExecutor, serviceIds: readonly numb
 }
 
 /**
+ * Finds which of some services have a listing, switched on or off.
+ *
+ * Why: plan 31 sections 3.1 and 5.2: a service has one listing (decision 039), and a draft row for a service that has one is
+ * `blocked: already_listed` whether or not the listing is on the shop (`listedServiceIds` asks only about the switch).
+ *
+ * @param db the database or a transaction
+ * @param serviceIds the services to check
+ * @returns the ids that have a listing
+ */
+export async function servicesWithListing(db: DbExecutor, serviceIds: readonly number[]): Promise<Set<number>> {
+  if (serviceIds.length === 0) return new Set();
+  const rows = await db
+    .select({ serviceId: serviceListings.serviceId })
+    .from(serviceListings)
+    .where(inArray(serviceListings.serviceId, [...serviceIds]));
+  return new Set(rows.map((row) => row.serviceId));
+}
+
+/** The public title and the slug of a listing. */
+export interface ListingNames {
+  readonly publicTitle: string;
+  readonly slug: string;
+}
+
+/**
+ * Reads the public title and the slug of every listing.
+ *
+ * Why: plan 31 sections 3.5 and 6.1: the cut and the uniqueness checks of the naming compare a draft's titles with the listings'
+ * (`listingTitles`), and the slug ladder needs every slug held. Two columns, at most {@link MAX_ALL_LISTINGS} rows (fact 22).
+ *
+ * @param db the database or a transaction
+ * @returns the titles and slugs, in id order
+ */
+export async function listingNamesOfAll(db: DbExecutor): Promise<ListingNames[]> {
+  return db
+    .select({ publicTitle: serviceListings.publicTitle, slug: serviceListings.slug })
+    .from(serviceListings)
+    .orderBy(asc(serviceListings.id))
+    .limit(MAX_ALL_LISTINGS);
+}
+
+/**
  * Finds a listed service page by its slug.
  *
  * @param db the database or a transaction
@@ -275,6 +317,42 @@ export type ListingChanges = Partial<
 export async function lockListing(db: DbExecutor, id: number): Promise<ServiceListing | undefined> {
   const [row] = await db.select().from(serviceListings).where(eq(serviceListings.id, id)).for('update');
   return row;
+}
+
+/**
+ * Locks the listing of a service, when it has one.
+ *
+ * Why: plan 31 sections 6.2 (step 5) and 6.7: the publisher and the run switch hold the service row lock first and then the
+ * service's one listing (decision 039), in the lock order of every listing writer; the row tells the publisher the service is listed
+ * already (`already_listed`).
+ *
+ * @param db the caller's transaction (it holds the service row lock)
+ * @param serviceId the service
+ * @returns the locked row, or `undefined` when the service has no listing
+ */
+export async function lockListingOfService(db: DbExecutor, serviceId: number): Promise<ServiceListing | undefined> {
+  const [row] = await db.select().from(serviceListings).where(eq(serviceListings.serviceId, serviceId)).for('update');
+  return row;
+}
+
+/**
+ * Reads the slugs of the listings that start with a prefix.
+ *
+ * Why: plan 31 sections 3.2 and 6.2 (step 8): the publisher gives a proposed slug that a listing took meanwhile the next free
+ * suffix (`nextFreeSlug`), which needs every slug of the family at once; the prefix is a little shorter than the base, since a long
+ * base is shortened to fit its suffix.
+ *
+ * @param db the database or the caller's transaction
+ * @param prefix the start of the slugs (a slug or a part of one)
+ * @returns the slugs held, at most {@link MAX_ALL_LISTINGS}
+ */
+export async function slugsStartingWith(db: DbExecutor, prefix: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ slug: serviceListings.slug })
+    .from(serviceListings)
+    .where(like(serviceListings.slug, `${escapeLike(prefix)}%`))
+    .limit(MAX_ALL_LISTINGS);
+  return new Set(rows.map((row) => row.slug));
 }
 
 /**

@@ -9,7 +9,9 @@ import {
   STALLED_ERROR,
   chunksOf,
   failureReason,
+  handsOver,
   isStalled,
+  publishModeOf,
   runErrorText,
   runView,
   uniqueGroups,
@@ -23,6 +25,7 @@ const record = (overrides: Partial<QuickAddRunRecord> = {}): QuickAddRunRecord =
   scope: 'groups',
   groups: [{ type: 'IMEI', remoteGroup: 'Apple iPhone' }],
   serviceStatus: 'active',
+  publishMode: 'none',
   status: 'running',
   total: 80,
   createdCount: 29,
@@ -107,6 +110,7 @@ describe('runView', () => {
       id: 7,
       supplierId: 2,
       scope: 'groups',
+      publish: 'none',
       status: 'running',
       total: 80,
       processed: 32,
@@ -122,6 +126,11 @@ describe('runView', () => {
     });
     expect(view.groups).toEqual([{ type: 'IMEI', remoteGroup: 'Apple iPhone' }]);
     expect(view.failures).toEqual([{ supplierServiceId: 5, name: 'Broken', reason: 'services_cost_check' }]);
+  });
+
+  it('tells what the run asked to publish', () => {
+    expect(runView(record({ publishMode: 'listed' }), NOW).publish).toBe('listed');
+    expect(runView(record({ publishMode: 'unlisted' }), NOW).publish).toBe('unlisted');
   });
 
   it('never sends the internal columns', () => {
@@ -159,6 +168,26 @@ describe('runView', () => {
   it('reads a finished run as it is', () => {
     const done = record({ status: 'succeeded', finishedAt: new Date(NOW - 10), heartbeatAt: new Date(NOW - 10) });
     expect(runView(done, NOW)).toMatchObject({ status: 'succeeded', error: null });
+  });
+});
+
+describe('publishModeOf', () => {
+  it('keeps the choice of the body: none without one, listed or unlisted with it', () => {
+    expect(publishModeOf(undefined)).toBe('none');
+    expect(publishModeOf({ listed: true })).toBe('listed');
+    expect(publishModeOf({ listed: false })).toBe('unlisted');
+  });
+});
+
+describe('handsOver', () => {
+  it('hands over a run that asked to publish and created something, whatever its end', () => {
+    expect(handsOver({ publishMode: 'listed', createdCount: 1 })).toBe(true);
+    expect(handsOver({ publishMode: 'unlisted', createdCount: 30 })).toBe(true);
+  });
+
+  it('hands nothing over when nothing was created or the run did not ask', () => {
+    expect(handsOver({ publishMode: 'listed', createdCount: 0 })).toBe(false);
+    expect(handsOver({ publishMode: 'none', createdCount: 30 })).toBe(false);
   });
 });
 

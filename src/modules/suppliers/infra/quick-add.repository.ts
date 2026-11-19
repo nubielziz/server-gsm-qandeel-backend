@@ -46,6 +46,7 @@ export function toRunRecord(row: SupplierImportRun): QuickAddRunRecord {
     scope: row.scope,
     groups: row.groups as QuickAddGroup[],
     serviceStatus: row.serviceStatus,
+    publishMode: row.publishMode,
     status: row.status,
     total: row.total,
     createdCount: row.createdCount,

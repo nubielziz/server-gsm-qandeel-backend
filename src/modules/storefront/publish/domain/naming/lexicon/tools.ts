@@ -1,0 +1,217 @@
+// Tool data of the shop detection (feature 31, plan section 3.5; A3 section 4): the server tools a service name can name, the
+// noise words of supplier groups, the groups whose name is not a brand, and the alias merges. Pure data; tested in lexicon.spec.ts.
+
+/**
+ * The tool names a server service's name is searched for when its group gives no brand, in this order (the first one the name
+ * contains wins).
+ *
+ * Why: plan section 3.5, fact 24: the prototype learned these from the batch it was given (`learnTools`), which made a row's brand
+ * depend on the other rows of a run. This list is what `learnTools` held after reading the 1157 real names (145 names, in the
+ * order it held them), frozen: nothing is learned at run time. A new tool is added here, with a test.
+ */
+export const KNOWN_TOOLS: readonly string[] = [
+  '360 TOOL',
+  'Alien Tool',
+  'AlseerY-Unlocker',
+  'Ameer Tool',
+  'Android Multi Tool',
+  'Android Root Tool',
+  'AnonySHU Tool',
+  'A.N TOOL',
+  'Apizu Tool',
+  'ArabFRP Tool',
+  'AUTH Flash Tool',
+  'AWT - AndroidWinTool',
+  'Baahubali Power Tool',
+  'BD Tool Xiaomi',
+  'BMT Tool Pro',
+  'Canva Tool - Premium',
+  'CDMA Yemen Tool',
+  'Cerberus',
+  'CF-TOOL',
+  'Cheetah Tool',
+  'Chimera Tool',
+  'CP Tool',
+  'DFT Pro Tool',
+  'Dragon Frp Tool',
+  'Dr.Fone',
+  'DT Pro Tool',
+  'DZKJ Schematics',
+  'Eagle Multi Tool',
+  'Easy Auth Tool',
+  'EFT Pro',
+  'E-GSM Tool',
+  'EME Mobile TOOL',
+  'Falcon FRP Tool',
+  'Falcon Multi Tool',
+  'Fast Unlocker Pro',
+  'FCK Tool Xiaomi',
+  'FCL Schematic',
+  'FD Tool Pro',
+  'Fenix Utility Pro',
+  'F-Key Tool',
+  'Free Fire Diamonds',
+  'FRP Boss Tool',
+  'FRT Tool',
+  'GAPro Tool',
+  'GCPro Black Screen For Ultra Viewer',
+  'General Unlocker',
+  'Ghost Auth Tool',
+  'Global AUTH Tool',
+  'Global Frp Tool',
+  'Global Unlocker Pro',
+  'Griffin-Unlocker',
+  'Guerra Tool',
+  'Hspro Tool',
+  'HW-Key Tool',
+  'Hydra',
+  'iMFC',
+  'Infinity CM2',
+  'Internet Download Manager IDM',
+  'iTunes Card USA',
+  'iTunes Gift Card Saudi Arabia - KSA',
+  'JCprogrammer Tools',
+  'Kaspersky',
+  'KEY-TOOL',
+  'KGFix Tool',
+  'KG Killer Tool',
+  'Knoxwizard',
+  'MaAnt Maintenance Tool',
+  'MAT AUTH Tool',
+  'Meow Realme',
+  'Mesallah Hardware Tool',
+  'MH Unlocker Pro',
+  'Microsoft MacOS Life Time',
+  'Microsoft Windows',
+  'Mobile Forensic Data',
+  'MobileSea',
+  'Moto King Pro',
+  'Moto M Tool',
+  'MotoWork Tool',
+  'MR AUTH',
+  'MRST PRO',
+  'Muslim Odin',
+  'MWorker-Tool Moto-Key',
+  'NCK Tool',
+  'Nemesis Box',
+  'NordVPN',
+  'OplusProLogin',
+  'Orion by ESTECH Schematics',
+  'OumseGsm Tool',
+  'Pandonymus PandaX MDM Maker Pro',
+  'Pandora',
+  'Parallel Desktop Crack Windows IN MacOs',
+  'Penguin Tool',
+  'Phoenix Tool',
+  'Pixel Pro Tool',
+  'Pixel Utility Tool',
+  'Playstation Card',
+  'Playstation Store',
+  'Pragmafix Schematics',
+  'PSN PlayStation Plus',
+  'Pubg Mobile UC by ID',
+  'Q-UNLOCKER Tool',
+  'Roblox USA',
+  'RTC TOOL',
+  'SamKey',
+  'Samsung Tool KG',
+  'Sam-Token Tool',
+  'Scorpion Tool',
+  'ShellTool',
+  'Sigma Plus',
+  'Sim Unlocker Pro',
+  'SK Unlocker',
+  'Smart FRP Tool',
+  'Telegram Premium',
+  'TeraTool',
+  'TFM Tool Pro',
+  'The Magic Tool',
+  'TMT Pro Tool',
+  'TR Tools',
+  'TSM TOOL',
+  'T-Tool Pro',
+  'Typhon Auth Tool',
+  'UFI Box ',
+  'Uni-Android Tool (UAT)',
+  'Unlock-Tool',
+  'WhatsApp Fixed Tool',
+  'Xiaomi Killer',
+  'Xiaomi Mi Fix Pro',
+  'Xiaomi Pro Tool',
+  'Xiaomi Repair Tool XRT',
+  'Xiaomi Speed Tool',
+  'XinZhiZao Schematics',
+  'Youtube Premium',
+  'Zen Auth Tool',
+  'Zero Plus',
+  'Zhizhen Schematics',
+  'Octoplus',
+  'Octopus',
+  'Sigma',
+  'Z3X',
+  'UMT',
+  'EFT',
+  'DFT',
+  'Chimera',
+  'TFM',
+  'Infinity',
+];
+
+/**
+ * Words a supplier group carries that are not part of a tool's brand (`Chimera Tool - Direct Source Services` gives
+ * `Chimera Tool`).
+ *
+ * Why: A3 section 4: a server group is one tool's shop; its brand is the group text without the supplier's words.
+ */
+export const GROUP_NOISE =
+  /\b(?:direct source(?: services)?|official (?:reseller|distributors?)|activations?|activaion|actiavtion|digital(?: license)?|license|licence|credits?|services?|firmware support|support|online|without box(?:\/dongle)?|software|team|schematics?(?= 1)|login tool)\b/gi;
+
+/**
+ * Server groups whose name is not a brand (a rental shop, a remote-service desk, a product page): the brand is read from the
+ * service name instead. Compared with the group text after entities are decoded.
+ *
+ * Why: A3 section 4: `Share Box & Tools Software` sells many tools by the hour; its name is no tool's name. `Imported` is the catalog's
+ * name for a supplier group with no usable text (`IMPORTED_CATEGORY_NAME`, a spec keeps the two equal): it says nothing about the tool, so
+ * a service in it gets the brand its own name gives, or none (plan 31 section 3.5: the rules never guess).
+ */
+export const NAME_BRAND_GROUPS: ReadonlySet<string> = new Set([
+  'Imported',
+  'Share Box & Tools Software',
+  'Remotely Services Online BY USB',
+  'Apple Accounts',
+  'iCloud Invoice FMI OFF',
+  'Social Media Followers',
+  'Streaming Account Services',
+  'VIP PACKAGE BY SERIAL (BIEN SPORT)',
+  'Services Xiaomi Tools',
+  'Build Your Server (DHRU)',
+]);
+
+/**
+ * Merges several supplier groups of one tool, and corrects a few display names (the first pattern that matches the cleaned group
+ * text, or the head of a service name, wins).
+ *
+ * Why: A3 section 4: `Octopus, Octoplus ( Box & Dongle )` and `Octoplus ...` are one tool; the shop's brand filter shows it once.
+ */
+export const TOOL_ALIASES: readonly (readonly [pattern: RegExp, tool: string])[] = [
+  [/^octopus,? octoplus/i, 'Octoplus'],
+  [/^infinity/i, 'Infinity CM2'],
+  [/^z3x/i, 'Z3X'],
+  [/^borneo/i, 'Borneo'],
+  [/^sigma/i, 'Sigma Plus'],
+  [/^hydra/i, 'Hydra'],
+  [/^fft /i, 'FFT (Fast FRP Tool)'],
+  [/^umt \/ nck|^nck online/i, 'UMT / NCK'],
+  [/^cerberus/i, 'Cerberus'],
+  [/^unlock-tool/i, 'Unlock-Tool'],
+  [/^halab-?tech/i, 'Halab-Tech'],
+  [/^arab-unlock/i, 'Arab-Unlock'],
+  [/^skunlocker|^sk\.unlocker/i, 'SK Unlocker'],
+  [/^xiaomi auth flash/i, 'Xiaomi Auth Flash'],
+  [/^auth otp for/i, 'Auth OTP'],
+  [/^mdm fix tool/i, 'MDM Fix Tool'],
+  [/^hello aio tool/i, 'Hello AIO Tool'],
+  [/^cdma yemen/i, 'CDMA Yemen Tool'],
+  [/^eft team pro/i, 'EFT Pro'],
+  [/^uni android tool/i, 'Uni-Android Tool (UAT)'],
+];

@@ -15,6 +15,7 @@ import {
   TOO_MANY_FAILURES_ERROR,
   chunksOf,
   failureReason,
+  handsOver,
   runErrorText,
 } from '../domain/quick-add';
 import { linkedServicesOf } from '../infra/foreign-reads.repository';
@@ -35,6 +36,7 @@ import {
   IMPORT_DEFAULT_SLA_KEY,
   SLA_BOUNDS,
 } from './imported-service';
+import { QuickAddOutbox } from './quick-add-outbox';
 
 /** How a call of {@link QuickAddRunner.run} ended. */
 export type QuickAddOutcome = 'not_queued' | 'stopped' | 'succeeded' | 'failed';
@@ -57,7 +59,8 @@ class RunClosedError extends Error {
  *
  * Side effects: per created service, `service_categories` (when missing), `services`, `service_fields` and `service_supplier_links`;
  * `services.effective_cost`; the catalog price version moves after each chunk that created something; `supplier_import_runs` is
- * claimed, advanced and closed; one `audit_logs` row with the actor `system` at the close.
+ * claimed, advanced and closed; one `audit_logs` row with the actor `system` at the close; for a run that asked to publish and created
+ * something, one `supplier.quick_add_done` outbox event in the closing transaction (the storefront takes the services from there).
  *
  * @see docs/queues.md (imports)
  */
@@ -71,6 +74,7 @@ export class QuickAddRunner {
     private readonly audit: AuditService,
     private readonly settings: SettingsReader,
     private readonly priceVersion: CatalogPriceVersion,
+    private readonly outbox: QuickAddOutbox,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -184,6 +188,7 @@ export class QuickAddRunner {
           cost: linkUnitCost({ credit: row.credit, creditRate: supplier.creditRate }),
           defaultSla,
           status: run.serviceStatus,
+          importRunId: run.id,
         });
         made.push(service.serviceId);
         created += 1;
@@ -199,7 +204,10 @@ export class QuickAddRunner {
     });
   }
 
-  /** Ends the run and writes the audit row of the whole run; nothing is written when a newer start already closed the run. */
+  /**
+   * Ends the run, writes the audit row of the whole run and, for a run that asked to publish and created something, the hand-over event.
+   * Nothing is written when a newer start already closed the run.
+   */
   private async close(
     run: QuickAddRunRecord,
     status: Extract<SupplierImportRunStatus, 'succeeded' | 'failed'>,
@@ -226,9 +234,13 @@ export class QuickAddRunner {
           categoriesCreated: closed.categoriesCreated,
           createdWithQuantity: closed.createdWithQuantity,
           serviceStatus: closed.serviceStatus,
+          ...(closed.publishMode === 'none' ? {} : { publish: closed.publishMode }),
           ...(closed.status === 'failed' ? { error: closed.error } : {}),
         },
       });
+      // A run that asked to publish hands what it created to the bulk publish in this same commit, after its last chunk (plan 31
+      // section 6.3); a failed run too, for the chunks that did commit.
+      if (handsOver(closed)) await this.outbox.done(tx, closed);
       return status;
     });
   }

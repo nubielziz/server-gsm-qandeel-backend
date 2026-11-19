@@ -1,6 +1,6 @@
 // Drizzle queries of the service category routes on `service_categories`, with the live service count of each category, the
 // service counts the delete and type-change guards need, and the category-scope pricing rules that go with a category.
-import { and, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, ne, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../infra/db';
 import {
@@ -117,6 +117,29 @@ export async function categoryNameTaken(
     .where(exceptId === undefined ? same : and(same, ne(serviceCategories.id, exceptId)))
     .limit(1);
   return row !== undefined;
+}
+
+/** A category as the pass over the names reads it. */
+export interface CategoryNameRow {
+  readonly id: number;
+  readonly name: string;
+}
+
+/**
+ * Reads a page of categories after an id, for a pass over all of them.
+ *
+ * @param db the database or a transaction
+ * @param afterId the last id of the previous page, or 0
+ * @param limit the size of the page
+ * @returns the ids and names, in id order
+ */
+export function categoryNamesAfter(db: DbExecutor, afterId: number, limit: number): Promise<CategoryNameRow[]> {
+  return db
+    .select({ id: serviceCategories.id, name: serviceCategories.name })
+    .from(serviceCategories)
+    .where(gt(serviceCategories.id, afterId))
+    .orderBy(asc(serviceCategories.id))
+    .limit(limit);
 }
 
 /**

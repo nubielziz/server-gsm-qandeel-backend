@@ -1,17 +1,18 @@
 // Read-only lookups into tables other modules own, kept in this one file: the service, its category and the retail group behind a
-// listing, the storefront sales of a service, the consents that reference a legal document, and the TAC catalogue's brands and model
-// names for the landing-page generator.
+// listing (and, for the bulk publish, the category's switch), the storefront sales of a service, the consents that reference a legal
+// document, and the TAC catalogue's brands and model names for the landing-page generator.
 //
 // DEVIATION to resolve when those modules export a read: decision 016 wants these reads through the owning module's public
 // service. Catalog exports the price resolver and `RetailPrices` (used for every price figure and every write; the retail price
 // itself is never read here) but no join that can be filtered, sorted and searched by service name and code, and no list of the TAC
 // catalogue's brands and model names (`TacDirectory` finds one TAC), and orders and customers export no counts yet, so this file reads
-// `services`, `service_categories`, `client_groups`, `orders`, `consent_records` and `tac_catalog` with plain selects, like catalog's
-// foreign-reads file. Replace the bodies with calls to their services;
+// `services`, `service_categories`, `service_fields`, `client_groups`, `orders`, `consent_records`, `tac_catalog` and `staff_users`
+// with plain selects, like catalog's foreign-reads file. Replace the bodies with calls to their services;
 // nothing outside this file knows.
 import { type SQL, and, asc, eq, gte, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere, schema as s } from '../../../infra/db';
+import { isMainInputKey, resolvedSupplierKey } from '../../../common/dhru';
 import type { ServiceListing } from '../db/schema';
 
 /** A listing with the service, category and retail group facts the console row and the lock rule need. */
@@ -152,6 +153,132 @@ export async function findServiceFacts(db: DbExecutor, serviceId: number): Promi
     .where(and(eq(s.services.id, serviceId), isNull(s.services.archivedAt)))
     .limit(1);
   return row ? { ...row, retailGroupId: row.retailGroupId ?? null } : undefined;
+}
+
+/** What a publish row is judged on about its live service: the lock facts plus the category's switch, the type and fulfilment. */
+export interface PublishServiceFacts extends ServiceFacts {
+  readonly serviceId: number;
+  readonly name: string;
+  readonly type: string;
+  readonly fulfillment: string;
+  readonly categoryId: number;
+  /** `service_categories.is_active`: a listing of a service in a switched-off category is on and invisible. */
+  readonly categoryActive: boolean;
+  /**
+   * The service has a field that is the supplier's main box (`isMainInputKey(resolvedSupplierKey(field))`, decision 042). A
+   * `server` service with one is named as `imei`, so it keeps its carrier and device brand (plan 31, correction 1).
+   */
+  readonly hasMainInput: boolean;
+}
+
+/** The select of {@link publishFactsOf} and {@link findPublishFacts}: live services only. */
+function publishFactsSelect(db: DbExecutor) {
+  return db
+    .select({
+      serviceId: s.services.id,
+      name: s.services.name,
+      type: s.services.type,
+      fulfillment: s.services.fulfillment,
+      status: s.services.status,
+      categoryId: s.serviceCategories.id,
+      categoryName: s.serviceCategories.name,
+      categoryActive: s.serviceCategories.isActive,
+      allowedGroupIds: s.serviceCategories.allowedGroupIds,
+      retailGroupId: s.clientGroups.id,
+    })
+    .from(s.services)
+    .innerJoin(s.serviceCategories, eq(s.serviceCategories.id, s.services.categoryId))
+    .leftJoin(s.clientGroups, eq(s.clientGroups.kind, 'b2c_retail'));
+}
+
+/**
+ * Reads, for a page of services, what a publish row is judged on: the facts of {@link findServiceFacts} and, unlike the listing
+ * routes, the category's `is_active`, with the service's type and fulfilment.
+ *
+ * Why: plan 31 sections 3.2 and 6.1: the sellable rule reads the category's `is_active` and the lock rule of the listing routes does
+ * not, so a published listing of a service in a switched-off category would be on and invisible (`category_inactive`); `file` is not
+ * orderable online (`not_orderable`), and only an `auto` service needs a supplier (`supplier_unavailable`). The listing routes keep
+ * `findServiceFacts` unchanged.
+ *
+ * @param db the database or the caller's transaction
+ * @param serviceIds the services of a page
+ * @returns the facts per live service; an unknown or archived service is absent
+ */
+export async function publishFactsOf(
+  db: DbExecutor,
+  serviceIds: readonly number[],
+): Promise<Map<number, PublishServiceFacts>> {
+  const ids = [...new Set(serviceIds)];
+  if (ids.length === 0) return new Map();
+  const rows = await publishFactsSelect(db).where(and(inArray(s.services.id, ids), isNull(s.services.archivedAt)));
+  const fields = await db
+    .select({
+      serviceId: s.serviceFields.serviceId,
+      key: s.serviceFields.key,
+      supplierKey: s.serviceFields.supplierKey,
+    })
+    .from(s.serviceFields)
+    .where(inArray(s.serviceFields.serviceId, ids));
+  // The dispatcher's rule, in code (not SQL), so it can never drift from `isMainInputKey` and `resolvedSupplierKey`.
+  const withMainInput = new Set(
+    fields.filter((field) => isMainInputKey(resolvedSupplierKey(field))).map((field) => field.serviceId),
+  );
+  return new Map(
+    rows.map((row) => [
+      row.serviceId,
+      { ...row, retailGroupId: row.retailGroupId ?? null, hasMainInput: withMainInput.has(row.serviceId) },
+    ]),
+  );
+}
+
+/**
+ * Reads what a publish row is judged on for one live service (see {@link publishFactsOf}).
+ *
+ * @param db the caller's transaction (the publisher holds the service row lock)
+ * @param serviceId the service
+ * @returns the facts, or `undefined` when the service is unknown or archived
+ */
+export async function findPublishFacts(db: DbExecutor, serviceId: number): Promise<PublishServiceFacts | undefined> {
+  return (await publishFactsOf(db, [serviceId])).get(serviceId);
+}
+
+/**
+ * Tells which of some services are live (not archived).
+ *
+ * Why: plan 31 sections 5.2 and 6.1: the scope `services` of a publish run takes the ticked services that still exist, and a copied row
+ * is dropped when its service was archived meanwhile.
+ *
+ * @param db the database or a transaction
+ * @param serviceIds the services
+ * @returns the ids that exist and are not archived
+ */
+export async function liveServiceIdsAmong(db: DbExecutor, serviceIds: readonly number[]): Promise<Set<number>> {
+  const ids = [...new Set(serviceIds)];
+  if (ids.length === 0) return new Set();
+  const rows = await db
+    .select({ id: s.services.id })
+    .from(s.services)
+    .where(and(inArray(s.services.id, ids), isNull(s.services.archivedAt)));
+  return new Set(rows.map((row) => row.id));
+}
+
+/**
+ * Reads the names of staff members.
+ *
+ * Why: plan 31 section 5.2: a publish run names who asked (`requestedByName`); one batched read for a page, no read per row.
+ *
+ * @param db the database or a transaction
+ * @param ids staff ids (repeats are fine)
+ * @returns id to name; a missing id is absent
+ */
+export async function staffNamesOf(db: DbExecutor, ids: readonly number[]): Promise<Map<number, string>> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return new Map();
+  const rows = await db
+    .select({ id: s.staffUsers.id, name: s.staffUsers.name })
+    .from(s.staffUsers)
+    .where(inArray(s.staffUsers.id, unique));
+  return new Map(rows.map((row) => [row.id, row.name]));
 }
 
 /** The storefront orders of a service over a window. */

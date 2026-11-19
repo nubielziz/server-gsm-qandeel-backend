@@ -76,7 +76,9 @@ sent as `0` (sorted as 0); a body year is a whole number from 1990 to next year 
 - **Group prices** (`group-price-admin.service.ts`, `domain/group-prices.ts`): replace-all under a lock on the service row and a
   shared lock on the groups; every submitted row is held to its floor (a merchant group at the effective cost plus the minimum
   profit for that group; `b2c_retail` at the storefront floor), rows kept unchanged included; repeated groups are `422
-  prices.N.groupId` "Listed twice".
+  prices.N.groupId` "Listed twice". A form that saves every group also sends `retailPriceSeen`, the retail price it loaded (`null`:
+  none): a retail row left at that figure is not written and not held to the floor, so the price stored now stays and keeps following,
+  also when a follow pass moved it or a publish set one after the form opened (feature 31).
 - **Client prices** (`client-price-admin.service.ts`): one per merchant and service (`409 PRICE_EXISTS`), above zero and at or above
   the floor of the merchant's group; `groupPrice` on each row is the resolver result for the merchant's group without the client
   price (catalog-16). Audit like the demo: `set client price for` and `removed client price for` on the `merchant`.
@@ -122,6 +124,14 @@ sent as `0` (sorted as 0); a body year is a whole number from 1990 to next year 
   Feature 26 (supplier quick add, B214): `ImportedServiceInput.status` (`active` when omitted, or `disabled`) sets the state the new
   service starts in, and `create` also returns `categoryCreated` (true when the group's category did not exist and was made for it),
   so the quick add can count the categories a run created. The picker's import passes neither and behaves as before.
+  Feature 31 (category names, plan 31 section 3.5): `create` finds the category of a new service by the supplier's **raw group text
+  first** (the lookup it always made, so a group whose category an earlier import made under the raw text keeps going there and no
+  service is split between two categories), **then by the cleaned name** (`cleanGroupName` in `domain/category-name.ts`: entities
+  decoded; control and invisible characters, direction marks, emoji, decoration and Arabic script runs removed; spaces collapsed;
+  separators at either end dropped; nothing left gives `Imported`), and only then creates the category, under the cleaned name. The
+  picker's import goes through the same lookup, and the adoption below keeps its exact-name lookup. The categories that already exist
+  get their clean names from `CategoryNameCleanup` (see "Jobs and schedules"), which leaves a name another category of the type holds.
+  `decodeEntities` and the two character patterns live in `src/common/text.ts` (the storefront search re-exports `decodeEntities`).
   Feature 33 (decision 042): a field of `ImportedServiceInput.fields` carries its `regex` (the supplier's main box gets `^.{min,max}$`
   from its lengths, never the supplier's own pattern; the `Requires.Custom` fields `''`), which `create` stores. `ServiceImporter.adoptMainInput(tx, { serviceId, field })` is the supplier
   sync's adoption of an IMEI service made before the decision whose supplier's main box is not an IMEI: under the service's row lock it
@@ -147,6 +157,58 @@ sent as `0` (sorted as 0); a body year is a whole number from 1990 to next year 
   `catalog` version counter after the commit of every write that can change a resolved price (services, group prices, client
   prices, rules, a group's discount or delete, categories); feature 6 calls it when `recomputeEffectiveCost` reports a change.
   Cached price lists read through `CatalogPriceVersion.versioned(key)`. This feature caches nothing itself.
+
+### Retail price rules (feature 31, decision 040, B229)
+
+- **The rules** (`retail_price_rules`; `domain/retail-rule.ts` pure, `application/retail-pricing.ts`, `infra/retail-price-rule.repository.ts`):
+  the shop's price as `effective cost x (1 + percent / 100) + fixed`, never under the storefront floor, rounded up to the cent and,
+  from `roundFrom` (default 5.00) on, to the style (`cent`, `step_0.05`, `step_0.10`, `ends_99`: always upwards, never the
+  `applyRounding` trap of `ends_99` rounding 17.995 down). A cost of 0 gives no price (`no_cost`). One rule per target among the rules
+  not deleted: a general one, one per service type, one per category; `pickRetailRule` takes the active rule of the category, else of
+  the type, else the general one. `autoFollowPercent` (default 25) is the limit `costMoved(from, to, percent)` applies: `abs(to -
+  from) x 100 > from x percent`, exact, no division. A delete is soft (`deleted_at`, `is_active = false`): every read filters
+  `deleted_at IS NULL` except the label of a price's history (`ruleRowsOf`), the rule row is locked `FOR NO KEY UPDATE` so an edit or
+  a delete never waits on the foreign key checks of the writers that point at it, and a category delete removes its rule by the
+  cascade (the audit row names it: `removedRetailRuleId`). Routes `GET`/`POST /admin/retail-price-rules`, `PATCH`/`DELETE
+  /admin/retail-price-rules/:id` and `POST /admin/retail-price-rules/preview` (`retail-price-rule-admin.service.ts`; `pricing:read`,
+  `create`, `update`, `delete`; the preview is `pricing:read` and `audit: false`). Every write is audited (entity
+  `retail_price_rule`: `created`, `changed`, `deleted retail price rule`, the fields before and after) and moves the catalog price
+  version. The preview works out, for at most 2000 following services the change can reach (by id), the price the same evaluator
+  gives under the changed rule set and counts the changes, rises, falls, floor prices and services left without a rule; it lists the
+  100 largest changes and stores nothing.
+- **Typed or following** (`retail_price_follows`): a row means a rule wrote the service's retail price last (`rule_id`,
+  `applied_price`, `applied_cost`, `applied_at`); no row means a person typed it (or there is none). `RetailPrices.set(db, id,
+  price, { origin, quote })` is the writer of every path but the group price page: it throws `RetailFloorError` for a price under
+  the quote's floor (the callers' `422` answer first), upserts the price row, then deletes the follow row (`manual`) or upserts it
+  (`rule`). The group price page's replace keeps its own floor check and calls `RetailPrices.afterGroupReplace`: a changed or removed
+  retail row stops following, the same price keeps it. A new price of either origin closes a proposal that waits for it (`superseded`).
+  `RetailPrices.sources(db, ids)` tells the listing rows whether a price is typed or following, by which rule, and whether a proposal
+  waits (`waiting`).
+- **`RetailPricing`** (global through `CatalogModule`): `targets(db, ids, at?)` (per live service: the quote, the type and category,
+  the follow row, the active rule of now and its price), `facts`, `activeRules`, `anyActiveRule(db)`; the pure `priceWithRules`
+  applies a rule set to the facts (the preview uses it with a changed set).
+- **The follow pass** (`retail_price_changes`, B230; `domain/retail-follow.ts` pure, `application/retail-price-follow.ts`,
+  `retail-follow-steps.ts`, `retail-follow-scheduler.ts`, `infra/retail-price-change.repository.ts`): the table of plan 31 section 3.4.
+  `decideFollow` reads the stored price, the cost, the follow row and the rule of now, under the service row lock: no retail row or
+  an archived service drops the follow row; a stored price that is not `applied_price` is `detached` (a typed price from now on); no
+  rule leaves everything; the rule giving the stored price records the cost and the rule; a cost of 0 proposes `no_cost`; a cost that
+  moved more than the rule's limit since `applied_cost` proposes `cost_jump`; a service that came under another rule while both rules
+  stayed as they were (a sync adoption) proposes `rule_changed`; anything else is written at once, with the reason `cost_changed`,
+  `rule_changed` or `floor_changed`. A sync adoption (`ServiceImporter.adoptMainInput`) sets the follow row's `applied_at` to its own
+  moment, so a rule edited before the move counts as older than the price. A waiting proposal is rewritten only when what it shows
+  differs and keeps `notified_at`. Nothing locks a rule row (the foreign key checks take `FOR KEY SHARE`, which a rule edit or delete
+  never waits for). Every move and every
+  proposal is a change row and an audit row (entity `service`, actor `system`: `changed`, `proposed`, `detached retail price of`).
+  The hourly message (`retail.prices_followed`, at most once an hour, one notification per channel) goes to the ops recipients; a
+  marking of nothing but closed proposals tells nobody and does not count for the hour.
+- **The price changes routes** (`retail-price-changes.service.ts`, `controllers/retail-price-changes.controller.ts`; `pricing:read`,
+  `pricing:update`): `GET /admin/retail-price-changes` (filters `kind`, `waiting`, `serviceId`; sorts `id`, newest first by default,
+  and `createdAt`) and `POST /admin/retail-price-changes/resolve` (`{ ids, action, seen }`, one transaction per id): `apply` names in
+  `seen` the `newPrice` the list showed for every id and writes the rule price of now only when that is still the proposal's figure
+  and the rule still gives it, whatever the size of the move (the pass rewrites a waiting proposal, so the row alone cannot say what a
+  person saw); `keep` takes no `seen` and deletes the follow row, so the price is typed, also for a service no rule can price; an id
+  answers `skipped` with `not_waiting`, `no_rule`, `no_cost` (also a cost too large to price) or `changed` (the proposal shows the
+  figure of now).
 
 Known deviation (tech debt): `infra/foreign-reads.repository.ts` reads supplier links, `orders`, `service_listings`,
 `checkout_sessions`, `help_articles` and `imei_checks` with plain selects, because those modules export no service yet (the
@@ -181,13 +243,18 @@ the price version: `PriceResolver` (`context`, `resolveMany`, `resolve`, `floor`
 Feature 15 adds `RetailPrices` (global through `CatalogModule`, takes the caller's database handle): the storefront's door into the
 catalog. `retailGroupId`, `quotes(db, serviceIds, at?)` (per live service: effective cost, minimum profit for the retail group, the
 storefront floor `storefrontFloor(base, floor)` and the retail price), `lockLiveService(db, id, 'update' | 'share')` and `set(db,
-serviceId, price)` (the one writer of the retail row of `service_group_prices` outside the group-price route; the caller moves the
+serviceId, price, { origin, quote })` (the one writer of the retail row of `service_group_prices` outside the group-price route; the caller moves the
 price version after its commit). `PATCH /admin/service-listings/:id` uses it, so the listing page and the group-price page hold
-the retail price to the same floor.
+the retail price to the same floor. Feature 31 (decision 040) adds the origin (`manual` or `rule`), the floor refusal
+`RetailFloorError`, `afterGroupReplace`, `sources`, and exports `RetailPricing`, `priceWithRules`, the pure `evaluateRetailRule`,
+`pickRetailRule`, `ruleLabel`, `costMoved`, `DEFAULT_AUTO_FOLLOW_PERCENT` and the lists `RETAIL_RULE_SCOPES` and `RETAIL_ROUNDINGS`.
+The follow pass adds `RetailPriceFollow` with `RetailPriceFollowModule` and its processor (worker only), `RetailFollowScheduler` (in
+`CatalogPricesModule`), the job and scheduler names, and the lists `RETAIL_CHANGE_KINDS`, `RETAIL_CHANGE_REASONS` and
+`RETAIL_CHANGE_RESOLUTIONS`.
 
 ## Owned tables
 
-Only this module reads and writes these 10 tables and `listed_prices` (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts`.
+Only this module reads and writes these 10 tables, `listed_prices`, `retail_price_rules`, `retail_price_follows` and `retail_price_changes` (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts`.
 
 | Table | What it holds |
 |---|---|
@@ -202,10 +269,19 @@ Only this module reads and writes these 10 tables and `listed_prices` (`scripts/
 | `inventory_codes` | Stock of digital codes. |
 | `tac_catalog` | The first 8 digits of an IMEI (TAC) with brand and model; used for automatic recognition, IMEI checks and SEO pages. |
 | `listed_prices` | The last price listed to a merchant for a service (price protection, user rule 9). A backend addition to the map's tables (B158), migration `0006_listed_prices.sql`. |
+| `retail_price_rules` | The retail price rules (feature 31, decision 040): general, per service type, per category; soft-deleted. Migration `0041_retail_price_rules.sql`. |
+| `retail_price_follows` | The services whose retail price a rule wrote last (feature 31, decision 040). Migration `0041_retail_price_rules.sql`. |
+| `retail_price_changes` | What the follow pass did or proposes: `followed`, `proposed`, `detached` (feature 31, decision 040). Migration `0043_retail_price_changes.sql`. |
 
 ## Routes
 
 43 endpoints (admin 37, client 3, v1 2, dhru 1). Source: `docs/slices/catalog.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built: the 20 routes of feature 4a are in `contracts/{client-groups,categories,services,inventory}.contracts.ts`, the 16 of feature 4b in `contracts/{pricing,client-prices,pricing-rules,merchant-catalog}.contracts.ts`, the rest are pending (`test/contract/pending.ts`).
+
+Feature 31 adds seven admin routes beyond the map (`scripts/map-additions/31.mjs`). Spec B229, `contracts/retail-price-rules.contracts.ts`:
+`GET /admin/retail-price-rules` (`pricing:read`), `POST /admin/retail-price-rules` (`pricing:create`, 201), `PATCH
+/admin/retail-price-rules/:id` (`pricing:update`), `DELETE /admin/retail-price-rules/:id` (`pricing:delete`, 204) and `POST
+/admin/retail-price-rules/preview` (`pricing:read`, `audit: false`). Spec B230, `contracts/retail-price-changes.contracts.ts`: `GET
+/admin/retail-price-changes` (`pricing:read`) and `POST /admin/retail-price-changes/resolve` (`pricing:update`).
 
 ### Admin console (37)
 
@@ -282,7 +358,8 @@ Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touc
 
 ## Permissions
 
-Staff permissions the map requires on this module's admin routes: `catalog:*`, `catalog:update`, `groups:*`, `inventory:read`, `inventory:write`, `pricing:*`, `pricing:read`, `pricing:update`. A `*` row means the action of the method: `groups:read|create|update|delete` (client groups), `catalog:read|create|update|delete` (categories, services), `pricing:read|create|update|delete` (client prices, pricing rules); fields and options need `catalog:update`; group prices and the bulk price change `pricing:update`; the resolver `pricing:read`; the inventory routes `inventory:read` and `inventory:write`. Audit entity types written: `client_group`, `category`, `service` (also the group prices and the bulk change), `merchant` (client prices), `pricing_rule` and `inventory_code` (a void; the import is audited on the `service`).
+Staff permissions the map requires on this module's admin routes: `catalog:*`, `catalog:update`, `groups:*`, `inventory:read`, `inventory:write`, `pricing:*`, `pricing:read`, `pricing:update`. A `*` row means the action of the method: `groups:read|create|update|delete` (client groups), `catalog:read|create|update|delete` (categories, services), `pricing:read|create|update|delete` (client prices, pricing rules); fields and options need `catalog:update`; group prices and the bulk price change `pricing:update`; the resolver `pricing:read`; the inventory routes `inventory:read` and `inventory:write`. Audit entity types written: `client_group`, `category`, `service` (also the group prices and the bulk change), `merchant` (client prices), `pricing_rule`, `retail_price_rule` (feature 31) and `inventory_code` (a void; the import is audited on the `service`). The retail price
+rules (feature 31, routes beyond the map) use `pricing:read` (list, preview), `pricing:create`, `pricing:update` and `pricing:delete`.
 
 API key scopes on its REST v1 routes: `services:read`.
 
@@ -311,6 +388,17 @@ The scan compares, for every active merchant and service of the last 30 days of 
 new order would pay now (`PriceResolver`, floor included) with the unit price of the merchant's latest order, and writes `service.price_changed` for each difference
 that has no event with the same ids yet (`OutboxService.hasEvent`; the webhook fan-out is idempotent on the same change as well). Event-driven, so no `job_runs` row.
 A merchant who has not ordered the service in 30 days is not told; a price that goes back to the last order's price is not announced.
+
+`category_names_clean` (queue `maintenance`, processor `jobs/category-name-cleanup.processor.ts`, module `CategoryNameCleanupModule` in the worker; feature 31): runs once,
+asked for by migration `0046_clean_category_names` through the outbox event `catalog.category_names_clean` (only the worker registers its route). `CategoryNameCleanup` walks
+every category and gives it the name `cleanGroupName` makes of it, each rename in its own transaction under the category row lock, with the `catalog.category_changed` event, the
+catalog price version and an `edited category` audit row by `system`. A name another category of the type already has (ignoring case) is left alone: staff merge such a pair by hand.
+Idempotent: a repeat finds the names clean. Not recorded in `job_runs`.
+
+`retail_price_follow` (queue `maintenance`, processor `jobs/retail-price-follow.processor.ts`, module `RetailPriceFollowModule` in the worker; feature 31, decision 040): every
+move of the catalog price version asks for a pass (`RetailFollowScheduler` in the global `CatalogPricesModule`, so the API asks too: a delayed job of 60 s, id
+`retail-follow-<minute>`), and the scheduler `retail_price_follow_hourly` runs one every hour at minute 10. The delayed job is unrecorded; the hourly and the manual run write
+`job_runs`. See "The follow pass" above and `docs/queues.md`.
 
 Otherwise none in this module. The nightly group promotion (`client_group_promotion`) writes `clients.group_id`, so it lives in identity
 (`src/modules/identity/jobs/`); it reads thresholds through `ClientGroupDirectory.promotionLadder` and is documented in

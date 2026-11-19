@@ -37,9 +37,9 @@ Only this module reads and writes these 5 tables (`scripts/module-map.mjs`; `sup
 |---|---|
 | `suppliers` | Supplier connections and your balance with each one. |
 | `supplier_services` | A copy of a supplier's services after a sync. |
-| `service_supplier_links` | Links your service to a supplier service, in priority order. |
+| `service_supplier_links` | Links your service to a supplier service, in priority order. `import_run_id` (feature 31) names the quick add run that created the service. |
 | `supplier_api_logs` | A log of every request sent to a supplier. |
-| `supplier_import_runs` | The record of one quick add (feature 26): scope, counts, progress and heartbeat; one live run per supplier. |
+| `supplier_import_runs` | The record of one quick add (feature 26): scope, counts, progress and heartbeat; one live run per supplier. `publish_mode` (feature 31) says whether it also puts what it creates on the shop. |
 
 ## Routes
 
@@ -96,7 +96,7 @@ Staff permissions the routes need: `suppliers:read`, `suppliers:create`, `suppli
 
 ## Events
 
-Outbox events produced: `supplier.quick_add` (queue `imports`, job `supplier_quick_add`, payload `{ runId, supplierId }`, aggregate `supplier_import_runs`; `QuickAddOutbox`, written by `POST /admin/suppliers/:id/quick-add`). Consumed: `order.dispatch_requested` (queue `supplier-dispatch`, payload `{ orderId }`, written by the orders module) and `supplier.quick_add` (queue `imports`, `QuickAddProcessor` in the worker). Audit phrases written (the console prints `<actor> <action> <entityLabel>`): `added supplier`, `edited supplier`, `paused supplier`, `resumed supplier`, `disabled supplier`, `enabled supplier`, `deleted supplier`, `tested connection to`, `synced services from`, `imported services from`, `started quick add from` (the staff member, when the run is queued), `quick added services from` (the system, when the run ends), `changed supplier links of` (entity `service`), `adopted the supplier's input` and `made the supplier's required fields required` (entity `service`, the system, by the sync: feature 33), and on orders `dispatched order`, `changed supplier of`, `fetched supplier result of`.
+Outbox events produced: `supplier.quick_add` (queue `imports`, job `supplier_quick_add`, payload `{ runId, supplierId }`, aggregate `supplier_import_runs`; `QuickAddOutbox`, written by `POST /admin/suppliers/:id/quick-add`) and `supplier.quick_add_done` (feature 31: payload `{ runId, supplierId, requestedBy, listed }`, aggregate `supplier_import_runs`; written by the transaction that closes a run that asked to publish and created services; its route and job `publish_from_quick_add` belong to the storefront). Consumed: `order.dispatch_requested` (queue `supplier-dispatch`, payload `{ orderId }`, written by the orders module) and `supplier.quick_add` (queue `imports`, `QuickAddProcessor` in the worker). Audit phrases written (the console prints `<actor> <action> <entityLabel>`): `added supplier`, `edited supplier`, `paused supplier`, `resumed supplier`, `disabled supplier`, `enabled supplier`, `deleted supplier`, `tested connection to`, `synced services from`, `imported services from`, `started quick add from` (the staff member, when the run is queued), `quick added services from` (the system, when the run ends), `changed supplier links of` (entity `service`), `adopted the supplier's input` and `made the supplier's required fields required` (entity `service`, the system, by the sync: feature 33), and on orders `dispatched order`, `changed supplier of`, `fetched supplier result of`.
 
 ## Jobs and schedules
 
@@ -211,6 +211,21 @@ order; the supplier's newest run rides along as `latestRun`), `POST .../quick-ad
   `application/quick-add.service.ts`, `application/quick-add-runner.ts`, `application/quick-add-outbox.ts`,
   `jobs/quick-add.processor.ts`, `contracts/quick-add.contracts.ts`, `controllers/quick-add.controller.ts`. `GET .../services` gained
   the filters `remoteGroup`, `type` (exact text) and `isAvailable` (B215).
+
+### Quick add also publishes (feature 31, decision 040, plan 31 sections 4.3, 5.5 and 6.3)
+
+- **The body** takes `publish?: { listed: boolean }`. The run stores `publish_mode` (`none`, `listed`, `unlisted`) and every run view
+  carries it as `publish` (also inside `service-groups.latestRun`). A staff member without `storefront:publish` gets `403 FORBIDDEN`
+  naming it (the controller checks with `grants`; the route's own permission stays `catalog:create`). `422` on `publish`: code
+  `needs_active` when `serviceStatus` is `disabled` ("Services added switched off cannot go on the shop."), code `no_rule` when no retail
+  price rule is active ("Set a retail pricing rule first."). Both are decided before the first write.
+- **What a run made.** `createImportedService` passes the run's id to `insertFirstLink`, which writes `service_supplier_links.import_run_id`:
+  the exact record of what the run created (the storefront's scope `quickAddRun` reads it through the catalog). `replaceChain` keeps the
+  `import_run_id` of a link that stays, or saving a chain would drop the service from its run.
+- **The hand-over.** A run that asked to publish and has `created_count > 0` writes `supplier.quick_add_done` (ids and `listed` only) in the
+  transaction that closes it: the runner's `close` (succeeded or failed) and the start that closes a stalled run. The storefront's
+  `publish_from_quick_add` job makes the one automatic publish run of it and prepares it; the suppliers module never imports the storefront.
+  A run that created nothing, or did not ask, writes no event.
 
 ## Audit resolutions
 

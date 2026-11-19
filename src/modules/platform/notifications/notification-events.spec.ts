@@ -4,6 +4,7 @@ import {
   BUILT_IN_EVENTS,
   CUSTOMER_MAIL_EVENT_KEYS,
   NotificationEventRegistry,
+  RETAIL_PRICES_FOLLOWED_EVENT,
   isEventKey,
 } from './notification-events';
 
@@ -64,6 +65,19 @@ describe('the built-in events', () => {
       expect(registry.get(key, 'customer')).toBeUndefined();
     }
     expect(registry.merchantPreferenceEvents().map((definition) => definition.key)).not.toContain('alert.fired');
+  });
+
+  it('register the hourly message about retail prices for the staff audience, sent by email and Telegram (feature 31)', () => {
+    const registry = new NotificationEventRegistry();
+    const definition = registry.get(RETAIL_PRICES_FOLLOWED_EVENT, 'staff');
+    expect(definition).toMatchObject({
+      channels: ['email', 'telegram'],
+      transactional: true,
+      variables: ['changed', 'waiting', 'detached', 'link'],
+    });
+    expect(registry.get(RETAIL_PRICES_FOLLOWED_EVENT, 'merchant')).toBeUndefined();
+    expect(registry.get(RETAIL_PRICES_FOLLOWED_EVENT, 'customer')).toBeUndefined();
+    expect(registry.merchantPreferenceEvents().map((one) => one.key)).not.toContain(RETAIL_PRICES_FOLLOWED_EVENT);
   });
 
   it('register the four customer account mails as transactional email events, next to the seven console events', () => {

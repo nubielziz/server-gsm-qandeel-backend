@@ -1,5 +1,5 @@
 // Drizzle queries of the public order tracking (feature 14a): the order a token names with its service, and its timeline. Read only.
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
 import { type Order, type OrderEvent, type OrderEventType, orderEvents, orders } from '../db/schema';
 import { foreignTables as f } from './foreign-reads.repository';
@@ -7,6 +7,7 @@ import { foreignTables as f } from './foreign-reads.repository';
 /** An order with the service names the tracking page shows. */
 export interface TrackedOrderRow {
   readonly order: Order;
+  /** The title the service is published under, or its catalog name when it has no listing. */
   readonly serviceName: string;
   readonly serviceType: string;
   readonly deliveryTime: string;
@@ -37,6 +38,9 @@ export async function findOrderByTrackingToken(
 /**
  * Reads a storefront order with its service names.
  *
+ * Why: the tracking page names the service as the shop did: the listing's public title (a service has at most one), and the catalog name
+ * only without a listing (feature 31: a bulk publish cleans the title from the supplier's name).
+ *
  * @param db the database or a transaction
  * @param id the order id
  * @returns the order, or `undefined`
@@ -45,12 +49,13 @@ export async function findTrackedOrder(db: DbExecutor, id: number): Promise<Trac
   const [row] = await db
     .select({
       order: orders,
-      serviceName: f.services.name,
+      serviceName: sql<string>`coalesce(${f.listings.publicTitle}, ${f.services.name})`,
       serviceType: f.services.type,
       deliveryTime: f.services.deliveryTime,
     })
     .from(orders)
     .innerJoin(f.services, eq(f.services.id, orders.serviceId))
+    .leftJoin(f.listings, eq(f.listings.serviceId, orders.serviceId))
     .where(eq(orders.id, id))
     .limit(1);
   return row;
