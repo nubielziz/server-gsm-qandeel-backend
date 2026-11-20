@@ -7,8 +7,8 @@ import type { DbExecutor } from '../../../infra/db';
 import type { OutboxEvent } from '../db/schema';
 import { assertOutboxEvent, packOutboxPayload } from './outbox-payload';
 import { OutboxRouteRegistry } from './outbox-routes';
-import { insertOutboxEvent, outboxBacklog, outboxEventExists } from './outbox.repository';
-import type { OutboxBacklog, OutboxEventInput, OutboxPayload } from './outbox.types';
+import { insertOutboxEvent, outboxBacklog, outboxEventExists, outboxEventsOf } from './outbox.repository';
+import type { OutboxBacklog, OutboxEventInput, OutboxEventTrace, OutboxPayload } from './outbox.types';
 
 /**
  * Writes outbox events and reports the backlog.
@@ -77,6 +77,29 @@ export class OutboxService {
     payload: OutboxPayload,
   ): Promise<boolean> {
     return outboxEventExists(db, type, aggregateType, aggregateId, payload);
+  }
+
+  /**
+   * Lists the newest events of one type and aggregate with their relay time.
+   *
+   * Why: a sweep that asks for lost work again (decision 044) must know whether the relay still holds an event and which job ids
+   * (`outbox-<id>`) to look for; other modules may not read `outbox_events`.
+   *
+   * @param db the database or a transaction
+   * @param type the event type
+   * @param aggregateType the aggregate of the events
+   * @param aggregateId the id of the aggregate row
+   * @param limit the most events returned (default 10)
+   * @returns id, creation time and relay time, newest first; writes nothing
+   */
+  recentEvents(
+    db: DbExecutor,
+    type: string,
+    aggregateType: string,
+    aggregateId: number,
+    limit = 10,
+  ): Promise<OutboxEventTrace[]> {
+    return outboxEventsOf(db, type, aggregateType, aggregateId, limit);
   }
 
   /**

@@ -1,14 +1,15 @@
 // The staff order actions that involve a supplier and the status poll (feature 6): `dispatch`, `fetch` and `change-supplier` through
 // HTTP (state machine of decision 025, resolutions orders-suppliers-11, -12, -17, -19) and `SupplierPoll` (the poll of a sent order and
 // the tick that finds the orders due for one). Real Postgres and Redis, the fake Dhru supplier.
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { Decimal } from 'decimal.js';
 import { eq } from 'drizzle-orm';
 import { EncryptionService } from '@src/infra/crypto';
 import { schema as s } from '@src/infra/db';
-import { QueuesService } from '@src/infra/queues';
+import { QueuesService, queueJobId } from '@src/infra/queues';
 import { RedisService } from '@src/infra/redis';
 import { SupplierDispatch, SupplierPoll } from '@src/modules/suppliers';
+import { SupplierClient } from '@src/modules/suppliers/application/supplier-client';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
@@ -22,6 +23,7 @@ import {
   eventsOf,
   insertOrderRow,
   json,
+  ledgerOf,
   orderRow,
   ordersWorld,
   outboxOf,
@@ -109,6 +111,19 @@ async function placeRefused(imei: string = IMEIS[0]): Promise<number> {
 const post = (orderId: number, action: string, body: unknown = {}) =>
   staff.post(`/admin/orders/${orderId}/${action}`, body);
 
+/** A second supplier for the current service (credit 14.00), returned with its supplier service. */
+async function anotherSupplier(credit = '14.0000') {
+  const second = await insertFakeSupplier(world.db, t.app.get(EncryptionService), fake, {
+    name: `Another ${sequence}`,
+  });
+  const link = await linkService(world.db, serviceId, second, { remoteId: '9001', priority: 2, credit });
+  return { second, link };
+}
+
+/** Marks the order's dispatch requests as handed to the queue, as the relay does: no job exists unless the test adds one. */
+const relayed = (orderId: number) =>
+  world.db.update(s.outboxEvents).set({ processedAt: clock.now() }).where(eq(s.outboxEvents.aggregateId, orderId));
+
 describe('POST /admin/orders/:id/dispatch', () => {
   it('sends a needs_attention order again: pending, the job queued, attempts counted, audited, and the job then sends it', async () => {
     await freshRoute();
@@ -146,6 +161,67 @@ describe('POST /admin/orders/:id/dispatch', () => {
     expect((await post(orderId, 'dispatch')).status).toBe(204);
     expect((await outboxOf(world.db, 'order.dispatch_requested', orderId)).length).toBe(outboxBefore);
     expect((await eventsOf(world.db, orderId)).length).toBe(eventsBefore);
+  });
+
+  it('sends again a pending order whose dispatch request was lost: a new request, a retry line, an audit row, the supplier left to the job', async () => {
+    await freshRoute();
+    const orderId = await place();
+    await relayed(orderId);
+    const eventsBefore = (await eventsOf(world.db, orderId)).length;
+    const auditBefore = (await auditOf(world.db, orderId)).length;
+
+    expect((await post(orderId, 'dispatch')).status).toBe(204);
+    expect(await outboxOf(world.db, 'order.dispatch_requested', orderId)).toHaveLength(2);
+    const events = await eventsOf(world.db, orderId);
+    expect(events).toHaveLength(eventsBefore + 1);
+    expect(events.at(-1)).toMatchObject({ type: 'retry', actorType: 'staff', actorId: staff.staffId });
+    const audit = await auditOf(world.db, orderId);
+    expect(audit).toHaveLength(auditBefore + 1);
+    expect(audit.at(-1)).toMatchObject({ action: 'dispatched order', entityType: 'order', actorType: 'staff' });
+    // The supplier columns stay as they were: the job chooses the target by the automatic rule, with its price protection.
+    expect(await orderRow(world.db, orderId)).toMatchObject({
+      status: 'pending',
+      dispatchState: 'pending',
+      sentAt: null,
+      supplierId: null,
+      supplierServiceId: null,
+    });
+    expect((await dispatch.run(orderId, { lastAttempt: false })).status).toBe('sent');
+    expect(await orderRow(world.db, orderId)).toMatchObject({ supplierId, dispatchState: 'sent' });
+  });
+
+  it("stays a 204 that changes nothing while the order's job waits in the queue", async () => {
+    await freshRoute();
+    const orderId = await place();
+    await relayed(orderId);
+    const [request] = await outboxOf(world.db, 'order.dispatch_requested', orderId);
+    const jobId = queueJobId('outbox', request!.id);
+    const queue = t.app.get(QueuesService, { strict: false }).queue('supplier-dispatch');
+    await queue.add('order.dispatch_requested', {}, { jobId });
+    try {
+      const eventsBefore = (await eventsOf(world.db, orderId)).length;
+      expect((await post(orderId, 'dispatch')).status).toBe(204);
+      expect(await outboxOf(world.db, 'order.dispatch_requested', orderId)).toHaveLength(1);
+      expect((await eventsOf(world.db, orderId)).length).toBe(eventsBefore);
+      expect((await auditOf(world.db, orderId)).at(-1)).toMatchObject({ action: 'dispatched order' });
+    } finally {
+      await queue.remove(jobId);
+    }
+  });
+
+  it('counts an unreadable queue as "no live request": the press of staff queues a new one (a second request is harmless, the claim lets one run through)', async () => {
+    await freshRoute();
+    const orderId = await place();
+    await relayed(orderId);
+    const queue = t.app.get(QueuesService, { strict: false }).queue('supplier-dispatch');
+    const reading = spyOn(queue, 'getJobState').mockRejectedValue(new Error('Connection is closed.'));
+    try {
+      expect((await post(orderId, 'dispatch')).status).toBe(204);
+    } finally {
+      reading.mockRestore();
+    }
+    expect(await outboxOf(world.db, 'order.dispatch_requested', orderId)).toHaveLength(2);
+    expect((await eventsOf(world.db, orderId)).at(-1)).toMatchObject({ type: 'retry', actorType: 'staff' });
   });
 
   it('refuses: an order the supplier already has (ALREADY_SENT), a closed one, a held one, an unknown one', async () => {
@@ -435,6 +511,23 @@ describe('POST /admin/orders/:id/change-supplier', () => {
     expect((await eventsOf(world.db, orderId)).at(-1)).toMatchObject({ type: 'supplier_changed' });
   });
 
+  it('points a sent order at another supplier without resetReference: the reference is cleared and the order needs attention', async () => {
+    await freshRoute();
+    const { orderId } = await placeAndSend();
+    const { second, link } = await secondSupplier('14.0000');
+    expect((await post(orderId, 'change-supplier', { supplierId: second })).status).toBe(204);
+    expect(await orderRow(world.db, orderId)).toMatchObject({
+      supplierId: second,
+      supplierServiceId: link.supplierServiceId,
+      supplierRef: null,
+      dispatchState: 'needs_attention',
+      status: 'processing',
+    });
+    expect((await eventsOf(world.db, orderId)).at(-1)!.data).toMatchObject({ resetReference: true });
+    // A poll has no reference to ask about now.
+    expect(await poll.check(orderId, { type: 'system' })).toEqual({ kind: 'skipped', reason: 'not_polled' });
+  });
+
   it('refuses a closed order', async () => {
     await freshRoute();
     const orderId = await placeRefused();
@@ -463,6 +556,41 @@ describe('the status poll', () => {
     expect(await orderRow(world.db, orderId)).toMatchObject({ status: 'completed', resultCode: 'Unlocked' });
     expect(await poll.check(orderId, { type: 'system' })).toEqual({ kind: 'skipped', reason: 'not_polled' });
     expect(fake.callsOf('getimeiorder')).toHaveLength(2);
+  });
+
+  it('applies no answer about a supplier the order no longer names', async () => {
+    await freshRoute();
+    const { orderId, reference } = await placeAndSend();
+    const { second } = await anotherSupplier();
+    fake.finish(reference, 4, 'Unlocked');
+    const ledgerBefore = await ledgerOf(world.db, orderId);
+    const client = t.app.get(SupplierClient, { strict: false });
+    const original = client.getOrder.bind(client);
+    // Staff change the supplier after the real answer was read and before it is applied.
+    const asking = spyOn(client, 'getOrder').mockImplementationOnce(async (supplier, asked) => {
+      const answer = await original(supplier, asked);
+      expect((await post(orderId, 'change-supplier', { supplierId: second })).status).toBe(204);
+      return answer;
+    });
+    try {
+      expect(await poll.check(orderId, { type: 'system' })).toEqual({ kind: 'skipped', reason: 'moved_on' });
+    } finally {
+      asking.mockRestore();
+    }
+    const order = await orderRow(world.db, orderId);
+    expect(order).toMatchObject({
+      status: 'processing',
+      dispatchState: 'needs_attention',
+      supplierId: second,
+      supplierRef: null,
+      completedAt: null,
+      resultCode: null,
+    });
+    // Nothing was settled: no completion, no revenue.
+    const types = (await eventsOf(world.db, orderId)).map((event) => event.type);
+    expect(types).not.toContain('completed');
+    expect(types).not.toContain('settle');
+    expect(await ledgerOf(world.db, orderId)).toEqual(ledgerBefore);
   });
 
   it("rejects it on STATUS 3, and leaves an unreachable supplier's order as it is for the next round", async () => {

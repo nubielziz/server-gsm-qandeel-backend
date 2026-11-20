@@ -1,8 +1,8 @@
 // Drizzle queries on outbox_events, the transactional outbox (platform module, decision 020).
-import { and, getTableColumns, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, inArray, isNull, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
 import { type OutboxEvent, outboxEvents } from '../db/schema';
-import type { OutboxBacklog } from './outbox.types';
+import type { OutboxBacklog, OutboxEventTrace } from './outbox.types';
 
 /** The Postgres channel the relay listens on. */
 export const OUTBOX_CHANNEL = 'outbox';
@@ -146,4 +146,38 @@ export async function outboxEventExists(
         and ${outboxEvents.payload} @> ${JSON.stringify(payload)}::jsonb
     ) as found`);
   return result.rows[0]?.found === true;
+}
+
+/**
+ * Reads the newest events of one type and aggregate.
+ *
+ * Why: decision 044: the dispatch sweep must know whether the relay still holds a request of an order and which jobs (`outbox-<id>`)
+ * to look for. The aggregate index `outbox_events_aggregate_idx` covers the lookup.
+ *
+ * @param db the database or a transaction
+ * @param type the event type
+ * @param aggregateType the aggregate table-like name
+ * @param aggregateId the aggregate id
+ * @param limit the most events returned
+ * @returns id, creation time and relay time, newest first
+ */
+export async function outboxEventsOf(
+  db: DbExecutor,
+  type: string,
+  aggregateType: string,
+  aggregateId: number,
+  limit: number,
+): Promise<OutboxEventTrace[]> {
+  return db
+    .select({ id: outboxEvents.id, createdAt: outboxEvents.createdAt, processedAt: outboxEvents.processedAt })
+    .from(outboxEvents)
+    .where(
+      and(
+        eq(outboxEvents.type, type),
+        eq(outboxEvents.aggregateType, aggregateType),
+        eq(outboxEvents.aggregateId, aggregateId),
+      ),
+    )
+    .orderBy(desc(outboxEvents.id))
+    .limit(limit);
 }

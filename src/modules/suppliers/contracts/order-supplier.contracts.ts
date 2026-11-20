@@ -14,7 +14,9 @@ export const dispatchOrder = defineRoute({
     'Staff retry: an order in `needs_attention`, `manual` or `operator` goes to `pending` and the dispatch job is queued (an `order.' +
     'dispatch_requested` outbox row; the answer does not wait for the supplier). The order goes to the supplier service it already ' +
     'has, else the first active link whose supplier is active; the price-protection limit of the automatic dispatch does not apply. ' +
-    'No money moves: the hold stays. An order already `pending` is a `204` that changes nothing. Writes a `retry` event and an audit row.',
+    'No money moves: the hold stays. An order already `pending` whose dispatch request is still waiting for the job is a `204` that ' +
+    'changes nothing; one whose request was lost gets a new one (a `retry` event, the job queued) and keeps its supplier columns: the job ' +
+    'chooses the target by the automatic rule. An order being sent to its supplier right now is `409 ALREADY_SENT`. Writes a `retry` event and an audit row.',
   tags: ['orders'],
   surface: 'admin',
   access: 'staff-permission',
@@ -76,10 +78,11 @@ export const changeOrderSupplier = defineRoute({
     "Points the order at another supplier (`supplierId`: the supplier's id; its active link of the order's service with the lowest " +
     'priority gives the supplier service) and/or forgets the old reference (`resetReference`). Nothing is sent to the supplier. ' +
     '`unit_cost` and `total_cost` are refreshed from the chosen link (`credit x credit_rate`; the price stays); a costlier link is ' +
-    'allowed for staff and the `supplier_changed` event records `costAbovePrice`. The dispatch state stays, except `sent` with ' +
-    '`resetReference`, which becomes `needs_attention`; with `dispatch: true` it becomes `pending` and the job is queued in the same ' +
-    'transaction. Neither `supplierId` nor `resetReference: true` is `422` on `supplierId`; the same supplier without a reset is a ' +
-    '`204` with no event.',
+    'allowed for staff and the `supplier_changed` event records `costAbovePrice`. Choosing another supplier always forgets the old ' +
+    'reference. The dispatch state stays, except a `sent` order whose reference is forgotten, which becomes `needs_attention`; with ' +
+    '`dispatch: true` it becomes `pending` and the job is queued in the same transaction. Neither `supplierId` nor `resetReference: true` ' +
+    'is `422` on `supplierId`; the same supplier without a reset is a `204` with no event. An order being sent to its supplier right now is ' +
+    '`409 ALREADY_SENT`.',
   tags: ['orders'],
   surface: 'admin',
   access: 'staff-permission',
@@ -98,7 +101,9 @@ export const changeOrderSupplier = defineRoute({
     'NOT_FOUND',
     'ORDER_NOT_OPEN',
     'ORDER_HELD',
+    'ALREADY_SENT',
     'SUPPLIER_DISABLED',
+    'INVALID_TRANSITION',
     'VALIDATION_FAILED',
   ],
   examples: { request: { supplierId: 3, resetReference: true, dispatch: true } },

@@ -71,6 +71,7 @@ export { OutboxService } from './outbox/outbox.service';
 export type {
   OutboxBacklog,
   OutboxEventInput,
+  OutboxEventTrace,
   OutboxJobData,
   OutboxPayload,
   OutboxPayloadValue,

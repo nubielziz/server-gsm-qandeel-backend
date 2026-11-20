@@ -4,6 +4,7 @@ import { Module, type OnModuleInit } from '@nestjs/common';
 import { JobSchedulerRegistry } from '../../../infra/queues';
 import { JobRunsModule } from '../../health';
 import { SupplierEngineModule } from '../supplier-engine.module';
+import { DISPATCH_SWEEP_JOB, DispatchSweepProcessor } from './dispatch-sweep.processor';
 import { QuickAddProcessor } from './quick-add.processor';
 import { SupplierDispatchProcessor } from './supplier-dispatch.processor';
 import { SUPPLIER_POLL_TICK_JOB } from '../application/supplier-poll';
@@ -15,17 +16,25 @@ export const SUPPLIER_SCHEDULERS = {
   poll: 'supplier-poll-tick',
   priceSync: 'supplier-price-sync',
   balanceCheck: 'supplier-balance-check',
+  dispatchSweep: 'supplier-dispatch-sweep',
 } as const;
 
 /**
- * Provides the processors of `supplier-dispatch`, `supplier-poll`, `supplier-sync` and the `supplier_quick_add` job of `imports`, and registers the schedules: the poll tick every
- * minute, the price sync every 15 minutes and the balance check every 30 minutes (the console's job list).
+ * Provides the processors of `supplier-dispatch`, `supplier-poll`, `supplier-sync`, the `supplier_quick_add` job of `imports` and the
+ * `dispatch_sweep` job of `maintenance` (decision 044), and registers the schedules: the poll tick and the dispatch sweep every minute,
+ * the price sync every 15 minutes and the balance check every 30 minutes (the console's job list).
  *
  * Why: the API only enqueues (the outbox row of a placed order, a staff sync request); the worker runs the supplier calls (decision 020).
  */
 @Module({
   imports: [SupplierEngineModule, JobRunsModule],
-  providers: [SupplierDispatchProcessor, SupplierPollProcessor, SupplierSyncProcessor, QuickAddProcessor],
+  providers: [
+    SupplierDispatchProcessor,
+    SupplierPollProcessor,
+    SupplierSyncProcessor,
+    QuickAddProcessor,
+    DispatchSweepProcessor,
+  ],
 })
 export class SupplierJobsModule implements OnModuleInit {
   constructor(private readonly schedulers: JobSchedulerRegistry) {}
@@ -39,6 +48,15 @@ export class SupplierJobsModule implements OnModuleInit {
       every: 60_000,
       jobOptions: { removeOnComplete: { age: 600, count: 20 }, removeOnFail: { age: 3600 } },
       description: 'Queues a status poll for every sent order that is due one.',
+    });
+    this.schedulers.register({
+      id: SUPPLIER_SCHEDULERS.dispatchSweep,
+      queue: 'maintenance',
+      jobName: DISPATCH_SWEEP_JOB,
+      every: 60_000,
+      jobOptions: { removeOnComplete: { age: 600, count: 20 }, removeOnFail: { age: 3600 } },
+      description:
+        'Moves orders whose supplier answer never came to needs attention, and asks again for the sends whose request was lost.',
     });
     this.schedulers.register({
       id: SUPPLIER_SCHEDULERS.priceSync,

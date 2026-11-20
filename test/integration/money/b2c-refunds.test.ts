@@ -7,7 +7,7 @@ import type { PoolClient } from 'pg';
 import { type Database, schema as s } from '@src/infra/db';
 import { UnrecoverableError } from '@src/infra/queues';
 import { RefundProcessModule, RefundSender } from '@src/modules/money';
-import { OrderSupplierMoves } from '@src/modules/orders';
+import { OrderSupplierMoves, SEND_IN_PROGRESS_DETAIL } from '@src/modules/orders';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
@@ -31,6 +31,7 @@ import { eventually } from '../../support/infra';
 import { ledgerTotals } from '../../support/money';
 import { rejectionOf } from '../../support/rejection';
 import { auditOf, eventsOf, ledgerOf, orderRow, outboxOf, systemBalance } from '../../support/orders';
+import { insertBareSupplier } from '../../support/suppliers';
 
 const clock = new TestClock('2026-11-07T12:00:00.000Z');
 const fake = new B2cGateway();
@@ -311,6 +312,25 @@ describe('POST /admin/refunds/:id/approve', () => {
     expect(res.body.errors[0]).toMatchObject({ field: 'amount' });
     expect((await orderRow(db, paid.orderId)).status).toBe('pending');
     expect((await ledgerTotals(db)).transactions).toBe(2);
+  });
+
+  it('refuses to approve the refund of an order being sent to its supplier: the refund stays requested, nothing is posted', async () => {
+    const paid = await order();
+    await db
+      .update(s.orders)
+      .set({ dispatchState: 'dispatching', sentAt: clock.now() })
+      .where(eq(s.orders.id, paid.orderId));
+    const refund = await request(paid);
+    const transactionsBefore = (await ledgerTotals(db)).transactions;
+
+    const res = await staff.post(`/admin/refunds/${refund.id}/approve`, {});
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ code: 'ALREADY_SENT', detail: SEND_IN_PROGRESS_DETAIL });
+    expect((await refundRow(refund.id)).status).toBe('requested');
+    expect(await orderRow(db, paid.orderId)).toMatchObject({ status: 'pending', dispatchState: 'dispatching' });
+    expect((await ledgerTotals(db)).transactions).toBe(transactionsBefore);
+    expect((await ledgerOf(db, paid.orderId)).filter((entry) => entry.kind === 'refund')).toHaveLength(0);
+    expect(await refundOutbox()).toHaveLength(0);
   });
 
   it('a crypto payment is paid out by hand: manual, completed at once, no gateway call', async () => {
@@ -880,10 +900,20 @@ describe('the autoRefundFailed policy (RULES settings 5)', () => {
   /** A paid order that a supplier is working on, rejected by the supplier's answer (the system decides, not a person). */
   async function rejectedBySupplier(): Promise<PaidOrder> {
     const paid = await order();
-    await db.update(s.orders).set({ status: 'processing', dispatchState: 'sent' }).where(eq(s.orders.id, paid.orderId));
+    const supplierId = await insertBareSupplier(db);
+    await db
+      .update(s.orders)
+      .set({ status: 'processing', dispatchState: 'sent', supplierId, supplierRef: 'REF-1' })
+      .where(eq(s.orders.id, paid.orderId));
     const moves = t.app.get(OrderSupplierMoves, { strict: false });
     await db.transaction((tx) =>
-      moves.settle(tx, { orderId: paid.orderId, result: 'rejected', supplierId: 1, text: 'Blacklisted phone' }),
+      moves.settle(tx, {
+        orderId: paid.orderId,
+        result: 'rejected',
+        supplierId,
+        supplierRef: 'REF-1',
+        text: 'Blacklisted phone',
+      }),
     );
     return paid;
   }

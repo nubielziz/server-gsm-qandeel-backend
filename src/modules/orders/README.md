@@ -17,9 +17,20 @@ the one `POST /api/index.php` transport route.
 - **State machine** (`domain/order-machine.ts`, decision 025): `decideOrderAction` is the only place the rules live; every use case
   asks it and applies its answer through `application/order-transitions.ts` (`OrderTransitions.apply`): the order is read, the
   machine decides, the order changes with a guarded `UPDATE ... WHERE status = $from AND dispatch_state = $from AND
-  verification_status IS NOT DISTINCT FROM $from` (zero rows: another request won, `409 INVALID_TRANSITION`, nothing else written),
-  the money posts, the timeline lines and the audit row are written and `order.status_changed` goes to the outbox, all in one
-  transaction. `accept` on an order that is not in the manual queue answers `NOT_MANUAL` (the endpoint doc's code).
+  verification_status IS NOT DISTINCT FROM $from AND sent_at IS NOT DISTINCT FROM $from` (zero rows: another request won, `409
+  INVALID_TRANSITION`, nothing else written), the money posts, the timeline lines and the audit row are written and
+  `order.status_changed` goes to the outbox, all in one transaction. `accept` on an order that is not in the manual queue answers
+  `NOT_MANUAL` (the endpoint doc's code). Decision 044: a send in flight is the dispatch state `dispatching` (the dispatch claim sets it
+  with `sent_at`; the supplier's answer applies only to its own claim, and a supplier's status answer only while the order still names
+  the supplier and reference it was asked about: the guard also compares them). While an order is `dispatching`, staff reply, reject,
+  change of supplier, staff dispatch and a storefront refund approval wait (`409 ALREADY_SENT` with `SEND_IN_PROGRESS_DETAIL`) and the
+  merchant's cancel is `409 ALREADY_SENT`. The merchant's cancel is also refused for good once the order was ever claimed for a supplier
+  call (it has at least one `dispatch` event), even when a failed or lost send reads `pending` again: the machine's state carries
+  `everDispatched`, `OrderTransitions.apply` reads it (one count of `dispatch` events) only for a cancel, and the order read model
+  (`OrderRow.everDispatched`, one `EXISTS` in the same select) feeds `canCancel`, so the button and the route agree; such an order is
+  cancelled by staff. `orderStateOf` is the one conversion of a stored order to the machine's state (a `pending`
+  order with `sent_at` set, claimed by an earlier release, counts as `dispatching`); `wireDispatchState` shows `dispatching` as
+  `pending`, so no response, queue or contract enum changes.
 - **Completion listeners** (feature 11, `application/order-completion-listeners.ts`, module `OrderCompletionModule`): a leaf list that
   `OrderTransitions.apply` and the stock delivery in `OrderPlacement.deliverFromStock` call inside their transaction: `completed` after a
   settlement (`complete`; a stock delivery), `reversed` after a `reopen` or a B2B `refund`; any other money move (hold release, B2C
@@ -125,7 +136,8 @@ are ISO with milliseconds, ids are numbers, lists are simple-rest with `x-total-
 - `GET /client/orders`: filters `status` (and `status_ne`), `type`, `serviceId`, `createdAt_gte`/`createdAt_lte`; `q` over the input,
   the service name and the id; sorts `createdAt` (default, newest first), `totalPrice`, `status`. Another merchant's order is `404`.
 - `POST /client/orders/:id/cancel` (`204`): only while the order was never sent (`pending`, `manual`, `held`) and the service has
-  `allow_cancel`: rejected as "Cancelled by the merchant", the hold released. `ALREADY_SENT` once sent; `INVALID_TRANSITION` when
+  `allow_cancel`: rejected as "Cancelled by the merchant", the hold released. `ALREADY_SENT` once the order was sent to a supplier at
+  least once (while being sent, sent, or sent and then failed or queued again: staff cancel such an order); `INVALID_TRANSITION` when
   the service forbids it or staff already work on the order.
 - `POST /client/orders/:id/verify` (`204`): a completed order, once, when the service has `allow_verify` and inside
   `verify_window_h` hours of completion (0 hours means no window); `INVALID_TRANSITION` otherwise.
@@ -198,9 +210,9 @@ hours, 0 = no window) through `POST|PATCH /admin/services` (feature 7a, catalog 
 ## Public API (`index.ts`)
 
 Exports `OrdersModule` (with `OrdersOutboxModule`, which the worker loads, and `OrdersAdminModule`, the routes and use cases), the pure
-rules (`decideOrderAction`, `deriveQueue`, `isOpen`, `placementDispatchState`, `mainInputOf`), the SQL fragments (`pastSlaPredicate`,
+rules (`decideOrderAction`, `deriveQueue`, `isOpen`, `placementDispatchState`, `orderStateOf`, `wireDispatchState`, `WIRE_DISPATCH_STATES`, `mainInputOf`), the SQL fragments (`pastSlaPredicate`,
 `queueSql`, `channelSql`), the services other features call (`OrderPlacement` for Dhru, REST v1 (7a) and the storefront; `OrderCompletionListeners` and `OrderCompletionModule` for the modules that react to a completion or a reversal; `OrderTransitions`
-for the risk actions; `OrderSupplierMoves`, the door of the supplier flows, and `OrdersEngineModule`, which provides both without routes for
+for the risk actions, with `refusalError`, `SEND_IN_PROGRESS_DETAIL` and `CHANGED_FIRST_DETAIL`; `OrderSupplierMoves`, the door of the supplier flows (its claim, its guarded moves, `recordLateAcceptance` and the readers of the dispatch sweep, with the types `UnansweredClaim`, `UnclaimedOrder` and `LateAcceptance`), and `OrdersEngineModule`, which provides both without routes for
 the worker; `OrderReadService`), the outbox event names (`ORDER_OUTBOX_EVENTS`, `OrderOutbox`) and the
 vocabularies and row types of the two tables. Other modules import only `src/modules/orders/index.ts` (lint rule
 `gsm/module-boundaries`).

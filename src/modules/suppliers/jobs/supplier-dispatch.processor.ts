@@ -9,8 +9,9 @@ import { type DispatchOutcome, SupplierDispatch } from '../application/supplier-
  * Runs the dispatch job.
  *
  * Why: the orders feature writes `order.dispatch_requested` (payload `{ orderId }`) when an automatic order is placed or staff send one
- * again; the relay turns it into a job of this queue. This is the queue's only processor, so it handles every job name. A busy supplier
- * throws (the queue retries with backoff); a payload without an order id can never succeed (`UnrecoverableError`).
+ * again (or the dispatch sweep asks again for a lost request, decision 044); the relay turns it into a job of this queue. This is the
+ * queue's only processor, so it handles every job name. A busy supplier, or call limits that cannot be read, throw (the queue retries with
+ * backoff; the last attempt ends in `needs_attention`); a payload without an order id can never succeed (`UnrecoverableError`).
  */
 @Injectable()
 @QueueProcessor('supplier-dispatch')

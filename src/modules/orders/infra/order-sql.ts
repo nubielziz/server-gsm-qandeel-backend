@@ -8,14 +8,15 @@ import { foreignTables } from './foreign-reads.repository';
 /**
  * The console's queue of an order as a SQL expression (decision 025): `review` = held; `needs_attention` = needs_attention;
  * `verification` = completed with a requested verification; `manual` = pending + manual; `pending` = pending + dispatch
- * pending; otherwise null. The same rules as `deriveQueue` in `domain/order-machine.ts` (a test compares them).
+ * pending or dispatching (decision 044); otherwise null. The same rules as `deriveQueue` in `domain/order-machine.ts` (a test
+ * compares them).
  */
 export const queueSql: SQL = sql`(case
   when ${orders.dispatchState} = 'held' then 'review'
   when ${orders.dispatchState} = 'needs_attention' then 'needs_attention'
   when ${orders.status} = 'completed' and ${orders.verificationStatus} = 'requested' then 'verification'
   when ${orders.status} = 'pending' and ${orders.dispatchState} = 'manual' then 'manual'
-  when ${orders.status} = 'pending' and ${orders.dispatchState} = 'pending' then 'pending'
+  when ${orders.status} = 'pending' and ${orders.dispatchState} in ('pending', 'dispatching') then 'pending'
   else null end)`;
 
 /** `b2b` when the order has a merchant, `b2c` when it has a storefront customer. */

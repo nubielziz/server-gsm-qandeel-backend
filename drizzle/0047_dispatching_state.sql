@@ -1,0 +1,3 @@
+-- Decision 044: the dispatch claim moves an order to dispatching. The list only grows: every existing row satisfies it.
+ALTER TABLE "orders" DROP CONSTRAINT "orders_dispatch_state_check";--> statement-breakpoint
+ALTER TABLE "orders" ADD CONSTRAINT "orders_dispatch_state_check" CHECK ("orders"."dispatch_state" in ('pending', 'dispatching', 'held', 'manual', 'operator', 'sent', 'needs_attention', 'done'));

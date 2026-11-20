@@ -1,7 +1,7 @@
 // The order state machine (decision 025, resolutions orders-suppliers-11 and -18): one pure function per decision, no
 // database. Use cases run the transition it returns inside one guarded UPDATE, write the event, post the money move and
 // write the outbox row when the status changed.
-import type { OrderDispatchState, OrderEventType, OrderStatus, OrderVerificationStatus } from '../db/schema';
+import type { Order, OrderDispatchState, OrderEventType, OrderStatus, OrderVerificationStatus } from '../db/schema';
 
 /** What the machine needs to know about an order. */
 export interface OrderState {
@@ -12,6 +12,11 @@ export interface OrderState {
   readonly channel: 'b2b' | 'b2c';
   /** True once the order was completed at least once (`completed_at` is set): a reopened B2C order was delivered. */
   readonly completedBefore: boolean;
+  /**
+   * True once the order was claimed for a supplier call at least once (it has a `dispatch` event), even if it reads `pending`
+   * again after a failed or lost send: the supplier may hold the first attempt, so only staff can end the order (decision 044).
+   */
+  readonly everDispatched: boolean;
 }
 
 /** The queue the console shows (`Order.queue`), derived from the state; `null` outside every queue. */
@@ -43,16 +48,37 @@ export type OrderAction =
   | { readonly kind: 'verification'; readonly decision: 'accept' | 'refund' }
   /** The merchant asks to verify a completed order (`/client` or `/v1` verify). */
   | { readonly kind: 'requestVerification' }
-  /** The merchant cancels an order that was never sent (`/client` or `/v1` cancel). */
+  /** The merchant cancels an order that was never claimed for a supplier call (`/client` or `/v1` cancel). */
   | { readonly kind: 'cancel' }
-  /** Staff send the order to a supplier again (`dispatch`, feature 6). */
-  | { readonly kind: 'staffDispatch' }
-  /** The dispatch job's answer: the supplier took it (REFERENCEID) or not (refusal, timeout, no eligible link). */
+  /**
+   * Staff send the order to a supplier again (`dispatch`, feature 6). `requestLive` = a dispatch request of this order is still on
+   * its way: not relayed yet, or its job waits, is delayed or runs (decision 044).
+   */
+  | { readonly kind: 'staffDispatch'; readonly requestLive: boolean }
+  /**
+   * The dispatch job's answer to a call it made: the supplier took it (REFERENCEID) or not (refusal, timeout), or the sweep gave up
+   * on an answer that never came. Accepted from `dispatching` only (decision 044).
+   */
   | { readonly kind: 'dispatchResult'; readonly result: 'sent' | 'failed' }
+  /**
+   * The dispatch job cannot start a send (no eligible supplier service, the supplier too busy or its limits unreadable on the last
+   * attempt) or the dispatch sweep gives up on a lost request. Accepted from `pending` only (decision 044).
+   */
+  | { readonly kind: 'dispatchBlocked' }
+  /** The dispatch sweep asks for the send of a pending order again: its earlier request was lost (decision 044). */
+  | { readonly kind: 'requeueDispatch' }
   /** A poll or a staff fetch read the supplier's status: 4 completed, 3 rejected, or still running. */
   | { readonly kind: 'supplierResult'; readonly result: 'completed' | 'rejected' | 'running' }
-  /** Staff move the order to another supplier or reset its reference (`change-supplier`). */
-  | { readonly kind: 'changeSupplier'; readonly resetReference: boolean; readonly dispatch: boolean }
+  /**
+   * Staff move the order to another supplier or reset its reference (`change-supplier`). `supplierChanges` = the request names a
+   * supplier other than the order's: its old reference is forgotten (decision 044).
+   */
+  | {
+      readonly kind: 'changeSupplier';
+      readonly resetReference: boolean;
+      readonly dispatch: boolean;
+      readonly supplierChanges: boolean;
+    }
   /** Risk staff release a held B2C order; `manual` is the placement rule's answer for the order's service. */
   | { readonly kind: 'riskApprove'; readonly manual: boolean }
   /** Risk staff refund a held B2C order. */
@@ -90,6 +116,8 @@ export interface OrderTransition {
 export interface OrderRefused {
   readonly ok: false;
   readonly refusal: OrderRefusal;
+  /** Set when the order is being sent to its supplier and the action must wait for the answer (decision 044). */
+  readonly sending?: true;
 }
 
 /** The answer of {@link decideOrderAction}. */
@@ -111,8 +139,8 @@ export function isOpen(status: OrderStatus): boolean {
  * The console's queue of an order.
  *
  * Why: decision 025: `review` = held; `manual` = pending + manual; `needs_attention` = needs_attention; `verification` =
- * completed + verification requested; `pending` = pending + dispatch pending; otherwise none (`operator`, `sent` and
- * `done` have no queue).
+ * completed + verification requested; `pending` = pending + dispatch pending or dispatching (decision 044: a send in flight
+ * keeps the queue it had before); otherwise none (`operator`, `sent` and `done` have no queue).
  *
  * @param state the order's status, dispatch state and verification status
  * @returns the queue, or `null`
@@ -124,8 +152,67 @@ export function deriveQueue(
   if (state.dispatchState === 'needs_attention') return 'needs_attention';
   if (state.status === 'completed' && state.verificationStatus === 'requested') return 'verification';
   if (state.status === 'pending' && state.dispatchState === 'manual') return 'manual';
-  if (state.status === 'pending' && state.dispatchState === 'pending') return 'pending';
+  if (state.status === 'pending' && (state.dispatchState === 'pending' || state.dispatchState === 'dispatching')) {
+    return 'pending';
+  }
   return null;
+}
+
+/**
+ * The dispatch states the wire carries (the console's enum, in its order): every stored state but `dispatching`.
+ *
+ * Why: decision 044: the response shapes do not change, so a send in flight reads as `pending`.
+ */
+export const WIRE_DISPATCH_STATES = [
+  'pending',
+  'held',
+  'manual',
+  'operator',
+  'sent',
+  'needs_attention',
+  'done',
+] as const satisfies readonly OrderDispatchState[];
+
+/** One value of {@link WIRE_DISPATCH_STATES}. */
+export type WireDispatchState = (typeof WIRE_DISPATCH_STATES)[number];
+
+/**
+ * The dispatch state a response shows.
+ *
+ * Why: decision 044: `dispatching` maps to what `pending` with `sent_at` set showed before, so no client sees a new value.
+ *
+ * @param state the stored dispatch state
+ * @returns the state the wire carries
+ */
+export function wireDispatchState(state: OrderDispatchState): WireDispatchState {
+  return state === 'dispatching' ? 'pending' : state;
+}
+
+/**
+ * What the machine needs to know about a stored order.
+ *
+ * Why: decision 044: one conversion for every use case, job and sweep, so the rule below cannot differ between them.
+ *
+ * @param order the stored order
+ * @param completedBefore true once the order was completed at least once (only a storefront order needs it)
+ * @param everDispatched true once the order has a `dispatch` event (only the merchant's cancel asks for it)
+ * @returns the machine's view of the order
+ */
+export function orderStateOf(
+  order: Pick<Order, 'status' | 'dispatchState' | 'verificationStatus' | 'clientId' | 'sentAt'>,
+  completedBefore = false,
+  everDispatched = false,
+): OrderState {
+  return {
+    status: order.status,
+    // A claim of an earlier release kept `pending` and set `sent_at`: its answer may still come, so it counts as a send in flight
+    // (decision 044).
+    dispatchState: order.dispatchState === 'pending' && order.sentAt !== null ? 'dispatching' : order.dispatchState,
+    verificationStatus: order.verificationStatus,
+    channel: order.clientId === null ? 'b2c' : 'b2b',
+    completedBefore,
+    everDispatched,
+  };
 }
 
 /**
@@ -153,6 +240,11 @@ export function placementDispatchState(input: {
 
 function refuse(refusal: OrderRefusal): OrderRefused {
   return { ok: false, refusal };
+}
+
+/** The order is being sent: the action waits for the supplier's answer (decision 044). */
+function sending(): OrderRefused {
+  return { ok: false, refusal: 'ALREADY_SENT', sending: true };
 }
 
 function to(
@@ -194,7 +286,10 @@ function openAndNotHeld(order: OrderState): OrderRefused | undefined {
  *
  * Why: decision 025's transition table, the single source of the rules: every route, job and scenario asks this function
  * and applies its answer through a guarded `UPDATE ... WHERE status = $from.status AND dispatch_state =
- * $from.dispatchState` (zero rows: another request won, answer `409 INVALID_TRANSITION`).
+ * $from.dispatchState AND sent_at IS NOT DISTINCT FROM $from.sentAt` (zero rows: another request won, answer `409
+ * INVALID_TRANSITION`). Decision 044: while the order is `dispatching` the actions that would change it wait for the
+ * supplier's answer (`ALREADY_SENT` with the `sending` flag), and the merchant's cancel is refused (`ALREADY_SENT`) once the order
+ * was ever claimed for a supplier call (`everDispatched`), whatever state it reads now.
  *
  * @param order the order as read at the start of the use case
  * @param action what is asked
@@ -213,11 +308,13 @@ export function decideOrderAction(order: OrderState, action: OrderAction): Order
     case 'reply': {
       const blocked = openAndNotHeld(order);
       if (blocked) return blocked;
+      if (order.dispatchState === 'dispatching') return sending();
       return to(order, { status: 'completed', dispatchState: 'done' }, 'completed', moneyComplete);
     }
     case 'reject': {
       const blocked = openAndNotHeld(order);
       if (blocked) return blocked;
+      if (order.dispatchState === 'dispatching') return sending();
       // A B2C order delivered once (reopened since) is refunded from the refunds page (orders-suppliers-18).
       if (order.channel === 'b2c' && order.completedBefore) return refuse('USE_REFUNDS');
       return to(
@@ -252,7 +349,11 @@ export function decideOrderAction(order: OrderState, action: OrderAction): Order
     }
     case 'cancel': {
       if (!isOpen(order.status)) return refuse('ORDER_NOT_OPEN');
-      if (order.dispatchState === 'sent') return refuse('ALREADY_SENT');
+      // Refused like a sent order (decision 044): the supplier has the order or may be taking it, and an order claimed once keeps that
+      // answer after a failed or lost send reads `pending` again, until staff end it.
+      if (order.everDispatched || order.dispatchState === 'sent' || order.dispatchState === 'dispatching') {
+        return refuse('ALREADY_SENT');
+      }
       if (!['pending', 'manual', 'held'].includes(order.dispatchState)) return refuse('INVALID_TRANSITION');
       return to(
         order,
@@ -265,15 +366,25 @@ export function decideOrderAction(order: OrderState, action: OrderAction): Order
       if (!isOpen(order.status)) return refuse('ORDER_NOT_OPEN');
       if (order.dispatchState === 'held') return refuse('ORDER_HELD');
       if (order.dispatchState === 'sent') return refuse('ALREADY_SENT');
-      // Already waiting for the dispatch job: a 204 that changes nothing.
-      if (order.dispatchState === 'pending') return noop(order, 'retry');
+      if (order.dispatchState === 'dispatching') return sending();
+      // A request still on its way is left alone: a 204 that changes nothing. A lost one is asked for again.
+      if (order.dispatchState === 'pending' && action.requestLive) return noop(order, 'retry');
       return to(order, { dispatchState: 'pending' }, 'retry', null, true);
     }
     case 'dispatchResult': {
-      if (order.dispatchState !== 'pending' || !isOpen(order.status)) return refuse('INVALID_TRANSITION');
+      // Only an order being sent takes the answer of a call (the use case also compares `sent_at`: the answer belongs to its claim).
+      if (order.dispatchState !== 'dispatching' || !isOpen(order.status)) return refuse('INVALID_TRANSITION');
       if (action.result === 'sent') return to(order, { status: 'processing', dispatchState: 'sent' }, 'ack', null);
       // Status unchanged; the use case writes the reason on the review event (decision 025).
       return to(order, { dispatchState: 'needs_attention' }, 'review', null);
+    }
+    case 'dispatchBlocked': {
+      if (order.dispatchState !== 'pending' || !isOpen(order.status)) return refuse('INVALID_TRANSITION');
+      return to(order, { dispatchState: 'needs_attention' }, 'review', null);
+    }
+    case 'requeueDispatch': {
+      if (order.dispatchState !== 'pending' || !isOpen(order.status)) return refuse('INVALID_TRANSITION');
+      return to(order, {}, 'retry', null, true);
     }
     case 'supplierResult': {
       if (!isOpen(order.status) || !['sent', 'needs_attention'].includes(order.dispatchState)) {
@@ -296,11 +407,13 @@ export function decideOrderAction(order: OrderState, action: OrderAction): Order
     }
     case 'changeSupplier': {
       if (!isOpen(order.status)) return refuse('ORDER_NOT_OPEN');
+      if (order.dispatchState === 'dispatching') return sending();
       if (action.dispatch) {
         if (order.dispatchState === 'held') return refuse('ORDER_HELD');
         return to(order, { dispatchState: 'pending' }, 'supplier_changed', null, true);
       }
-      if (order.dispatchState === 'sent' && action.resetReference) {
+      // The reference is forgotten (reset, or another supplier): a sent order has nothing to poll and needs a person.
+      if (order.dispatchState === 'sent' && (action.resetReference || action.supplierChanges)) {
         return to(order, { dispatchState: 'needs_attention' }, 'supplier_changed', null);
       }
       return to(order, {}, 'supplier_changed', null);
@@ -320,6 +433,7 @@ export function decideOrderAction(order: OrderState, action: OrderAction): Order
       // `reject` it works on a held order and on one delivered before and reopened, because the refund decision is the refund page's.
       if (order.channel !== 'b2c') return refuse('INVALID_TRANSITION');
       if (!isOpen(order.status)) return refuse('ORDER_NOT_OPEN');
+      if (order.dispatchState === 'dispatching') return sending();
       return to(order, { status: 'rejected', dispatchState: 'done' }, 'rejected', 'b2c_refund');
     }
   }

@@ -9,28 +9,48 @@ import { AppError } from '../../../common/errors';
 import type { DbExecutor } from '../../../infra/db';
 import { AuditService } from '../../platform';
 import { type Order, type OrderEventType, orders } from '../db/schema';
-import { type OrderAction, type OrderTransition, decideOrderAction } from '../domain/order-machine';
+import {
+  type OrderAction,
+  type OrderTransition,
+  decideOrderAction,
+  isOpen,
+  orderStateOf,
+} from '../domain/order-machine';
 import type { TimelineActor } from '../domain/order-timeline';
 import { merchantOf } from '../infra/foreign-reads.repository';
-import { type OrderChanges, findOrder, insertEvents, updateOrderGuarded } from '../infra/order.repository';
+import {
+  type OrderChanges,
+  countEventsOfType,
+  findOrder,
+  insertEvents,
+  storeLateReference,
+  updateOrderGuarded,
+} from '../infra/order.repository';
 import {
   type DispatchClaim,
   type PollCandidate,
   type SupplierOrderCounts,
   type SupplierOrderUsage,
+  type UnansweredClaim,
+  type UnclaimedOrder,
   claimDispatch,
   completedSpend,
   openOrderCounts,
   pollCandidates,
   supplierOrderUsage,
+  unansweredClaims,
+  unclaimedPending,
 } from '../infra/order-supplier.repository';
 import { OrderOutbox } from './order-outbox';
-import { type TransitionOutcome, OrderTransitions, refusalError } from './order-transitions';
+import { CHANGED_FIRST_DETAIL, type TransitionOutcome, OrderTransitions, refusalError } from './order-transitions';
 
 /** The supplier actions a no-money move applies. */
 export type SupplierMoveAction = Extract<
   OrderAction,
-  { kind: 'staffDispatch' | 'dispatchResult' | 'supplierResult' | 'changeSupplier' }
+  {
+    kind:
+      'staffDispatch' | 'dispatchResult' | 'dispatchBlocked' | 'requeueDispatch' | 'supplierResult' | 'changeSupplier';
+  }
 >;
 
 /** The data of a timeline line: plain values only. */
@@ -50,6 +70,10 @@ export interface SupplierMove {
   readonly writeOnNoop?: boolean;
   /** The audit verb phrase of a staff action; leave it out for the jobs. */
   readonly audit?: string;
+  /** The claim this answer belongs to: the move applies only while `sent_at` is that time (decision 044). */
+  readonly claimedAt?: Date;
+  /** The supplier and reference a supplier's answer was asked about: the move applies only while the order still names them. */
+  readonly asked?: { readonly supplierId: number; readonly supplierRef: string };
 }
 
 /** The result a supplier gave for an order, for {@link OrderSupplierMoves.settle}. */
@@ -59,7 +83,23 @@ export interface SupplierSettlement {
   readonly supplierId: number;
   /** The CODE of a completed order, or the reason of a rejected one. */
   readonly text: string | null;
+  /** The reference the answer is about: it applies only while the order still names this supplier and reference (decision 044). */
+  readonly supplierRef: string;
   readonly audit?: string;
+}
+
+/**
+ * Why a supplier's acceptance is recorded on its own: the order `moved_on` (staff or the sweep acted, a newer claim exists) before the
+ * answer was applied, or the answer's own transaction failed (`not_recorded`) while the order may still be `dispatching`.
+ */
+export type LateAcceptanceCause = 'moved_on' | 'not_recorded';
+
+/** What {@link OrderSupplierMoves.recordLateAcceptance} did. */
+export interface LateAcceptance {
+  /** True when the reference was stored on the order (it had none and still named the supplier). */
+  readonly stored: boolean;
+  /** True when a waiting order was moved to `needs_attention` so that no second send follows. */
+  readonly stopped: boolean;
 }
 
 /**
@@ -125,24 +165,23 @@ export class OrderSupplierMoves {
    * @param tx the caller's transaction
    * @param move the order, the action and what to write with it
    * @returns the order after the move, whether anything was written and the machine's decision
-   * @throws {AppError} `NOT_FOUND`; the machine's `409` refusals; `INVALID_TRANSITION` when the guarded update found the order
-   *   already changed
+   * @throws {AppError} `NOT_FOUND`; the machine's `409` refusals (`ALREADY_SENT` while the order is being sent);
+   *   `INVALID_TRANSITION` when the guarded update found the order already changed, when `claimedAt` is no longer the order's
+   *   `sent_at`, or when `asked` names a supplier or reference the order no longer has
    * @throws {Error} when the action would post money (a programming error: use {@link OrderSupplierMoves.settle})
    */
   async move(tx: DbExecutor, move: SupplierMove): Promise<TransitionOutcome> {
     const order = await findOrder(tx, move.orderId);
     if (!order) throw new AppError('NOT_FOUND', { detail: 'No order with this id.' });
-    const decision = decideOrderAction(
-      {
-        status: order.status,
-        dispatchState: order.dispatchState,
-        verificationStatus: order.verificationStatus,
-        channel: order.clientId === null ? 'b2c' : 'b2b',
-        completedBefore: false,
-      },
-      move.action,
-    );
-    if (!decision.ok) throw refusalError(decision.refusal);
+    if (
+      (move.claimedAt !== undefined && order.sentAt?.getTime() !== move.claimedAt.getTime()) ||
+      (move.asked !== undefined &&
+        (order.supplierId !== move.asked.supplierId || order.supplierRef !== move.asked.supplierRef))
+    ) {
+      throw new AppError('INVALID_TRANSITION', { detail: CHANGED_FIRST_DETAIL });
+    }
+    const decision = decideOrderAction(orderStateOf(order), move.action);
+    if (!decision.ok) throw refusalError(decision);
     if (decision.money !== null) throw new Error(`The action ${move.action.kind} posts money: use settle().`);
     if (decision.noop) {
       if (move.writeOnNoop) {
@@ -154,7 +193,13 @@ export class OrderSupplierMoves {
     const updated = await updateOrderGuarded(
       tx,
       order.id,
-      { status: order.status, dispatchState: order.dispatchState, verificationStatus: order.verificationStatus },
+      {
+        status: order.status,
+        dispatchState: order.dispatchState,
+        verificationStatus: order.verificationStatus,
+        sentAt: move.claimedAt ?? order.sentAt,
+        ...(move.asked === undefined ? {} : { supplier: move.asked }),
+      },
       {
         status: decision.next.status,
         dispatchState: decision.next.dispatchState,
@@ -162,11 +207,7 @@ export class OrderSupplierMoves {
         ...move.columns,
       },
     );
-    if (!updated) {
-      throw new AppError('INVALID_TRANSITION', {
-        detail: 'Another request changed this order first. Reload it and try again.',
-      });
-    }
+    if (!updated) throw new AppError('INVALID_TRANSITION', { detail: CHANGED_FIRST_DETAIL });
     await this.writeLine(tx, order, updated.status, decision, move);
     if (decision.statusChanged) {
       await this.outbox.statusChanged(tx, {
@@ -191,14 +232,15 @@ export class OrderSupplierMoves {
    * @param tx the caller's transaction
    * @param settlement the order, the result and the supplier's text
    * @returns what the transition did
-   * @throws {AppError} the machine's refusals (`INVALID_TRANSITION` when the order is no longer `sent` or `needs_attention`,
-   *   `ORDER_NOT_OPEN`), `NOT_FOUND`
+   * @throws {AppError} the machine's refusals (`INVALID_TRANSITION` when the order is no longer `sent` or `needs_attention`, or no
+   *   longer names the supplier and reference the answer is about; `ORDER_NOT_OPEN`), `NOT_FOUND`
    */
   async settle(tx: DbExecutor, settlement: SupplierSettlement): Promise<TransitionOutcome> {
     const outcome = await this.transitions.apply(tx, {
       orderId: settlement.orderId,
       action: { kind: 'supplierResult', result: settlement.result },
       actor: { type: 'supplier', id: settlement.supplierId },
+      asked: { supplierId: settlement.supplierId, supplierRef: settlement.supplierRef },
       ...(settlement.result === 'rejected' ? { reason: settlement.text ?? 'Rejected by the supplier' } : {}),
       ...(settlement.audit === undefined ? {} : { audit: settlement.audit }),
     });
@@ -278,6 +320,105 @@ export class OrderSupplierMoves {
    */
   pollCandidates(db: DbExecutor, limit: number): Promise<PollCandidate[]> {
     return pollCandidates(db, this.clock.now(), limit);
+  }
+
+  /**
+   * Records a supplier's acceptance that the order's own answer did not record.
+   *
+   * Why: decision 044: the supplier holds the order and will charge for it, so its reference must not live only in the call log. The
+   * reference is stored where the order has none and still names that supplier; a `review` line says who accepted and under which
+   * reference; an order that waits in `pending` for another send is moved to `needs_attention` instead, so the next job does not send
+   * it a second time. An order a newer attempt has `dispatching` or `sent` is not moved (that would break the attempt): this includes
+   * the order whose answer could not be recorded (`cause` `not_recorded`) and is still `dispatching` under the same claim, which keeps
+   * its state: the dispatch sweep moves it later and staff can then fetch the result with the stored reference.
+   *
+   * Side effects (on the caller's transaction): may update `orders.supplier_ref`; writes one `review` event, or the move to
+   * `needs_attention` with its event; no outbox row.
+   *
+   * @param tx the caller's own transaction (a failure here must not undo anything else)
+   * @param input the order, the supplier that answered (id and name), its reference and why it is recorded here (`moved_on` by default;
+   *   it only picks the sentence the review line carries)
+   * @returns what was recorded, or `undefined` when the order does not exist
+   * @see docs/decisions/044-dispatch-state.md
+   */
+  async recordLateAcceptance(
+    tx: DbExecutor,
+    input: {
+      orderId: number;
+      supplierId: number;
+      supplierName: string;
+      reference: string;
+      cause?: LateAcceptanceCause;
+    },
+  ): Promise<LateAcceptance | undefined> {
+    const order = await findOrder(tx, input.orderId);
+    if (!order) return undefined;
+    const stored = await storeLateReference(tx, input.orderId, input.supplierId, input.reference);
+    const reason =
+      input.cause === 'not_recorded'
+        ? `${input.supplierName} accepted this order under reference ${input.reference}, but the answer could not be recorded. Check it with the supplier before sending it again.`
+        : `${input.supplierName} accepted this order (reference ${input.reference}) after it had moved on. Check it with the supplier before sending it again.`;
+    const data: EventData = {
+      message: reason,
+      reason,
+      ref: input.reference,
+      supplier: input.supplierName,
+      supplierId: input.supplierId,
+      referenceStored: stored,
+    };
+    const actor: TimelineActor = { type: 'supplier', id: input.supplierId };
+    if (isOpen(order.status) && order.dispatchState === 'pending' && order.sentAt === null) {
+      try {
+        await this.move(tx, { orderId: input.orderId, action: { kind: 'dispatchBlocked' }, actor, data });
+        return { stored, stopped: true };
+      } catch (error) {
+        // A job claimed the order meanwhile: it is now in flight, so the line below is all that is written.
+        if (!(error instanceof AppError && (error.code === 'INVALID_TRANSITION' || error.code === 'ORDER_NOT_OPEN'))) {
+          throw error;
+        }
+      }
+    }
+    await insertEvents(tx, [
+      { orderId: input.orderId, type: 'review', actorType: actor.type, actorId: actor.id, data },
+    ]);
+    return { stored, stopped: false };
+  }
+
+  /**
+   * Finds the sends whose answer has not been recorded for longer than the supplier's timeout plus a margin.
+   *
+   * @param db the database
+   * @param marginMs added to the supplier's timeout
+   * @param limit the most claims returned
+   * @returns the claims, the oldest first
+   */
+  unansweredClaims(db: DbExecutor, marginMs: number, limit: number): Promise<UnansweredClaim[]> {
+    return unansweredClaims(db, this.clock.now(), marginMs, limit);
+  }
+
+  /**
+   * Finds the orders that wait for a first send and were placed before a given wait.
+   *
+   * @param db the database
+   * @param waitedMs how long an order must have waited
+   * @param limit the most orders returned
+   * @returns the orders, the oldest first
+   */
+  unclaimedPending(db: DbExecutor, waitedMs: number, limit: number): Promise<UnclaimedOrder[]> {
+    return unclaimedPending(db, new Date(this.clock.nowMs() - waitedMs), limit);
+  }
+
+  /**
+   * Counts the dispatch requests the system itself made again for an order.
+   *
+   * Why: decision 044 limits the sweep to a few automatic requests in an order's life; each one writes a `retry` line by the system.
+   *
+   * @param db the database
+   * @param orderId the order
+   * @returns how many `retry` events by the system the order has
+   */
+  automaticRequeues(db: DbExecutor, orderId: number): Promise<number> {
+    return countEventsOfType(db, orderId, 'retry', 'system');
   }
 
   private async writeLine(

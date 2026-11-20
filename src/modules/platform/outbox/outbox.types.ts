@@ -30,6 +30,19 @@ export interface OutboxEventInput {
 }
 
 /**
+ * What a reader may know about a written outbox event: its id (the job id is `outbox-<id>`), when it was written and whether the
+ * relay handed it over.
+ *
+ * Why: decision 044: a sweep that asks for lost work again must tell a request still waiting for the relay from one whose job is gone.
+ */
+export interface OutboxEventTrace {
+  readonly id: number;
+  readonly createdAt: Date;
+  /** `null` while the relay has not handed the event to its queue. */
+  readonly processedAt: Date | null;
+}
+
+/**
  * The data of the BullMQ job the relay creates for an event.
  *
  * Why: processors of every queue receive events in this one shape; `requestId` joins the logs of the request that wrote

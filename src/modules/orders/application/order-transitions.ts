@@ -10,9 +10,10 @@ import type { Order } from '../db/schema';
 import {
   type OrderAction,
   type OrderRefusal,
-  type OrderState,
+  type OrderRefused,
   type OrderTransition,
   decideOrderAction,
+  orderStateOf,
 } from '../domain/order-machine';
 import { type TimelineActor, VERIFICATION_REFUND_REASON, transitionLines } from '../domain/order-timeline';
 import { merchantOf } from '../infra/foreign-reads.repository';
@@ -51,7 +52,19 @@ export interface TransitionRequest {
    * that is not a staff write (the merchant's own cancel and verify, jobs).
    */
   readonly audit?: string;
+  /**
+   * The supplier and reference a supplier's answer was asked about: the transition applies only while the order still names them
+   * (decision 044).
+   */
+  readonly asked?: { readonly supplierId: number; readonly supplierRef: string };
 }
+
+/** The sentence of `INVALID_TRANSITION` when a guarded update found the order already changed. */
+export const CHANGED_FIRST_DETAIL = 'Another request changed this order first. Reload it and try again.';
+
+/** The sentence staff read when an action waits for a send in flight (`ALREADY_SENT`, decision 044). */
+export const SEND_IN_PROGRESS_DETAIL =
+  "This order is being sent to its supplier right now: wait for the supplier's answer, then reload the order.";
 
 /** What {@link OrderTransitions.apply} did. */
 export interface TransitionOutcome {
@@ -78,11 +91,17 @@ const REFUSAL_DETAILS: Readonly<Record<OrderRefusal, string>> = {
 /**
  * Turns a refusal of the machine into the error the route answers.
  *
- * @param refusal the machine's refusal
+ * Why: decision 044: an action refused only because the supplier is being called gets a sentence that says to wait; the code stays
+ * `ALREADY_SENT`, so no client needs a new case.
+ *
+ * @param refused the machine's refusal, or the whole refused decision (its `sending` flag picks the wait sentence)
  * @returns the `409` error with its readable detail
  */
-export function refusalError(refusal: OrderRefusal): AppError {
-  return new AppError(refusal, { detail: REFUSAL_DETAILS[refusal] });
+export function refusalError(refused: OrderRefusal | OrderRefused): AppError {
+  if (typeof refused === 'string') return new AppError(refused, { detail: REFUSAL_DETAILS[refused] });
+  return new AppError(refused.refusal, {
+    detail: refused.sending === true ? SEND_IN_PROGRESS_DETAIL : REFUSAL_DETAILS[refused.refusal],
+  });
 }
 
 /** The ledger records a supplier's action as the system's: only staff, merchants, customers and the system post. */
@@ -90,23 +109,12 @@ function ledgerActorOf(actor: TimelineActor): LedgerActor {
   return actor.type === 'supplier' ? { type: 'system', id: null } : { type: actor.type, id: actor.id };
 }
 
-/** What the machine needs to know about a stored order. */
-function stateOf(order: Order, completedBefore: boolean): OrderState {
-  return {
-    status: order.status,
-    dispatchState: order.dispatchState,
-    verificationStatus: order.verificationStatus,
-    channel: order.clientId === null ? 'b2c' : 'b2b',
-    completedBefore,
-  };
-}
-
 /**
  * Applies decisions of the order state machine.
  *
  * Why: decision 025: every transition is one transaction: the machine decides (`decideOrderAction`, the only rules), the order
- * changes with a guarded `UPDATE ... WHERE status = $from AND dispatch_state = $from` (zero rows: another request won, `409
- * INVALID_TRANSITION`, and nothing else is written), the money posts through `OrderLedger`, the timeline lines and the audit row are
+ * changes with a guarded `UPDATE ... WHERE status = $from AND dispatch_state = $from AND sent_at IS NOT DISTINCT FROM $from` (zero
+ * rows: another request won, `409 INVALID_TRANSITION`, and nothing else is written), the money posts through `OrderLedger`, the timeline lines and the audit row are
  * written and `order.status_changed` goes to the outbox when the status changed. A transition either does all of it or none of it.
  *
  * Side effects (all on the caller's transaction): updates `orders`; inserts `ledger_transactions` and entries; inserts
@@ -134,25 +142,40 @@ export class OrderTransitions {
    * @param tx the caller's transaction
    * @param request the order, the action, who acts and the texts that go with it
    * @returns the order after the change, whether anything was written, and the machine's decision
-   * @throws {AppError} `NOT_FOUND` (an unknown order, or another merchant's); the machine's `409` refusals; `INVALID_TRANSITION`
-   *   when the guarded update found the order already changed; `INSUFFICIENT_FUNDS` from the ledger
+   * @throws {AppError} `NOT_FOUND` (an unknown order, or another merchant's); the machine's `409` refusals (`ALREADY_SENT` also while
+   *   the order is being sent to its supplier, and for a merchant's cancel of an order that has a `dispatch` event); `INVALID_TRANSITION` when the guarded update found the order already changed, or
+   *   when `asked` names a supplier or reference the order no longer has; `INSUFFICIENT_FUNDS` from the ledger
    */
   async apply(tx: DbExecutor, request: TransitionRequest): Promise<TransitionOutcome> {
     const order = await findOrder(tx, request.orderId);
     if (!order || (request.onlyClientId !== undefined && order.clientId !== request.onlyClientId)) {
       throw new AppError('NOT_FOUND', { detail: 'No order with this id.' });
     }
+    if (
+      request.asked !== undefined &&
+      (order.supplierId !== request.asked.supplierId || order.supplierRef !== request.asked.supplierRef)
+    ) {
+      throw new AppError('INVALID_TRANSITION', { detail: CHANGED_FIRST_DETAIL });
+    }
     // Only a storefront order needs to know whether it was delivered before: a reopened one is refunded from /admin/refunds.
     const completedBefore = order.clientId === null && (await countEventsOfType(tx, order.id, 'completed')) > 0;
-    const decision = decideOrderAction(stateOf(order, completedBefore), request.action);
-    if (!decision.ok) throw refusalError(decision.refusal);
+    // Only the merchant's cancel asks whether the order was ever claimed for a supplier call (decision 044): no extra read otherwise.
+    const everDispatched = request.action.kind === 'cancel' && (await countEventsOfType(tx, order.id, 'dispatch')) > 0;
+    const decision = decideOrderAction(orderStateOf(order, completedBefore, everDispatched), request.action);
+    if (!decision.ok) throw refusalError(decision);
     if (decision.noop) return { order, applied: false, decision };
 
     const now = this.clock.now();
     const updated = await updateOrderGuarded(
       tx,
       order.id,
-      { status: order.status, dispatchState: order.dispatchState, verificationStatus: order.verificationStatus },
+      {
+        status: order.status,
+        dispatchState: order.dispatchState,
+        verificationStatus: order.verificationStatus,
+        sentAt: order.sentAt,
+        ...(request.asked === undefined ? {} : { supplier: request.asked }),
+      },
       {
         status: decision.next.status,
         dispatchState: decision.next.dispatchState,
@@ -160,11 +183,7 @@ export class OrderTransitions {
         ...this.columnsFor(decision, request, now),
       },
     );
-    if (!updated) {
-      throw new AppError('INVALID_TRANSITION', {
-        detail: 'Another request changed this order first. Reload it and try again.',
-      });
-    }
+    if (!updated) throw new AppError('INVALID_TRANSITION', { detail: CHANGED_FIRST_DETAIL });
 
     // Lock order (feature 11): a reversal locks the order's commission accruals before the ledger locks any wallet, as an approval does.
     await this.completions.beforeMove(tx, updated, decision.money);
@@ -260,6 +279,8 @@ export class OrderTransitions {
       case 'requestVerification':
       case 'staffDispatch':
       case 'dispatchResult':
+      case 'dispatchBlocked':
+      case 'requeueDispatch':
       case 'supplierResult':
       case 'changeSupplier':
       case 'riskApprove':

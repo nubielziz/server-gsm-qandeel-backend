@@ -66,7 +66,8 @@ export class OrderActionsService {
    * @param staff the acting staff member
    * @param orderId the order
    * @param reply the result text and the optional comment
-   * @throws {AppError} `NOT_FOUND`, `ORDER_NOT_OPEN`, `ORDER_HELD`, `INVALID_TRANSITION` (a lost race)
+   * @throws {AppError} `NOT_FOUND`, `ORDER_NOT_OPEN`, `ORDER_HELD`, `ALREADY_SENT` (the order is being sent to its supplier: wait for the
+   *   answer, decision 044), `INVALID_TRANSITION` (a lost race)
    */
   async reply(
     staff: StaffActor,
@@ -85,7 +86,8 @@ export class OrderActionsService {
    * @param staff the acting staff member
    * @param orderId the order
    * @param reason the buyer-visible reason
-   * @throws {AppError} `NOT_FOUND`, `ORDER_NOT_OPEN`, `ORDER_HELD`, `USE_REFUNDS`
+   * @throws {AppError} `NOT_FOUND`, `ORDER_NOT_OPEN`, `ORDER_HELD`, `ALREADY_SENT` (the order is being sent to its supplier: wait for the
+   *   answer, decision 044), `USE_REFUNDS`
    */
   async reject(staff: StaffActor, orderId: number, reason: string): Promise<void> {
     await this.run(staff, orderId, { kind: 'reject' }, ORDER_AUDIT_ACTIONS.reject, { reason });

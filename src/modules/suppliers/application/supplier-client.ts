@@ -1,10 +1,12 @@
 // SupplierClient: the one place that calls suppliers (decisions 019, 021, 023, 026). It decrypts the supplier's key for one call, picks
 // the driver, applies the environment's call policy and returns the record the caller writes to `supplier_api_logs`. SupplierThrottle
 // holds the per-supplier limits (concurrent calls and calls per minute).
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { LogThrottle } from '../../../common/log-throttle';
 import { DecryptionError, EncryptionService } from '../../../infra/crypto';
 import { OutboundHttp } from '../../../infra/http';
 import { RateLimitService, type SemaphoreLease } from '../../../infra/rate-limit';
+import { withoutCredentials } from '../../../infra/redis';
 import { SettingsReader } from '../../platform';
 import type { AccountInfo, RemoteService, SupplierOrderStatus } from '../domain/dhru-protocol';
 import type { Supplier } from '../db/schema';
@@ -148,39 +150,64 @@ export class SupplierClient {
 /** What {@link SupplierThrottle.admit} answers. */
 export type Admission =
   | { readonly ok: true; readonly lease: SemaphoreLease }
-  | { readonly ok: false; readonly reason: 'busy' | 'rate_limited'; readonly retryAfterSeconds: number };
+  | {
+      readonly ok: false;
+      readonly reason: 'busy' | 'rate_limited' | 'unavailable';
+      readonly retryAfterSeconds: number;
+    };
 
 /**
  * Applies a supplier's own limits to the calls we make to it.
  *
  * Why: decision 021 and the brief: `suppliers.max_concurrency` (a semaphore) and `suppliers.rate_limit_per_min` (the `supplier`
- * limiter) keep us inside what the supplier tolerates; a caller that is refused delays itself instead of failing.
+ * limiter) keep us inside what the supplier tolerates; a caller that is refused delays itself instead of failing. Decision 044: when
+ * the limits cannot be read (the cache Redis does not answer) the answer is `unavailable`, which callers treat like busy: the queue
+ * retries and the last attempt of a dispatch ends in `needs_attention` instead of a silent failed job.
  *
- * Side effects: a lease in the supplier's semaphore and a point on its limiter, both on the cache Redis, with TTLs.
+ * Side effects: a lease in the supplier's semaphore and a point on its limiter, both on the cache Redis, with TTLs; one warning per
+ * supplier per 30 s in the log when the limits cannot be read.
  */
 @Injectable()
 export class SupplierThrottle {
+  private readonly warnings = new LogThrottle(30_000);
+  private readonly logger = new Logger(SupplierThrottle.name);
+
   constructor(private readonly limits: RateLimitService) {}
 
   /**
    * Asks to make one call.
    *
    * @param supplier the supplier's limits
-   * @returns a lease to give back with {@link SupplierThrottle.release}, or why the call must wait
+   * @returns a lease to give back with {@link SupplierThrottle.release}, or why the call must wait (`unavailable`: the limits could
+   *   not be read); never throws for a Redis failure (decision 044)
+   * @throws {RangeError} for an invalid limit (a programming error)
    */
   async admit(supplier: Pick<Supplier, 'id' | 'maxConcurrency' | 'rateLimitPerMin' | 'timeoutMs'>): Promise<Admission> {
-    const lease = await this.limits.acquire(
-      `supplier-${supplier.id}`,
-      supplier.maxConcurrency,
-      supplier.timeoutMs + 10_000,
-    );
-    if (!lease) return { ok: false, reason: 'busy', retryAfterSeconds: 2 };
-    const rate = await this.limits.consume('supplier', String(supplier.id), 1, { limit: supplier.rateLimitPerMin });
-    if (!rate.allowed) {
-      await this.limits.release(lease);
-      return { ok: false, reason: 'rate_limited', retryAfterSeconds: rate.retryAfterSeconds };
+    let lease: SemaphoreLease | null = null;
+    try {
+      lease = await this.limits.acquire(
+        `supplier-${supplier.id}`,
+        supplier.maxConcurrency,
+        supplier.timeoutMs + 10_000,
+      );
+      if (!lease) return { ok: false, reason: 'busy', retryAfterSeconds: 2 };
+      const rate = await this.limits.consume('supplier', String(supplier.id), 1, { limit: supplier.rateLimitPerMin });
+      if (!rate.allowed) {
+        await this.limits.release(lease);
+        return { ok: false, reason: 'rate_limited', retryAfterSeconds: rate.retryAfterSeconds };
+      }
+      return { ok: true, lease };
+    } catch (error) {
+      if (error instanceof RangeError) throw error;
+      // A lease already taken is given back (`release` never throws), so a failed check does not hold a place.
+      if (lease) await this.limits.release(lease);
+      if (this.warnings.attempt(`limits:${supplier.id}`)) {
+        this.logger.warn(
+          `The call limits of supplier ${supplier.id} could not be checked; the call waits: ${withoutCredentials(String(error))}`,
+        );
+      }
+      return { ok: false, reason: 'unavailable', retryAfterSeconds: 2 };
     }
-    return { ok: true, lease };
   }
 
   /**

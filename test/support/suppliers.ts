@@ -25,9 +25,47 @@ export interface FakeCall {
   readonly parameters: Record<string, unknown>;
 }
 
+/**
+ * A `placeimeiorder` the fake holds: the order exists at the supplier, the answer waits until `release()` (decision 044 tests).
+ * `arrived` resolves when the call reached the fake, so a test never waits on time.
+ */
+export class FakeHold {
+  readonly arrived: Promise<void>;
+  /** Resolves when `release()` was called; the fake waits on it before it answers. */
+  readonly released: Promise<void>;
+  private signalArrived!: () => void;
+  private freeIt!: () => void;
+
+  constructor() {
+    this.arrived = new Promise<void>((resolve) => {
+      this.signalArrived = resolve;
+    });
+    this.released = new Promise<void>((resolve) => {
+      this.freeIt = resolve;
+    });
+  }
+
+  /** Called by the fake when the held call reached it. */
+  markArrived(): void {
+    this.signalArrived();
+  }
+
+  /** Lets the held call answer. */
+  release(): void {
+    this.freeIt();
+  }
+}
+
+/** Creates a hold for `fake.place({ hold })`. */
+export function hold(): FakeHold {
+  return new FakeHold();
+}
+
 /** How the fake answers the next `placeimeiorder`. */
 export type PlaceScript =
   | 'accept'
+  /** The order is created, then the answer is held until the hold is released; it then answers `SUCCESS` with the reference. */
+  | { readonly hold: FakeHold }
   /** The supplier runs the order and never answers: the caller times out although the order exists at the supplier. */
   | 'accept-then-hang'
   | { readonly refuse: string }
@@ -86,6 +124,7 @@ export class FakeDhruSupplier {
    */
   accepts: 'both' | 'dhru_xml' | 'json' = 'both';
   private readonly script: PlaceScript[] = [];
+  private readonly holds = new Set<FakeHold>();
   private readonly server: ReturnType<typeof Bun.serve>;
   private nextReference = 88_100;
 
@@ -109,6 +148,7 @@ export class FakeDhruSupplier {
 
   /** Queues the behaviour of the next `placeimeiorder` calls, in order (`accept` when the queue is empty). */
   place(...scripts: PlaceScript[]): void {
+    for (const script of scripts) if (typeof script === 'object' && 'hold' in script) this.holds.add(script.hold);
     this.script.push(...scripts);
   }
 
@@ -130,8 +170,11 @@ export class FakeDhruSupplier {
     return [...this.orders.keys()][position - 1]!;
   }
 
-  /** Forgets calls, orders and scripts. */
+  /** Forgets calls, orders and scripts, and releases every hold still open. */
   reset(): void {
+    // A test that failed must not leave a request hanging: every hold still open is released.
+    for (const open of this.holds) open.release();
+    this.holds.clear();
     this.calls.length = 0;
     this.orders.clear();
     this.script.length = 0;
@@ -208,7 +251,12 @@ export class FakeDhruSupplier {
     const reference = String(this.nextReference++);
     this.orders.set(reference, { reference, parameters, status: 1, code: '' });
     if (next === 'accept-then-hang') return new Promise<Response>(() => undefined);
-    return this.json({ SUCCESS: [{ MESSAGE: 'Order received', REFERENCEID: reference }] });
+    const answer = (): Response => this.json({ SUCCESS: [{ MESSAGE: 'Order received', REFERENCEID: reference }] });
+    if (typeof next === 'object' && 'hold' in next) {
+      next.hold.markArrived();
+      return next.hold.released.then(answer);
+    }
+    return answer();
   }
 
   private list(): Record<string, unknown> {
@@ -298,6 +346,26 @@ export async function insertFakeSupplier(
       paramFormat: 'dhru_xml',
       timeoutMs: 1500,
       ...overrides,
+    })
+    .returning({ id: s.suppliers.id });
+  return row!.id;
+}
+
+/**
+ * Inserts a supplier row that is never called (a state a test writes by hand needs a real supplier for the order's foreign key).
+ *
+ * @param db the test database
+ * @returns the supplier id
+ */
+export async function insertBareSupplier(db: Database): Promise<number> {
+  const [row] = await db
+    .insert(s.suppliers)
+    .values({
+      name: `Bare supplier ${crypto.randomUUID().slice(0, 6)}`,
+      driver: 'dhru',
+      baseUrl: 'http://127.0.0.1:9',
+      username: 'unused',
+      paramFormat: 'dhru_xml',
     })
     .returning({ id: s.suppliers.id });
   return row!.id;

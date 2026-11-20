@@ -187,6 +187,39 @@ describe('OutboxService.add', () => {
     expect(await rows()).toHaveLength(0);
   });
 
+  it('recentEvents lists the newest events of one type and aggregate, newest first, with their relay time', async () => {
+    const clock = new TestClock();
+    const r = await rig({ clock });
+    r.harness.get(OutboxRouteRegistry).register({ type: 'test.other', queue: QUEUE });
+    const first = await addEvent(r, 7);
+    clock.advance(5 * SECOND);
+    const second = await addEvent(r, 7);
+    clock.advance(5 * SECOND);
+    // Another aggregate and another type are not listed.
+    await addEvent(r, 8);
+    await r.db.runInTransaction(({ tx }) =>
+      r.outbox.add(tx, { type: 'test.other', aggregateType: 'orders', aggregateId: 7, payload: { orderId: 7 } }),
+    );
+
+    const both = await r.outbox.recentEvents(r.db.db, 'test.event', 'orders', 7);
+    expect(both.map((event) => event.id)).toEqual([second.id, first.id]);
+    expect(both.map((event) => event.createdAt.getTime())).toEqual([
+      second.createdAt.getTime(),
+      first.createdAt.getTime(),
+    ]);
+    expect(both.map((event) => event.processedAt)).toEqual([null, null]);
+    expect((await r.outbox.recentEvents(r.db.db, 'test.event', 'orders', 7, 1)).map((event) => event.id)).toEqual([
+      second.id,
+    ]);
+    expect(await r.outbox.recentEvents(r.db.db, 'test.event', 'orders', 99)).toEqual([]);
+
+    // Once the relay handed them over, the relay time shows.
+    clock.advance(SECOND);
+    await r.relay.run();
+    const relayed = await r.outbox.recentEvents(r.db.db, 'test.event', 'orders', 7);
+    expect(relayed.map((event) => event.processedAt?.getTime())).toEqual([clock.nowMs(), clock.nowMs()]);
+  });
+
   it('reports the backlog: how many events wait and for how long', async () => {
     const clock = new TestClock();
     const r = await rig({ clock });

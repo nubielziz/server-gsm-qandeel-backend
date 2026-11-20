@@ -1,7 +1,7 @@
 // The dispatch job of feature 6 (resolutions orders-suppliers-11 and -12, decision 025): an order placed through the portal is sent to
 // its supplier exactly once, a REFERENCEID moves it to `sent`, and a refusal, a timeout or no eligible link moves it to `needs_attention`
 // with the reason and the hold kept. Real Postgres and Redis, the fake Dhru supplier, no BullMQ worker: the test calls the job's logic.
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { Decimal } from 'decimal.js';
 import { eq } from 'drizzle-orm';
 import { EncryptionService } from '@src/infra/crypto';
@@ -258,10 +258,10 @@ describe('a send that does not work', () => {
     expect(fake.calls).toHaveLength(0);
   });
 
-  it('a claim whose answer was never recorded is not sent again: the order needs attention', async () => {
+  it('a claim of an earlier release (pending with sent_at set) is never sent again: the order needs attention', async () => {
     await freshRoute();
     const orderId = await place();
-    // What a crash between the claim and the answer leaves behind.
+    // What a crash between the claim and the answer left behind before the dispatching state existed.
     await world.db.update(s.orders).set({ sentAt: new Date() }).where(eq(s.orders.id, orderId));
     const outcome = await run(orderId);
     expect(outcome).toMatchObject({
@@ -373,6 +373,31 @@ describe('a busy supplier', () => {
     }
   });
 
+  it('a cache Redis error in the call limits counts as busy: the queue retries, the last attempt stops the order in needs attention', async () => {
+    await freshRoute();
+    const limits = t.app.get(RateLimitService, { strict: false });
+    const acquire = spyOn(limits, 'acquire').mockRejectedValue(new Error('Connection is closed.'));
+    try {
+      const orderId = await place();
+      expect(await run(orderId).catch((error: unknown) => error)).toBeInstanceOf(SupplierBusyError);
+      expect(await orderRow(world.db, orderId)).toMatchObject({ dispatchState: 'pending', sentAt: null });
+      const last = await run(orderId, true);
+      expect(last).toMatchObject({
+        status: 'needs_attention',
+        reason: expect.stringContaining('could not be checked'),
+      });
+      expect(acquire).toHaveBeenCalledTimes(2);
+      expect(await orderRow(world.db, orderId)).toMatchObject({ dispatchState: 'needs_attention', sentAt: null });
+      expect(fake.calls).toHaveLength(0);
+      expect((await staff.get(`/admin/orders/${orderId}`)).body).toMatchObject({
+        queue: 'needs_attention',
+        reviewReason: expect.stringContaining('could not be checked'),
+      });
+    } finally {
+      acquire.mockRestore();
+    }
+  });
+
   it("refuses a call over the supplier's own rate limit", async () => {
     await freshRoute({ supplier: { rateLimitPerMin: 1 } });
     // Supplier ids repeat from one run of the suite to the next and the counter lives a minute on the cache Redis.
@@ -398,7 +423,8 @@ describe('the orders module door', () => {
       .where(eq(s.serviceSupplierLinks.serviceId, serviceId));
     const claimWith = { ...claim, supplierServiceId: link!.supplierServiceId };
     const first = await world.db.transaction((tx) => moves.claim(tx, claimWith, 'Fake'));
-    expect(first).toMatchObject({ id: orderId, sentAt: expect.any(Date) });
+    expect(first).toMatchObject({ id: orderId, sentAt: expect.any(Date), dispatchState: 'dispatching' });
+    expect(await orderRow(world.db, orderId)).toMatchObject({ dispatchState: 'dispatching' });
     expect(await world.db.transaction((tx) => moves.claim(tx, claimWith, 'Fake'))).toBeUndefined();
   });
 });

@@ -4,6 +4,8 @@ import { Module } from '@nestjs/common';
 import { CatalogPricesModule, CatalogSignals, ServiceImporter } from '../catalog';
 import { OrdersEngineModule } from '../orders';
 import { AuditService, SettingsModule } from '../platform';
+import { DispatchRequests } from './application/dispatch-requests';
+import { DispatchSweep } from './application/dispatch-sweep';
 import { QuickAddOutbox } from './application/quick-add-outbox';
 import { QuickAddRunner } from './application/quick-add-runner';
 import { SupplierClient, SupplierThrottle } from './application/supplier-client';
@@ -13,13 +15,15 @@ import { SupplierSync } from './application/supplier-sync';
 
 /**
  * Provides {@link SupplierClient}, {@link SupplierThrottle}, {@link SupplierSync}, {@link SupplierDispatch}, {@link SupplierPoll},
- * {@link QuickAddRunner} and {@link QuickAddOutbox}.
+ * {@link DispatchRequests}, {@link DispatchSweep}, {@link QuickAddRunner} and {@link QuickAddOutbox}.
  *
  * Why: decision 016 and 020: the API (the staff's sync, test, fetch and dispatch, the start of a quick add) and the worker (the jobs)
  * run the same logic, so it lives in one module without controllers. The outbound HTTP, crypto, rate limit, queue and database providers
  * come from the global infrastructure modules both processes load. The worker does not load `CatalogModule`, so the quick add's runner
  * and the sync (its adoption of the supplier's main box, decision 042) get their own `ServiceImporter` and the `CatalogSignals` it writes
- * the search index's events with (it needs only the outbox, a global platform provider).
+ * the search index's events with (it needs only the outbox, a global platform provider). Decision 044: both processes get
+ * {@link DispatchRequests} (the API's staff "send again" asks it whether a dispatch request is still on its way) and {@link DispatchSweep}
+ * (the worker's job module adds its processor; tests reach the sweep from the test app).
  */
 @Module({
   imports: [OrdersEngineModule, SettingsModule, CatalogPricesModule],
@@ -32,6 +36,8 @@ import { SupplierSync } from './application/supplier-sync';
     SupplierSync,
     SupplierDispatch,
     SupplierPoll,
+    DispatchRequests,
+    DispatchSweep,
     QuickAddOutbox,
     QuickAddRunner,
   ],
@@ -41,6 +47,8 @@ import { SupplierSync } from './application/supplier-sync';
     SupplierSync,
     SupplierDispatch,
     SupplierPoll,
+    DispatchRequests,
+    DispatchSweep,
     QuickAddOutbox,
     QuickAddRunner,
     OrdersEngineModule,

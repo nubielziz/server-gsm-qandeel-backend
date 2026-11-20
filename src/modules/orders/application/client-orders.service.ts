@@ -104,12 +104,13 @@ export class ClientOrdersService {
   }
 
   /**
-   * Cancels an order that was never sent.
+   * Cancels an order that was never sent to a supplier (not even once).
    *
    * @param clientId the signed-in merchant
    * @param orderId the order
-   * @throws {AppError} `NOT_FOUND` (unknown or another merchant's), `ORDER_NOT_OPEN`, `ALREADY_SENT`, `INVALID_TRANSITION` (the
-   *   service does not allow cancellation, or the order is already being worked on)
+   * @throws {AppError} `NOT_FOUND` (unknown or another merchant's), `ORDER_NOT_OPEN`, `ALREADY_SENT` (the supplier has the order, its send
+   *   is in flight, or the order was claimed for a supplier call once: it has a `dispatch` event; decision 044), `INVALID_TRANSITION` (the service does not allow cancellation, or the order is already being
+   *   worked on)
    */
   async cancel(clientId: number, orderId: number): Promise<void> {
     await this.db.runInTransaction(async ({ tx }) => {

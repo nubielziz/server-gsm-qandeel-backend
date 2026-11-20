@@ -3,7 +3,7 @@
 import { type SQL, and, asc, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, escapeLike, listOrderBy, listWhere } from '../../../infra/db';
-import { type Order, type OrderStatus, orders } from '../db/schema';
+import { type Order, type OrderStatus, orderEvents, orders } from '../db/schema';
 import { foreignTables as f } from './foreign-reads.repository';
 import { channelSql, pastSlaPredicate, queueSql } from './order-sql';
 
@@ -12,6 +12,11 @@ export interface OrderRow {
   readonly order: Order;
   readonly serviceName: string;
   readonly slaMinutes: number;
+  /**
+   * True once the order has a `dispatch` event (it was claimed for a supplier call at least once): the merchant's cancel is refused
+   * for good, so `canCancel` is false (decision 044).
+   */
+  readonly everDispatched: boolean;
   /** The service's own rules for the merchant's cancel and verify buttons. */
   readonly allowCancel: boolean;
   readonly allowVerify: boolean;
@@ -35,6 +40,8 @@ function selectRows(db: DbExecutor) {
       order: orders,
       serviceName: f.services.name,
       slaMinutes: f.services.slaMinutes,
+      // One EXISTS in the same select (never a query per row); `order_events_order_idx` serves it.
+      everDispatched: sql<boolean>`exists (select 1 from ${orderEvents} where ${orderEvents.orderId} = ${orders.id} and ${orderEvents.type} = 'dispatch')`,
       allowCancel: f.services.allowCancel,
       allowVerify: f.services.allowVerify,
       verifyWindowH: f.services.verifyWindowH,

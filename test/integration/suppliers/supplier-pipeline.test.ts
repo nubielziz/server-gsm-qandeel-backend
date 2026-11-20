@@ -95,6 +95,16 @@ describe('the supplier pipeline through the real queues', () => {
     expect(fake.callsOf('placeimeiorder').filter((call) => call.parameters.IMEI === IMEIS[1])).toHaveLength(1);
   });
 
+  it('registers the dispatch sweep on the maintenance queue', async () => {
+    const queues = t.app.get(QueuesService, { strict: false });
+    const schedulers = await queues.queue('maintenance').getJobSchedulers();
+    expect(schedulers.map((scheduler) => scheduler.key)).toContain(SUPPLIER_SCHEDULERS.dispatchSweep);
+    expect(schedulers.find((scheduler) => scheduler.key === SUPPLIER_SCHEDULERS.dispatchSweep)).toMatchObject({
+      name: 'dispatch_sweep',
+      every: 60_000,
+    });
+  });
+
   it('registers the three schedules of the supplier jobs and runs the price sync through every supplier, recorded in job_runs', async () => {
     const { db } = world;
     const queues = t.app.get(QueuesService, { strict: false });

@@ -216,8 +216,9 @@ export const cancelClientOrder = defineRoute({
   summary: 'Cancel an order',
   description:
     'Cancels an order that was never sent (`pending`, manual or held) when its service allows it: the order is rejected as ' +
-    '"Cancelled by the merchant" and the hold returns to the wallet. An order already sent to a supplier is `409 ALREADY_SENT`; a ' +
-    'service that does not allow cancellation, or an order already being worked on, is `409 INVALID_TRANSITION`.',
+    '"Cancelled by the merchant" and the hold returns to the wallet. An order that was sent to a supplier once (being sent now, sent, or ' +
+    'sent and then failed or queued again) is `409 ALREADY_SENT`: it is cancelled by staff. A service that does not allow cancellation, or an ' +
+    'order already being worked on, is `409 INVALID_TRANSITION`.',
   tags: ['client-orders'],
   surface: 'client',
   access: 'merchant-session',

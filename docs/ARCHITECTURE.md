@@ -124,7 +124,9 @@ payment (`b2c_pay`, `b2c_fee`), then dispatched; delivery posts `b2c_deliver`. D
 worker (`supplier-dispatch`, `supplier-poll`): poll every minute in the first hour, then every 5 minutes, then every
 30 minutes (map); the switch to 30 minutes is a setting, default after 24 h (the map does not fix it). A supplier
 timeout on dispatch never re-sends: `dispatch_state` becomes `needs_attention`, the status stays pending, the hold
-stays, staff are alerted and resolve it with fetch or a manual dispatch (scenario `timeout`).
+stays, staff are alerted and resolve it with fetch or a manual dispatch (scenario `timeout`). While the supplier call is in flight
+the order is `dispatching` (decision 044): actions that would change it wait for the answer, and a sweep moves a claim whose answer
+never came to `needs_attention`.
 
 ## 7. Async work
 

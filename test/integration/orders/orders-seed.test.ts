@@ -2,15 +2,17 @@
 // mock, through the real API, linked to the holds and settlements the money seed already posted (the seed posts nothing for orders).
 import { afterAll, beforeAll, describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { and, eq, like, not, sql } from 'drizzle-orm';
+import { and, eq, isNull, like, not, sql } from 'drizzle-orm';
 import { loadDemoState, demoStatePath } from '../../../scripts/seed/demo-state';
 import { runSeed } from '../../../scripts/seed/run';
 import { seedOrders } from '../../../scripts/seed/orders';
 import { schema as s } from '@src/infra/db';
 import { MerchantSpend } from '@src/modules/money';
+import { DispatchSweep } from '@src/modules/suppliers';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
+import { DAY, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { ledgerTotals } from '../../support/money';
 import { insertOrderRow, ledgerOf, orderRow, walletOf } from '../../support/orders';
@@ -18,16 +20,19 @@ import { insertOrderRow, ledgerOf, orderRow, walletOf } from '../../support/orde
 setDefaultTimeout(180_000);
 
 const frontendPresent = existsSync(demoStatePath());
+const clock = new TestClock();
 let t: TestApp;
 let staff: AdminApi;
 
 beforeAll(async () => {
   if (!frontendPresent) return;
-  t = await createTestApp();
+  t = await createTestApp({ clock });
   await resetDb();
   await clearIdentityCaches(t);
   const { db } = await testDb();
   await runSeed(db, await loadDemoState(), t.config);
+  // The seed took a while: the test clock stands where the seeded dates are.
+  clock.reset();
   staff = await adminWith(t, ['orders:*', 'clients:*', 'wallet:*', 'files:read']);
 });
 afterAll(async () => {
@@ -203,6 +208,36 @@ describe.skipIf(!frontendPresent)('the orders seed', () => {
     const finished = row.completed + row.rejected;
     expect(phoneDoctor.stats.successRate).toBeCloseTo((row.completed / finished) * 100, 6);
     expect(phoneDoctor.stats.lastOrderAt).toMatch(/Z$/);
+  });
+
+  it('leaves the queued demo orders pending when the dispatch sweep runs: they never had a dispatch request, however old they are', async () => {
+    const { db } = await testDb();
+    const queued = () =>
+      db
+        .select({ id: s.orders.id })
+        .from(s.orders)
+        .where(and(eq(s.orders.status, 'pending'), eq(s.orders.dispatchState, 'pending'), isNull(s.orders.sentAt)))
+        .orderBy(s.orders.id);
+    const before = await queued();
+    expect(before.length).toBeGreaterThan(0);
+
+    clock.advance(30 * DAY);
+    try {
+      expect(await t.app.get(DispatchSweep, { strict: false }).run()).toEqual({
+        unanswered: 0,
+        requeued: 0,
+        stopped: 0,
+        movedOn: 0,
+        unknown: 0,
+      });
+    } finally {
+      clock.reset();
+    }
+    expect(await queued()).toEqual(before);
+    expect((await staff.get('/admin/orders?queue=pending&_end=100')).total).toBe(6);
+    expect(
+      await db.select().from(s.outboxEvents).where(eq(s.outboxEvents.type, 'order.dispatch_requested')),
+    ).toHaveLength(0);
   });
 
   it('is idempotent, and the next order gets an id after the demo ids', async () => {

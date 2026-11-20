@@ -24,7 +24,25 @@ export type { SupplierRef } from './application/supplier-directory';
 export { SupplierReader } from './application/supplier-reader';
 export type { SupplierDetailView, SupplierView } from './application/supplier-reader';
 export { QuickAddRunner } from './application/quick-add-runner';
-export { SupplierDispatch } from './application/supplier-dispatch';
+export { ANSWER_NOT_RECORDED_REASON, SupplierDispatch } from './application/supplier-dispatch';
+export { DispatchRequests, RECENT_DISPATCH_REQUESTS } from './application/dispatch-requests';
+export type { DispatchRequestInfo, DispatchRequestState } from './application/dispatch-requests';
+export { DispatchSweep, EMPTY_SWEEP } from './application/dispatch-sweep';
+export type { DispatchSweepResult, SweepItem, SweepPlan } from './application/dispatch-sweep';
+export {
+  DISPATCH_ANSWER_MARGIN_MS,
+  DISPATCH_REQUEUE_AFTER_MS,
+  DISPATCH_REQUEUE_MAX_AGE_MS,
+  DISPATCH_SWEEP_BATCH,
+  MAX_AUTOMATIC_REQUEUES,
+  REQUEUED_MESSAGE,
+  REQUEUE_LIMIT_REASON,
+  REQUEUE_TOO_OLD_REASON,
+  lostRequestAction,
+} from './domain/dispatch-sweep-rules';
+export type { LostRequestAction } from './domain/dispatch-sweep-rules';
+export { DISPATCH_SWEEP_JOB, DispatchSweepProcessor } from './jobs/dispatch-sweep.processor';
+export type { DispatchSweepData } from './jobs/dispatch-sweep.processor';
 export { SupplierPoll } from './application/supplier-poll';
 export { SupplierSync } from './application/supplier-sync';
 export { SupplierJobsModule, SUPPLIER_SCHEDULERS } from './jobs/supplier-jobs.module';

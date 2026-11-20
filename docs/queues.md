@@ -83,23 +83,35 @@ Sends accepted orders to their supplier.
 - **Jobs:** one catch-all processor, `SupplierDispatchProcessor` (`src/modules/suppliers/jobs/`), for the outbox event `order.dispatch_requested`
   (the relay names the job by the event type). The logic is `SupplierDispatch.run`.
 - **Payload:** the `OutboxJobData` of the event (`payload: { orderId }`, written by the orders feature at placement and by every move that
-  makes an order dispatchable again: staff `dispatch`, `change-supplier` with `dispatch: true`, a risk release). Ids only.
+  makes an order dispatchable again: staff `dispatch`, `change-supplier` with `dispatch: true`, a risk release, and the `dispatch_sweep`'s
+  new request for an order whose request was lost, decision 044). Ids only.
 - **Idempotency:** the job id is `outbox-<event id>`. The run re-reads the order and does nothing unless it is open with `dispatch_state =
   'pending'`. It then claims the order with the guarded update `UPDATE orders ... WHERE dispatch_state = 'pending' AND sent_at IS NULL`
-  (it also pins `supplier_id`, `supplier_service_id` and refreshes `unit_cost` and `total_cost` from the chosen link) BEFORE the supplier call, so
-  two runs never send twice. The call is made outside any transaction; its answer moves the order in one transaction: a REFERENCEID gives
-  `sent` (status `processing`, `supplier_ref` stored once, an `ack` event), an explicit refusal, a timeout, any other failure, or no eligible
-  link gives `needs_attention` (status unchanged, a `review` event with the reason, the hold kept). A run that finds a claim whose answer was
-  never recorded (`sent_at` set, still `pending`: a crash, or a recording that failed) does not send again: it moves the order to
-  `needs_attention`. A staff dispatch clears `sent_at` in the same transaction that queues the new job.
+  (it sets `dispatch_state = 'dispatching'` with `sent_at`, pins `supplier_id`, `supplier_service_id` and refreshes `unit_cost` and
+  `total_cost` from the chosen link; decision 044) BEFORE the supplier call, so two runs never send twice. The call is made outside any
+  transaction; its answer moves the order in one transaction, and only while the order is `dispatching` with the `sent_at` of that claim: a
+  REFERENCEID gives `sent` (status `processing`, `supplier_ref` stored once, an `ack` event), an explicit refusal or a timeout gives
+  `needs_attention` (status unchanged, a `review` event with the reason, the hold kept). No eligible link, or a supplier too busy on the
+  last attempt, stops a waiting order in `needs_attention` the same way. An answer that finds the order moved on (staff acted, the sweep
+  moved it, a newer claim exists) is not applied; a late acceptance is recorded in its own transaction (the reference is stored where the order
+  has none and still names that supplier, a `review` line names the supplier and the reference, an order waiting in `pending` for another
+  send goes to `needs_attention` so that it is not sent twice, an error log line and an error report). A run that finds a claim of an earlier
+  release (`pending` with `sent_at` set) never sends it again: it moves the order to `needs_attention`. A staff dispatch clears `sent_at` in
+  the same transaction that queues the new job. A call log row that cannot be written is logged (error line) and reported and never stops the
+  answer from being recorded. When the answer's own transaction fails for any reason other than "the order moved on" and the supplier accepted,
+  the acceptance is kept the same way (the reference stored where the order has none, one `review` line that says the answer could not be
+  recorded, an error log line and an error report; the order keeps its claim, so the sweep moves it later and staff can then fetch the result)
+  and the original error fails the job: the retry finds the claim and sends nothing. If keeping the acceptance fails too, that is logged and
+  reported and never rethrown.
 - **Eligibility** (automatic dispatch only): the first active link by priority whose supplier is `active` (not paused, not disabled), whose
   supplier service is still listed by the supplier and whose cost (`credit x credit_rate`) is not above the price charged for one unit
   (user rule 9, B117 (6)); never a failover to a costlier link. An order that already names a supplier service (a staff choice) goes there as it
   is, whatever it costs.
-- **Retry policy:** 3 attempts, exponential backoff from 5 s (jitter 50 %). Only a busy supplier (its semaphore or its rate limit is full)
-  throws, so the queue retries; on the last attempt a busy supplier sends the order to `needs_attention` instead. A processor throws
-  `UnrecoverableError` for a payload without an order id. A supplier timeout is never retried (decision 025). Stalled jobs are not re-run
-  (`maxStalledCount` 0).
+- **Retry policy:** 3 attempts, exponential backoff from 5 s (jitter 50 %). Only a busy supplier (its semaphore or its rate limit is full, or
+  its limits cannot be read because the cache Redis does not answer), or an answer that could not be recorded (after the acceptance was kept,
+  and the retry sends nothing), throws, so the queue retries; on the last attempt such a supplier sends the
+  order to `needs_attention` instead. A processor throws `UnrecoverableError` for a payload without an order id. A supplier timeout is never
+  retried (decision 025). Stalled jobs are not re-run (`maxStalledCount` 0): the `dispatch_sweep` moves their order.
 - **Schedule:** none (event-driven).
 
 ## supplier-poll
@@ -392,7 +404,7 @@ Draws the PDF tax receipt of a paid storefront order and stores it (`GET /store/
 Scheduled housekeeping: group promotion, data retention, integrity checks, FX refresh.
 
 - **Concurrency:** 2 per worker process.
-- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly, and `refund.process`, event-driven (money module, below), `checkout_recovery_sweep`, every 5 minutes (customers module, below), `notification_campaign_sweep`, every minute, `notification_reconcile`, every 5 minutes, and `notification_retention`, daily at 04:20 UTC (platform module, feature 23, below), `service_price_scan`, event-driven (catalog module, below), `retail_price_follow`, after a price change and every hour, and `category_names_clean`, once, asked for by a migration (catalog module, feature 31, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below), `support_reply_mail_sweep`, every minute, and `ticket_attachment_retention`, nightly at 03:30 UTC (support module, feature 28, below), and the storefront search jobs `search_reconcile` (every `SEARCH_RECONCILE_MINUTES`, default 15, and once at worker boot), `search_rebuild` (nightly at 03:40 UTC, and on demand), `search_terms_build` (hourly at :20), `search_terms_flush` (every 15 minutes) and `search_terms_purge` (daily 04:10 UTC) (storefront module, feature 29, below). The others are built by their features, each
+- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly, and `refund.process`, event-driven (money module, below), `checkout_recovery_sweep`, every 5 minutes (customers module, below), `notification_campaign_sweep`, every minute, `notification_reconcile`, every 5 minutes, and `notification_retention`, daily at 04:20 UTC (platform module, feature 23, below), `service_price_scan`, event-driven (catalog module, below), `retail_price_follow`, after a price change and every hour, and `category_names_clean`, once, asked for by a migration (catalog module, feature 31, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below), `support_reply_mail_sweep`, every minute, and `ticket_attachment_retention`, nightly at 03:30 UTC (support module, feature 28, below), `dispatch_sweep`, every minute (suppliers module, decision 044, below), and the storefront search jobs `search_reconcile` (every `SEARCH_RECONCILE_MINUTES`, default 15, and once at worker boot), `search_rebuild` (nightly at 03:40 UTC, and on demand), `search_terms_build` (hourly at :20), `search_terms_flush` (every 15 minutes) and `search_terms_purge` (daily 04:10 UTC) (storefront module, feature 29, below). The others are built by their features, each
   registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
   `ledger_integrity` (12b, nightly 02:30 UTC, below), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). `idempotency_purge` (daily 04:10 UTC,
 orders module, below) is built. `storefront_popularity` (every 30 minutes, storefront module, below) is built. `data_retention`
@@ -413,7 +425,8 @@ orders module, below) is built. `storefront_popularity` (every 30 minutes, store
   `ip-rule-hits-flush` every minute (`src/modules/identity/security/ip-rules/ip-rule-hits-flush.module.ts`);
   `session-purge` at 03:15 UTC (`src/modules/identity/jobs/session-purge.module.ts`);
   `client-group-promotion` at 03:30 UTC (`src/modules/identity/jobs/group-promotion.module.ts`);
-  `payment-auto-credit` every minute (`src/modules/money/jobs/payment-auto-credit.module.ts`); `fx-refresh` every hour at minute 0
+  `payment-auto-credit` every minute (`src/modules/money/jobs/payment-auto-credit.module.ts`); `supplier-dispatch-sweep` every minute
+  (`src/modules/suppliers/jobs/supplier-jobs.module.ts`); `fx-refresh` every hour at minute 0
   (`src/modules/money/jobs/fx-refresh.module.ts`); `checkout-recovery-sweep` every 5 minutes
   (`src/modules/customers/checkout-recovery.module.ts`); `notification-campaign-sweep` every minute
   (`src/modules/platform/notifications/campaigns/campaign-engine.module.ts`); the health jobs in
@@ -543,6 +556,28 @@ Credits the wallet of confirmed top-ups of automatic gateways by themselves (use
 - **What it does, per payment:** asks the gateway's API again through the driver (no row lock is held across the call); then, under `SELECT ... FOR UPDATE` on the payment, re-checks that it is still pending and not flagged and (a) credits it (`deposit` from `gateway_clearing`, key `deposit:payment:<id>`, invoice paid, `invoice.paid` outbox row, audit `credited deposit of` by the system) when the gateway still says confirmed (a crypto gateway only after its required confirmations), (b) sets `review_required` with the reason (audit `sent deposit to review`) when the gateway no longer confirms, the invoice is no longer payable, the payment stayed unconfirmed for 24 hours, or risk flags it (just before the credit, still under the lock, the job asks money's `TopUpScreeningHooks`, which the risk services module fills with `RiskScreening.reviewTopUp`: the payment's card fingerprint and the merchant's email against the blocklist; nothing is posted), or (c) moves `auto_credit_at` 5 minutes ahead while the gateway has not confirmed yet or cannot be reached.
 - **Idempotency:** the payment row lock plus the unique ledger key make a double credit impossible, whether two ticks overlap or a staff decision races the job (the loser changes nothing; staff get `PAYMENT_ALREADY_REVIEWED`). A failure of one payment never stops the others; it stays due for the next tick.
 - **Recorded in `job_runs`** (job `payment_auto_credit`, `processed` = payments credited, `result` = the counts) only for a tick that had payments due and for every manual run: a run every minute with nothing due would bury the jobs list (like the outbox tick, decision 020). Retry policy: the queue's (3 attempts, backoff from 1 min); the next minute's tick is the real retry.
+
+### `dispatch_sweep` (suppliers module, decision 044)
+
+Moves the supplier sends that lost their answer or their request (`DispatchSweep`, `src/modules/suppliers/application/dispatch-sweep.ts`; processor `DispatchSweepProcessor`, `src/modules/suppliers/jobs/`).
+
+- **Trigger:** the scheduler `supplier-dispatch-sweep` every minute, or a manual run (`POST /admin/system/jobs/dispatch_sweep/run`).
+- **Payload:** none (a manual run carries `{ runId }`).
+- **What it does** (at most 100 orders per rule per run, oldest first; it plans without writing, then moves each order in its own transaction through the state machine):
+  (a) an open order `dispatching`, or `pending` with `sent_at` set by an earlier release, whose `sent_at` is older than its supplier's `timeout_ms` plus 2 minutes goes to
+  `needs_attention` with "A send was started but its answer was not recorded. Check the supplier, then fetch or send the order again."; it is never sent again automatically and the hold stays;
+  (b) an open order `pending` with `sent_at` empty, placed more than 5 minutes ago, that has at least one dispatch request, whose newest dispatch request is older than 5 minutes and none of whose newest ten requests is live, gets a
+  new `order.dispatch_requested` row (a `retry` line by the system) through the outbox; at most 3 such requests in an order's life, and none once the newest request is older than 24 hours:
+  those orders go to `needs_attention` with the reason. A request is live when the relay has not handed it over, or its job `outbox-<event id>` on `supplier-dispatch` is waiting, active,
+  delayed, prioritized or waiting for children (the rule of `notification_reconcile`); an order whose jobs cannot be read (the queue Redis does not answer) waits for the next run.
+  An order that never had a dispatch request is left alone however old it is: every placement, release and staff send writes its request in the same transaction as the change, so an
+  order without any request row was not placed through the order engine (seeded demo orders, rows written by hand) and nothing was lost.
+- **Idempotency:** every move is a guarded update (`status`, `dispatch_state` and `sent_at` unchanged), so a repeat or a parallel run finds the order moved already; `JobRunsService.run`
+  skips a run while another one is going on; a doubled request only adds a job that the dispatch claim makes harmless.
+- **Recorded in `job_runs`** (job `dispatch_sweep`, `processed` = orders moved, `result` = `{ unanswered, requeued, stopped, movedOn, unknown }`) only for a run that moved an order and for every manual run.
+  A move that fails for any reason other than "the order changed first" does not stop the others: the run counts it, keeps the first failure, moves the rest and then throws one error
+  (`Dispatch sweep: moved <n>, failed <n>; first failure: <first line of its message>`; no payloads), so the row is `failed` with that text and the next minute plans again.
+- **Retry policy:** the queue's (3 attempts, backoff from 1 min); the next minute is the real retry.
 
 ### `refund.process` (money module)
 
@@ -765,7 +800,7 @@ none); the job id is `outbox-<event id>`.
 | `order.status_changed` | `merchant-webhooks`, `notifications` | `order.status_changed` on the webhooks, `notification.plan` on `notifications` | `orderId`, `clientId` (null for a storefront order), `fromStatus`, `toStatus` (aggregate: `orders`) | orders (`OrderOutbox`: the webhooks route, loaded by the API and the worker) and platform (`NotificationRoutes`: the notifications route); written by every transition that changes the status: accept, reply, reject, cancel, reopen, refund, verification refund. Consumers: the webhook fan-out (7b) and the order result notifications (12a) |
 | `wallet.low_balance` | `merchant-webhooks`, `notifications` | `wallet.low_balance` / `notification.plan` | `clientId`, `currency`, `available`, `threshold` (aggregate: `ledger_accounts`) | platform (`MerchantEventRoutes` webhooks route, `NotificationRoutes` notifications route), written by the money module's `WalletLowBalanceWatch` |
 | `service.price_changed` | `merchant-webhooks`, `notifications` | `service.price_changed` / `notification.plan` | `clientId`, `serviceId`, `previousPrice`, `price`, `currency` (aggregate: `services`) | platform (both routes), written by the catalog's price change scan |
-| `order.dispatch_requested` | `supplier-dispatch` | `order.dispatch_requested` | `orderId` (aggregate: `orders`) | orders (`OrderOutbox`), written by placement of an automatic order with an active supplier link (and by a staff dispatch, feature 6). No processor yet: the dispatch job is feature 6 |
+| `order.dispatch_requested` | `supplier-dispatch` | `order.dispatch_requested` | `orderId` (aggregate: `orders`) | orders (`OrderOutbox`), written by placement of an automatic order with an active supplier link, by a staff dispatch, by `change-supplier` with `dispatch: true`, by a risk release and by the `dispatch_sweep` (decision 044). The processor is `SupplierDispatchProcessor` (`src/modules/suppliers/jobs/`) |
 | `invoice.paid` | `merchant-webhooks` | `invoice.paid` | `invoiceId`, `clientId` (aggregate: `invoices`) | money (`InvoiceOutbox`, loaded by the API and the worker), written by every credit of a top-up: a staff approval (`POST /admin/payments/:id/approve`) and the automatic credit job. The fan-out re-reads the invoice (7b) |
 | `receipt.render` | `files` | `receipt.render` | `invoiceId` (aggregate: `invoices`) | money (`ReceiptOutbox`, loaded by the API and the worker), written by the capture of a storefront payment together with the receipt invoice. The processor is `ReceiptRenderProcessor` (`src/modules/money/jobs/`) |
 | `refund.process` | `maintenance` | `refund.process` | `refundId` (aggregate: `refunds`) | money (`RefundOutbox`, loaded by the API and the worker), written by the approval and the retry of a storefront refund and by the system's automatic refunds. The processor is `RefundProcessProcessor` (`src/modules/money/jobs/`) |
@@ -795,6 +830,7 @@ Registered with `JobSchedulerRegistry.register` in `onModuleInit`; the worker up
 | `session-purge` | `maintenance` | `session_purge` | daily 03:15 UTC | identity (`src/modules/identity/jobs/`) |
 | `client-group-promotion` | `maintenance` | `client_group_promotion` | daily 03:30 UTC | identity (`src/modules/identity/jobs/`) |
 | `payment-auto-credit` | `maintenance` | `payment_auto_credit` | every minute | money (`src/modules/money/jobs/`) |
+| `supplier-dispatch-sweep` | `maintenance` | `dispatch_sweep` | every minute | suppliers (`src/modules/suppliers/jobs/`) |
 | `checkout-recovery-sweep` | `maintenance` | `checkout_recovery_sweep` | every 5 minutes | customers (`src/modules/customers/checkout-recovery.module.ts`) |
 | `notification-campaign-sweep` | `maintenance` | `notification_campaign_sweep` | every minute | platform (`src/modules/platform/notifications/campaigns/campaign-engine.module.ts`) |
 | `notification-reconcile` | `maintenance` | `notification_reconcile` | every 5 minutes | platform (`src/modules/platform/notifications/campaigns/campaign-engine.module.ts`) |

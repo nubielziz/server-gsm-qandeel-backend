@@ -46,7 +46,8 @@ export const replyOrder = defineRoute({
     'Completes an open order: `result_code` and `result_comment` are stored, `completed_at` is set, `dispatch_state` becomes `done`. The ' +
     'hold is settled to revenue (B2B `complete`: hold to revenue, plus supplier prepaid to cost of goods only when a supplier executed ' +
     'the order and no earlier settlement booked the cost). Writes `completed` and `settle` events, `order.status_changed` and an audit ' +
-    'row. Two parallel replies, or a reply and a reject, change the order and the ledger once: the other answers `409`.',
+    'row. Two parallel replies, or a reply and a reject, change the order and the ledger once: the other answers `409`. While the order is ' +
+    'being sent to its supplier the action waits for the answer: `409 ALREADY_SENT`.',
   tags: ['orders'],
   surface: 'admin',
   access: 'staff-permission',
@@ -64,6 +65,7 @@ export const replyOrder = defineRoute({
     'NOT_FOUND',
     'ORDER_NOT_OPEN',
     'ORDER_HELD',
+    'ALREADY_SENT',
     'INVALID_TRANSITION',
     'VALIDATION_FAILED',
   ],
@@ -77,7 +79,8 @@ export const rejectOrder = defineRoute({
   description:
     'Rejects an open order with a buyer-visible reason: `result_code` is the reason, `completed_at` is set and the hold returns to the ' +
     'wallet (B2B `reject`). Writes `rejected` and `release` events, `order.status_changed` and an audit row. A storefront order ' +
-    'delivered before and then reopened is refunded from the Refunds page (`USE_REFUNDS`).',
+    'delivered before and then reopened is refunded from the Refunds page (`USE_REFUNDS`). While the order is being sent to its supplier ' +
+    'the action waits for the answer: `409 ALREADY_SENT`.',
   tags: ['orders'],
   surface: 'admin',
   access: 'staff-permission',
@@ -92,6 +95,7 @@ export const rejectOrder = defineRoute({
     'NOT_FOUND',
     'ORDER_NOT_OPEN',
     'ORDER_HELD',
+    'ALREADY_SENT',
     'USE_REFUNDS',
     'INVALID_TRANSITION',
     'VALIDATION_FAILED',

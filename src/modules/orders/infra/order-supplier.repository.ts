@@ -1,8 +1,10 @@
 // Drizzle queries of the supplier flows on `orders` (stage 6): the dispatch claim, the counts and spend the suppliers page shows, the
 // usage a supplier delete checks, and the orders due for a status poll. The only file where the orders module reads `supplier_api_logs`.
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
+import { MAX_TIMEOUT_MS } from '../../../infra/http';
 import { type Order, orders } from '../db/schema';
+import { foreignTables } from './foreign-reads.repository';
 
 /** What the dispatch claim writes on the order. */
 export interface DispatchClaim {
@@ -20,6 +22,8 @@ export interface DispatchClaim {
  * Why: decision 025 and orders-suppliers-11: the guarded `UPDATE ... WHERE dispatch_state = 'pending' AND sent_at IS NULL` runs
  * before the supplier call, so a second run of the job (a retry, a duplicate) finds the order claimed and never sends twice. It
  * also pins the supplier service the order goes to and refreshes the cost from it (`unit_cost`, `total_cost = unit_cost x quantity`).
+ * Decision 044: it moves the order to `dispatching` with `sent_at`: until the answer is recorded, the actions that would change the
+ * order wait.
  *
  * @param db the claim's transaction
  * @param claim the order, the chosen supplier service and the time
@@ -33,6 +37,7 @@ export async function claimDispatch(db: DbExecutor, claim: DispatchClaim): Promi
       supplierServiceId: claim.supplierServiceId,
       unitCost: claim.unitCost,
       totalCost: sql`round(${claim.unitCost}::numeric * ${orders.quantity}, 4)`,
+      dispatchState: 'dispatching',
       sentAt: claim.at,
     })
     .where(
@@ -188,4 +193,81 @@ export async function pollCandidates(db: DbExecutor, now: Date, limit: number): 
     sentAt: row.sentAt ?? row.placedAt,
     lastPolledAt: row.lastPolledAt === null ? null : new Date(row.lastPolledAt),
   }));
+}
+
+/** A send whose answer was never recorded. */
+export interface UnansweredClaim {
+  readonly orderId: number;
+  /** The claim's time: the answer of a call belongs to this claim. */
+  readonly sentAt: Date;
+}
+
+/**
+ * Finds the open orders whose send started and whose answer has not been recorded for too long.
+ *
+ * Why: decision 044: an order is `dispatching` from its claim to the answer; a worker that died in between, or a call that never
+ * returned, leaves it there. A claim of an earlier release (`pending` with `sent_at` set) counts too. The deadline is the supplier's
+ * own timeout plus a margin (an order without a supplier uses the longest timeout the HTTP layer allows).
+ *
+ * @param db the database
+ * @param now the clock's time (decision 031)
+ * @param marginMs added to the supplier's `timeout_ms`
+ * @param limit the most orders returned
+ * @returns the claims, the oldest first
+ */
+export async function unansweredClaims(
+  db: DbExecutor,
+  now: Date,
+  marginMs: number,
+  limit: number,
+): Promise<UnansweredClaim[]> {
+  const rows = await db
+    .select({ orderId: orders.id, sentAt: orders.sentAt })
+    .from(orders)
+    .leftJoin(foreignTables.suppliers, eq(foreignTables.suppliers.id, orders.supplierId))
+    .where(
+      and(
+        inArray(orders.status, ['pending', 'processing']),
+        or(
+          eq(orders.dispatchState, 'dispatching'),
+          and(eq(orders.dispatchState, 'pending'), sql`${orders.sentAt} is not null`),
+        ),
+        sql`${orders.sentAt} + (coalesce(${foreignTables.suppliers.timeoutMs}, ${MAX_TIMEOUT_MS}) + ${marginMs}) * interval '1 millisecond' < ${now.toISOString()}::timestamptz`,
+      ),
+    )
+    .orderBy(asc(orders.sentAt), asc(orders.id))
+    .limit(limit);
+  return rows.flatMap((row) => (row.sentAt === null ? [] : [{ orderId: row.orderId, sentAt: row.sentAt }]));
+}
+
+/** An order that waits for its first send. */
+export interface UnclaimedOrder {
+  readonly orderId: number;
+}
+
+/**
+ * Finds the open orders that wait for a send nobody claimed.
+ *
+ * Why: decision 044: a `pending` order with no `sent_at` is waiting for its dispatch job; one placed some time ago may have lost its job
+ * (a queue Redis that lost its data, a job that failed for good). The partial index `orders_open_idx (dispatch_state, placed_at)` covers it.
+ *
+ * @param db the database
+ * @param placedBefore only orders placed before this time
+ * @param limit the most orders returned
+ * @returns the orders, the oldest first
+ */
+export async function unclaimedPending(db: DbExecutor, placedBefore: Date, limit: number): Promise<UnclaimedOrder[]> {
+  return db
+    .select({ orderId: orders.id })
+    .from(orders)
+    .where(
+      and(
+        inArray(orders.status, ['pending', 'processing']),
+        eq(orders.dispatchState, 'pending'),
+        isNull(orders.sentAt),
+        lt(orders.placedAt, placedBefore),
+      ),
+    )
+    .orderBy(asc(orders.placedAt), asc(orders.id))
+    .limit(limit);
 }

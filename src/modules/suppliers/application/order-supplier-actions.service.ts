@@ -5,12 +5,20 @@ import { Injectable } from '@nestjs/common';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService, type DbExecutor } from '../../../infra/db';
-import { OrderSupplierMoves, decideOrderAction, isOpen, refusalError } from '../../orders';
+import {
+  CHANGED_FIRST_DETAIL,
+  OrderSupplierMoves,
+  decideOrderAction,
+  isOpen,
+  orderStateOf,
+  refusalError,
+} from '../../orders';
 import { AuditService } from '../../platform';
 import type { Order } from '../../orders';
 import { linkUnitCost, type RoutingLink } from '../domain/link-selection';
 import { routingLinks } from '../infra/supplier-catalogue.repository';
 import { findSupplier, findSuppliers } from '../infra/supplier.repository';
+import { DispatchRequests } from './dispatch-requests';
 import { SupplierPoll } from './supplier-poll';
 
 /** The audit verb phrases of the demo's style: the console prints `<actor> <action> <entityLabel>`. */
@@ -32,15 +40,6 @@ function invalid(field: string, message: string, code = 'invalid'): AppError {
   return new AppError('VALIDATION_FAILED', { errors: [{ field, code, message }] });
 }
 
-/** What the machine needs to know about an order (a supplier action never depends on an earlier completion). */
-const stateOf = (order: Order) => ({
-  status: order.status,
-  dispatchState: order.dispatchState,
-  verificationStatus: order.verificationStatus,
-  channel: order.clientId === null ? ('b2c' as const) : ('b2b' as const),
-  completedBefore: false,
-});
-
 /** The cost columns of an order for a link: `unit_cost = credit x credit_rate`, `total_cost = unit_cost x quantity`. */
 function costColumns(order: Order, link: Pick<RoutingLink, 'credit' | 'creditRate'>) {
   const unit = linkUnitCost(link);
@@ -55,6 +54,10 @@ function costColumns(order: Order, link: Pick<RoutingLink, 'credit' | 'creditRat
  * rule 9 (never a costlier link) does not bind a person: a staff change or dispatch may use a costlier link, and the event records
  * `costAbovePrice` so the loss shows in reports.
  *
+ * Decision 044: nothing here changes an order whose send is in flight (`409 ALREADY_SENT`); choosing another supplier always forgets the
+ * old reference; "send again" on a `pending` order whose dispatch request was lost queues a new request and leaves the supplier
+ * columns as they are (the job chooses its target by the automatic rule), while one whose request is still on its way changes nothing.
+ *
  * Side effects: each action is one transaction that updates `orders`, appends an `order_events` row, writes the outbox rows the move
  * calls for (`order.dispatch_requested`, `order.status_changed`) and one `audit_logs` row; `fetch` also calls the supplier and writes
  * its log row.
@@ -66,6 +69,7 @@ export class OrderSupplierActions {
     private readonly orders: OrderSupplierMoves,
     private readonly poll: SupplierPoll,
     private readonly audit: AuditService,
+    private readonly requests: DispatchRequests,
   ) {}
 
   /**
@@ -73,18 +77,37 @@ export class OrderSupplierActions {
    *
    * @param staffId the staff member
    * @param orderId the order
-   * @throws {AppError} `NOT_FOUND`; the machine's `ORDER_NOT_OPEN`, `ORDER_HELD`, `ALREADY_SENT`; `NO_SUPPLIER` (no active link and no
-   *   supplier service); `SUPPLIER_DISABLED` (the order's supplier, or every linked supplier, is paused or disabled)
+   * @throws {AppError} `NOT_FOUND`; the machine's `ORDER_NOT_OPEN`, `ORDER_HELD`, `ALREADY_SENT` (also while the order is being sent to
+   *   its supplier); `NO_SUPPLIER` (no active link and no supplier service); `SUPPLIER_DISABLED` (the order's supplier, or every linked
+   *   supplier, is paused or disabled)
    */
   async dispatch(staffId: number, orderId: number): Promise<void> {
     await this.db.runInTransaction(async ({ tx }) => {
       const order = await this.orders.find(tx, orderId);
       if (!order) throw notFound();
-      const decision = decideOrderAction(stateOf(order), { kind: 'staffDispatch' });
-      if (!decision.ok) throw refusalError(decision.refusal);
-      // Already waiting for the dispatch job: nothing to change and nothing to check, but the press of the button is audited.
+      // Only a pending order that was never claimed can have a request on its way; an unreadable queue counts as "not live" (a second
+      // request is harmless: the claim lets one run through).
+      const requestLive =
+        order.dispatchState === 'pending' && order.sentAt === null
+          ? (await this.requests.inspect(tx, orderId)).state === 'live'
+          : false;
+      const decision = decideOrderAction(orderStateOf(order), { kind: 'staffDispatch', requestLive });
+      if (!decision.ok) throw refusalError(decision);
+      // A request still on its way: nothing to change and nothing to check, but the press of the button is audited.
       if (decision.noop) {
         await this.recordNoop(tx, order, ORDER_SUPPLIER_AUDIT.dispatch);
+        return;
+      }
+      // A pending order whose request was lost keeps its supplier columns: the job chooses its target by the automatic rule, with its
+      // price protection, exactly as it would have for the lost request. Only the other states pin a link by hand.
+      if (order.dispatchState === 'pending') {
+        await this.orders.move(tx, {
+          orderId,
+          action: { kind: 'staffDispatch', requestLive },
+          actor: { type: 'staff', id: staffId },
+          data: { message: 'Queued for sending again' },
+          audit: ORDER_SUPPLIER_AUDIT.dispatch,
+        });
         return;
       }
       let columns: Parameters<OrderSupplierMoves['move']>[1]['columns'] = { sentAt: null };
@@ -122,7 +145,7 @@ export class OrderSupplierActions {
       }
       await this.orders.move(tx, {
         orderId,
-        action: { kind: 'staffDispatch' },
+        action: { kind: 'staffDispatch', requestLive: false },
         actor: { type: 'staff', id: staffId },
         columns,
         data: { message: `Sent to ${supplierName} again`, supplier: supplierName },
@@ -157,9 +180,7 @@ export class OrderSupplierActions {
         ? notFound()
         : new AppError('INVALID_TRANSITION', {
             detail:
-              outcome.reason === 'moved_on'
-                ? 'Another request changed this order first. Reload it and try again.'
-                : 'This order is not waiting for a supplier result.',
+              outcome.reason === 'moved_on' ? CHANGED_FIRST_DETAIL : 'This order is not waiting for a supplier result.',
           });
     }
   }
@@ -167,12 +188,15 @@ export class OrderSupplierActions {
   /**
    * Changes the supplier of an order and/or forgets its supplier reference.
    *
+   * Why: decision 044: choosing another supplier always forgets the old reference (it names an order at the previous supplier), and a
+   * `sent` order whose reference is forgotten goes to `needs_attention` unless the same call dispatches it.
+   *
    * @param staffId the staff member
    * @param orderId the order
    * @param input the target supplier, whether to reset the reference and whether to queue the dispatch at once
-   * @throws {AppError} `NOT_FOUND`; `ORDER_NOT_OPEN`, `ORDER_HELD` (with `dispatch`); `SUPPLIER_DISABLED` (the target is paused or
-   *   disabled); `VALIDATION_FAILED` (422 on `supplierId`: nothing to do, an unknown supplier, or no active link of the order's
-   *   service to it)
+   * @throws {AppError} `NOT_FOUND`; `ORDER_NOT_OPEN`, `ORDER_HELD` (with `dispatch`), `ALREADY_SENT` (while the order is being sent to its
+   *   supplier); `SUPPLIER_DISABLED` (the target is paused or disabled); `INVALID_TRANSITION` (the order changed while the request ran);
+   *   `VALIDATION_FAILED` (422 on `supplierId`: nothing to do, an unknown supplier, or no active link of the order's service to it)
    */
   async changeSupplier(staffId: number, orderId: number, input: ChangeSupplierInput): Promise<void> {
     const reset = input.resetReference === true;
@@ -183,9 +207,12 @@ export class OrderSupplierActions {
     await this.db.runInTransaction(async ({ tx }) => {
       const order = await this.orders.find(tx, orderId);
       if (!order) throw notFound();
-      const action = { kind: 'changeSupplier', resetReference: reset, dispatch } as const;
-      const decision = decideOrderAction(stateOf(order), action);
-      if (!decision.ok) throw refusalError(decision.refusal);
+      const supplierChanges = input.supplierId !== undefined && input.supplierId !== order.supplierId;
+      // Another supplier always forgets the old reference: it names an order at the previous supplier (decision 044).
+      const clearsReference = reset || supplierChanges;
+      const action = { kind: 'changeSupplier', resetReference: reset, dispatch, supplierChanges } as const;
+      const decision = decideOrderAction(orderStateOf(order), action);
+      if (!decision.ok) throw refusalError(decision);
 
       let columns: NonNullable<Parameters<OrderSupplierMoves['move']>[1]['columns']> = {};
       let toSupplierId = order.supplierId;
@@ -218,7 +245,7 @@ export class OrderSupplierActions {
           totalCost: cost.totalCost,
         };
       }
-      if (reset) columns = { ...columns, supplierRef: null };
+      if (clearsReference) columns = { ...columns, supplierRef: null };
       // A new send needs a fresh claim.
       if (dispatch) columns = { ...columns, sentAt: null };
 
@@ -235,10 +262,10 @@ export class OrderSupplierActions {
         actor: { type: 'staff', id: staffId },
         columns,
         data: {
-          message: `Supplier changed from ${from} to ${to}${reset ? ' (reference reset)' : ''}`,
+          message: `Supplier changed from ${from} to ${to}${clearsReference ? ' (reference reset)' : ''}`,
           fromSupplierId: order.supplierId,
           toSupplierId,
-          resetReference: reset,
+          resetReference: clearsReference,
           costAbovePrice,
         },
         audit: ORDER_SUPPLIER_AUDIT.changeSupplier,

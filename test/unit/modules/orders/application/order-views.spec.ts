@@ -9,7 +9,7 @@ const HOUR = 3_600_000;
 
 function row(
   order: Partial<Order>,
-  rules: Partial<Pick<OrderRow, 'allowCancel' | 'allowVerify' | 'verifyWindowH'>> = {},
+  rules: Partial<Pick<OrderRow, 'allowCancel' | 'allowVerify' | 'verifyWindowH' | 'everDispatched'>> = {},
 ): OrderRow {
   return {
     order: {
@@ -17,10 +17,12 @@ function row(
       dispatchState: 'pending',
       verificationStatus: null,
       completedAt: null,
+      sentAt: null,
       ...order,
     } as Order,
     serviceName: 'Service',
     slaMinutes: 60,
+    everDispatched: false,
     allowCancel: true,
     allowVerify: true,
     verifyWindowH: 24,
@@ -46,6 +48,19 @@ describe('canCancel', () => {
     }
     expect(canCancel(row({ status: 'completed', dispatchState: 'done' }))).toBe(false);
     expect(canCancel(row({}, { allowCancel: false }))).toBe(false);
+  });
+
+  it('is false while a send is in flight (dispatching, or pending with sent_at set by an earlier release)', () => {
+    expect(canCancel(row({ dispatchState: 'dispatching', sentAt: NOW }))).toBe(false);
+    expect(canCancel(row({ status: 'processing', dispatchState: 'dispatching', sentAt: NOW }))).toBe(false);
+    expect(canCancel(row({ dispatchState: 'pending', sentAt: NOW }))).toBe(false);
+  });
+
+  it('is false once the order was ever claimed for a supplier call, even when it reads pending, manual or held again', () => {
+    for (const dispatchState of ['pending', 'manual', 'held'] as const) {
+      expect(canCancel(row({ dispatchState }, { everDispatched: true }))).toBe(false);
+      expect(canCancel(row({ dispatchState }, { everDispatched: false }))).toBe(true);
+    }
   });
 });
 

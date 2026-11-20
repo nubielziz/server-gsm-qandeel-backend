@@ -1,11 +1,10 @@
 // Order views: the rows of the read model turned into what the routes send. The staff view is the console's `Order` (cost, supplier,
 // notes); the merchant view hides everything that is not the merchant's to see (cost, supplier, internal notes, risk).
 import type { JsonObject } from '../../../common/contract';
-import { deriveQueue } from '../domain/order-machine';
-import type { OrderQueue } from '../domain/order-machine';
+import { deriveQueue, orderStateOf, wireDispatchState } from '../domain/order-machine';
+import type { OrderQueue, WireDispatchState } from '../domain/order-machine';
 import type {
   Order,
-  OrderDispatchState,
   OrderEvent,
   OrderEventActorType,
   OrderEventType,
@@ -27,7 +26,8 @@ export interface StaffOrderView {
   readonly createdAt: string;
   readonly taxAmount: string;
   readonly currency: string;
-  readonly dispatchState: OrderDispatchState;
+  /** The wire's dispatch state: an order being sent reads `pending` (decision 044). */
+  readonly dispatchState: WireDispatchState;
   readonly imei: string;
   readonly quantity: number;
   readonly inputs: JsonObject;
@@ -89,7 +89,7 @@ export function toStaffOrder(
     createdAt: order.createdAt.toISOString(),
     taxAmount: order.taxAmount,
     currency: order.currency,
-    dispatchState: order.dispatchState,
+    dispatchState: wireDispatchState(order.dispatchState),
     imei: order.imei ?? '',
     quantity: order.quantity,
     inputs: order.inputs as JsonObject,
@@ -185,17 +185,22 @@ const HOUR_MS = 3_600_000;
 /**
  * Tells whether the merchant may cancel the order now.
  *
- * Why: decision 025: only while the order was never sent (`pending`, `manual` or `held`) and the service allows it.
+ * Why: decision 025: only while the order was never sent (`pending`, `manual` or `held`) and the service allows it; never while a
+ * send is in flight (decision 044: `dispatching`, or `pending` with `sent_at` set by an earlier release), and never once the order
+ * was claimed for a supplier call (`everDispatched`: a `dispatch` event exists), even when a failed or lost send reads `pending`
+ * again. The same rule as the machine's `cancel`.
  *
  * @param row the order with its service's rules
  * @returns true when `POST /client/orders/:id/cancel` would be accepted
  */
 export function canCancel(row: OrderRow): boolean {
   const { order } = row;
+  const { dispatchState } = orderStateOf(order);
   return (
     row.allowCancel &&
+    !row.everDispatched &&
     (order.status === 'pending' || order.status === 'processing') &&
-    (order.dispatchState === 'pending' || order.dispatchState === 'manual' || order.dispatchState === 'held')
+    (dispatchState === 'pending' || dispatchState === 'manual' || dispatchState === 'held')
   );
 }
 

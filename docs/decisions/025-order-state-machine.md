@@ -8,13 +8,14 @@ frontend Order contract (`docs/contract/endpoints/orders.md`).
   pending → processing | completed | rejected; processing → completed | rejected; completed → processing (reopen) |
   rejected (refund, verification refund); rejected is final. A closed order refuses actions with
   `409 ORDER_NOT_OPEN`.
-- `orders.dispatch_state` (internal, passed through on the wire): `pending` (waiting for the dispatch job), `held`
+- `orders.dispatch_state` (internal, passed through on the wire): `pending` (waiting for the dispatch job), `dispatching`
+  (the claim set it with `sent_at`; the supplier's answer is awaited; the wire shows it as `pending`) (amended 2026-11-20 by decision 044), `held`
   (B2C risk review), `manual` (operator needed: manual service or no active supplier link), `operator` (accepted by
   staff), `sent` (supplier accepted, polling), `needs_attention` (timeout or supplier error; never re-sent
   automatically), `done` (finished or served from inventory).
 - `queue` on the wire is derived: `review` = held; `manual` = pending + manual; `needs_attention` = needs_attention
   (status stays pending until a REFERENCEID exists); `verification` = completed + `verification_status` requested;
-  `pending` = pending + dispatch pending; otherwise null. `reviewReason` = text stored on the event that opened the
+  `pending` = pending + dispatch `pending` or `dispatching` (amended 2026-11-20 by decision 044); otherwise null. `reviewReason` = text stored on the event that opened the
   queue. `pastSla` = `status IN ('pending','processing') AND placed_at < $now - make_interval(mins => services.sla_minutes)`
   (`$now` from the injected clock, decision 031): age only, no queue exclusion (B92), one exported query fragment of the
   orders read model shared by `GET /admin/orders`, the dashboard and System health. The clock is `placed_at`, which the
@@ -28,26 +29,30 @@ frontend Order contract (`docs/contract/endpoints/orders.md`).
   | Event | From | To (status) |
   |---|---|---|
   | Placement | - | `held` (B2C risk hold), `done` (inventory code delivered at once), `manual` (fulfillment manual or no active supplier link), else `pending` (dispatch job enqueued) |
-  | Dispatch job: REFERENCEID | `pending` | `sent` (processing, `sent_at`) |
-  | Dispatch job: explicit refusal, timeout, or no eligible link (disabled, paused, or costlier than the charged price, B117 (6)) | `pending` | `needs_attention` (status unchanged, review event with the reason) |
+  | Dispatch job: claim (amended 2026-11-20 by decision 044) | `pending` (`sent_at` empty) | `dispatching` (status unchanged, `sent_at` set) |
+  | Dispatch job: REFERENCEID (amended 2026-11-20 by decision 044) | `dispatching` (the claim's `sent_at`) | `sent` (processing) |
+  | Dispatch job: explicit refusal or timeout (amended 2026-11-20 by decision 044) | `dispatching` (the claim's `sent_at`) | `needs_attention` (status unchanged, review event with the reason) |
+  | Dispatch job: no eligible link (disabled, paused, or costlier than the charged price, B117 (6)), supplier busy or its limits unreadable on the last try (amended 2026-11-20 by decision 044) | `pending` | `needs_attention` (status unchanged, review event with the reason) |
+  | Dispatch sweep: no answer recorded (amended 2026-11-20 by decision 044) | `dispatching` | `needs_attention` (status unchanged, review event) |
+  | Dispatch sweep: request lost (amended 2026-11-20 by decision 044) | `pending` | `pending` + job (at most 3 times, never after 24 h; then `needs_attention`); an order with no dispatch request at all is left alone |
   | Poll or fetch: STATUS 4 / STATUS 3 | `sent`, `needs_attention` | `done` (completed / rejected) |
   | Fetch finds it still running | `needs_attention` | `sent` |
   | `accept` | `manual` | `operator` (processing, queue null) |
-  | `reply` / `reject` | any open, not `held` | `done` (completed / rejected) |
+  | `reply` / `reject` | any open, not `held`, not `dispatching` (amended 2026-11-20 by decision 044) | `done` (completed / rejected) |
   | `refund` (B2B completed) | `done` | `done` (rejected) |
   | `reopen` | `done` (completed) | `operator` (processing, queue null) |
   | Verification accept / refund | `done` | `done` (accept: stays completed, `verification_status` `accepted`; refund: rejected, `verification_status` `refunded`) |
   | Risk approve / risk refund | `held` | `pending` (or `manual` by the placement rule) / `done` (rejected) |
-  | Merchant cancel | `pending`, `manual`, `held` | `done` (rejected) |
-  | Staff `dispatch` | `needs_attention`, `manual`, `operator` | `pending` + job; `pending` is a 204 no-op (already queued); `held` is `409 ORDER_HELD`; `sent` is `409 ALREADY_SENT` |
-  | `change-supplier` | any | unchanged, except `sent` + `resetReference` becomes `needs_attention` (reason 'Supplier changed: dispatch needed'); with `dispatch: true` it becomes `pending` + job |
+  | Merchant cancel | `pending`, `manual`, `held`, when the order has no `dispatch` event (`sent`, `dispatching` and any order claimed for a supplier call once are `409 ALREADY_SENT`) (amended 2026-11-20 by decision 044) | `done` (rejected) |
+  | Staff `dispatch` | `needs_attention`, `manual`, `operator`, or `pending` whose request was lost (amended 2026-11-20 by decision 044) | `pending` + job (a `pending` order keeps its supplier columns); `pending` with a live request is a 204 no-op; `held` is `409 ORDER_HELD`; `sent` and `dispatching` are `409 ALREADY_SENT` |
+  | `change-supplier` | any open but `dispatching` (amended 2026-11-20 by decision 044) | unchanged, except `sent` whose reference is forgotten (reset, or another supplier) becomes `needs_attention` (reason 'Supplier changed: dispatch needed') (amended 2026-11-20 by decision 044); with `dispatch: true` it becomes `pending` + job |
 
   The derived queue stays as defined above: `operator`, `sent` and `done` have queue `null`. The B117 (6) failover limit
   applies to automatic failover by the dispatch job only; a staff `change-supplier` may choose a costlier link (the cost
   fields are refreshed and the `supplier_changed` event records `costAbovePrice`), and the following staff `dispatch`
   sends to the chosen supplier service as is.
 - Every transition is one DB transaction: guarded `UPDATE orders … WHERE id = $1 AND status = $2 [AND
-  dispatch_state = $3]` (0 rows → 409), an `order_events` row (actor `staff | client | customer | supplier | system`),
+  dispatch_state = $3] AND sent_at IS NOT DISTINCT FROM $n` (amended 2026-11-20 by decision 044) (0 rows → 409), an `order_events` row (actor `staff | client | customer | supplier | system`),
   the ledger posting through `postTransaction` with idempotency key `order_event:<event id>`, and an outbox
   `order.status_changed` row when the status changed. Staff actions also write `audit_logs`.
 - Money per transition (map money events): placement B2B = `order` (wallet → hold); B2C order creation on payment =
@@ -62,8 +67,8 @@ frontend Order contract (`docs/contract/endpoints/orders.md`).
   STATUS 4 → complete, STATUS 3 → reject.
 - Inventory services reserve a code at placement, mark it sold on completion (it becomes the result), release it on
   rejection before delivery; a delivered code never returns to stock.
-- Cancellation by the merchant (`/client`, `/v1`): only while the order was never sent (`pending | manual | held`)
-  and the service allows it; posts `reject`. Verification: within `verify_window_h` of completion when the service
+- Cancellation by the merchant (`/client`, `/v1`): only while the order was never sent, is not being sent and never had a `dispatch` event
+  (amended 2026-11-20 by decision 044) (`pending | manual | held`) and the service allows it; posts `reject`. Verification: within `verify_window_h` of completion when the service
   allows it; staff decide accept or refund.
 - `orders.source` ∈ `dhru | v1 | portal | store | admin`; `channel` on the wire = b2b when `client_id` is set,
   b2c when `customer_id` is set.

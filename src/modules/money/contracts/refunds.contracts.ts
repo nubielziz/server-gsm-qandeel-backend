@@ -123,7 +123,8 @@ export const approveRefund = defineRoute({
     'from customer funds; the VAT share is `round(tax x amount / paid, 2)`. A card or wallet refund goes to the gateway through a job ' +
     '(`processing` until it answers, then `completed` or `failed`); a crypto payment, or a gateway that cannot refund, is paid out ' +
     'by hand and is `completed` at once. Without `amount` the amount on the request is refunded; the limit is what was paid minus the ' +
-    'other refunds that are completed or processing. The answer carries `netAmount` and `taxAmount` of the posted journal.',
+    'other refunds that are completed or processing. The answer carries `netAmount` and `taxAmount` of the posted journal. An order that is ' +
+    'being sent to its supplier right now is `409 ALREADY_SENT` (approve it once the supplier answered).',
   tags: ['refunds'],
   surface: 'admin',
   access: 'staff-permission',
@@ -138,7 +139,7 @@ export const approveRefund = defineRoute({
       .describe('A USD amount with up to 4 decimals (`7.5000`); left out means the amount on the request.'),
   }),
   success: { status: 200, schema: RefundSchema },
-  errors: [...DECISION_ERRORS, 'REFUND_NOT_PENDING', 'ORDER_NOT_OPEN', 'INVALID_TRANSITION'],
+  errors: [...DECISION_ERRORS, 'REFUND_NOT_PENDING', 'ORDER_NOT_OPEN', 'ALREADY_SENT', 'INVALID_TRANSITION'],
   examples: {
     request: { amount: '7.5000' },
     response: {

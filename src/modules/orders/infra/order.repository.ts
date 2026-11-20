@@ -8,6 +8,7 @@ import {
   type Order,
   type OrderDispatchState,
   type OrderEvent,
+  type OrderEventActorType,
   type OrderEventType,
   type OrderStatus,
   type OrderVerificationStatus,
@@ -46,6 +47,10 @@ export interface OrderStateGuard {
   readonly status: OrderStatus;
   readonly dispatchState: OrderDispatchState;
   readonly verificationStatus: OrderVerificationStatus | null;
+  /** `sent_at` as the decision read it, or the claim an answer belongs to (decision 044). */
+  readonly sentAt: Date | null;
+  /** When given: the supplier and reference a supplier's answer was asked about; the update applies only while the order still names them. */
+  readonly supplier?: { readonly supplierId: number; readonly supplierRef: string };
 }
 
 /** The columns a transition may change. */
@@ -71,9 +76,11 @@ export type OrderChanges = Partial<
 /**
  * Applies a transition with the guarded update of decision 025.
  *
- * Why: `UPDATE ... WHERE id = $1 AND status = $2 AND dispatch_state = $3 AND verification_status IS NOT DISTINCT FROM $4`: zero
- * rows means another request changed the order first, so the caller answers `409 INVALID_TRANSITION` and posts nothing. Two
- * parallel replies, or a reply and a reject, therefore change the order and the ledger once.
+ * Why: `UPDATE ... WHERE id = $1 AND status = $2 AND dispatch_state = $3 AND verification_status IS NOT DISTINCT FROM $4 AND sent_at
+ * IS NOT DISTINCT FROM $5 [AND supplier_id = $6 AND supplier_ref = $7]`: zero rows means another request changed the order first,
+ * so the caller answers `409 INVALID_TRANSITION` and posts nothing. Two parallel replies, or a reply and a reject, therefore change
+ * the order and the ledger once. Decision 044: `sent_at` identifies a dispatch claim, so an answer never lands on a later claim; the
+ * supplier and reference tie a supplier's status answer to the question that was asked.
  *
  * @param db the transaction
  * @param id the order id
@@ -98,10 +105,40 @@ export async function updateOrderGuarded(
         from.verificationStatus === null
           ? isNull(orders.verificationStatus)
           : eq(orders.verificationStatus, from.verificationStatus),
+        from.sentAt === null ? isNull(orders.sentAt) : eq(orders.sentAt, from.sentAt),
+        ...(from.supplier === undefined
+          ? []
+          : [eq(orders.supplierId, from.supplier.supplierId), eq(orders.supplierRef, from.supplier.supplierRef)]),
       ),
     )
     .returning();
   return row;
+}
+
+/**
+ * Stores the reference a supplier gave after the order moved on, where the order has none.
+ *
+ * Why: decision 044: a supplier that accepted an order holds it and will charge for it, so its reference must not live only in the
+ * call log. The update applies only while the order has no reference and still names that supplier.
+ *
+ * @param db the transaction
+ * @param orderId the order
+ * @param supplierId the supplier that was called
+ * @param reference the supplier's reference
+ * @returns true when the reference was stored
+ */
+export async function storeLateReference(
+  db: DbExecutor,
+  orderId: number,
+  supplierId: number,
+  reference: string,
+): Promise<boolean> {
+  const rows = await db
+    .update(orders)
+    .set({ supplierRef: reference })
+    .where(and(eq(orders.id, orderId), isNull(orders.supplierRef), eq(orders.supplierId, supplierId)))
+    .returning({ id: orders.id });
+  return rows.length > 0;
 }
 
 /**
@@ -167,13 +204,25 @@ export async function insertEvents(db: DbExecutor, events: readonly NewOrderEven
  * @param db the transaction
  * @param orderId the order
  * @param type the event type
+ * @param actorType when given, only events written by this kind of actor
  * @returns how many there are
  */
-export async function countEventsOfType(db: DbExecutor, orderId: number, type: OrderEventType): Promise<number> {
+export async function countEventsOfType(
+  db: DbExecutor,
+  orderId: number,
+  type: OrderEventType,
+  actorType?: OrderEventActorType,
+): Promise<number> {
   const [row] = await db
     .select({ total: sql<number>`count(*)::int` })
     .from(orderEvents)
-    .where(and(eq(orderEvents.orderId, orderId), eq(orderEvents.type, type)));
+    .where(
+      and(
+        eq(orderEvents.orderId, orderId),
+        eq(orderEvents.type, type),
+        ...(actorType === undefined ? [] : [eq(orderEvents.actorType, actorType)]),
+      ),
+    );
   return row?.total ?? 0;
 }
 

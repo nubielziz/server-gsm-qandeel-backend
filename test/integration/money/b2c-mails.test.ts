@@ -29,6 +29,7 @@ import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { mailbox, notificationRows, sendAllQueued, seedDefaultTemplates } from '../../support/notifications';
 import { ledgerTotals } from '../../support/money';
 import { orderRow } from '../../support/orders';
+import { insertBareSupplier } from '../../support/suppliers';
 
 const clock = new TestClock('2026-11-07T12:00:00.000Z');
 const fake = new B2cGateway();
@@ -318,13 +319,20 @@ describe('order.failed', () => {
 
   it('is written when a supplier rejects the order, and when staff approve a refund of an open order', async () => {
     const supplierRejected = await paidOrder(t, clock, world, { email: 'a@mail.example' });
+    const supplierId = await insertBareSupplier(db);
     await db
       .update(s.orders)
-      .set({ status: 'processing', dispatchState: 'sent' })
+      .set({ status: 'processing', dispatchState: 'sent', supplierId, supplierRef: 'REF-1' })
       .where(eq(s.orders.id, supplierRejected.orderId));
     const moves = t.app.get(OrderSupplierMoves, { strict: false });
     await db.transaction((tx) =>
-      moves.settle(tx, { orderId: supplierRejected.orderId, result: 'rejected', supplierId: 1, text: 'Blacklisted' }),
+      moves.settle(tx, {
+        orderId: supplierRejected.orderId,
+        result: 'rejected',
+        supplierId,
+        supplierRef: 'REF-1',
+        text: 'Blacklisted',
+      }),
     );
     expect((await mails('order.failed')).map((row) => variablesOf(row)['orderId'])).toEqual([
       `SF-${supplierRejected.orderId}`,
@@ -343,10 +351,20 @@ describe('order.failed', () => {
     const settings = await adminWith(t, ['settings:storefront', 'settings:read']);
     expect((await settings.patch('/admin/storefront/settings', { autoRefundFailed: false })).status).toBe(200);
     const paid = await paidOrder(t, clock, world);
-    await db.update(s.orders).set({ status: 'processing', dispatchState: 'sent' }).where(eq(s.orders.id, paid.orderId));
+    const supplierId = await insertBareSupplier(db);
+    await db
+      .update(s.orders)
+      .set({ status: 'processing', dispatchState: 'sent', supplierId, supplierRef: 'REF-1' })
+      .where(eq(s.orders.id, paid.orderId));
     const moves = t.app.get(OrderSupplierMoves, { strict: false });
     await db.transaction((tx) =>
-      moves.settle(tx, { orderId: paid.orderId, result: 'rejected', supplierId: 1, text: 'Blacklisted' }),
+      moves.settle(tx, {
+        orderId: paid.orderId,
+        result: 'rejected',
+        supplierId,
+        supplierRef: 'REF-1',
+        text: 'Blacklisted',
+      }),
     );
     // The order failed, but nothing went back yet: no "refunded" email.
     expect(await mails('order.failed')).toHaveLength(0);

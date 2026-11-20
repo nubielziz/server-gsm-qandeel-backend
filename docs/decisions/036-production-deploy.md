@@ -32,7 +32,7 @@ backups somebody can restore, and an operations document. Nothing here changes a
   a separate S3-compatible bucket: 30 daily and 12 monthly dumps; a copy of the files bucket that never deletes (`rclone copy`, never
   `sync`); a scripted restore into an explicit target and a monthly restore drill that checks the ledger sums to zero and the
   migrations match. Started by the host's cron or systemd timer, not by a container that sleeps. Not backed up: the queue Redis
-  (jobs are re-derived from `outbox_events`; AOF covers restarts), the cache Redis, Prometheus history.
+  (AOF covers restarts; after a loss of its data only some work comes back by itself: decision 044 and docs/OPERATIONS.md section 6), the cache Redis, Prometheus history.
 - **Sentry** is wired but off until `SENTRY_DSN` is set: see decision 015.
 
 **Consequences.** One host, one Postgres, no high availability (a restore from backup is the recovery). The compose file, the

@@ -7,7 +7,7 @@ import { eq } from 'drizzle-orm';
 import { EncryptionService } from '@src/infra/crypto';
 import { schema as s } from '@src/infra/db';
 import { RedisService } from '@src/infra/redis';
-import { SupplierDispatch, SupplierPoll } from '@src/modules/suppliers';
+import { DispatchSweep, SupplierDispatch, SupplierPoll } from '@src/modules/suppliers';
 import { type AdminApi, adminWith } from '../support/admin-api';
 import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches } from '../support/auth';
@@ -108,6 +108,14 @@ describe('scenario timeout: the supplier does not answer', () => {
     // Six hours is longer than a session: the member signs in again.
     staff = await adminWith(t, ['orders:*', 'suppliers:*'], { name: 'Lina S.' });
     expect(await poll.tick()).toMatchObject({ queued: 0 });
+    // Decision 044: the dispatch sweep leaves the needs-attention order alone too (it moves only a send that never answered, or a request that was lost).
+    expect(await t.app.get(DispatchSweep, { strict: false }).run()).toEqual({
+      unanswered: 0,
+      requeued: 0,
+      stopped: 0,
+      movedOn: 0,
+      unknown: 0,
+    });
     expect(await dispatch.run(orderId, { lastAttempt: false })).toEqual({ status: 'skipped', reason: 'not_pending' });
     expect(fake.callsOf('placeimeiorder')).toHaveLength(1);
     expect(await walletOf(db, merchant.id)).toEqual({ wallet: '82.7200', hold: '17.2800' });

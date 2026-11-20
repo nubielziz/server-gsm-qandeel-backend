@@ -103,7 +103,8 @@ export class RefundService {
    * @param amountText the USD amount staff typed, or `undefined` for the amount on the request
    * @returns the refund after the decision (`processing`, or `completed` for a hand payout)
    * @throws {AppError} `NOT_FOUND`; `REFUND_NOT_PENDING` (409); `VALIDATION_FAILED` (422, field `amount`); `INVALID_TRANSITION`
-   *   (409) for a payment in dispute; `ORDER_NOT_OPEN` (409) when the order closed meanwhile
+   *   (409) for a payment in dispute; `ORDER_NOT_OPEN` (409) when the order closed meanwhile; `ALREADY_SENT` (409) while the order
+   *   is being sent to its supplier (decision 044: approve again after the supplier answered; nothing was changed)
    */
   async approve(staffId: number, id: number, amountText: string | undefined): Promise<WireRefund> {
     const approved = await this.db.runInTransaction(async ({ tx }) => {

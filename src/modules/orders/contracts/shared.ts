@@ -3,8 +3,8 @@
 import { z } from 'zod';
 import { zId, zIsoDateTime, zJsonObject, zMoney } from '../../../common/contract';
 import { SERVICE_TYPES } from '../../catalog';
+import { WIRE_DISPATCH_STATES } from '../domain/order-machine';
 import {
-  ORDER_DISPATCH_STATES,
   ORDER_EVENT_ACTOR_TYPES,
   ORDER_EVENT_TYPES,
   ORDER_SOURCES,
@@ -33,7 +33,11 @@ export const StaffOrderSchema = z.object({
   createdAt: zIsoDateTime.describe('The placement time; the clock of the past-SLA predicate.'),
   taxAmount: zMoney,
   currency: z.string().describe("The buyer's display currency: `USD` for a merchant."),
-  dispatchState: z.enum(ORDER_DISPATCH_STATES),
+  dispatchState: z
+    .enum(WIRE_DISPATCH_STATES)
+    .describe(
+      'The internal dispatch state (decision 025); an order whose send is in progress reads `pending` (decision 044).',
+    ),
   imei: z.string().describe("The order's main input (IMEI, account, serial or file name); `''` when it has none."),
   quantity: z.number().int().min(1),
   inputs: zJsonObject.describe('The custom field values by field key.'),

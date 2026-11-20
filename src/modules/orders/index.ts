@@ -2,7 +2,15 @@
 // placement and transition services the Dhru, REST v1, supplier and risk features call, the outbox event types, and the modules.
 // Other modules import only this file.
 // Order matters (decision 032): the pure rules and SQL fragments come first, ahead of the modules whose providers lead into identity.
-export { decideOrderAction, deriveQueue, isOpen, placementDispatchState } from './domain/order-machine';
+export {
+  WIRE_DISPATCH_STATES,
+  decideOrderAction,
+  deriveQueue,
+  isOpen,
+  orderStateOf,
+  placementDispatchState,
+  wireDispatchState,
+} from './domain/order-machine';
 export type {
   OrderAction,
   OrderDecision,
@@ -11,6 +19,7 @@ export type {
   OrderRefusal,
   OrderState,
   OrderTransition,
+  WireDispatchState,
 } from './domain/order-machine';
 export { mainInputOf } from './domain/main-input';
 export { MAX_INPUT_LENGTH, inputProblems, isValidImei, normalizeImei, quantityProblem } from './domain/placement-rules';
@@ -43,7 +52,12 @@ export { OrderPlacement } from './application/order-placement';
 export type { PlacementItem, PlacementRequest } from './application/order-placement';
 export { CustomerOrderPlacement } from './application/customer-placement';
 export type { CustomerPlacementRequest } from './application/customer-placement';
-export { OrderTransitions, refusalError } from './application/order-transitions';
+export {
+  CHANGED_FIRST_DETAIL,
+  OrderTransitions,
+  SEND_IN_PROGRESS_DETAIL,
+  refusalError,
+} from './application/order-transitions';
 export type { TransitionOutcome, TransitionRequest } from './application/order-transitions';
 export { OrderCompletionListeners } from './application/order-completion-listeners';
 export type { OrderCompletionListener, OrderReversalReason } from './application/order-completion-listeners';
@@ -53,11 +67,19 @@ export { OrderReadService } from './application/order-read.service';
 export { OrderSupplierMoves } from './application/order-supplier-moves';
 export type {
   EventData,
+  LateAcceptance,
+  LateAcceptanceCause,
   SupplierMove,
   SupplierMoveAction,
   SupplierSettlement,
 } from './application/order-supplier-moves';
-export type { PollCandidate, SupplierOrderCounts, SupplierOrderUsage } from './infra/order-supplier.repository';
+export type {
+  PollCandidate,
+  SupplierOrderCounts,
+  SupplierOrderUsage,
+  UnansweredClaim,
+  UnclaimedOrder,
+} from './infra/order-supplier.repository';
 export { OrdersOutboxModule } from './orders-outbox.module';
 export { IdempotencyPurge, IDEMPOTENCY_PURGE_BATCH_SIZE } from './jobs/idempotency-purge';
 export type { IdempotencyPurgeCount } from './jobs/idempotency-purge';

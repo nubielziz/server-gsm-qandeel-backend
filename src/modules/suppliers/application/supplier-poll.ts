@@ -49,7 +49,8 @@ export const FETCH_AUDIT_ACTION = 'fetched supplier result of';
  * `orders.poll_slow_after_hours`; STATUS 4 completes the order (the CODE becomes its result), STATUS 3 rejects it (the supplier's text
  * is the reason). The tick keeps no state of its own: the order's `sent_at` and the newest `getimeiorder` log row tell what is due, so
  * a lost job or a restart loses nothing. A poll never changes an order that moved on, and an unreachable supplier leaves it as it is
- * for the next round.
+ * for the next round. Decision 044: an answer is applied only while the order still names the supplier and reference it was asked about
+ * (the check runs again in the guarded update), and limits that cannot be read count as busy (the next tick asks again).
  *
  * Side effects: one `supplier_api_logs` row per call; a completion or rejection settles the order (ledger, events, outbox);
  * the tick adds `poll` jobs with the id `order-poll-<order>-<minute>`.
@@ -119,6 +120,8 @@ export class SupplierPoll {
 
     const admission = by.type === 'system' ? await this.throttle.admit(supplier) : undefined;
     if (admission && !admission.ok) return { kind: 'busy' };
+    // What this question is about: an answer that arrives after a change of supplier or reference is not applied (decision 044).
+    const asked = { supplierId: order.supplierId, supplierRef: order.supplierRef };
     try {
       const call = await this.client.getOrder(supplier, order.supplierRef);
       await writeCallLog(this.db.db, supplier.id, order.id, call.record, this.clock.now());
@@ -132,6 +135,7 @@ export class SupplierPoll {
               orderId: order.id,
               action: { kind: 'supplierResult', result: 'running' },
               actor,
+              asked,
               // An automatic poll that finds the order still running writes nothing; a staff fetch leaves a line.
               ...(by.type === 'staff'
                 ? { data: { message: 'Supplier has not finished yet' }, writeOnNoop: true, ...audit }
@@ -144,6 +148,7 @@ export class SupplierPoll {
             result: call.value.state,
             supplierId: supplier.id,
             text: call.value.code,
+            supplierRef: asked.supplierRef,
             ...audit,
           });
         });

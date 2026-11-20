@@ -18,7 +18,7 @@ The audit log: `AuditModule` (global) provides `AuditService.record(tx, { action
 
 Settings and maintenance: `SettingsModule` (global) and `SettingsService.get(key, executor?)` (the raw JSON value of one setting, `undefined` when it was never set); `MaintenanceModule` with `MaintenanceService` (`state()`, `invalidate()`), the pure `maintenanceRefusal`, `scopesCovering`, `parseMaintenanceState`, `MAINTENANCE_KEY`, `MAINTENANCE_OFF`, `MAINTENANCE_SCOPES`, `DEFAULT_MAINTENANCE_MESSAGE` and the types `MaintenanceState`, `MaintenanceScope`, `MaintenanceRequest`.
 
-The outbox: `OutboxModule` (global: `OutboxService`, `OutboxRouteRegistry`), `OutboxService.add(tx, event)` and `backlog(db)`, `OutboxRouteRegistry.register({ type, queue, jobName? })`, the types `OutboxEventInput`, `OutboxPayload`, `OutboxJobData`, `OutboxRoute`, `OutboxBacklog`, and, for the worker only, `OutboxRelayModule` with `OutboxRelay`.
+The outbox: `OutboxModule` (global: `OutboxService`, `OutboxRouteRegistry`), `OutboxService.add(tx, event)`, `recentEvents(db, type, aggregateType, aggregateId, limit?)` (the newest events of one aggregate with their relay time, for sweeps) and `backlog(db)`, `OutboxRouteRegistry.register({ type, queue, jobName? })`, the types `OutboxEventInput`, `OutboxPayload`, `OutboxJobData`, `OutboxRoute`, `OutboxBacklog`, `OutboxEventTrace`, and, for the worker only, `OutboxRelayModule` with `OutboxRelay`.
 
 Documents and stored files (feature 8): `PdfModule` (global) provides `PdfRenderer.render(document)` (`PdfDocument`, `PdfBlock`, `PdfColumn`), and `StoredFiles` (`store`, `metaOf`, `findOwned`, with `StoreFileInput`, `FileMeta` and `PROOF_MIME_TYPES`) is the public side of the `files` table for the money and identity modules.
 

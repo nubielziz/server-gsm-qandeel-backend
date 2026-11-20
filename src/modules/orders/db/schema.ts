@@ -21,13 +21,14 @@ export const ORDER_STATUSES = ['pending', 'processing', 'completed', 'rejected']
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 /**
- * Internal dispatch state of an order: waiting for the job, held for risk review, manual, accepted by staff, sent to
- * a supplier, needs attention, or done.
+ * Internal dispatch state of an order: waiting for the job, being sent (the claim set it with `sent_at`; the supplier's
+ * answer is awaited), held for risk review, manual, accepted by staff, sent to a supplier, needs attention, or done.
  *
- * Why: decision 025.
+ * Why: decisions 025 and 044.
  */
 export const ORDER_DISPATCH_STATES = [
   'pending',
+  'dispatching',
   'held',
   'manual',
   'operator',

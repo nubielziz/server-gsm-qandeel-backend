@@ -94361,7 +94361,8 @@
                           "sent",
                           "needs_attention",
                           "done"
-                        ]
+                        ],
+                        "description": "The internal dispatch state (decision 025); an order whose send is in progress reads `pending` (decision 044)."
                       },
                       "imei": {
                         "type": "string",
@@ -96390,7 +96391,8 @@
                         "sent",
                         "needs_attention",
                         "done"
-                      ]
+                      ],
+                      "description": "The internal dispatch state (decision 025); an order whose send is in progress reads `pending` (decision 044)."
                     },
                     "imei": {
                       "type": "string",
@@ -97821,7 +97823,7 @@
     },
     "/admin/orders/{id}/change-supplier": {
       "post": {
-        "description": "Points the order at another supplier (`supplierId`: the supplier's id; its active link of the order's service with the lowest priority gives the supplier service) and/or forgets the old reference (`resetReference`). Nothing is sent to the supplier. `unit_cost` and `total_cost` are refreshed from the chosen link (`credit x credit_rate`; the price stays); a costlier link is allowed for staff and the `supplier_changed` event records `costAbovePrice`. The dispatch state stays, except `sent` with `resetReference`, which becomes `needs_attention`; with `dispatch: true` it becomes `pending` and the job is queued in the same transaction. Neither `supplierId` nor `resetReference: true` is `422` on `supplierId`; the same supplier without a reset is a `204` with no event.",
+        "description": "Points the order at another supplier (`supplierId`: the supplier's id; its active link of the order's service with the lowest priority gives the supplier service) and/or forgets the old reference (`resetReference`). Nothing is sent to the supplier. `unit_cost` and `total_cost` are refreshed from the chosen link (`credit x credit_rate`; the price stays); a costlier link is allowed for staff and the `supplier_changed` event records `costAbovePrice`. Choosing another supplier always forgets the old reference. The dispatch state stays, except a `sent` order whose reference is forgotten, which becomes `needs_attention`; with `dispatch: true` it becomes `pending` and the job is queued in the same transaction. Neither `supplierId` nor `resetReference: true` is `422` on `supplierId`; the same supplier without a reset is a `204` with no event. An order being sent to its supplier right now is `409 ALREADY_SENT`.",
         "operationId": "postAdminOrdersByIdChangeSupplier",
         "parameters": [
           {
@@ -98169,7 +98171,7 @@
             }
           },
           "409": {
-            "description": "ORDER_NOT_OPEN: This order is no longer open.\nORDER_HELD: This order is on hold for review.\nSUPPLIER_DISABLED: This supplier is disabled.",
+            "description": "ORDER_NOT_OPEN: This order is no longer open.\nORDER_HELD: This order is on hold for review.\nALREADY_SENT: This order was already sent to a supplier.\nSUPPLIER_DISABLED: This supplier is disabled.\nINVALID_TRANSITION: This status change is not allowed.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -98201,7 +98203,9 @@
                       "enum": [
                         "ORDER_NOT_OPEN",
                         "ORDER_HELD",
-                        "SUPPLIER_DISABLED"
+                        "ALREADY_SENT",
+                        "SUPPLIER_DISABLED",
+                        "INVALID_TRANSITION"
                       ]
                     },
                     "detail": {
@@ -98259,6 +98263,17 @@
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   },
+                  "ALREADY_SENT": {
+                    "summary": "This order was already sent to a supplier.",
+                    "value": {
+                      "type": "https://errors.gsm.example/already-sent",
+                      "title": "This order was already sent to a supplier.",
+                      "status": 409,
+                      "code": "ALREADY_SENT",
+                      "detail": "This order was already sent to a supplier.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
                   "SUPPLIER_DISABLED": {
                     "summary": "This supplier is disabled.",
                     "value": {
@@ -98267,6 +98282,17 @@
                       "status": 409,
                       "code": "SUPPLIER_DISABLED",
                       "detail": "This supplier is disabled.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "INVALID_TRANSITION": {
+                    "summary": "This status change is not allowed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/invalid-transition",
+                      "title": "This status change is not allowed.",
+                      "status": 409,
+                      "code": "INVALID_TRANSITION",
+                      "detail": "This status change is not allowed.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   }
@@ -98394,7 +98420,7 @@
     },
     "/admin/orders/{id}/dispatch": {
       "post": {
-        "description": "Staff retry: an order in `needs_attention`, `manual` or `operator` goes to `pending` and the dispatch job is queued (an `order.dispatch_requested` outbox row; the answer does not wait for the supplier). The order goes to the supplier service it already has, else the first active link whose supplier is active; the price-protection limit of the automatic dispatch does not apply. No money moves: the hold stays. An order already `pending` is a `204` that changes nothing. Writes a `retry` event and an audit row.",
+        "description": "Staff retry: an order in `needs_attention`, `manual` or `operator` goes to `pending` and the dispatch job is queued (an `order.dispatch_requested` outbox row; the answer does not wait for the supplier). The order goes to the supplier service it already has, else the first active link whose supplier is active; the price-protection limit of the automatic dispatch does not apply. No money moves: the hold stays. An order already `pending` whose dispatch request is still waiting for the job is a `204` that changes nothing; one whose request was lost gets a new one (a `retry` event, the job queued) and keeps its supplier columns: the job chooses the target by the automatic rule. An order being sent to its supplier right now is `409 ALREADY_SENT`. Writes a `retry` event and an audit row.",
         "operationId": "postAdminOrdersByIdDispatch",
         "parameters": [
           {
@@ -101135,7 +101161,7 @@
     },
     "/admin/orders/{id}/reject": {
       "post": {
-        "description": "Rejects an open order with a buyer-visible reason: `result_code` is the reason, `completed_at` is set and the hold returns to the wallet (B2B `reject`). Writes `rejected` and `release` events, `order.status_changed` and an audit row. A storefront order delivered before and then reopened is refunded from the Refunds page (`USE_REFUNDS`).",
+        "description": "Rejects an open order with a buyer-visible reason: `result_code` is the reason, `completed_at` is set and the hold returns to the wallet (B2B `reject`). Writes `rejected` and `release` events, `order.status_changed` and an audit row. A storefront order delivered before and then reopened is refunded from the Refunds page (`USE_REFUNDS`). While the order is being sent to its supplier the action waits for the answer: `409 ALREADY_SENT`.",
         "operationId": "postAdminOrdersByIdReject",
         "parameters": [
           {
@@ -101473,7 +101499,7 @@
             }
           },
           "409": {
-            "description": "ORDER_NOT_OPEN: This order is no longer open.\nORDER_HELD: This order is on hold for review.\nUSE_REFUNDS: Use the refunds page for storefront orders.\nINVALID_TRANSITION: This status change is not allowed.",
+            "description": "ORDER_NOT_OPEN: This order is no longer open.\nORDER_HELD: This order is on hold for review.\nALREADY_SENT: This order was already sent to a supplier.\nUSE_REFUNDS: Use the refunds page for storefront orders.\nINVALID_TRANSITION: This status change is not allowed.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -101505,6 +101531,7 @@
                       "enum": [
                         "ORDER_NOT_OPEN",
                         "ORDER_HELD",
+                        "ALREADY_SENT",
                         "USE_REFUNDS",
                         "INVALID_TRANSITION"
                       ]
@@ -101561,6 +101588,17 @@
                       "status": 409,
                       "code": "ORDER_HELD",
                       "detail": "This order is on hold for review.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "ALREADY_SENT": {
+                    "summary": "This order was already sent to a supplier.",
+                    "value": {
+                      "type": "https://errors.gsm.example/already-sent",
+                      "title": "This order was already sent to a supplier.",
+                      "status": 409,
+                      "code": "ALREADY_SENT",
+                      "detail": "This order was already sent to a supplier.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   },
@@ -102269,7 +102307,7 @@
     },
     "/admin/orders/{id}/reply": {
       "post": {
-        "description": "Completes an open order: `result_code` and `result_comment` are stored, `completed_at` is set, `dispatch_state` becomes `done`. The hold is settled to revenue (B2B `complete`: hold to revenue, plus supplier prepaid to cost of goods only when a supplier executed the order and no earlier settlement booked the cost). Writes `completed` and `settle` events, `order.status_changed` and an audit row. Two parallel replies, or a reply and a reject, change the order and the ledger once: the other answers `409`.",
+        "description": "Completes an open order: `result_code` and `result_comment` are stored, `completed_at` is set, `dispatch_state` becomes `done`. The hold is settled to revenue (B2B `complete`: hold to revenue, plus supplier prepaid to cost of goods only when a supplier executed the order and no earlier settlement booked the cost). Writes `completed` and `settle` events, `order.status_changed` and an audit row. Two parallel replies, or a reply and a reject, change the order and the ledger once: the other answers `409`. While the order is being sent to its supplier the action waits for the answer: `409 ALREADY_SENT`.",
         "operationId": "postAdminOrdersByIdReply",
         "parameters": [
           {
@@ -102613,7 +102651,7 @@
             }
           },
           "409": {
-            "description": "ORDER_NOT_OPEN: This order is no longer open.\nORDER_HELD: This order is on hold for review.\nINVALID_TRANSITION: This status change is not allowed.",
+            "description": "ORDER_NOT_OPEN: This order is no longer open.\nORDER_HELD: This order is on hold for review.\nALREADY_SENT: This order was already sent to a supplier.\nINVALID_TRANSITION: This status change is not allowed.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -102645,6 +102683,7 @@
                       "enum": [
                         "ORDER_NOT_OPEN",
                         "ORDER_HELD",
+                        "ALREADY_SENT",
                         "INVALID_TRANSITION"
                       ]
                     },
@@ -102700,6 +102739,17 @@
                       "status": 409,
                       "code": "ORDER_HELD",
                       "detail": "This order is on hold for review.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "ALREADY_SENT": {
+                    "summary": "This order was already sent to a supplier.",
+                    "value": {
+                      "type": "https://errors.gsm.example/already-sent",
+                      "title": "This order was already sent to a supplier.",
+                      "status": 409,
+                      "code": "ALREADY_SENT",
+                      "detail": "This order was already sent to a supplier.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   },
@@ -126809,7 +126859,7 @@
     },
     "/admin/refunds/{id}/approve": {
       "post": {
-        "description": "Approves a waiting refund in full or in part and posts its journal once (`b2c_refund`, key `refund:<id>`): a delivered order is reversed from revenue (the supplier cost is never recovered), an order that was not delivered is cancelled and refunded in full from customer funds; the VAT share is `round(tax x amount / paid, 2)`. A card or wallet refund goes to the gateway through a job (`processing` until it answers, then `completed` or `failed`); a crypto payment, or a gateway that cannot refund, is paid out by hand and is `completed` at once. Without `amount` the amount on the request is refunded; the limit is what was paid minus the other refunds that are completed or processing. The answer carries `netAmount` and `taxAmount` of the posted journal.",
+        "description": "Approves a waiting refund in full or in part and posts its journal once (`b2c_refund`, key `refund:<id>`): a delivered order is reversed from revenue (the supplier cost is never recovered), an order that was not delivered is cancelled and refunded in full from customer funds; the VAT share is `round(tax x amount / paid, 2)`. A card or wallet refund goes to the gateway through a job (`processing` until it answers, then `completed` or `failed`); a crypto payment, or a gateway that cannot refund, is paid out by hand and is `completed` at once. Without `amount` the amount on the request is refunded; the limit is what was paid minus the other refunds that are completed or processing. The answer carries `netAmount` and `taxAmount` of the posted journal. An order that is being sent to its supplier right now is `409 ALREADY_SENT` (approve it once the supplier answered).",
         "operationId": "postAdminRefundsByIdApprove",
         "parameters": [
           {
@@ -127546,7 +127596,7 @@
             }
           },
           "409": {
-            "description": "REFUND_NOT_PENDING: This refund is no longer waiting for a decision.\nORDER_NOT_OPEN: This order is no longer open.\nINVALID_TRANSITION: This status change is not allowed.",
+            "description": "REFUND_NOT_PENDING: This refund is no longer waiting for a decision.\nORDER_NOT_OPEN: This order is no longer open.\nALREADY_SENT: This order was already sent to a supplier.\nINVALID_TRANSITION: This status change is not allowed.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -127578,6 +127628,7 @@
                       "enum": [
                         "REFUND_NOT_PENDING",
                         "ORDER_NOT_OPEN",
+                        "ALREADY_SENT",
                         "INVALID_TRANSITION"
                       ]
                     },
@@ -127633,6 +127684,17 @@
                       "status": 409,
                       "code": "ORDER_NOT_OPEN",
                       "detail": "This order is no longer open.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "ALREADY_SENT": {
+                    "summary": "This order was already sent to a supplier.",
+                    "value": {
+                      "type": "https://errors.gsm.example/already-sent",
+                      "title": "This order was already sent to a supplier.",
+                      "status": 409,
+                      "code": "ALREADY_SENT",
+                      "detail": "This order was already sent to a supplier.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   },
@@ -228014,7 +228076,7 @@
     },
     "/client/orders/{id}/cancel": {
       "post": {
-        "description": "Cancels an order that was never sent (`pending`, manual or held) when its service allows it: the order is rejected as \"Cancelled by the merchant\" and the hold returns to the wallet. An order already sent to a supplier is `409 ALREADY_SENT`; a service that does not allow cancellation, or an order already being worked on, is `409 INVALID_TRANSITION`.",
+        "description": "Cancels an order that was never sent (`pending`, manual or held) when its service allows it: the order is rejected as \"Cancelled by the merchant\" and the hold returns to the wallet. An order that was sent to a supplier once (being sent now, sent, or sent and then failed or queued again) is `409 ALREADY_SENT`: it is cancelled by staff. A service that does not allow cancellation, or an order already being worked on, is `409 INVALID_TRANSITION`.",
         "operationId": "postClientOrdersByIdCancel",
         "parameters": [
           {
@@ -278873,7 +278935,7 @@
     },
     "/v1/orders/{id}/cancel": {
       "post": {
-        "description": "Cancels an order that was never sent (`pending`, manual or held) when its service allows it (`allowCancel` of the service): the order is rejected as \"Cancelled by the merchant\" and the hold returns to the wallet. The answer is the order. An order already sent to a supplier is `409 ALREADY_SENT`; a service that does not allow cancellation, or an order already being worked on, is `409 INVALID_TRANSITION`. Scope `orders:write`.",
+        "description": "Cancels an order that was never sent (`pending`, manual or held) when its service allows it (`allowCancel` of the service): the order is rejected as \"Cancelled by the merchant\" and the hold returns to the wallet. The answer is the order. An order that was sent to a supplier once (being sent now, sent, or sent and then failed or queued again) is `409 ALREADY_SENT`: it is cancelled by staff. A service that does not allow cancellation, or an order already being worked on, is `409 INVALID_TRANSITION`. Scope `orders:write`.",
         "operationId": "postV1OrdersByIdCancel",
         "parameters": [
           {

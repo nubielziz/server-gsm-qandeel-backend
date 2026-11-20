@@ -171,8 +171,8 @@ What is saved, every night: a full dump of the database (`pg_dump`, custom forma
 `BACKUP_AGE_RECIPIENT`, uploaded to the bucket `BACKUP_S3_BUCKET` (use another provider or account than the server: a backup on the same disk
 is not a backup). Thirty daily dumps are kept (`BACKUP_RETENTION_DAYS`), and the dump of the first day of each month is kept twelve
 times (`BACKUP_MONTHLY_KEEP`). The files bucket is copied (never synced: a file deleted by mistake stays in the backup). **Not saved:**
-the queue Redis (its jobs are re-created from `outbox_events`; its append-only file survives restarts), the cache Redis and the
-Prometheus history.
+the queue Redis (its append-only file survives restarts; a job lost with its data is not re-created from `outbox_events`: see "If the
+queue Redis loses its data" in section 6), the cache Redis and the Prometheus history.
 
 **Make the age key pair once, on your own computer, not on the server:**
 
@@ -255,6 +255,28 @@ Keep a copy of the new list offline before you restart.
   It then receives only unexpected server errors (an unhandled 5xx of the API) and jobs that failed for good, with the stack, the route, the
   request id and the queue and job name. It does not receive request bodies, headers, cookies, users, breadcrumbs, the host name, or
   e-mail addresses and long digit runs inside messages. To turn it off, remove the line and restart: with no DSN the SDK is never started.
+
+**If the queue Redis loses its data** (a lost volume, a `FLUSHALL`, a crash that loses the last second of the append-only file; decision 044):
+restart the worker (`gsmc restart worker`): it writes its schedules only when it starts. Then these come back by themselves: outbox events
+not yet handed over (still in Postgres); supplier sends (the dispatch sweep asks again, within about 6 minutes, for orders whose request was
+lost, and moves orders whose send was in flight to Needs attention after the supplier's timeout plus 2 minutes; nothing is sent twice; an
+order that waited more than 24 hours, or was asked for 3 times, goes to Needs attention); status polls of sent orders (the poll tick); queued
+notifications (`notification_reconcile` adds their send again once they waited 30 minutes); scheduled campaigns; the search index (its
+reconcile, within 15 minutes); storefront receipts (made at their first download); every scheduled job. These do not come back yet:
+storefront refunds approved and waiting for their gateway (they stay `processing`; the console's retry is for failed refunds only), merchant
+webhook deliveries (they stay `pending`), Quick add and bulk publish runs waiting for their job, mails sent by a job of their own that had
+not run yet (sign-in and password links, invitations, ticket mails, abandoned-checkout reminders: the person asks again), a waiting price
+change scan (the next price change asks for one), the one-time category name clean-up of migration 0046, and the failed jobs kept for staff
+(the failed list is empty afterwards). Note the affected orders, refunds and runs before you change anything.
+
+**An order stays "being sent"** (decision 044). While the supplier is called, an order reads Pending in the console and staff actions on it
+(reply, reject, send again, change supplier, refund approval) answer 409 with "This order is being sent to its supplier right now: wait for the
+supplier's answer"; that is normal for as long as the supplier's timeout, plus about 2 minutes, and a merchant cannot cancel it. If it lasts
+longer than that, the maintenance queue is not running the `dispatch_sweep` job (a worker that is down, or one that lost its schedules): look at
+System health and at the worker's logs, then start or restart the worker (`gsmc restart worker`; it writes its schedules when it starts).
+Within a minute the sweep moves the order to Needs attention with "A send was started but its answer was not recorded"; nothing is sent again by itself. Open the order,
+check it with the supplier, then fetch its result or send it again (when the supplier accepted it under a reference, the order timeline has
+a line that names it). A merchant cannot cancel an order that was sent once, even when it reads Pending again; staff cancel it by rejecting it.
 
 **Retail prices that follow a rule** (feature 31, decision 040). The worker moves them when the cost, the floor or a rule changes, at most once a
 minute and at least once an hour, and lists every move and every proposal under Storefront, Retail pricing. Once an hour at most it sends the counts to
