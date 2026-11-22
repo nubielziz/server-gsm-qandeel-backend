@@ -187,4 +187,57 @@ describe('transitionLines: the risk review (feature 18)', () => {
     });
     expect(lines[1]!.data.message).toBe('Refund of $12.49 sent to the original payment method');
   });
+
+  it('a risk refund that waits for staff says so (decision 048)', () => {
+    const lines = transitionLines('risk', 'b2c_refund', {
+      actor: staff,
+      from: 'pending',
+      to: 'rejected',
+      reason: 'Refunded after risk review: Prepaid card BIN',
+      money: { posted: false, amount: '12.4900', cost: '0.0000', requested: true, disputed: true },
+      dispatchState: 'done',
+    });
+    expect(kinds(lines)).toEqual(['risk', 'refund']);
+    expect(lines[0]!.data.message).toBe(
+      'Risk review: refund waits for staff. Refunded after risk review: Prepaid card BIN',
+    );
+    expect(lines[1]!.data).toEqual({
+      message:
+        'Refund of $12.49 is waiting for staff: the buyer disputed this payment with the card network, so nothing was sent back',
+      amount: '12.4900',
+      requested: true,
+      disputed: true,
+    });
+  });
+});
+
+describe('transitionLines: refunds of a disputed payment (decision 048)', () => {
+  const rejected = (money: { requested?: boolean; disputed?: boolean }) =>
+    transitionLines('rejected', 'b2c_refund', {
+      actor: staff,
+      from: 'pending',
+      to: 'rejected',
+      reason: 'No stock',
+      money: { posted: false, amount: '3.3100', cost: '0.0000', ...money },
+    });
+
+  it('a refund of a disputed payment waits for staff and says why', () => {
+    const lines = rejected({ requested: true, disputed: true });
+    expect(kinds(lines)).toEqual(['rejected', 'refund']);
+    expect(lines[1]!.data).toEqual({
+      message:
+        'Refund of $3.31 is waiting for staff: the buyer disputed this payment with the card network, so nothing was sent back',
+      amount: '3.3100',
+      requested: true,
+      disputed: true,
+    });
+  });
+
+  it('a request that is not about a dispute keeps its line', () => {
+    expect(rejected({ requested: true })[1]!.data).toEqual({
+      message: 'Refund of $3.31 is waiting for staff to approve',
+      amount: '3.3100',
+      requested: true,
+    });
+  });
 });

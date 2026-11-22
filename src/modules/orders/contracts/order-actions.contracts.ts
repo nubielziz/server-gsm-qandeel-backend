@@ -81,7 +81,10 @@ export const rejectOrder = defineRoute({
     'wallet (B2B `reject`). Writes `rejected` and `release` events, `order.status_changed` and an audit row. A storefront order ' +
     'delivered before and then reopened is refunded from the Refunds page (`USE_REFUNDS`). While the order is being sent to its supplier ' +
     'the action waits for the answer: `409 ALREADY_SENT`. ' +
-    'Rejecting an open storefront order that has a captured payment gives the payment back, so it also needs `refunds:approve` (`403 FORBIDDEN`, decision 046).',
+    'Rejecting an open storefront order that has a captured payment gives the payment back, so it also needs `refunds:approve` (`403 FORBIDDEN`, decision 046). ' +
+    'The payment of a storefront order goes back to the buyer at once, except a payment the buyer disputed with the card network ' +
+    '(`disputed` or `chargeback`): then nothing is sent, a refund request waits on the Refunds page and the order’s timeline says why ' +
+    '(decision 048).',
   tags: ['orders'],
   surface: 'admin',
   access: 'staff-permission',

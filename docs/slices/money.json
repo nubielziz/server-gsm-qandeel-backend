@@ -4,13 +4,13 @@
   "domain": "E",
   "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
   "counts": {
-    "rows": 58,
-    "endpoints": 74,
+    "rows": 59,
+    "endpoints": 75,
     "bySurface": {
       "dhru": 1,
       "v1": 2,
       "client": 7,
-      "admin": 52,
+      "admin": 53,
       "hooks": 2,
       "events": 2,
       "store": 8
@@ -25,7 +25,8 @@
     14,
     16,
     21,
-    32
+    32,
+    38
   ],
   "ownedTables": [
     {
@@ -3000,6 +3001,41 @@
         "spec": "B232"
       },
       "successStatus": 204
+    },
+    {
+      "key": "POST /admin/held-payments/:id/close",
+      "method": "POST",
+      "path": "/admin/held-payments/:id/close",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "refunds",
+      "descriptionAr": "Close a storefront payment held for staff: paid back by hand, or no money was received.",
+      "access": "staff-permission",
+      "permission": "refunds:approve",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "refunds:approve",
+      "stage": 38,
+      "tables": [
+        "payments",
+        "refunds",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/held-payments/:id/close",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/held-payments/:id/close"
+      },
+      "module": "money",
+      "description": "Close a storefront payment held for staff: paid back by hand, or no money was received.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/38.mjs",
+        "spec": "B-TBD held-payment-close"
+      }
     }
   ],
   "scenarios": [

@@ -4,7 +4,12 @@ import { Money } from '@src/common/money';
 import { signWebhook } from '@src/infra/crypto';
 import type { HttpResult, OutboundHttp, OutboundRequestOptions } from '@src/infra/http';
 import { cardDriver } from '@src/modules/money/infra/gateway-drivers/card-driver';
-import type { GatewayCalls, GatewayCredentials } from '@src/modules/money/infra/gateway-drivers/driver';
+import {
+  type GatewayCalls,
+  type GatewayCredentials,
+  httpsUrlOf,
+  unixSecondsToDate,
+} from '@src/modules/money/infra/gateway-drivers/driver';
 import { CRYPTO_SIGNATURE_HEADER, cryptoDriver } from '@src/modules/money/infra/gateway-drivers/crypto-driver';
 import { driverFor } from '@src/modules/money/infra/gateway-drivers/drivers';
 
@@ -342,6 +347,331 @@ describe('crypto driver', () => {
     expect(cryptoDriver.parse(invoice('invoice.pending', 3))?.kind).toBe('pending');
     expect(cryptoDriver.parse(invoice('invoice.expired', 0))?.kind).toBe('failed');
     expect(cryptoDriver.parse(invoice('invoice.refunded', 0))).toBeUndefined();
+  });
+});
+
+describe('checkout addresses and page expiry (decision 048)', () => {
+  const HTTPS_DETAIL = 'The payment gateway gave a checkout address that is not an https address.';
+  const open = async (driver: typeof cardDriver, url: unknown, expiresAt?: Date) => {
+    const { calls, seen } = fakeCalls(() => ({ status: 200, body: { id: 'cs_1', url } }));
+    const opened = await driver
+      .createCheckout(calls, credentials, {
+        invoiceNumber: 'PAY-7',
+        amount: Money.of('10'),
+        currency: 'USD',
+        description: 'Unlock',
+        returnUrl: 'https://shop.example/return',
+        ...(expiresAt === undefined ? {} : { expiresAt }),
+      })
+      .catch((caught: unknown) => caught);
+    return { opened, seen };
+  };
+
+  it('a checkout address that is not https is a gateway error', async () => {
+    for (const driver of [cardDriver, cryptoDriver]) {
+      for (const url of [
+        'http://pay.example/cs_1',
+        '/pay/cs_1',
+        'https://user@pay.example/cs_1',
+        'https://pay.example/cs 1',
+        'javascript:alert(1)',
+      ]) {
+        const { opened } = await open(driver, url);
+        expect(opened).toMatchObject({ code: 'GATEWAY_ERROR', detail: HTTPS_DETAIL });
+      }
+      expect((await open(driver, 'https://pay.example/cs_1')).opened).toEqual({
+        paymentUrl: 'https://pay.example/cs_1',
+      });
+      // No address at all keeps its own sentence.
+      expect((await open(driver, undefined)).opened).toMatchObject({
+        code: 'GATEWAY_ERROR',
+        detail: 'The payment gateway gave no checkout address.',
+      });
+    }
+  });
+
+  it('the card checkout closes at expiresAt and names its reference on the payment', async () => {
+    const at = new Date('2026-11-21T12:30:00.500Z');
+    const { seen } = await open(cardDriver, 'https://pay.example/cs_1', at);
+    const form = new URLSearchParams(seen[0]!.body as string);
+    expect(form.get('expires_at')).toBe(String(Math.floor(at.getTime() / 1000)));
+    expect(form.get('payment_intent_data[metadata][reference]')).toBe('PAY-7');
+    const plain = new URLSearchParams((await open(cardDriver, 'https://pay.example/cs_1')).seen[0]!.body as string);
+    expect(plain.has('expires_at')).toBe(false);
+    expect(plain.get('payment_intent_data[metadata][reference]')).toBe('PAY-7');
+    // The crypto protocol has no page expiry: nothing is sent.
+    const crypto = JSON.parse((await open(cryptoDriver, 'https://crypto.example/c', at)).seen[0]!.body as string);
+    expect(crypto).not.toHaveProperty('expiresAt');
+    expect(crypto).not.toHaveProperty('expires_at');
+  });
+
+  it('httpsUrlOf takes only an absolute https address with a host', () => {
+    expect(httpsUrlOf('https://pay.example/c/1?x=2')).toBe('https://pay.example/c/1?x=2');
+    for (const value of [
+      'http://pay.example',
+      'https://',
+      'https://a:b@pay.example',
+      'https://pay.example/\n',
+      'https://pay.example/\u007f',
+      ' https://pay.example',
+      'pay.example',
+      '',
+      42,
+      null,
+    ]) {
+      expect(httpsUrlOf(value)).toBeUndefined();
+    }
+  });
+
+  it('unixSecondsToDate reads finite seconds only', () => {
+    expect(unixSecondsToDate(1_800_000_000)).toEqual(new Date(1_800_000_000_000));
+    for (const value of ['1800000000', Number.NaN, Number.POSITIVE_INFINITY, null, undefined]) {
+      expect(unixSecondsToDate(value)).toBeNull();
+    }
+  });
+});
+
+describe('events carry their own time (decision 048)', () => {
+  it('card and crypto events carry their created time, null without it', () => {
+    const card = (extra: Record<string, unknown>) =>
+      cardDriver.parse({
+        id: 'evt',
+        type: 'checkout.session.completed',
+        ...extra,
+        data: {
+          object: { id: 'cs_1', client_reference_id: 'PAY-1', payment_intent: 'pi_1', payment_status: 'paid' },
+        },
+      });
+    expect(card({ created: NOW })?.occurredAt).toEqual(new Date(NOW * 1000));
+    expect(card({})?.occurredAt).toBeNull();
+    const crypto = (extra: Record<string, unknown>) =>
+      cryptoDriver.parse({
+        id: 'evt',
+        type: 'invoice.confirmed',
+        ...extra,
+        data: { id: 'cinv_1', reference: 'PAY-1', confirmations: 3, requiredConfirmations: 3 },
+      });
+    expect(crypto({ created: NOW })?.occurredAt).toEqual(new Date(NOW * 1000));
+    expect(crypto({})?.occurredAt).toBeNull();
+    const dispute = cardDriver.parseDispute!({
+      id: 'evt_d',
+      created: NOW,
+      type: 'charge.dispute.created',
+      data: { object: { id: 'dp_1', payment_intent: 'pi_1', amount: 100, currency: 'usd' } },
+    });
+    expect(dispute?.occurredAt).toEqual(new Date(NOW * 1000));
+  });
+
+  it('the crypto amount is read exactly, trailing zeros included', () => {
+    const amount = (value: unknown) =>
+      cryptoDriver.parse({
+        id: 'evt',
+        type: 'invoice.confirmed',
+        data: { id: 'cinv_1', reference: 'PAY-1', amount: value, confirmations: 3, requiredConfirmations: 3 },
+      })?.amount;
+    expect(amount('100.000000')).toBe('100.0000');
+    expect(amount('100.00')).toBe('100.00');
+    expect(amount('10')).toBe('10');
+    expect(amount('1.23450')).toBe('1.2345');
+    expect(amount('1.23456')).toBeNull();
+    expect(amount(100)).toBeNull();
+    expect(amount('1e3')).toBeNull();
+  });
+});
+
+describe('verifyPayment reads the gateway record (decision 048)', () => {
+  const intent = (extra: Record<string, unknown> = {}) => ({
+    id: 'pi_1',
+    status: 'succeeded',
+    amount_received: 3500,
+    currency: 'jod',
+    metadata: { reference: 'PAY-7' },
+    latest_charge: {
+      id: 'ch_1',
+      created: NOW,
+      payment_method_details: { type: 'card', card: { brand: 'visa', last4: '4242', fingerprint: 'fp_9' } },
+    },
+    ...extra,
+  });
+  const check = (status: number, body: unknown, reference = 'pi_1') => {
+    const { calls, seen } = fakeCalls(() => ({ status, body }));
+    return cardDriver.verifyPayment!(calls, credentials, reference).then(
+      (result) => ({ result, seen }),
+      (error: unknown) => ({ result: error, seen }),
+    );
+  };
+
+  it('reads status, amount, currency, charge time, reference and card from the expanded PaymentIntent', async () => {
+    const { result, seen } = await check(200, intent());
+    expect(result).toEqual({
+      status: 'confirmed',
+      amount: '3.5000',
+      currency: 'JOD',
+      paidAt: new Date(NOW * 1000),
+      belongsTo: 'PAY-7',
+      details: { brand: 'visa', last4: '4242', fingerprint: 'fp_9', threeDs: false, wallet: undefined },
+    });
+    expect(seen[0]).toMatchObject({
+      method: 'GET',
+      url: 'https://gateway.example/v1/payment_intents/pi_1?expand[]=latest_charge',
+      timeoutMs: 3000,
+    });
+    expect((await check(200, intent({ status: 'requires_payment_method' }))).result).toMatchObject({
+      status: 'not_confirmed',
+    });
+    // A page opened before the record carried its reference says nothing.
+    expect((await check(200, intent({ metadata: {} }))).result).toMatchObject({ belongsTo: null });
+    expect((await check(200, intent({ amount_received: undefined }))).result).toMatchObject({ amount: null });
+  });
+
+  it('a Checkout Session reference reads the session; one that names a payment intent is not confirmed', async () => {
+    const session = {
+      id: 'cs_1',
+      payment_status: 'paid',
+      amount_total: 384,
+      currency: 'gbp',
+      client_reference_id: 'PAY-7',
+    };
+    const { result, seen } = await check(200, session, 'cs_1');
+    expect(result).toEqual({
+      status: 'confirmed',
+      amount: '3.8400',
+      currency: 'GBP',
+      paidAt: null,
+      belongsTo: 'PAY-7',
+    });
+    expect(seen[0]).toMatchObject({
+      method: 'GET',
+      url: 'https://gateway.example/v1/checkout/sessions/cs_1',
+      timeoutMs: 3000,
+    });
+    expect((await check(200, { ...session, payment_intent: 'pi_1' }, 'cs_1')).result).toMatchObject({
+      status: 'not_confirmed',
+      belongsTo: 'PAY-7',
+    });
+    expect((await check(200, { ...session, payment_status: 'unpaid' }, 'cs_1')).result).toMatchObject({
+      status: 'not_confirmed',
+    });
+  });
+
+  it('reads what happened to the money of the latest charge since: disputed, refunded in full or in part (decision 048)', async () => {
+    const withCharge = (state: Record<string, unknown>) =>
+      intent({ latest_charge: { ...intent().latest_charge, ...state } });
+    expect((await check(200, withCharge({ refunded: true, amount_refunded: 3500 }))).result).toMatchObject({
+      status: 'confirmed',
+      afterPayment: 'refunded',
+    });
+    expect((await check(200, withCharge({ refunded: false, amount_refunded: 100 }))).result).toMatchObject({
+      status: 'confirmed',
+      afterPayment: 'partially_refunded',
+    });
+    // A dispute is named first: the money is contested whatever was refunded.
+    expect((await check(200, withCharge({ disputed: true, amount_refunded: 100 }))).result).toMatchObject({
+      afterPayment: 'disputed',
+    });
+    const untouched = (await check(200, withCharge({ refunded: false, amount_refunded: 0, disputed: false }))).result;
+    expect(untouched).not.toHaveProperty('afterPayment');
+    expect((await check(200, intent({ latest_charge: null }))).result).not.toHaveProperty('afterPayment');
+  });
+
+  it('a canceled intent or an expired session ended unpaid; one that waits does not', async () => {
+    expect((await check(200, intent({ status: 'canceled' }))).result).toMatchObject({
+      status: 'not_confirmed',
+      ended: true,
+    });
+    expect((await check(200, intent({ status: 'processing' }))).result).not.toHaveProperty('ended');
+    const session = {
+      id: 'cs_1',
+      payment_status: 'unpaid',
+      amount_total: 384,
+      currency: 'gbp',
+      client_reference_id: 'PAY-7',
+    };
+    expect((await check(200, { ...session, status: 'expired' }, 'cs_1')).result).toMatchObject({
+      status: 'not_confirmed',
+      ended: true,
+    });
+    expect((await check(200, { ...session, status: 'open' }, 'cs_1')).result).not.toHaveProperty('ended');
+  });
+
+  it('a payment the gateway does not know is not confirmed', async () => {
+    for (const reference of ['pi_1', 'cs_1']) {
+      expect((await check(404, { error: { code: 'resource_missing' } }, reference)).result).toEqual({
+        status: 'not_confirmed',
+        amount: null,
+        currency: null,
+        paidAt: null,
+        belongsTo: null,
+      });
+    }
+  });
+
+  it('a check that cannot be made throws GATEWAY_ERROR', async () => {
+    for (const status of [500, 401, 403, 429, 400]) {
+      expect((await check(status, {})).result).toMatchObject({ code: 'GATEWAY_ERROR' });
+    }
+    const down = fakeCalls(() => new Error('timeout'));
+    expect(
+      await cardDriver.verifyPayment!(down.calls, credentials, 'pi_1').catch((caught: unknown) => caught),
+    ).toMatchObject({
+      code: 'GATEWAY_ERROR',
+    });
+  });
+
+  it('a caller that is not a webhook may give the read a longer limit (the automatic credit, decision 048)', async () => {
+    for (const [reference, body] of [
+      ['pi_1', intent()],
+      ['cs_1', { id: 'cs_1', payment_status: 'paid', amount_total: 384, currency: 'gbp' }],
+    ] as const) {
+      const { calls, seen } = fakeCalls(() => ({ status: 200, body }));
+      await cardDriver.verifyPayment!(calls, credentials, reference, { timeoutMs: 10_000 });
+      expect(seen[0]).toMatchObject({ method: 'GET', timeoutMs: 10_000 });
+    }
+    const crypto = fakeCalls(() => ({ status: 200, body: { id: 'cinv_1', status: 'pending' } }));
+    await cryptoDriver.verifyPayment!(crypto.calls, credentials, 'cinv_1', { timeoutMs: 10_000 });
+    expect(crypto.seen[0]).toMatchObject({ method: 'GET', timeoutMs: 10_000 });
+  });
+
+  it('the crypto driver reads the invoice: status, amount, currency, reference and coin', async () => {
+    const answer = {
+      id: 'cinv_1',
+      status: 'confirmed',
+      confirmations: 3,
+      requiredConfirmations: 3,
+      amount: '25.000000',
+      currency: 'usdt',
+      reference: 'PAY-9',
+      coin: 'usdt',
+      network: 'TRC-20',
+    };
+    const { calls, seen } = fakeCalls(() => ({ status: 200, body: answer }));
+    expect(await cryptoDriver.verifyPayment!(calls, credentials, 'cinv_1')).toEqual({
+      status: 'confirmed',
+      amount: '25.0000',
+      currency: 'USDT',
+      paidAt: null,
+      belongsTo: 'PAY-9',
+      details: { coin: 'usdt', network: 'TRC-20' },
+    });
+    expect(seen[0]).toMatchObject({
+      method: 'GET',
+      url: 'https://gateway.example/v1/invoices/cinv_1',
+      timeoutMs: 3000,
+    });
+    const pending = fakeCalls(() => ({ status: 200, body: { ...answer, confirmations: 1 } }));
+    expect((await cryptoDriver.verifyPayment!(pending.calls, credentials, 'cinv_1')).status).toBe('not_confirmed');
+    const missing = fakeCalls(() => ({ status: 404, body: {} }));
+    expect((await cryptoDriver.verifyPayment!(missing.calls, credentials, 'cinv_1')).status).toBe('not_confirmed');
+    const failing = fakeCalls(() => ({ status: 502, body: {} }));
+    expect(
+      await cryptoDriver.verifyPayment!(failing.calls, credentials, 'cinv_1').catch((caught: unknown) => caught),
+    ).toMatchObject({ code: 'GATEWAY_ERROR' });
+  });
+
+  it('only the card driver limits the decimals it charges', () => {
+    expect(cardDriver.maxChargeDecimals!('JPY')).toBe(0);
+    expect(cardDriver.maxChargeDecimals!('jod')).toBe(2);
+    expect(cryptoDriver.maxChargeDecimals).toBeUndefined();
   });
 });
 

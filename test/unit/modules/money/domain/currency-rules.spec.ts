@@ -1,6 +1,7 @@
 // Unit tests of the currency rules (resolution money-13): staleness by age, rate formatting and the field checks.
 import { describe, expect, it } from 'bun:test';
 import {
+  chargeDecimalsProblem,
   checkDecimals,
   checkMarkup,
   checkRate,
@@ -73,6 +74,21 @@ describe('checkDecimals', () => {
   it('accepts the integers 0 to 4 only', () => {
     for (const ok of [0, 1, 2, 3, 4]) expect(checkDecimals(ok)).toBeUndefined();
     for (const bad of [-1, 5, 1.5, Number.NaN]) expect(checkDecimals(bad)).toMatchObject({ field: 'decimals' });
+  });
+});
+
+describe('chargeDecimalsProblem (decision 048)', () => {
+  it('decimals a card method cannot charge', () => {
+    expect(chargeDecimalsProblem('jod', 3, 2)).toEqual({
+      field: 'decimals',
+      code: 'not_chargeable',
+      message: 'The card payment method charges JOD with at most 2 decimals.',
+    });
+    expect(chargeDecimalsProblem('JPY', 2, 0)?.message).toBe(
+      'The card payment method charges JPY with at most 0 decimals.',
+    );
+    expect(chargeDecimalsProblem('JOD', 2, 2)).toBeUndefined();
+    expect(chargeDecimalsProblem('JOD', 3, undefined)).toBeUndefined();
   });
 });
 

@@ -1,7 +1,7 @@
 // The pure rules of storefront refunds (feature 16): how much can still go back, how the money goes back (the gateway or by hand),
 // what a refund of a delivered or an undelivered order posts, and the fixed texts. No database.
 import { Money } from '../../../common/money';
-import type { OrderMethod, RefundMethod } from '../db/schema';
+import type { OrderMethod, RefundMethod, RefundStatus } from '../db/schema';
 
 /** The note a crypto refund carries: the gateway cannot reverse a coin payment, so staff pay it out (ANSWERS refunds Q4). */
 export const CRYPTO_REFUND_NOTE =
@@ -12,6 +12,38 @@ export const MANUAL_REFUND_NOTE = 'This payment method cannot be refunded by the
 
 /** The reason of the refund the system opens when it rejects a paid order before delivery. */
 export const AUTO_REFUND_REASON = 'The order could not be delivered';
+
+/** The reason of the refund without an order that sends a held storefront payment back by itself (decision 048). */
+export const AUTO_RETURN_REASON = 'Sent back automatically: this payment could not pay its checkout';
+
+/** The reason of the refund without an order that records a held storefront payment staff paid back by hand (decision 048). */
+export const MANUAL_RETURN_REASON = 'Paid back by hand by staff';
+
+/**
+ * The note and timeline line of a refund that was closed unsent because its payment was charged back (decision 048): the card network
+ * already returned the money, so the refund's journal is reversed and the books show the money leaving once.
+ */
+export const CHARGEBACK_NOT_SENT_NOTE = 'Not sent: the payment was charged back.';
+
+/**
+ * Tells whether a chargeback closes a refund unsent.
+ *
+ * Why: decision 048: when the card network takes a payment back, a refund of it that the gateway has not paid would return the same money a
+ * second time, so it is closed and its journal reversed: a request, a refund waiting to be sent (`processing` without the gateway's id), or
+ * one that failed (also when its last send got no answer: staff check the gateway's dashboard for it). A completed refund stays (the
+ * gateway paid both), and so does one the gateway acknowledged and has not answered yet (`processing` with its id): its result comes from
+ * the gateway.
+ *
+ * @param refund the refund's status and the gateway's id of it
+ * @returns true when the chargeback closes it
+ */
+export function closesAtChargeback(refund: {
+  readonly status: RefundStatus;
+  readonly gatewayRefundId: string | null;
+}): boolean {
+  if (refund.status === 'processing') return refund.gatewayRefundId === null;
+  return refund.status === 'requested' || refund.status === 'failed';
+}
 
 /**
  * What is left to refund on a payment.

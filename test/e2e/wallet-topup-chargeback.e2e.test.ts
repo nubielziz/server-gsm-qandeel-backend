@@ -117,6 +117,7 @@ describe('a store balance top-up charged back after part of it was spent', () =>
       })
       .returning();
     reference = `pi_${crypto.randomUUID()}`;
+    fake.paid(reference, { minor: 5000, reference: invoice!.number });
     const body = cardEvent('evt_story_paid', invoice!.number, { reference, amount: 5000 });
     expect((await postWebhook(t, 'card', body, signedHeaders(WEBHOOK_KEY, body, clock))).statusCode).toBe(200);
     clock.advance(10 * MINUTE);

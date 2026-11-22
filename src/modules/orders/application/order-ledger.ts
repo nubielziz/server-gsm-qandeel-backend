@@ -37,6 +37,8 @@ export interface MoveOutcome {
   readonly cost: string;
   /** True when no refund was made and a refund request waits for staff (`autoRefundFailed` off); `amount` is what it asks for (USD). */
   readonly requested?: boolean;
+  /** True when the request waits because the buyer disputed the payment with the card network (decision 048). */
+  readonly disputed?: boolean;
 }
 
 /** What the use case knows when it asks for a move. */
@@ -171,6 +173,7 @@ export class OrderLedger {
           amount: refunded.amount,
           cost: Money.zero().toWire(),
           ...(refunded.requested ? { requested: true } : {}),
+          ...(refunded.disputed ? { disputed: true } : {}),
         };
       }
       case 'reopen':

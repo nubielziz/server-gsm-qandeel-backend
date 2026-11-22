@@ -16,7 +16,7 @@ export const RefundSchema = z.object({
   status: z
     .enum(REFUND_STATUSES)
     .describe(
-      '`requested` waits for staff; `processing` from approval until the gateway answers; then `completed` or `failed`; `rejected` when declined. A hand payout goes straight to `completed`.',
+      '`requested` waits for staff; `processing` from approval until the gateway answers; then `completed` or `failed`; `rejected` when declined, or when the payment was charged back before the gateway paid the refund (`note`: "Not sent: the payment was charged back."; its journal is reversed). A hand payout goes straight to `completed`.',
     ),
   method: z.enum(REFUND_METHODS).describe('`original` goes back through the gateway; `manual` is paid out by hand.'),
   currency: z.string().describe("The customer's currency (ISO code), for display."),
@@ -26,7 +26,9 @@ export const RefundSchema = z.object({
   note: z
     .string()
     .nullable()
-    .describe('The gateway failure text or the message the customer got when it was declined.'),
+    .describe(
+      'The gateway failure text, the message the customer got when it was declined, or why it was closed unsent (a chargeback).',
+    ),
   requestedBy: z.object({ type: z.enum(REFUND_REQUESTER_TYPES), name: z.string().nullable() }),
   approvedBy: NamedRef.nullable().describe('The staff member who decided it.'),
   customer: NamedRef.nullable(),

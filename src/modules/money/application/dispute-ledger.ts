@@ -11,6 +11,7 @@ import { statusAfterRefunds, toUsd, wireUsd } from '../domain/b2c-money';
 import { type TopUpOwner, clawbackSplit, topupChargeback } from '../domain/customer-wallet-events';
 import { paymentRef } from '../domain/invoice-rules';
 import { b2cChargeback } from '../domain/money-events';
+import { CHARGEBACK_NOT_SENT_NOTE } from '../domain/refund-rules';
 import { loadSessionMoney } from '../infra/b2c-reads.repository';
 import { updateDispute, updateDisputeIn } from '../infra/dispute.repository';
 import { findInvoice, updateInvoice } from '../infra/invoice.repository';
@@ -18,8 +19,9 @@ import { updatePayment } from '../infra/payment.repository';
 import { updateOrderPayment } from '../infra/order-payment.repository';
 import { takenRefundsOfPayment } from '../infra/refund.repository';
 import { LedgerPoster } from './post-transaction';
-import type { RefundActor } from './b2c-refunds';
+import { B2cRefunds, type RefundActor } from './b2c-refunds';
 import { CustomerWallets } from './customer-wallets';
+import { StorefrontOrderPorts } from './storefront-ports';
 
 /**
  * Whose wallet a top-up payment credited: the customer on the payment row, else the merchant of its invoice.
@@ -52,9 +54,13 @@ export function topUpDisputeHold(disputeId: number, paymentId: number): string {
  * Why: RESOLUTIONS money-5 and rule 8 of RULES refunds: a dispute lost, from the staff's accept or from the gateway's webhook, posts
  * exactly one `b2c_chargeback` journal (Dr chargeback_loss amount + fee, Cr gateway_clearing; key `dispute:<id>:chargeback`) and
  * keeps its id in `disputes.ledger_tx_id`, so whichever comes second posts nothing; a dispute won sets the payment back to `captured`,
- * or to `partial_refund` or `refunded` when completed refunds exist.
+ * or to `partial_refund` or `refunded` when completed refunds exist. Decision 048: when a loss books the chargeback, the payment's refunds
+ * that have not completed at the gateway are closed unsent and their journals reversed ({@link B2cRefunds.closeNotSent}), each with a
+ * timeline line, so the books show the money leaving once.
  *
- * Side effects (on the caller's transaction): updates `disputes` and `payments`; writes one ledger transaction for a loss.
+ * Side effects (on the caller's transaction): updates `disputes` and `payments`; writes one ledger transaction for a loss; for a loss,
+ * updates `refunds`, writes one reversing ledger transaction per closed refund that was booked and one order timeline line per closed
+ * refund.
  */
 @Injectable()
 export class DisputeLedger {
@@ -64,6 +70,8 @@ export class DisputeLedger {
     private readonly poster: LedgerPoster,
     private readonly wallets: CustomerWallets,
     private readonly audit: AuditService,
+    private readonly refunds: B2cRefunds,
+    private readonly ports: StorefrontOrderPorts,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -80,6 +88,9 @@ export class DisputeLedger {
     const now = this.clock.now();
     let ledgerTxId = dispute.ledgerTxId;
     if (ledgerTxId === null) {
+      // The card network took the money back: a refund the gateway has not paid is closed and its journal reversed before the chargeback
+      // posts (decision 048; lock order: the payment, each refund, the ledger accounts).
+      const closed = await this.refunds.closeNotSent(tx, payment, actor);
       const session =
         dispute.orderId === null ? undefined : (await loadSessionMoney(tx, [dispute.orderId])).get(dispute.orderId);
       const fx = session?.fxRate ?? '1';
@@ -102,6 +113,16 @@ export class DisputeLedger {
         createdBy: { type: actor.type, id: actor.id },
       });
       ledgerTxId = posted.id;
+      const timelineActor =
+        actor.type === 'staff' ? { type: 'staff' as const, id: actor.id } : { type: 'system' as const, id: null };
+      for (const refund of closed) {
+        if (refund.orderId === null) continue;
+        await this.ports.get().addTimeline(tx, refund.orderId, timelineActor, {
+          type: 'refund',
+          message: CHARGEBACK_NOT_SENT_NOTE,
+          data: { refundId: refund.id },
+        });
+      }
     }
     const lost =
       dispute.status === 'lost'

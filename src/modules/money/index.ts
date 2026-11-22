@@ -20,12 +20,25 @@ export { MoneyAdminModule } from './money-admin.module';
 export { StorefrontPayments } from './application/storefront-payments';
 export type {
   CapturedSession,
+  HeldConfirmation,
   RecordedCapture,
   StartPaymentInput,
   StartedPayment,
 } from './application/storefront-payments';
 export { OrderReceipts } from './application/order-receipts';
-export { brandLine, paymentFacts, storefrontMismatch } from './domain/b2c-money';
+export {
+  CONFIRMATION_GRACE_MINUTES,
+  LATE_REFUND_REASON,
+  brandLine,
+  lateConfirmationSignal,
+  minutesLate,
+  paymentFacts,
+  storefrontMismatch,
+} from './domain/b2c-money';
+export { paymentRef } from './domain/invoice-rules';
+export { aftermathNote } from './domain/payment-rules';
+export type { PaymentAftermath } from './domain/payment-rules';
+export type { PaymentCheck } from './infra/gateway-drivers/driver';
 export { B2cRefunds } from './application/b2c-refunds';
 export type { RefundActor, RefundLeft, RefundPosting } from './application/b2c-refunds';
 export { StorefrontCaptures, StorefrontOrderPorts } from './application/storefront-ports';

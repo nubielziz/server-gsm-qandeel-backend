@@ -115,6 +115,30 @@ export function checkDecimals(decimals: number): FieldError | undefined {
 }
 
 /**
+ * Checks that a currency's decimals can be charged exactly by the storefront card method.
+ *
+ * Why: decision 048: the buyer's gross is rounded to the currency's decimals, and a card method charges in fixed steps (0.01, or whole
+ * units for some currencies); a currency with more decimals would make the gateway charge a rounded amount.
+ *
+ * @param code the currency code
+ * @param decimals the decimals the currency would have
+ * @param maxDecimals the most decimals an active storefront card method charges exactly in this currency, `undefined` when none limits it
+ * @returns a field error on `decimals` (`not_chargeable`), or `undefined`
+ */
+export function chargeDecimalsProblem(
+  code: string,
+  decimals: number,
+  maxDecimals: number | undefined,
+): FieldError | undefined {
+  if (maxDecimals === undefined || decimals <= maxDecimals) return undefined;
+  return {
+    field: 'decimals',
+    code: 'not_chargeable',
+    message: `The card payment method charges ${code.toUpperCase()} with at most ${maxDecimals} decimals.`,
+  };
+}
+
+/**
  * Normalises a decimal text so two spellings of one number compare equal (`0.79`, `0.7900`, `00.79`).
  *
  * Why: the base currency refuses a rate change, and re-sending the stored rate is not a change.

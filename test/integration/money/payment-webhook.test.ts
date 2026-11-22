@@ -1,9 +1,11 @@
 // Integration tests of the incoming payment confirmation (map stage 8, POST /webhooks/payments/:gateway): the signature of each
 // driver, the 5-minute window, the event-id replay filter, the payment recorded once (even under a race), the review path for a
 // confirmation that does not match its invoice, and the events that are only acknowledged.
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import { Logger } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { type Database, schema as s } from '@src/infra/db';
+import { adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import {
@@ -92,29 +94,31 @@ describe('POST /webhooks/payments/:gateway (card driver)', () => {
 
   it('waits the longer of the delay setting and the gateway hold hours', async () => {
     const hold = await world({ holdHours: 2 });
-    await send(cardEvent(eventId(), hold.invoice.number, { reference: 'pi_hold' }));
+    await send(cardEvent(eventId(), hold.invoice.number, { reference: 'pi_hold', amount: 10000 }));
     expect((await payments())[0]!.autoCreditAt!.toISOString()).toBe('2026-11-01T12:00:00.000Z');
 
     await resetDb();
     await db.insert(s.settings).values({ key: 'payments.auto_credit_delay_minutes', value: 30 });
     await clearIdentityCaches(t);
     const delayed = await world();
-    await send(cardEvent(eventId(), delayed.invoice.number, { reference: 'pi_delay' }));
+    await send(cardEvent(eventId(), delayed.invoice.number, { reference: 'pi_delay', amount: 10000 }));
     expect((await payments())[0]!.autoCreditAt!.toISOString()).toBe('2026-11-01T10:30:00.000Z');
   });
 
   it('records one payment when the same event, the same payment under a new event, or a race arrives', async () => {
     const { invoice } = await world();
     const same = eventId();
-    const body = cardEvent(same, invoice.number, { reference: 'pi_once' });
+    const body = cardEvent(same, invoice.number, { reference: 'pi_once', amount: 10000 });
     expect((await send(body)).statusCode).toBe(200);
     expect((await send(body)).statusCode).toBe(200);
-    expect((await send(cardEvent(eventId(), invoice.number, { reference: 'pi_once' }))).json()).toEqual({
+    expect((await send(cardEvent(eventId(), invoice.number, { reference: 'pi_once', amount: 10000 }))).json()).toEqual({
       received: true,
       duplicate: true,
     });
     const racing = await Promise.all(
-      Array.from({ length: 5 }, () => send(cardEvent(eventId(), invoice.number, { reference: 'pi_race' }))),
+      Array.from({ length: 5 }, () =>
+        send(cardEvent(eventId(), invoice.number, { reference: 'pi_race', amount: 10000 })),
+      ),
     );
     expect(racing.every((res) => res.statusCode === 200)).toBe(true);
     expect((await payments()).map((payment) => payment.gatewayTxnId).sort()).toEqual(['pi_once', 'pi_race']);
@@ -157,21 +161,16 @@ describe('POST /webhooks/payments/:gateway (card driver)', () => {
     }
   });
 
-  it('acknowledges and ignores events that record nothing: other types, failures, unknown or settled invoices, other gateways', async () => {
+  it('acknowledges and ignores events that record nothing: other types, failures, unknown invoices, other gateways', async () => {
     const { invoice, merchant } = await world();
     const other = await insertGateway(t, db, { code: 'other', driver: 'card', apiBase: fake.url });
     const foreign = await insertInvoiceRow(db, merchant.id, { gatewayId: other });
-    const paid = await insertInvoiceRow(db, merchant.id, {
-      status: 'paid',
-      gatewayId: (await db.select().from(s.paymentGateways).where(eq(s.paymentGateways.code, 'card')))[0]!.id,
-    });
     const bodies = [
       JSON.stringify({ id: eventId(), type: 'customer.created', data: { object: { id: 'cus_1' } } }),
       cardEvent(eventId(), invoice.number, { type: 'checkout.session.expired' }),
       cardEvent(eventId(), invoice.number, { paymentStatus: 'unpaid' }),
       cardEvent(eventId(), 'INV-2026-9999'),
       cardEvent(eventId(), foreign.number),
-      cardEvent(eventId(), paid.number),
     ];
     for (const body of bodies) expect((await send(body)).statusCode).toBe(200);
     expect(await payments()).toHaveLength(0);
@@ -193,6 +192,54 @@ describe('POST /webhooks/payments/:gateway (card driver)', () => {
     expect((await payments())[0]).toMatchObject({ reviewRequired: true });
     expect((await payments())[0]!.reviewNote).toBe('The gateway reports a payment in EUR; the invoice is in USD.');
   });
+
+  it('a card confirmation that does not say its amount goes to staff review (decision 048)', async () => {
+    const { invoice } = await world();
+    expect((await send(cardEvent(eventId(), invoice.number, { reference: 'pi_silent' }))).statusCode).toBe(200);
+    const [payment] = await payments();
+    expect(payment).toMatchObject({ status: 'pending', reviewRequired: true, autoCreditAt: null });
+    expect(payment!.reviewNote).toBe('The gateway does not say how much was paid; the invoice is 100.0000.');
+  });
+
+  it('a confirmation for a top-up invoice that is paid or void is recorded for review and never credited (decision 048)', async () => {
+    for (const status of ['void', 'paid'] as const) {
+      await resetDb();
+      await clearIdentityCaches(t);
+      const { merchant, gatewayId } = await world();
+      const closed = await insertInvoiceRow(db, merchant.id, { amount: '100.0000', fee: '3.2000', gatewayId, status });
+      const warn = spyOn(Logger.prototype, 'warn');
+      let res;
+      try {
+        res = await send(cardEvent(eventId(), closed.number, { reference: `pi_${status}`, amount: 10000 }));
+        const [recorded] = await payments();
+        // The warning line names the payment, the invoice and its status, for staff.
+        expect(warn).toHaveBeenCalledWith(
+          `Payment PAY-${recorded!.id} recorded for ${closed.number}, which is ${status}: staff review.`,
+        );
+      } finally {
+        warn.mockRestore();
+      }
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ received: true });
+      const [payment] = await payments();
+      expect(payment).toMatchObject({
+        invoiceId: closed.id,
+        gatewayTxnId: `pi_${status}`,
+        status: 'pending',
+        reviewRequired: true,
+        autoCreditAt: null,
+      });
+      expect(payment!.reviewNote).toContain(`which is ${status}: it is never credited`);
+      const staff = await adminWith(t, ['payments:approve', 'payments:read']);
+      const approve = await staff.post(`/admin/payments/${payment!.id}/approve`);
+      expect(approve.status).toBe(409);
+      expect(approve.body.code).toBe('CONFLICT');
+      expect(await db.select().from(s.ledgerTransactions)).toHaveLength(0);
+      const reject = await staff.post(`/admin/payments/${payment!.id}/reject`, { reason: 'Refunded at the gateway' });
+      expect(reject.status).toBe(200);
+      expect((await db.select().from(s.invoices).where(eq(s.invoices.id, closed.id)))[0]!.status).toBe(status);
+    }
+  });
 });
 
 describe('POST /webhooks/payments/:gateway (crypto driver)', () => {
@@ -209,6 +256,26 @@ describe('POST /webhooks/payments/:gateway (crypto driver)', () => {
         requiredConfirmations: required,
       },
     });
+
+  it('a crypto confirmation whose amount cannot be read goes to staff review (decision 048)', async () => {
+    const merchant = await insertWalletMerchant(db);
+    const gatewayId = await insertGateway(t, db, {
+      code: 'crypto',
+      driver: 'crypto',
+      name: 'Crypto',
+      apiBase: fake.url,
+    });
+    const invoice = await insertInvoiceRow(db, merchant.id, { gatewayId, fee: '1.0000' });
+    const event = JSON.parse(cryptoEvent(eventId(), invoice.number, 'invoice.confirmed', 3));
+    event.data.amount = '1.23456';
+    const body = JSON.stringify(event);
+    expect(
+      (await postWebhook(t, 'crypto', body, signedHeaders(WEBHOOK_KEY, body, clock, 'x-gsm-signature'))).statusCode,
+    ).toBe(200);
+    const [payment] = await payments();
+    expect(payment).toMatchObject({ status: 'pending', reviewRequired: true, autoCreditAt: null });
+    expect(payment!.reviewNote).toBe('The gateway does not say how much was paid; the invoice is 100.0000.');
+  });
 
   it('records a payment only once the gateway reports the required confirmations', async () => {
     const merchant = await insertWalletMerchant(db);

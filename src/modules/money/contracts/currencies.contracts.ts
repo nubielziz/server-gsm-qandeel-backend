@@ -87,7 +87,9 @@ export const createCurrency = defineRoute({
   description:
     'Adds a currency. `code` is three capital letters and unique; `rateToBase` is above zero (up to eight decimal places); ' +
     '`markupPercent` is 0 to 10; `decimals` is 0 to 4. The rate is stamped with the current time. Audited. ' +
-    'It also needs `currencies:update` (`403 FORBIDDEN`, decision 046).',
+    'It also needs `currencies:update` (`403 FORBIDDEN`, decision 046). ' +
+    'While an active storefront card payment method exists, `decimals` may not exceed what it can charge exactly (0 for whole-unit ' +
+    'currencies such as JPY, else 2): `422` on `decimals` (`not_chargeable`, decision 048).',
   tags: ['clients'],
   surface: 'admin',
   access: 'staff-permission',
@@ -125,7 +127,10 @@ export const updateCurrency = defineRoute({
     'Changes the fields sent. Sending `rateToBase` stamps the rate with the current time. The base currency USD refuses a ' +
     'new rate, a new markup and being switched off. The code cannot be changed once created. Audited. ' +
     'Sending `rateToBase` or `markupPercent` also needs `currencies:update` (`403 FORBIDDEN`, decision 046). A sent `rateToBase` ' +
-    'also ends a hold of the refresh, and the shop offers the currency again (decision 049).',
+    'also ends a hold of the refresh, and the shop offers the currency again (decision 049). ' +
+    'While an active storefront card payment method exists, `decimals` may not exceed what it can charge exactly (0 for whole-unit ' +
+    'currencies such as JPY, else 2): `422` on `decimals` (`not_chargeable`, decision 048). It is checked when `decimals` is sent or ' +
+    '`isStorefront` or `isActive` is switched on.',
   tags: ['clients'],
   surface: 'admin',
   access: 'staff-permission',

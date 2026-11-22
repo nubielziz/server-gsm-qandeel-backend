@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches, signInStaff } from '../../support/auth';
+import { insertGateway } from '../../support/billing';
 import { DAY, HOUR, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 
@@ -385,5 +386,116 @@ describe('the permission of a rate (decision 046)', () => {
     expect(stored.rateToBase).toBe('0.79000000');
     expect(stored.markupPercent).toBe('2.5000');
     expect((await send(settingsOnly, 'PATCH', url, { name: 'Pound' })).statusCode).toBe(200);
+  });
+});
+
+describe('decimals the storefront card method can charge (decision 048)', () => {
+  const JOD = {
+    code: 'JOD',
+    name: 'Jordanian dinar',
+    rateToBase: '0.709',
+    markupPercent: '0',
+    charmRounding: false,
+    isStorefront: true,
+  };
+  const JPY = {
+    code: 'JPY',
+    name: 'Japanese yen',
+    rateToBase: '150',
+    markupPercent: '0',
+    charmRounding: false,
+    isStorefront: true,
+  };
+  const refusal = (code: string, max: number) => ({
+    field: 'decimals',
+    code: 'not_chargeable',
+    message: `The card payment method charges ${code} with at most ${max} decimals.`,
+  });
+
+  it('decimals the storefront card method cannot charge are refused while it is active', async () => {
+    const { db } = await testDb();
+    const gatewayId = await insertGateway(t, db, {
+      code: 'card-b2c',
+      name: 'Card gateway',
+      driver: 'card',
+      audience: 'b2c',
+    });
+    const staff = await signInStaff(t, ['settings:update', 'currencies:update']);
+    const three = await send(staff, 'POST', '/admin/currencies', { ...JOD, decimals: 3 });
+    expect(three.statusCode).toBe(422);
+    // The detail repeats the field message: the console's storefront switch has no decimals field to show it under.
+    expect(three.json()).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      detail: refusal('JOD', 2).message,
+      errors: [refusal('JOD', 2)],
+    });
+    // Checked whatever isStorefront says.
+    expect(
+      (await send(staff, 'POST', '/admin/currencies', { ...JOD, isStorefront: false, decimals: 3 })).statusCode,
+    ).toBe(422);
+    const jod = await create(staff, { ...JOD, decimals: 2 });
+    const yen = await send(staff, 'POST', '/admin/currencies', { ...JPY, decimals: 2 });
+    expect(yen.statusCode).toBe(422);
+    expect(yen.json().errors).toEqual([refusal('JPY', 0)]);
+    await create(staff, { ...JPY, decimals: 0 });
+
+    const patch = await send(staff, 'PATCH', `/admin/currencies/${jod.id}`, { decimals: 3 });
+    expect(patch.statusCode).toBe(422);
+    expect(patch.json().errors).toEqual([refusal('JOD', 2)]);
+    // A row saved with 3 decimals before this rule cannot be switched on for the shop.
+    const [old] = await db
+      .insert(s.currencies)
+      .values({
+        code: 'KWD',
+        name: 'Kuwaiti dinar',
+        rateToBase: '0.307',
+        decimals: 3,
+        isStorefront: false,
+        isActive: true,
+      })
+      .returning();
+    const offered = await send(staff, 'PATCH', `/admin/currencies/${old!.id}`, { isStorefront: true });
+    expect(offered.statusCode).toBe(422);
+    expect(offered.json()).toMatchObject({ detail: refusal('KWD', 2).message });
+    // A name change of that row is not about decimals.
+    expect((await send(staff, 'PATCH', `/admin/currencies/${old!.id}`, { name: 'Dinar' })).statusCode).toBe(200);
+    // A switched-off row with 3 decimals cannot be switched back on while the card method is active.
+    const [off] = await db
+      .insert(s.currencies)
+      .values({
+        code: 'OMR',
+        name: 'Omani rial',
+        rateToBase: '0.385',
+        decimals: 3,
+        isStorefront: false,
+        isActive: false,
+      })
+      .returning();
+    const activated = await send(staff, 'PATCH', `/admin/currencies/${off!.id}`, { isActive: true });
+    expect(activated.statusCode).toBe(422);
+    expect(activated.json()).toMatchObject({ detail: refusal('OMR', 2).message, errors: [refusal('OMR', 2)] });
+    expect((await db.select().from(s.currencies).where(eq(s.currencies.id, off!.id)))[0]).toMatchObject({
+      isActive: false,
+    });
+    // A row the card method can charge is switched on as before.
+    const [two] = await db
+      .insert(s.currencies)
+      .values({
+        code: 'QAR',
+        name: 'Qatari riyal',
+        rateToBase: '3.64',
+        decimals: 2,
+        isStorefront: false,
+        isActive: false,
+      })
+      .returning();
+    expect((await send(staff, 'PATCH', `/admin/currencies/${two!.id}`, { isActive: true })).statusCode).toBe(200);
+
+    // With the card method switched off, three decimals are allowed again.
+    await db.update(s.paymentGateways).set({ isActive: false }).where(eq(s.paymentGateways.id, gatewayId));
+    expect(
+      (await send(staff, 'POST', '/admin/currencies', { ...JOD, code: 'BHD', name: 'Bahraini dinar', decimals: 3 }))
+        .statusCode,
+    ).toBe(201);
   });
 });

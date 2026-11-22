@@ -1,6 +1,7 @@
 // The arithmetic of storefront payments, refunds and disputes (feature 16): base-currency conversion at the locked rate, the VAT
 // share of a refund, the gateway fee, the payment status after refunds, and the method words. Pure functions on exact decimals.
 import { Decimal } from 'decimal.js';
+import type { JsonObject } from '../../../common/contract';
 import { Money } from '../../../common/money';
 import type { OrderMethod, OrderPaymentStatus } from '../db/schema';
 
@@ -210,23 +211,156 @@ export function paymentFacts(
  * Tells whether a confirmation says another amount or currency than the payment that was opened.
  *
  * Why: the gateway collected what it says it collected; a storefront payment whose confirmed amount or currency differs from the quote
- * must not create an order at the locked price (the buyer paid something else). It is held for staff, like a top-up (B167).
+ * must not create an order at the locked price (the buyer paid something else). It is held for staff, like a top-up (B167). Decision
+ * 048: a confirmation that does not say its currency or its amount does not match either (what was paid cannot be vouched for); the
+ * currency is judged first.
  *
  * @param event what the gateway says was paid (4-decimal text and ISO code, `null` when the event does not say)
  * @param payment what the payment was opened for
- * @returns the sentence for staff, or `undefined` when they agree
+ * @returns the sentence for staff, or `undefined` only when the gateway states the payment's currency and amount
  */
 export function storefrontMismatch(
   event: { readonly amount: string | null; readonly currency: string | null },
   payment: { readonly amount: string; readonly currency: string },
 ): string | undefined {
-  if (event.currency !== null && event.currency !== payment.currency) {
+  if (event.currency === null) {
+    return `The gateway's confirmation does not say the currency; the payment was opened in ${payment.currency}.`;
+  }
+  if (event.currency !== payment.currency) {
     return `The gateway confirmed ${event.currency} but the payment was opened in ${payment.currency}.`;
   }
-  if (event.amount !== null && Money.of(event.amount).cmp(Money.of(payment.amount)) !== 0) {
+  if (event.amount === null) {
+    return `The gateway's confirmation does not say the amount; the payment was opened for ${payment.amount}.`;
+  }
+  if (Money.of(event.amount).cmp(Money.of(payment.amount)) !== 0) {
     return `The gateway confirmed ${event.amount} but the payment was opened for ${payment.amount}.`;
   }
   return undefined;
+}
+
+const MINUTE_MS = 60_000;
+
+/**
+ * How long after the checkout's price lock ends a payment is still used at the locked price (minutes).
+ *
+ * Why: decision 048: the hosted page closes this long after the lock, and a payment made later is not used at the old price.
+ */
+export const CONFIRMATION_GRACE_MINUTES = 30;
+
+/**
+ * The shortest life of a hosted card page: the gateway's minimum (30 minutes after it was created) plus one minute for the call.
+ *
+ * Why: decision 048: a page opened in the last minutes of the price lock still gets a life the gateway accepts.
+ */
+export const HOSTED_PAGE_MIN_LIFETIME_MS = 31 * MINUTE_MS;
+
+/**
+ * The most payment pages a checkout keeps open at once (pending, not held).
+ *
+ * Why: decision 048: each page is a gateway call and a possible payment; three cover a buyer who changes the method twice.
+ */
+export const MAX_LIVE_PAYMENTS_PER_CHECKOUT = 3;
+
+/**
+ * From this age of a confirmation (its own event time, else when the payment opened), a gateway record that still cannot be read
+ * holds the payment for staff instead of asking the gateway to deliver the event again (hours).
+ *
+ * Why: decision 048: the gateway retries a delivery for a few days; a long outage must not lose the confirmation when it stops.
+ */
+export const GATEWAY_CHECK_GIVE_UP_HOURS = 24;
+
+/**
+ * When the hosted card page of a payment must close.
+ *
+ * Why: decision 048: the page closes {@link CONFIRMATION_GRACE_MINUTES} after the checkout's price lock ends, and never sooner than
+ * {@link HOSTED_PAGE_MIN_LIFETIME_MS} after it is opened (the gateway refuses a shorter life).
+ *
+ * @param lockEndsAt when the checkout's price lock ends (`checkout_sessions.expires_at`)
+ * @param now the clock's time when the page is opened
+ * @returns the later of the two times
+ */
+export function hostedPageExpiry(lockEndsAt: Date, now: Date): Date {
+  return new Date(
+    Math.max(
+      lockEndsAt.getTime() + CONFIRMATION_GRACE_MINUTES * MINUTE_MS,
+      now.getTime() + HOSTED_PAGE_MIN_LIFETIME_MS,
+    ),
+  );
+}
+
+/**
+ * How late a payment was made after the checkout's price lock ended, beyond the grace.
+ *
+ * Why: decision 048: lateness is judged on when the buyer paid (the gateway's own time), never on when the confirmation was processed, so
+ * a delivery the gateway repeats never makes an on-time payment late. Exactly {@link CONFIRMATION_GRACE_MINUTES} after the lock is in time.
+ *
+ * @param lockEndsAt when the checkout's price lock ended
+ * @param paidAt when the buyer paid
+ * @returns the whole minutes after the lock end when the payment is late, else `undefined`
+ */
+export function minutesLate(lockEndsAt: Date, paidAt: Date): number | undefined {
+  const after = paidAt.getTime() - lockEndsAt.getTime();
+  if (after <= CONFIRMATION_GRACE_MINUTES * MINUTE_MS) return undefined;
+  return Math.floor(after / MINUTE_MS);
+}
+
+/**
+ * The risk signal of a payment made after the checkout's price lock ended.
+ *
+ * Why: decision 048: a late payment is booked on an order placed held; this sentence is its review reason and its hold sentence.
+ *
+ * @param minutes the minutes after the lock end ({@link minutesLate})
+ * @returns the sentence
+ */
+export function lateConfirmationSignal(minutes: number): string {
+  return `Paid ${minutes} minutes after the checkout's price lock ended`;
+}
+
+/** The refund reason of a late payment that is sent back at once (decision 048). */
+export const LATE_REFUND_REASON = "Paid after the checkout's price lock ended: refunded automatically";
+
+/** The key of `payments.raw` under which a held storefront payment records whether its money arrived (decision 048). */
+export const HOLD_MARK_KEY = 'gsmHold';
+
+/**
+ * The stored event of a held storefront payment, with the mark of whether the gateway's record showed its money received.
+ *
+ * Why: decision 048: a held payment whose money arrived may only be closed as paid back, never as "no money received" (that would take it
+ * off the money integrity check while the money is still there). The mark is kept with the event the hold stores (no column of its own).
+ *
+ * @param raw the event as received
+ * @param moneyReceived true when the record (or, when the driver cannot check, the confirmation) showed money received for this payment
+ * @returns the event with the mark under {@link HOLD_MARK_KEY}
+ */
+export function withHoldMark(raw: JsonObject, moneyReceived: boolean): JsonObject {
+  return { ...raw, [HOLD_MARK_KEY]: { moneyReceived } };
+}
+
+/**
+ * Reads the mark {@link withHoldMark} stored.
+ *
+ * @param raw the payment's stored event
+ * @returns the mark, or `undefined` for a payment held before the mark existed (or never held)
+ */
+export function holdMarkOf(raw: Readonly<Record<string, unknown>>): boolean | undefined {
+  const mark = raw[HOLD_MARK_KEY];
+  if (typeof mark !== 'object' || mark === null || Array.isArray(mark)) return undefined;
+  const received = (mark as Record<string, unknown>)['moneyReceived'];
+  return typeof received === 'boolean' ? received : undefined;
+}
+
+/**
+ * The number of significant decimals of an amount.
+ *
+ * Why: decision 048: a card method charges in fixed steps (0.01 or whole units); an amount with more significant decimals than the step
+ * cannot be charged exactly and is refused before a page opens.
+ *
+ * @param amount the amount
+ * @returns the decimals of its 4-decimal wire form without trailing zeros (`3.3960` is 3, `3.4000` is 1, `576.0000` is 0)
+ */
+export function fractionDigits(amount: Money): number {
+  const fraction = amount.toWire().split('.')[1] ?? '';
+  return fraction.replace(/0+$/, '').length;
 }
 
 /**

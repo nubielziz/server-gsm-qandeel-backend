@@ -15,14 +15,22 @@ export const paymentWebhook = defineRoute({
     '`200` and changes nothing. Events billing does not use are acknowledged with `200`. A gateway may keep two webhook secrets: a ' +
     'delivery signed with either passes. Refund results (`refund.updated` with a final status, `refund.failed`) settle the storefront ' +
     'refund they name, and dispute events are handled exactly as on `POST /webhooks/disputes/:gateway` (one provider endpoint with ' +
-    'every event is enough; the same dispute on both URLs is recorded once).',
+    'every event is enough; the same dispute on both URLs is recorded once). ' +
+    "For a storefront payment (`PAY-<id>`) the gateway's own record is read before the order is created: when it cannot be read the " +
+    'answer is `502 GATEWAY_ERROR` and the gateway delivers the event again (once the event is 24 hours old the payment is held for ' +
+    'staff instead); a payment the record does not show as paid, or shows for another amount or currency, and a confirmation that does ' +
+    'not state its amount or currency, is held for staff: nothing is created, and money that arrived is sent back in full automatically ' +
+    "when the gateway can refund. A payment made more than 30 minutes after the checkout's price lock ended is refunded at once, or " +
+    'waits in the risk queue when the method cannot refund. A confirmation of a top-up invoice that is paid or void is recorded for ' +
+    'staff review and never credited. A dispute event for a payment or a dispute not recorded yet is `503 UNAVAILABLE`, so the ' +
+    'gateway delivers it again (decision 048).',
   tags: ['webhooks'],
   surface: 'hooks',
   access: 'gateway-signature',
   params: z.object({ gateway: z.string() }),
   body: zJsonObject,
   success: { status: 200, schema: z.object({ received: z.literal(true), duplicate: z.boolean().optional() }) },
-  errors: ['WEBHOOK_SIGNATURE_INVALID', 'VALIDATION_FAILED'],
+  errors: ['WEBHOOK_SIGNATURE_INVALID', 'VALIDATION_FAILED', 'GATEWAY_ERROR', 'UNAVAILABLE'],
   examples: {
     request: {
       id: 'evt_1',

@@ -163,7 +163,8 @@ export const refundHeldOrder = defineRoute({
     'ledger move), in one transaction with the assessment outcome, the order timeline, the audit row and the chosen blocklist ' +
     'entries (manual entries of the caller; an entry that already exists is skipped, and none is linked to a customer). The ' +
     'customer’s status is not changed: block the customer with `POST /admin/customers/:id/block`. `409 NOT_HELD` when the order ' +
-    'is not waiting for a decision any more.',
+    'is not waiting for a decision any more. A payment the buyer disputed with the card network is not sent back: a refund request ' +
+    'waits on the Refunds page instead (decision 048).',
   tags: ['risk'],
   surface: 'admin',
   access: 'staff-permission',

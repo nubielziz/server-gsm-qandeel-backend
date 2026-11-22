@@ -1,17 +1,31 @@
 // Integration tests of the card disputes (feature 16, scenario b2c-chargeback, RESOLUTIONS money-5, ANSWERS refunds Q5 to Q8, M115): the signed
 // dispute webhook (created, lost, won, repeats, refusals), the list and the single read with the evidence pack, evidence before the deadline,
 // accepting the loss, and the one chargeback journal whichever of the accept and the webhook comes first.
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import { Logger } from '@nestjs/common';
 import { Decimal } from 'decimal.js';
 import { eq } from 'drizzle-orm';
 import { type Database, schema as s } from '@src/infra/db';
+import { ErrorReporter } from '@src/infra/observability';
 import { StoredFiles } from '@src/modules/platform';
 import { signWebhook } from '@src/infra/crypto';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { WEBHOOK_KEY, GatewayTestModule } from '../../support/billing';
-import { type B2cWorld, B2cGateway, type PaidOrder, b2cWorld, disputeEvent, hook, paidOrder } from '../../support/b2c';
+import {
+  type B2cWorld,
+  B2cGateway,
+  type PaidOrder,
+  b2cWorld,
+  disputeEvent,
+  hook,
+  json,
+  openCheckout,
+  paidOrder,
+  pay,
+  storefrontEvent,
+} from '../../support/b2c';
 import { DAY, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { ledgerTotals } from '../../support/money';
@@ -200,22 +214,15 @@ describe('POST /webhooks/disputes/:gateway: dispute.created', () => {
     expect((await send(world.gateway.code, { 'stripe-signature': stamp(-290) })).statusCode).toBe(200);
   });
 
-  it('acknowledges and ignores what it cannot use: an unknown payment, other event types, a dispute closed before it was recorded', async () => {
+  it('acknowledges and ignores what it cannot use: other event types and bodies that are not disputes', async () => {
     const paid = await order();
     const ignored = [
-      disputeEvent(`evt_i1_${unique()}`, { dispute: 'dp_none', intent: 'pi_unknown' }),
       disputeEvent(`evt_i2_${unique()}`, { dispute: 'dp_upd', intent: paid.intent, type: 'charge.dispute.updated' }),
       disputeEvent(`evt_i3_${unique()}`, {
         dispute: 'dp_pending',
         intent: paid.intent,
         type: 'charge.dispute.closed',
         status: 'warning_closed',
-      }),
-      disputeEvent(`evt_i4_${unique()}`, {
-        dispute: 'dp_early',
-        intent: paid.intent,
-        type: 'charge.dispute.closed',
-        status: 'lost',
       }),
       JSON.stringify({ id: `evt_i5_${unique()}`, type: 'charge.dispute.created', data: {} }),
     ];
@@ -637,5 +644,207 @@ describe('POST /admin/disputes/:id/accept and the lost event', () => {
     const half = new Decimal('1.92').div(fx).toDecimalPlaces(4).toFixed(4);
     expect(res.body.amount).toBe(half);
     expect(await systemBalance(db, 'chargeback_loss')).toBe(half);
+  });
+});
+
+describe('dispute events that arrive before what they name (decision 048)', () => {
+  const nowSeconds = () => Math.floor(clock.nowMs() / 1000);
+  const send = (body: string) => hook(t, clock, 'disputes', world.gateway.code, body);
+  const expectAskedAgain = (res: Awaited<ReturnType<typeof send>>) => {
+    expect(res.statusCode).toBe(503);
+    expect(json(res)).toMatchObject({ code: 'UNAVAILABLE' });
+  };
+
+  it('a dispute for a payment not recorded yet answers 503 and is applied when the gateway delivers it again', async () => {
+    const { token } = await openCheckout(t, world);
+    const { payment } = json(await pay(t, token, undefined));
+    const intent = `pi_early_${unique()}`;
+    const body = disputeEvent(`evt_early_${unique()}`, { dispute: 'dp_before', intent, created: nowSeconds() });
+    const warn = spyOn(Logger.prototype, 'warn');
+    try {
+      expectAskedAgain(await send(body));
+      expect(warn).toHaveBeenCalledWith(
+        'Gateway card-b2c: dispute dp_before names a payment that is not recorded yet; asking for it again.',
+      );
+    } finally {
+      warn.mockRestore();
+    }
+    expect(await db.select().from(s.disputes)).toHaveLength(0);
+    const confirm = storefrontEvent(`evt_pay_${unique()}`, payment.reference, { amount: payment.amount, intent });
+    expect((await hook(t, clock, 'payments', world.gateway.code, confirm)).statusCode).toBe(200);
+    // The 503 released the replay mark: the same delivery is applied now.
+    expect((await send(body)).statusCode).toBe(200);
+    const disputes = await db.select().from(s.disputes);
+    expect(disputes).toHaveLength(1);
+    expect(disputes[0]).toMatchObject({ gatewayDisputeId: 'dp_before', paymentId: payment.id });
+    expect((await paymentRow(payment.id)).status).toBe('disputed');
+  });
+
+  it('a dispute closed before it was opened here answers 503, then closes it after the opening', async () => {
+    const paid = await order({ deliver: true });
+    const lost = disputeEvent(`evt_lost_${unique()}`, {
+      dispute: 'dp_order',
+      intent: paid.intent,
+      type: 'charge.dispute.closed',
+      status: 'lost',
+      created: nowSeconds(),
+    });
+    const warn = spyOn(Logger.prototype, 'warn');
+    try {
+      expectAskedAgain(await send(lost));
+      expect(warn).toHaveBeenCalledWith(
+        'Gateway card-b2c: dispute dp_order was closed before it was opened here; asking for it again.',
+      );
+    } finally {
+      warn.mockRestore();
+    }
+    expect(await chargebacks()).toHaveLength(0);
+    const created = disputeEvent(`evt_created_${unique()}`, {
+      dispute: 'dp_order',
+      intent: paid.intent,
+      created: nowSeconds(),
+    });
+    expect((await send(created)).statusCode).toBe(200);
+    expect((await send(lost)).statusCode).toBe(200);
+    expect(await rowOf('dp_order')).toMatchObject({ status: 'lost' });
+    expect(await chargebacks()).toHaveLength(1);
+    expect((await paymentRow(paid.paymentId)).status).toBe('chargeback');
+  });
+
+  /** A payment held for staff: the gateway's record says another amount than the checkout's. */
+  async function heldPayment() {
+    const { token } = await openCheckout(t, world);
+    const { payment } = json(await pay(t, token, undefined));
+    const intent = `pi_held_${unique()}`;
+    const body = storefrontEvent(`evt_held_${unique()}`, payment.reference, {
+      amount: payment.amount,
+      intent,
+      received: '1.00',
+    });
+    expect((await hook(t, clock, 'payments', world.gateway.code, body)).statusCode).toBe(200);
+    expect(await paymentRow(payment.id)).toMatchObject({ status: 'pending', reviewRequired: true, orderId: null });
+    return { paymentId: payment.id as number, intent };
+  }
+
+  it('a dispute on a payment held for staff answers 503 and records nothing', async () => {
+    const held = await heldPayment();
+    const before = (await paymentRow(held.paymentId)).reviewNote;
+    const error = spyOn(Logger.prototype, 'error');
+    try {
+      expectAskedAgain(
+        await send(
+          disputeEvent(`evt_dh_${unique()}`, { dispute: 'dp_held', intent: held.intent, created: nowSeconds() }),
+        ),
+      );
+      expect(error).toHaveBeenCalledWith(
+        `Gateway card-b2c: dispute dp_held names PAY-${held.paymentId}, which is held for staff; asking for it again.`,
+      );
+    } finally {
+      error.mockRestore();
+    }
+    expect(await db.select().from(s.disputes)).toHaveLength(0);
+    expect((await paymentRow(held.paymentId)).reviewNote).toBe(before);
+  });
+
+  it('once 24 hours old such an event is acknowledged and reported, and a held payment notes the dispute', async () => {
+    const held = await heldPayment();
+    const paid = await order();
+    const dayAgo = nowSeconds() - 24 * 3600;
+    const error = spyOn(Logger.prototype, 'error');
+    const capture = spyOn(t.app.get(ErrorReporter, { strict: false }), 'capture');
+    try {
+      const onHeld = await send(
+        disputeEvent(`evt_old1_${unique()}`, { dispute: 'dp_old_held', intent: held.intent, created: dayAgo }),
+      );
+      expect(onHeld.statusCode).toBe(200);
+      expect(json(onHeld)).toEqual({ received: true });
+      expect(error).toHaveBeenCalledWith(
+        `Gateway card-b2c: dispute dp_old_held names PAY-${held.paymentId}, which is held for staff, and it is no longer asked for again: acknowledged for staff review.`,
+      );
+      const unknown = await send(
+        disputeEvent(`evt_old2_${unique()}`, { dispute: 'dp_old_none', intent: 'pi_nobody', created: dayAgo }),
+      );
+      expect(unknown.statusCode).toBe(200);
+      const closed = await send(
+        disputeEvent(`evt_old3_${unique()}`, {
+          dispute: 'dp_old_closed',
+          intent: paid.intent,
+          type: 'charge.dispute.closed',
+          status: 'lost',
+          created: dayAgo,
+        }),
+      );
+      expect(closed.statusCode).toBe(200);
+      expect(error).toHaveBeenCalledWith(
+        'Gateway card-b2c: dispute dp_old_closed was closed before it was opened here, and it is no longer asked for again: acknowledged for staff review.',
+      );
+      // Each acknowledged event is reported to the error reporter, not only logged.
+      const reported = { process: 'api', route: 'POST /webhooks/disputes/:gateway', code: 'DISPUTE_NOT_APPLIED' };
+      expect(capture).toHaveBeenCalledTimes(3);
+      expect(capture).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: `A dispute event could not be applied: Gateway card-b2c: dispute dp_old_held names PAY-${held.paymentId}, which is held for staff.`,
+        }),
+        reported,
+      );
+      expect(capture).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message:
+            'A dispute event could not be applied: Gateway card-b2c: dispute dp_old_closed was closed before it was opened here.',
+        }),
+        reported,
+      );
+    } finally {
+      error.mockRestore();
+      capture.mockRestore();
+    }
+    expect((await paymentRow(held.paymentId)).reviewNote).toContain('Disputed at the gateway (dp_old_held, created).');
+    expect(await db.select().from(s.disputes)).toHaveLength(0);
+    expect(await chargebacks()).toHaveLength(0);
+    // One second younger than the limit is still asked for again.
+    expectAskedAgain(
+      await send(
+        disputeEvent(`evt_young_${unique()}`, { dispute: 'dp_young', intent: 'pi_nobody', created: dayAgo + 1 }),
+      ),
+    );
+  });
+
+  it('an event that does not say when it was made is acknowledged for staff at once', async () => {
+    const paid = await order();
+    for (const body of [
+      disputeEvent(`evt_nt1_${unique()}`, { dispute: 'dp_none', intent: 'pi_unknown' }),
+      disputeEvent(`evt_nt2_${unique()}`, {
+        dispute: 'dp_early',
+        intent: paid.intent,
+        type: 'charge.dispute.closed',
+        status: 'lost',
+      }),
+    ]) {
+      const res = await send(body);
+      expect(res.statusCode).toBe(200);
+      expect(json(res)).toEqual({ received: true });
+    }
+    expect(await db.select().from(s.disputes)).toHaveLength(0);
+    expect(await chargebacks()).toHaveLength(0);
+  });
+
+  it('a won event for a dispute staff accepted as lost changes nothing and is logged for staff', async () => {
+    const paid = await order({ deliver: true });
+    const { row, gatewayId } = await open(paid);
+    expect((await staff.post(`/admin/disputes/${row.id}/accept`, {})).status).toBe(200);
+    const error = spyOn(Logger.prototype, 'error');
+    try {
+      const res = await decide(paid, gatewayId, 'won');
+      expect(res.statusCode).toBe(200);
+      expect(json(res)).toEqual({ received: true, duplicate: true });
+      expect(error).toHaveBeenCalledWith(
+        `Dispute DP-${row.id} was reported won after it was closed as lost: the chargeback stays booked; staff review.`,
+      );
+    } finally {
+      error.mockRestore();
+    }
+    expect(await disputeRow(row.id)).toMatchObject({ status: 'lost' });
+    expect(await chargebacks()).toHaveLength(1);
+    expect((await paymentRow(paid.paymentId)).status).toBe('chargeback');
   });
 });

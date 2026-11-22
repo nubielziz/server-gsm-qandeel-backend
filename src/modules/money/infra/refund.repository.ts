@@ -241,6 +241,51 @@ export async function appendLateRefundFailure(
 }
 
 /**
+ * Marks a completed return without an order failed again when the gateway reports its refund failed after it had completed.
+ *
+ * Why: decision 048: a held storefront payment counts for the money integrity check until a refund of it is `processing` or `completed`;
+ * a return the gateway failed later is money that did not go back, so the refund is `failed` again (`completed_at` cleared) with the
+ * failure on its note, and the payment is listed again. The update is guarded like {@link appendLateRefundFailure}: the status, no
+ * order, the gateway refund id and the absence of the same marker, so a repeated delivery changes nothing.
+ *
+ * @param db the database or a transaction
+ * @param id the refund id
+ * @param gatewayRefundId the gateway's id of the refund that failed
+ * @param marker the text that identifies this failure on the note
+ * @param text the line to append
+ * @param at the clock's time
+ * @returns the updated row, or `undefined` when nothing matched
+ */
+export async function failLateReturn(
+  db: DbExecutor,
+  id: number,
+  gatewayRefundId: string,
+  marker: string,
+  text: string,
+  at: Date,
+): Promise<Refund | undefined> {
+  const [updated] = await db
+    .update(refunds)
+    .set({
+      status: 'failed',
+      completedAt: null,
+      note: sql`case when ${refunds.note} = '' then ${text} else ${refunds.note} || chr(10) || ${text} end`,
+      updatedAt: at,
+    })
+    .where(
+      and(
+        eq(refunds.id, id),
+        eq(refunds.status, 'completed'),
+        isNull(refunds.orderId),
+        eq(refunds.gatewayRefundId, gatewayRefundId),
+        sql`strpos(${refunds.note}, ${marker}) = 0`,
+      ),
+    )
+    .returning();
+  return updated;
+}
+
+/**
  * The refunds of a payment that count against what can still go back.
  *
  * Why: ANSWERS refunds Q3: the limit is the paid amount minus the other refunds that are `completed` or `processing` (an approved
@@ -263,6 +308,20 @@ export async function takenRefundsOfPayment(db: DbExecutor, paymentId: number, e
     .from(refunds)
     .where(and(...conditions))
     .orderBy(refunds.id);
+}
+
+/**
+ * Every refund of a payment, whatever its status.
+ *
+ * Why: decision 048: a payment that is not captured has refunds only from a return (a held confirmation sent back, or paid back by hand),
+ * and such a payment never pays its checkout once one exists.
+ *
+ * @param db the database or a transaction
+ * @param paymentId the payment
+ * @returns the refunds, oldest first
+ */
+export async function refundsOfPayment(db: DbExecutor, paymentId: number): Promise<Refund[]> {
+  return db.select().from(refunds).where(eq(refunds.paymentId, paymentId)).orderBy(refunds.id);
 }
 
 /**

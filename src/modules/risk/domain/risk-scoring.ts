@@ -156,6 +156,23 @@ function decide(score: number, hardBlock: boolean, rules: RiskRuleSet): RiskDeci
 }
 
 /**
+ * Adds the review reasons the payment side found to a verdict.
+ *
+ * Why: decision 048: some facts need staff review whatever the score (a payment made after the checkout's price lock ended): each is a
+ * signal and the decision is at least `review`. The reasons come first, so the first one is the hold sentence; a `block` keeps its hard
+ * signals first, so its refund reason does not change.
+ *
+ * @param verdict the verdict of the rules
+ * @param reasons the review reasons, in order (empty: none)
+ * @returns the verdict with the reasons
+ */
+export function withReviewReasons(verdict: ScreeningVerdict, reasons: readonly string[]): ScreeningVerdict {
+  if (reasons.length === 0) return verdict;
+  if (verdict.decision === 'block') return { ...verdict, signals: [...verdict.signals, ...reasons] };
+  return { score: verdict.score, signals: [...reasons, ...verdict.signals], decision: 'review' };
+}
+
+/**
  * The reason the held order's timeline shows.
  *
  * Why: the demo writes `Risk hold: score 84. <first signal> and N more signals` on the order a rule held.

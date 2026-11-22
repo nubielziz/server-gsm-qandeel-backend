@@ -2,6 +2,7 @@
 // b2c-paid steps 4 and 5). It judges the checkout and hands the money side to `StorefrontPayments`.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
+import { APP_CONFIG, type AppConfig } from '../../../config';
 import type { BodyOf, ResultOf } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
@@ -10,7 +11,7 @@ import { SettingsService } from '../../platform';
 import { REQUIRE_3DS_KEY, StorefrontMoney, StorefrontPayments } from '../../money';
 import { StorefrontPolicies, inCurrency } from '../../storefront';
 import type { payCheckoutSession } from '../contracts/checkout-pay.contracts';
-import { consentState, effectiveStatus, requiredConsents } from '../domain/checkout';
+import { consentState, effectiveStatus, isShopAddress, requiredConsents } from '../domain/checkout';
 import { findCheckoutSession } from '../infra/checkout.repository';
 import { findCustomerById } from '../infra/customer.repository';
 import { listSessionConsents } from '../infra/consent.repository';
@@ -26,7 +27,8 @@ export type StartedPaymentView = ResultOf<typeof payCheckoutSession>;
  * every required consent granted (the proof for a chargeback, scenario b2c-chargeback step 4) and the method one of the shop's; then the
  * payment is opened once per `Idempotency-Key`. A replay of an earlier call answers before any of these checks, so a retry after the
  * session expired or was paid still receives the answer it missed. The order is NOT created here (CLAUDE.md: B2C never dispatches before
- * payment): the gateway's confirmation does it.
+ * payment): the gateway's confirmation does it. Decision 048: the return address must be on one of the shop's own origins (checked
+ * first, before a replay), and the hosted page closes the grace after the checkout's price lock.
  *
  * Side effects: through `StorefrontPayments.start`: one `payments` row and one gateway call.
  */
@@ -39,6 +41,7 @@ export class CheckoutPayService {
     private readonly policies: StorefrontPolicies,
     private readonly settings: SettingsService,
     private readonly sessions: CheckoutSessionService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -49,13 +52,23 @@ export class CheckoutPayService {
    * @param body the chosen method and the return address
    * @param key the `Idempotency-Key`
    * @returns the payment, its gateway and the hosted page
-   * @throws {AppError} `NOT_FOUND`, `INVALID_TRANSITION`, `ACCOUNT_SUSPENDED`, `VALIDATION_FAILED`, the idempotency refusals, `GATEWAY_ERROR`
+   * @throws {AppError} `NOT_FOUND`, `INVALID_TRANSITION`, `ACCOUNT_SUSPENDED`, `VALIDATION_FAILED` (also `not_shop` on `returnUrl` and
+   *   `not_chargeable` on `gateway`, decision 048), `RATE_LIMITED` (429: every payment page of the checkout is open), the idempotency
+   *   refusals, `GATEWAY_ERROR`
    */
   async pay(
     sessionId: number,
     body: BodyOf<typeof payCheckoutSession>,
     key: string,
   ): Promise<{ view: StartedPaymentView; replayed: boolean }> {
+    // The gateway sends the buyer to this address: only the shop's own origins (decision 048). Checked before a replay, so the same key
+    // with another address is refused too.
+    const origins = [this.config.http.storeBaseUrl, this.config.http.portalBaseUrl, ...this.config.http.shopOrigins];
+    if (!isShopAddress(body.returnUrl, origins)) {
+      throw new AppError('VALIDATION_FAILED', {
+        errors: [{ field: 'returnUrl', code: 'not_shop', message: 'Use an address of this shop.' }],
+      });
+    }
     const session = await findCheckoutSession(this.db.db, sessionId);
     if (!session) throw new AppError('NOT_FOUND', { detail: 'This link is not valid.' });
     const currency = await this.money.byCode(this.db.db, session.currency);
@@ -77,6 +90,7 @@ export class CheckoutPayService {
         description: `Order for ${(await this.sessions.view(this.db.db, session)).service.name}`,
         // The policy that asks for 3-D Secure on cards (RULES settings 5): money's `asks3ds` judges it with the method (decision 049).
         threeDsPolicy: await this.settings.get(REQUIRE_3DS_KEY),
+        lockEndsAt: session.expiresAt,
       },
       () => this.assertPayable(sessionId),
     );

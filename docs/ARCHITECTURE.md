@@ -127,8 +127,8 @@ One engine for B2B and B2C (decision 025 holds the exact statuses and transition
 update (`UPDATE … WHERE id = $1 AND status = $2`) plus an `order_events` row in the same transaction. B2B: price
 resolved at placement, the hold posted (`order` event) before dispatch; completion posts `complete`, rejection posts
 `reject`. B2C: a checkout session locks price, tax and FX; the order is created only when the gateway webhook confirms
-payment (`b2c_pay`, `b2c_fee`), then dispatched; delivery posts `b2c_deliver`. Dispatch and polling run in the
-worker (`supplier-dispatch`, `supplier-poll`): poll every minute in the first hour, then every 5 minutes, then every
+payment and the gateway's own record agrees (decision 048) (`b2c_pay`, `b2c_fee`), then dispatched; delivery posts
+`b2c_deliver`. Dispatch and polling run in the worker (`supplier-dispatch`, `supplier-poll`): poll every minute in the first hour, then every 5 minutes, then every
 30 minutes (map); the switch to 30 minutes is a setting, default after 24 h (the map does not fix it). A supplier
 timeout on dispatch never re-sends: `dispatch_state` becomes `needs_attention`, the status stays pending, the hold
 stays, staff are alerted and resolve it with fetch or a manual dispatch (scenario `timeout`). While the supplier call is in flight

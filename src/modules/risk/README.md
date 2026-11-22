@@ -39,7 +39,14 @@ payment method, the session's IMEI, the event's card fingerprint, the tax countr
 before. `review` places it `held` (no stock claimed, no `order.dispatch_requested`, a `review` timeline line with `holdReason`).
 `block` places it `held` and `RiskDecisionsService.refundBlocked` rejects it at once as the system: a `processing` refund, the
 `b2c_refund` journal and the `refund.process` event of feature 16, the first signal as the reason, no blocklist entry, no audit row,
-and the assessment records outcome `refunded` with no reviewer. A risk refund is always paid out, even while `autoRefundFailed` is off.
+and the assessment records outcome `refunded` with no reviewer. A risk refund is always paid out, even while `autoRefundFailed` is off,
+except a payment the buyer disputed with the card network: it opens a refund request for staff (decision 048).
+
+**Review reasons from the payment side** (decision 048): `ScreeningInput.reviewReasons` are facts the payment found that need staff
+review whatever the score (a payment made after the checkout's price lock ended). `withReviewReasons` makes an `allow` a `review`, puts
+the reasons first in the signals (a `block` keeps its hard signals first) and the first reason is the hold sentence.
+`RiskDecisionsService.refundBlocked` takes an optional `reason` (else the sentence from the signals): the capture uses it to refund a
+late payment at once when the gateway can refund.
 
 - **Signals** (points, `domain/risk-scoring.ts`, the demo's table): disposable email 22, first order above the rule's USD 18, VPN or
   proxy 15, IP country differs from card country 25, prepaid card 12, a 4th order in an hour from one address or customer 20,

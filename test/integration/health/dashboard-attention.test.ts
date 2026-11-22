@@ -11,7 +11,9 @@ import { clearIdentityCaches } from '../../support/auth';
 import { DAY, HOUR, MINUTE, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertUsd } from '../../support/fixtures';
+import { insertOrderPayment } from '../../support/customers';
 import { insertOrderRow, ordersWorld } from '../../support/orders';
+import { insertCustomerRow } from '../../support/storefront';
 
 const clock = new TestClock();
 let t: TestApp;
@@ -304,12 +306,21 @@ describe('the storefront attention items', () => {
     expect(item(await dashboard(api, 'scope=b2b&days=7'), 'tickets_late')).toBeUndefined();
   });
 
+  /** A storefront customer's paid order: the refunds the Refunds page lists name its customer, its payment and its order. */
+  async function customerPayment(db: Database) {
+    const world = await ordersWorld(db);
+    const customerId = await insertCustomerRow(db);
+    const order = await insertOrderRow(db, { serviceId: world.auto.serviceId, customerId, source: 'store' });
+    const paymentId = await insertOrderPayment(db, order.id, customerId);
+    return { customerId, orderId: order.id, paymentId };
+  }
+
   it('raises requested refunds as medium and failed refunds as high with the first one and its reason', async () => {
     const api = await adminWith(t, ['dashboard:read']);
     const { db } = await testDb();
-    const world = await ordersWorld(db);
+    const paid = await customerPayment(db);
     const refund = (status: 'requested' | 'failed', over: Partial<typeof s.refunds.$inferInsert> = {}) => ({
-      clientId: world.merchant.id,
+      ...paid,
       amount: '5.0000',
       currency: 'USD',
       method: 'manual' as const,
@@ -345,6 +356,26 @@ describe('the storefront attention items', () => {
     expect(body.navCounts.refunds.open).toBe(3);
     // Neither is a merchant item, and neither is shown for the merchants' scope.
     expect(kinds(await dashboard(api, 'scope=b2b&days=7'))).not.toContain('refunds_failed');
+  });
+
+  it('a failed refund without a customer is not counted in refunds_failed (decision 048)', async () => {
+    const api = await adminWith(t, ['dashboard:read']);
+    const { db } = await testDb();
+    const paid = await customerPayment(db);
+    // The automatic return of a held payment names only the payment: the Refunds page cannot show it, the integrity check does.
+    await db.insert(s.refunds).values({
+      paymentId: paid.paymentId,
+      amount: '5.0000',
+      currency: 'USD',
+      reason: 'Sent back automatically: this payment could not pay its checkout',
+      method: 'original',
+      status: 'failed',
+      requestedByType: 'system',
+      createdAt: ago(HOUR),
+    });
+    const body = await dashboard(api);
+    expect(kinds(body)).not.toContain('refunds_failed');
+    expect(body.navCounts.refunds.open).toBe(0);
   });
 });
 

@@ -9,7 +9,7 @@ import { normalizeImei } from '../../orders';
 import type { RiskDecision } from '../db/schema';
 import { isDisposableEmail } from '../domain/disposable-domains';
 import { imeiHashInput } from '../domain/imei-check';
-import { type ScreeningFacts, holdReason, scorePayment } from '../domain/risk-scoring';
+import { type ScreeningFacts, holdReason, scorePayment, withReviewReasons } from '../domain/risk-scoring';
 import { insertAssessment, linkAssessmentToOrder } from '../infra/assessment.repository';
 import { wasCheckedBlacklisted } from '../infra/imei-check-admin.repository';
 import { countEarlierOrders } from '../infra/foreign-reads.repository';
@@ -47,6 +47,11 @@ export interface ScreeningInput {
   readonly cardDetailsMissing?: boolean;
   /** The visitor's address is a known VPN or proxy. */
   readonly proxyIp?: boolean;
+  /**
+   * Facts the payment side found that need staff review whatever the score: each is a signal and the decision is at least review
+   * (decision 048: a payment made after the checkout's price lock ended). The first one is the hold sentence.
+   */
+  readonly reviewReasons?: readonly string[];
 }
 
 /** The verdict the payment acts on. */
@@ -145,7 +150,7 @@ export class RiskScreening {
         (await wasCheckedBlacklisted(tx, this.tokens.lookupHash(imeiHashInput(imei)))),
       blocklistHits: hits.map((hit) => hit.sentence),
     };
-    const verdict = scorePayment(facts, rules);
+    const verdict = withReviewReasons(scorePayment(facts, rules), input.reviewReasons ?? []);
     const row = await insertAssessment(tx, {
       checkoutSessionId: input.checkoutSessionId ?? null,
       orderId: input.orderId ?? null,
@@ -165,7 +170,7 @@ export class RiskScreening {
       decision: verdict.decision,
       hold,
       block: verdict.decision === 'block',
-      holdReason: hold ? holdReason(verdict) : null,
+      holdReason: hold ? (input.reviewReasons?.[0] ?? holdReason(verdict)) : null,
     };
   }
 

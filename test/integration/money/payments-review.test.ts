@@ -278,6 +278,10 @@ describe('POST /admin/payments/:id/approve (a confirmation that does not match i
     );
   });
 
+  it('never credits a payment whose confirmation does not say the amount (decision 048)', async () => {
+    await expectNeverCredited(await confirmedThroughWebhook({}), 'does not say how much was paid');
+  });
+
   it('never credits a payment in another currency, even for the same number', async () => {
     await expectNeverCredited(
       await confirmedThroughWebhook({ amount: 10000, currency: 'eur' }),

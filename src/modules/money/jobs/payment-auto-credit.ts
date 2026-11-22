@@ -8,11 +8,16 @@ import { OutboundHttp } from '../../../infra/http';
 import { AuditService } from '../../platform';
 import type { Payment, PaymentGateway } from '../db/schema';
 import { paymentRef } from '../domain/invoice-rules';
-import { type GatewayStatus, decideAutoCredit } from '../domain/payment-rules';
+import { type GatewayStatus, decideAutoCredit, topUpRecordProblem } from '../domain/payment-rules';
 import { GatewayCredentialsVault } from '../application/gateway-credentials';
 import { PaymentCrediting } from '../application/payment-crediting';
 import { TopUpScreeningHooks } from '../application/top-up-screening-hooks';
-import { GATEWAY_HTTP_POLICY, type GatewayHttpPolicy } from '../infra/gateway-drivers/driver';
+import {
+  GATEWAY_CALL_TIMEOUT_MS,
+  GATEWAY_HTTP_POLICY,
+  type GatewayHttpPolicy,
+  type PaymentCheck,
+} from '../infra/gateway-drivers/driver';
 import { driverFor } from '../infra/gateway-drivers/drivers';
 import { findWalletCustomer, loadBillingMerchants } from '../infra/foreign-directory.repository';
 import { findGateway } from '../infra/gateway.repository';
@@ -37,6 +42,13 @@ export interface AutoCreditSummary {
 
 type Outcome = 'credited' | 'review' | 'deferred' | 'skipped';
 
+/** What the gateway says about a payment now, and what in its record differs from the invoice (decision 048). */
+interface GatewayAnswer {
+  readonly status: GatewayStatus;
+  /** The note for staff when the record of a confirmed payment differs from its invoice. */
+  readonly problem?: string | undefined;
+}
+
 /**
  * Credits the top-ups of automatic gateways by themselves.
  *
@@ -48,7 +60,12 @@ type Outcome = 'credited' | 'review' | 'deferred' | 'skipped';
  * hold a row lock across a network call); the decision is taken under `SELECT ... FOR UPDATE` on the payment after re-checking
  * that it is still pending, so a staff decision racing the job changes nothing (the loser gets `PAYMENT_ALREADY_REVIEWED`) and
  * the ledger key `deposit:payment:<id>` makes a double credit impossible. A gateway that cannot be reached counts as "not
- * confirmed yet".
+ * confirmed yet". Decision 048: a card top-up is judged on the gateway's own record of the payment, read once (`verifyPayment`, the
+ * read the storefront capture makes, with the 10-second limit of the status check it replaced, {@link GATEWAY_CALL_TIMEOUT_MS}: the
+ * capture's 3 seconds are for a webhook that waits, and a job has the time): it is credited only when the record says paid, belongs
+ * to this invoice (when it states the reference its checkout was opened with), shows nothing refunded or disputed since, and shows
+ * the invoice's amount and currency as received; any difference sends it to staff review with a note that names it, and a record that
+ * ended unpaid counts as "no longer confirmed". Other automatic gateways are asked for the payment's status (`checkStatus`).
  *
  * Side effects: calls the gateway's API; credits wallets (see {@link PaymentCrediting}); writes `payments` and `audit_logs` rows.
  */
@@ -104,10 +121,12 @@ export class PaymentAutoCredit {
     const gateway = await findGateway(this.db.db, payment.gatewayId);
     if (!gateway) throw new Error(`${paymentRef(id)} points at a gateway that does not exist.`);
 
-    const status = await this.askGateway(payment, gateway);
-    if (status === undefined) return this.sendToReview(id, 'This gateway cannot be checked automatically.');
+    const answer = await this.askGateway(payment, gateway);
+    if (answer === undefined) return this.sendToReview(id, 'This gateway cannot be checked automatically.');
+    // A record that differs from the invoice is never credited automatically; staff look at it (decision 048).
+    if (answer.problem !== undefined) return this.sendToReview(id, answer.problem);
     const decision = decideAutoCredit({
-      gateway: status,
+      gateway: answer.status,
       capturedAt: payment.capturedAt ?? payment.createdAt,
       now: this.clock.now(),
     });
@@ -132,23 +151,44 @@ export class PaymentAutoCredit {
     return payment;
   }
 
-  /** What the gateway says now; `undefined` when the gateway has no code that can be asked. */
-  private async askGateway(payment: Payment, gateway: PaymentGateway): Promise<GatewayStatus | undefined> {
+  /**
+   * What the gateway says now; `undefined` when the gateway has no code that can be asked. A card top-up reads the gateway's record of the
+   * payment once and compares it with the invoice; any other automatic gateway is asked for the payment's status.
+   */
+  private async askGateway(payment: Payment, gateway: PaymentGateway): Promise<GatewayAnswer | undefined> {
     const driver = gateway.isManual ? undefined : driverFor(gateway.driver);
     if (!driver || !payment.gatewayTxnId) return undefined;
     try {
-      return await driver.checkStatus(
-        { http: this.http, policy: this.policy },
-        this.vault.read(gateway),
-        payment.gatewayTxnId,
-      );
+      const calls = { http: this.http, policy: this.policy };
+      if (driver.methodType === 'card' && driver.verifyPayment) {
+        // A job nobody waits on: the read gets the time of any gateway call, not the webhook's short limit (decision 048).
+        return await this.judgeRecord(
+          payment,
+          await driver.verifyPayment(calls, this.vault.read(gateway), payment.gatewayTxnId, {
+            timeoutMs: GATEWAY_CALL_TIMEOUT_MS,
+          }),
+        );
+      }
+      return { status: await driver.checkStatus(calls, this.vault.read(gateway), payment.gatewayTxnId) };
     } catch (error) {
       if (error instanceof AppError && error.code === 'GATEWAY_ERROR') {
         this.logger.warn(`Gateway ${gateway.code} could not confirm ${paymentRef(payment.id)} yet: ${error.message}`);
-        return 'pending';
+        return { status: 'pending' };
       }
       throw error;
     }
+  }
+
+  /**
+   * Turns the gateway's record of a card top-up into the job's answer: paid (with what differs from the invoice, if anything), ended
+   * unpaid (`failed`), or not paid yet (`pending`).
+   */
+  private async judgeRecord(payment: Payment, record: PaymentCheck): Promise<GatewayAnswer> {
+    if (record.status !== 'confirmed') return { status: record.ended === true ? 'failed' : 'pending' };
+    // Without an invoice the credit itself refuses the payment and sends it to staff.
+    const invoice = payment.invoiceId === null ? undefined : await findInvoice(this.db.db, payment.invoiceId);
+    const problem = invoice === undefined ? undefined : topUpRecordProblem(record, invoice);
+    return problem === undefined ? { status: 'confirmed' } : { status: 'confirmed', problem };
   }
 
   /**

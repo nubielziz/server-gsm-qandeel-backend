@@ -26,6 +26,41 @@ export async function tryLockPayKey(db: DbExecutor, sessionId: number, key: stri
 }
 
 /**
+ * Takes the lock of a checkout's pay calls, waiting for it.
+ *
+ * Why: decision 048: a checkout keeps at most a few live payment pages; the count and the insert of a new page run under this lock, so
+ * calls with different keys at once cannot all pass the count. Lock order of a pay call: the key's try-lock, then this lock.
+ *
+ * @param db the transaction
+ * @param sessionId the checkout session
+ */
+export async function lockPaySession(db: DbExecutor, sessionId: number): Promise<void> {
+  await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`pay-session:${sessionId}`}, 0))`);
+}
+
+/**
+ * Counts the live payment pages of a checkout: storefront payments that are pending and not held for staff.
+ *
+ * @param db the transaction (under {@link lockPaySession})
+ * @param sessionId the checkout session
+ * @returns the number of live pages, a page still being opened included
+ */
+export async function countLivePayments(db: DbExecutor, sessionId: number): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(payments)
+    .where(
+      and(
+        eq(payments.checkoutSessionId, sessionId),
+        eq(payments.purpose, 'order'),
+        eq(payments.status, 'pending'),
+        eq(payments.reviewRequired, false),
+      ),
+    );
+  return row?.n ?? 0;
+}
+
+/**
  * Finds the payment a pay call opened under a key.
  *
  * @param db the database or a transaction

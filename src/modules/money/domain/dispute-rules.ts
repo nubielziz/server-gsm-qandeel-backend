@@ -4,6 +4,27 @@
 /** How long staff have to answer a dispute when the gateway names no deadline (days). */
 export const DEFAULT_EVIDENCE_DAYS = 7;
 
+/**
+ * How long a dispute event that names what is not recorded here yet (its payment, or its opening) is asked for again (hours).
+ *
+ * Why: decision 048: the gateway delivers such an event again, so it is applied once its payment or its opening is recorded; after this
+ * age it is acknowledged and reported for staff instead, so an event that can never be applied does not fail for days.
+ */
+export const DISPUTE_RETRY_HOURS = 24;
+
+/**
+ * The sentence added to a held storefront payment's review note when a dispute event about it is acknowledged for staff.
+ *
+ * Why: decision 048: a held payment has no order for the dispute to attach to; staff closing it must know the buyer disputed it.
+ *
+ * @param reference the gateway's id of the dispute
+ * @param kind `created`, `won` or `lost`
+ * @returns the sentence
+ */
+export function heldDisputeNote(reference: string, kind: string): string {
+  return `Disputed at the gateway (${reference}, ${kind}).`;
+}
+
 /** The longest note staff may add to an evidence submission. */
 export const MAX_EVIDENCE_NOTE_LENGTH = 1000;
 

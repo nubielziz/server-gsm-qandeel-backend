@@ -227,6 +227,70 @@ export async function findJournal(db: DbExecutor, id: number): Promise<JournalRo
 
 type Header = Omit<JournalRow, 'entries'>;
 
+/** A posted journal as its reversal needs it: the header, its currency and its entries with their accounts. */
+export interface ReversibleJournal {
+  readonly id: number;
+  readonly kind: string;
+  readonly refType: LedgerRefType;
+  readonly refId: number;
+  /** The currency of its accounts (one per journal). */
+  readonly currency: string;
+  readonly entries: ReadonlyArray<{
+    /** Signed, debit positive. */
+    readonly amount: string;
+    readonly account: {
+      readonly kind: LedgerAccountKind;
+      readonly ownerType: LedgerOwnerType | null;
+      readonly ownerId: number | null;
+    };
+  }>;
+}
+
+/**
+ * Reads a journal with the currency and the accounts of its entries, to post its reversal.
+ *
+ * Why: decision 048: the journal of a refund closed unsent because its payment was charged back is undone by a mirrored transaction.
+ *
+ * @param db the caller's transaction
+ * @param id the `ledger_transactions.id`
+ * @returns the journal, or `undefined` when there is none
+ */
+export async function findReversibleJournal(db: DbExecutor, id: number): Promise<ReversibleJournal | undefined> {
+  const [header] = await db
+    .select({
+      id: ledgerTransactions.id,
+      kind: ledgerTransactions.kind,
+      refType: ledgerTransactions.refType,
+      refId: ledgerTransactions.refId,
+    })
+    .from(ledgerTransactions)
+    .where(eq(ledgerTransactions.id, id))
+    .limit(1);
+  if (!header) return undefined;
+  const lines = await db
+    .select({
+      amount: ledgerEntries.amount,
+      kind: ledgerAccounts.kind,
+      ownerType: ledgerAccounts.ownerType,
+      ownerId: ledgerAccounts.ownerId,
+      currency: ledgerAccounts.currency,
+    })
+    .from(ledgerEntries)
+    .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, ledgerEntries.accountId))
+    .where(eq(ledgerEntries.transactionId, id))
+    .orderBy(asc(ledgerEntries.id));
+  const currency = lines[0]?.currency;
+  if (currency === undefined) return undefined;
+  return {
+    ...header,
+    currency,
+    entries: lines.map((line) => ({
+      amount: line.amount,
+      account: { kind: line.kind, ownerType: line.ownerType, ownerId: line.ownerId },
+    })),
+  };
+}
+
 async function withEntries(db: DbExecutor, headers: readonly Header[]): Promise<JournalRow[]> {
   if (headers.length === 0) return [];
   const lines = await db

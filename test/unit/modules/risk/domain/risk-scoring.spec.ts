@@ -2,7 +2,13 @@
 import { describe, expect, it } from 'bun:test';
 import { Money } from '@src/common/money';
 import { defaultRuleSet, mergeRules } from '@src/modules/risk/domain/risk-rules';
-import { SIGNAL_POINTS, type ScreeningFacts, holdReason, scorePayment } from '@src/modules/risk/domain/risk-scoring';
+import {
+  SIGNAL_POINTS,
+  type ScreeningFacts,
+  holdReason,
+  scorePayment,
+  withReviewReasons,
+} from '@src/modules/risk/domain/risk-scoring';
 
 const CALM: ScreeningFacts = {
   amountUsd: Money.of('15.0000'),
@@ -169,5 +175,29 @@ describe('holdReason', () => {
     expect(holdReason({ score: 55, signals: ['a', 'b'] })).toBe('Risk hold: score 55. a and 1 more signal');
     expect(holdReason({ score: 55, signals: ['a'] })).toBe('Risk hold: score 55. a');
     expect(holdReason({ score: 55, signals: [] })).toBe('Risk hold: score 55.');
+  });
+});
+
+describe('withReviewReasons (decision 048)', () => {
+  const late = "Paid 31 minutes after the checkout's price lock ended";
+
+  it('a review reason holds a payment the rules allow, and leaves a block a block', () => {
+    expect(withReviewReasons({ score: 0, signals: [], decision: 'allow' }, [late])).toEqual({
+      score: 0,
+      signals: [late],
+      decision: 'review',
+    });
+    expect(withReviewReasons({ score: 60, signals: ['Prepaid card BIN'], decision: 'review' }, [late])).toEqual({
+      score: 60,
+      signals: [late, 'Prepaid card BIN'],
+      decision: 'review',
+    });
+    expect(withReviewReasons({ score: 100, signals: ['Blocked email'], decision: 'block' }, [late])).toEqual({
+      score: 100,
+      signals: ['Blocked email', late],
+      decision: 'block',
+    });
+    const verdict = { score: 10, signals: ['VPN or proxy IP'], decision: 'allow' } as const;
+    expect(withReviewReasons(verdict, [])).toBe(verdict);
   });
 });

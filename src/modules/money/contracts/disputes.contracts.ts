@@ -165,7 +165,9 @@ export const acceptDispute = defineRoute({
   description:
     'Accepts the loss: the dispute is `lost` with `resolvedAt`, the payment `chargeback`, and one `b2c_chargeback` journal posts the ' +
     'amount and the dispute fee (Dr chargeback_loss, Cr gateway_clearing, key `dispute:<id>:chargeback`), kept in `disputes.ledger_tx_id` ' +
-    'so a later `lost` event from the gateway posts nothing again. The customer is not blocked (M115). `409 DISPUTE_NOT_OPEN` when it ' +
+    'so a later `lost` event from the gateway posts nothing again. Refunds of the payment the gateway has not paid (requested, waiting ' +
+    'to be sent, or failed) are closed `rejected` with the note "Not sent: the payment was charged back." and their journals reversed, so ' +
+    'the money leaves the books once (decision 048). The customer is not blocked (M115). `409 DISPUTE_NOT_OPEN` when it ' +
     'no longer waits for evidence.',
   tags: ['refunds'],
   surface: 'admin',
@@ -190,15 +192,19 @@ export const disputeWebhook = defineRoute({
     '5 minutes of now and an event id not seen before; otherwise `400 WEBHOOK_SIGNATURE_INVALID`. `dispute.created` records the ' +
     'dispute once (the gateway id is unique per payment) with its evidence deadline and marks the payment `disputed` and the order ' +
     'timeline; a dispute won returns the payment to `captured` (or `partial_refund`/`refunded` when refunds completed); a dispute lost ' +
-    'posts the chargeback journal once and marks the payment `chargeback`. A repeat of an event answers `200` and changes nothing; events ' +
-    'the shop does not use are acknowledged with `200`.',
+    'posts the chargeback journal once and marks the payment `chargeback`, and closes the refunds of the payment the gateway has not paid ' +
+    '(their journals reversed, decision 048). A repeat of an event answers `200` and changes nothing; event ' +
+    'types the shop does not use are acknowledged with `200`; an event that names a payment not recorded yet, a payment held for staff, ' +
+    'or a closed dispute whose opening was not recorded yet answers `503 UNAVAILABLE`, so the gateway delivers it again (decision 048; ' +
+    'once the event is 24 hours old it is acknowledged with `200` and reported for staff). A delivery the database could not apply because ' +
+    'it met another change at the same moment writes nothing and answers `503 UNAVAILABLE` as well, so the gateway delivers it again.',
   tags: ['webhooks'],
   surface: 'hooks',
   access: 'gateway-signature',
   params: z.object({ gateway: z.string() }),
   body: zJsonObject,
   success: { status: 200, schema: z.object({ received: z.literal(true), duplicate: z.boolean().optional() }) },
-  errors: ['WEBHOOK_SIGNATURE_INVALID', 'VALIDATION_FAILED'],
+  errors: ['WEBHOOK_SIGNATURE_INVALID', 'VALIDATION_FAILED', 'UNAVAILABLE'],
   examples: {
     request: {
       id: 'evt_d1',

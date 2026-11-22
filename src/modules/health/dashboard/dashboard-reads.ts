@@ -341,9 +341,11 @@ export async function moneyFacts(db: DbExecutor, now: Date): Promise<MoneyFacts>
       from refunds r join currencies cur on cur.code = r.currency
       left join orders po on po.id = r.order_id left join checkout_sessions cs on cs.id = po.checkout_session_id
       where r.status = 'requested'`),
+      // The item links to the Refunds page, which lists customer refunds only; a failed automatic return of a held payment is a finding of
+      // the integrity check instead (decision 048).
       one<{ n: number; id: number | null; reason: string | null }>(sql`
       select count(*)::int as n, (array_agg(id order by created_at, id))[1] as id, (array_agg(reason order by created_at, id))[1] as reason
-      from refunds where status = 'failed'`),
+      from refunds where status = 'failed' and customer_id is not null`),
       // Active currencies only (a switched-off one needs no refresh); money's rule decides which are stale.
       db.execute<{ code: string; updated: Date; held: Date | null }>(sql`
       select code, rate_updated_at as updated, rate_held_at as held from currencies where is_active order by rate_updated_at, code`),

@@ -76,6 +76,7 @@ async function confirmedTopUp(amountCents = 5000, reference = `pi_${crypto.rando
       checkoutUrl: 'https://pay.example/cs_1',
     })
     .returning();
+  fake.paid(reference, { minor: amountCents, reference: invoice!.number });
   const body = cardEvent(`evt_${crypto.randomUUID()}`, invoice!.number, { reference, amount: amountCents });
   const res = await postWebhook(t, 'card', body, signedHeaders(WEBHOOK_KEY, body, clock));
   return { customer, gatewayId, invoice: invoice!, body, res, reference };

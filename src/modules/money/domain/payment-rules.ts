@@ -117,20 +117,98 @@ export function decideAutoCredit(input: {
  * Why: a payment is credited at its invoice's amount, so a confirmation of another amount or another currency must never credit
  * (money that never arrived). The webhook sends such a payment to staff review with this text, and crediting refuses it again from
  * the stored gateway event, so neither staff approval nor the automatic job can credit it; staff reject it and adjust the wallet.
+ * Decision 048: an event that does not say what was paid (no currency, or no amount it states exactly) is a mismatch too: the amount
+ * cannot be vouched for. The currency is judged first.
  *
  * @param reported what the gateway says (`null` when its event does not say)
  * @param invoice what the invoice asked for
- * @returns the reason the payment does not match, or `undefined` when it does (or the gateway does not say)
+ * @returns the reason the payment does not match, or `undefined` only when the gateway states the invoice's currency and amount
  */
 export function confirmationMismatch(
   reported: { readonly amount: string | null; readonly currency: string | null },
   invoice: { readonly amount: string; readonly currency: string },
 ): string | undefined {
-  if (reported.currency !== null && reported.currency.toUpperCase() !== invoice.currency.toUpperCase()) {
+  if (reported.currency === null) {
+    return `The gateway does not say in which currency this payment was made; the invoice is in ${invoice.currency}.`;
+  }
+  if (reported.currency.toUpperCase() !== invoice.currency.toUpperCase()) {
     return `The gateway reports a payment in ${reported.currency}; the invoice is in ${invoice.currency}.`;
   }
-  if (reported.amount !== null && !Money.of(reported.amount).eq(Money.of(invoice.amount))) {
+  if (reported.amount === null) {
+    return `The gateway does not say how much was paid; the invoice is ${invoice.amount}.`;
+  }
+  if (!Money.of(reported.amount).eq(Money.of(invoice.amount))) {
     return `The gateway reports ${Money.of(reported.amount).toWire()} paid; the invoice is ${invoice.amount}.`;
   }
   return undefined;
+}
+
+/**
+ * The review note of a confirmation for a top-up invoice that is no longer open.
+ *
+ * Why: decision 048: a confirmation for an invoice that is `paid` or `void` is money the gateway holds for the customer or merchant,
+ * so it is recorded for staff review instead of being dropped; crediting refuses an invoice that is not open, so it is never credited.
+ *
+ * @param invoiceNumber the invoice's number (`INV-2026-0001`)
+ * @param status the invoice's status (`paid` or `void`)
+ * @returns the sentence for `payments.review_note`
+ */
+export function closedInvoiceNote(invoiceNumber: string, status: string): string {
+  return `The gateway confirmed this payment for ${invoiceNumber}, which is ${status}: it is never credited. Refund it at the gateway or adjust the wallet by hand, then reject it (the reason you give is sent to the customer).`;
+}
+
+/** What a gateway's record can show happened to a payment after it was made (decision 048). */
+export const PAYMENT_AFTERMATHS = ['refunded', 'partially_refunded', 'disputed'] as const;
+
+/** One value of {@link PAYMENT_AFTERMATHS}. */
+export type PaymentAftermath = (typeof PAYMENT_AFTERMATHS)[number];
+
+/**
+ * The note of a payment whose gateway record shows that its money went back, in full or in part, or is disputed.
+ *
+ * Why: decision 048: such a payment is not money to use as quoted. A storefront capture holds it (nothing is sent back: the money already
+ * went back or is contested) and the automatic credit sends a top-up to staff review with this note.
+ *
+ * @param aftermath what the record shows
+ * @returns the sentence for `payments.review_note`
+ */
+export function aftermathNote(aftermath: PaymentAftermath): string {
+  if (aftermath === 'refunded')
+    return "The gateway's record shows this payment was refunded in full after it was made.";
+  if (aftermath === 'partially_refunded') {
+    return "The gateway's record shows part of this payment was refunded after it was made.";
+  }
+  return "The gateway's record shows this payment is disputed.";
+}
+
+/**
+ * What differs between the gateway's record of a top-up payment and its invoice.
+ *
+ * Why: decision 048: before a top-up is credited automatically the gateway's own record must belong to this invoice (when it states the
+ * reference its checkout was opened with: a page opened before the record carried one states none and passes), show nothing refunded or
+ * disputed since, and show the invoice's amount and currency as received (an amount or currency the record does not state is a
+ * difference). Every difference is named, so staff see what to check.
+ *
+ * @param record what the gateway's record says (a record that says paid)
+ * @param invoice the invoice's number, amount and currency
+ * @returns the note for staff review, or `undefined` when the record matches the invoice
+ */
+export function topUpRecordProblem(
+  record: {
+    readonly amount: string | null;
+    readonly currency: string | null;
+    readonly belongsTo: string | null;
+    readonly afterPayment?: PaymentAftermath | undefined;
+  },
+  invoice: { readonly number: string; readonly amount: string; readonly currency: string },
+): string | undefined {
+  const mismatch = confirmationMismatch(record, invoice);
+  const problems = [
+    record.belongsTo !== null && record.belongsTo !== invoice.number
+      ? `The gateway's record of this payment names ${record.belongsTo}, not ${invoice.number}.`
+      : undefined,
+    record.afterPayment === undefined ? undefined : aftermathNote(record.afterPayment),
+    mismatch === undefined ? undefined : `The gateway's record does not match the invoice. ${mismatch}`,
+  ].filter((problem): problem is string => problem !== undefined);
+  return problems.length === 0 ? undefined : problems.join(' ');
 }

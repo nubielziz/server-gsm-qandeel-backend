@@ -6,6 +6,7 @@ import {
   STRIPE_THREE_DECIMAL,
   STRIPE_WHOLE_UNITS,
   STRIPE_ZERO_DECIMAL,
+  chargeableDecimals,
   exponentOf,
   fromMinor,
   toMinor,
@@ -88,5 +89,23 @@ describe('fromMinor', () => {
     expect(fromMinor(100, null)).toBeNull();
     expect(fromMinor(100, undefined)).toBeNull();
     expect(fromMinor(100, '')).toBeNull();
+  });
+});
+
+describe('chargeableDecimals (decision 048)', () => {
+  it('chargeable decimals per currency group', () => {
+    for (const code of ['JPY', 'isk', 'UGX', 'KRW']) expect(chargeableDecimals(code)).toBe(0);
+    for (const code of ['JOD', 'KWD', 'USD', 'gbp']) expect(chargeableDecimals(code)).toBe(2);
+    // An amount with that many decimals is charged exactly; one more decimal is not.
+    const cases: Array<[string, string, string]> = [
+      ['JPY', '500', '500.5'],
+      ['ISK', '5', '5.4'],
+      ['USD', '10.99', '10.995'],
+      ['JOD', '3.39', '3.396'],
+    ];
+    for (const [code, exact, inexact] of cases) {
+      expect(toMinor(Money.of(exact), code).exact).toBe(true);
+      expect(toMinor(Money.of(inexact), code).exact).toBe(false);
+    }
   });
 });

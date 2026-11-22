@@ -2,7 +2,8 @@
 // for customers and merchants: `created` records it and holds a customer's balance, `lost` claws the credit back once (below zero when it
 // was spent, frozen at commit), `won` closes it and leaves the hold; a top-up never credited posts nothing and can never be credited later;
 // `/admin/disputes` never serves a top-up dispute; the Deposits wire shows it; the books still reconcile.
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import { Logger } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
 import { type Database, schema as s } from '@src/infra/db';
 import { PaymentAutoCredit, PaymentAutoCreditModule } from '@src/modules/money';
@@ -87,6 +88,7 @@ async function topUp(owner: { customerId?: number; clientId?: number }, options:
     })
     .returning();
   const reference = `pi_${crypto.randomUUID()}`;
+  fake.paid(reference, { minor: 5000, reference: invoice!.number });
   const body = cardEvent(`evt_${crypto.randomUUID()}`, invoice!.number, { reference, amount: 5000 });
   expect((await postWebhook(t, 'card', body, signedHeaders(WEBHOOK_KEY, body, clock))).statusCode).toBe(200);
   if (options.credit !== false) {
@@ -100,11 +102,18 @@ async function topUp(owner: { customerId?: number; clientId?: number }, options:
 /** A signed card dispute event on a USD payment. */
 function dispute(
   reference: string,
-  options: { dispute?: string; type?: 'created' | 'won' | 'lost'; amount?: number; fee?: number } = {},
+  options: {
+    dispute?: string;
+    type?: 'created' | 'won' | 'lost';
+    amount?: number;
+    fee?: number;
+    created?: number;
+  } = {},
 ): string {
   const type = options.type ?? 'created';
   return JSON.stringify({
     id: `evt_${crypto.randomUUID()}`,
+    ...(options.created === undefined ? {} : { created: options.created }),
     type: type === 'created' ? 'charge.dispute.created' : 'charge.dispute.closed',
     data: {
       object: {
@@ -312,5 +321,30 @@ describe('a dispute of a merchant top-up', () => {
     expect(stored).toBeDefined();
     expect((await ledgerTotals(db)).sum).toBe('0.0000');
     expect(await findBalanceDifferences(db)).toEqual([]);
+  });
+});
+
+describe('a top-up dispute closed before it was opened here (decision 048)', () => {
+  it('answers 503 while the event is young, then closes it after the opening', async () => {
+    const merchant = await insertWalletMerchant(db, { name: 'Zain Mobile Hub' });
+    const { reference } = await topUp({ clientId: merchant.id });
+    const created = Math.floor(clock.nowMs() / 1000);
+    const lost = dispute(reference, { dispute: 'dp_topup_early', type: 'lost', created });
+    const warn = spyOn(Logger.prototype, 'warn');
+    try {
+      const early = await hook(t, clock, 'disputes', 'card', lost);
+      expect(early.statusCode).toBe(503);
+      expect(early.json()).toMatchObject({ code: 'UNAVAILABLE' });
+      expect(warn).toHaveBeenCalledWith(
+        'Gateway card: top-up dispute dp_topup_early was closed before it was opened here; asking for it again.',
+      );
+    } finally {
+      warn.mockRestore();
+    }
+    expect(await disputeRows()).toHaveLength(0);
+    await send(dispute(reference, { dispute: 'dp_topup_early', created }));
+    await send(lost);
+    expect((await disputeRows())[0]).toMatchObject({ gatewayDisputeId: 'dp_topup_early', status: 'lost' });
+    expect((await walletOf(db, merchant.id)).wallet).toBe('0.0000');
   });
 });

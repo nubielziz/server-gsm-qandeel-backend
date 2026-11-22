@@ -1,16 +1,20 @@
 // The `card` driver: a hosted card checkout that speaks the Stripe Checkout protocol (form-encoded API calls with a bearer key, and
 // webhooks signed `t=<unix>,v1=<hmac>` with the endpoint's own secret). Serves the gateways whose driver is `card` or `stripe`. Amounts
-// travel in each currency's minor units (`stripe-amounts.ts`); card details come from the PaymentIntent's latest Charge (feature 24C).
+// travel in each currency's minor units (`stripe-amounts.ts`); card details come from the PaymentIntent's latest Charge (feature 24C); the
+// record of a storefront payment is read back before its capture (decision 048).
 import { Logger } from '@nestjs/common';
 import { AppError } from '../../../../common/errors';
 import type { Money } from '../../../../common/money';
 import { assertWebhookSignature } from '../../../../infra/crypto';
+import type { PaymentAftermath } from '../../domain/payment-rules';
 import {
   type CheckoutRequest,
   DETAILS_TIMEOUT_MS,
   type DisputeEvent,
   type GatewayCalls,
   type GatewayCredentials,
+  GatewayRefusalError,
+  type PaymentCheck,
   type PaymentDetails,
   type PaymentEvent,
   type PaymentGatewayDriver,
@@ -18,10 +22,13 @@ import {
   type RefundEvent,
   type RefundRequest,
   gatewayCall,
+  httpsUrlOf,
+  notHttps,
   objectOf,
   textOf,
+  unixSecondsToDate,
 } from './driver';
-import { fromMinor, toMinor } from './stripe-amounts';
+import { chargeableDecimals, fromMinor, toMinor } from './stripe-amounts';
 
 const DEFAULT_API_BASE = 'https://api.stripe.com';
 const logger = new Logger('CardDriver');
@@ -73,6 +80,18 @@ function cardDetailsOf(charge: Record<string, unknown> | undefined): PaymentDeta
   };
 }
 
+/**
+ * What a Charge shows happened to its money after the payment (decision 048): disputed, refunded in full (`refunded`), or refunded in part
+ * (`amount_refunded` above zero). A dispute is named first: the money is contested whatever was refunded.
+ */
+function aftermathOf(charge: Record<string, unknown> | undefined): PaymentAftermath | undefined {
+  if (!charge) return undefined;
+  if (charge['disputed'] === true) return 'disputed';
+  if (charge['refunded'] === true) return 'refunded';
+  const refunded = charge['amount_refunded'];
+  return typeof refunded === 'number' && refunded > 0 ? 'partially_refunded' : undefined;
+}
+
 /** The result a refund event reports, by Stripe's event type and the refund's `status` (plan 24C § 2.3). */
 function refundResultOf(type: string | undefined, status: string | undefined): RefundEvent['kind'] | undefined {
   if (type === 'refund.failed') return 'failed';
@@ -81,11 +100,6 @@ function refundResultOf(type: string | undefined, status: string | undefined): R
   if (status === 'succeeded') return 'succeeded';
   if (status === 'failed' || status === 'canceled') return 'failed';
   return undefined;
-}
-
-/** A timestamp in unix seconds as a date, or `null`. */
-function dateOf(seconds: unknown): Date | null {
-  return typeof seconds === 'number' && Number.isFinite(seconds) ? new Date(seconds * 1000) : null;
 }
 
 function bearer(credentials: GatewayCredentials): Record<string, string> {
@@ -98,7 +112,10 @@ function bearer(credentials: GatewayCredentials): Record<string, string> {
  *
  * Why: the demo's card gateway (hosted checkout page, 3D Secure). A confirmation is the `checkout.session.completed` event with
  * `payment_status` paid (or the later async success); an expired or failed session is `failed`. The payment's reference is the
- * payment intent, which the status check reads again before the wallet is credited (user rule 6).
+ * payment intent, which the status check reads again before the wallet is credited (user rule 6). Decision 048: the hosted page closes
+ * at the request's `expiresAt` (`expires_at`), the payment intent carries the reference billing gave it (`metadata[reference]`), the
+ * checkout address must be https, and `verifyPayment` reads the record of a payment back (status, amount received, currency, charge time,
+ * card and reference, whether it ended unpaid, and whether its latest charge was refunded or disputed since).
  *
  * @see docs/contract/endpoints/money.md (POST /webhooks/payments/:gateway)
  */
@@ -141,6 +158,7 @@ export const cardDriver: PaymentGatewayDriver = {
       amount: fromMinor(session['amount_total'], currency),
       currency: currency ? currency.toUpperCase() : null,
       raw: event as PaymentEvent['raw'],
+      occurredAt: unixSecondsToDate(event['created']),
     };
   },
 
@@ -157,6 +175,11 @@ export const cardDriver: PaymentGatewayDriver = {
       'line_items[0][price_data][product_data][name]': request.description,
     });
     if (request.require3ds) form.set('payment_method_options[card][request_three_d_secure]', 'any');
+    // The payment's own record names the reference it was opened for, so a confirmation can be matched to its checkout (decision 048).
+    form.set('payment_intent_data[metadata][reference]', request.invoiceNumber);
+    if (request.expiresAt !== undefined) {
+      form.set('expires_at', String(Math.floor(request.expiresAt.getTime() / 1000)));
+    }
     const answer = await gatewayCall(calls, {
       url: `${credentials.apiBase ?? DEFAULT_API_BASE}/v1/checkout/sessions`,
       method: 'POST',
@@ -167,9 +190,70 @@ export const cardDriver: PaymentGatewayDriver = {
       },
       body: form.toString(),
     });
-    const paymentUrl = textOf(answer['url']);
-    if (!paymentUrl) throw new AppError('GATEWAY_ERROR', { detail: 'The payment gateway gave no checkout address.' });
+    if (textOf(answer['url']) === undefined) {
+      throw new AppError('GATEWAY_ERROR', { detail: 'The payment gateway gave no checkout address.' });
+    }
+    const paymentUrl = httpsUrlOf(answer['url']);
+    if (paymentUrl === undefined) throw notHttps();
     return { paymentUrl };
+  },
+
+  maxChargeDecimals: chargeableDecimals,
+
+  async verifyPayment(calls, credentials, reference, options): Promise<PaymentCheck> {
+    const apiBase = credentials.apiBase ?? DEFAULT_API_BASE;
+    const timeoutMs = options?.timeoutMs ?? DETAILS_TIMEOUT_MS;
+    try {
+      if (reference.startsWith('pi_')) {
+        const answer = await gatewayCall(calls, {
+          url: `${apiBase}/v1/payment_intents/${encodeURIComponent(reference)}?expand[]=latest_charge`,
+          method: 'GET',
+          headers: bearer(credentials),
+          timeoutMs,
+        });
+        const charge = objectOf(answer['latest_charge']);
+        const currency = textOf(answer['currency']);
+        const status = textOf(answer['status']);
+        const afterPayment = aftermathOf(charge);
+        return {
+          status: status === 'succeeded' ? 'confirmed' : 'not_confirmed',
+          amount: fromMinor(answer['amount_received'], currency),
+          currency: currency?.toUpperCase() ?? null,
+          paidAt: unixSecondsToDate(charge?.['created']),
+          belongsTo: textOf(objectOf(answer['metadata'])?.['reference']) ?? null,
+          details: cardDetailsOf(charge),
+          // A canceled intent is never paid any more; one that waits for the buyer or the bank still may be.
+          ...(status === 'canceled' ? { ended: true } : {}),
+          ...(afterPayment === undefined ? {} : { afterPayment }),
+        };
+      }
+      const answer = await gatewayCall(calls, {
+        url: `${apiBase}/v1/checkout/sessions/${encodeURIComponent(reference)}`,
+        method: 'GET',
+        headers: bearer(credentials),
+        timeoutMs,
+      });
+      const currency = textOf(answer['currency']);
+      return {
+        // A paid session always has a payment intent, and its confirmation names that intent: a confirmation naming the session of a
+        // payment intent is not the record of a payment.
+        status:
+          answer['payment_status'] === 'paid' && textOf(answer['payment_intent']) === undefined
+            ? 'confirmed'
+            : 'not_confirmed',
+        amount: fromMinor(answer['amount_total'], currency),
+        currency: currency?.toUpperCase() ?? null,
+        paidAt: null,
+        belongsTo: textOf(answer['client_reference_id']) ?? null,
+        ...(answer['status'] === 'expired' ? { ended: true } : {}),
+      };
+    } catch (error) {
+      // A payment the gateway does not know is an answer, not a failure: it is not confirmed.
+      if (error instanceof GatewayRefusalError && error.gatewayStatus === 404) {
+        return { status: 'not_confirmed', amount: null, currency: null, paidAt: null, belongsTo: null };
+      }
+      throw error;
+    }
   },
 
   async checkStatus(calls, credentials, reference) {
@@ -267,7 +351,8 @@ export const cardDriver: PaymentGatewayDriver = {
       currency: currency ? currency.toUpperCase() : null,
       fee: fromMinor(dispute['fee'], currency),
       reasonCode: textOf(dispute['reason']) ?? 'general',
-      evidenceDueAt: dateOf(objectOf(dispute['evidence_details'])?.['due_by']),
+      evidenceDueAt: unixSecondsToDate(objectOf(dispute['evidence_details'])?.['due_by']),
+      occurredAt: unixSecondsToDate(event['created']),
       raw: event as DisputeEvent['raw'],
     };
   },

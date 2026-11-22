@@ -1,10 +1,13 @@
 // Unit tests of the top-up payment rules: when an automatic payment credits itself, who may review it, and what the job decides.
 import { describe, expect, it } from 'bun:test';
 import {
+  aftermathNote,
   autoCreditAtOf,
+  closedInvoiceNote,
   confirmationMismatch,
   decideAutoCredit,
   reviewRefusal,
+  topUpRecordProblem,
   waitingNote,
 } from '@src/modules/money/domain/payment-rules';
 
@@ -58,15 +61,20 @@ describe('confirmationMismatch', () => {
     expect(confirmationMismatch({ amount: '100', currency: 'usd' }, invoice)).toBeUndefined();
   });
 
-  it('accepts an event that does not say what was paid (the invoice is then the only record)', () => {
-    expect(confirmationMismatch({ amount: null, currency: null }, invoice)).toBeUndefined();
+  it('an event that does not say its currency or its amount is a mismatch', () => {
+    const noCurrency = 'The gateway does not say in which currency this payment was made; the invoice is in USD.';
+    expect(confirmationMismatch({ amount: null, currency: null }, invoice)).toBe(noCurrency);
+    expect(confirmationMismatch({ amount: '100.0000', currency: null }, invoice)).toBe(noCurrency);
+    expect(confirmationMismatch({ amount: null, currency: 'USD' }, invoice)).toBe(
+      'The gateway does not say how much was paid; the invoice is 100.0000.',
+    );
   });
 
   it('names a different amount, less or more, with both figures', () => {
     expect(confirmationMismatch({ amount: '50.0000', currency: 'USD' }, invoice)).toBe(
       'The gateway reports 50.0000 paid; the invoice is 100.0000.',
     );
-    expect(confirmationMismatch({ amount: '100.0001', currency: null }, invoice)).toBe(
+    expect(confirmationMismatch({ amount: '100.0001', currency: 'usd' }, invoice)).toBe(
       'The gateway reports 100.0001 paid; the invoice is 100.0000.',
     );
   });
@@ -77,6 +85,15 @@ describe('confirmationMismatch', () => {
     );
     expect(confirmationMismatch({ amount: '1.0000', currency: 'EUR' }, invoice)).toBe(
       'The gateway reports a payment in EUR; the invoice is in USD.',
+    );
+  });
+});
+
+describe('closedInvoiceNote', () => {
+  it('says the confirmed payment of a closed invoice is never credited and what staff do', () => {
+    expect(closedInvoiceNote('INV-2026-0001', 'void')).toBe(
+      'The gateway confirmed this payment for INV-2026-0001, which is void: it is never credited. Refund it at the gateway or ' +
+        'adjust the wallet by hand, then reject it (the reason you give is sent to the customer).',
     );
   });
 });
@@ -102,5 +119,55 @@ describe('decideAutoCredit', () => {
     });
     expect(decideAutoCredit({ gateway: 'pending', capturedAt: captured, now: at(24 * 60 - 1) }).action).toBe('recheck');
     expect(decideAutoCredit({ gateway: 'pending', capturedAt: captured, now: at(24 * 60) }).action).toBe('review');
+  });
+});
+
+describe('aftermathNote (decision 048)', () => {
+  it('says what the record shows happened to the money', () => {
+    expect(aftermathNote('refunded')).toBe(
+      "The gateway's record shows this payment was refunded in full after it was made.",
+    );
+    expect(aftermathNote('partially_refunded')).toBe(
+      "The gateway's record shows part of this payment was refunded after it was made.",
+    );
+    expect(aftermathNote('disputed')).toBe("The gateway's record shows this payment is disputed.");
+  });
+});
+
+describe('topUpRecordProblem (decision 048)', () => {
+  const invoice = { number: 'INV-2026-0007', amount: '100.0000', currency: 'USD' };
+  const record = { amount: '100.0000', currency: 'USD', belongsTo: 'INV-2026-0007' };
+
+  it('finds nothing when the record states the invoice, its amount and its currency, with or without a reference', () => {
+    expect(topUpRecordProblem(record, invoice)).toBeUndefined();
+    expect(topUpRecordProblem({ ...record, belongsTo: null }, invoice)).toBeUndefined();
+    expect(topUpRecordProblem({ ...record, currency: 'usd', amount: '100' }, invoice)).toBeUndefined();
+  });
+
+  it('names a record of another invoice, another amount or currency, one that does not say, and money that went back', () => {
+    expect(topUpRecordProblem({ ...record, belongsTo: 'INV-2026-0008' }, invoice)).toBe(
+      "The gateway's record of this payment names INV-2026-0008, not INV-2026-0007.",
+    );
+    expect(topUpRecordProblem({ ...record, amount: '50.0000' }, invoice)).toBe(
+      "The gateway's record does not match the invoice. The gateway reports 50.0000 paid; the invoice is 100.0000.",
+    );
+    expect(topUpRecordProblem({ ...record, currency: 'EUR' }, invoice)).toBe(
+      "The gateway's record does not match the invoice. The gateway reports a payment in EUR; the invoice is in USD.",
+    );
+    expect(topUpRecordProblem({ ...record, amount: null }, invoice)).toContain('does not say how much was paid');
+    expect(topUpRecordProblem({ ...record, currency: null }, invoice)).toContain('does not say in which currency');
+    expect(topUpRecordProblem({ ...record, afterPayment: 'partially_refunded' }, invoice)).toBe(
+      "The gateway's record shows part of this payment was refunded after it was made.",
+    );
+    // Every difference is named.
+    expect(
+      topUpRecordProblem(
+        { amount: '1.0000', currency: 'USD', belongsTo: 'INV-2026-0008', afterPayment: 'disputed' },
+        invoice,
+      ),
+    ).toBe(
+      "The gateway's record of this payment names INV-2026-0008, not INV-2026-0007. The gateway's record shows this payment is " +
+        "disputed. The gateway's record does not match the invoice. The gateway reports 1.0000 paid; the invoice is 100.0000.",
+    );
   });
 });

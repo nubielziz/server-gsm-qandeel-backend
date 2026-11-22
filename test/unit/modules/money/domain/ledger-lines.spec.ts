@@ -3,7 +3,13 @@
 import { describe, expect, it } from 'bun:test';
 import { AppError } from '@src/common/errors';
 import { Money } from '@src/common/money';
-import { type LedgerLine, assertBalanced, creditLine, debitLine } from '@src/modules/money/domain/ledger-lines';
+import {
+  type LedgerLine,
+  assertBalanced,
+  creditLine,
+  debitLine,
+  reversalLines,
+} from '@src/modules/money/domain/ledger-lines';
 
 const bank = { kind: 'bank' } as const;
 const revenue = { kind: 'revenue' } as const;
@@ -54,5 +60,27 @@ describe('debitLine and creditLine', () => {
   it('drop a zero amount and refuse a negative one', () => {
     expect(debitLine(bank, Money.zero())).toEqual([]);
     expect(() => creditLine(bank, m('-0.0001'))).toThrow(RangeError);
+  });
+});
+
+describe('reversalLines', () => {
+  it('mirrors every entry of a posted journal on the same account, so the two sum to zero (decision 048)', () => {
+    const clearing = { kind: 'gateway_clearing' } as const;
+    const funds = { kind: 'customer_funds' } as const;
+    const vat = { kind: 'vat_payable' } as const;
+    // A refund journal as stored (signed, debit positive): Dr customer funds 3.99, Dr VAT 0.80, Cr gateway clearing 4.79.
+    const lines = reversalLines([
+      { amount: m('3.9900'), account: funds },
+      { amount: m('0.8000'), account: vat },
+      { amount: m('-4.7900'), account: clearing },
+    ]);
+    expect(lines).toEqual([
+      ...creditLine(funds, m('3.99')),
+      ...creditLine(vat, m('0.80')),
+      ...debitLine(clearing, m('4.79')),
+    ]);
+    expect(code(lines)).toBe('ok');
+    const wallet = { kind: 'customer_wallet', ownerType: 'customer', ownerId: 7 } as const;
+    expect(reversalLines([{ amount: m('-2.0000'), account: wallet }])).toEqual(debitLine(wallet, m('2')));
   });
 });

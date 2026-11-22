@@ -5,7 +5,7 @@ import { Injectable } from '@nestjs/common';
 import type { DbExecutor } from '../../../infra/db';
 import type { Order } from '../../orders';
 import type { Payment, PaymentGateway } from '../db/schema';
-import type { PaymentEvent } from '../infra/gateway-drivers/driver';
+import type { PaymentCheck, PaymentEvent } from '../infra/gateway-drivers/driver';
 
 /** Who acts on an order: the timeline and the ledger record the same actor. */
 export interface PortActor {
@@ -93,6 +93,8 @@ export interface CaptureRequest {
   readonly gateway: PaymentGateway;
   /** What the driver read from the signed event. */
   readonly event: PaymentEvent;
+  /** What the gateway's own record said, read before the transaction; absent when the driver cannot check (decision 048). */
+  readonly check?: PaymentCheck | undefined;
 }
 
 /** What the capture did. */
@@ -100,6 +102,8 @@ export interface CaptureOutcome {
   /** `captured` created the order; `duplicate` means the session was already paid and the money was refunded; `held` left the payment for review. */
   readonly result: 'captured' | 'duplicate' | 'held';
   readonly orderId: number | null;
+  /** For `held`: the note stored on the payment; absent when nothing changed (decision 048). */
+  readonly reason?: string | undefined;
 }
 
 /**

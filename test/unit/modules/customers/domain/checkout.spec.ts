@@ -3,6 +3,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   consentState,
   effectiveStatus,
+  isShopAddress,
   maskEmail,
   maskImei,
   requiredConsents,
@@ -101,5 +102,29 @@ describe('masks', () => {
   it('shows the last four digits of an IMEI', () => {
     expect(maskImei('353890110000004')).toBe('•••••••••••0004');
     expect(maskImei('123')).toBe('123');
+  });
+});
+
+describe('isShopAddress (decision 048)', () => {
+  const bases = ['https://shop.gsm.example', 'https://portal.gsm.example', 'not a url'];
+
+  it("a return address must be on the shop's origin", () => {
+    expect(isShopAddress('https://shop.gsm.example/en/checkout/return?token=abc', bases)).toBe(true);
+    expect(isShopAddress('https://shop.gsm.example', bases)).toBe(true);
+    expect(isShopAddress('https://portal.gsm.example/wallet', bases)).toBe(true);
+    for (const url of [
+      'https://other.example/return',
+      'https://shop.gsm.example:8443/return',
+      'http://shop.gsm.example/return',
+      'https://user@shop.gsm.example/return',
+      'https://user:pw@shop.gsm.example/return',
+      'https://shop.gsm.example.other.example/return',
+      'not a url',
+    ]) {
+      expect(isShopAddress(url, bases)).toBe(false);
+    }
+    // A development origin with a port is matched exactly.
+    expect(isShopAddress('http://localhost:5175/en/checkout/return', ['http://localhost:5175'])).toBe(true);
+    expect(isShopAddress('http://localhost:5174/en/checkout/return', ['http://localhost:5175'])).toBe(false);
   });
 });

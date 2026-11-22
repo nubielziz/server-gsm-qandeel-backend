@@ -120,17 +120,25 @@ export class RiskDecisionsService {
    * Why: RESOLUTIONS orders-suppliers-11 and RULES risk: a payment the rules block is never worked. The checkout places the order
    * `held` (the machine only refunds a held order) and this rejects it at once, with the same refund a staff decision gives: the whole
    * payment goes back through `B2cRefunds` (a `processing` refund, the `b2c_refund` journal and the `refund.process` event). There is no
-   * staff actor, the reason is the first signal, no blocklist entry is added and no audit row is written (the system acts).
+   * staff actor, the reason is the first signal, no blocklist entry is added and no audit row is written (the system acts). Decision 048:
+   * it is also the system's refund of a payment made after the checkout's price lock ended (an order placed held for review), with its own
+   * reason.
    *
    * @param tx the capture's transaction
-   * @param input the order just placed, its assessment (decision `block`) and the assessment's signals
+   * @param input the order just placed, its assessment (decision `block`, or `review` for a late payment), the assessment's signals and
+   *   the reason the buyer sees (default: the sentence from the signals)
    * @throws {AppError} whatever the machine refuses (`INVALID_TRANSITION` when the order is not held)
    */
   async refundBlocked(
     tx: DbExecutor,
-    input: { readonly orderId: number; readonly assessmentId: number; readonly signals: readonly string[] },
+    input: {
+      readonly orderId: number;
+      readonly assessmentId: number;
+      readonly signals: readonly string[];
+      readonly reason?: string | undefined;
+    },
   ): Promise<void> {
-    const reason = refundReason(input.signals, undefined);
+    const reason = input.reason ?? refundReason(input.signals, undefined);
     await this.rejectAndRefund(
       tx,
       input.assessmentId,

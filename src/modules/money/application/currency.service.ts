@@ -6,13 +6,14 @@ import { CLOCK, type Clock } from '../../../common/clock';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError, type FieldError } from '../../../common/errors';
 import { Money } from '../../../common/money';
-import { DbService } from '../../../infra/db';
+import { DbService, type DbExecutor } from '../../../infra/db';
 import { type PermissionHolder, requirePermission } from '../../identity';
 import { AuditService } from '../../platform';
 import type { CurrencySchema } from '../contracts/currencies.contracts';
 import type { Currency } from '../db/schema';
 import { BASE_CURRENCY } from '../domain/accounts';
 import {
+  chargeDecimalsProblem,
   checkDecimals,
   checkMarkup,
   checkRate,
@@ -20,6 +21,8 @@ import {
   isRateStale,
   normalizeDecimal,
 } from '../domain/currency-rules';
+import { driverFor } from '../infra/gateway-drivers/drivers';
+import { findStorefrontGateways } from '../infra/storefront-money.repository';
 import {
   type CurrencySortField,
   findCurrenciesByCode,
@@ -49,6 +52,12 @@ export type UpdateCurrencyInput = Partial<CreateCurrencyInput> & { readonly isAc
 const CODE = /^[A-Z]{3}$/;
 
 const refuse = (...errors: FieldError[]) => new AppError('VALIDATION_FAILED', { errors });
+/**
+ * The refusal of decimals the card method cannot charge: the detail repeats the field message, because the console's storefront switch
+ * sends `PATCH { isStorefront }` from a list row that has no decimals field to show it under (decision 048).
+ */
+const notChargeable = (problem: FieldError) =>
+  new AppError('VALIDATION_FAILED', { detail: problem.message, errors: [problem] });
 const notFound = () => new AppError('NOT_FOUND', { detail: 'No currency with this id.' });
 
 /** The audit snapshot of a currency: what an admin changes. */
@@ -71,6 +80,8 @@ function snapshotOf(row: Currency): Record<string, unknown> {
  *
  * Why: the Settings page lists currencies with their rate, markup and storefront switch (RULES settings 7); the storefront
  * prices come from the same rows. `rateToBase` is units of the currency per 1 USD (M167); USD is the base (rate 1, no markup).
+ *
+ * Decision 048: while an active storefront card method exists, a currency's decimals may not exceed what it charges exactly.
  *
  * Side effects: `create` and `update` write `currencies` and one audit row each.
  */
@@ -114,7 +125,8 @@ export class CurrencyService {
    * @param input the request body
    * @returns the new currency
    * @throws {AppError} `FORBIDDEN` (403) when the caller lacks `currencies:update`; `VALIDATION_FAILED` for a bad code (format or already listed), a blank name, a rate that is not above
-   *   zero, a markup outside 0 to 10 or decimals outside 0 to 4
+   *   zero, a markup outside 0 to 10 or decimals outside 0 to 4, and on `decimals` (`not_chargeable`) for more decimals than an active
+   *   storefront card method charges exactly (decision 048)
    */
   async create(caller: PermissionHolder, input: CreateCurrencyInput): Promise<WireCurrency> {
     // An exchange rate and its markup move money: they need the permission of the rate refresh (decision 046).
@@ -138,6 +150,9 @@ export class CurrencyService {
       if ((await findCurrenciesByCode(tx, [code])).length > 0) {
         throw refuse({ field: 'code', code: 'taken', message: 'This currency is already in the list.' });
       }
+      // Checked whatever `isStorefront` says: a currency switched on for the shop later keeps its decimals (decision 048).
+      const chargeable = chargeDecimalsProblem(code, input.decimals, await this.chargeDecimalsOf(tx, code));
+      if (chargeable) throw notChargeable(chargeable);
       const now = this.clock.now();
       const row = await insertCurrency(tx, {
         code,
@@ -179,7 +194,8 @@ export class CurrencyService {
    * @param input the fields to change
    * @returns the changed currency
    * @throws {AppError} `FORBIDDEN` (403) when a rate or markup is sent without `currencies:update`; `NOT_FOUND`; `VALIDATION_FAILED` for a bad rate, markup, decimals or name, a code change, or a change
-   *   of rate, markup or activity on the base currency
+   *   of rate, markup or activity on the base currency; on `decimals` (`not_chargeable`) when `decimals` is sent or `isStorefront` or
+   *   `isActive` is switched on and the decimals exceed what an active storefront card method charges exactly (decision 048)
    */
   async update(caller: PermissionHolder, id: number, input: UpdateCurrencyInput): Promise<WireCurrency> {
     // An exchange rate and its markup move money: they need the permission of the rate refresh (decision 046).
@@ -231,6 +247,23 @@ export class CurrencyService {
       } else if (input.isActive !== undefined) changes.isActive = input.isActive;
       if (input.charmRounding !== undefined) changes.charmRounding = input.charmRounding;
       if (input.isStorefront !== undefined) changes.isStorefront = input.isStorefront;
+      // Decision 048: new decimals, or a currency switched on for the shop, must be chargeable by the storefront card method.
+      const decimalsSent = input.decimals !== undefined && checkDecimals(input.decimals) === undefined;
+      if (
+        decimalsSent ||
+        (input.isStorefront === true && !current.isStorefront) ||
+        (input.isActive === true && !current.isActive)
+      ) {
+        const chargeable = chargeDecimalsProblem(
+          current.code,
+          changes.decimals ?? current.decimals,
+          await this.chargeDecimalsOf(tx, current.code),
+        );
+        if (chargeable) {
+          if (errors.length === 0) throw notChargeable(chargeable);
+          errors.push(chargeable);
+        }
+      }
       if (errors.length > 0) throw refuse(...errors);
 
       const row =
@@ -245,6 +278,18 @@ export class CurrencyService {
       });
       return this.toWire(row, now.getTime());
     });
+  }
+
+  /**
+   * The most decimals an active storefront card method charges exactly in a currency: the smallest over the automatic storefront gateways
+   * whose driver says (decision 048).
+   */
+  private async chargeDecimalsOf(tx: DbExecutor, code: string): Promise<number | undefined> {
+    const limits = (await findStorefrontGateways(tx)).flatMap((gateway) => {
+      const limit = gateway.isManual ? undefined : driverFor(gateway.driver)?.maxChargeDecimals?.(code);
+      return limit === undefined ? [] : [limit];
+    });
+    return limits.length === 0 ? undefined : Math.min(...limits);
   }
 
   private toWire(row: Currency, nowMs: number): WireCurrency {

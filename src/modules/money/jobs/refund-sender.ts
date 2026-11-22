@@ -21,6 +21,10 @@ import { findGateway } from '../infra/gateway.repository';
 import { findOrderPayment } from '../infra/order-payment.repository';
 import { findRefund, lockRefund, updateRefund } from '../infra/refund.repository';
 
+/** The failure note of a refund that was not sent because its payment is disputed (decision 048). */
+export const DISPUTED_REFUND_NOTE =
+  'The payment is disputed at the gateway; send this refund again after the dispute is closed.';
+
 /** What one run of the job did. */
 export type RefundSendResult = 'completed' | 'pending' | 'failed' | 'skipped';
 
@@ -36,6 +40,8 @@ export type RefundSendResult = 'completed' | 'pending' | 'failed' | 'skipped';
  * `send_attempt` moves on, so the staff retry sends under a new key (`refund-<id>-<n>`) instead of being answered with the same refusal. An
  * error whose outcome is unknown (a timeout, a 5xx, a network error) is thrown so the queue retries it with the same key, and on the last
  * attempt the refund fails with that error but keeps its key: the gateway may have made the refund, and the same key stops a second one.
+ * Decision 048: a refund whose payment is disputed or charged back at send time is not sent: it fails without a gateway call and keeps its
+ * key, so staff send it again once the dispute is closed.
  *
  * Side effects: calls the gateway; updates `refunds` and `payments`; adds an order timeline line.
  */
@@ -73,6 +79,17 @@ export class RefundSender {
       await this.settlement.settle(refundId, {
         kind: 'failed',
         note: 'The payment gateway cannot refund this payment: pay it out by hand.',
+      });
+      return 'failed';
+    }
+    // Money the buyer disputed with the card network is never sent back while the dispute is open (decision 048): the failure is not
+    // definite, so the key stays and a staff retry after the dispute sends it once.
+    if (payment.status === 'disputed' || payment.status === 'chargeback') {
+      this.logger.warn(`Refund ${refund.id} was not sent: its payment is disputed at the gateway.`);
+      await this.settlement.settle(refundId, {
+        kind: 'failed',
+        note: DISPUTED_REFUND_NOTE,
+        attempt: refund.sendAttempt,
       });
       return 'failed';
     }

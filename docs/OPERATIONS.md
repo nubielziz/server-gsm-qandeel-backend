@@ -188,6 +188,20 @@ back (`howToRestore`). Exit codes of the export: 0 written and verified, or noth
 database is not at `0033` or `0034`, or already migrated; 1 any other error (a missing or unwritable `--out` folder, no
 `DATABASE_URL`; nothing half-written is left).
 
+### Release with decision 048 (payments integrity)
+
+The migration of this release (`payments_integrity`) first checks that no two orders share a checkout session; when some do, it stops,
+changes nothing and names them (see "One order per checkout session" in section 6). Before step 3, and once more after step 4:
+
+- The card API key can read PaymentIntents and Checkout Sessions: a storefront order is created only after the webhook has read the
+  payment's record. The gateway account's API version must support `expand[]=latest_charge` (the driver sends no version header).
+- `gateway_card_details_unavailable_total` is 0 on the metrics page before the release: from now on a record that cannot be read answers
+  502 (the gateway delivers the event again) and, after 24 hours, holds the payment for staff.
+- `STORE_BASE_URL` and `PORTAL_BASE_URL` are the real addresses of the shop and the portal: `/pay` refuses a return address on any other
+  origin.
+- Storefront payments that were already held for staff before this release appear as findings of the money integrity check on its first run.
+- `supportsRefunds` is off by default for a payment method: until it is switched on, money of a held or late payment is paid back by hand.
+
 ### Release with decision 045 (origins per surface)
 
 Every command of the image (the API, the worker, `migrate`, `setup`) refuses `CORS_ORIGINS` in production from this release on. Before
@@ -435,6 +449,55 @@ for each, look at the payments in the console (Finance, Payments) and decide whi
 
 Then migrate again.
 
+**Storefront payments held for staff** (decision 048). A storefront confirmation that cannot pay its checkout is held: the gateway's record
+does not say paid, says another amount, currency or checkout, the event does not state its amount or currency, the checkout cannot be found,
+the gateway reference belongs to another payment, or the record could not be read for 24 hours. Nothing is booked for it. When money arrived
+and the gateway can refund (a card method with refunds switched on), the whole amount is sent back at once by the refund job; that return is a
+refund without an order, so the Refunds page does not list it and a failed one cannot be retried from the console. Every held payment whose
+money is not back is listed under System health, Integrity, "Every confirmed payment has an entry" (with its gateway reference), and raises the
+`ledger.mismatch_count` alert when such a rule exists: nightly at 02:30 UTC, or at once with "Run now". What to do: find the reference in the
+gateway's dashboard and pay the money back there (or confirm that none arrived), then close the payment with
+`POST /admin/held-payments/:id/close`, outcome `returned` or `not_received` and a note (the console gets a screen later). A payment whose
+gateway record showed its money received (another amount or currency, no checkout, money refunded or disputed since) can only be closed
+`returned`: `not_received` answers `409` ("The gateway's record shows this payment was received: send it back, then close it as
+returned."). A payment held with "The gateway's record shows this payment was refunded in full after it was made." or "The gateway's record
+shows this payment is disputed." had its money go back or contested at the gateway, and nothing is sent back from here: check the gateway's
+dashboard, then close it `returned` with a note of what the gateway did (for a dispute, once it is decided). A payment held with "The
+gateway's record shows part of this payment was refunded after it was made." still has the rest of its money at the gateway, and nothing is
+sent back from here either: pay back what is left at the gateway's dashboard first, and only then close it `returned`, with a note of what
+was paid back. A payment held before this rule accepts both outcomes. A payment held
+with "The gateway's record of this payment belongs to another checkout." received nothing of its own: the money is that other checkout's,
+which captures it with its own confirmation, so close it `not_received` and pay nothing back. An automatic return the gateway fails after it
+had completed is failed again, and its payment is listed again: pay it back at the gateway's dashboard, then close it `returned`. The gateway's fee
+of a returned payment is not booked. A gateway that cannot be reached makes storefront confirmations wait: its delivery log shows 502 answers,
+and they are captured when the gateway delivers again; a confirmation that still cannot be checked after 24 hours is held. A payment made more
+than 30 minutes after its checkout's price lock ended is refunded at once, or waits in the risk queue when its method cannot refund.
+
+**Card top-ups checked against the gateway's record** (decision 048). Before a card top-up credits itself, the job reads the gateway's
+record of the payment: it must say paid, show the invoice's amount and currency as received, show nothing refunded or disputed since and,
+when it states the reference of its checkout, name this invoice. Otherwise the top-up waits on the Payments page for review with a note
+that starts "The gateway's record ...": look the payment up in the gateway's dashboard, approve it only when the gateway holds the
+invoice's amount for this invoice, else reject it and settle what really arrived by hand. A gateway that cannot be reached still only delays
+the credit.
+
+**Refunds of a charged-back payment** (decision 048). When a dispute is lost (the gateway's event, or staff accepting the loss), the
+refunds of the payment that the gateway has not paid (a request, a refund waiting to be sent, one that failed) are closed (`rejected`,
+"Not sent: the payment was charged back.") and their journals are reversed: the card network already gave the money back. A refund whose
+last send got no answer (a timeout or an error at the gateway: it shows `failed`, and the gateway may still have made it) is closed and
+reversed with the others. So when a chargeback is booked, check the gateway's dashboard for each such refund of the payment (the order's
+timeline shows its failed send): if the gateway made it, the buyer got the money back twice while the books show it leaving once. A refund
+the gateway completed before stays, and the books then show both, as the gateway paid both. A refund the gateway had taken and not answered
+yet stays `processing` until it answers; if it then completes, look the payment up in the gateway's dashboard.
+
+**A confirmation for a closed top-up invoice** (decision 048). A top-up confirmation for an invoice that is already paid or void is recorded on
+the Payments page for review and is never credited: refund it at the gateway or adjust the wallet by hand, then reject it. The reason typed when
+rejecting is mailed to the customer, and a void top-up then shows as rejected.
+
+**One order per checkout session** (decision 048). The migration of feature 38 stops when two orders share a checkout session and names the
+sessions. For each one: keep the order that `checkout_sessions.order_id` names, refund or reject the other order from the console, take a
+backup, set that order's `checkout_session_id` to `NULL` (one `UPDATE orders set checkout_session_id = null where id = <id>` per order),
+then run the migration again.
+
 **Search engine** (feature 29, decision 038). The English search of the shop header and the results page runs on one Typesense node
 (`typesense` in `deploy/compose.prod.yaml`, pinned by digest, on the network `gsm` only: no published port, no Caddy route, never
 reachable from a browser). Postgres is the truth; the index holds only public, English, price-free documents and can be rebuilt at any
@@ -563,6 +626,11 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
 - [ ] Object storage for backups on another provider, its keys in `deploy/.env`, and the two key holders named.
 - [ ] A Sentry project (optional) and its DSN.
 - [ ] The payment provider chosen by the owner (decision D-6) and its keys entered in the console, never in a file.
+- [ ] The provider sends every checkout, refund and dispute event to `/webhooks/payments/<code>`, and refunds are switched on for the method
+      (`supportsRefunds`) so a payment that cannot be used goes back by itself.
+- [ ] The card API key can read PaymentIntents and Checkout Sessions, and the account's API version supports `expand[]=latest_charge`.
+- [ ] An alert rule on `ledger.mismatch_count` above 0 exists (it also reports storefront payments held for staff; only the demo seed
+      creates one).
 
 **Before go-live**
 - [ ] Every check of section 2.5 passed, including the client-address check.

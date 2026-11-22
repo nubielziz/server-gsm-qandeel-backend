@@ -1,5 +1,6 @@
 // Integration tests of the payment provider fixes on the storefront (feature 24C): minor units per currency both ways, card details read
-// from the PaymentIntent's latest Charge before the capture, and dispute events delivered to the payments endpoint.
+// from the PaymentIntent's latest Charge before the capture (the gateway record of decision 048), and dispute events delivered to the
+// payments endpoint.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { Money } from '@src/common/money';
@@ -24,7 +25,6 @@ import { GatewayTestModule } from '../../support/billing';
 import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { ledgerTotals } from '../../support/money';
-import { assessmentOf } from '../../support/risk';
 import { insertCurrency } from '../../support/storefront';
 
 const clock = new TestClock('2026-11-07T12:00:00.000Z');
@@ -72,34 +72,30 @@ async function opened(currency: string) {
 }
 
 describe('amounts in the currency minor units (24C)', () => {
-  it('a JOD checkout is sent with three digits and confirmed at the same amount; a tenth of it is held for staff', async () => {
+  it('a JOD checkout is sent with three digits and confirmed at the same amount; a tenth of it is held and sent back by the record', async () => {
+    // Two decimals: the card method charges JOD in steps of 0.010 (decision 048 refuses a third significant decimal at /pay).
+    await insertCurrency(db, { code: 'JOD', decimals: 2 });
     const { payment, unitAmount, sentCurrency } = await opened('JOD');
     expect(payment.currency).toBe('JOD');
     const expected = toMinor(Money.of(payment.amount), 'JOD');
+    expect(expected.exact).toBe(true);
     expect(sentCurrency).toBe('jod');
     expect(unitAmount).toBe(expected.minor);
-    // The old code sent amount × 100 (a tenth of a JOD price): the gateway reporting that is a mismatch, never a capture.
+    expect(unitAmount).toMatch(/0$/);
+    // The old code sent amount × 100 (a tenth of a JOD price): the event reporting that is a mismatch, never a capture. The gateway's
+    // record says the whole amount was collected, and that is what goes back.
     const tenth = JSON.parse(
       storefrontEvent(eventId(), payment.reference, { amount: payment.amount, currency: 'JOD', intent: 'pi_tenth' }),
     );
     tenth.data.object.amount_total = Math.round(Number(expected.minor) / 10);
     expect((await hook(t, clock, 'payments', 'card-b2c', JSON.stringify(tenth))).statusCode).toBe(200);
     expect(await orders()).toHaveLength(0);
-    expect(await paymentRow(payment.id)).toMatchObject({ status: 'pending', reviewRequired: true });
-    expect((await paymentRow(payment.id)).reviewNote).toContain(`opened for ${payment.amount}`);
-  });
-
-  it('a JOD price whose third digit is not 0 is rounded half up at the gateway (3.396 -> 3400) and held for staff', async () => {
-    const { payment, unitAmount } = await opened('JOD');
-    expect(payment.amount).toBe('3.3960');
-    expect(unitAmount).toBe('3400');
-    const body = storefrontEvent(eventId(), payment.reference, { amount: '3.400', currency: 'JOD', intent: 'pi_jod' });
-    expect(JSON.parse(body).data.object.amount_total).toBe(3400);
-    expect((await hook(t, clock, 'payments', 'card-b2c', body)).statusCode).toBe(200);
-    // The gateway charged 3.400, the payment was opened for 3.396: the exact guard holds it (never hidden).
-    expect(await orders()).toHaveLength(0);
-    expect(await paymentRow(payment.id)).toMatchObject({ status: 'pending', reviewRequired: true });
-    expect((await paymentRow(payment.id)).reviewNote).toContain('3.4000');
+    const held = await paymentRow(payment.id);
+    expect(held).toMatchObject({ status: 'pending', reviewRequired: true });
+    expect(held.reviewNote).toContain(`opened for ${payment.amount}`);
+    expect(held.reviewNote).toContain('Sent back in full automatically');
+    const [refund] = await db.select().from(s.refunds).where(eq(s.refunds.paymentId, payment.id));
+    expect(refund).toMatchObject({ amount: payment.amount, currency: 'JOD', orderId: null, status: 'processing' });
   });
 
   it('with two display decimals (plan 24C decision 2) a JOD checkout is charged and captured at its exact amount', async () => {
@@ -160,25 +156,35 @@ describe('card details from the PaymentIntent (24C)', () => {
     });
   });
 
-  it('a details call that fails still captures, with the risk signal, and counts it', async () => {
+  /** Opens a GBP checkout and pays it; returns the payment and its confirmation. */
+  async function confirmation(intent: string) {
+    const { payment } = await opened('GBP');
+    const body = storefrontEvent(eventId(), payment.reference, { amount: payment.amount, intent });
+    return { payment, body };
+  }
+
+  it('a gateway record that fails answers 502 and captures nothing (decision 048)', async () => {
     fake.failDetails = 500;
-    const paid = await paidOrder(t, clock, world);
-    expect(await paymentRow(paid.paymentId)).toMatchObject({ status: 'captured', brand: '', cardFingerprint: null });
-    const assessment = await assessmentOf(db, paid.orderId);
-    expect(assessment.signals).toContain('Card details unavailable from the gateway');
-    // Alone the signal does not hold the order.
-    expect(assessment).toMatchObject({ decision: 'allow' });
+    const { payment, body } = await confirmation('pi_down');
+    const res = await hook(t, clock, 'payments', 'card-b2c', body);
+    expect(res.statusCode).toBe(502);
+    expect(json(res)).toMatchObject({ code: 'GATEWAY_ERROR' });
+    expect(await orders()).toHaveLength(0);
+    expect(await paymentRow(payment.id)).toMatchObject({ status: 'pending', reviewRequired: false });
+    // The storefront read is not a "card details unavailable" read any more: that counter is for card top-ups.
     const metrics = await t.app.get(MetricsService).render();
-    expect(metrics).toContain('gateway_card_details_unavailable_total{gateway="card-b2c"} 1');
+    expect(metrics).not.toContain('gateway_card_details_unavailable_total{gateway="card-b2c"} 1');
   });
 
-  it('a details call that hangs times out after 3 seconds and still captures', async () => {
+  it('a gateway record that hangs answers 502 after 3 seconds and captures nothing (decision 048)', async () => {
     fake.failDetails = 'hang';
+    const { payment, body } = await confirmation('pi_hang');
     const started = performance.now();
-    const paid = await paidOrder(t, clock, world);
+    const res = await hook(t, clock, 'payments', 'card-b2c', body);
     expect(performance.now() - started).toBeLessThan(10_000);
-    expect(await paymentRow(paid.paymentId)).toMatchObject({ status: 'captured', cardFingerprint: null });
-    expect((await assessmentOf(db, paid.orderId)).signals).toContain('Card details unavailable from the gateway');
+    expect(res.statusCode).toBe(502);
+    expect(await orders()).toHaveLength(0);
+    expect(await paymentRow(payment.id)).toMatchObject({ status: 'pending', cardFingerprint: null });
   });
 });
 

@@ -39166,7 +39166,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "Adds a currency. `code` is three capital letters and unique; `rateToBase` is above zero (up to eight decimal places); `markupPercent` is 0 to 10; `decimals` is 0 to 4. The rate is stamped with the current time. Audited. It also needs `currencies:update` (`403 FORBIDDEN`, decision 046).",
+        "description": "Adds a currency. `code` is three capital letters and unique; `rateToBase` is above zero (up to eight decimal places); `markupPercent` is 0 to 10; `decimals` is 0 to 4. The rate is stamped with the current time. Audited. It also needs `currencies:update` (`403 FORBIDDEN`, decision 046). While an active storefront card payment method exists, `decimals` may not exceed what it can charge exactly (0 for whole-unit currencies such as JPY, else 2): `422` on `decimals` (`not_chargeable`, decision 048).",
         "operationId": "postAdminCurrencies",
         "parameters": [],
         "requestBody": {
@@ -40607,7 +40607,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "Changes the fields sent. Sending `rateToBase` stamps the rate with the current time. The base currency USD refuses a new rate, a new markup and being switched off. The code cannot be changed once created. Audited. Sending `rateToBase` or `markupPercent` also needs `currencies:update` (`403 FORBIDDEN`, decision 046). A sent `rateToBase` also ends a hold of the refresh, and the shop offers the currency again (decision 049).",
+        "description": "Changes the fields sent. Sending `rateToBase` stamps the rate with the current time. The base currency USD refuses a new rate, a new markup and being switched off. The code cannot be changed once created. Audited. Sending `rateToBase` or `markupPercent` also needs `currencies:update` (`403 FORBIDDEN`, decision 046). A sent `rateToBase` also ends a hold of the refresh, and the shop offers the currency again (decision 049). While an active storefront card payment method exists, `decimals` may not exceed what it can charge exactly (0 for whole-unit currencies such as JPY, else 2): `422` on `decimals` (`not_chargeable`, decision 048). It is checked when `decimals` is sent or `isStorefront` or `isActive` is switched on.",
         "operationId": "patchAdminCurrenciesById",
         "parameters": [
           {
@@ -57506,7 +57506,7 @@
     },
     "/admin/disputes/{id}/accept": {
       "post": {
-        "description": "Accepts the loss: the dispute is `lost` with `resolvedAt`, the payment `chargeback`, and one `b2c_chargeback` journal posts the amount and the dispute fee (Dr chargeback_loss, Cr gateway_clearing, key `dispute:<id>:chargeback`), kept in `disputes.ledger_tx_id` so a later `lost` event from the gateway posts nothing again. The customer is not blocked (M115). `409 DISPUTE_NOT_OPEN` when it no longer waits for evidence.",
+        "description": "Accepts the loss: the dispute is `lost` with `resolvedAt`, the payment `chargeback`, and one `b2c_chargeback` journal posts the amount and the dispute fee (Dr chargeback_loss, Cr gateway_clearing, key `dispute:<id>:chargeback`), kept in `disputes.ledger_tx_id` so a later `lost` event from the gateway posts nothing again. Refunds of the payment the gateway has not paid (requested, waiting to be sent, or failed) are closed `rejected` with the note \"Not sent: the payment was charged back.\" and their journals reversed, so the money leaves the books once (decision 048). The customer is not blocked (M115). `409 DISPUTE_NOT_OPEN` when it no longer waits for evidence.",
         "operationId": "postAdminDisputesByIdAccept",
         "parameters": [
           {
@@ -59689,6 +59689,556 @@
         "x-gsm-access": "staff-permission",
         "x-gsm-key": "GET /admin/files/:id",
         "x-gsm-permission": "files:read",
+        "x-gsm-session-stages": [
+          "active"
+        ],
+        "x-gsm-surface": "admin"
+      }
+    },
+    "/admin/held-payments/{id}/close": {
+      "post": {
+        "description": "A storefront payment the gateway confirmed that could not pay its checkout is held for staff (decision 048): it has no order, and the money integrity check lists it until its money is back. `returned`: staff paid it back by hand (at the gateway or by transfer); a completed refund without an order records it, and a later confirmation of the payment changes nothing. `not_received`: the gateway holds no money for it; the payment becomes `failed` (a later real confirmation can still pay its checkout). `not_received` is accepted only when the gateway's record did not show money received for the payment when it was held (not paid, could not be checked, or the record of another checkout); a payment whose record showed its money received (another amount or currency, no checkout, money refunded or disputed since) is `409 CONFLICT` (\"The gateway's record shows this payment was received: send it back, then close it as returned.\"), and a payment held before this rule accepts both outcomes. `note` (10 to 500 characters) says what staff did. A payment that is not held, or whose money is being sent back or was sent back, is `409 CONFLICT`; an unknown id or a top-up is `404`. Audited.",
+        "operationId": "postAdminHeldPaymentsByIdClose",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Numeric record id.",
+            "schema": {
+              "x-gsm-alias": "Id",
+              "description": "Numeric record id.",
+              "type": "string",
+              "pattern": "^[1-9]\\d{0,15}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "returned",
+                      "not_received"
+                    ],
+                    "description": "`returned`: staff paid it back by hand (at the gateway or by transfer). `not_received`: the gateway holds no money for it; refused (409) when the gateway's record showed the payment's money received."
+                  },
+                  "note": {
+                    "type": "string",
+                    "minLength": 10,
+                    "maxLength": 500,
+                    "description": "What staff did, 10 to 500 characters."
+                  }
+                },
+                "required": [
+                  "outcome",
+                  "note"
+                ]
+              },
+              "examples": {
+                "example": {
+                  "value": {
+                    "outcome": "returned",
+                    "note": "Refunded in full from the gateway dashboard."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Done. No body.",
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to do this.\nCSRF_FAILED: The security check for this request failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FORBIDDEN",
+                        "CSRF_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CSRF_FAILED": {
+                    "summary": "The security check for this request failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/csrf-failed",
+                      "title": "The security check for this request failed.",
+                      "status": 403,
+                      "code": "CSRF_FAILED",
+                      "detail": "The security check for this request failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: The requested item was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 404
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_FOUND"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "NOT_FOUND": {
+                    "summary": "The requested item was not found.",
+                    "value": {
+                      "type": "https://errors.gsm.example/not-found",
+                      "title": "The requested item was not found.",
+                      "status": 404,
+                      "code": "NOT_FOUND",
+                      "detail": "The requested item was not found.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CONFLICT: The request conflicts with the current state.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 409
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "CONFLICT"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "CONFLICT": {
+                    "summary": "The request conflicts with the current state.",
+                    "value": {
+                      "type": "https://errors.gsm.example/conflict",
+                      "title": "The request conflicts with the current state.",
+                      "status": 409,
+                      "code": "CONFLICT",
+                      "detail": "The request conflicts with the current state.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "staffSession": []
+          }
+        ],
+        "summary": "Close a storefront payment held for staff",
+        "tags": [
+          "refunds"
+        ],
+        "x-gsm-access": "staff-permission",
+        "x-gsm-audit": true,
+        "x-gsm-key": "POST /admin/held-payments/:id/close",
+        "x-gsm-permission": "refunds:approve",
         "x-gsm-session-stages": [
           "active"
         ],
@@ -101173,7 +101723,7 @@
     },
     "/admin/orders/{id}/reject": {
       "post": {
-        "description": "Rejects an open order with a buyer-visible reason: `result_code` is the reason, `completed_at` is set and the hold returns to the wallet (B2B `reject`). Writes `rejected` and `release` events, `order.status_changed` and an audit row. A storefront order delivered before and then reopened is refunded from the Refunds page (`USE_REFUNDS`). While the order is being sent to its supplier the action waits for the answer: `409 ALREADY_SENT`. Rejecting an open storefront order that has a captured payment gives the payment back, so it also needs `refunds:approve` (`403 FORBIDDEN`, decision 046).",
+        "description": "Rejects an open order with a buyer-visible reason: `result_code` is the reason, `completed_at` is set and the hold returns to the wallet (B2B `reject`). Writes `rejected` and `release` events, `order.status_changed` and an audit row. A storefront order delivered before and then reopened is refunded from the Refunds page (`USE_REFUNDS`). While the order is being sent to its supplier the action waits for the answer: `409 ALREADY_SENT`. Rejecting an open storefront order that has a captured payment gives the payment back, so it also needs `refunds:approve` (`403 FORBIDDEN`, decision 046). The payment of a storefront order goes back to the buyer at once, except a payment the buyer disputed with the card network (`disputed` or `chargeback`): then nothing is sent, a refund request waits on the Refunds page and the order’s timeline says why (decision 048).",
         "operationId": "postAdminOrdersByIdReject",
         "parameters": [
           {
@@ -125401,7 +125951,7 @@
                           "failed",
                           "rejected"
                         ],
-                        "description": "`requested` waits for staff; `processing` from approval until the gateway answers; then `completed` or `failed`; `rejected` when declined. A hand payout goes straight to `completed`."
+                        "description": "`requested` waits for staff; `processing` from approval until the gateway answers; then `completed` or `failed`; `rejected` when declined, or when the payment was charged back before the gateway paid the refund (`note`: \"Not sent: the payment was charged back.\"; its journal is reversed). A hand payout goes straight to `completed`."
                       },
                       "method": {
                         "type": "string",
@@ -125436,7 +125986,7 @@
                         ]
                       },
                       "note": {
-                        "description": "The gateway failure text or the message the customer got when it was declined.",
+                        "description": "The gateway failure text, the message the customer got when it was declined, or why it was closed unsent (a chargeback).",
                         "type": [
                           "string",
                           "null"
@@ -126129,7 +126679,7 @@
                         "failed",
                         "rejected"
                       ],
-                      "description": "`requested` waits for staff; `processing` from approval until the gateway answers; then `completed` or `failed`; `rejected` when declined. A hand payout goes straight to `completed`."
+                      "description": "`requested` waits for staff; `processing` from approval until the gateway answers; then `completed` or `failed`; `rejected` when declined, or when the payment was charged back before the gateway paid the refund (`note`: \"Not sent: the payment was charged back.\"; its journal is reversed). A hand payout goes straight to `completed`."
                     },
                     "method": {
                       "type": "string",
@@ -126164,7 +126714,7 @@
                       ]
                     },
                     "note": {
-                      "description": "The gateway failure text or the message the customer got when it was declined.",
+                      "description": "The gateway failure text, the message the customer got when it was declined, or why it was closed unsent (a chargeback).",
                       "type": [
                         "string",
                         "null"
@@ -126961,7 +127511,7 @@
                         "failed",
                         "rejected"
                       ],
-                      "description": "`requested` waits for staff; `processing` from approval until the gateway answers; then `completed` or `failed`; `rejected` when declined. A hand payout goes straight to `completed`."
+                      "description": "`requested` waits for staff; `processing` from approval until the gateway answers; then `completed` or `failed`; `rejected` when declined, or when the payment was charged back before the gateway paid the refund (`note`: \"Not sent: the payment was charged back.\"; its journal is reversed). A hand payout goes straight to `completed`."
                     },
                     "method": {
                       "type": "string",
@@ -126996,7 +127546,7 @@
                       ]
                     },
                     "note": {
-                      "description": "The gateway failure text or the message the customer got when it was declined.",
+                      "description": "The gateway failure text, the message the customer got when it was declined, or why it was closed unsent (a chargeback).",
                       "type": [
                         "string",
                         "null"
@@ -127937,7 +128487,7 @@
                         "failed",
                         "rejected"
                       ],
-                      "description": "`requested` waits for staff; `processing` from approval until the gateway answers; then `completed` or `failed`; `rejected` when declined. A hand payout goes straight to `completed`."
+                      "description": "`requested` waits for staff; `processing` from approval until the gateway answers; then `completed` or `failed`; `rejected` when declined, or when the payment was charged back before the gateway paid the refund (`note`: \"Not sent: the payment was charged back.\"; its journal is reversed). A hand payout goes straight to `completed`."
                     },
                     "method": {
                       "type": "string",
@@ -127972,7 +128522,7 @@
                       ]
                     },
                     "note": {
-                      "description": "The gateway failure text or the message the customer got when it was declined.",
+                      "description": "The gateway failure text, the message the customer got when it was declined, or why it was closed unsent (a chargeback).",
                       "type": [
                         "string",
                         "null"
@@ -128867,7 +129417,7 @@
                         "failed",
                         "rejected"
                       ],
-                      "description": "`requested` waits for staff; `processing` from approval until the gateway answers; then `completed` or `failed`; `rejected` when declined. A hand payout goes straight to `completed`."
+                      "description": "`requested` waits for staff; `processing` from approval until the gateway answers; then `completed` or `failed`; `rejected` when declined, or when the payment was charged back before the gateway paid the refund (`note`: \"Not sent: the payment was charged back.\"; its journal is reversed). A hand payout goes straight to `completed`."
                     },
                     "method": {
                       "type": "string",
@@ -128902,7 +129452,7 @@
                       ]
                     },
                     "note": {
-                      "description": "The gateway failure text or the message the customer got when it was declined.",
+                      "description": "The gateway failure text, the message the customer got when it was declined, or why it was closed unsent (a chargeback).",
                       "type": [
                         "string",
                         "null"
@@ -135100,7 +135650,7 @@
     },
     "/admin/reports/vat": {
       "get": {
-        "description": "Worked out from the ledger, not from invoices: the `vat_payable` lines of the storefront payment journals (`b2c_pay`) minus its refund journals (`b2c_refund`), posted between `from` and `to` (days, both included, UTC). One row per tax country and month, newest month first, then country. Amounts are USD. `422` for a bad date or `from` after `to`.",
+        "description": "Worked out from the ledger, not from invoices: the `vat_payable` lines of the storefront payment journals (`b2c_pay`) minus its refund journals (`b2c_refund`), posted between `from` and `to` (days, both included, UTC). A refund journal that was reversed (a refund closed unsent when its payment was charged back) and its reversal are both left out (decision 048). One row per tax country and month, newest month first, then country. Amounts are USD. `422` for a bad date or `from` after `to`.",
         "operationId": "getAdminReportsVat",
         "parameters": [
           {
@@ -140570,7 +141120,7 @@
     },
     "/admin/risk/orders/{id}/refund": {
       "post": {
-        "description": "`:id` is the order id. Rejects the order without contacting a supplier and returns the whole payment (the storefront refund ledger move), in one transaction with the assessment outcome, the order timeline, the audit row and the chosen blocklist entries (manual entries of the caller; an entry that already exists is skipped, and none is linked to a customer). The customer’s status is not changed: block the customer with `POST /admin/customers/:id/block`. `409 NOT_HELD` when the order is not waiting for a decision any more.",
+        "description": "`:id` is the order id. Rejects the order without contacting a supplier and returns the whole payment (the storefront refund ledger move), in one transaction with the assessment outcome, the order timeline, the audit row and the chosen blocklist entries (manual entries of the caller; an entry that already exists is skipped, and none is linked to a customer). The customer’s status is not changed: block the customer with `POST /admin/customers/:id/block`. `409 NOT_HELD` when the order is not waiting for a decision any more. A payment the buyer disputed with the card network is not sent back: a refund request waits on the Refunds page instead (decision 048).",
         "operationId": "postAdminRiskOrdersByIdRefund",
         "parameters": [
           {
@@ -249517,7 +250067,7 @@
     },
     "/store/v1/checkout-sessions/{token}/pay": {
       "post": {
-        "description": "Starts the payment of an open checkout with one of the methods `GET /store/v1/checkout-sessions/:token` lists (`gateway` is its `code`): the gateway opens a hosted page for the session's locked gross in the buyer's currency (3-D Secure for a card when the shop asks for it, a wallet or a crypto address on the same page) and the answer carries its address. **No order exists yet**: the order is created, the money booked and the service delivered only when the gateway's signed confirmation arrives (`POST /webhooks/payments/:gateway`), in one transaction. The checkout needs every required consent first (`422` on `consent`); a paid or expired checkout is `409 INVALID_TRANSITION` (so is a page that opened after its payment was already closed), a suspended or blocked customer `403 ACCOUNT_SUSPENDED`, a method that is off or does not take the amount `422` on `gateway`, a gateway that cannot open its page `502 GATEWAY_ERROR`. `Idempotency-Key` is required. The token in the path is the credential.",
+        "description": "Starts the payment of an open checkout with one of the methods `GET /store/v1/checkout-sessions/:token` lists (`gateway` is its `code`): the gateway opens a hosted page for the session's locked gross in the buyer's currency (3-D Secure for a card when the shop asks for it, a wallet or a crypto address on the same page) and the answer carries its address. **No order exists yet**: the order is created, the money booked and the service delivered only when the gateway's signed confirmation arrives (`POST /webhooks/payments/:gateway`), in one transaction. The checkout needs every required consent first (`422` on `consent`); a paid or expired checkout is `409 INVALID_TRANSITION` (so is a page that opened after its payment was already closed), a suspended or blocked customer `403 ACCOUNT_SUSPENDED`, a method that is off or does not take the amount `422` on `gateway`, a gateway that cannot open its page `502 GATEWAY_ERROR`. `Idempotency-Key` is required. The token in the path is the credential. A checkout keeps at most 3 payment pages open (`429 RATE_LIMITED` for another; a page that failed, was paid or is held frees its place); an amount the method cannot charge exactly is `422` on `gateway` (`not_chargeable`); a `returnUrl` that is not an address of this shop is `422` on `returnUrl` (`not_shop`). The confirmation creates the order only once the gateway's own record says the payment succeeded for this amount and currency; a payment made more than 30 minutes after the price lock ended is not used at the old price (decision 048).",
         "operationId": "postStoreV1CheckoutSessionsByTokenPay",
         "parameters": [
           {
@@ -249563,7 +250113,7 @@
                     "type": "string",
                     "maxLength": 500,
                     "format": "uri",
-                    "description": "Where the gateway sends the buyer back to after the hosted page (the shop)."
+                    "description": "Where the gateway sends the buyer back to: an address of this shop (the origin of STORE_BASE_URL or PORTAL_BASE_URL, or one of SHOP_ORIGINS), else 422 on returnUrl (not_shop)."
                   }
                 },
                 "required": [
@@ -249575,7 +250125,7 @@
                 "example": {
                   "value": {
                     "gateway": "card",
-                    "returnUrl": "https://shop.example/checkout/return"
+                    "returnUrl": "http://localhost:5175/en/checkout/return"
                   }
                 }
               }
@@ -249664,7 +250214,7 @@
                     },
                     "paymentUrl": {
                       "type": "string",
-                      "description": "The gateway's hosted page: send the buyer there."
+                      "description": "The gateway's hosted page, always an https address: send the buyer there. A card page closes 30 minutes after the checkout's price lock ends."
                     }
                   },
                   "required": [
@@ -250081,6 +250631,103 @@
                 "description": "Id of this request; quote it when you report a problem.",
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: You are sending requests too quickly.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 429
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "RATE_LIMITED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "RATE_LIMITED": {
+                    "summary": "You are sending requests too quickly.",
+                    "value": {
+                      "type": "https://errors.gsm.example/rate-limited",
+                      "title": "You are sending requests too quickly.",
+                      "status": 429,
+                      "code": "RATE_LIMITED",
+                      "detail": "You are sending requests too quickly.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "retry-after": {
+                "description": "Seconds to wait before the next request.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
                 }
               }
             }
@@ -283598,7 +284245,7 @@
     },
     "/webhooks/disputes/{gateway}": {
       "post": {
-        "description": "A payment gateway reports a dispute. The delivery must carry the gateway's signature (the scheme of its driver; either of the gateway's two webhook secrets), a signed time within 5 minutes of now and an event id not seen before; otherwise `400 WEBHOOK_SIGNATURE_INVALID`. `dispute.created` records the dispute once (the gateway id is unique per payment) with its evidence deadline and marks the payment `disputed` and the order timeline; a dispute won returns the payment to `captured` (or `partial_refund`/`refunded` when refunds completed); a dispute lost posts the chargeback journal once and marks the payment `chargeback`. A repeat of an event answers `200` and changes nothing; events the shop does not use are acknowledged with `200`.",
+        "description": "A payment gateway reports a dispute. The delivery must carry the gateway's signature (the scheme of its driver; either of the gateway's two webhook secrets), a signed time within 5 minutes of now and an event id not seen before; otherwise `400 WEBHOOK_SIGNATURE_INVALID`. `dispute.created` records the dispute once (the gateway id is unique per payment) with its evidence deadline and marks the payment `disputed` and the order timeline; a dispute won returns the payment to `captured` (or `partial_refund`/`refunded` when refunds completed); a dispute lost posts the chargeback journal once and marks the payment `chargeback`, and closes the refunds of the payment the gateway has not paid (their journals reversed, decision 048). A repeat of an event answers `200` and changes nothing; event types the shop does not use are acknowledged with `200`; an event that names a payment not recorded yet, a payment held for staff, or a closed dispute whose opening was not recorded yet answers `503 UNAVAILABLE`, so the gateway delivers it again (decision 048; once the event is 24 hours old it is acknowledged with `200` and reported for staff). A delivery the database could not apply because it met another change at the same moment writes nothing and answers `503 UNAVAILABLE` as well, so the gateway delivers it again.",
         "operationId": "postWebhooksDisputesByGateway",
         "parameters": [
           {
@@ -283858,6 +284505,96 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "UNAVAILABLE: The service is temporarily unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 503
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAVAILABLE"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAVAILABLE": {
+                    "summary": "The service is temporarily unavailable.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unavailable",
+                      "title": "The service is temporarily unavailable.",
+                      "status": 503,
+                      "code": "UNAVAILABLE",
+                      "detail": "The service is temporarily unavailable.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -283876,7 +284613,7 @@
     },
     "/webhooks/payments/{gateway}": {
       "post": {
-        "description": "A payment gateway confirms a top-up. The delivery must carry the gateway's signature (the scheme of its driver), a signed time within 5 minutes of now and an event id not seen before; otherwise `400 WEBHOOK_SIGNATURE_INVALID`. A confirmed payment of an open invoice is recorded once (the gateway reference is unique): the payment waits `payments.auto_credit_delay_minutes` (at least the gateway hold hours), then a job asks the gateway again and credits the wallet. A repeat of the same event answers `200` and changes nothing. Events billing does not use are acknowledged with `200`. A gateway may keep two webhook secrets: a delivery signed with either passes. Refund results (`refund.updated` with a final status, `refund.failed`) settle the storefront refund they name, and dispute events are handled exactly as on `POST /webhooks/disputes/:gateway` (one provider endpoint with every event is enough; the same dispute on both URLs is recorded once).",
+        "description": "A payment gateway confirms a top-up. The delivery must carry the gateway's signature (the scheme of its driver), a signed time within 5 minutes of now and an event id not seen before; otherwise `400 WEBHOOK_SIGNATURE_INVALID`. A confirmed payment of an open invoice is recorded once (the gateway reference is unique): the payment waits `payments.auto_credit_delay_minutes` (at least the gateway hold hours), then a job asks the gateway again and credits the wallet. A repeat of the same event answers `200` and changes nothing. Events billing does not use are acknowledged with `200`. A gateway may keep two webhook secrets: a delivery signed with either passes. Refund results (`refund.updated` with a final status, `refund.failed`) settle the storefront refund they name, and dispute events are handled exactly as on `POST /webhooks/disputes/:gateway` (one provider endpoint with every event is enough; the same dispute on both URLs is recorded once). For a storefront payment (`PAY-<id>`) the gateway's own record is read before the order is created: when it cannot be read the answer is `502 GATEWAY_ERROR` and the gateway delivers the event again (once the event is 24 hours old the payment is held for staff instead); a payment the record does not show as paid, or shows for another amount or currency, and a confirmation that does not state its amount or currency, is held for staff: nothing is created, and money that arrived is sent back in full automatically when the gateway can refund. A payment made more than 30 minutes after the checkout's price lock ended is refunded at once, or waits in the risk queue when the method cannot refund. A confirmation of a top-up invoice that is paid or void is recorded for staff review and never credited. A dispute event for a payment or a dispute not recorded yet is `503 UNAVAILABLE`, so the gateway delivers it again (decision 048).",
         "operationId": "postWebhooksPaymentsByGateway",
         "parameters": [
           {
@@ -284117,6 +284854,186 @@
                       "status": 422,
                       "code": "VALIDATION_FAILED",
                       "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "GATEWAY_ERROR: The payment gateway reported an error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 502
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "GATEWAY_ERROR"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "GATEWAY_ERROR": {
+                    "summary": "The payment gateway reported an error.",
+                    "value": {
+                      "type": "https://errors.gsm.example/gateway-error",
+                      "title": "The payment gateway reported an error.",
+                      "status": 502,
+                      "code": "GATEWAY_ERROR",
+                      "detail": "The payment gateway reported an error.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "UNAVAILABLE: The service is temporarily unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 503
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAVAILABLE"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAVAILABLE": {
+                    "summary": "The service is temporarily unavailable.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unavailable",
+                      "title": "The service is temporarily unavailable.",
+                      "status": 503,
+                      "code": "UNAVAILABLE",
+                      "detail": "The service is temporarily unavailable.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   }

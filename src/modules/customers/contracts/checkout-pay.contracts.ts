@@ -27,7 +27,12 @@ export const payCheckoutSession = defineRoute({
     "booked and the service delivered only when the gateway's signed confirmation arrives (`POST /webhooks/payments/:gateway`), in one " +
     'transaction. The checkout needs every required consent first (`422` on `consent`); a paid or expired checkout is `409 ' +
     'INVALID_TRANSITION` (so is a page that opened after its payment was already closed), a suspended or blocked customer `403 ACCOUNT_SUSPENDED`, a method that is off or does not take the amount `422` ' +
-    'on `gateway`, a gateway that cannot open its page `502 GATEWAY_ERROR`. `Idempotency-Key` is required. The token in the path is the credential.',
+    'on `gateway`, a gateway that cannot open its page `502 GATEWAY_ERROR`. `Idempotency-Key` is required. The token in the path is the credential. ' +
+    'A checkout keeps at most 3 payment pages open (`429 RATE_LIMITED` for another; a page that failed, was paid or is held frees its ' +
+    'place); an amount the method cannot charge exactly is `422` on `gateway` (`not_chargeable`); a `returnUrl` that is not an address of ' +
+    "this shop is `422` on `returnUrl` (`not_shop`). The confirmation creates the order only once the gateway's own record says the " +
+    'payment succeeded for this amount and currency; a payment made more than 30 minutes after the price lock ended is not used at the ' +
+    'old price (decision 048).',
   tags: ['checkout'],
   surface: 'store',
   access: 'checkout-token',
@@ -38,7 +43,10 @@ export const payCheckoutSession = defineRoute({
     returnUrl: z
       .url({ protocol: /^https?$/, error: 'Enter an http or https address.' })
       .max(500)
-      .describe('Where the gateway sends the buyer back to after the hosted page (the shop).'),
+      .describe(
+        'Where the gateway sends the buyer back to: an address of this shop (the origin of STORE_BASE_URL or PORTAL_BASE_URL, or one ' +
+          'of SHOP_ORIGINS), else 422 on returnUrl (not_shop).',
+      ),
   }),
   success: {
     status: 201,
@@ -54,7 +62,12 @@ export const payCheckoutSession = defineRoute({
         amount: zMoney.describe("What is charged: the gross in the buyer's currency."),
       }),
       gateway: z.object({ code: z.string(), name: z.string(), supports3ds: z.boolean() }),
-      paymentUrl: z.string().describe("The gateway's hosted page: send the buyer there."),
+      paymentUrl: z
+        .string()
+        .describe(
+          "The gateway's hosted page, always an https address: send the buyer there. A card page closes 30 minutes after the " +
+            "checkout's price lock ends.",
+        ),
     }),
   },
   errors: [
@@ -64,10 +77,11 @@ export const payCheckoutSession = defineRoute({
     'ACCOUNT_SUSPENDED',
     'IDEMPOTENCY_KEY_REUSED',
     'IDEMPOTENCY_IN_PROGRESS',
+    'RATE_LIMITED',
     'GATEWAY_ERROR',
   ],
   examples: {
-    request: { gateway: 'card', returnUrl: 'https://shop.example/checkout/return' },
+    request: { gateway: 'card', returnUrl: 'http://localhost:5175/en/checkout/return' },
     response: {
       payment: {
         id: 9001,

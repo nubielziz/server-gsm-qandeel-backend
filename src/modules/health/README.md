@@ -212,7 +212,10 @@ Queues, jobs and schedules: `docs/queues.md`.
   `ledger.mismatch_count` rule reads, and the processor judges that rule right after recording a run. It never corrects anything.
   Feature 21: `payments_without_entry` left-joins the gateway, so a store balance payment (no gateway) is found and named `Store balance`;
   a customer wallet finding reads `Customer wallet · <customer>`. The dashboard's "disputes due" item counts order-payment disputes only (a
-  top-up dispute has no evidence screen to link to).
+  top-up dispute has no evidence screen to link to). Decision 048: `payments_without_entry` also lists a storefront payment held for staff
+  (`pending` with `review_required`) until a refund of it is `processing` or `completed` (its money is back), with its gateway reference;
+  it counts in `mismatchCount`, so the `ledger.mismatch_count` rule fires for it. The dashboard's `refunds_failed` item counts customer
+  refunds only (the Refunds page it links to lists those); a failed automatic return of a held payment shows in the integrity check.
 - **Audit verbs**: `added alert rule`, `changed alert rule` (`muted alert rule`, `unmuted alert rule`, `turned on alert rule`, `turned off alert rule`),
   `deleted alert rule`, `acknowledged alert`, `opened incident`, `updated incident`, `closed incident`, `ran job` (the integrity run).
 

@@ -6,7 +6,7 @@ import { AppError } from '../../../../common/errors';
 import type { Money } from '../../../../common/money';
 import { type HostLookup, HttpRequestError, OutboundHttp } from '../../../../infra/http';
 import type { VerifiedDelivery } from '../../../identity';
-import type { GatewayStatus } from '../../domain/payment-rules';
+import type { GatewayStatus, PaymentAftermath } from '../../domain/payment-rules';
 import type { TopupMethod } from '../../db/schema';
 
 /** The credentials of a gateway, read from `config_enc` and `webhook_secret_enc` (decision 019). */
@@ -61,6 +61,53 @@ export interface PaymentEvent {
   readonly raw: JsonObject;
   /** How a storefront payment was made, when the event says (feature 16). */
   readonly details?: PaymentDetails | undefined;
+  /** When the gateway made the event: its own signed time (decision 048); `null` when the event does not say. */
+  readonly occurredAt?: Date | null | undefined;
+}
+
+/**
+ * What the gateway's own record of a payment says, read back before a storefront capture (decision 048).
+ *
+ * Why: a signed event names a payment; the record the gateway keeps says whether the money arrived, how much, in which currency and for
+ * which checkout. The capture uses the record, never the event alone.
+ */
+export interface PaymentCheck {
+  /**
+   * `confirmed`: the gateway holds the money; `not_confirmed`: it answered and does not say paid, or does not know the payment;
+   * `unverified`: set by billing only, when the record could not be read for 24 hours (never by a driver).
+   */
+  readonly status: 'confirmed' | 'not_confirmed' | 'unverified';
+  /** What the gateway collected, as a 4-decimal amount, or `null` when the record does not say. */
+  readonly amount: string | null;
+  /** The currency collected (ISO code, upper case), or `null`. */
+  readonly currency: string | null;
+  /** When the payment itself was made (the gateway's time), or `null` when the record does not say. */
+  readonly paidAt: Date | null;
+  /** The reference billing gave the gateway when it opened the page, as the gateway's record states it; `null` when it does not say. */
+  readonly belongsTo: string | null;
+  /** How the payment was made (the card of a card payment, the coin of a crypto one). */
+  readonly details?: PaymentDetails | undefined;
+  /**
+   * True when the record says the payment ended without being paid (a canceled payment, an expired page): it will not be paid any more.
+   * Absent when it may still be paid or the driver does not say.
+   */
+  readonly ended?: boolean | undefined;
+  /**
+   * What the record shows happened to the money after the payment (decision 048): refunded in full or in part, or disputed. Absent when
+   * nothing did or the driver does not say.
+   */
+  readonly afterPayment?: PaymentAftermath | undefined;
+}
+
+/**
+ * How a read of the gateway's record of a payment is made.
+ *
+ * Why: decision 048: the storefront webhook waits for the read, so it uses the short {@link DETAILS_TIMEOUT_MS}; the automatic credit of a
+ * top-up is a job nobody waits on, so it gives the read the time of any other gateway call ({@link GATEWAY_CALL_TIMEOUT_MS}).
+ */
+export interface VerifyOptions {
+  /** The limit of the call in milliseconds; {@link DETAILS_TIMEOUT_MS} when absent. */
+  readonly timeoutMs?: number | undefined;
 }
 
 /** What a driver needs to open a checkout. */
@@ -75,6 +122,8 @@ export interface CheckoutRequest {
   readonly returnUrl: string;
   /** Ask the cardholder for 3-D Secure (a storefront card payment whose gateway supports it). */
   readonly require3ds?: boolean | undefined;
+  /** When the hosted page must close (decision 048); a driver without that notion ignores it. */
+  readonly expiresAt?: Date | undefined;
   /** A stable key (the payment's reference): a repeat of the same call never opens a second hosted page (scenario b2c-paid step 4). */
   readonly idempotencyKey?: string | undefined;
 }
@@ -131,6 +180,8 @@ export interface DisputeEvent {
   readonly reasonCode: string;
   /** When the evidence must be in, or `null`. */
   readonly evidenceDueAt: Date | null;
+  /** When the gateway made the event: its own signed time (decision 048); `null` when the event does not say. */
+  readonly occurredAt?: Date | null | undefined;
   readonly raw: JsonObject;
 }
 
@@ -224,6 +275,37 @@ export interface PaymentGatewayDriver {
     reference: string,
   ): Promise<PaymentDetails | undefined>;
   /**
+   * Reads the gateway's own record of a payment: whether it was paid, how much, in which currency, when, for which checkout, how, and what
+   * happened to the money since.
+   *
+   * Why: decision 048: a storefront capture is verified with the gateway before the order is created (the webhook calls this before its
+   * transaction, with the short {@link DETAILS_TIMEOUT_MS}), and the automatic credit of a card top-up reads the same record before it
+   * credits (with {@link GATEWAY_CALL_TIMEOUT_MS}, the time of the status check it replaced).
+   *
+   * @param calls the HTTP client and policy
+   * @param credentials the gateway's credentials
+   * @param reference the gateway's id of the payment, as the confirmation names it
+   * @param options the limit of the call (default {@link DETAILS_TIMEOUT_MS})
+   * @returns what the record says; a payment the gateway does not know (404) is `not_confirmed`
+   * @throws {AppError} `GATEWAY_ERROR` when the gateway cannot be asked (network, timeout, any other refusal or error answer)
+   */
+  verifyPayment?(
+    calls: GatewayCalls,
+    credentials: GatewayCredentials,
+    reference: string,
+    options?: VerifyOptions,
+  ): Promise<PaymentCheck>;
+  /**
+   * The most significant decimals an amount may have to be charged exactly in a currency (absent: any).
+   *
+   * Why: decision 048: an amount the method cannot charge exactly is refused before a page opens, and a currency's decimals may not exceed
+   * what an active storefront method charges exactly.
+   *
+   * @param currency the ISO code, any case
+   * @returns the number of decimals
+   */
+  maxChargeDecimals?(currency: string): number;
+  /**
    * Refunds a storefront payment (absent when the gateway cannot: the refund is then paid out by hand).
    *
    * @param calls the HTTP client and policy
@@ -262,7 +344,8 @@ export interface PaymentGatewayDriver {
   ): Promise<void>;
 }
 
-const TIMEOUT_MS = 10_000;
+/** The timeout of a gateway call nobody waits on (decision 023): a job's read, a refund, a status check, a checkout page. */
+export const GATEWAY_CALL_TIMEOUT_MS = 10_000;
 /** The timeout of a read the webhook waits for (the card details of a confirmation, plan 24C § 2.4). */
 export const DETAILS_TIMEOUT_MS = 3_000;
 
@@ -309,7 +392,7 @@ export async function gatewayCall(
       ...request,
       target: 'gateway',
       operation: 'payments',
-      timeoutMs: timeoutMs ?? TIMEOUT_MS,
+      timeoutMs: timeoutMs ?? GATEWAY_CALL_TIMEOUT_MS,
       ...(calls.policy?.allowPrivateNetwork === undefined
         ? {}
         : { allowPrivateNetwork: calls.policy.allowPrivateNetwork }),
@@ -346,6 +429,54 @@ export async function gatewayCall(
  */
 export function textOf(value: unknown): string | undefined {
   return typeof value === 'string' && value !== '' ? value : undefined;
+}
+
+/**
+ * Reads an https address a gateway gave.
+ *
+ * Why: decision 048: the checkout address a gateway answers is where the buyer is sent; only an absolute https address with a host and
+ * without a user name, a password, whitespace or control characters is used.
+ *
+ * @param value any value from a parsed body
+ * @returns the text when it is such an address, otherwise `undefined`
+ */
+export function httpsUrlOf(value: unknown): string | undefined {
+  const text = textOf(value);
+  // Whitespace and control characters (U+0000 to U+0020, U+007F) never belong in an address handed to a browser.
+  if (text === undefined || [...text].some((char) => char.charCodeAt(0) <= 0x20 || char.charCodeAt(0) === 0x7f)) {
+    return undefined;
+  }
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    return undefined;
+  }
+  if (url.protocol !== 'https:' || url.hostname === '' || url.username !== '' || url.password !== '') return undefined;
+  return text;
+}
+
+/**
+ * The refusal of a checkout address that is not an https address.
+ *
+ * Why: decision 048: every caller of `createCheckout` already marks its payment failed or voids its invoice on a `GATEWAY_ERROR`.
+ *
+ * @returns the `502 GATEWAY_ERROR` to throw
+ */
+export function notHttps(): AppError {
+  return new AppError('GATEWAY_ERROR', {
+    detail: 'The payment gateway gave a checkout address that is not an https address.',
+  });
+}
+
+/**
+ * Reads a time a gateway gave in unix seconds.
+ *
+ * @param value any value from a parsed body
+ * @returns the date for a finite number of seconds, otherwise `null`
+ */
+export function unixSecondsToDate(value: unknown): Date | null {
+  return typeof value === 'number' && Number.isFinite(value) ? new Date(value * 1000) : null;
 }
 
 /**

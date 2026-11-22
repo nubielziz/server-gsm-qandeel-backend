@@ -53,6 +53,21 @@ export function exponentOf(currency: string): 0 | 2 | 3 {
   return 2;
 }
 
+/**
+ * The most significant decimals an amount may have to be charged exactly in a currency.
+ *
+ * Why: decision 048: the gateway charges zero-decimal and whole-unit currencies (JPY, ISK, UGX) in whole units and every other one in steps
+ * of 0.01 (a three-decimal currency's last digit must be 0); an amount with this many significant decimals or fewer is charged exactly
+ * (`toMinor(...).exact`), any other is refused before a page opens.
+ *
+ * @param currency an ISO code, any case
+ * @returns 0 for the zero-decimal and whole-unit currencies, else 2
+ */
+export function chargeableDecimals(currency: string): 0 | 2 {
+  const code = currency.toUpperCase();
+  return ZERO.has(code) || WHOLE.has(code) ? 0 : 2;
+}
+
 /** The smallest step the gateway can charge, in ten-thousandths of a unit. */
 function stepOf(currency: string): bigint {
   const code = currency.toUpperCase();

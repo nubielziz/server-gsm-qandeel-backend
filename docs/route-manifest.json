@@ -10,20 +10,20 @@
     "rowFlags": "the same files may add Turnstile to a public client or store map row (rowFlags, feature 24A); the endpoint then has turnstile true and rowFlag { file, spec }"
   },
   "counts": {
-    "rows": 391,
+    "rows": 392,
     "tables": 66,
     "scenarios": 13,
     "surfaces": 9,
     "moneyEvents": 13,
     "accounts": 14,
-    "endpoints": 499,
+    "endpoints": 500,
     "map": {
       "rows": 274,
       "endpoints": 382
     },
     "additions": {
-      "rows": 117,
-      "endpoints": 117
+      "rows": 118,
+      "endpoints": 118
     },
     "frontendRoutes": 340,
     "bySurface": {
@@ -40,8 +40,8 @@
         "endpoints": 66
       },
       "admin": {
-        "rows": 232,
-        "endpoints": 340
+        "rows": 233,
+        "endpoints": 341
       },
       "hooks": {
         "rows": 3,
@@ -66,8 +66,8 @@
     },
     "byModule": {
       "money": {
-        "rows": 58,
-        "endpoints": 74
+        "rows": 59,
+        "endpoints": 75
       },
       "catalog": {
         "rows": 28,
@@ -17313,6 +17313,41 @@
         "spec": "B232"
       },
       "successStatus": 204
+    },
+    {
+      "key": "POST /admin/held-payments/:id/close",
+      "method": "POST",
+      "path": "/admin/held-payments/:id/close",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "refunds",
+      "descriptionAr": "Close a storefront payment held for staff: paid back by hand, or no money was received.",
+      "access": "staff-permission",
+      "permission": "refunds:approve",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "refunds:approve",
+      "stage": 38,
+      "tables": [
+        "payments",
+        "refunds",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/held-payments/:id/close",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/held-payments/:id/close"
+      },
+      "module": "money",
+      "description": "Close a storefront payment held for staff: paid back by hand, or no money was received.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/38.mjs",
+        "spec": "B-TBD held-payment-close"
+      }
     }
   ]
 }

@@ -27,19 +27,51 @@ export interface GatewayRequest {
   readonly body: string;
 }
 
+/** What the record of a paid PaymentIntent says (decision 048: the automatic credit of a card top-up reads it before it credits). */
+export interface FakeIntentRecord {
+  /** What it collected (`amount_received`), in the currency's minor units. */
+  readonly minor: number;
+  /** The currency, any case (`usd` by default). */
+  readonly currency?: string;
+  /** `metadata.reference`: the invoice number its checkout was opened for; absent for a page opened before the record carried it. */
+  readonly reference?: string;
+  /** What its latest charge shows since the payment: refunded in full, the minor units refunded, disputed. */
+  readonly charge?: { readonly refunded?: boolean; readonly amountRefunded?: number; readonly disputed?: boolean };
+}
+
 /**
  * A local HTTP server that plays the API of a card gateway (Stripe's checkout protocol) and of a crypto gateway: it records every
  * request, opens checkouts, and answers a status check from what the test sets.
  */
 export class FakeGateway {
   readonly requests: GatewayRequest[] = [];
-  /** What `GET /v1/payment_intents/:id` and `GET /v1/invoices/:id` answer, by id (default: confirmed). */
-  readonly status = new Map<string, { status: string; confirmations?: number; requiredConfirmations?: number }>();
+  /**
+   * What `GET /v1/payment_intents/:id` and `GET /v1/invoices/:id` answer, by id (default: confirmed); a crypto invoice's record may also
+   * state its amount, currency, coin, network and reference (decision 048), answered as given.
+   */
+  readonly status = new Map<
+    string,
+    {
+      status: string;
+      confirmations?: number;
+      requiredConfirmations?: number;
+      amount?: string;
+      currency?: string;
+      coin?: string;
+      network?: string;
+      reference?: string;
+    }
+  >();
   /**
    * The card of a PaymentIntent's latest Charge, by intent id, as `GET /v1/payment_intents/:id?expand[]=latest_charge` answers it
    * (feature 24C); an intent without one answers no charge.
    */
   readonly cards = new Map<string, { brand: string; last4: string; fingerprint: string; wallet?: string }>();
+  /**
+   * What the record of a PaymentIntent says it collected, by intent id, as `GET /v1/payment_intents/:id?expand[]=latest_charge` answers it
+   * (with the status of {@link status}, `succeeded` by default); an intent without one states no amount.
+   */
+  readonly records = new Map<string, FakeIntentRecord>();
   /** When set, only the card details read (`?expand[]=latest_charge`) answers this status code. */
   failDetails: number | undefined;
   /** When set, every call answers this status code instead (a gateway that is down). */
@@ -75,23 +107,44 @@ export class FakeGateway {
           if (!url.searchParams.has('expand[]')) return json(status);
           if (this.failDetails) return new Response('{"error":"no"}', { status: this.failDetails });
           const card = this.cards.get(id);
+          const record = this.records.get(id);
+          const charge = record?.charge;
           return json({
             id,
             ...status,
-            latest_charge: card
-              ? {
-                  id: `ch_${id}`,
-                  payment_method_details: {
-                    type: 'card',
-                    card: {
-                      brand: card.brand,
-                      last4: card.last4,
-                      fingerprint: card.fingerprint,
-                      wallet: card.wallet ? { type: card.wallet } : null,
-                    },
-                  },
-                }
-              : null,
+            ...(record === undefined
+              ? {}
+              : {
+                  amount_received: record.minor,
+                  currency: (record.currency ?? 'usd').toLowerCase(),
+                  ...(record.reference === undefined ? {} : { metadata: { reference: record.reference } }),
+                }),
+            latest_charge:
+              card || charge
+                ? {
+                    id: `ch_${id}`,
+                    ...(charge
+                      ? {
+                          refunded: charge.refunded ?? false,
+                          amount_refunded: charge.amountRefunded ?? 0,
+                          disputed: charge.disputed ?? false,
+                        }
+                      : {}),
+                    ...(card
+                      ? {
+                          payment_method_details: {
+                            type: 'card',
+                            card: {
+                              brand: card.brand,
+                              last4: card.last4,
+                              fingerprint: card.fingerprint,
+                              wallet: card.wallet ? { type: card.wallet } : null,
+                            },
+                          },
+                        }
+                      : {}),
+                  }
+                : null,
           });
         }
         const invoice = /^\/v1\/invoices\/(.+)$/.exec(url.pathname);
@@ -114,11 +167,22 @@ export class FakeGateway {
     return `http://127.0.0.1:${this.server.port}`;
   }
 
+  /**
+   * Records what the gateway's record of a paid PaymentIntent says.
+   *
+   * @param id the intent id
+   * @param record what it collected, the reference its checkout named, and what its charge shows since
+   */
+  paid(id: string, record: FakeIntentRecord): void {
+    this.records.set(id, record);
+  }
+
   /** Forgets the requests and the scripted answers. */
   reset(): void {
     this.requests.length = 0;
     this.status.clear();
     this.cards.clear();
+    this.records.clear();
     this.failDetails = undefined;
     this.failWith = undefined;
   }

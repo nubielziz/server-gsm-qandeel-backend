@@ -81,6 +81,7 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 | `GET /admin/payment-gateway-presets` | admin | staff-permission `payments:gateways` | 32 | `listGatewayPresets` |
 | `POST /admin/payment-gateways/:id/logo` | admin | staff-permission `payments:gateways` | 32 | `uploadGatewayLogo` |
 | `DELETE /admin/payment-gateways/:id/logo` | admin | staff-permission `payments:gateways` | 32 | `removeGatewayLogo` |
+| `POST /admin/held-payments/:id/close` | admin | staff-permission `refunds:approve` | 38 |  |
 
 ## DHRU accountinfo
 
@@ -635,4 +636,9 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 
 - **Map addition** (B232, `scripts/map-additions/32.mjs`): Remove the uploaded logo of a payment method. · staff-permission `payments:gateways` · stage 32 · tables payment_gateways, audit_logs · success 204
 - **Frontend**: `removeGatewayLogo` (src/features/settings/api/gateways.ts:92) · params `id: number` · returns `void`
+
+## POST /admin/held-payments/:id/close
+
+- **Map addition** (B-TBD held-payment-close, `scripts/map-additions/38.mjs`): Close a storefront payment held for staff: paid back by hand, or no money was received. · staff-permission `refunds:approve` · stage 38 · tables payments, refunds, audit_logs
+- **Frontend**: none.
 

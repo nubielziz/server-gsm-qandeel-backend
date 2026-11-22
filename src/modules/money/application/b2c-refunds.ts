@@ -9,9 +9,19 @@ import type { DbExecutor } from '../../../infra/db';
 import type { OrderMethod, Payment, PaymentGateway, Refund } from '../db/schema';
 import { refundSplit, statusAfterRefunds, storedOrderMethod, toUsd } from '../domain/b2c-money';
 import { b2cWalletRefund } from '../domain/customer-wallet-events';
+import { type AccountRef, reversalLines } from '../domain/ledger-lines';
 import { b2cRefund } from '../domain/money-events';
-import { AUTO_REFUND_REASON, refundRoute, settlesAtOnce } from '../domain/refund-rules';
+import {
+  AUTO_REFUND_REASON,
+  AUTO_RETURN_REASON,
+  CHARGEBACK_NOT_SENT_NOTE,
+  closesAtChargeback,
+  refundRoute,
+  settlesAtOnce,
+} from '../domain/refund-rules';
 import { type LedgerParts, ledgerPartsOf, loadSessionMoney } from '../infra/b2c-reads.repository';
+import { findReversibleJournal } from '../infra/ledger-read.repository';
+import { findCurrencyByCode } from '../infra/storefront-money.repository';
 import { driverFor } from '../infra/gateway-drivers/drivers';
 import { findGateway } from '../infra/gateway.repository';
 import {
@@ -25,6 +35,7 @@ import {
   findRefund,
   insertRefund,
   lockRefund,
+  refundsOfPayment,
   takenRefundsOfPayment,
   updateRefund,
   updateRefundIn,
@@ -51,6 +62,11 @@ export interface RefundPosting {
   readonly refundId: number | null;
   /** True when no money went back and a refund request waits for staff instead (`mode: 'request'`); `amount` is what the request asks for. */
   readonly requested: boolean;
+  /**
+   * True when the payment is disputed or charged back with the card network: nothing went back and a refund request waits for staff
+   * (decision 048).
+   */
+  readonly disputed: boolean;
 }
 
 /** What the system does with a rejected paid order: refund it now, or open a request for staff to approve. */
@@ -101,7 +117,8 @@ export class B2cRefunds {
    * `mode: 'request'` is the `autoRefundFailed` switch off (RULES settings 5): the system rejected the order but sends nothing by itself, so a
    * refund request for everything that is left (`requested`, requested by the system) waits for staff and no journal is posted; approving it
    * later posts the journal from customer funds, as an automatic refund would have. Without a payment row the journal-only path stays (there
-   * is no payment a request could name).
+   * is no payment a request could name). Decision 048: a payment the buyer disputed with the card network (`disputed` or `chargeback`) is
+   * never paid out by a rejection or a risk refund: the request mode runs whatever the caller asked, and the posting says `disputed`.
    *
    * @param tx the transition's transaction
    * @param input the order after the guarded update, who acts, the refund being paid out when an approval drives the move, and what the
@@ -121,13 +138,26 @@ export class B2cRefunds {
       namedPaymentId === null ? await findPaymentOfOrder(tx, order.id) : await findOrderPayment(tx, namedPaymentId);
     if (!payment) return this.legacy(tx, order, actor);
     // Lock order: the order (the transition's guarded update took it), then the payment, then the refund, then the ledger accounts.
-    await lockOrderPayment(tx, payment.id);
-    if (input.refundId === undefined && input.mode === 'request') return this.openRequest(tx, order, payment);
+    const locked = await lockOrderPayment(tx, payment.id);
+    if (!locked) throw new Error(`Payment ${payment.id} does not exist.`);
+    // Money the buyer disputed with the card network never goes back by itself; staff decide once the dispute is closed (decision 048).
+    const disputed = locked.status === 'disputed' || locked.status === 'chargeback';
+    if (input.refundId === undefined && (input.mode === 'request' || disputed)) {
+      return this.openRequest(tx, order, locked, disputed);
+    }
     let refund: Refund;
     if (input.refundId === undefined) {
-      const opened = await this.openAutomatic(tx, order, payment, actor);
-      if (!opened)
-        return { posted: false, amount: Money.zero().toWire(), ledgerTxId: null, refundId: null, requested: false };
+      const opened = await this.openAutomatic(tx, order, locked, actor);
+      if (!opened) {
+        return {
+          posted: false,
+          amount: Money.zero().toWire(),
+          ledgerTxId: null,
+          refundId: null,
+          requested: false,
+          disputed: false,
+        };
+      }
       refund = opened;
     } else {
       const locked = await lockRefund(tx, input.refundId);
@@ -136,14 +166,145 @@ export class B2cRefunds {
     }
     const posted = await this.postLedger(tx, {
       order,
-      payment,
+      payment: locked,
       refund,
       from: 'customer_funds',
       key: input.refundId === undefined ? `order:${order.id}:refund` : `refund:${refund.id}`,
       actor,
     });
-    if (input.refundId === undefined) await this.dispatchAutomatic(tx, refund, payment);
-    return { posted: true, amount: posted.gross, ledgerTxId: posted.id, refundId: refund.id, requested: false };
+    if (input.refundId === undefined) await this.dispatchAutomatic(tx, refund, locked);
+    return {
+      posted: true,
+      amount: posted.gross,
+      ledgerTxId: posted.id,
+      refundId: refund.id,
+      requested: false,
+      disputed: false,
+    };
+  }
+
+  /**
+   * Tells whether a payment's money can go back through its gateway by itself.
+   *
+   * Why: decision 048: a held confirmation and a late payment are sent back at once only when the gateway can refund (a card or wallet
+   * payment, refunds switched on, a driver that refunds); otherwise staff pay them back by hand.
+   *
+   * @param payment the payment
+   * @param gateway its gateway row, if it still exists
+   * @param method the payment's method as the confirmation shows it (`card`, `wallet` or `crypto`)
+   * @returns true when the refund route is `original` through the gateway
+   */
+  sendsBack(payment: Payment, gateway: PaymentGateway | undefined, method: OrderMethod): boolean {
+    return payment.methodType !== 'balance' && refundRoute(method, this.capability(gateway)).method === 'original';
+  }
+
+  /**
+   * Sends a held storefront payment back in full through its gateway: a refund without an order.
+   *
+   * Why: decision 048: a confirmation that cannot pay its checkout (another amount or currency, no stated amount, no checkout) is money
+   * that arrived without an order; when the gateway can refund it, it goes back at once. The row names the payment only (`order_id` and
+   * `customer_id` stay empty, so the Refunds page and the reports leave it out); the refund job sends and settles it. No journal is posted:
+   * the money never entered the books.
+   *
+   * Side effects: inserts one `refunds` row (`processing`, requested by the system) and one `refund.process` outbox row.
+   *
+   * @param tx the capture's transaction (the payment is locked)
+   * @param input the payment, its gateway, its method, and the amount and currency the gateway's record says it collected
+   * @returns the refund, or `undefined` when the payment cannot go back by itself, the amount is not above zero, the payment already has a
+   *   refund or the currency is not one of the shop's
+   */
+  async openReturn(
+    tx: DbExecutor,
+    input: { payment: Payment; gateway: PaymentGateway; method: OrderMethod; amount: Money; currency: string },
+  ): Promise<Refund | undefined> {
+    const { payment } = input;
+    if (!this.sendsBack(payment, input.gateway, input.method) || !input.amount.isPositive()) return undefined;
+    if ((await refundsOfPayment(tx, payment.id)).length > 0) return undefined;
+    if (!(await findCurrencyByCode(tx, input.currency))) return undefined;
+    const now = this.clock.now();
+    const refund = await insertRefund(tx, {
+      paymentId: payment.id,
+      orderId: null,
+      customerId: null,
+      amount: input.amount.toWire(),
+      currency: input.currency,
+      reason: AUTO_RETURN_REASON,
+      method: 'original',
+      status: 'processing',
+      requestedByType: 'system',
+      requestedById: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await this.outbox.refund(tx, refund.id);
+    return refund;
+  }
+
+  /**
+   * Closes the refunds of a charged-back payment that the gateway has not paid, and reverses their journals.
+   *
+   * Why: decision 048: refunds of a disputed payment are not sent, so a refund can be booked while the card network takes the same money
+   * back. When the chargeback is booked, every refund of the payment that has not completed at the gateway ({@link closesAtChargeback}:
+   * `requested`, `processing` without a gateway id, or `failed`, also one whose last send got no answer) becomes `rejected` with the
+   * note {@link CHARGEBACK_NOT_SENT_NOTE} (a guarded update under the refund's lock), and the journal it had posted is reversed in the
+   * same transaction (append-only: a mirrored transaction, key `reverse:<journal id>`), so the books show the money leaving once. A refund
+   * the gateway completed stays (the gateway paid both), and so does one the gateway has acknowledged and not answered yet (`processing`
+   * with a gateway id): its result comes from the gateway.
+   *
+   * Lock order: the payment (the caller's), then only the refunds that qualify, in id order: they are read first without a lock, and each
+   * is checked again under its lock; a refund this will not close is never locked. The refund settlement (`RefundSettlement.settle`)
+   * takes the other order (the refund, then its payment) when the gateway's answer completes a refund, so the two can meet on the same
+   * refund at the same moment: the database then ends one of the two transactions (a deadlock), nothing of it is written, and the gateway
+   * delivers its event again (the dispute webhook answers `503 UNAVAILABLE` for it; a settlement from the refund job is retried by the
+   * queue).
+   *
+   * Side effects (on the caller's transaction): updates `refunds`; one ledger transaction per reversed journal.
+   *
+   * @param tx the chargeback's transaction (the payment is locked; lock order: the payment, each refund closed, the ledger accounts)
+   * @param payment the charged-back payment
+   * @param actor who booked the chargeback (staff accepting the loss, or the system for the gateway's decision)
+   * @returns the refunds that were closed
+   */
+  async closeNotSent(tx: DbExecutor, payment: Payment, actor: RefundActor): Promise<Refund[]> {
+    const closed: Refund[] = [];
+    // Read first, then lock only what qualifies, in id order (`refundsOfPayment` is ordered by id); re-checked under each lock.
+    const closing = (await refundsOfPayment(tx, payment.id)).filter(closesAtChargeback);
+    for (const candidate of closing) {
+      const refund = await lockRefund(tx, candidate.id);
+      if (!refund || !closesAtChargeback(refund)) continue;
+      const done = await updateRefundIn(tx, refund.id, [refund.status], {
+        status: 'rejected',
+        note: CHARGEBACK_NOT_SENT_NOTE,
+        updatedAt: this.clock.now(),
+      });
+      if (!done) continue;
+      if (done.ledgerTxId !== null) await this.reverseJournal(tx, done, done.ledgerTxId, actor);
+      closed.push(done);
+    }
+    return closed;
+  }
+
+  /** Posts the mirror of a refund's journal (key `reverse:<journal id>`, so a replay posts nothing). */
+  private async reverseJournal(tx: DbExecutor, refund: Refund, journalId: number, actor: RefundActor): Promise<void> {
+    const journal = await findReversibleJournal(tx, journalId);
+    if (!journal) throw new Error(`Journal ${journalId} of refund ${refund.id} does not exist.`);
+    const accountOf = (account: (typeof journal.entries)[number]['account']): AccountRef => ({
+      kind: account.kind,
+      ...(account.ownerType === null ? {} : { ownerType: account.ownerType }),
+      ...(account.ownerId === null ? {} : { ownerId: account.ownerId }),
+    });
+    await this.poster.post(tx, {
+      kind: journal.kind,
+      refType: journal.refType,
+      refId: journal.refId,
+      idempotencyKey: `reverse:${journal.id}`,
+      currency: journal.currency,
+      lines: reversalLines(
+        journal.entries.map((entry) => ({ amount: Money.of(entry.amount), account: accountOf(entry.account) })),
+      ),
+      memo: `Reversal of refund RF-${refund.id}: not sent, the payment was charged back`,
+      createdBy: { type: actor.type, id: actor.id },
+    });
   }
 
   /**
@@ -318,8 +479,16 @@ export class B2cRefunds {
     const net = Money.of(order.totalPrice);
     const vat = Money.of(order.taxAmount);
     const posting = b2cRefund({ net, vat });
-    if (posting.lines.length === 0)
-      return { posted: false, amount: Money.zero().toWire(), ledgerTxId: null, refundId: null, requested: false };
+    if (posting.lines.length === 0) {
+      return {
+        posted: false,
+        amount: Money.zero().toWire(),
+        ledgerTxId: null,
+        refundId: null,
+        requested: false,
+        disputed: false,
+      };
+    }
     const posted = await this.poster.post(tx, {
       kind: posting.kind,
       refType: posting.refType,
@@ -330,7 +499,14 @@ export class B2cRefunds {
       memo: `Refund ORD-${order.id}`,
       createdBy: { type: actor.type, id: actor.id },
     });
-    return { posted: true, amount: net.add(vat).toWire(), ledgerTxId: posted.id, refundId: null, requested: false };
+    return {
+      posted: true,
+      amount: net.add(vat).toWire(),
+      ledgerTxId: posted.id,
+      refundId: null,
+      requested: false,
+      disputed: false,
+    };
   }
 
   /** Opens the refund the system creates when it rejects a paid order: everything that is left, approved by whoever rejected. */
@@ -368,12 +544,25 @@ export class B2cRefunds {
    * Opens the refund request of a rejected paid order (`autoRefundFailed` off): everything that is left, waiting for staff.
    *
    * It is a row like a customer's request (status `requested`), made by the system (no staff id), with no journal and no gateway job: the
-   * approval route posts, sends and tells the customer. The method is only a first guess; the approval works it out again.
+   * approval route posts, sends and tells the customer. The method is only a first guess; the approval works it out again. `disputed` is
+   * true when the request is opened because the payment is disputed (decision 048): the posting says so.
    */
-  private async openRequest(tx: DbExecutor, order: RefundedOrder, payment: Payment): Promise<RefundPosting> {
+  private async openRequest(
+    tx: DbExecutor,
+    order: RefundedOrder,
+    payment: Payment,
+    disputed: boolean,
+  ): Promise<RefundPosting> {
     const left = await this.leftOn(tx, order, payment);
     if (!left.original.isPositive() || !left.usd.isPositive()) {
-      return { posted: false, amount: Money.zero().toWire(), ledgerTxId: null, refundId: null, requested: false };
+      return {
+        posted: false,
+        amount: Money.zero().toWire(),
+        ledgerTxId: null,
+        refundId: null,
+        requested: false,
+        disputed: false,
+      };
     }
     const route = refundRoute(
       storedOrderMethod(payment.methodType),
@@ -394,7 +583,14 @@ export class B2cRefunds {
       createdAt: now,
       updatedAt: now,
     });
-    return { posted: false, amount: left.usd.toWire(), ledgerTxId: null, refundId: refund.id, requested: true };
+    return {
+      posted: false,
+      amount: left.usd.toWire(),
+      ledgerTxId: null,
+      refundId: refund.id,
+      requested: true,
+      disputed,
+    };
   }
 
   /**

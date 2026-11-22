@@ -224,7 +224,9 @@ export const orders = pgTable(
     ),
     index('orders_api_key_id_idx').on(t.apiKeyId),
     index('orders_currency_idx').on(t.currency),
-    index('orders_checkout_session_id_idx').on(t.checkoutSessionId),
+    // One order per checkout session (decision 048). A full index (it also serves the foreign key's checks); NULLs stay distinct, so
+    // orders without a checkout session are not limited.
+    uniqueIndex('orders_checkout_session_uq').on(t.checkoutSessionId),
     index('orders_supplier_service_id_idx').on(t.supplierServiceId),
     index('orders_input_file_id_idx').on(t.inputFileId),
     index('orders_result_file_id_idx').on(t.resultFileId),

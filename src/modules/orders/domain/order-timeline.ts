@@ -129,15 +129,35 @@ export interface TransitionContext {
   readonly decision?: 'accept' | 'refund' | undefined;
   /** The staff note that came with a verification decision. */
   readonly note?: string | undefined;
-  /** The money that moved (4-decimal texts); `posted` is false for a free order. `requested` marks a refund that waits for staff to approve. */
+  /**
+   * The money that moved (4-decimal texts); `posted` is false for a free order. `requested` marks a refund that waits for staff to approve,
+   * `disputed` one that waits because the buyer disputed the payment with the card network (decision 048).
+   */
   readonly money: {
     readonly posted: boolean;
     readonly amount: string;
     readonly cost: string;
     readonly requested?: boolean;
+    readonly disputed?: boolean;
   };
   /** The dispatch state after the transition: a risk approval says whether the order went to a supplier or to the manual queue. */
   readonly dispatchState?: OrderDispatchState | undefined;
+}
+
+/** The line of a storefront refund that waits for staff: why it waits when the payment is disputed (decision 048). */
+function waitingRefundLine(context: TransitionContext, amount: string): TimelineLine {
+  return context.money.disputed
+    ? line('refund', SYSTEM_ACTOR, {
+        message: `Refund of ${amount} is waiting for staff: the buyer disputed this payment with the card network, so nothing was sent back`,
+        amount: context.money.amount,
+        requested: true,
+        disputed: true,
+      })
+    : line('refund', SYSTEM_ACTOR, {
+        message: `Refund of ${amount} is waiting for staff to approve`,
+        amount: context.money.amount,
+        requested: true,
+      });
 }
 
 function line(
@@ -194,11 +214,7 @@ export function transitionLines(
         line('rejected', context.actor, { message: reason ?? 'Rejected', reason: reason ?? null }, status),
         money === 'b2c_refund'
           ? context.money.requested
-            ? line('refund', SYSTEM_ACTOR, {
-                message: `Refund of ${amount} is waiting for staff to approve`,
-                amount: context.money.amount,
-                requested: true,
-              })
+            ? waitingRefundLine(context, amount)
             : line('refund', SYSTEM_ACTOR, {
                 message: `Refund of ${amount} sent to the original payment method`,
                 amount: context.money.amount,
@@ -243,6 +259,18 @@ export function transitionLines(
     }
     // The risk review of a held storefront order (feature 18): approved (released to a supplier or the manual queue) or refunded.
     case 'risk':
+      if (money === 'b2c_refund' && context.money.requested) {
+        // A risk refund of a disputed payment opens a request instead of sending money (decision 048).
+        return [
+          line(
+            'risk',
+            context.actor,
+            { message: `Risk review: refund waits for staff${reason ? `. ${reason}` : ''}`, reason: reason ?? null },
+            status,
+          ),
+          waitingRefundLine(context, amount),
+        ];
+      }
       return money === 'b2c_refund'
         ? [
             line(

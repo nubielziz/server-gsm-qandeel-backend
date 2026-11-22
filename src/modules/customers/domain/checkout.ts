@@ -116,6 +116,34 @@ export function consentOf(state: ConsentState): {
 }
 
 /**
+ * Tells whether an address is on one of the shop's own origins.
+ *
+ * Why: decision 048: the gateway sends the buyer to the return address of a storefront payment, so it must be the shop's (scheme, host
+ * and port of the storefront's or the portal's base URL, or of a configured shop origin), never another site, and never with a user name
+ * or password.
+ *
+ * @param url the address to check
+ * @param baseUrls the shop's base URLs and origins (one that does not parse is skipped)
+ * @returns true when the address parses, has no user name or password, and its origin is the origin of one of `baseUrls`
+ */
+export function isShopAddress(url: string, baseUrls: readonly string[]): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.username !== '' || parsed.password !== '') return false;
+  return baseUrls.some((base) => {
+    try {
+      return new URL(base).origin === parsed.origin;
+    } catch {
+      return false;
+    }
+  });
+}
+
+/**
  * Hides most of an email address: `ab•••@domain`.
  *
  * Why: the session link is a capability, but it can be forwarded or shown on a shared screen; the buyer knows their own address and

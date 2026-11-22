@@ -183,7 +183,9 @@ export interface UnpostedPayment {
  * Why: a top-up is confirmed when staff or the automatic credit approve it, and its `deposit` entry points at the payment; a storefront
  * payment is confirmed once the gateway captured it (and stays so through refunds and disputes), and its `b2c_payment` entry points at the
  * order (resolution money-2). A confirmed payment with no entry is money the books never saw. A payment from the store balance (feature
- * 21) has no gateway and is named `Store balance`; a customer's top-up posts `deposit` on the payment like a merchant's.
+ * 21) has no gateway and is named `Store balance`; a customer's top-up posts `deposit` on the payment like a merchant's. A storefront
+ * payment the gateway confirmed that is held for staff counts until its money is sent back (a refund of it `processing` or `completed`,
+ * decision 048).
  *
  * @param db the database
  * @returns the count, the summed amount and the first {@link MAX_FINDINGS} (by id)
@@ -208,6 +210,9 @@ export async function paymentsWithoutEntry(db: DbExecutor): Promise<FoundRows<Un
        or (p.purpose = 'order' and p.status in ('captured', 'refunded', 'partial_refund', 'disputed', 'chargeback')
              and not exists (select 1 from ledger_transactions t
                              where t.ref_type = 'order' and t.ref_id = p.order_id and t.kind = 'b2c_payment'))
+       -- A held storefront payment (decision 048): the gateway confirmed it, the books never saw it, and it was not sent back.
+       or (p.purpose = 'order' and p.status = 'pending' and p.review_required
+             and not exists (select 1 from refunds r where r.payment_id = p.id and r.status in ('processing', 'completed')))
     order by p.id
     limit ${MAX_FINDINGS}`);
   return {

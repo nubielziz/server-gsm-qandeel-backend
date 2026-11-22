@@ -3,11 +3,19 @@
 import { describe, expect, it } from 'bun:test';
 import { Money } from '@src/common/money';
 import {
+  CONFIRMATION_GRACE_MINUTES,
+  LATE_REFUND_REASON,
   amountText,
   b2cPaymentMethod,
   brandLine,
+  fractionDigits,
+  HOLD_MARK_KEY,
   fromUsd,
   gatewayFeeUsd,
+  holdMarkOf,
+  hostedPageExpiry,
+  lateConfirmationSignal,
+  minutesLate,
   paymentFacts,
   refundSplit,
   statusAfterRefunds,
@@ -15,6 +23,7 @@ import {
   storefrontMismatch,
   toUsd,
   wireUsd,
+  withHoldMark,
 } from '@src/modules/money/domain/b2c-money';
 
 const m = (amount: string): Money => Money.of(amount);
@@ -156,10 +165,18 @@ describe('paymentFacts', () => {
 describe('storefrontMismatch', () => {
   const opened = { amount: '3.8400', currency: 'GBP' };
 
-  it('accepts a confirmation that agrees, or one that does not say', () => {
+  it('accepts a confirmation that agrees, however the amount is written', () => {
     expect(storefrontMismatch({ amount: '3.8400', currency: 'GBP' }, opened)).toBeUndefined();
     expect(storefrontMismatch({ amount: '3.84', currency: 'GBP' }, opened)).toBeUndefined();
-    expect(storefrontMismatch({ amount: null, currency: null }, opened)).toBeUndefined();
+  });
+
+  it('a confirmation that does not say its currency or amount does not match', () => {
+    const noCurrency = "The gateway's confirmation does not say the currency; the payment was opened in GBP.";
+    expect(storefrontMismatch({ amount: null, currency: null }, opened)).toBe(noCurrency);
+    expect(storefrontMismatch({ amount: '3.8400', currency: null }, opened)).toBe(noCurrency);
+    expect(storefrontMismatch({ amount: null, currency: 'GBP' }, opened)).toBe(
+      "The gateway's confirmation does not say the amount; the payment was opened for 3.8400.",
+    );
   });
 
   it('names another currency or another amount', () => {
@@ -169,6 +186,42 @@ describe('storefrontMismatch', () => {
     expect(storefrontMismatch({ amount: '1.0000', currency: 'GBP' }, opened)).toBe(
       'The gateway confirmed 1.0000 but the payment was opened for 3.8400.',
     );
+  });
+});
+
+describe('the price lock at the gateway (decision 048)', () => {
+  const now = new Date('2026-11-21T12:00:00.000Z');
+  const plus = (base: Date, ms: number) => new Date(base.getTime() + ms);
+  const MIN = 60_000;
+
+  it('the hosted page closes 30 minutes after the lock, never before the gateway minimum', () => {
+    expect(CONFIRMATION_GRACE_MINUTES).toBe(30);
+    expect(hostedPageExpiry(plus(now, 20 * MIN), now)).toEqual(plus(now, 50 * MIN));
+    expect(hostedPageExpiry(plus(now, 30_000), now)).toEqual(plus(now, 31 * MIN));
+    // A lock that has already ended still gets the gateway's shortest page.
+    expect(hostedPageExpiry(plus(now, -5 * MIN), now)).toEqual(plus(now, 31 * MIN));
+  });
+
+  it('late is more than 30 minutes after the lock, judged on the payment time', () => {
+    const lock = now;
+    expect(minutesLate(lock, plus(lock, 30 * MIN))).toBeUndefined();
+    expect(minutesLate(lock, plus(lock, 30 * MIN + 1))).toBe(30);
+    expect(minutesLate(lock, plus(lock, 75 * MIN))).toBe(75);
+    expect(minutesLate(lock, plus(lock, -10 * MIN))).toBeUndefined();
+  });
+
+  it('names the late payment and its refund', () => {
+    expect(lateConfirmationSignal(42)).toBe("Paid 42 minutes after the checkout's price lock ended");
+    expect(LATE_REFUND_REASON).toBe("Paid after the checkout's price lock ended: refunded automatically");
+  });
+});
+
+describe('fractionDigits', () => {
+  it('counts the significant decimals of an amount', () => {
+    expect(fractionDigits(m('3.3960'))).toBe(3);
+    expect(fractionDigits(m('3.4000'))).toBe(1);
+    expect(fractionDigits(m('576.0000'))).toBe(0);
+    expect(fractionDigits(m('0.0001'))).toBe(4);
   });
 });
 
@@ -182,5 +235,25 @@ describe('wireUsd', () => {
   it('a part is converted at the rate; without a payment everything is converted', () => {
     expect(wireUsd(m('1.92'), payment, '0.80185000').toWire()).toBe('2.3945');
     expect(wireUsd(m('3.84'), undefined, '0.80185000').toWire()).toBe('4.7889');
+  });
+});
+
+describe('the hold mark of a held storefront payment (decision 048)', () => {
+  it('keeps the event and adds whether money arrived; reading it back', () => {
+    const event = { id: 'evt_1', type: 'checkout.session.completed', data: { object: { id: 'cs_1' } } };
+    const marked = withHoldMark(event, true);
+    expect(marked).toEqual({ ...event, [HOLD_MARK_KEY]: { moneyReceived: true } });
+    expect(holdMarkOf(marked)).toBe(true);
+    expect(holdMarkOf(withHoldMark(event, false))).toBe(false);
+    // A newer hold replaces an older mark.
+    expect(holdMarkOf(withHoldMark(withHoldMark(event, false), true))).toBe(true);
+  });
+
+  it('reads no mark from a payment held before it existed, or from a malformed one', () => {
+    expect(holdMarkOf({})).toBeUndefined();
+    expect(holdMarkOf({ id: 'evt_1' })).toBeUndefined();
+    expect(holdMarkOf({ [HOLD_MARK_KEY]: 'yes' })).toBeUndefined();
+    expect(holdMarkOf({ [HOLD_MARK_KEY]: [true] })).toBeUndefined();
+    expect(holdMarkOf({ [HOLD_MARK_KEY]: { moneyReceived: 'true' } })).toBeUndefined();
   });
 });

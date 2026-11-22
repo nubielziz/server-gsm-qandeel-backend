@@ -1,11 +1,13 @@
 // Integration tests of the automatic credit of confirmed top-ups (user rule 6, RESOLUTIONS money-3): the wait, the second look at
 // the gateway, the credit from gateway_clearing, the payments that go to staff, a gateway that is slow or down, a flagged payment,
 // and the guarantee that two runs (or a run and a staff decision) credit once.
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { type Database, schema as s } from '@src/infra/db';
+import { OutboundHttp } from '@src/infra/http';
 import { JobRunsService } from '@src/modules/health';
 import { PaymentAutoCredit, PaymentAutoCreditModule } from '@src/modules/money';
+import { driverFor } from '@src/modules/money/infra/gateway-drivers/drivers';
 import { PaymentAutoCreditProcessor } from '@src/modules/money/jobs/payment-auto-credit.processor';
 import { adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
@@ -60,6 +62,8 @@ async function confirmed(gatewayOverrides: Record<string, unknown> = {}, referen
     ...gatewayOverrides,
   });
   const invoice = await insertInvoiceRow(db, merchant.id, { amount: '100.0000', fee: '3.2000', gatewayId });
+  // The gateway's record of the payment: 100.00 USD collected for this invoice's checkout (decision 048).
+  fake.paid(reference, { minor: 10000, reference: invoice.number });
   const body = cardEvent(`evt_${crypto.randomUUID()}`, invoice.number, { reference, amount: 10000 });
   expect((await postWebhook(t, 'card', body, signedHeaders(WEBHOOK_KEY, body, clock))).statusCode).toBe(200);
   const [payment] = await db.select().from(s.payments);
@@ -111,6 +115,27 @@ describe('PaymentAutoCredit', () => {
     expect((await admin.post(`/admin/payments/${payment.id}/approve`)).body.code).toBe('PAYMENT_ALREADY_REVIEWED');
     // A later tick finds nothing to do.
     expect(await job.due()).toEqual([]);
+  });
+
+  it("reads the gateway's record with the 10-second limit of a job, not the webhook's 3 seconds (decision 048)", async () => {
+    const { reference } = await confirmed();
+    clock.advance(11 * MINUTE);
+    const read = spyOn(driverFor('card')!, 'verifyPayment');
+    const http = spyOn(OutboundHttp.prototype, 'request');
+    try {
+      expect(await tick()).toMatchObject({ checked: 1, credited: 1, failed: 0 });
+      // The limit the job passes to the driver, and the one the driver gives the call.
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(read.mock.calls[0]![2]).toBe(reference);
+      expect(read.mock.calls[0]![3]).toEqual({ timeoutMs: 10_000 });
+      const asked = http.mock.calls
+        .map(([options]) => options)
+        .find((options) => String(options.url).includes(`/v1/payment_intents/${reference}`));
+      expect(asked).toMatchObject({ method: 'GET', timeoutMs: 10_000 });
+    } finally {
+      read.mockRestore();
+      http.mockRestore();
+    }
   });
 
   it('credits once when two runs overlap', async () => {
@@ -194,6 +219,79 @@ describe('PaymentAutoCredit', () => {
     expect(approved.body.client.walletBalance).toBe('96.8000');
     expect((await accountFigures(db, 'gateway_clearing'))!.balance).toBe('100.0000');
     expect(merchant.id).toBeGreaterThan(0);
+  });
+
+  it("never credits a confirmation that names another top-up's paid record, and sends it to staff (decision 048)", async () => {
+    const merchant = await insertWalletMerchant(db, { name: 'Zain Mobile Hub' });
+    const gatewayId = await insertGateway(t, db, {
+      code: 'card',
+      name: 'Card gateway',
+      driver: 'card',
+      apiBase: fake.url,
+    });
+    const mine = await insertInvoiceRow(db, merchant.id, { number: 'INV-2026-0501', amount: '100.0000', gatewayId });
+    const theirs = await insertInvoiceRow(db, merchant.id, { number: 'INV-2026-0502', amount: '100.0000', gatewayId });
+    // The gateway's record of pi_theirs: paid, for the other invoice's checkout.
+    fake.paid('pi_theirs', { minor: 10000, reference: theirs.number });
+    const body = cardEvent(`evt_${crypto.randomUUID()}`, mine.number, { reference: 'pi_theirs', amount: 10000 });
+    expect((await postWebhook(t, 'card', body, signedHeaders(WEBHOOK_KEY, body, clock))).statusCode).toBe(200);
+    const [payment] = await db.select().from(s.payments);
+    expect(payment).toMatchObject({ invoiceId: mine.id, reviewRequired: false });
+    clock.advance(11 * MINUTE);
+    expect(await tick()).toMatchObject({ checked: 1, credited: 0, review: 1, failed: 0 });
+    const flagged = await reload(payment!.id);
+    expect(flagged).toMatchObject({ status: 'pending', reviewRequired: true, autoCreditAt: null });
+    expect(flagged.reviewNote).toBe("The gateway's record of this payment names INV-2026-0502, not INV-2026-0501.");
+    expect(await db.select().from(s.ledgerTransactions)).toHaveLength(0);
+    expect((await db.select().from(s.invoices).where(eq(s.invoices.id, mine.id)))[0]!.status).toBe('open');
+  });
+
+  it('never credits a payment whose gateway record shows another amount, and sends it to staff (decision 048)', async () => {
+    const { merchant, payment, invoice, reference } = await confirmed();
+    // The confirmation said 100.00; the gateway's own record says 50.00 was collected.
+    fake.paid(reference, { minor: 5000, reference: invoice.number });
+    clock.advance(11 * MINUTE);
+    expect(await tick()).toMatchObject({ checked: 1, credited: 0, review: 1, failed: 0 });
+    const flagged = await reload(payment.id);
+    expect(flagged).toMatchObject({ status: 'pending', reviewRequired: true, autoCreditAt: null });
+    expect(flagged.reviewNote).toBe(
+      "The gateway's record does not match the invoice. The gateway reports 50.0000 paid; the invoice is 100.0000.",
+    );
+    expect(await db.select().from(s.ledgerTransactions)).toHaveLength(0);
+    expect((await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id }))!.balance).toBe('0.0000');
+  });
+
+  it('sends a payment whose gateway record shows it refunded or disputed since to staff (decision 048)', async () => {
+    const cases = [
+      {
+        charge: { refunded: true, amountRefunded: 10000 },
+        note: "The gateway's record shows this payment was refunded in full after it was made.",
+      },
+      {
+        charge: { amountRefunded: 2500 },
+        note: "The gateway's record shows part of this payment was refunded after it was made.",
+      },
+      { charge: { disputed: true }, note: "The gateway's record shows this payment is disputed." },
+    ];
+    for (const { charge, note } of cases) {
+      await resetDb();
+      await clearIdentityCaches(t);
+      clock.set('2026-11-01T10:00:00.000Z');
+      const { payment, invoice, reference } = await confirmed();
+      fake.paid(reference, { minor: 10000, reference: invoice.number, charge });
+      clock.advance(11 * MINUTE);
+      expect(await tick()).toMatchObject({ credited: 0, review: 1 });
+      expect(await reload(payment.id)).toMatchObject({ reviewRequired: true, reviewNote: note });
+      expect(await db.select().from(s.ledgerTransactions)).toHaveLength(0);
+    }
+  });
+
+  it('credits a payment whose record states no reference (a page opened before the record carried one)', async () => {
+    const { payment, reference } = await confirmed();
+    fake.paid(reference, { minor: 10000 });
+    clock.advance(11 * MINUTE);
+    expect(await tick()).toMatchObject({ credited: 1, review: 0 });
+    expect((await reload(payment.id)).status).toBe('approved');
   });
 
   it('asks again in 5 minutes while the gateway has not confirmed, and after a day sends the payment to staff', async () => {

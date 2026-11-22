@@ -13,6 +13,7 @@ import { type TestApp, createTestApp } from '../../support/app';
 import {
   type B2cWorld,
   B2cGateway,
+  STORE_RETURN_URL,
   b2cWorld,
   hook,
   json,
@@ -106,7 +107,7 @@ describe('POST /store/v1/checkout-sessions/:token/pay', () => {
     expect(refused.statusCode).toBe(422);
     expect(json(refused).errors).toEqual([expect.objectContaining({ field: 'consent' })]);
 
-    const unknown = await pay(t, token, { gateway: 'nope', returnUrl: 'https://shop.example/return' });
+    const unknown = await pay(t, token, { gateway: 'nope', returnUrl: STORE_RETURN_URL });
     expect(unknown.statusCode).toBe(422);
     expect(json(unknown).errors).toEqual([expect.objectContaining({ field: 'gateway' })]);
     await db.update(s.paymentGateways).set({ audience: 'b2b' });
@@ -155,7 +156,7 @@ describe('POST /store/v1/checkout-sessions/:token/pay', () => {
     expect(fake.calls('/v1/checkout/sessions')).toHaveLength(1);
     expect(await payments()).toHaveLength(1);
 
-    const other = await pay(t, token, { gateway: 'card-b2c', returnUrl: 'https://shop.example/other' }, 'key-replay');
+    const other = await pay(t, token, { gateway: 'card-b2c', returnUrl: `${STORE_RETURN_URL}/other` }, 'key-replay');
     expect(other.statusCode).toBe(409);
     expect(json(other)).toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' });
     // A new key is a new attempt.
@@ -207,7 +208,7 @@ describe('POST /store/v1/checkout-sessions/:token/pay: replays and calls in flig
     expect(again.headers['idempotency-replayed']).toBe('true');
     expect(json(again)).toEqual({ ...json(first), payment: { ...payment, status: 'captured' } });
     // Another request under the key is still refused after the capture.
-    const other = await pay(t, token, { gateway: 'card-b2c', returnUrl: 'https://shop.example/other' }, 'key-after');
+    const other = await pay(t, token, { gateway: 'card-b2c', returnUrl: `${STORE_RETURN_URL}/other` }, 'key-after');
     expect(other.statusCode).toBe(409);
     expect(json(other)).toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' });
     expect(fake.calls('/v1/checkout/sessions')).toHaveLength(1);

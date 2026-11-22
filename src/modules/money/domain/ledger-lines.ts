@@ -65,6 +65,23 @@ function sideLine(account: AccountRef, amount: Money, side: 'debit' | 'credit'):
 }
 
 /**
+ * The lines of the transaction that reverses a posted one: every entry on the other side of the same account.
+ *
+ * Why: the ledger is append-only (decision 024): a journal that no longer stands is undone by a second transaction with the mirrored
+ * lines, never by an update. Decision 048: the journal of a refund that was closed unsent because its payment was charged back.
+ *
+ * @param entries the stored entries of the journal (signed, debit positive) with their accounts
+ * @returns the mirrored lines: a debit becomes a credit of the same amount and the other way round
+ */
+export function reversalLines(
+  entries: ReadonlyArray<{ readonly amount: Money; readonly account: AccountRef }>,
+): LedgerLine[] {
+  return entries.flatMap(({ amount, account }) =>
+    amount.isNegative() ? debitLine(account, amount.neg()) : creditLine(account, amount),
+  );
+}
+
+/**
  * Checks the lines of a posting.
  *
  * Why: decision 024 step 1: "validate: >= 2 lines, each a positive debit or credit, sum of debits = sum of credits, one

@@ -25,6 +25,7 @@ import { DisputeLedger } from './application/dispute-ledger';
 import { DisputeService } from './application/dispute.service';
 import { DisputeViews } from './application/dispute-views';
 import { DisputeWebhookService } from './application/dispute-webhook.service';
+import { HeldPaymentsService } from './application/held-payments.service';
 import { OrderReceipts } from './application/order-receipts';
 import { RefundService } from './application/refund.service';
 import { RefundSettlement } from './application/refund-settlement';
@@ -39,6 +40,7 @@ import { ClientBillingController } from './controllers/client-billing.controller
 import { CurrenciesController } from './controllers/currencies.controller';
 import { DisputesController } from './controllers/disputes.controller';
 import { GatewaysController } from './controllers/gateways.controller';
+import { HeldPaymentsController } from './controllers/held-payments.controller';
 import { InvoicesController } from './controllers/invoices.controller';
 import { FxController } from './controllers/fx.controller';
 import { LedgerController } from './controllers/ledger.controller';
@@ -65,7 +67,8 @@ import { StorefrontMailsModule } from './storefront-mails.module';
  * routes, the account reads of REST v1 and Dhru (`/v1/account`, `/v1/transactions`, `accountinfo`) and the billing of stage 8:
  * `/admin/payment-gateways`, `/admin/invoices`, `/admin/payments`, the portal's `/client/payment-methods` and `/client/invoices`,
  * and the incoming `POST /webhooks/payments/:gateway` with the gateway signature adapters behind it, and the storefront money of
- * stage 16: `/admin/refunds`, `/admin/disputes`, `/admin/reports/vat|payments` and `POST /webhooks/disputes/:gateway`; it exports
+ * stage 16: `/admin/refunds`, `/admin/disputes`, `/admin/reports/vat|payments` and `POST /webhooks/disputes/:gateway`, and the close of a
+ * storefront payment held for staff (`POST /admin/held-payments/:id/close`, decision 048); it exports
  * what the checkout and the order receipt need (`StorefrontPayments`, `OrderReceipts`); and the customer wallet of feature 21
  * (`/store/v1/me/wallet*` with the top-ups, `/admin/customers/:id/wallet*`, `/admin/customer-wallets`), exporting `CustomerWallets` and `CustomerWalletPayments`
  * for the customers module (anonymize guard, data export, balance payment).
@@ -90,6 +93,7 @@ import { StorefrontMailsModule } from './storefront-mails.module';
     PaymentWebhookController,
     ReportsController,
     RefundsController,
+    HeldPaymentsController,
     DisputesController,
     B2cReportsController,
     CustomerWalletController,
@@ -124,6 +128,7 @@ import { StorefrontMailsModule } from './storefront-mails.module';
     RefundViews,
     RefundService,
     RefundSettlement,
+    HeldPaymentsService,
     DisputeViews,
     DisputeLedger,
     DisputeService,

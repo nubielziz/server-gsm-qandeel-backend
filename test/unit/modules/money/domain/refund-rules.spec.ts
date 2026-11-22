@@ -1,4 +1,5 @@
-// Unit tests of the storefront refund rules (feature 16): what is left to refund, how a refund is paid out, and the check of an approval's amount.
+// Unit tests of the storefront refund rules (feature 16): what is left to refund, how a refund is paid out, the check of an approval's amount,
+// and which refunds a chargeback closes (decision 048).
 import { describe, expect, it } from 'bun:test';
 import { Money } from '@src/common/money';
 import {
@@ -6,6 +7,7 @@ import {
   MANUAL_REFUND_NOTE,
   NOTHING_LEFT_MESSAGE,
   checkApproval,
+  closesAtChargeback,
   refundRoute,
   refundSendKey,
   refundableLeft,
@@ -142,5 +144,21 @@ describe('wholeCents', () => {
     expect(wholeCents(m('4.7889'))).toBe('4.7889');
     expect(wholeCents(m('0'))).toBe('0.00');
     expect(wholeCents(m('1234.5'))).toBe('1234.50');
+  });
+});
+
+describe('closesAtChargeback (decision 048)', () => {
+  it('closes a request, a refund waiting to be sent and one that failed, also with a gateway id', () => {
+    expect(closesAtChargeback({ status: 'requested', gatewayRefundId: null })).toBe(true);
+    expect(closesAtChargeback({ status: 'processing', gatewayRefundId: null })).toBe(true);
+    expect(closesAtChargeback({ status: 'failed', gatewayRefundId: null })).toBe(true);
+    expect(closesAtChargeback({ status: 'failed', gatewayRefundId: 're_1' })).toBe(true);
+  });
+
+  it('leaves a refund the gateway acknowledged, a completed one and a closed one', () => {
+    expect(closesAtChargeback({ status: 'processing', gatewayRefundId: 're_1' })).toBe(false);
+    expect(closesAtChargeback({ status: 'completed', gatewayRefundId: 're_1' })).toBe(false);
+    expect(closesAtChargeback({ status: 'completed', gatewayRefundId: null })).toBe(false);
+    expect(closesAtChargeback({ status: 'rejected', gatewayRefundId: null })).toBe(false);
   });
 });

@@ -1,17 +1,24 @@
 // The `crypto` driver: hosted crypto invoices (USDT and other coins) over a small JSON API, with webhooks signed like the card
 // driver's (`t=<unix>,v1=<hmac>`, header `x-gsm-signature`). A payment counts as confirmed only once the gateway reports the
-// confirmations it requires (user rule 6). Serves the gateways whose driver is `crypto` or `usdt`.
+// confirmations it requires (user rule 6). Serves the gateways whose driver is `crypto` or `usdt`. The invoice of a storefront payment is
+// read back before its capture (decision 048).
 import { AppError } from '../../../../common/errors';
 import { assertWebhookSignature } from '../../../../infra/crypto';
 import {
   type CheckoutRequest,
+  DETAILS_TIMEOUT_MS,
   type GatewayCalls,
   type GatewayCredentials,
+  GatewayRefusalError,
+  type PaymentCheck,
   type PaymentEvent,
   type PaymentGatewayDriver,
   gatewayCall,
+  httpsUrlOf,
+  notHttps,
   objectOf,
   textOf,
+  unixSecondsToDate,
 } from './driver';
 
 /** The header the gateway signs its webhooks in. */
@@ -36,10 +43,22 @@ function isConfirmed(invoice: Record<string, unknown>): boolean {
 }
 
 /**
+ * An amount of the protocol, read exactly: digits with at most four significant decimals; trailing zeros beyond the fourth are ignored
+ * (`"100.000000"` is `100.0000`). A JSON number or a fifth significant decimal is not an amount billing can compare (`null`).
+ */
+function amountOf(value: unknown): string | null {
+  const match = /^(\d{1,14})(?:\.(\d{1,4})0*)?$/.exec(textOf(value) ?? '');
+  if (!match) return null;
+  return match[2] === undefined ? match[1]! : `${match[1]}.${match[2]}`;
+}
+
+/**
  * The crypto driver.
  *
  * Why: the demo's crypto gateway (USDT and BTC invoices with confirmation tracking). Events `invoice.confirmed`,
  * `invoice.pending` and `invoice.expired`; an `invoice.confirmed` below the required confirmations still reads as pending.
+ * Decision 048: the checkout address must be https; the protocol has no page expiry, so `expiresAt` is ignored; an event's optional
+ * `created` (unix seconds) is its time; `verifyPayment` reads the invoice back (status, amount, currency, reference, coin).
  *
  * @see docs/contract/endpoints/money.md (POST /webhooks/payments/:gateway)
  */
@@ -81,16 +100,16 @@ export const cryptoDriver: PaymentGatewayDriver = {
     const invoiceNumber = textOf(invoice['reference']);
     const reference = textOf(invoice['id']);
     if (!kind || !invoiceNumber || !reference) return undefined;
-    const amount = textOf(invoice['amount']);
     const currency = textOf(invoice['currency']);
     return {
       kind,
       invoiceNumber,
       reference,
-      amount: amount && /^\d+(\.\d{1,4})?$/.test(amount) ? amount : null,
+      amount: amountOf(invoice['amount']),
       currency: currency ? currency.toUpperCase() : null,
       raw: event as PaymentEvent['raw'],
       details: { coin: textOf(invoice['coin']), network: textOf(invoice['network']) },
+      occurredAt: unixSecondsToDate(event['created']),
     };
   },
 
@@ -107,9 +126,38 @@ export const cryptoDriver: PaymentGatewayDriver = {
         returnUrl: request.returnUrl,
       }),
     });
-    const paymentUrl = textOf(answer['url']);
-    if (!paymentUrl) throw new AppError('GATEWAY_ERROR', { detail: 'The payment gateway gave no checkout address.' });
+    if (textOf(answer['url']) === undefined) {
+      throw new AppError('GATEWAY_ERROR', { detail: 'The payment gateway gave no checkout address.' });
+    }
+    const paymentUrl = httpsUrlOf(answer['url']);
+    if (paymentUrl === undefined) throw notHttps();
     return { paymentUrl };
+  },
+
+  async verifyPayment(calls, credentials, reference, options): Promise<PaymentCheck> {
+    try {
+      const answer = await gatewayCall(calls, {
+        url: `${apiBaseOf(credentials)}/v1/invoices/${encodeURIComponent(reference)}`,
+        method: 'GET',
+        headers: authHeaders(credentials),
+        timeoutMs: options?.timeoutMs ?? DETAILS_TIMEOUT_MS,
+      });
+      return {
+        status: isConfirmed(answer) ? 'confirmed' : 'not_confirmed',
+        amount: amountOf(answer['amount']),
+        currency: textOf(answer['currency'])?.toUpperCase() ?? null,
+        paidAt: null,
+        // The field the checkout request sets to the reference billing gave the invoice.
+        belongsTo: textOf(answer['reference']) ?? null,
+        details: { coin: textOf(answer['coin']), network: textOf(answer['network']) },
+      };
+    } catch (error) {
+      // An invoice the gateway does not know is an answer, not a failure: it is not confirmed.
+      if (error instanceof GatewayRefusalError && error.gatewayStatus === 404) {
+        return { status: 'not_confirmed', amount: null, currency: null, paidAt: null, belongsTo: null };
+      }
+      throw error;
+    }
   },
 
   async checkStatus(calls, credentials, reference) {
